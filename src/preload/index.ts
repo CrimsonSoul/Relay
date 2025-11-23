@@ -14,6 +14,8 @@ const api: BridgeAPI = {
     });
   },
 
+  reloadData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_RELOAD),
+
   onAuthRequested: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.AUTH_REQUESTED);
     ipcRenderer.on(IPC_CHANNELS.AUTH_REQUESTED, (_event, request: AuthRequest) => {
