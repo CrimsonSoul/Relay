@@ -65,14 +65,8 @@ function setupIpc(dataRoot: string) {
     await shell.openExternal(url);
   });
 
-  ipcMain.handle(IPC_CHANNELS.OPEN_GROUPS_FILE, async () => {
-    const path = join(dataRoot, 'groups.xlsx');
-    await shell.openPath(path);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
-    const path = join(dataRoot, 'contacts.xlsx');
-    await shell.openPath(path);
+  ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
+    fileManager?.readAndEmit();
   });
 
   ipcMain.on(IPC_CHANNELS.AUTH_SUBMIT, (_event, { username, password }) => {
