@@ -12,5 +12,5 @@ extraResources:
     filter:
       - '*.xlsx'
 win:
-  target: dir
-  artifactName: ${productName}-${version}-win
+  target: zip
+  artifactName: ${productName}-${version}-win.${ext}
