@@ -28,7 +28,12 @@ async function createWindow() {
   if (process.env.ELECTRON_RENDERER_URL) {
     await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
-    await mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+    // In production, electron-builder packs renderer to dist/renderer
+    // The environment variable MAIN_WINDOW_DIST usually points to dist/renderer/index.html's parent
+    // but verifying it's set correctly by electron-vite.
+    // If we assume standard electron-vite behavior:
+    const indexHtml = join(__dirname, '../renderer/index.html');
+    await mainWindow.loadFile(indexHtml);
   }
 
   fileManager = new FileManager(mainWindow);
