@@ -12,5 +12,5 @@ extraResources:
     filter:
       - '*.xlsx'
 win:
-  target: nsis
+  target: zip
   artifactName: ${productName}-${version}-win.${ext}
