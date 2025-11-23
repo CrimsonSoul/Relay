@@ -25,22 +25,16 @@ jobs:
       - name: Build Windows App
         run: npm run build:win
 
-      - name: Locate unpacked build folder
-        id: portable_dir
+      - name: Locate portable zip
+        id: portable_zip
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          dirs=(dist_electron/*/)
-          if (( ${#dirs[@]} != 1 )); then
-            echo "Expected 1 build folder in dist_electron, found ${#dirs[@]}" >&2
-            exit 1
-          fi
-          dir=${dirs[0]%/}
-          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          file=$(ls dist_electron/*.zip)
+          echo "file=$file" >> "$GITHUB_OUTPUT"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: ${{ steps.portable_dir.outputs.dir }}
+          path: dist_electron/*.zip
