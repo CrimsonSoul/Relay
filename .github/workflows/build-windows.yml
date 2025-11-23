@@ -3,6 +3,7 @@ name: Windows Build
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,4 +27,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
-          path: dist_electron/*.exe
+          path: dist_electron/*.zip
