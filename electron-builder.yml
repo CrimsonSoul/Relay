@@ -14,6 +14,5 @@ directories:
   buildResources: resources
 win:
   target:
-    - target: portable
+    - target: dir
       arch: x64
-  artifactName: "${productName}-${version}-Portable.${ext}"
