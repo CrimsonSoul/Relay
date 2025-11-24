@@ -33,7 +33,7 @@ jobs:
         run: pnpm import
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
