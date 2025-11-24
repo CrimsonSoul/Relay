@@ -28,11 +28,18 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Package Windows portable build
-        run: npx electron-builder --config electron-builder.yml --win portable
+      - name: Clean release output
+        shell: powershell
+        run: |
+          if (Test-Path 'release') {
+            Remove-Item -Recurse -Force 'release'
+          }
 
-      - name: Upload portable artifact
+      - name: Prepare Windows unpacked build
+        run: npx electron-builder --config electron-builder.yml --win dir
+
+      - name: Upload unpacked artifact
         uses: actions/upload-artifact@v4
         with:
-          name: operators-atelier-windows-portable
-          path: release/*
+          name: operators-atelier-windows-unpacked
+          path: release/win-unpacked/**
