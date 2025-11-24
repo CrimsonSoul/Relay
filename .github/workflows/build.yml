@@ -29,11 +29,18 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Import npm lockfile to pnpm
         run: pnpm import
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: npm ci
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
 
       - name: Build project
         run: pnpm run build
