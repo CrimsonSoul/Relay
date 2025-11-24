@@ -28,11 +28,11 @@ jobs:
       - name: Build project
         run: npm run build
 
-      - name: Prepare Windows unpacked build
-        run: npx electron-builder --config electron-builder.yml --win dir
+      - name: Package Windows portable build
+        run: npx electron-builder --config electron-builder.yml --win portable
 
-      - name: Upload unpacked artifact
+      - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: operators-atelier-windows-unpacked
-          path: release/win-unpacked/**
+          name: operators-atelier-windows-portable
+          path: release/*
