@@ -38,7 +38,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, selectedGroups, manualAd
     const date = new Date();
     const dateStr = `${date.getMonth() + 1}/${date.getDate()} -`;
     const attendees = log.map(m => m.email).join(',');
-    const url = `https://teams.microsoft.com/l/meeting/new?subject=${dateStr} NOC Briefing&attendees=${attendees}`;
+    const url = `https://teams.microsoft.com/l/meeting/new?subject=${dateStr}&attendees=${attendees}`;
     window.api.openExternal(url);
   };
 
