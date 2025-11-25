@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Panel, TactileButton } from '../components';
 
 export const RadarTab: React.FC = () => {
-  const [url, setUrl] = useState('https://google.com');
+  const [url, setUrl] = useState('https://your-intranet/dashboard');
   const [key, setKey] = useState(0);
 
   const handleRefresh = () => setKey(k => k + 1);
