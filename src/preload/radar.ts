@@ -1,0 +1,104 @@
+import { ipcRenderer } from 'electron';
+import { IPC_CHANNELS, type RadarCounters, type RadarSnapshot } from '@shared/ipc';
+
+type SelectorMap = {
+  ready: string;
+  holding: string;
+  inProgress: string;
+  waiting: string;
+  status: string;
+};
+
+const SELECTORS: SelectorMap = {
+  // Multiple fallbacks to accommodate small markup shifts on the radar page
+  ready: '#xcenter-ready, [data-xcenter-counter="ready"], .xcenter-ready .value, .ready .counter-value',
+  holding: '#xcenter-holding, [data-xcenter-counter="holding"], .xcenter-holding .value, .holding .counter-value',
+  inProgress: '#xcenter-inprogress, [data-xcenter-counter="inprogress"], .xcenter-active .value, .active .counter-value',
+  waiting: '#xcenter-waiting, [data-xcenter-counter="waiting"], .xcenter-queue .value, .queue .counter-value',
+  status: '#xcenter-status, [data-xcenter-status], .xcenter-status, .status-banner'
+};
+
+let lastPayload: string | null = null;
+
+const parseNumber = (selector: string): number | undefined => {
+  const element = document.querySelector(selector);
+  if (!element) return undefined;
+
+  const match = element.textContent?.match(/-?\d+(?:\.\d+)?/);
+  if (!match) return undefined;
+
+  const value = Number(match[0]);
+  return Number.isNaN(value) ? undefined : value;
+};
+
+const readStatus = (selector: string): string | undefined => {
+  const element = document.querySelector(selector);
+  if (!element) return undefined;
+
+  const text = element.textContent?.trim();
+  return text || undefined;
+};
+
+const buildSnapshot = (): RadarSnapshot | null => {
+  const counters: RadarCounters = {
+    ready: parseNumber(SELECTORS.ready),
+    holding: parseNumber(SELECTORS.holding),
+    inProgress: parseNumber(SELECTORS.inProgress),
+    waiting: parseNumber(SELECTORS.waiting)
+  };
+
+  const statusText = readStatus(SELECTORS.status);
+  const hasCounters = Object.values(counters).some((value) => value !== undefined);
+
+  if (!hasCounters && !statusText) {
+    return null; // Avoid spamming empty payloads if the DOM has not rendered yet
+  }
+
+  return {
+    counters,
+    statusText,
+    lastUpdated: Date.now()
+  };
+};
+
+const emitSnapshot = () => {
+  const snapshot = buildSnapshot();
+  if (!snapshot) return;
+
+  const serialized = JSON.stringify(snapshot);
+  if (serialized === lastPayload) return;
+
+  lastPayload = serialized;
+  ipcRenderer.send(IPC_CHANNELS.RADAR_DATA, snapshot);
+  ipcRenderer.sendToHost(IPC_CHANNELS.RADAR_DATA, snapshot);
+};
+
+const startObserving = () => {
+  const target = document.body;
+  if (!target) {
+    setTimeout(startObserving, 250);
+    return;
+  }
+
+  emitSnapshot();
+
+  const observer = new MutationObserver(() => {
+    emitSnapshot();
+  });
+
+  observer.observe(target, { childList: true, subtree: true, characterData: true });
+
+  // Safety net in case mutations are throttled or missed
+  const interval = setInterval(emitSnapshot, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    observer.disconnect();
+    clearInterval(interval);
+  });
+};
+
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+  startObserving();
+} else {
+  window.addEventListener('DOMContentLoaded', startObserving);
+}
