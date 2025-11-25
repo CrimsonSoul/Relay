@@ -172,10 +172,20 @@ export default function App() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <TactileButton variant="secondary" onClick={handleOpenGroupsFile} style={{ padding: '10px 14px', fontSize: '12px' }}>
+          <TactileButton
+            className="file-button"
+            variant="secondary"
+            onClick={handleOpenGroupsFile}
+            style={{ padding: '10px 14px', fontSize: '12px' }}
+          >
             Open groups file
           </TactileButton>
-          <TactileButton variant="secondary" onClick={handleOpenContactsFile} style={{ padding: '10px 14px', fontSize: '12px' }}>
+          <TactileButton
+            className="file-button"
+            variant="secondary"
+            onClick={handleOpenContactsFile}
+            style={{ padding: '10px 14px', fontSize: '12px' }}
+          >
             Open contacts file
           </TactileButton>
           <TactileButton
@@ -183,17 +193,20 @@ export default function App() {
             variant="secondary"
             active={isReloading}
             disabled={isReloading}
+            className={`refresh-button ${isReloading ? 'is-reloading' : ''}`}
             style={{ padding: '10px 14px', fontSize: '12px', minWidth: '140px', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}
           >
             {isReloading && (
               <span
                 style={{
-                  width: '12px',
-                  height: '12px',
+                  width: '14px',
+                  height: '14px',
                   borderRadius: '50%',
-                  border: '2px solid rgba(255,255,255,0.3)',
+                  border: '2px solid rgba(255,255,255,0.2)',
                   borderTopColor: 'var(--accent-primary)',
-                  animation: 'spin 1s linear infinite'
+                  boxShadow: '0 0 0 1px rgba(255,215,0,0.08)',
+                  animation: 'spin 0.85s linear infinite, pulse 2s ease-in-out infinite',
+                  display: 'inline-block'
                 }}
               />
             )}
@@ -226,6 +239,70 @@ export default function App() {
       <style>{`
         @keyframes progress { 0% { width: 0%; } 100% { width: 100%; } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 0.65; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+        @keyframes sweep {
+          0% { transform: translateX(-120%); opacity: 0; }
+          10% { opacity: 0.35; }
+          60% { opacity: 0.15; }
+          100% { transform: translateX(140%); opacity: 0; }
+        }
+
+        .file-button {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+        }
+
+        .file-button::after {
+          content: '';
+          position: absolute;
+          inset: 1px;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 1px;
+          transform: translateY(6px);
+          opacity: 0;
+          transition: transform 160ms ease, opacity 160ms ease, border-color 160ms ease;
+          pointer-events: none;
+        }
+
+        .file-button:hover::after,
+        .file-button:focus-visible::after {
+          transform: translateY(0);
+          opacity: 1;
+          border-color: rgba(255,215,0,0.25);
+        }
+
+        .file-button:focus-visible {
+          outline: 1px solid rgba(255,215,0,0.4);
+          outline-offset: 2px;
+        }
+
+        .refresh-button {
+          position: relative;
+          overflow: hidden;
+          isolation: isolate;
+        }
+
+        .refresh-button::after {
+          content: '';
+          position: absolute;
+          inset: -2px;
+          background: linear-gradient(120deg, transparent 35%, rgba(255,215,0,0.15) 50%, transparent 65%);
+          opacity: 0;
+          transform: translateX(-120%);
+          transition: opacity 180ms ease;
+          pointer-events: none;
+        }
+
+        .refresh-button:hover::after {
+          opacity: 1;
+          animation: sweep 1.3s linear infinite;
+        }
+
+        .refresh-button.is-reloading::after {
+          opacity: 1;
+          animation: sweep 1s linear infinite;
+        }
       `}</style>
     </div>
   );
