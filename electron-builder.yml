@@ -6,12 +6,14 @@ files:
   - package.json
   - node_modules/**
   - resources/**
+  - "!node_modules/fsevents/**"
 extraResources:
   - from: resources
     to: resources
 directories:
   output: release
   buildResources: resources
+npmRebuild: false
 win:
   target:
     - target: portable
