@@ -19,4 +19,4 @@ win:
     - target: portable
       arch: x64
   artifactName: "noc workshop-${version}.exe"
-  icon: build/icon.svg
+  icon: build/icon.png
