@@ -10,14 +10,15 @@ type SelectorMap = {
 };
 
 const SELECTORS: SelectorMap = {
-  // Multiple fallbacks to accommodate the XCenter Counts panel markup
+  // Multiple fallbacks to accommodate the XCenter Counts panel markup (attribute matches are case-insensitive)
   ok:
-    '#xcenter-ok, [data-xcenter-counter="ok"], [data-counter="ok"], [data-counter-ok], .xcenter-ok .value, .ok .counter-value, [data-testid="xcenter-count-ok"], [data-xcenter-count="ok"]',
+    '#xcenter-ok, [data-xcenter-counter="ok" i], [data-counter="ok" i], [data-counter-ok], .xcenter-ok .value, .ok .counter-value, [data-testid="xcenter-count-ok"], [data-xcenter-count="ok" i]',
   pending:
-    '#xcenter-pending, [data-xcenter-counter="pending"], [data-counter="pending"], [data-counter-pending], .xcenter-pending .value, .pending .counter-value, [data-testid="xcenter-count-pending"], [data-xcenter-count="pending"]',
+    '#xcenter-pending, [data-xcenter-counter="pending" i], [data-counter="pending" i], [data-counter-pending], .xcenter-pending .value, .pending .counter-value, [data-testid="xcenter-count-pending"], [data-xcenter-count="pending" i]',
   internalError:
-    '#xcenter-internal-error, #xcenter-internalError, [data-xcenter-counter="internal-error"], [data-xcenter-counter="internalError"], [data-counter="internalError"], [data-counter-internal-error], [data-counter-internalError], .xcenter-internal-error .value, .internal-error .counter-value, [data-testid="xcenter-count-internal-error"], [data-xcenter-count="internal-error"]',
-  countsPanel: '#xcenter-counts, [data-xcenter-counts], [data-testid="xcenter-counts"], [aria-label*="XCenter Counts" i], .xcenter-counts, .counts-panel',
+    '#xcenter-internal-error, #xcenter-internalError, [data-xcenter-counter="internal-error" i], [data-xcenter-counter="internalError" i], [data-counter="internalError" i], [data-counter-internal-error], [data-counter-internalError], .xcenter-internal-error .value, .internal-error .counter-value, [data-testid="xcenter-count-internal-error"], [data-xcenter-count="internal-error" i]',
+  countsPanel:
+    '#xcenter-counts, [data-xcenter-counts], [data-testid="xcenter-counts"], [aria-label*="XCenter Counts" i], [data-panel="xcenter" i], [data-panel-type="xcenter" i], .xcenter-counts, .counts-panel',
   status: '#xcenter-status, [data-xcenter-status], .xcenter-status, .status-banner'
 };
 
@@ -190,6 +191,17 @@ const emitSnapshot = () => {
   ipcRenderer.sendToHost(IPC_CHANNELS.RADAR_DATA, snapshot);
 };
 
+let emitTimeout: number | null = null;
+
+const scheduleEmitSnapshot = () => {
+  if (emitTimeout !== null) return;
+
+  emitTimeout = window.setTimeout(() => {
+    emitTimeout = null;
+    emitSnapshot();
+  }, 200);
+};
+
 const startObserving = () => {
   const target = document.body;
   if (!target) {
@@ -200,7 +212,7 @@ const startObserving = () => {
   emitSnapshot();
 
   const observer = new MutationObserver(() => {
-    emitSnapshot();
+    scheduleEmitSnapshot();
   });
 
   observer.observe(target, { childList: true, subtree: true, characterData: true });
