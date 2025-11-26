@@ -29,7 +29,6 @@ export type RadarCounters = {
 export type RadarSnapshot = {
     counters: RadarCounters;
     statusText?: string;
-    statusColor?: string;
     lastUpdated: number;
 };
 
