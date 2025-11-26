@@ -191,7 +191,7 @@ export default function App() {
             onClick={handleOpenGroupsFile}
             style={{ padding: '10px 14px', fontSize: '12px' }}
           >
-            Open groups file
+            Groups
           </TactileButton>
           <TactileButton
             className="toolbar-button"
@@ -199,20 +199,20 @@ export default function App() {
             onClick={handleOpenContactsFile}
             style={{ padding: '10px 14px', fontSize: '12px' }}
           >
-            Open contacts file
+            Contacts
           </TactileButton>
           <TactileButton
             onClick={handleRefresh}
             variant="secondary"
             active={isReloading}
             disabled={isReloading}
-            className={`toolbar-button refresh-button ${isReloading ? 'is-reloading pulse-glow-effect' : ''}`}
+            className={`toolbar-button refresh-button ${isReloading ? 'pulse-glow-effect' : ''}`}
             style={{ padding: '10px 14px', fontSize: '12px' }}
           >
             {isReloading && (
               <span className="button-spinner" aria-hidden />
             )}
-            {isReloading ? 'Refreshing...' : 'Refresh data'}
+            {isReloading ? 'Syncing...' : 'Refresh'}
           </TactileButton>
         </div>
       </div>
