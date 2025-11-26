@@ -38,8 +38,8 @@ export const RadarTab: React.FC = () => {
   };
 
   const metrics = [
-    { label: 'Ready Now', value: telemetry?.counters.ready },
-    { label: 'Holding', value: telemetry?.counters.holding },
+    { label: 'Ready', value: telemetry?.counters.ready },
+    { label: 'On Hold', value: telemetry?.counters.holding },
     { label: 'In Progress', value: telemetry?.counters.inProgress },
     { label: 'Waiting', value: telemetry?.counters.waiting }
   ];
@@ -90,11 +90,10 @@ export const RadarTab: React.FC = () => {
               gap: '12px',
               padding: '12px',
               borderRadius: '8px',
-              background: telemetry?.statusColor || 'linear-gradient(90deg, rgba(0,255,153,0.15), rgba(0,255,153,0.05))',
+              background: 'linear-gradient(90deg, rgba(0,255,153,0.15), rgba(0,255,153,0.05))',
               border: '1px solid rgba(0,255,153,0.2)'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: '10px', height: '36px', borderRadius: '6px', background: telemetry?.statusColor || '#00ff99', opacity: 0.85 }} />
+              <div>
                 <div style={{ fontFamily: 'var(--font-serif)', fontSize: '14px', color: 'var(--text-secondary)' }}>Status</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: '18px', color: 'var(--text-primary)' }}>
                   {telemetry?.statusText || 'Awaiting telemetry...'}
