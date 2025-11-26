@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <EVB>
   <General>
-    <InputFile>release\win-unpacked\noc workshop.exe</InputFile>
-    <OutputFile>release\packed\noc workshop.exe</OutputFile>
+    <InputFile>release/win-unpacked/noc workshop.exe</InputFile>
+    <OutputFile>release/packed/noc workshop.exe</OutputFile>
     <Files>
       <Enabled>true</Enabled>
       <DeleteExtractedOnExit>true</DeleteExtractedOnExit>
@@ -18,7 +18,7 @@
         <Files>
           <File>
             <Type>3</Type>
-            <Name>release\win-unpacked\%DEFAULT FOLDER%</Name>
+            <Name>release/win-unpacked</Name>
             <Action>0</Action>
             <WorkingDir>1</WorkingDir>
           </File>
