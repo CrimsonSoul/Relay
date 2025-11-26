@@ -11,7 +11,7 @@ directories:
   output: release
   buildResources: resources
 npmRebuild: false
-extraResources:
+extraFiles:
   - from: data
     to: data
 win:
