@@ -3,6 +3,7 @@ import { dirname, join } from 'path';
 import fs from 'fs';
 import { FileManager } from './FileManager';
 import { IPC_CHANNELS } from '../shared/ipc';
+import { ensureDataFiles } from './dataUtils';
 
 let mainWindow: BrowserWindow | null = null;
 let fileManager: FileManager | null = null;
@@ -18,11 +19,9 @@ function getDataRoot() {
   const executableDir = process.env.PORTABLE_EXECUTABLE_DIR || dirname(process.execPath);
   const portableDataPath = join(executableDir, 'data');
 
-  if (fs.existsSync(portableDataPath)) {
-    return portableDataPath;
-  }
+  ensureDataFiles(portableDataPath, join(process.resourcesPath, 'data'), app.isPackaged);
 
-  return join(process.resourcesPath, 'data');
+  return portableDataPath;
 }
 
 const GROUP_FILES = ['groups.csv'];
@@ -116,9 +115,10 @@ function setupIpc(dataRoot: string) {
     if (response === 1) {
       try {
         // Ensure data directory exists (it might not if using portable logic but folder deleted)
-        if (!fs.existsSync(dataRoot)) {
-          fs.mkdirSync(dataRoot, { recursive: true });
-        }
+        // Also ensure other required files are present to keep the dataset valid
+        // We need to pass bundled path again, constructing it:
+        const bundledPath = app.isPackaged ? join(process.resourcesPath, 'data') : join(process.cwd(), 'data');
+        ensureDataFiles(dataRoot, bundledPath, app.isPackaged);
 
         fs.copyFileSync(sourcePath, targetPath);
         fileManager?.readAndEmit();
