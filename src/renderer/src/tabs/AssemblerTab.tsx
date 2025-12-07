@@ -97,6 +97,18 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     return map;
   }, [contacts]);
 
+  const emailToGroups = useMemo(() => {
+    const map = new Map<string, string[]>();
+    Object.entries(groups).forEach(([groupName, emails]) => {
+      emails.forEach((email) => {
+        const key = email.toLowerCase();
+        const existing = map.get(key) || [];
+        map.set(key, [...existing, groupName]);
+      });
+    });
+    return map;
+  }, [groups]);
+
   const log = useMemo(() => {
     const fromGroups = selectedGroups.flatMap(g => groups[g] || []);
     const union = new Set([...fromGroups, ...manualAdds]);
@@ -172,18 +184,51 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                  <button
                    onClick={() => setIsGroupModalOpen(true)}
                    style={{
-                       background: 'rgba(255,255,255,0.05)',
+                       background: 'var(--color-accent-blue)',
                        border: 'none',
-                       borderRadius: '4px',
-                       color: 'var(--color-text-secondary)',
+                       borderRadius: '999px',
+                       color: '#fff',
                        cursor: 'pointer',
-                       padding: '2px 6px',
-                       fontSize: '14px'
+                       padding: '6px 12px',
+                       fontSize: '12px',
+                       fontWeight: 600,
+                       display: 'flex',
+                       alignItems: 'center',
+                       gap: '6px',
+                       boxShadow: '0 8px 20px rgba(59, 130, 246, 0.3)',
+                       transition: 'transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease'
                    }}
                    title="Create Group"
-                   className="hover-bg"
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.background = '#2563EB';
+                     e.currentTarget.style.boxShadow = '0 10px 24px rgba(37, 99, 235, 0.35)';
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.background = 'var(--color-accent-blue)';
+                     e.currentTarget.style.boxShadow = '0 8px 20px rgba(59, 130, 246, 0.3)';
+                     e.currentTarget.style.transform = 'translateY(0)';
+                   }}
+                   onMouseDown={(e) => {
+                     e.currentTarget.style.transform = 'translateY(1px)';
+                     e.currentTarget.style.background = '#1D4ED8';
+                   }}
+                   onMouseUp={(e) => {
+                     e.currentTarget.style.transform = 'translateY(0)';
+                     e.currentTarget.style.background = '#2563EB';
+                   }}
                  >
-                     +
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.18)',
+                      fontSize: '14px',
+                      lineHeight: 1
+                    }}>+</span>
+                    New group
                  </button>
             </div>
           </div>
@@ -353,6 +398,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                     const name = contact ? contact.name : email.split('@')[0]; // Fallback to part of email
                     const title = contact?.title;
                     const phone = contact?.phone;
+                    const membership = emailToGroups.get(email.toLowerCase()) || [];
 
                     return (
                         <ContactCard
@@ -361,6 +407,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             email={email}
                             title={title}
                             phone={phone}
+                            groups={membership}
                             sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
                             className="animate-fade-in"
                             action={
