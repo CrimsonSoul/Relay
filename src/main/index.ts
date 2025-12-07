@@ -14,6 +14,17 @@ let currentDataRoot: string = '';
 // Auth State
 let authCallback: ((username: string, password: string) => void) | null = null;
 
+// Helpers
+const getDefaultDataPath = () => {
+  return join(app.getPath('userData'), 'data');
+};
+
+const getBundledDataPath = () => {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'data')
+    : join(process.cwd(), 'data');
+};
+
 function getDataRoot() {
   // Check config first
   const config = loadConfig();
@@ -22,10 +33,8 @@ function getDataRoot() {
   }
 
   // Default to AppData
-  const defaultDataPath = join(app.getPath('userData'), 'data');
-  const bundledPath = app.isPackaged
-    ? join(process.resourcesPath, 'data')
-    : join(process.cwd(), 'data');
+  const defaultDataPath = getDefaultDataPath();
+  const bundledPath = getBundledDataPath();
 
   ensureDataFiles(defaultDataPath, bundledPath, app.isPackaged);
   return defaultDataPath;
@@ -43,8 +52,8 @@ const resolveDataFile = (root: string, candidates: string[]) => {
   return join(root, candidates[0]);
 };
 
-const groupsFilePath = (root: string) => resolveDataFile(root, GROUP_FILES);
-const contactsFilePath = (root: string) => resolveDataFile(root, CONTACT_FILES);
+const groupsFilePath = () => resolveDataFile(currentDataRoot, GROUP_FILES);
+const contactsFilePath = () => resolveDataFile(currentDataRoot, CONTACT_FILES);
 
 async function createWindow(dataRoot: string) {
   mainWindow = new BrowserWindow({
@@ -80,10 +89,77 @@ async function createWindow(dataRoot: string) {
   });
 }
 
-function setupIpc(dataRoot: string) {
+function copyFilesIfMissing(sourceRoot: string, targetRoot: string) {
+  const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
+  let filesCopied = false;
+
+  // Ensure target exists
+  if (!fs.existsSync(targetRoot)) {
+    try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { console.error(e); }
+  }
+
+  for (const file of essentialFiles) {
+      const source = join(sourceRoot, file);
+      const target = join(targetRoot, file);
+      // Only copy if target DOES NOT exist
+      if (!fs.existsSync(target)) {
+          // Try sourceRoot
+          if (fs.existsSync(source)) {
+              try {
+                  fs.copyFileSync(source, target);
+                  filesCopied = true;
+                  console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
+              } catch (e) {
+                  console.error(`Failed to copy ${file}:`, e);
+              }
+          } else {
+             // Fallback to bundle if sourceRoot fails
+             const bundled = join(getBundledDataPath(), file);
+             if (fs.existsSync(bundled)) {
+                 try {
+                     fs.copyFileSync(bundled, target);
+                     filesCopied = true;
+                     console.log(`Copied ${file} from bundle to ${targetRoot}`);
+                 } catch (e) {
+                     console.error(`Failed to copy bundled ${file}:`, e);
+                 }
+             }
+          }
+      }
+  }
+  return filesCopied;
+}
+
+function handleDataPathChange(newPath: string) {
+    if (!mainWindow) return;
+
+    // 1. Ensure files exist in new location (copy from OLD location if missing)
+    copyFilesIfMissing(currentDataRoot, newPath);
+
+    // 2. Update Config
+    saveConfig({ dataRoot: newPath });
+    currentDataRoot = newPath;
+
+    // 3. Hot Swap FileManager and Logger
+    if (fileManager) {
+        fileManager.destroy();
+        fileManager = null;
+    }
+    fileManager = new FileManager(mainWindow, currentDataRoot);
+
+    // BridgeLogger doesn't have a destroy method but it's just a class wrapper usually.
+    // If it has state or watchers, we might need to look at it.
+    // Assuming simple instantiation for now.
+    bridgeLogger = new BridgeLogger(currentDataRoot);
+
+    // 4. Force read to update UI
+    fileManager.readAndEmit();
+}
+
+function setupIpc() {
   // Config IPCs
   ipcMain.handle(IPC_CHANNELS.GET_DATA_PATH, async () => {
-    return dataRoot;
+    return currentDataRoot;
   });
 
   ipcMain.handle(IPC_CHANNELS.CHANGE_DATA_FOLDER, async () => {
@@ -96,40 +172,18 @@ function setupIpc(dataRoot: string) {
 
     if (canceled || filePaths.length === 0) return false;
 
-    const newPath = filePaths[0];
-
-    // Copy current files if target is empty/missing key files
-    const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
-    let filesCopied = false;
-
-    for (const file of essentialFiles) {
-        const source = join(dataRoot, file);
-        const target = join(newPath, file);
-        if (fs.existsSync(source) && !fs.existsSync(target)) {
-            try {
-                fs.copyFileSync(source, target);
-                filesCopied = true;
-            } catch (e) {
-                console.error(`Failed to copy ${file} to new location:`, e);
-            }
-        }
-    }
-
-    if (filesCopied) {
-        console.log('Copied existing data files to new location.');
-    }
-
-    // Save config
-    saveConfig({ dataRoot: newPath });
-
-    // Relaunch
-    // For portable apps, app.relaunch() sometimes needs explicit executable path
-    // But Electron 5+ usually handles it.
-    // However, on Windows portable, exiting immediately might kill the relaunch process if not detached.
-    // We'll use a small delay or app.quit() instead of exit() which forces it.
-    app.relaunch();
-    app.quit();
+    handleDataPathChange(filePaths[0]);
     return true;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RESET_DATA_FOLDER, async () => {
+      const defaultPath = getDefaultDataPath();
+      // If already on default, do nothing or just reload?
+      // User might want to "repair" default.
+      // But mainly used to switch back.
+
+      handleDataPathChange(defaultPath);
+      return true;
   });
 
   // FS IPCs
@@ -138,11 +192,11 @@ function setupIpc(dataRoot: string) {
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_GROUPS_FILE, async () => {
-    await shell.openPath(groupsFilePath(dataRoot));
+    await shell.openPath(groupsFilePath());
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
-    await shell.openPath(contactsFilePath(dataRoot));
+    await shell.openPath(contactsFilePath());
   });
 
   // Import Handlers (Now Merging)
@@ -246,7 +300,7 @@ app.on('login', (event, _webContents, _request, authInfo, callback) => {
 
   app.whenReady().then(async () => {
     currentDataRoot = getDataRoot();
-    setupIpc(currentDataRoot);
+    setupIpc();
     await createWindow(currentDataRoot);
 
     app.on('activate', () => {

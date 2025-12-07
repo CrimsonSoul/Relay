@@ -170,9 +170,15 @@ export class FileManager {
   public async addContact(contact: Partial<Contact>): Promise<boolean> {
     try {
       const path = join(this.rootDir, CONTACT_FILES[0]);
-      if (!fs.existsSync(path)) return false;
+      let contents = '';
+      if (fs.existsSync(path)) {
+        contents = fs.readFileSync(path, 'utf-8');
+      } else {
+        // Create if missing
+        contents = '';
+        // If the directory doesn't exist, we might fail writing later, but rootDir should exist by now.
+      }
 
-      const contents = fs.readFileSync(path, 'utf-8');
       const data = parseCsv(contents);
 
       // If empty or just header, we can append. If completely empty, init header.
@@ -253,9 +259,13 @@ export class FileManager {
   public async addGroup(groupName: string): Promise<boolean> {
     try {
       const path = join(this.rootDir, GROUP_FILES[0]);
-      if (!fs.existsSync(path)) return false;
+      let contents = '';
+      if (fs.existsSync(path)) {
+        contents = fs.readFileSync(path, 'utf-8');
+      } else {
+        contents = '';
+      }
 
-      const contents = fs.readFileSync(path, 'utf-8');
       const data = parseCsv(contents); // Array of arrays
 
       if (data.length === 0) {
