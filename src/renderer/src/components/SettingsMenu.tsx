@@ -43,7 +43,8 @@ export const SettingsMenu = ({
 
   const handleChangeFolder = async () => {
      await window.api?.changeDataFolder();
-     // App will restart, no need to close menu
+     window.api?.getDataPath().then(setDataPath);
+     // App handles hot swap, no restart needed
   };
 
   return (
@@ -110,6 +111,35 @@ export const SettingsMenu = ({
               }}
             >
               Change Folder...
+            </button>
+            <button
+              className="menu-item"
+              onClick={async () => {
+                await window.api?.resetDataFolder();
+                window.api?.getDataPath().then(setDataPath);
+              }}
+              style={{
+                width: '100%',
+                textAlign: 'left',
+                padding: '8px 12px',
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-secondary)',
+                fontSize: '13px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'var(--color-glass-hover)';
+                e.currentTarget.style.color = 'var(--text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'var(--text-secondary)';
+              }}
+            >
+              Reset to Default
             </button>
 
             <div style={{ height: '1px', background: 'var(--color-border)', margin: '4px 8px' }} />
