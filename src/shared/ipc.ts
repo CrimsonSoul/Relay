@@ -59,11 +59,13 @@ export type BridgeAPI = {
     removeContactFromGroup: (groupName: string, email: string) => Promise<boolean>;
     importContactsWithMapping: () => Promise<boolean>;
     changeDataFolder: () => Promise<boolean>;
+    resetDataFolder: () => Promise<boolean>;
     getDataPath: () => Promise<string>;
 };
 
 export const IPC_CHANNELS = {
     CHANGE_DATA_FOLDER: 'config:changeDataFolder',
+    RESET_DATA_FOLDER: 'config:resetDataFolder',
     GET_DATA_PATH: 'config:getDataPath',
     OPEN_PATH: 'fs:openPath',
     OPEN_EXTERNAL: 'shell:openExternal',

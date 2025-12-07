@@ -67,6 +67,7 @@ const api: BridgeAPI = {
   removeContactFromGroup: (groupName, email) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_CONTACT_FROM_GROUP, groupName, email),
   importContactsWithMapping: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING),
   changeDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.CHANGE_DATA_FOLDER),
+  resetDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_DATA_FOLDER),
   getDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_PATH)
 };
 
