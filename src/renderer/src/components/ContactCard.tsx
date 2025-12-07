@@ -11,6 +11,7 @@ type ContactCardProps = {
   style?: React.CSSProperties;
   className?: string;
   sourceLabel?: string;
+  groups?: string[];
 };
 
 // --- Utils ---
@@ -42,7 +43,7 @@ const formatPhone = (phone: string | undefined) => {
   return phone;
 };
 
-export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel }: ContactCardProps) => {
+export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [] }: ContactCardProps) => {
   const color = avatarColor || getAvatarColor(name);
   const formattedPhone = formatPhone(phone);
 
@@ -50,13 +51,13 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
     <div
       style={{
         ...style,
-        height: '72px', // Slightly taller for better spacing
         display: 'flex',
-        alignItems: 'center',
-        padding: '0 16px',
+        alignItems: 'stretch',
+        padding: '12px 16px',
         background: 'transparent',
         borderBottom: 'var(--border-subtle)',
         transition: 'background 0.15s',
+        gap: '12px'
       }}
       className={`contact-card ${className || ''}`}
       onMouseEnter={(e) => {
@@ -79,31 +80,51 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         justifyContent: 'center',
         fontSize: '14px',
         fontWeight: 600,
-        marginRight: '12px',
         flexShrink: 0
       }}>
         {getInitials(name)}
       </div>
 
-      {/* Info Group 1: Name & Title */}
-      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px', paddingRight: '12px' }}>
-        <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {name}
+      <div style={{ display: 'flex', flex: 1, minWidth: 0, gap: '12px' }}>
+        {/* Info Group 1: Name & Title */}
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name}
+          </div>
+          <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {title || 'No Title'}
+          </div>
+          {groups.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+              {groups.map((group) => (
+                <span
+                  key={group}
+                  style={{
+                    fontSize: '11px',
+                    color: 'var(--color-text-secondary)',
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '12px',
+                    padding: '4px 8px',
+                    lineHeight: 1.1,
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {group}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {title || 'No Title'}
-        </div>
-      </div>
 
-       {/* Info Group 2: Contact Details */}
-       <div style={{
+        {/* Info Group 2: Contact Details */}
+        <div style={{
           flex: 1.8,
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          gap: '4px',
-          paddingRight: '12px'
+          gap: '4px'
         }}>
           <div style={{
             fontSize: '13px',
@@ -128,6 +149,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
             </div>
           )}
         </div>
+      </div>
 
         {/* Source Label (if any) */}
         {sourceLabel && (
@@ -149,7 +171,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
 
         {/* Action Button Area */}
         {action && (
-          <div style={{ minWidth: '40px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <div style={{ minWidth: '40px', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
             {action}
           </div>
         )}

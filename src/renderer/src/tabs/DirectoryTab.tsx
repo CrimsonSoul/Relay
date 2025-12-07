@@ -1,4 +1,4 @@
-import React, { useState, memo, useRef, useEffect } from 'react';
+import React, { useState, memo, useRef, useEffect, useMemo } from 'react';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { Contact, GroupMap } from '@shared/ipc';
@@ -115,12 +115,14 @@ const ContactRow = memo(({ index, style, data }: ListChildComponentProps<{
   filtered: Contact[],
   recentlyAdded: Set<string>,
   onAdd: (contact: Contact) => void,
-  groups: GroupMap
+  groups: GroupMap,
+  emailToGroups: Map<string, string[]>
 }>) => {
-  const { filtered, recentlyAdded, onAdd, groups } = data;
+  const { filtered, recentlyAdded, onAdd, groups, emailToGroups } = data;
   const contact = filtered[index];
   const added = recentlyAdded.has(contact.email);
   const [showGroups, setShowGroups] = useState(false);
+  const membership = emailToGroups.get(contact.email.toLowerCase()) || [];
 
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -223,6 +225,7 @@ const ContactRow = memo(({ index, style, data }: ListChildComponentProps<{
       email={contact.email}
       title={contact.title}
       phone={contact.phone}
+      groups={membership}
       action={actionButtons}
     />
   );
@@ -232,6 +235,18 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const [search, setSearch] = useState('');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  const emailToGroups = useMemo(() => {
+    const map = new Map<string, string[]>();
+    Object.entries(groups).forEach(([groupName, emails]) => {
+      emails.forEach((email) => {
+        const key = email.toLowerCase();
+        const existing = map.get(key) || [];
+        map.set(key, [...existing, groupName]);
+      });
+    });
+    return map;
+  }, [groups]);
 
   const filtered = contacts.filter(c =>
     !search || c._searchString.includes(search.toLowerCase())
@@ -349,9 +364,9 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             <List
               height={height}
               itemCount={filtered.length}
-              itemSize={72}
+              itemSize={96}
               width={width}
-              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups }}
+              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups }}
             >
               {ContactRow}
             </List>
