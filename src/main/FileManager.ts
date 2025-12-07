@@ -185,17 +185,35 @@ export class FileManager {
       }
 
       // Find indices for standard fields
+      // NOTE: h.toLowerCase() is compared against the names array.
+      // But we need to check if names INCLUDES h.toLowerCase().
       const findIdx = (names: string[]) => header.findIndex(h => names.includes(h.toLowerCase()));
-      const nameIdx = findIdx(['name', 'full name']);
-      const emailIdx = findIdx(['email', 'e-mail']);
-      const titleIdx = findIdx(['title', 'role', 'position']);
-      const phoneIdx = findIdx(['phone', 'phone number']);
+
+      // Update header ref in case it was modified (though pushing to data[0] updates it)
+      if (data.length > 0) header = data[0];
+
+      let nameIdx = findIdx(['name', 'full name']);
+      let emailIdx = findIdx(['email', 'e-mail']);
+      let titleIdx = findIdx(['title', 'role', 'position']);
+      let phoneIdx = findIdx(['phone', 'phone number']);
 
       // Ensure we have columns
-      if (nameIdx === -1) header.push('Name');
-      if (emailIdx === -1) header.push('Email');
-      if (titleIdx === -1) header.push('Title');
-      if (phoneIdx === -1) header.push('Phone');
+      const ensureCol = (names: string[], defaultName: string) => {
+          if (findIdx(names) === -1) {
+              header.push(defaultName);
+              // Update all existing rows with empty string
+              for (let i = 1; i < data.length; i++) {
+                  data[i].push('');
+              }
+              return header.length - 1;
+          }
+          return findIdx(names);
+      };
+
+      nameIdx = ensureCol(['name', 'full name'], 'Name');
+      emailIdx = ensureCol(['email', 'e-mail'], 'Email');
+      titleIdx = ensureCol(['title', 'role', 'position'], 'Title');
+      phoneIdx = ensureCol(['phone', 'phone number'], 'Phone');
 
       // If we modified header (which we shouldn't if file exists, but for robustness)
       // Actually, better to just map to existing columns and append empty string for others
@@ -206,13 +224,13 @@ export class FileManager {
       // Helper to set value if column exists
       const setVal = (idx: number, val?: string) => { if (idx !== -1 && val) newRow[idx] = val; };
 
-      setVal(findIdx(['name', 'full name']), contact.name);
-      setVal(findIdx(['email', 'e-mail']), contact.email);
-      setVal(findIdx(['title', 'role', 'position']), contact.title);
-      setVal(findIdx(['phone', 'phone number']), contact.phone);
+      setVal(nameIdx, contact.name);
+      setVal(emailIdx, contact.email);
+      setVal(titleIdx, contact.title);
+      setVal(phoneIdx, contact.phone);
 
       // Check if email already exists to prevent dupes (optional but good)
-      const emailCol = findIdx(['email', 'e-mail']);
+      const emailCol = emailIdx;
       if (emailCol !== -1 && contact.email) {
           const exists = data.slice(1).some(row => row[emailCol] === contact.email);
           if (exists) {
@@ -244,11 +262,13 @@ export class FileManager {
         data.push([groupName]); // New file
       } else {
         // Check if group exists
+        // Need to check case-insensitive or exact? Usually exact for groups.
         if (data[0].includes(groupName)) return true; // Already exists
 
         // Add header
         data[0].push(groupName);
         // Pad other rows
+        // IMPORTANT: Ensure we pad all existing rows, otherwise next read might fail or be jagged
         for (let i = 1; i < data.length; i++) {
           data[i].push('');
         }
