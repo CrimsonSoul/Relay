@@ -123,8 +123,12 @@ function setupIpc(dataRoot: string) {
     saveConfig({ dataRoot: newPath });
 
     // Relaunch
+    // For portable apps, app.relaunch() sometimes needs explicit executable path
+    // But Electron 5+ usually handles it.
+    // However, on Windows portable, exiting immediately might kill the relaunch process if not detached.
+    // We'll use a small delay or app.quit() instead of exit() which forces it.
     app.relaunch();
-    app.exit();
+    app.quit();
     return true;
   });
 
