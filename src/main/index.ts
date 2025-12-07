@@ -140,6 +140,9 @@ function handleDataPathChange(newPath: string) {
     // 1. Ensure files exist in new location (copy from OLD location if missing)
     copyFilesIfMissing(currentDataRoot, newPath);
 
+    // As a fallback, hydrate from bundled defaults so empty/reset folders still work
+    ensureDataFiles(newPath, getBundledDataPath(), app.isPackaged);
+
     // 2. Update Config
     saveConfig({ dataRoot: newPath });
     currentDataRoot = newPath;
