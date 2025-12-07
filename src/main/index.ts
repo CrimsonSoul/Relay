@@ -28,13 +28,17 @@ const getBundledDataPath = () => {
 function getDataRoot() {
   // Check config first
   const config = loadConfig();
-  if (config.dataRoot && fs.existsSync(config.dataRoot)) {
+  const bundledPath = getBundledDataPath();
+  if (config.dataRoot) {
+    // Ensure the configured directory exists and has the required files. If the
+    // directory was removed between sessions, recreate it and hydrate from the
+    // bundled defaults so the app can still start cleanly.
+    ensureDataFiles(config.dataRoot, bundledPath, app.isPackaged);
     return config.dataRoot;
   }
 
   // Default to AppData
   const defaultDataPath = getDefaultDataPath();
-  const bundledPath = getBundledDataPath();
 
   ensureDataFiles(defaultDataPath, bundledPath, app.isPackaged);
   return defaultDataPath;
