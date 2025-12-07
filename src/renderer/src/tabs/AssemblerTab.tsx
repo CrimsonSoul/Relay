@@ -62,18 +62,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, selectedGroups, manualAd
                 <button
                   key={g}
                   onClick={() => onToggleGroup(g, !isSelected)}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '6px',
-                    fontSize: '13px',
-                    background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                    border: `1px solid ${isSelected ? 'var(--color-accent-blue)' : 'var(--border-subtle)'}`,
-                    color: isSelected ? 'var(--color-accent-blue)' : 'var(--color-text-secondary)',
-                    transition: 'all 0.15s ease',
-                    cursor: 'pointer'
-                  }}
-                  onMouseEnter={(e) => { if(!isSelected) e.currentTarget.style.borderColor = 'var(--color-text-secondary)' }}
-                  onMouseLeave={(e) => { if(!isSelected) e.currentTarget.style.borderColor = 'var(--border-subtle)' }}
+                  className={`chip-button ${isSelected ? 'active' : ''}`}
                 >
                   {g}
                 </button>
@@ -87,40 +76,27 @@ export const AssemblerTab: React.FC<Props> = ({ groups, selectedGroups, manualAd
           </div>
         </div>
 
-        {/* Manual Add - Zero Friction Input */}
+        {/* Manual Add - Updated Input Styling */}
         <div className="glass-panel animate-slide-up" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px', borderRadius: '12px', animationDelay: '100ms' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Quick Add</h3>
           <div style={{ position: 'relative' }}>
             <input
               type="text"
+              className="input-field"
               placeholder="Enter email address..."
               value={adhocInput}
               onChange={(e) => setAdhocInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && adhocInput) { onAddManual(adhocInput); setAdhocInput(''); } }}
-              style={{
-                width: '100%',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: '1px solid var(--border-subtle)',
-                padding: '12px 0',
-                fontSize: '14px',
-                color: 'var(--color-text-primary)',
-                outline: 'none',
-                fontFamily: 'var(--font-family-base)',
-                transition: 'border-color 0.2s'
-              }}
-              onFocus={(e) => e.currentTarget.style.borderBottomColor = 'var(--color-accent-blue)'}
-              onBlur={(e) => e.currentTarget.style.borderBottomColor = 'var(--border-subtle)'}
             />
             {adhocInput && (
                <div
                style={{
                  position: 'absolute',
-                 right: '0',
+                 right: '12px',
                  top: '50%',
                  transform: 'translateY(-50%)',
                  color: 'var(--color-accent-blue)',
-                 fontSize: '12px',
+                 fontSize: '11px',
                  fontWeight: 600,
                  pointerEvents: 'none'
                }}
@@ -162,50 +138,33 @@ export const AssemblerTab: React.FC<Props> = ({ groups, selectedGroups, manualAd
           <div style={{ display: 'flex', gap: '12px' }}>
             <button
               onClick={onResetManual}
+              className="tactile-button"
               style={{
-                background: 'transparent',
                 border: 'none',
-                color: 'var(--color-text-tertiary)',
-                cursor: 'pointer',
-                fontSize: '13px'
+                color: 'var(--color-text-tertiary)'
               }}>Reset</button>
             {manualRemoves.length > 0 && (
               <button
                 onClick={onUndoRemove}
+                className="tactile-button"
                 style={{
-                  background: 'transparent',
                   border: 'none',
-                  color: 'var(--color-text-tertiary)',
-                  cursor: 'pointer',
-                  fontSize: '13px'
+                  color: 'var(--color-text-tertiary)'
                 }}>Undo</button>
             )}
             <button
               onClick={handleCopy}
-              style={{
-                background: 'transparent',
-                border: 'var(--border-subtle)',
-                borderRadius: '6px',
-                padding: '6px 12px',
-                color: 'var(--color-text-secondary)',
-                cursor: 'pointer',
-                fontSize: '13px',
-                transition: 'all 0.2s'
-              }}
+              className="tactile-button"
             >
               {copied ? 'Copied' : 'Copy'}
             </button>
             <button
               onClick={handleDraftBridge}
+              className="tactile-button"
               style={{
                 background: 'var(--color-accent-blue)',
                 border: 'none',
-                borderRadius: '6px',
-                padding: '6px 16px',
                 color: 'white',
-                fontWeight: 500,
-                cursor: 'pointer',
-                fontSize: '13px',
                 boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)'
               }}
             >

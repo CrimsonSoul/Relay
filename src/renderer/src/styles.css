@@ -140,6 +140,9 @@ input, button, select, textarea {
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tactile-button:hover {
@@ -149,10 +152,62 @@ input, button, select, textarea {
 }
 
 .tactile-button:active {
-  transform: translateY(0) scale(0.98);
+  transform: translateY(0) scale(0.96); /* More pronounced click feel */
   background: rgba(255, 255, 255, 0.05);
 }
 
 .hover-bg:hover {
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* New: Input Field Styling */
+.input-field {
+  background: var(--color-bg-card);
+  border: var(--border-subtle);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  width: 100%;
+  transition: all var(--transition-fast);
+}
+
+.input-field:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.input-field:focus {
+  border: var(--border-focus);
+  background: #1F1F1F;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.2);
+}
+
+/* New: Chip Button (Group Selection) */
+.chip-button {
+  background: transparent;
+  border: var(--border-subtle);
+  border-radius: 20px; /* Pill shape */
+  padding: 6px 14px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  user-select: none;
+}
+
+.chip-button:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-primary);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.chip-button.active {
+  background: var(--color-accent-blue-dim);
+  border-color: var(--color-accent-blue);
+  color: #60A5FA;
+}
+
+.chip-button:active {
+  transform: scale(0.95);
 }

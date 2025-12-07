@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { SettingsMenu } from './components/SettingsMenu';
+// import { SettingsMenu } from './components/SettingsMenu'; // Unused
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
 import { DirectoryTab } from './tabs/DirectoryTab';
@@ -8,10 +8,11 @@ import { RadarTab } from './tabs/RadarTab';
 import { MetricsTab } from './tabs/MetricsTab';
 import { AppData, Contact } from '@shared/ipc';
 
-type Tab = 'Studio' | 'Network' | 'Vault' | 'Pulse';
+// Renamed tabs
+type Tab = 'Compose' | 'People' | 'Reports' | 'Live';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('Studio');
+  const [activeTab, setActiveTab] = useState<Tab>('Compose');
   const [data, setData] = useState<AppData>({ groups: {}, contacts: [], lastUpdated: 0 });
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
@@ -84,14 +85,6 @@ export default function App() {
     await window.api?.reloadData();
   };
 
-  // Logic to show settings menu.
-  // The Sidebar has a settings button. We can either show a modal or a popover.
-  // The existing SettingsMenu is a button that opens a dropdown.
-  // We can render it invisible but triggered, or refactor it.
-  // For now, let's keep it simple: clicking settings in sidebar triggers the native menu actions directly or opens a simple modal.
-  // Actually, let's just use the SettingsMenu component but trigger it programmatically or place it in the sidebar?
-  // The Sidebar component has a `onOpenSettings`.
-  // Let's make a simple state for "Settings Open".
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -129,35 +122,19 @@ export default function App() {
         }}>
            <div style={{ display: 'flex', flexDirection: 'column' }}>
              <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
-               Workspace / {activeTab}
+               Relay / {activeTab}
              </span>
              <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-               {activeTab === 'Studio' && 'Data Composition'}
-               {activeTab === 'Network' && 'Contact Directory'}
-               {activeTab === 'Vault' && 'Vault Metrics'}
-               {activeTab === 'Pulse' && 'Dispatcher Radar'}
+               {activeTab === 'Compose' && 'Data Composition'}
+               {activeTab === 'People' && 'Contact Directory'}
+               {activeTab === 'Reports' && 'Vault Metrics'}
+               {activeTab === 'Live' && 'Dispatcher Radar'}
              </span>
            </div>
 
-           {/* Actions Area */}
+           {/* Actions Area - Sync moved to Settings, only Clock here now */}
            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
               <WorldClock />
-              <div style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
-              <button
-                onClick={handleSync}
-                className="tactile-button"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  opacity: isReloading ? 0.7 : 1,
-                  cursor: isReloading ? 'wait' : 'pointer',
-                  borderColor: isReloading ? 'var(--color-accent-blue)' : 'var(--border-subtle)',
-                  color: isReloading ? 'var(--color-accent-blue)' : 'var(--color-text-primary)'
-                }}
-              >
-                {isReloading ? 'Syncing...' : 'Sync'}
-              </button>
            </div>
         </header>
 
@@ -168,7 +145,7 @@ export default function App() {
           overflowY: 'auto',
           overflowX: 'hidden'
         }}>
-          {activeTab === 'Studio' && (
+          {activeTab === 'Compose' && (
             <div className="animate-fade-in">
               <AssemblerTab
                 groups={data.groups}
@@ -183,7 +160,7 @@ export default function App() {
               />
             </div>
           )}
-          {activeTab === 'Network' && (
+          {activeTab === 'People' && (
              <div className="animate-fade-in" style={{ height: '100%' }}>
               <DirectoryTab
                 contacts={data.contacts}
@@ -191,12 +168,12 @@ export default function App() {
               />
             </div>
           )}
-          {activeTab === 'Vault' && (
+          {activeTab === 'Reports' && (
              <div className="animate-fade-in">
                <MetricsTab />
              </div>
           )}
-          {activeTab === 'Pulse' && (
+          {activeTab === 'Live' && (
             <div className="animate-fade-in" style={{ height: '100%' }}>
               <RadarTab />
             </div>
@@ -204,12 +181,12 @@ export default function App() {
         </div>
       </main>
 
-      {/* Hidden Settings Menu (Triggered via state or ref) - Quick hack to reuse logic */}
+      {/* Settings Modal */}
       {settingsOpen && (
         <div style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(0,0,0,0.5)',
+          background: 'rgba(0,0,0,0.6)',
           backdropFilter: 'blur(4px)',
           zIndex: 100,
           display: 'flex',
@@ -221,10 +198,42 @@ export default function App() {
             border: 'var(--border-subtle)',
             borderRadius: '12px',
             padding: '24px',
-            minWidth: '300px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
+            minWidth: '320px',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.6)'
           }}>
-            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Settings</h3>
+            <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px' }}>Settings</h3>
+
+            {/* Sync Button (Moved here) */}
+            <div style={{ marginBottom: '16px' }}>
+                <button
+                    onClick={handleSync}
+                    className="tactile-button"
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      height: '40px',
+                      background: isReloading ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                      borderColor: isReloading ? 'var(--color-accent-blue)' : 'var(--border-subtle)',
+                      color: isReloading ? 'var(--color-accent-blue)' : 'var(--color-text-primary)'
+                    }}
+                  >
+                    {isReloading ? (
+                        <>
+                         <svg className="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                         <span>Syncing Data...</span>
+                        </>
+                    ) : (
+                        <>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.3"/></svg>
+                        <span>Sync Now</span>
+                        </>
+                    )}
+                  </button>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <button className="tactile-button" onClick={handleOpenGroupsFile}>Open Groups CSV</button>
               <button className="tactile-button" onClick={handleOpenContactsFile}>Open Contacts CSV</button>
@@ -232,9 +241,22 @@ export default function App() {
               <button className="tactile-button" onClick={handleImportGroups}>Import Groups...</button>
               <button className="tactile-button" onClick={handleImportContacts}>Import Contacts...</button>
             </div>
+
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+                 <button
+                    onClick={() => setSettingsOpen(false)}
+                    style={{ background: 'none', border: 'none', color: 'var(--color-text-tertiary)', fontSize: '12px', cursor: 'pointer' }}
+                 >
+                     Close
+                 </button>
+            </div>
           </div>
         </div>
       )}
+      <style>{`
+        .spin { animation: spin 1s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+      `}</style>
     </div>
   );
 }
