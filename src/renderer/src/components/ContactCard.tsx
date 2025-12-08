@@ -71,12 +71,12 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         height: '100%',
         ...style,
         display: 'flex',
-        alignItems: 'stretch',
+        flexDirection: 'column', // Changed to column to stack chips below
         padding: '12px 16px',
         background: 'transparent',
         borderBottom: 'var(--border-subtle)',
         transition: 'background 0.15s',
-        gap: '12px'
+        justifyContent: 'center' // Vertically center content if height is constrained
       }}
       className={`contact-card ${className || ''}`}
       onMouseEnter={(e) => {
@@ -86,94 +86,73 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
          e.currentTarget.style.background = 'transparent';
       }}
     >
-      {/* Avatar */}
-      <div style={{
-        width: '42px',
-        height: '42px',
-        borderRadius: '50%',
-        background: `rgba(${parseInt(color.slice(1,3), 16)}, ${parseInt(color.slice(3,5), 16)}, ${parseInt(color.slice(5,7), 16)}, 0.2)`,
-        color: color,
-        border: `1px solid ${color}40`,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: '14px',
-        fontWeight: 600,
-        flexShrink: 0
-      }}>
-        {getInitials(name, email)}
-      </div>
+      {/* Top Row: Avatar + Info + Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%' }}>
 
-      <div style={{ display: 'flex', flex: 1, minWidth: 0, gap: '12px' }}>
-        {/* Info Group 1: Name & Title & Chips */}
-        {/* Adjusted flex ratio to give more space for chips */}
-        <div style={{ flex: 1.2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {displayName}
-          </div>
-          <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {title || 'No Title'}
-          </div>
-          {groups.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
-              {groups.map((group) => {
-                const groupColor = getColorForString(group);
-                return (
-                  <span
-                    key={group}
-                    style={{
-                      fontSize: '11px',
-                      color: groupColor.text,
-                      background: groupColor.bg,
-                      border: `1px solid ${groupColor.border}`,
-                      borderRadius: '12px',
-                      padding: '2px 6px', // Reduced horizontal padding
-                      lineHeight: 1.4,
-                      whiteSpace: 'nowrap',
-                      opacity: 0.9
-                    }}
-                  >
-                    {group}
-                  </span>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Info Group 2: Contact Details */}
+        {/* Avatar */}
         <div style={{
-          flex: 1.5, // Reduced from 1.8 to balance layout
-          minWidth: 0,
+          width: '42px',
+          height: '42px',
+          borderRadius: '50%',
+          background: `rgba(${parseInt(color.slice(1,3), 16)}, ${parseInt(color.slice(3,5), 16)}, ${parseInt(color.slice(5,7), 16)}, 0.2)`,
+          color: color,
+          border: `1px solid ${color}40`,
           display: 'flex',
-          flexDirection: 'column',
+          alignItems: 'center',
           justifyContent: 'center',
-          gap: '4px'
+          fontSize: '14px',
+          fontWeight: 600,
+          flexShrink: 0
         }}>
-          <div style={{
-            fontSize: '13px',
-            fontFamily: 'var(--font-family-base)',
-            color: 'var(--color-text-secondary)',
-            opacity: 1, // Increased visibility
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap'
-          }}>
-            {email}
-          </div>
-          {formattedPhone && (
-            <div style={{
-              fontSize: '13px', // Increased size
-              fontFamily: 'var(--font-family-base)',
-              color: 'var(--color-text-primary)',
-              fontWeight: 500,
-              opacity: 1 // Increased visibility
-            }}>
-              {formattedPhone}
-            </div>
-          )}
+          {getInitials(name, email)}
         </div>
-      </div>
+
+        {/* Info Columns Wrapper */}
+        <div style={{ display: 'flex', flex: 1, minWidth: 0, gap: '12px', alignItems: 'center' }}>
+
+          {/* Info Group 1: Name & Title */}
+          <div style={{ flex: 1.2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {displayName}
+            </div>
+            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {title || 'No Title'}
+            </div>
+          </div>
+
+          {/* Info Group 2: Contact Details */}
+          <div style={{
+            flex: 1.5,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            gap: '2px'
+          }}>
+            <div style={{
+              fontSize: '13px',
+              fontFamily: 'var(--font-family-base)',
+              color: 'var(--color-text-secondary)',
+              opacity: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap'
+            }}>
+              {email}
+            </div>
+            {formattedPhone && (
+              <div style={{
+                fontSize: '13px',
+                fontFamily: 'var(--font-family-base)',
+                color: 'var(--color-text-primary)',
+                fontWeight: 500,
+                opacity: 1
+              }}>
+                {formattedPhone}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Source Label (if any) */}
         {sourceLabel && (
@@ -199,6 +178,34 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
             {action}
           </div>
         )}
+      </div>
+
+      {/* Bottom Row: Group Chips */}
+      {groups.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+          {groups.map((group) => {
+            const groupColor = getColorForString(group);
+            return (
+              <span
+                key={group}
+                style={{
+                  fontSize: '11px',
+                  color: groupColor.text,
+                  background: groupColor.bg,
+                  border: `1px solid ${groupColor.border}`,
+                  borderRadius: '12px',
+                  padding: '2px 8px',
+                  lineHeight: 1.4,
+                  whiteSpace: 'nowrap',
+                  opacity: 0.9
+                }}
+              >
+                {group}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 });
