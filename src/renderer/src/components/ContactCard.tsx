@@ -23,13 +23,23 @@ const getAvatarColor = (name: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+// Check if a name is valid or just garbage/punctuation
+const isValidName = (name: string) => {
+    if (!name) return false;
+    // Remove all punctuation and whitespace
+    const stripped = name.replace(/[.\s\-_]/g, '');
+    return stripped.length > 0;
+};
+
 const getInitials = (name: string, email: string) => {
-  if (!name) {
-    return (email && email.length > 0) ? email[0].toUpperCase() : '?';
+  // Use name only if it's valid
+  if (isValidName(name)) {
+      const parts = name.trim().split(' ');
+      if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+      return name.slice(0, 2).toUpperCase();
   }
-  const parts = name.trim().split(' ');
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return name.slice(0, 2).toUpperCase();
+  // Fallback to email
+  return (email && email.length > 0) ? email[0].toUpperCase() : '?';
 };
 
 const formatPhone = (phone: string | undefined) => {
@@ -50,6 +60,9 @@ const formatPhone = (phone: string | undefined) => {
 export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [] }: ContactCardProps) => {
   const color = avatarColor || getAvatarColor(name || email);
   const formattedPhone = formatPhone(phone);
+
+  const validName = isValidName(name);
+  const displayName = validName ? name : email;
 
   return (
     <div
@@ -92,10 +105,11 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
       </div>
 
       <div style={{ display: 'flex', flex: 1, minWidth: 0, gap: '12px' }}>
-        {/* Info Group 1: Name & Title */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+        {/* Info Group 1: Name & Title & Chips */}
+        {/* Adjusted flex ratio to give more space for chips */}
+        <div style={{ flex: 1.2, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {name || email}
+            {displayName}
           </div>
           <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {title || 'No Title'}
@@ -113,7 +127,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                       background: groupColor.bg,
                       border: `1px solid ${groupColor.border}`,
                       borderRadius: '12px',
-                      padding: '2px 8px',
+                      padding: '2px 6px', // Reduced horizontal padding
                       lineHeight: 1.4,
                       whiteSpace: 'nowrap',
                       opacity: 0.9
@@ -129,7 +143,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
 
         {/* Info Group 2: Contact Details */}
         <div style={{
-          flex: 1.8,
+          flex: 1.5, // Reduced from 1.8 to balance layout
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
