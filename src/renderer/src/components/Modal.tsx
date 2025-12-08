@@ -40,6 +40,8 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           animation: 'scaleIn 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         {/* Header */}
         <div style={{
