@@ -446,7 +446,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             <List
               height={height}
               itemCount={filtered.length}
-              itemSize={96}
+              itemSize={120}
               width={width}
               itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups, onContextMenu }}
             >
