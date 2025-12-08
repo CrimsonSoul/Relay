@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { SettingsMenu } from './components/SettingsMenu';
+import { SettingsModal } from './components/SettingsModal';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
 import { DirectoryTab } from './tabs/DirectoryTab';
@@ -26,6 +27,7 @@ export default function App() {
   useEffect(() => { isReloadingRef.current = isReloading; }, [isReloading]);
 
   const settleReloadIndicator = useCallback(() => {
+    // Always clear, respecting minimum display time if a start time exists
     if (!reloadStartRef.current) {
       setIsReloading(false);
       return;
@@ -40,6 +42,20 @@ export default function App() {
     }, delay);
   }, []);
 
+  // Safety timeout to prevent stuck syncing state
+  useEffect(() => {
+    if (isReloading) {
+        const safety = setTimeout(() => {
+            if (isReloadingRef.current) {
+                console.warn('[App] Force clearing stuck sync indicator after timeout');
+                setIsReloading(false);
+                reloadStartRef.current = null;
+            }
+        }, 5000);
+        return () => clearTimeout(safety);
+    }
+  }, [isReloading]);
+
   const handleImportGroups = async () => await window.api?.importGroupsFile();
   const handleImportContacts = async () => await window.api?.importContactsFile();
 
@@ -47,14 +63,14 @@ export default function App() {
     if (!window.api) return;
     window.api.subscribeToData((newData) => {
       setData(newData);
-      if (isReloadingRef.current) settleReloadIndicator();
+      settleReloadIndicator();
     });
     window.api.onReloadStart(() => {
       reloadStartRef.current = performance.now();
       setIsReloading(true);
     });
     window.api.onReloadComplete(() => {
-      if (isReloadingRef.current) settleReloadIndicator();
+      settleReloadIndicator();
     });
     return () => { if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current); };
   }, [settleReloadIndicator]);
@@ -106,7 +122,10 @@ export default function App() {
       <Sidebar
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+            console.log("Opening settings");
+            setSettingsOpen(true);
+        }}
       />
 
       {/* Main Content Area */}
@@ -205,80 +224,14 @@ export default function App() {
           <WindowControls />
       </div>
 
-      {/* Hidden Settings Menu (Triggered via state or ref) - Quick hack to reuse logic */}
-      {settingsOpen && (
-        <div style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          backdropFilter: 'blur(4px)',
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }} onClick={() => setSettingsOpen(false)}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--color-bg-card)',
-            border: 'var(--border-subtle)',
-            borderRadius: '12px',
-            padding: '24px',
-            minWidth: '300px',
-            boxShadow: '0 20px 40px rgba(0,0,0,0.4)'
-          }}>
-            <h3 style={{ marginTop: 0, marginBottom: '16px' }}>Settings</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button
-                onClick={handleSync}
-                className="tactile-button"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  justifyContent: 'center',
-                  borderColor: isReloading ? 'var(--color-accent-blue)' : 'var(--border-subtle)',
-                  color: isReloading ? 'var(--color-accent-blue)' : 'var(--color-text-primary)'
-                }}
-              >
-                {isReloading ? (
-                  <>
-                     <span style={{ width: '8px', height: '8px', border: '1px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                     Syncing...
-                  </>
-                ) : 'Sync Data'}
-              </button>
-              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '8px 0' }} />
-              <button className="tactile-button" onClick={handleImportGroups}>Import Groups...</button>
-              <button className="tactile-button" onClick={handleImportContacts}>Import Contacts...</button>
-              <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '8px 0' }} />
-              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-tertiary)', marginBottom: '4px' }}>Data Storage</div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-secondary)', marginBottom: '8px', wordBreak: 'break-all' }}>
-                 {/* We need to fetch this async. For now, let's use a DataPath component or fetch on open */}
-                 <DataPathDisplay key={settingsOpen ? 'open' : 'closed'} />
-              </div>
-              <button className="tactile-button" onClick={async () => {
-                  await window.api?.changeDataFolder();
-                  // Force re-render of path
-                  setSettingsOpen(false);
-                  setTimeout(() => setSettingsOpen(true), 10);
-              }}>Change Folder...</button>
-               <button className="tactile-button" onClick={async () => {
-                  await window.api?.resetDataFolder();
-                  // Force re-render of path
-                  setSettingsOpen(false);
-                  setTimeout(() => setSettingsOpen(true), 10);
-              }}>Reset to Default</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        isSyncing={isReloading}
+        onSync={handleSync}
+        onImportGroups={handleImportGroups}
+        onImportContacts={handleImportContacts}
+      />
     </div>
   );
 }
-
-const DataPathDisplay = () => {
-    const [path, setPath] = useState('');
-    useEffect(() => {
-        window.api?.getDataPath().then(setPath);
-    }, []);
-    return <>{path || 'Loading...'}</>;
-};
