@@ -1,4 +1,4 @@
-import React, { useState, memo, useRef, useEffect, useMemo } from 'react';
+import React, { useState, memo, useRef, useEffect, useMemo, useCallback } from 'react';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { Contact, GroupMap } from '@shared/ipc';
@@ -13,6 +13,14 @@ type Props = {
   contacts: Contact[];
   groups: GroupMap; // Need groups to show selector
   onAddToAssembler: (contact: Contact) => void;
+};
+
+// Default Column Widths (px)
+const DEFAULT_WIDTHS = {
+    name: 250,
+    title: 150,
+    email: 200,
+    groups: 150
 };
 
 // --- Group Selector Popover ---
@@ -120,9 +128,10 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   onAdd: (contact: Contact) => void,
   groups: GroupMap,
   emailToGroups: Map<string, string[]>,
-  onContextMenu: (e: React.MouseEvent, contact: Contact) => void
+  onContextMenu: (e: React.MouseEvent, contact: Contact) => void,
+  columnWidths: typeof DEFAULT_WIDTHS
 }>) => {
-  const { filtered, recentlyAdded, onAdd, groups, emailToGroups, onContextMenu } = data;
+  const { filtered, recentlyAdded, onAdd, groups, emailToGroups, onContextMenu, columnWidths } = data;
   const contact = filtered[index];
   const added = recentlyAdded.has(contact.email);
   const [showGroups, setShowGroups] = useState(false);
@@ -206,16 +215,88 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
           phone={contact.phone}
           groups={membership}
           action={actionButtons}
+          columnWidths={columnWidths}
         />
     </div>
   );
 });
+
+const ResizableHeader = ({ label, width, minWidth = 50, onResize }: { label: string, width: number, minWidth?: number, onResize: (w: number) => void }) => {
+    const [isResizing, setIsResizing] = useState(false);
+    const startX = useRef(0);
+    const startWidth = useRef(0);
+
+    useEffect(() => {
+        if (!isResizing) return;
+
+        const onMouseMove = (e: MouseEvent) => {
+            const diff = e.clientX - startX.current;
+            const newWidth = Math.max(minWidth, startWidth.current + diff);
+            onResize(newWidth);
+        };
+
+        const onMouseUp = () => {
+            setIsResizing(false);
+            document.body.style.cursor = 'default';
+        };
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+
+        return () => {
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        };
+    }, [isResizing, minWidth, onResize]);
+
+    return (
+        <div style={{ width: width, flex: 'none', position: 'relative', display: 'flex', alignItems: 'center' }}>
+            {label}
+            <div
+                style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: '4px',
+                    cursor: 'col-resize',
+                    zIndex: 10
+                }}
+                onMouseDown={(e) => {
+                    e.preventDefault();
+                    setIsResizing(true);
+                    startX.current = e.clientX;
+                    startWidth.current = width;
+                    document.body.style.cursor = 'col-resize';
+                }}
+            />
+        </div>
+    );
+};
 
 export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembler }) => {
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Column Widths
+  const [columnWidths, setColumnWidths] = useState(() => {
+      try {
+          const saved = localStorage.getItem('relay-directory-columns');
+          return saved ? JSON.parse(saved) : DEFAULT_WIDTHS;
+      } catch (e) {
+          console.error('Failed to parse column widths:', e);
+          return DEFAULT_WIDTHS;
+      }
+  });
+
+  const handleResize = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
+      const newWidths = { ...columnWidths, [key]: width };
+      setColumnWidths(newWidths);
+      localStorage.setItem('relay-directory-columns', JSON.stringify(newWidths));
+  };
+
 
   // Optimistic State
   const [optimisticAdds, setOptimisticAdds] = useState<Contact[]>([]);
@@ -410,13 +491,18 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         textTransform: 'uppercase',
         letterSpacing: '0.05em',
         color: 'var(--color-text-tertiary)',
-        gap: '16px'
+        gap: '16px',
+        overflow: 'hidden' // Hide scroll if headers exceed
       }}>
-        <div style={{ flex: 1.5, paddingLeft: '40px' }}>Name</div> {/* +40px for avatar space */}
-        <div style={{ flex: 1 }}>Job Title</div>
-        <div style={{ flex: 1.2 }}>Email</div>
-        <div style={{ flex: 1 }}>Groups</div>
-        <div style={{ width: '80px', textAlign: 'right' }}>Actions</div>
+         {/* We need an extra wrapper to apply the same gap spacing */}
+         <div style={{ flex: 1.5, paddingLeft: '40px', display: 'none' }}>Name</div> {/* Legacy */}
+
+         <ResizableHeader label="Name" width={columnWidths.name} onResize={(w) => handleResize('name', w)} />
+         <ResizableHeader label="Job Title" width={columnWidths.title} onResize={(w) => handleResize('title', w)} />
+         <ResizableHeader label="Email" width={columnWidths.email} onResize={(w) => handleResize('email', w)} />
+         <ResizableHeader label="Groups" width={columnWidths.groups} onResize={(w) => handleResize('groups', w)} />
+
+         <div style={{ width: '80px', textAlign: 'right', flexShrink: 0 }}>Actions</div>
       </div>
 
       {/* Virtualized List */}
@@ -428,7 +514,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               itemCount={filtered.length}
               itemSize={50} // Denser row height
               width={width}
-              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups, onContextMenu }}
+              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups, onContextMenu, columnWidths }}
             >
               {VirtualRow}
             </List>

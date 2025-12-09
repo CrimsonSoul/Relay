@@ -35,33 +35,26 @@ export const RadarTab: React.FC = () => {
         alignItems: 'center'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-           <div style={{
-             width: '8px',
-             height: '8px',
-             borderRadius: '50%',
-             background: 'var(--color-accent-green)',
-             boxShadow: '0 0 8px var(--color-accent-green)'
-           }} />
-           <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--color-text-primary)' }}>Live Signal</span>
+           <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Live Signal</h2>
+           <span style={{
+               fontSize: '11px',
+               color: 'var(--color-text-tertiary)',
+               background: 'rgba(255,255,255,0.05)',
+               padding: '2px 8px',
+               borderRadius: '12px',
+               fontFamily: 'var(--font-family-mono)'
+           }}>
+             SOURCE: INTRANET
+           </span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontFamily: 'var(--font-family-mono)' }}>
-            SOURCE: INTRANET
-          </span>
           <button
             onClick={handleRefresh}
+            className="tactile-button"
             style={{
-              background: 'transparent',
-              border: 'var(--border-subtle)',
-              borderRadius: '6px',
-              padding: '6px 12px',
-              color: 'var(--color-text-secondary)',
-              fontSize: '12px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
+               gap: '6px',
+               width: 'auto'
             }}
           >
              <svg
