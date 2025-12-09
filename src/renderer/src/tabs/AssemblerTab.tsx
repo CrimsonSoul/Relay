@@ -1,5 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, memo } from 'react';
 import { GroupMap, Contact } from '@shared/ipc';
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import AutoSizer from 'react-virtualized-auto-sizer';
 import { ContactCard } from '../components/ContactCard';
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
@@ -21,6 +23,71 @@ type Props = {
   onUndoRemove: () => void;
   onResetManual: () => void;
 };
+
+// Row component for virtualization
+const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
+  log: { email: string, source: string }[],
+  contactMap: Map<string, Contact>,
+  emailToGroups: Map<string, string[]>,
+  onRemoveManual: (email: string) => void
+}>) => {
+  const { log, contactMap, emailToGroups, onRemoveManual } = data;
+  const { email, source } = log[index];
+  const contact = contactMap.get(email.toLowerCase());
+  const name = contact ? contact.name : email.split('@')[0];
+  const title = contact?.title;
+  const phone = contact?.phone;
+  const membership = emailToGroups.get(email.toLowerCase()) || [];
+
+  return (
+    <div style={style}>
+      <ContactCard
+        key={email}
+        name={name}
+        email={email}
+        title={title}
+        phone={phone}
+        groups={membership}
+        sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
+        style={{ paddingLeft: '32px', paddingRight: '32px', height: '100%' }} // Match toolbar padding
+        action={
+          <button
+            onClick={() => onRemoveManual(email)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-tertiary)',
+              width: '24px',
+              height: '24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              opacity: 0.7,
+              transition: 'all 0.2s',
+              borderRadius: '4px'
+            }}
+            className="hover-bg"
+            title="Remove from List"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = '#EF4444';
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--color-text-tertiary)';
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        }
+      />
+    </div>
+  );
+});
 
 export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups, manualAdds, manualRemoves, onToggleGroup, onAddManual, onRemoveManual, onUndoRemove, onResetManual }) => {
   const { showToast } = useToast();
@@ -263,7 +330,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
         {/* List */}
         <div style={{
           flex: 1,
-          overflowY: 'auto',
+          overflow: 'hidden', // AutoSizer handles scrolling
           padding: '0' // Content has its own padding
         }}>
           {log.length === 0 ? (
@@ -280,62 +347,19 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
               <div>No recipients selected</div>
             </div>
           ) : (
-             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {log.map(({ email, source }) => {
-                    const contact = contactMap.get(email.toLowerCase());
-                    const name = contact ? contact.name : email.split('@')[0];
-                    const title = contact?.title;
-                    const phone = contact?.phone;
-                    const membership = emailToGroups.get(email.toLowerCase()) || [];
-
-                    return (
-                        <ContactCard
-                            key={email}
-                            name={name}
-                            email={email}
-                            title={title}
-                            phone={phone}
-                            groups={membership}
-                            sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
-                            style={{ paddingLeft: '32px', paddingRight: '32px', height: '50px' }} // Match toolbar padding
-                            action={
-                                <button
-                                    onClick={() => onRemoveManual(email)}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: 'var(--color-text-tertiary)',
-                                        width: '24px',
-                                        height: '24px',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        cursor: 'pointer',
-                                        opacity: 0.7,
-                                        transition: 'all 0.2s',
-                                        borderRadius: '4px'
-                                    }}
-                                    className="hover-bg"
-                                    title="Remove from List"
-                                    onMouseEnter={(e) => {
-                                        e.currentTarget.style.color = '#EF4444';
-                                        e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                                        e.currentTarget.style.background = 'transparent';
-                                    }}
-                                >
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                                    </svg>
-                                </button>
-                            }
-                        />
-                    );
-                })}
-             </div>
+            <AutoSizer>
+              {({ height, width }) => (
+                <List
+                  height={height}
+                  itemCount={log.length}
+                  itemSize={50}
+                  width={width}
+                  itemData={{ log, contactMap, emailToGroups, onRemoveManual }}
+                >
+                  {VirtualRow}
+                </List>
+              )}
+            </AutoSizer>
           )}
         </div>
       </div>

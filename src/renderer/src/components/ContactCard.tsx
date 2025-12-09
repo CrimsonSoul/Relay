@@ -13,6 +13,12 @@ type ContactRowProps = {
   sourceLabel?: string;
   groups?: string[];
   selected?: boolean;
+  columnWidths?: {
+    name: number;
+    title: number;
+    email: number;
+    groups: number;
+  };
 };
 
 // --- Utils ---
@@ -50,11 +56,18 @@ const formatPhone = (phone: string | undefined) => {
   return phone;
 };
 
-export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected }: ContactRowProps) => {
+export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected, columnWidths }: ContactRowProps) => {
   const color = avatarColor || getAvatarColor(name || email);
   const formattedPhone = formatPhone(phone);
   const validName = isValidName(name);
   const displayName = validName ? name : email;
+
+  const getStyle = (key: 'name' | 'title' | 'email' | 'groups' | 'default', defaultFlex: number) => {
+      if (columnWidths && key !== 'default' && columnWidths[key]) {
+          return { width: columnWidths[key], flex: 'none', minWidth: 0 };
+      }
+      return { flex: defaultFlex, minWidth: 0 };
+  };
 
   return (
     <div
@@ -84,8 +97,8 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
          if (actions) actions.style.opacity = '0';
       }}
     >
-        {/* Column 1: Avatar + Name (Flex Grow) */}
-        <div style={{ flex: 1.5, minWidth: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Column 1: Avatar + Name */}
+        <div style={{ ...getStyle('name', 1.5), display: 'flex', alignItems: 'center', gap: '12px' }}>
             {/* Avatar */}
             <div style={{
                 width: '24px', // Dense avatar
@@ -122,18 +135,18 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
             )}
         </div>
 
-        {/* Column 2: Title (Fixed or Flex) */}
-        <div style={{ flex: 1, minWidth: 0, fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {/* Column 2: Title */}
+        <div style={{ ...getStyle('title', 1), fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {title || '-'}
         </div>
 
-        {/* Column 3: Email (Flex) */}
-        <div style={{ flex: 1.2, minWidth: 0, fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {/* Column 3: Email */}
+        <div style={{ ...getStyle('email', 1.2), fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {email}
         </div>
 
-        {/* Column 4: Groups (Flex) */}
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '4px', overflow: 'hidden' }}>
+        {/* Column 4: Groups */}
+        <div style={{ ...getStyle('groups', 1), display: 'flex', gap: '4px', overflow: 'hidden' }}>
             {groups.slice(0, 2).map(g => {
                  const c = getColorForString(g);
                  return (
@@ -158,6 +171,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         {/* Column 5: Actions (Fixed) */}
         <div className="row-actions" style={{
             width: '80px',
+            flexShrink: 0,
             display: 'flex',
             justifyContent: 'flex-end',
             opacity: 0, // Hidden by default
