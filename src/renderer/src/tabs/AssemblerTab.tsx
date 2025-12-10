@@ -436,10 +436,9 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                onClick={() => setIsGroupModalOpen(true)}
                style={{
                    background: 'transparent',
-                   border: '1px solid var(--border-subtle)',
-                   color: 'var(--color-text-secondary)',
-                   borderRadius: '4px',
-                   padding: '2px 8px',
+                   border: 'none',
+                   color: 'var(--color-text-tertiary)',
+                   padding: '0',
                    fontSize: '11px',
                    fontWeight: 600,
                    cursor: 'pointer',
@@ -448,7 +447,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                    justifyContent: 'center',
                    transition: 'all 0.15s'
                }}
-               className="hover-bg"
+               className="hover-text"
                title="Create Group"
             >
                ADD
@@ -507,11 +506,11 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
 
           <div style={{ display: 'flex', gap: '12px' }}>
             {manualRemoves.length > 0 && (
-               <ToolbarButton label="Undo" onClick={onUndoRemove} />
+               <ToolbarButton label="UNDO" onClick={onUndoRemove} />
             )}
-            <ToolbarButton label="Reset" onClick={onResetManual} />
-            <ToolbarButton label="Copy" onClick={handleCopy} />
-            <ToolbarButton label="Draft Bridge" onClick={handleDraftBridge} primary />
+            <ToolbarButton label="RESET" onClick={onResetManual} />
+            <ToolbarButton label="COPY" onClick={handleCopy} />
+            <ToolbarButton label="DRAFT BRIDGE" onClick={handleDraftBridge} primary />
           </div>
         </div>
 

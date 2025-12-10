@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, ReactNode } from 'react';
 
 type Props = {
-    label: string;
+    label?: string;
+    icon?: ReactNode;
     onClick: () => void;
     primary?: boolean;
     active?: boolean;
     successLabel?: string;
+    children?: ReactNode;
 };
 
-export const ToolbarButton = ({ onClick, label, primary = false, active = false, successLabel }: Props) => {
+export const ToolbarButton = ({ onClick, label, icon, primary = false, active = false, successLabel, children }: Props) => {
     const [isSuccess, setIsSuccess] = useState(false);
 
     const handleClick = () => {
@@ -18,6 +20,8 @@ export const ToolbarButton = ({ onClick, label, primary = false, active = false,
             setTimeout(() => setIsSuccess(false), 2000);
         }
     };
+
+    const content = children || label;
 
     return (
         <button
@@ -35,6 +39,8 @@ export const ToolbarButton = ({ onClick, label, primary = false, active = false,
                 borderColor: !primary && isSuccess ? 'var(--color-accent-green)' : (primary ? 'transparent' : 'var(--border-subtle)'),
                 fontSize: '12px',
                 fontWeight: 500,
+                textTransform: 'uppercase',
+                letterSpacing: '0.02em',
                 cursor: 'pointer',
                 transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                 outline: 'none',
@@ -69,7 +75,8 @@ export const ToolbarButton = ({ onClick, label, primary = false, active = false,
             {isSuccess && !primary && (
                 <span style={{ fontSize: '14px', lineHeight: 0 }}>✓</span>
             )}
-            {isSuccess ? (successLabel || label) : label}
+            {!isSuccess && icon}
+            {isSuccess ? (successLabel || content) : content}
         </button>
     )
 }

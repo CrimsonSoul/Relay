@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MetricsData } from '@shared/ipc';
 import { getColorForString } from '../utils/colors';
-import { TactileButton } from '../components/TactileButton';
+import { ToolbarButton } from '../components/ToolbarButton';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 
@@ -72,15 +72,10 @@ export const MetricsTab: React.FC = () => {
                 </div>
             </div>
 
-            <TactileButton
+            <ToolbarButton
+                label="RESET HISTORY"
                 onClick={() => setIsResetModalOpen(true)}
-                style={{
-                    color: 'var(--color-text-tertiary)',
-                    borderColor: 'var(--border-subtle)'
-                }}
-            >
-                Reset History
-            </TactileButton>
+            />
         </div>
 
         {/* Scrollable Content */}
