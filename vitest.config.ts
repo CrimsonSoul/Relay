@@ -1,9 +1,15 @@
 import { defineConfig } from 'vitest/config';
+import { resolve } from 'path';
 
 export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts'],
-    exclude: ['src/renderer/**'], // Renderer tests might need jsdom, separate config or unified?
+    exclude: ['src/renderer/**'],
+    alias: {
+      '@shared': resolve(__dirname, 'src/shared'),
+      '@renderer': resolve(__dirname, 'src/renderer/src'),
+      '@main': resolve(__dirname, 'src/main')
+    }
   },
 });
