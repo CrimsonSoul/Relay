@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Contact } from '@shared/ipc';
 import { Input } from './Input';
+import { sanitizePhoneNumber } from '../utils/phone';
 
 type Props = {
   isOpen: boolean;
@@ -42,7 +43,7 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
 
     setIsSubmitting(true);
     // Optimistic: Do not await.
-    onSave({ name, email, phone, title });
+    onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
     onClose();
   };
 

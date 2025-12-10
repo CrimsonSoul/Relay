@@ -112,25 +112,25 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 right: '8px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                color: 'var(--color-text-tertiary)',
+                color: '#A1A1AA', // Force visible color (Text Secondary)
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '16px',
-                height: '16px',
+                width: '18px', // Slightly larger hit area
+                height: '18px',
                 borderRadius: '50%',
                 background: 'rgba(255,255,255,0.1)',
-                zIndex: 20, // Boosted Z-index
+                zIndex: 50, // Ensure strictly on top
                 transition: 'all 0.1s'
             }}
             onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.25)';
+                e.currentTarget.style.color = '#FFFFFF';
             }}
             onMouseLeave={e => {
                 e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                e.currentTarget.style.color = '#A1A1AA';
             }}
             title="Clear"
         >
