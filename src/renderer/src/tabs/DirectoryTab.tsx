@@ -169,20 +169,19 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
       <button
         onClick={(e) => { e.stopPropagation(); setShowGroups(!showGroups); }}
         style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--color-text-tertiary)',
-          cursor: 'pointer',
-          padding: '4px',
+          background: showGroups ? 'rgba(255,255,255,0.1)' : 'transparent',
+          border: '1px solid var(--border-subtle)',
+          color: 'var(--color-text-secondary)',
           borderRadius: '4px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
+          padding: '2px 8px',
+          fontSize: '11px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'all 0.15s'
         }}
-        title="Manage Groups"
         className="hover-bg"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+        GROUPS
       </button>
 
       {showGroups && (
@@ -516,14 +515,12 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   };
 
   return (
-    <div className="glass-panel" style={{
+    <div style={{
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      borderRadius: '12px',
       overflow: 'hidden',
-      background: 'var(--color-bg-card)',
-      border: 'var(--border-subtle)'
+      background: 'var(--color-bg-app)'
     }}>
 
       {/* Header / Actions */}

@@ -51,6 +51,17 @@ export class BridgeLogger {
     this.save();
   }
 
+  public reset(): boolean {
+    try {
+      this.events = [];
+      this.save();
+      return true;
+    } catch (e) {
+      console.error('[BridgeLogger] Failed to reset history:', e);
+      return false;
+    }
+  }
+
   public getMetrics(): MetricsData {
     const now = Date.now();
     const oneDay = 24 * 60 * 60 * 1000;
