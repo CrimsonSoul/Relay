@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
+import { ToolbarButton } from '../components/ToolbarButton';
 
 export const RadarTab: React.FC = () => {
   const [url, setUrl] = useState('https://your-intranet/dashboard');
@@ -37,44 +38,32 @@ export const RadarTab: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <button
+          <ToolbarButton
             onClick={handleRefresh}
-            className="tactile-button"
-            style={{
-               gap: '6px',
-               width: 'auto'
-            }}
-          >
-             <svg
-               width="12"
-               height="12"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               strokeWidth="2"
-               strokeLinecap="round"
-               strokeLinejoin="round"
-               className={isLoading ? 'spin' : ''}
-               style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
-             >
-               <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-             </svg>
-             {isLoading ? 'Refreshing' : 'Refresh'}
-          </button>
+            label={isLoading ? 'REFRESHING' : 'REFRESH'}
+            icon={
+                <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={isLoading ? 'spin' : ''}
+                    style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
+                >
+                    <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+            }
+          />
         </div>
       </div>
 
-      {/* Webview Container with Padding */}
-      <div style={{ flex: 1, position: 'relative', background: 'transparent', padding: '16px' }}>
-        <div style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            border: 'var(--border-subtle)', // Optional: inner border for the webview frame
-            background: '#000'
-        }}>
-            <webview
+      {/* Webview Container - Full Bleed */}
+      <div style={{ flex: 1, position: 'relative', background: 'black', overflow: 'hidden' }}>
+        <webview
             ref={webviewRef}
             src={url}
             allowpopups="true"
@@ -85,8 +74,7 @@ export const RadarTab: React.FC = () => {
                 border: 'none',
                 background: 'white'
             }}
-            />
-        </div>
+        />
       </div>
 
       <style>{`

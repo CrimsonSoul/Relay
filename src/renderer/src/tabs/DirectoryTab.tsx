@@ -6,6 +6,7 @@ import { ContactCard } from '../components/ContactCard'; // This is now the dens
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { ToolbarButton } from '../components/ToolbarButton';
 import { Input } from '../components/Input';
 import { ContextMenu } from '../components/ContextMenu';
 
@@ -547,13 +548,11 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         )}
          <div style={{flex:1}}></div>
 
-        <button
+        <ToolbarButton
+          label="ADD CONTACT"
           onClick={() => setIsAddModalOpen(true)}
-          className="tactile-button"
-          style={{ background: 'var(--color-accent-blue)', borderColor: 'transparent', color: '#FFF' }}
-        >
-          Add Contact
-        </button>
+          primary
+        />
       </div>
 
       {/* Header Row - Matching ContactCard Columns */}
