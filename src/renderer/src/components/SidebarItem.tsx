@@ -13,7 +13,7 @@ export const SidebarItem: React.FC<SidebarItemProps> = ({ label, count, active, 
   const color = getColorForString(label);
 
   return (
-    <div
+    <button
       onClick={onClick}
       onContextMenu={onContextMenu}
       style={{
@@ -28,7 +28,12 @@ export const SidebarItem: React.FC<SidebarItemProps> = ({ label, count, active, 
         fontSize: '13px',
         fontWeight: 500,
         transition: 'all 0.1s ease',
-        userSelect: 'none'
+        userSelect: 'none',
+        border: 'none',
+        width: '100%',
+        fontFamily: 'inherit',
+        textAlign: 'left',
+        outline: 'none'
       }}
       onMouseEnter={(e) => {
         if (!active) {
@@ -60,6 +65,6 @@ export const SidebarItem: React.FC<SidebarItemProps> = ({ label, count, active, 
             {count}
         </span>
       )}
-    </div>
+    </button>
   );
 };

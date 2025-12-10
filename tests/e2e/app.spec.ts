@@ -13,7 +13,7 @@ test.describe('Application Shell', () => {
     await expect(page.getByRole('button', { name: 'Compose' })).toHaveClass(/active/);
 
     // Update locator for Groups title
-    await expect(page.getByRole('heading', { name: 'Groups' })).toBeVisible();
+    await expect(page.getByText('GROUPS', { exact: true })).toBeVisible();
 
     // Navigate to People (formerly Directory)
     await page.getByRole('button', { name: 'People' }).click();
@@ -30,36 +30,45 @@ test.describe('Application Shell', () => {
   test('assembler logic: selection and manual entry', async ({ page }) => {
     // Verify groups from mock are loaded
     const groupName = 'Alpha Team';
-    await expect(page.getByRole('button', { name: groupName })).toBeVisible();
+    // Match "Alpha Team" followed by count, e.g., "Alpha Team 2"
+    await expect(page.getByRole('button', { name: new RegExp(groupName) })).toBeVisible();
 
     // Toggle Group
-    await page.getByRole('button', { name: groupName }).click();
+    await page.getByRole('button', { name: new RegExp(groupName) }).click();
 
     // Verify logs populated
     await expect(page.getByText('alpha1@agency.net')).toBeVisible();
     await expect(page.getByText('alpha2@agency.net')).toBeVisible();
     // Update text matcher for Log count - case insensitive
-    await expect(page.getByText('2 recipients selected')).toBeVisible();
+    // Replaced "2 recipients selected" with check for badge count
+    await expect(page.locator('h2:has-text("Composition") + span')).toHaveText('2');
 
     // Manual Entry
     const adhocEmail = 'adhoc@agency.net';
     // Update placeholder matcher
-    await page.getByPlaceholder('Enter email address...').fill(adhocEmail);
-    await page.getByPlaceholder('Enter email address...').press('Enter');
+    await page.getByPlaceholder('Add by email...').fill(adhocEmail);
+    await page.getByPlaceholder('Add by email...').press('Enter');
 
-    // The mock data doesn't include this email, so the app will trigger the Add Contact Modal.
-    // We need to handle that modal flow.
+    // Verify ad-hoc added immediately to the list
+    // Use locator to specifically target the row, avoiding conflict with toast message
+    const adhocRow = page.locator('.contact-row', { has: page.getByText(adhocEmail) });
+    await expect(adhocRow).toBeVisible();
+
+    // The mock data doesn't include this email, so the app will trigger the Add Contact Modal ONLY if we click SAVE.
+    // Locate the row and find the SAVE button.
+    // Hover to reveal actions if necessary, though click might work directly if it's just CSS opacity
+    await adhocRow.hover();
+    await adhocRow.getByRole('button', { name: 'SAVE' }).click();
+
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByPlaceholder('e.g. Alice Smith').fill('Adhoc User');
     await page.getByRole('button', { name: 'Create Contact', exact: true }).click();
 
-    // Verify ad-hoc added
-    await expect(page.getByText(adhocEmail)).toBeVisible();
-
     // Fix: "MANUAL" tag strict mode violation.
-    await expect(page.getByText('MANUAL', { exact: true }).first()).toBeVisible();
+    await expect(adhocRow.getByText('MANUAL')).toBeVisible();
 
-    await expect(page.getByText('3 recipients selected')).toBeVisible();
+    // Replaced "3 recipients selected" with check for badge count
+    await expect(page.locator('h2:has-text("Composition") + span')).toHaveText('3');
 
     // Reset
     await page.getByRole('button', { name: 'Reset' }).click();
@@ -80,8 +89,8 @@ test.describe('Application Shell', () => {
     await expect(page.getByText('Jane Smith')).toBeVisible();
     await expect(page.getByText('John Doe')).not.toBeVisible();
 
-    // Add to assembler - "Add" button (case insensitive or exact, updated to "Add")
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    // Add to assembler - "ADD" button (case sensitive, matching UI)
+    await page.getByRole('button', { name: 'ADD', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Added' })).toBeVisible();
 
     // Go back to Compose (Assembler)
@@ -91,6 +100,7 @@ test.describe('Application Shell', () => {
     await expect(page.getByText('jane.smith@agency.net')).toBeVisible();
 
     // Verify it's marked as MANUAL
-    await expect(page.getByText('MANUAL', { exact: true }).first()).toBeVisible();
+    const janeRow = page.locator('.contact-row', { has: page.getByText('jane.smith@agency.net') });
+    await expect(janeRow.getByText('MANUAL')).toBeVisible();
   });
 });
