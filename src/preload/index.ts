@@ -56,6 +56,7 @@ const api: BridgeAPI = {
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.GET_METRICS),
+  resetMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_METRICS),
   addContact: (contact) => ipcRenderer.invoke(IPC_CHANNELS.ADD_CONTACT, contact),
   removeContact: (email) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_CONTACT, email),
   addGroup: (groupName) => ipcRenderer.invoke(IPC_CHANNELS.ADD_GROUP, groupName),
