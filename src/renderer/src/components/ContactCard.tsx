@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { getColorForString } from '../utils/colors';
+import { sanitizePhoneNumber } from '../utils/phone';
 
 type ContactRowProps = {
   name: string;
@@ -47,14 +48,16 @@ const getInitials = (name: string, email: string) => {
 
 const formatPhone = (phone: string | undefined) => {
   if (!phone) return null;
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length === 10) {
-    return `(${cleaned.slice(0, 3)}) ${cleaned.slice(3, 6)}-${cleaned.slice(6)}`;
+  const sanitized = sanitizePhoneNumber(phone);
+  const digits = sanitized.replace(/\D/g, ''); // Extract just digits for length check
+
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
-  if (cleaned.length === 11 && cleaned.startsWith('1')) {
-     return `1 (${cleaned.slice(1, 4)}) ${cleaned.slice(4, 7)}-${cleaned.slice(7)}`;
+  if (digits.length === 11 && digits.startsWith('1')) {
+     return `1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
   }
-  return phone;
+  return sanitized;
 };
 
 export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected, columnWidths }: ContactRowProps) => {
