@@ -164,6 +164,10 @@ export function setupIpcHandlers(
     return getBridgeLogger()?.getMetrics();
   });
 
+  ipcMain.handle(IPC_CHANNELS.RESET_METRICS, async () => {
+    return getBridgeLogger()?.reset() ?? false;
+  });
+
   // --- Data Mutation Handlers ---
 
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_event, contact) => {
