@@ -16,14 +16,12 @@ export const RadarTab: React.FC = () => {
   };
 
   return (
-    <div className="glass-panel" style={{
+    <div style={{
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      borderRadius: '12px',
       overflow: 'hidden',
-      background: 'var(--color-bg-card)',
-      border: 'var(--border-subtle)'
+      background: 'var(--color-bg-app)'
     }}>
 
       {/* Header */}

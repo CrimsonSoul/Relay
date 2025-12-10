@@ -1,18 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { MetricsData } from '@shared/ipc';
 import { getColorForString } from '../utils/colors';
+import { TactileButton } from '../components/TactileButton';
+import { Modal } from '../components/Modal';
+import { useToast } from '../components/Toast';
 
 export const MetricsTab: React.FC = () => {
   const [metrics, setMetrics] = useState<MetricsData | null>(null);
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const { showToast } = useToast();
+
+  const fetchMetrics = async () => {
+    const data = await window.api?.getMetrics();
+    if (data) setMetrics(data);
+  };
 
   useEffect(() => {
-    const fetchMetrics = async () => {
-      const data = await window.api?.getMetrics();
-      if (data) setMetrics(data);
-    };
     fetchMetrics();
-    // Refresh periodically if needed, or just on mount
   }, []);
+
+  const handleReset = async () => {
+      const success = await window.api?.resetMetrics();
+      if (success) {
+          showToast('History cleared', 'success');
+          fetchMetrics();
+      } else {
+          showToast('Failed to clear history', 'error');
+      }
+      setIsResetModalOpen(false);
+  };
 
   const StatCard = ({ label, value }: { label: string; value: number }) => (
     <div style={{
@@ -34,14 +50,12 @@ export const MetricsTab: React.FC = () => {
   );
 
   return (
-    <div className="glass-panel" style={{
+    <div style={{
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      borderRadius: '12px',
       overflow: 'hidden',
-      background: 'var(--color-bg-card)',
-      border: 'var(--border-subtle)'
+      background: 'var(--color-bg-app)'
     }}>
         {/* Header */}
         <div style={{
@@ -51,10 +65,22 @@ export const MetricsTab: React.FC = () => {
             justifyContent: 'space-between',
             alignItems: 'center'
         }}>
-            <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Reports</h2>
-            <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                {metrics ? 'Data Loaded' : 'Loading...'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Reports</h2>
+                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
+                    {metrics ? 'Data Loaded' : 'Loading...'}
+                </div>
             </div>
+
+            <TactileButton
+                onClick={() => setIsResetModalOpen(true)}
+                style={{
+                    color: 'var(--color-text-tertiary)',
+                    borderColor: 'var(--border-subtle)'
+                }}
+            >
+                Reset History
+            </TactileButton>
         </div>
 
         {/* Scrollable Content */}
@@ -130,6 +156,37 @@ export const MetricsTab: React.FC = () => {
                 </div>
             )}
         </div>
+
+        <Modal
+            isOpen={isResetModalOpen}
+            onClose={() => setIsResetModalOpen(false)}
+            title="Reset History"
+            width="400px"
+        >
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ fontSize: '14px', color: 'var(--color-text-primary)' }}>
+                    Are you sure you want to clear all bridge history?
+                </div>
+                <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', lineHeight: '1.5' }}>
+                    This action cannot be undone. All metrics and reports will be reset to zero.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
+                    <button
+                        onClick={() => setIsResetModalOpen(false)}
+                        className="tactile-button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={handleReset}
+                        className="tactile-button"
+                        style={{ background: '#EF4444', borderColor: 'transparent', color: '#FFF' }}
+                    >
+                        Reset Data
+                    </button>
+                </div>
+            </div>
+        </Modal>
     </div>
   );
 };

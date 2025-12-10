@@ -52,6 +52,7 @@ export type BridgeAPI = {
     subscribeToRadar: (callback: (data: RadarSnapshot) => void) => void;
     logBridge: (groups: string[]) => void;
     getMetrics: () => Promise<MetricsData>;
+    resetMetrics: () => Promise<boolean>;
     addContact: (contact: Partial<Contact>) => Promise<boolean>;
     removeContact: (email: string) => Promise<boolean>;
     addGroup: (groupName: string) => Promise<boolean>;
@@ -98,7 +99,8 @@ export const IPC_CHANNELS = {
     AUTH_CANCEL: 'auth:cancel',
     RADAR_DATA: 'radar:data',
     LOG_BRIDGE: 'metrics:logBridge',
-    GET_METRICS: 'metrics:get'
+    GET_METRICS: 'metrics:get',
+    RESET_METRICS: 'metrics:reset'
 } as const;
 
 export type BridgeEvent = {
