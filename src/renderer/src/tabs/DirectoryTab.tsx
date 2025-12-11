@@ -1,6 +1,9 @@
 import React, { useState, memo, useRef, useEffect, useMemo, useCallback } from 'react';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Contact, GroupMap } from '@shared/ipc';
 import { ContactCard } from '../components/ContactCard'; // This is now the dense row
 import { AddContactModal } from '../components/AddContactModal';
@@ -27,9 +30,34 @@ const DEFAULT_WIDTHS = {
     groups: 150
 };
 
+// Default Column Order
+const DEFAULT_ORDER: (keyof typeof DEFAULT_WIDTHS)[] = ['name', 'title', 'email', 'phone', 'groups'];
+
 type SortConfig = {
     key: keyof typeof DEFAULT_WIDTHS;
     direction: 'asc' | 'desc';
+};
+
+// Draggable Header Component
+const DraggableHeader = ({ id, children }: { id: string, children: React.ReactNode }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        zIndex: isDragging ? 10 : 'auto',
+        position: isDragging ? 'relative' : undefined,
+        cursor: 'grab'
+    } as React.CSSProperties;
+
+    return (
+        <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+            {children}
+        </div>
+    );
 };
 
 // --- Group Selector Popover ---
@@ -139,9 +167,10 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   groups: GroupMap,
   emailToGroups: Map<string, string[]>,
   onContextMenu: (e: React.MouseEvent, contact: Contact) => void,
-  columnWidths: typeof DEFAULT_WIDTHS
+  columnWidths: typeof DEFAULT_WIDTHS,
+  columnOrder: (keyof typeof DEFAULT_WIDTHS)[]
 }>) => {
-  const { filtered, recentlyAdded, onAdd, groups, emailToGroups, onContextMenu, columnWidths } = data;
+  const { filtered, recentlyAdded, onAdd, groups, emailToGroups, onContextMenu, columnWidths, columnOrder } = data;
   // Safety check: sometimes virtual list requests index out of bounds during filter changes
   if (index >= filtered.length) return null;
 
@@ -218,6 +247,7 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
           groups={membership}
           action={actionButtons}
           columnWidths={columnWidths}
+          columnOrder={columnOrder}
         />
     </div>
   );
@@ -245,10 +275,46 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       }
   });
 
+  // Column Order State
+  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() => {
+      try {
+          const saved = localStorage.getItem('relay-directory-order');
+          const parsed = saved ? JSON.parse(saved) : DEFAULT_ORDER;
+           if (Array.isArray(parsed) && parsed.length === DEFAULT_ORDER.length) return parsed;
+          return DEFAULT_ORDER;
+      } catch {
+          return DEFAULT_ORDER;
+      }
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+        activationConstraint: {
+            distance: 8,
+        }
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   const handleResize = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
       const newWidths = { ...columnWidths, [key]: width };
       setColumnWidths(newWidths);
       localStorage.setItem('relay-directory-columns', JSON.stringify(newWidths));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+          setColumnOrder((items) => {
+              const oldIndex = items.indexOf(active.id as keyof typeof DEFAULT_WIDTHS);
+              const newIndex = items.indexOf(over.id as keyof typeof DEFAULT_WIDTHS);
+              const newOrder = arrayMove(items, oldIndex, newIndex);
+              localStorage.setItem('relay-directory-order', JSON.stringify(newOrder));
+              return newOrder;
+          });
+      }
   };
 
   const handleSort = (key: keyof typeof DEFAULT_WIDTHS) => {
@@ -421,6 +487,15 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       setContextMenu({ x: e.clientX, y: e.clientY, contact });
   };
 
+  // Label Map
+  const LABELS: Record<keyof typeof DEFAULT_WIDTHS, string> = {
+      name: 'Name',
+      title: 'Job Title',
+      email: 'Email',
+      phone: 'Phone',
+      groups: 'Groups'
+  };
+
   return (
     <div style={{
       display: 'flex',
@@ -475,14 +550,26 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         gap: '16px',
         overflow: 'hidden' // Hide scroll if headers exceed
       }}>
-         {/* We need an extra wrapper to apply the same gap spacing */}
-         <div style={{ flex: 1.5, paddingLeft: '40px', display: 'none' }}>Name</div> {/* Legacy */}
-
-         <ResizableHeader label="Name" width={columnWidths.name} sortKey="name" currentSort={sortConfig} onSort={handleSort} onResize={(w) => handleResize('name', w)} />
-         <ResizableHeader label="Job Title" width={columnWidths.title} sortKey="title" currentSort={sortConfig} onSort={handleSort} onResize={(w) => handleResize('title', w)} />
-         <ResizableHeader label="Email" width={columnWidths.email} sortKey="email" currentSort={sortConfig} onSort={handleSort} onResize={(w) => handleResize('email', w)} />
-         <ResizableHeader label="Phone" width={columnWidths.phone} sortKey="phone" currentSort={sortConfig} onSort={handleSort} onResize={(w) => handleResize('phone', w)} />
-         <ResizableHeader label="Groups" width={columnWidths.groups} sortKey="groups" currentSort={sortConfig} onSort={handleSort} onResize={(w) => handleResize('groups', w)} />
+         <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+         >
+             <SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+                 {columnOrder.map(key => (
+                     <DraggableHeader key={key} id={key}>
+                         <ResizableHeader
+                            label={LABELS[key]}
+                            width={columnWidths[key]}
+                            sortKey={key}
+                            currentSort={sortConfig}
+                            onSort={handleSort}
+                            onResize={(w) => handleResize(key, w)}
+                         />
+                     </DraggableHeader>
+                 ))}
+             </SortableContext>
+         </DndContext>
 
          <div style={{ width: '80px', textAlign: 'right', flexShrink: 0 }}>Actions</div>
       </div>
@@ -496,7 +583,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               itemCount={filtered.length}
               itemSize={50} // Denser row height
               width={width}
-              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups, onContextMenu, columnWidths }}
+              itemData={{ filtered, recentlyAdded, onAdd: handleAddWrapper, groups, emailToGroups, onContextMenu, columnWidths, columnOrder }}
             >
               {VirtualRow}
             </List>
