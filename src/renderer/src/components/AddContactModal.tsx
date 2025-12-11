@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { Contact } from '@shared/ipc';
 import { Input } from './Input';
-import { sanitizePhoneNumber } from '../utils/phone';
+import { TactileButton } from './TactileButton';
+import { sanitizePhoneNumber, formatPhoneNumber } from '../utils/phone';
 
 type Props = {
   isOpen: boolean;
@@ -45,6 +46,10 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     // Optimistic: Do not await.
     onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
     onClose();
+  };
+
+  const handlePhoneBlur = () => {
+    setPhone(formatPhoneNumber(phone));
   };
 
   const labelStyle: React.CSSProperties = {
@@ -100,30 +105,25 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
               type="tel"
               value={phone}
               onChange={e => setPhone(e.target.value)}
+              onBlur={handlePhoneBlur}
               placeholder="e.g. (555) 123-4567"
             />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-          <button
+          <TactileButton
             type="button"
             onClick={onClose}
-            className="tactile-button"
           >
             Cancel
-          </button>
-          <button
+          </TactileButton>
+          <TactileButton
             type="submit"
-            className="tactile-button"
             disabled={isSubmitting}
-            style={{
-              background: 'var(--color-accent-blue)',
-              borderColor: 'transparent',
-              color: '#FFFFFF'
-            }}
+            variant="primary"
           >
             {isSubmitting ? 'Saving...' : (editContact ? 'Update Contact' : 'Create Contact')}
-          </button>
+          </TactileButton>
         </div>
 
       </form>

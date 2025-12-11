@@ -8,6 +8,7 @@ import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { Input } from '../components/Input';
+import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
 
 type Props = {
@@ -167,46 +168,36 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   const actionButtons = (
     <div ref={wrapperRef} style={{ display: 'flex', gap: '8px', position: 'relative', alignItems: 'center' }}>
       {/* Group Button */}
-      <button
+      <TactileButton
         onClick={(e) => { e.stopPropagation(); setShowGroups(!showGroups); }}
         style={{
-          background: showGroups ? 'rgba(255,255,255,0.1)' : 'transparent',
-          border: '1px solid var(--border-subtle)',
-          color: 'var(--color-text-secondary)',
-          borderRadius: '4px',
           padding: '2px 8px',
           fontSize: '11px',
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'all 0.15s'
+          height: '24px'
         }}
-        className="hover-bg"
+        active={showGroups}
       >
         GROUPS
-      </button>
+      </TactileButton>
 
       {showGroups && (
          <GroupSelector contact={contact} groups={groups} onClose={() => setShowGroups(false)} />
       )}
 
       {/* Add to List Button */}
-      <button
+      <TactileButton
         onClick={handleAdd}
         style={{
-          background: added ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-          border: added ? '1px solid var(--color-accent-green)' : '1px solid var(--border-subtle)',
-          color: added ? 'var(--color-accent-green)' : 'var(--color-text-secondary)',
-          borderRadius: '4px',
           padding: '2px 8px',
           fontSize: '11px',
-          fontWeight: 600,
-          cursor: 'pointer',
-          transition: 'all 0.15s'
+          height: '24px',
+          borderColor: added ? 'var(--color-accent-green)' : undefined,
+          color: added ? 'var(--color-accent-green)' : undefined,
+          background: added ? 'rgba(16, 185, 129, 0.1)' : undefined
         }}
-        className={!added ? "hover-bg" : ""}
       >
         {added ? 'ADDED' : 'ADD'}
-      </button>
+      </TactileButton>
     </div>
   );
 
@@ -640,19 +631,17 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
                 This action cannot be undone.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                <button
+                <TactileButton
                     onClick={() => setDeleteConfirmation(null)}
-                    className="tactile-button"
                 >
                     Cancel
-                </button>
-                <button
+                </TactileButton>
+                <TactileButton
                     onClick={handleDeleteContact}
-                    className="tactile-button"
-                    style={{ background: '#EF4444', borderColor: 'transparent', color: '#FFF' }}
+                    variant="danger"
                 >
                     Delete Contact
-                </button>
+                </TactileButton>
             </div>
         </div>
       </Modal>
