@@ -15,12 +15,14 @@ export const sanitizePhoneNumber = (phone: string): string => {
       processed = processed.slice(plusIndex);
   }
 
-  // Remove all non-numeric characters
+  // Remove all non-numeric characters, except the leading +
+  // If we have a +, keep it.
+  const hasPlus = processed.startsWith('+');
   const digits = processed.replace(/[^0-9]/g, '');
 
   if (!digits) return '';
 
-  return plusIndex !== -1 ? `+${digits}` : digits;
+  return hasPlus ? `+${digits}` : digits;
 };
 
 export const formatPhoneNumber = (phone: string): string => {
@@ -65,5 +67,6 @@ export const formatPhoneNumber = (phone: string): string => {
   }
 
   // Fallback: return the cleaned number
+  // If it's a raw number but didn't match 10 digits (e.g. 7 digits), returns clean.
   return clean;
 };
