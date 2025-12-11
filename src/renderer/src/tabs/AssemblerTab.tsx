@@ -195,6 +195,10 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
         map.set(key, [...existing, groupName]);
       });
     });
+    // Bolt: Sort groups for consistent display and faster sorting
+    for (const groups of map.values()) {
+        groups.sort();
+    }
     return map;
   }, [groups]);
 
@@ -235,9 +239,9 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
         if (sortConfig.key === 'groups') {
              const groupsA = emailToGroups.get(a.email.toLowerCase()) || [];
              const groupsB = emailToGroups.get(b.email.toLowerCase()) || [];
-             // Bolt: Prevent mutation of original arrays using toSorted or copy
-             const strA = [...groupsA].sort().join(', ');
-             const strB = [...groupsB].sort().join(', ');
+             // Bolt: Use pre-sorted arrays
+             const strA = groupsA.join(', ');
+             const strB = groupsB.join(', ');
              return strA.localeCompare(strB) * dir;
         }
 
