@@ -412,6 +412,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       });
   }, [effectiveContacts, search, sortConfig, emailToGroups]);
 
+  // Bolt: Memoize callback to prevent itemData change and row re-renders
   const handleAddWrapper = useCallback((contact: Contact) => {
     onAddToAssembler(contact);
     setRecentlyAdded(prev => new Set(prev).add(contact.email));
@@ -482,20 +483,22 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       }
   };
 
+  // Bolt: Memoize context menu handler
   const onContextMenu = useCallback((e: React.MouseEvent, contact: Contact) => {
       e.preventDefault();
       setContextMenu({ x: e.clientX, y: e.clientY, contact });
   }, []);
 
+  // Bolt: Memoize itemData to prevent full list re-render on unrelated state changes
   const itemData = useMemo(() => ({
-      filtered,
-      recentlyAdded,
-      onAdd: handleAddWrapper,
-      groups,
-      emailToGroups,
-      onContextMenu,
-      columnWidths,
-      columnOrder
+    filtered,
+    recentlyAdded,
+    onAdd: handleAddWrapper,
+    groups,
+    emailToGroups,
+    onContextMenu,
+    columnWidths,
+    columnOrder
   }), [filtered, recentlyAdded, handleAddWrapper, groups, emailToGroups, onContextMenu, columnWidths, columnOrder]);
 
   // Label Map
