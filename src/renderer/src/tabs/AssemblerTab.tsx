@@ -8,6 +8,7 @@ import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { Input } from '../components/Input';
+import { TactileButton } from '../components/TactileButton';
 import { SidebarItem } from '../components/SidebarItem';
 import { ContextMenu } from '../components/ContextMenu';
 
@@ -60,26 +61,17 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
         action={
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {isUnknown && (
-                    <button
+                    <TactileButton
                         onClick={() => onAddToContacts(email)}
                         style={{
-                            background: 'transparent',
-                            border: '1px solid var(--border-subtle)',
-                            color: 'var(--color-text-secondary)',
-                            borderRadius: '4px',
                             padding: '2px 8px',
                             fontSize: '11px',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            whiteSpace: 'nowrap'
+                            height: '24px'
                         }}
-                        className="hover-bg"
                         title="Add to Contacts"
                     >
                         SAVE
-                    </button>
+                    </TactileButton>
                 )}
               <button
                 onClick={() => onRemoveManual(email)}
@@ -432,26 +424,19 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
             <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-text-tertiary)' }}>GROUPS</div>
-            <button
+            <TactileButton
                onClick={() => setIsGroupModalOpen(true)}
                style={{
-                   background: 'transparent',
+                   padding: '2px 8px',
+                   fontSize: '10px',
+                   height: '20px',
                    border: 'none',
-                   color: 'var(--color-text-tertiary)',
-                   padding: '0',
-                   fontSize: '11px',
-                   fontWeight: 600,
-                   cursor: 'pointer',
-                   display: 'flex',
-                   alignItems: 'center',
-                   justifyContent: 'center',
-                   transition: 'all 0.15s'
+                   background: 'rgba(255,255,255,0.05)'
                }}
-               className="hover-text"
                title="Create Group"
             >
                ADD
-            </button>
+            </TactileButton>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -598,8 +583,8 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                   style={{ marginBottom: '16px' }}
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                  <button type="button" onClick={() => setIsGroupModalOpen(false)} className="tactile-button">Cancel</button>
-                  <button type="submit" className="tactile-button" style={{ background: 'var(--color-accent-blue)', borderColor: 'transparent', color: '#FFF' }}>Create</button>
+                  <TactileButton type="button" onClick={() => setIsGroupModalOpen(false)}>Cancel</TactileButton>
+                  <TactileButton type="submit" variant="primary">Create</TactileButton>
               </div>
           </form>
       </Modal>
@@ -619,13 +604,12 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                 This will remove the group tag from all contacts. The contacts themselves will not be deleted.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                <button
+                <TactileButton
                     onClick={() => setGroupToDelete(null)}
-                    className="tactile-button"
                 >
                     Cancel
-                </button>
-                <button
+                </TactileButton>
+                <TactileButton
                     onClick={async () => {
                         if (groupToDelete) {
                             const success = await window.api?.removeGroup(groupToDelete);
@@ -640,11 +624,10 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                         }
                         setGroupToDelete(null);
                     }}
-                    className="tactile-button"
-                    style={{ background: '#EF4444', borderColor: 'transparent', color: '#FFF' }}
+                    variant="danger"
                 >
                     Delete Group
-                </button>
+                </TactileButton>
             </div>
         </div>
       </Modal>
@@ -668,13 +651,12 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                     Do you want to merge <span style={{ fontWeight: 600 }}>{groupToRename}</span> into <span style={{ fontWeight: 600 }}>{renameConflict}</span>? All contacts will be moved.
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                    <button
+                    <TactileButton
                         onClick={() => setRenameConflict(null)}
-                        className="tactile-button"
                     >
                         Cancel
-                    </button>
-                    <button
+                    </TactileButton>
+                    <TactileButton
                         onClick={async () => {
                             if (groupToRename && renameConflict) {
                                 const success = await window.api?.renameGroup(groupToRename, renameConflict);
@@ -691,11 +673,10 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             setGroupToRename(null);
                             setRenameConflict(null);
                         }}
-                        className="tactile-button"
-                        style={{ background: 'var(--color-accent-blue)', borderColor: 'transparent', color: '#FFF' }}
+                        variant="primary"
                     >
                         Merge Groups
-                    </button>
+                    </TactileButton>
                 </div>
             </div>
         ) : (
@@ -729,8 +710,8 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                   style={{ marginBottom: '16px' }}
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                  <button type="button" onClick={() => setGroupToRename(null)} className="tactile-button">Cancel</button>
-                  <button type="submit" className="tactile-button" style={{ background: 'var(--color-accent-blue)', borderColor: 'transparent', color: '#FFF' }}>Save</button>
+                  <TactileButton type="button" onClick={() => setGroupToRename(null)}>Cancel</TactileButton>
+                  <TactileButton type="submit" variant="primary">Save</TactileButton>
               </div>
           </form>
         )}
