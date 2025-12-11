@@ -965,14 +965,33 @@ export class FileManager {
       }
   }
 
-  public async importServersWithMapping(sourcePath: string): Promise<boolean> {
+  public async importServersWithMapping(sourcePath: string): Promise<{ success: boolean; message?: string }> {
       try {
           const targetPath = join(this.rootDir, SERVER_FILES[0]);
           const sourceContent = await fs.readFile(sourcePath, 'utf-8');
-          const sourceDataRaw = await parseCsvAsync(sourceContent);
+
+          // Header scan logic similar to parseServers
+          const lines = sourceContent.split(/\r?\n/);
+          let headerLineIndex = -1;
+
+          for(let i = 0; i < Math.min(lines.length, 20); i++) {
+              if (lines[i].toLowerCase().includes('vm-m') || lines[i].toLowerCase().includes('server name')) {
+                  headerLineIndex = i;
+                  break;
+              }
+          }
+
+          if (headerLineIndex === -1) {
+              return { success: false, message: 'Could not find "VM-M" or "Server Name" header in the first 20 lines.' };
+          }
+
+          const cleanContents = lines.slice(headerLineIndex).join('\n');
+          const sourceDataRaw = await parseCsvAsync(cleanContents);
           const sourceData = sourceDataRaw.map(r => r.map(c => desanitizeField(c)));
 
-          if (sourceData.length < 2) return false;
+          if (sourceData.length < 2) {
+               return { success: false, message: 'File appears to be empty or missing data rows.' };
+          }
 
           const sourceHeader = sourceData[0].map((h: any) => String(h).toLowerCase().trim());
           const sourceRows = sourceData.slice(1);
@@ -988,15 +1007,24 @@ export class FileManager {
           const s_osTypeIdx = mapHeader(['server os', 'os type', 'os']);
           const s_osIdx = mapHeader(['os according to the configuration file', 'config os', 'configuration os']);
 
-          // If no name, abort? No, maybe they have other cols. But name is key.
+          // If no name, abort
           if (s_nameIdx === -1) {
-              console.error('Import servers failed: No name column found');
-              return false;
+              return { success: false, message: 'No "VM-M" or "Server Name" column found in the header.' };
           }
 
           let targetData: any[][] = [];
           if (existsSync(targetPath)) {
               const existing = await fs.readFile(targetPath, 'utf-8');
+              const existingLines = existing.split(/\r?\n/);
+              // We must use the same header scan logic for reading the EXISTING file too,
+              // otherwise we might append clean data to a dirty file or vice versa.
+              // However, FileManager.parseServers usually rewrites dirty files.
+              // So we can assume if it exists, it's mostly clean, OR we just trust parseCsvAsync.
+              // But if the existing file has a header at line 5, parseCsvAsync(existing) treats line 1 as header.
+              // This is risky.
+              // Better to re-use our parseServers logic or assume standard CSV.
+              // Since we rewrite on parse, it SHOULD be clean.
+              // But let's be safe and try to find header if parse fails or header looks wrong.
               targetData = (await parseCsvAsync(existing)).map(r => r.map(c => desanitizeField(c)));
           }
 
@@ -1065,10 +1093,94 @@ export class FileManager {
 
           const csvOutput = this.safeStringify(targetData);
           await this.writeAndEmit(targetPath, csvOutput);
-          return true;
-      } catch (e) {
+
+          // Trigger cleanup after successful import
+          await this.cleanupServerContacts();
+
+          return { success: true };
+      } catch (e: any) {
           console.error('[FileManager] importServersWithMapping error:', e);
-          return false;
+          return { success: false, message: e.message };
+      }
+  }
+
+  public async cleanupServerContacts() {
+      console.log('[FileManager] Starting Server Contact Cleanup...');
+      try {
+          const servers = await this.parseServers(); // Reuse robust parsing
+          const contacts = await this.parseContacts();
+          const path = join(this.rootDir, SERVER_FILES[0]);
+
+          if (servers.length === 0 || contacts.length === 0) return;
+
+          // Map Email -> Name
+          const emailToName = new Map<string, string>();
+          for (const c of contacts) {
+              if (c.email && c.name) {
+                  emailToName.set(c.email.toLowerCase(), c.name);
+              }
+          }
+
+          let changed = false;
+          // We need to work with the RAW structure to save it back correctly.
+          // parseServers returns Objects. We need to map them back to CSV rows?
+          // Or we can just modify the file by reading it again.
+          // Since we want to preserve unknown columns, we should read->modify->write like in import.
+
+          // Let's read the file again to get the grid
+          const content = await fs.readFile(path, 'utf-8');
+           // Scan for header
+          const lines = content.split(/\r?\n/);
+          let headerLineIndex = 0;
+          for(let i = 0; i < Math.min(lines.length, 20); i++) {
+              if (lines[i].toLowerCase().includes('vm-m')) {
+                  headerLineIndex = i;
+                  break;
+              }
+          }
+          const cleanContent = lines.slice(headerLineIndex).join('\n');
+          const dataRaw = await parseCsvAsync(cleanContent);
+          const data = dataRaw.map(r => r.map(c => desanitizeField(c)));
+
+          if (data.length < 2) return;
+
+          const header = data[0].map((h: any) => String(h).toLowerCase().trim());
+          const ownerIdx = header.findIndex(h => ['lob owner', 'owner', 'lobowner'].includes(h));
+          const contactIdx = header.findIndex(h => ['it tech support contact', 'it support', 'contact', 'tech support'].includes(h));
+
+          if (ownerIdx === -1 && contactIdx === -1) return;
+
+          for (let i = 1; i < data.length; i++) {
+              const row = data[i];
+
+              const tryReplace = (idx: number) => {
+                  if (idx !== -1 && row[idx]) {
+                      const val = String(row[idx]).trim();
+                      // Check if it's an email
+                      if (val.includes('@')) {
+                          const match = emailToName.get(val.toLowerCase());
+                          if (match && match !== val) {
+                              row[idx] = match;
+                              changed = true;
+                          }
+                      }
+                  }
+              };
+
+              tryReplace(ownerIdx);
+              tryReplace(contactIdx);
+          }
+
+          if (changed) {
+              const csvOutput = this.safeStringify(data);
+              await this.writeAndEmit(path, csvOutput);
+              console.log('[FileManager] Server contacts cleanup completed. Updated file.');
+          } else {
+              console.log('[FileManager] No server contacts needed cleanup.');
+          }
+
+      } catch (e) {
+          console.error('[FileManager] Error in cleanupServerContacts:', e);
       }
   }
 
