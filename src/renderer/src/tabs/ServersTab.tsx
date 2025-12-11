@@ -5,6 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Server, Contact } from '@shared/ipc';
+import { useDebounce } from '../hooks/useDebounce';
 import { Input } from '../components/Input';
 import { ContextMenu } from '../components/ContextMenu';
 import { AddServerModal } from '../components/AddServerModal';
@@ -183,6 +184,7 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
 
 export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, server: Server } | null>(null);
@@ -245,8 +247,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
 
   const filteredServers = useMemo(() => {
     let result = servers;
-    if (search) {
-      const q = search.toLowerCase();
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
       result = result.filter(s => s._searchString.includes(q));
     }
     return result.sort((a, b) => {
@@ -256,7 +258,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
         return 0;
     });
-  }, [servers, search, sortField, sortOrder]);
+  }, [servers, debouncedSearch, sortField, sortOrder]);
 
   const handleHeaderSort = (field: any) => {
       if (sortField === field) {

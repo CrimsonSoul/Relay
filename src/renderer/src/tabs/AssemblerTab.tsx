@@ -1,5 +1,6 @@
 import React, { useMemo, useState, memo, useRef, useEffect, useCallback } from 'react';
 import { GroupMap, Contact } from '@shared/ipc';
+import { useDebounce } from '../hooks/useDebounce';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { ContactCard } from '../components/ContactCard';
@@ -161,6 +162,7 @@ const SortableHeader = ({
 export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups, manualAdds, manualRemoves, onToggleGroup, onAddManual, onRemoveManual, onUndoRemove, onResetManual }) => {
   const { showToast } = useToast();
   const [adhocInput, setAdhocInput] = useState('');
+  const debouncedAdhocInput = useDebounce(adhocInput, 300);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const [pendingEmail, setPendingEmail] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -204,13 +206,14 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
 
   // Suggestions Logic
   const suggestions = useMemo(() => {
-    if (!adhocInput || !showSuggestions) return [];
-    const lower = adhocInput.toLowerCase();
+    // Bolt: Use debounced input to prevent filtering on every keystroke
+    if (!debouncedAdhocInput || !showSuggestions) return [];
+    const lower = debouncedAdhocInput.toLowerCase();
     // Simple filter: match name or email, limit to 5
     return contacts
         .filter(c => c._searchString.includes(lower))
         .slice(0, 5);
-  }, [adhocInput, showSuggestions, contacts]);
+  }, [debouncedAdhocInput, showSuggestions, contacts]);
 
   useEffect(() => {
       const handleClickOutside = (event: MouseEvent) => {
