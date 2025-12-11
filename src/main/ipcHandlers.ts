@@ -214,7 +214,7 @@ export function setupIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.IMPORT_SERVERS_FILE, async () => {
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
-    if (!mainWindow) return false;
+    if (!mainWindow) return { success: false, message: 'Main window not found' };
 
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Import Servers CSV',
@@ -222,8 +222,8 @@ export function setupIpcHandlers(
       properties: ['openFile']
     });
 
-    if (canceled || filePaths.length === 0) return false;
-    return fileManager?.importServersWithMapping(filePaths[0]) ?? false;
+    if (canceled || filePaths.length === 0) return { success: false, message: 'Cancelled' };
+    return fileManager?.importServersWithMapping(filePaths[0]) ?? { success: false, message: 'File Manager not initialized' };
   });
 
   // Window Controls

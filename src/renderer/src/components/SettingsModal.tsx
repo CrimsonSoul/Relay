@@ -10,7 +10,7 @@ type Props = {
   onSync: () => void;
   onImportGroups: () => Promise<boolean>;
   onImportContacts: () => Promise<boolean>;
-  onImportServers: () => Promise<boolean>;
+  onImportServers: () => Promise<any>;
 };
 
 const DataPathDisplay = () => {
@@ -62,9 +62,11 @@ export const SettingsModal: React.FC<Props> = ({
   };
 
   const handleImportServersClick = async () => {
-      const success = await onImportServers();
-      if (success) {
+      const result = await onImportServers();
+      if (result && result.success) {
           showToast('Servers imported successfully', 'success');
+      } else if (result && result.message && result.message !== 'Cancelled') {
+          showToast(`Import failed: ${result.message}`, 'error');
       }
   };
 
