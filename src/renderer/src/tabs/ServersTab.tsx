@@ -1,6 +1,9 @@
 import React, { useState, useMemo, memo } from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Server, Contact } from '@shared/ipc';
 import { Input } from '../components/Input';
 import { ContextMenu } from '../components/ContextMenu';
@@ -29,19 +32,62 @@ const DEFAULT_WIDTHS = {
   os: 150
 };
 
+// Default Column Order
+const DEFAULT_ORDER: (keyof typeof DEFAULT_WIDTHS)[] = [
+    'name', 'businessArea', 'lob', 'comment', 'owner', 'contact', 'osType', 'os'
+];
+
+// OS Formatter
+const formatOS = (val: string | undefined) => {
+    if (!val) return '-';
+    const lower = val.toLowerCase();
+    if (lower.includes('win')) return 'W';
+    if (lower.includes('lin')) return 'L';
+    if (lower.includes('vmware') || lower.includes('esx')) return 'V';
+    // Fallback: First letter capitalized
+    const clean = val.trim();
+    return clean ? clean.charAt(0).toUpperCase() : '-';
+};
+
+// Draggable Header Component
+const DraggableHeader = ({ id, children }: { id: string, children: React.ReactNode }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+        display: 'flex',
+        alignItems: 'center',
+        zIndex: isDragging ? 10 : 'auto',
+        position: isDragging ? 'relative' : undefined,
+        cursor: 'grab'
+    } as React.CSSProperties;
+
+    return (
+        <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+            {children}
+        </div>
+    );
+};
+
 // Row Component
 const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
   servers: Server[],
   contacts: Contact[],
   columns: typeof DEFAULT_WIDTHS,
+  columnOrder: (keyof typeof DEFAULT_WIDTHS)[],
   onContextMenu: (e: React.MouseEvent, server: Server) => void
 }>) => {
-  const { servers, contacts, columns, onContextMenu } = data;
+  const { servers, contacts, columns, columnOrder, onContextMenu } = data;
   if (index >= servers.length) return null;
 
   const server = servers[index];
 
-  const formatValue = (val: string | undefined) => {
+  const formatValue = (key: keyof typeof DEFAULT_WIDTHS, val: string | undefined) => {
+      if (key === 'osType' || key === 'os') {
+          return formatOS(val);
+      }
       if (!val) return '-';
       const s = String(val).trim();
       if (s === '' || s === '0' || s === '#N/A' || s.toLowerCase() === 'nan') return '-';
@@ -50,49 +96,67 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
 
   const resolveContact = (val: string) => {
      if (!val) return null;
-     const lowerVal = val.toLowerCase();
-     // Match by email OR name since we might have cleaned it up
-     return contacts.find(c =>
-         c.email.toLowerCase() === lowerVal ||
-         (c.name && c.name.toLowerCase() === lowerVal)
-     );
+     // Handle multiple emails separated by ;
+     // If multiple, we just resolve the first one for the avatar/color logic,
+     // or list them.
+     // Requirement: "replacing with name function isn't working for entrys that have multiple emails"
+     // This suggests we should try to replace ALL emails in the string with names.
+
+     const parts = val.split(';').map(p => p.trim()).filter(p => p);
+     const resolvedParts = parts.map(part => {
+        const lowerVal = part.toLowerCase();
+        const found = contacts.find(c =>
+             c.email.toLowerCase() === lowerVal ||
+             (c.name && c.name.toLowerCase() === lowerVal)
+        );
+        return found ? found : { name: part, email: part }; // Return pseudo-contact if not found
+     });
+
+     return resolvedParts;
   };
 
   const renderCell = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
-      let content: React.ReactNode = formatValue(server[key]);
       const rawVal = server[key] || '';
+      let content: React.ReactNode = formatValue(key, rawVal);
 
       if ((key === 'owner' || key === 'contact') && rawVal && content !== '-') {
-          const contact = resolveContact(rawVal);
-          // If we found a contact, or if it's just a string name
-          const displayName = contact ? contact.name : rawVal;
-          const displayEmail = contact ? contact.email : '';
-          const avatarLetter = displayName.charAt(0).toUpperCase();
-          const color = getColorForString(displayName);
+          const resolvedList = resolveContact(rawVal);
 
-          content = (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                  <div style={{
-                      width: '20px', height: '20px', borderRadius: '50%',
-                      background: color, color: '#18181b',
-                      fontSize: '10px', fontWeight: 600,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0
-                  }}>
-                      {avatarLetter}
+          if (resolvedList && resolvedList.length > 0) {
+              // Just use the first one for the avatar logic to keep it clean,
+              // or maybe stack them? For a table row, usually simplest is best.
+              // Let's show the first one's avatar, and list names.
+              const primary = resolvedList[0];
+              const displayName = primary.name || primary.email; // Fallback
+              const avatarLetter = displayName.charAt(0).toUpperCase();
+              const color = getColorForString(displayName);
+
+              // If multiple, join names
+              const allNames = resolvedList.map(c => c.name || c.email).join('; ');
+
+              content = (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      <div style={{
+                          width: '20px', height: '20px', borderRadius: '50%',
+                          background: color, color: '#18181b',
+                          fontSize: '10px', fontWeight: 600,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          flexShrink: 0
+                      }}>
+                          {avatarLetter}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                           <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }} title={allNames}>
+                               {allNames}
+                           </span>
+                      </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>
-                           {displayName}
-                       </span>
-                       {/* Optional: Show email if it differs? No, simpler is better for now match DirectoryTab */}
-                  </div>
-              </div>
-          );
+              );
+          }
       }
 
       return (
-          <div style={{
+          <div key={key} style={{
               width,
               paddingRight: '12px',
               overflow: 'hidden',
@@ -108,18 +172,11 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
 
   return (
       <div
-        style={{ ...style, display: 'flex', alignItems: 'center', borderBottom: 'var(--border-subtle)', padding: '0 16px' }}
+        style={{ ...style, display: 'flex', alignItems: 'center', borderBottom: 'var(--border-subtle)', padding: '0 16px', gap: '16px' }}
         onContextMenu={(e) => onContextMenu(e, server)}
-        className="contact-row hover-bg" // Reuse contact-row styling for consistency if defined, otherwise hover-bg
+        className="contact-row hover-bg"
       >
-          {renderCell('name', columns.name)}
-          {renderCell('businessArea', columns.businessArea)}
-          {renderCell('lob', columns.lob)}
-          {renderCell('comment', columns.comment)}
-          {renderCell('owner', columns.owner)}
-          {renderCell('contact', columns.contact)}
-          {renderCell('osType', columns.osType)}
-          {renderCell('os', columns.os)}
+          {columnOrder.map(key => renderCell(key, columns[key]))}
       </div>
   );
 });
@@ -143,10 +200,47 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       }
   });
 
+  // Column Order State
+  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() => {
+      try {
+          const saved = localStorage.getItem('relay-servers-order');
+          const parsed = saved ? JSON.parse(saved) : DEFAULT_ORDER;
+          // Ensure all keys exist
+          if (Array.isArray(parsed) && parsed.length === DEFAULT_ORDER.length) return parsed;
+          return DEFAULT_ORDER;
+      } catch {
+          return DEFAULT_ORDER;
+      }
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+        activationConstraint: {
+            distance: 8, // Require drag of 8px to start, prevents accidental drags on click
+        }
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   const handleResize = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
       const newWidths = { ...columnWidths, [key]: width };
       setColumnWidths(newWidths);
       localStorage.setItem('relay-servers-columns', JSON.stringify(newWidths));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (over && active.id !== over.id) {
+          setColumnOrder((items) => {
+              const oldIndex = items.indexOf(active.id as keyof typeof DEFAULT_WIDTHS);
+              const newIndex = items.indexOf(over.id as keyof typeof DEFAULT_WIDTHS);
+              const newOrder = arrayMove(items, oldIndex, newIndex);
+              localStorage.setItem('relay-servers-order', JSON.stringify(newOrder));
+              return newOrder;
+          });
+      }
   };
 
   const filteredServers = useMemo(() => {
@@ -203,6 +297,18 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       return;
   }, [contextMenu]);
 
+  // Map of Labels
+  const LABELS: Record<keyof typeof DEFAULT_WIDTHS, string> = {
+      name: 'Name',
+      businessArea: 'Business Area',
+      lob: 'LOB',
+      comment: 'Comment',
+      owner: 'Owner',
+      contact: 'IT Contact',
+      osType: 'OS Type',
+      os: 'OS'
+  };
+
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-app)' }}>
@@ -247,17 +353,32 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           color: 'var(--color-text-tertiary)',
-          gap: '16px', // Matches DirectoryTab
+          gap: '16px',
           overflow: 'hidden'
       }}>
-          <ResizableHeader label="Name" width={columnWidths.name} sortKey="name" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('name', w)} />
-          <ResizableHeader label="Business Area" width={columnWidths.businessArea} sortKey="businessArea" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('businessArea', w)} />
-          <ResizableHeader label="LOB" width={columnWidths.lob} sortKey="lob" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('lob', w)} />
-          <ResizableHeader label="Comment" width={columnWidths.comment} sortKey="comment" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('comment', w)} />
-          <ResizableHeader label="Owner" width={columnWidths.owner} sortKey="owner" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('owner', w)} />
-          <ResizableHeader label="IT Contact" width={columnWidths.contact} sortKey="contact" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('contact', w)} />
-          <ResizableHeader label="OS Type" width={columnWidths.osType} sortKey="osType" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('osType', w)} />
-          <ResizableHeader label="OS" width={columnWidths.os} sortKey="os" currentSort={{ key: sortField, direction: sortOrder }} onSort={handleHeaderSort} onResize={w => handleResize('os', w)} />
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+              <SortableContext
+                items={columnOrder}
+                strategy={horizontalListSortingStrategy}
+              >
+                  {columnOrder.map(key => (
+                      <DraggableHeader key={key} id={key}>
+                          <ResizableHeader
+                            label={LABELS[key]}
+                            width={columnWidths[key]}
+                            sortKey={key}
+                            currentSort={{ key: sortField, direction: sortOrder }}
+                            onSort={handleHeaderSort}
+                            onResize={w => handleResize(key, w)}
+                          />
+                      </DraggableHeader>
+                  ))}
+              </SortableContext>
+          </DndContext>
       </div>
 
       {/* List */}
@@ -269,7 +390,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               width={width}
               itemCount={filteredServers.length}
               itemSize={50} // Denser row
-              itemData={{ servers: filteredServers, contacts, columns: columnWidths, onContextMenu: handleContextMenu }}
+              itemData={{ servers: filteredServers, contacts, columns: columnWidths, columnOrder, onContextMenu: handleContextMenu }}
             >
               {ServerRow}
             </List>
