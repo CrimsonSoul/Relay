@@ -5,6 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Contact, GroupMap } from '@shared/ipc';
+import { useDebounce } from '../hooks/useDebounce';
 import { ContactCard } from '../components/ContactCard'; // This is now the dense row
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
@@ -256,6 +257,7 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
 export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembler }) => {
   const { showToast } = useToast();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -394,7 +396,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
   const filtered = useMemo(() => {
       let res = effectiveContacts.filter(c =>
-        !search || c._searchString.includes(search.toLowerCase())
+        !debouncedSearch || c._searchString.includes(debouncedSearch.toLowerCase())
       );
 
       return res.sort((a, b) => {
@@ -415,7 +417,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
           return valA.localeCompare(valB) * dir;
       });
-  }, [effectiveContacts, search, sortConfig, emailToGroups]);
+  }, [effectiveContacts, debouncedSearch, sortConfig, emailToGroups]);
 
   // Bolt: Memoize callback to prevent itemData change and row re-renders
   const handleAddWrapper = useCallback((contact: Contact) => {
