@@ -9,22 +9,26 @@ test.describe('Application Shell', () => {
   });
 
   test('navigates between tabs', async ({ page }) => {
+    const composeTab = page.locator('button.sidebar-item', { hasText: 'Compose' });
+    const peopleTab = page.locator('button.sidebar-item', { hasText: 'People' });
+    const liveTab = page.locator('button.sidebar-item', { hasText: 'Live' });
+
     // Check initial state (Compose)
-    await expect(page.getByRole('button', { name: 'Compose' })).toHaveClass(/active/);
+    await expect(composeTab).toHaveClass(/active/);
 
     // Update locator for Groups title
     await expect(page.getByText('GROUPS', { exact: true })).toBeVisible();
 
     // Navigate to People (formerly Directory)
-    await page.getByRole('button', { name: 'People' }).click();
-    await expect(page.getByRole('button', { name: 'People' })).toHaveClass(/active/);
+    await peopleTab.click();
+    await expect(peopleTab).toHaveClass(/active/);
 
     // Update locator for People search input
     await expect(page.getByPlaceholder('Search people...')).toBeVisible();
 
     // Navigate to Live (formerly Radar)
-    await page.getByRole('button', { name: 'Live', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Live', exact: true })).toHaveClass(/active/);
+    await liveTab.click();
+    await expect(liveTab).toHaveClass(/active/);
   });
 
   test('assembler logic: selection and manual entry', async ({ page }) => {
@@ -78,8 +82,11 @@ test.describe('Application Shell', () => {
   });
 
   test('directory search adds to assembler', async ({ page }) => {
+    const peopleTab = page.locator('button.sidebar-item', { hasText: 'People' });
+    const composeTab = page.locator('button.sidebar-item', { hasText: 'Compose' });
+
     // Go to People (Directory)
-    await page.getByRole('button', { name: 'People' }).click();
+    await peopleTab.click();
 
     // Search
     const searchInput = page.getByPlaceholder('Search people...');
@@ -94,7 +101,7 @@ test.describe('Application Shell', () => {
     await expect(page.getByRole('button', { name: 'Added' })).toBeVisible();
 
     // Go back to Compose (Assembler)
-    await page.getByRole('button', { name: 'Compose' }).click();
+    await composeTab.click();
 
     // Verify added
     await expect(page.getByText('jane.smith@agency.net')).toBeVisible();
