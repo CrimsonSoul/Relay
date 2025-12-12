@@ -189,7 +189,7 @@ describe('FileManager', () => {
   describe('Server CSV Header Migration', () => {
     it('migrates legacy server headers to new format', async () => {
       // Legacy format with old column names
-      const legacyCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer1,Finance,Accounting,Test server,owner@a.com,tech@a.com,Windows';
+      const legacyCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer1,Finance,Accounting,Test server,owner@a.com,tech@a.com,Windows';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), legacyCsv);
 
       await fileManager.readAndEmit();
@@ -199,12 +199,12 @@ describe('FileManager', () => {
 
       const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
       // Should have new standardized headers
-      expect(content).toContain('Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type');
+      expect(content).toContain('Name,Business Area,LOB,Comment,Owner,IT Contact,OS');
       expect(content).toContain('Server1');
     });
 
     it('keeps modern server headers unchanged', async () => {
-      const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
+      const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), modernCsv);
 
       await fileManager.readAndEmit();
@@ -216,7 +216,7 @@ describe('FileManager', () => {
     });
 
     it('handles very old legacy headers (Server Name instead of VM-M)', async () => {
-      const veryOldCsv = 'Server Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nOldServer,Sales,CRM,Legacy,old@a.com,oldtech@a.com,Unix';
+      const veryOldCsv = 'Server Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nOldServer,Sales,CRM,Legacy,old@a.com,oldtech@a.com,Unix';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), veryOldCsv);
 
       await fileManager.readAndEmit();
@@ -232,7 +232,7 @@ describe('FileManager', () => {
 
     it('preserves all data during header migration', async () => {
       // Complex legacy data with special characters
-      const complexCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS Type\n"Server, Test",Finance & Ops,"Line of Business",Special "quoted" comment,owner@example.com,tech@example.com,Windows 2019';
+      const complexCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS\n"Server, Test",Finance & Ops,"Line of Business",Special "quoted" comment,owner@example.com,tech@example.com,Windows 2019';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), complexCsv);
 
       await fileManager.readAndEmit();
@@ -338,7 +338,7 @@ describe('FileManager', () => {
     });
 
     it('removes a server by name', async () => {
-      const csv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer1,Finance,Accounting,Note1,owner1@a.com,tech1@a.com,Windows\nServer2,IT,Infrastructure,Note2,owner2@a.com,tech2@a.com,Linux';
+      const csv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer1,Finance,Accounting,Note1,owner1@a.com,tech1@a.com,Windows\nServer2,IT,Infrastructure,Note2,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), csv);
 
       const removed = await fileManager.removeServer('Server1');

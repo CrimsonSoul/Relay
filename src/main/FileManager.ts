@@ -262,7 +262,7 @@ export class FileManager {
           const rows = data.slice(1);
 
           // Standardize Headers
-          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS Type'];
+          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS'];
 
           const findCol = (candidates: string[]) => {
               return header.findIndex(h => candidates.includes(h));
@@ -317,7 +317,7 @@ export class FileManager {
                   'comment': comment,
                   'owner': owner,
                   'it contact': contact,
-                  'os type': osType
+                  'os': osType
               };
 
               results.push({
@@ -864,7 +864,7 @@ export class FileManager {
           const data = await parseCsvAsync(contents);
           const workingData = data.map(row => row.map(cell => desanitizeField(cell)));
 
-          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS Type'];
+          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS'];
 
           if (workingData.length === 0) {
               workingData.push(STD_HEADERS);
@@ -888,7 +888,7 @@ export class FileManager {
           const commentIdx = ensureCol('Comment');
           const ownerIdx = ensureCol('Owner');
           const contactIdx = ensureCol('IT Contact');
-          const osTypeIdx = ensureCol('OS Type');
+          const osTypeIdx = ensureCol('OS');
 
           // Update or Add
           let rowIndex = -1;
@@ -1029,7 +1029,7 @@ export class FileManager {
           let targetData: any[][] = [];
 
           // Load or Init Target with Standard Headers
-          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS Type'];
+          const STD_HEADERS = ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'IT Contact', 'OS'];
 
           if (existsSync(targetPath)) {
               const existing = await fs.readFile(targetPath, 'utf-8');
