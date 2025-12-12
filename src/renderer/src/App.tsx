@@ -59,9 +59,10 @@ export function MainApp() {
     }
   }, [isReloading]);
 
-  const handleImportGroups = async () => await window.api?.importGroupsFile();
-  const handleImportContacts = async () => await window.api?.importContactsFile();
-  const handleImportServers = async () => await window.api?.importServersFile();
+  // Bolt: Memoize window API calls (though they use global window.api, good practice)
+  const handleImportGroups = useCallback(async () => await window.api?.importGroupsFile(), []);
+  const handleImportContacts = useCallback(async () => await window.api?.importContactsFile(), []);
+  const handleImportServers = useCallback(async () => await window.api?.importServersFile(), []);
 
   useEffect(() => {
     if (!window.api) return;
@@ -79,29 +80,38 @@ export function MainApp() {
     return () => { if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current); };
   }, [settleReloadIndicator]);
 
-  const handleAddToAssembler = (contact: Contact) => {
+  // Bolt: Memoize handlers to prevent re-renders of heavy AssemblerTab/DirectoryTab lists
+  const handleAddToAssembler = useCallback((contact: Contact) => {
     setManualRemoves(prev => prev.filter(e => e !== contact.email));
     setManualAdds(prev => prev.includes(contact.email) ? prev : [...prev, contact.email]);
-  };
+  }, []);
 
-  const handleUndoRemove = () => {
+  const handleUndoRemove = useCallback(() => {
     setManualRemoves(prev => {
       const newRemoves = [...prev];
       newRemoves.pop();
       return newRemoves;
     });
-  };
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setSelectedGroups([]);
     setManualAdds([]);
     setManualRemoves([]);
-  };
+  }, []);
 
-  const handleSync = async () => {
+  const handleAddManual = useCallback((email: string) => {
+    setManualAdds(p => [...p, email]);
+  }, []);
+
+  const handleRemoveManual = useCallback((email: string) => {
+    setManualRemoves(p => [...p, email]);
+  }, []);
+
+  const handleSync = useCallback(async () => {
     if (isReloading) return;
     await window.api?.reloadData();
-  };
+  }, [isReloading]);
 
   // Logic to show settings menu.
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -163,8 +173,8 @@ export function MainApp() {
                 manualAdds={manualAdds}
                 manualRemoves={manualRemoves}
                 onToggleGroup={handleToggleGroup}
-                onAddManual={(email) => setManualAdds(p => [...p, email])}
-                onRemoveManual={(email) => setManualRemoves(p => [...p, email])}
+                onAddManual={handleAddManual}
+                onRemoveManual={handleRemoveManual}
                 onUndoRemove={handleUndoRemove}
                 onResetManual={handleReset}
               />
