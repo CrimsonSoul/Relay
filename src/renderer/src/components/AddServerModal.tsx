@@ -125,7 +125,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
         <div style={{ display: 'flex', gap: '16px' }}>
             <Input
-              label="OS Type"
+              label="OS"
               value={formData.osType}
               onChange={handleChange('osType')}
               placeholder="e.g. Windows"
