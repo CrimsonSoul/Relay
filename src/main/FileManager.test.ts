@@ -152,6 +152,38 @@ describe('FileManager', () => {
       expect(content).toContain('(555) 123-4567');
       expect(content).toContain('999');
     });
+
+    it('handles legacy contact CSV with "Phone Number" column', async () => {
+      // Old CSV format might use "Phone Number" instead of "Phone"
+      const legacyCsv = 'Name,Title,Email,Phone Number\nLegacy User,Manager,legacy@a.com,555-987-6543';
+      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), legacyCsv);
+
+      await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
+      // Should still work and format the phone
+      expect(content).toContain('Legacy User');
+      expect(content).toContain('(555) 987-6543');
+    });
+
+    it('preserves contact data with special characters and quotes', async () => {
+      const complexCsv = 'Name,Title,Email,Phone\n"Smith, John","VP of Sales & Marketing",john@example.com,"Office: 555-123-4567"';
+      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), complexCsv);
+
+      await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
+      // All data should be preserved correctly
+      expect(content).toContain('Smith, John');
+      expect(content).toContain('VP of Sales & Marketing');
+      expect(content).toContain('john@example.com');
+    });
   });
 
   describe('Server CSV Header Migration', () => {
@@ -181,6 +213,39 @@ describe('FileManager', () => {
       // Should remain unchanged (headers already standard)
       expect(content).toContain('Server2');
       expect(content).toContain('Name,Business Area,LOB');
+    });
+
+    it('handles very old legacy headers (Server Name instead of VM-M)', async () => {
+      const veryOldCsv = 'Server Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nOldServer,Sales,CRM,Legacy,old@a.com,oldtech@a.com,Unix';
+      await fs.writeFile(path.join(tmpDir, 'servers.csv'), veryOldCsv);
+
+      await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
+      // Should be migrated to standard Name header
+      expect(content).toContain('Name,Business Area,LOB');
+      expect(content).toContain('OldServer');
+    });
+
+    it('preserves all data during header migration', async () => {
+      // Complex legacy data with special characters
+      const complexCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS Type\n"Server, Test",Finance & Ops,"Line of Business",Special "quoted" comment,owner@example.com,tech@example.com,Windows 2019';
+      await fs.writeFile(path.join(tmpDir, 'servers.csv'), complexCsv);
+
+      await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
+      // All data should be preserved
+      expect(content).toContain('Server, Test');
+      expect(content).toContain('Finance & Ops');
+      expect(content).toContain('Line of Business');
+      expect(content).toContain('owner@example.com');
     });
   });
 
