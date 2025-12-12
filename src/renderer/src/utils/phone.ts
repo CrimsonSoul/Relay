@@ -1,55 +1,33 @@
-export const sanitizePhoneNumber = (phone: string): string => {
-  if (!phone) return '';
+import { sanitizePhoneNumber as sharedSanitizePhoneNumber, normalizeUSPhone } from '../../../shared/phoneUtils';
 
-  let processed = phone.trim();
+/**
+ * Re-export the shared sanitizePhoneNumber utility for backward compatibility
+ */
+export const sanitizePhoneNumber = sharedSanitizePhoneNumber;
 
-  // Handle '00' prefix as '+' (common international standard)
-  if (processed.startsWith('00')) {
-      processed = '+' + processed.slice(2);
-  }
-
-  const plusIndex = processed.indexOf('+');
-
-  // If there is a '+', assume the number starts there
-  if (plusIndex !== -1) {
-      processed = processed.slice(plusIndex);
-  }
-
-  // Remove all non-numeric characters, except the leading +
-  // If we have a +, keep it.
-  const hasPlus = processed.startsWith('+');
-  const digits = processed.replace(/[^0-9]/g, '');
-
-  if (!digits) return '';
-
-  return hasPlus ? `+${digits}` : digits;
-};
-
+/**
+ * Formats a single sanitized phone number for UI display.
+ * US numbers are normalized to 10 digits (no formatting).
+ * International numbers keep their + prefix.
+ */
 const formatSingleNumber = (clean: string): string => {
-    // 10 digits: XXXXXXXXXX (US Standard simplified)
-    if (/^\d{10}$/.test(clean)) {
-        return clean;
+    const { isUS, digits } = normalizeUSPhone(clean);
+
+    if (isUS) {
+        return digits; // Return raw 10 digits for US numbers
     }
 
-    // 11 digits starting with 1: XXXXXXXXXX (Strip leading 1)
-    if (/^1\d{10}$/.test(clean)) {
-        return clean.slice(1);
-    }
-
-    // +1 followed by 10 digits: XXXXXXXXXX (Strip +1)
-    if (/^\+1\d{10}$/.test(clean)) {
-        return clean.slice(2);
-    }
-
-    // Generic International: +XXXXXXXXX (No spaces)
-    // Matches + followed by any digits.
-    if (clean.startsWith('+')) {
-        return clean;
-    }
-
+    // International: Keep as-is with + prefix
     return clean;
 };
 
+/**
+ * Formats a phone number for UI display.
+ * Handles run-on numbers (concatenated 10-digit numbers).
+ *
+ * @param phone - Raw phone number string
+ * @returns Formatted phone number
+ */
 export const formatPhoneNumber = (phone: string): string => {
   if (!phone) return '';
   const clean = sanitizePhoneNumber(phone);
