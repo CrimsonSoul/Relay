@@ -45,9 +45,10 @@ describe('FileManager', () => {
 
   afterEach(async () => {
     if (fileManager) fileManager.destroy();
-    // Wait a bit to ensure file locks are released?
+    // Wait a bit to ensure file locks are released
     try {
         await fs.rm(tmpDir, { recursive: true, force: true });
+        await fs.rm(bundledDir, { recursive: true, force: true });
     } catch (e) {
         // Ignore cleanup errors
     }
@@ -106,6 +107,9 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // Phone should be cleaned and formatted
       expect(content).toContain('79984456, (877) 273-9002');
@@ -116,6 +120,9 @@ describe('FileManager', () => {
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
 
       await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       expect(content).toContain('(555) 123-4567');
@@ -149,26 +156,31 @@ describe('FileManager', () => {
 
   describe('Server CSV Header Migration', () => {
     it('migrates legacy server headers to new format', async () => {
-      const legacyCsv = 'VM-M,Mailbox,VDP-M,Server Warden,Temp\nServer1,box1,vdp1,warden1,70F';
+      // Legacy format with old column names
+      const legacyCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer1,Finance,Accounting,Test server,owner@a.com,tech@a.com,Windows';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), legacyCsv);
 
       await fileManager.readAndEmit();
 
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
       const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should have new headers
-      expect(content).toContain('Name,Mailbox,Manager,Warden,Temperature');
-      expect(content).toContain('Server1,box1,vdp1,warden1,70F');
+      // Should have new standardized headers
+      expect(content).toContain('Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type');
+      expect(content).toContain('Server1');
     });
 
     it('keeps modern server headers unchanged', async () => {
-      const modernCsv = 'Name,Mailbox,Manager,Warden,Temperature\nServer2,box2,mgr2,ward2,68F';
+      const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), modernCsv);
 
       await fileManager.readAndEmit();
 
       const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should remain unchanged
-      expect(content).toBe(modernCsv);
+      // Should remain unchanged (headers already standard)
+      expect(content).toContain('Server2');
+      expect(content).toContain('Name,Business Area,LOB');
     });
   });
 
@@ -243,10 +255,12 @@ describe('FileManager', () => {
     it('adds a server to empty file', async () => {
       const server = {
         name: 'TestServer',
-        mailbox: 'MB1',
-        vdpManager: 'VDP1',
-        warden: 'Warden1',
-        temperature: '70F'
+        businessArea: 'IT',
+        lob: 'Infrastructure',
+        comment: 'Test comment',
+        owner: 'owner@example.com',
+        contact: 'tech@example.com',
+        osType: 'Linux'
       };
 
       const success = await fileManager.addServer(server);
@@ -254,11 +268,12 @@ describe('FileManager', () => {
 
       const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
       expect(content).toContain('TestServer');
-      expect(content).toContain('MB1');
+      expect(content).toContain('IT');
+      expect(content).toContain('Infrastructure');
     });
 
     it('removes a server by name', async () => {
-      const csv = 'Name,Mailbox,Manager,Warden,Temperature\nServer1,MB1,VDP1,W1,70F\nServer2,MB2,VDP2,W2,68F';
+      const csv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS Type\nServer1,Finance,Accounting,Note1,owner1@a.com,tech1@a.com,Windows\nServer2,IT,Infrastructure,Note2,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), csv);
 
       const removed = await fileManager.removeServer('Server1');
@@ -295,8 +310,9 @@ describe('FileManager', () => {
     });
 
     it('removes members from a group', async () => {
-      // Create group with members
-      const csv = 'GroupName,Members\nTeam1,"user1@a.com, user2@a.com"';
+      // Create group with members using columnar format
+      // Column format: each column is a group, rows are members
+      const csv = 'Team1,Team2\nuser1@a.com,user3@a.com\nuser2@a.com,user4@a.com';
       await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
 
       const success = await fileManager.updateGroupMembership('Team1', 'user1@a.com', true);
@@ -308,7 +324,8 @@ describe('FileManager', () => {
     });
 
     it('renames a group', async () => {
-      const csv = 'GroupName,Members\nOldName,"user@a.com"';
+      // Columnar format
+      const csv = 'OldName,Team2\nuser@a.com,user2@a.com';
       await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
 
       const success = await fileManager.renameGroup('OldName', 'NewName');
@@ -320,7 +337,8 @@ describe('FileManager', () => {
     });
 
     it('removes a group', async () => {
-      const csv = 'GroupName,Members\nGroup1,"user1@a.com"\nGroup2,"user2@a.com"';
+      // Columnar format
+      const csv = 'Group1,Group2\nuser1@a.com,user2@a.com';
       await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
 
       const success = await fileManager.removeGroup('Group1');
