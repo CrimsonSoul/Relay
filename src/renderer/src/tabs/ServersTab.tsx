@@ -46,7 +46,7 @@ const DEFAULT_WIDTHS = {
   comment: 200,
   owner: 200,
   contact: 200,
-  os: 100
+  os: 150
 };
 
 // Default Column Order
@@ -57,13 +57,9 @@ const DEFAULT_ORDER: (keyof typeof DEFAULT_WIDTHS)[] = [
 // OS Formatter
 const formatOS = (val: string | undefined) => {
     if (!val) return '-';
-    const lower = val.toLowerCase();
-    if (lower.includes('win')) return 'W';
-    if (lower.includes('lin')) return 'L';
-    if (lower.includes('vmware') || lower.includes('esx')) return 'V';
-    // Fallback: First letter capitalized
     const clean = val.trim();
-    return clean ? clean.charAt(0).toUpperCase() : '-';
+    if (clean === '' || clean === '0' || clean === '#N/A' || clean.toLowerCase() === 'nan') return '-';
+    return clean;
 };
 
 // Draggable Header Component
@@ -351,7 +347,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       comment: 'Comment',
       owner: 'Owner',
       contact: 'IT Contact',
-      os: 'OS'
+      os: 'OS Type'
   };
 
 
