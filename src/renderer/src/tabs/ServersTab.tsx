@@ -13,6 +13,7 @@ import { ToolbarButton } from '../components/ToolbarButton';
 import { ResizableHeader } from '../components/ResizableHeader';
 import { getColorForString } from '../utils/colors';
 import { scaleColumns, reverseScale } from '../utils/columnSizing';
+import { loadColumnWidths, saveColumnWidths, loadColumnOrder, saveColumnOrder } from '../utils/columnStorage';
 
 // Custom PointerSensor that ignores resize handles
 class CustomPointerSensor extends PointerSensor {
@@ -196,22 +197,12 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
 
   // Column Widths State (Base pixels)
-  const [baseWidths, setBaseWidths] = useState(() => {
-      try {
-          const saved = localStorage.getItem('relay-servers-columns');
-          const parsed = saved ? JSON.parse(saved) : DEFAULT_WIDTHS;
-          const validKeys = Object.keys(DEFAULT_WIDTHS);
-          const filteredParsed: any = {};
-          if (parsed && typeof parsed === 'object') {
-              for (const key of validKeys) {
-                  if (parsed[key]) filteredParsed[key] = parsed[key];
-              }
-          }
-          return { ...DEFAULT_WIDTHS, ...filteredParsed };
-      } catch (e) {
-          return DEFAULT_WIDTHS;
-      }
-  });
+  const [baseWidths, setBaseWidths] = useState(() =>
+    loadColumnWidths({
+      storageKey: 'relay-servers-columns',
+      defaults: DEFAULT_WIDTHS
+    })
+  );
 
   const [listWidth, setListWidth] = useState(0);
 
@@ -232,20 +223,12 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   }, [baseWidths, listWidth]);
 
 
-  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() => {
-      try {
-          const saved = localStorage.getItem('relay-servers-order');
-          const parsed = saved ? JSON.parse(saved) : DEFAULT_ORDER;
-          if (Array.isArray(parsed) && parsed.length === DEFAULT_ORDER.length) {
-              const validKeys = Object.keys(DEFAULT_WIDTHS);
-              const isValid = parsed.every(k => validKeys.includes(k));
-              if (isValid) return parsed;
-          }
-          return DEFAULT_ORDER;
-      } catch {
-          return DEFAULT_ORDER;
-      }
-  });
+  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() =>
+    loadColumnOrder({
+      storageKey: 'relay-servers-order',
+      defaults: DEFAULT_ORDER
+    })
+  );
 
   const sensors = useSensors(
     useSensor(CustomPointerSensor, {
@@ -269,7 +252,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
 
       const newWidths = { ...baseWidths, [key]: newBase };
       setBaseWidths(newWidths);
-      localStorage.setItem('relay-servers-columns', JSON.stringify(newWidths));
+      saveColumnWidths('relay-servers-columns', newWidths);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -279,7 +262,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               const oldIndex = items.indexOf(active.id as keyof typeof DEFAULT_WIDTHS);
               const newIndex = items.indexOf(over.id as keyof typeof DEFAULT_WIDTHS);
               const newOrder = arrayMove(items, oldIndex, newIndex);
-              localStorage.setItem('relay-servers-order', JSON.stringify(newOrder));
+              saveColumnOrder('relay-servers-order', newOrder);
               return newOrder;
           });
       }

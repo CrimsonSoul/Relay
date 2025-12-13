@@ -17,6 +17,7 @@ import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
 import { ResizableHeader } from '../components/ResizableHeader';
 import { scaleColumns, reverseScale } from '../utils/columnSizing';
+import { loadColumnWidths, saveColumnWidths, loadColumnOrder, saveColumnOrder } from '../utils/columnStorage';
 
 // Custom PointerSensor that ignores resize handles
 class CustomPointerSensor extends PointerSensor {
@@ -219,15 +220,12 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
 
   // Use state for base widths (pixels), but scale them on render if needed
-  const [baseWidths, setBaseWidths] = useState(() => {
-      try {
-          const saved = localStorage.getItem('relay-directory-columns');
-          const parsed = saved ? JSON.parse(saved) : DEFAULT_WIDTHS;
-          return { ...DEFAULT_WIDTHS, ...parsed };
-      } catch (e) {
-          return DEFAULT_WIDTHS;
-      }
-  });
+  const [baseWidths, setBaseWidths] = useState(() =>
+    loadColumnWidths({
+      storageKey: 'relay-directory-columns',
+      defaults: DEFAULT_WIDTHS
+    })
+  );
 
   // Track scaling
   const [listWidth, setListWidth] = useState(0);
@@ -249,16 +247,12 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   }, [baseWidths, listWidth]);
 
 
-  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() => {
-      try {
-          const saved = localStorage.getItem('relay-directory-order');
-          const parsed = saved ? JSON.parse(saved) : DEFAULT_ORDER;
-           if (Array.isArray(parsed) && parsed.length === DEFAULT_ORDER.length) return parsed;
-          return DEFAULT_ORDER;
-      } catch {
-          return DEFAULT_ORDER;
-      }
-  });
+  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() =>
+    loadColumnOrder({
+      storageKey: 'relay-directory-order',
+      defaults: DEFAULT_ORDER
+    })
+  );
 
   const sensors = useSensors(
     useSensor(CustomPointerSensor, {
@@ -284,7 +278,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
       const newWidths = { ...baseWidths, [key]: newBase };
       setBaseWidths(newWidths);
-      localStorage.setItem('relay-directory-columns', JSON.stringify(newWidths));
+      saveColumnWidths('relay-directory-columns', newWidths);
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -294,7 +288,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               const oldIndex = items.indexOf(active.id as keyof typeof DEFAULT_WIDTHS);
               const newIndex = items.indexOf(over.id as keyof typeof DEFAULT_WIDTHS);
               const newOrder = arrayMove(items, oldIndex, newIndex);
-              localStorage.setItem('relay-directory-order', JSON.stringify(newOrder));
+              saveColumnOrder('relay-directory-order', newOrder);
               return newOrder;
           });
       }
