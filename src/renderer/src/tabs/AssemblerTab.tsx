@@ -320,14 +320,14 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
   }, []);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '0px', height: '100%', alignItems: 'start' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', gap: '0px', height: '100%', alignItems: 'start' }}>
 
       {/* Sidebar Controls - Compact */}
       <div style={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '16px',
-          padding: '14px',
+          gap: '14px',
+          padding: '12px',
           borderRight: 'var(--border-subtle)',
           height: '100%',
           overflowY: 'auto'
@@ -404,19 +404,21 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', padding: '0 4px' }}>
             <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--color-text-tertiary)' }}>GROUPS</div>
-            <TactileButton
+            <div
                onClick={() => setIsGroupModalOpen(true)}
                style={{
-                   padding: '2px 8px',
                    fontSize: '10px',
-                   height: '20px',
-                   border: 'none',
-                   background: 'rgba(255,255,255,0.05)'
+                   fontWeight: 600,
+                   color: 'var(--color-text-tertiary)',
+                   cursor: 'pointer',
+                   transition: 'color var(--transition-fast)'
                }}
+               onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-text-primary)'}
+               onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-text-tertiary)'}
                title="Create Group"
             >
                ADD
-            </TactileButton>
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
