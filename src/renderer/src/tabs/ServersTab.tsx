@@ -47,7 +47,7 @@ const DEFAULT_WIDTHS = {
   comment: 200,
   owner: 200,
   contact: 200,
-  os: 60
+  os: 30
 };
 
 // Default Column Order
@@ -217,7 +217,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       return scaleColumns({
           baseWidths,
           availableWidth: listWidth,
-          minColumnWidth: 50,
+          minColumnWidth: 30,
           reservedSpace: RESERVED_SPACE
       }) as typeof DEFAULT_WIDTHS;
   }, [baseWidths, listWidth]);
@@ -413,7 +413,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
                             currentSort={{ key: sortField, direction: sortOrder }}
                             onSort={handleHeaderSort}
                             onResize={w => handleResize(key, w)}
-                            minWidth={key === 'os' ? 30 : 50}
+                            minWidth={key === 'os' ? 25 : 50}
                           />
                       </DraggableHeader>
                   ))}
