@@ -5,6 +5,7 @@ import fs from 'fs';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { FileManager } from './FileManager';
 import { BridgeLogger } from './BridgeLogger';
+import { rateLimiters } from './rateLimiter';
 
 /**
  * Check if a path is a Windows UNC path (\\server\share)
@@ -156,8 +157,15 @@ export function setupIpcHandlers(
     await shell.openPath(getContactsFilePath());
   });
 
-  // Import Handlers
+  // Import Handlers (rate limited to prevent DoS)
   const handleMergeImport = async (type: 'groups' | 'contacts', title: string) => {
+    // Rate limit file imports (expensive operations)
+    const rateLimitResult = rateLimiters.fileImport.tryConsume();
+    if (!rateLimitResult.allowed) {
+      console.warn(`[RateLimit] Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      return { success: false, rateLimited: true };
+    }
+
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
     if (!mainWindow) return false;
@@ -195,6 +203,12 @@ export function setupIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
+    // Rate limit data reloads
+    const rateLimitResult = rateLimiters.dataReload.tryConsume();
+    if (!rateLimitResult.allowed) {
+      console.warn(`[RateLimit] Data reload blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      return { success: false, rateLimited: true };
+    }
     getFileManager()?.readAndEmit();
   });
 
@@ -226,33 +240,49 @@ export function setupIpcHandlers(
     return getBridgeLogger()?.reset() ?? false;
   });
 
-  // --- Data Mutation Handlers ---
+  // --- Data Mutation Handlers (rate limited) ---
+
+  // Helper to check mutation rate limit
+  const checkMutationRateLimit = () => {
+    const result = rateLimiters.dataMutation.tryConsume();
+    if (!result.allowed) {
+      console.warn(`[RateLimit] Data mutation blocked, retry after ${result.retryAfterMs}ms`);
+    }
+    return result.allowed;
+  };
 
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_event, contact) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.addContact(contact) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_CONTACT, async (_event, email) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.removeContact(email) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.ADD_GROUP, async (_event, groupName) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.addGroup(groupName) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT_TO_GROUP, async (_event, groupName, email) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.updateGroupMembership(groupName, email, false) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_CONTACT_FROM_GROUP, async (_event, groupName, email) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.updateGroupMembership(groupName, email, true) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_GROUP, async (_event, groupName) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.removeGroup(groupName) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.RENAME_GROUP, async (_event, oldName, newName) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.renameGroup(oldName, newName) ?? false;
   });
 
@@ -260,16 +290,25 @@ export function setupIpcHandlers(
     return handleMergeImport('contacts', 'Merge Contacts CSV');
   });
 
-  // Server Handlers
+  // Server Handlers (rate limited)
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_event, server) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.addServer(server) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_SERVER, async (_event, name) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.removeServer(name) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_SERVERS_FILE, async () => {
+    // Rate limit file imports
+    const rateLimitResult = rateLimiters.fileImport.tryConsume();
+    if (!rateLimitResult.allowed) {
+      console.warn(`[RateLimit] Server import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      return { success: false, rateLimited: true };
+    }
+
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
     if (!mainWindow) return { success: false, message: 'Main window not found' };
