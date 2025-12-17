@@ -63,6 +63,59 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
   }
 }
 
+// Async version for non-blocking file copying with parallel operations
+export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string, bundledDataPath: string): Promise<boolean> {
+  const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
+
+  // Ensure target exists
+  try {
+    await fsPromises.mkdir(targetRoot, { recursive: true });
+  } catch (e) {
+    console.error('Failed to create target directory:', e);
+  }
+
+  // Build array of copy operations to run in parallel
+  const copyOperations: Promise<boolean>[] = essentialFiles.map(async (file) => {
+    const source = join(sourceRoot, file);
+    const target = join(targetRoot, file);
+
+    // Check if target exists
+    try {
+      await fsPromises.access(target);
+      return false; // Target exists, skip
+    } catch {
+      // Target doesn't exist, proceed with copy
+    }
+
+    // Try sourceRoot first
+    try {
+      await fsPromises.access(source);
+      await fsPromises.copyFile(source, target);
+      console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
+      return true;
+    } catch {
+      // Source doesn't exist, try bundle
+    }
+
+    // Fallback to bundle
+    const bundled = join(bundledDataPath, file);
+    try {
+      await fsPromises.access(bundled);
+      await fsPromises.copyFile(bundled, target);
+      console.log(`Copied ${file} from bundle to ${targetRoot}`);
+      return true;
+    } catch (e) {
+      // Bundle doesn't exist either
+      return false;
+    }
+  });
+
+  // Execute all copy operations in parallel
+  const results = await Promise.all(copyOperations);
+  return results.some(copied => copied);
+}
+
+// Sync version for compatibility (used during path changes)
 export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDataPath: string) {
   const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
   let filesCopied = false;
@@ -135,6 +188,17 @@ export function loadConfig(): { dataRoot?: string } {
   return {};
 }
 
+// Async version for non-blocking config save
+export async function saveConfigAsync(config: { dataRoot?: string }): Promise<void> {
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json');
+    await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Failed to save config:', error);
+  }
+}
+
+// Sync version for compatibility
 export function saveConfig(config: { dataRoot?: string }) {
   try {
     const configPath = join(app.getPath('userData'), 'config.json');
