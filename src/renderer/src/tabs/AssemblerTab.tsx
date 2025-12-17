@@ -255,7 +255,12 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     const date = new Date();
     const dateStr = `${date.getMonth() + 1}/${date.getDate()} -`;
     const attendees = log.map(m => m.email).join(',');
-    const url = `https://teams.microsoft.com/l/meeting/new?subject=${dateStr}&attendees=${attendees}`;
+    // Use URLSearchParams for proper URL encoding to prevent injection
+    const params = new URLSearchParams({
+      subject: dateStr,
+      attendees: attendees
+    });
+    const url = `https://teams.microsoft.com/l/meeting/new?${params.toString()}`;
     window.api?.openExternal(url);
     window.api?.logBridge(selectedGroups);
     showToast('Bridge drafted', 'success');

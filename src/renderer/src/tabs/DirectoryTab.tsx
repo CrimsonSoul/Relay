@@ -92,11 +92,18 @@ const GroupSelector = ({ contact, groups, onClose }: { contact: Contact, groups:
   }, [contact, groups]);
 
   const toggleGroup = async (group: string, current: boolean) => {
+    const previousState = membership[group];
     setMembership(prev => ({ ...prev, [group]: !current }));
-    if (current) {
-      await window.api?.removeContactFromGroup(group, contact.email);
-    } else {
-      await window.api?.addContactToGroup(group, contact.email);
+    try {
+      if (current) {
+        await window.api?.removeContactFromGroup(group, contact.email);
+      } else {
+        await window.api?.addContactToGroup(group, contact.email);
+      }
+    } catch (error) {
+      // Rollback on failure
+      setMembership(prev => ({ ...prev, [group]: previousState }));
+      console.error('[DirectoryTab] Failed to toggle group membership:', error);
     }
   };
 
@@ -396,10 +403,17 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     setOptimisticAdds(prev => [newContact, ...prev]);
     setIsAddModalOpen(false);
 
-    const success = await window.api?.addContact(contact);
-    if (!success) {
-        setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email));
-        showToast('Failed to create contact', 'error');
+    try {
+      const success = await window.api?.addContact(contact);
+      if (!success) {
+          setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email));
+          showToast('Failed to create contact: Unable to save to file', 'error');
+      }
+    } catch (error) {
+      setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email));
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      showToast(`Failed to create contact: ${message}`, 'error');
+      console.error('[DirectoryTab] Error creating contact:', error);
     }
   };
 
@@ -409,16 +423,29 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       }
       setEditingContact(null);
 
-      const success = await window.api?.addContact(updated);
-      if (!success) {
-          if (updated.email) {
-             setOptimisticUpdates(prev => {
-                 const next = new Map(prev);
-                 next.delete(updated.email!);
-                 return next;
-             });
-          }
-          showToast('Failed to update contact', 'error');
+      try {
+        const success = await window.api?.addContact(updated);
+        if (!success) {
+            if (updated.email) {
+               setOptimisticUpdates(prev => {
+                   const next = new Map(prev);
+                   next.delete(updated.email!);
+                   return next;
+               });
+            }
+            showToast('Failed to update contact: Unable to save changes', 'error');
+        }
+      } catch (error) {
+        if (updated.email) {
+           setOptimisticUpdates(prev => {
+               const next = new Map(prev);
+               next.delete(updated.email!);
+               return next;
+           });
+        }
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        showToast(`Failed to update contact: ${message}`, 'error');
+        console.error('[DirectoryTab] Error updating contact:', error);
       }
   }
 
@@ -428,14 +455,25 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           setOptimisticDeletes(prev => new Set(prev).add(email));
           setDeleteConfirmation(null);
 
-          const success = await window.api?.removeContact(email);
-          if (!success) {
-              setOptimisticDeletes(prev => {
-                  const next = new Set(prev);
-                  next.delete(email);
-                  return next;
-              });
-              showToast('Failed to delete contact', 'error');
+          try {
+            const success = await window.api?.removeContact(email);
+            if (!success) {
+                setOptimisticDeletes(prev => {
+                    const next = new Set(prev);
+                    next.delete(email);
+                    return next;
+                });
+                showToast('Failed to delete contact: Contact not found or file error', 'error');
+            }
+          } catch (error) {
+            setOptimisticDeletes(prev => {
+                const next = new Set(prev);
+                next.delete(email);
+                return next;
+            });
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            showToast(`Failed to delete contact: ${message}`, 'error');
+            console.error('[DirectoryTab] Error deleting contact:', error);
           }
       }
   };
