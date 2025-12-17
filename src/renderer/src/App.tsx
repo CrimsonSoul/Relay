@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, Component, ErrorInfo, ReactNode } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
@@ -7,6 +7,85 @@ import { ToastProvider } from './components/Toast';
 import { AppData, Contact } from '@shared/ipc';
 import { TabFallback } from './components/TabFallback';
 import './styles.css';
+
+// Error Boundary to prevent full app crashes from component errors
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[ErrorBoundary] Caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          background: 'var(--color-bg-app)',
+          color: 'var(--color-text-primary)',
+          padding: '40px',
+          textAlign: 'center'
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '20px', opacity: 0.3 }}>⚠</div>
+          <h1 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '12px' }}>Something went wrong</h1>
+          <p style={{ fontSize: '14px', color: 'var(--color-text-secondary)', marginBottom: '24px', maxWidth: '400px' }}>
+            The application encountered an unexpected error. Please restart the application.
+          </p>
+          <pre style={{
+            fontSize: '11px',
+            color: 'var(--color-text-tertiary)',
+            background: 'rgba(255,255,255,0.05)',
+            padding: '12px 16px',
+            borderRadius: '6px',
+            maxWidth: '500px',
+            overflow: 'auto',
+            textAlign: 'left'
+          }}>
+            {this.state.error?.message || 'Unknown error'}
+          </pre>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: '24px',
+              padding: '10px 20px',
+              background: 'var(--color-accent-blue)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 500
+            }}
+          >
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // Lazy load non-default tabs and settings modal to optimize initial bundle size
 const DirectoryTab = lazy(() => import('./tabs/DirectoryTab').then(m => ({ default: m.DirectoryTab })));
@@ -244,8 +323,10 @@ export function MainApp() {
 
 export default function App() {
     return (
-        <ToastProvider>
-            <MainApp />
-        </ToastProvider>
+        <ErrorBoundary>
+            <ToastProvider>
+                <MainApp />
+            </ToastProvider>
+        </ErrorBoundary>
     );
 }

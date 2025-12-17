@@ -66,7 +66,6 @@ export const RadarTab: React.FC = () => {
         <webview
             ref={webviewRef}
             src={url}
-            allowpopups="true"
             onDidStopLoading={handleLoadStop}
             style={{
                 width: '100%',
