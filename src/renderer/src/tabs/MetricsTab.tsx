@@ -10,9 +10,22 @@ export const MetricsTab: React.FC = () => {
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const { showToast } = useToast();
 
+  const [error, setError] = useState<string | null>(null);
+
   const fetchMetrics = async () => {
-    const data = await window.api?.getMetrics();
-    if (data) setMetrics(data);
+    try {
+      setError(null);
+      const data = await window.api?.getMetrics();
+      if (data) {
+        setMetrics(data);
+      } else {
+        setError('Unable to load metrics data');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(`Failed to load metrics: ${message}`);
+      console.error('[MetricsTab] Error fetching metrics:', err);
+    }
   };
 
   useEffect(() => {
@@ -20,12 +33,18 @@ export const MetricsTab: React.FC = () => {
   }, []);
 
   const handleReset = async () => {
-      const success = await window.api?.resetMetrics();
-      if (success) {
-          showToast('History cleared', 'success');
-          fetchMetrics();
-      } else {
-          showToast('Failed to clear history', 'error');
+      try {
+        const success = await window.api?.resetMetrics();
+        if (success) {
+            showToast('History cleared', 'success');
+            fetchMetrics();
+        } else {
+            showToast('Failed to clear history: Unable to write to file', 'error');
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        showToast(`Failed to clear history: ${message}`, 'error');
+        console.error('[MetricsTab] Error resetting metrics:', err);
       }
       setIsResetModalOpen(false);
   };
@@ -80,7 +99,26 @@ export const MetricsTab: React.FC = () => {
 
         {/* Scrollable Content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
-            {!metrics ? (
+            {error ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: '16px', color: 'var(--color-text-tertiary)' }}>
+                    <div style={{ fontSize: '48px', opacity: 0.3 }}>⚠</div>
+                    <div style={{ color: 'var(--color-text-secondary)' }}>{error}</div>
+                    <button
+                      onClick={fetchMetrics}
+                      style={{
+                        padding: '8px 16px',
+                        background: 'rgba(255,255,255,0.1)',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: 'var(--color-text-primary)',
+                        cursor: 'pointer',
+                        fontSize: '13px'
+                      }}
+                    >
+                      Retry
+                    </button>
+                </div>
+            ) : !metrics ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)' }}>
                     Loading metrics...
                 </div>

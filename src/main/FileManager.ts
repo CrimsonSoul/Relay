@@ -105,9 +105,12 @@ export class FileManager {
     console.log('[FileManager] Reading data files...');
     this.emitReloadStarted();
     try {
-      const groups = await this.parseGroups();
-      const contacts = await this.parseContacts();
-      const servers = await this.parseServers();
+      // Parse all files in parallel for faster data loading
+      const [groups, contacts, servers] = await Promise.all([
+        this.parseGroups(),
+        this.parseContacts(),
+        this.parseServers()
+      ]);
 
       const payload: AppData = {
         groups,
