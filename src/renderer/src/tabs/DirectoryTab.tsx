@@ -190,19 +190,32 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   groupMap: Map<string, string[]>,
   onContextMenu: (e: React.MouseEvent, contact: Contact) => void,
   columnWidths: typeof DEFAULT_WIDTHS,
-  columnOrder: (keyof typeof DEFAULT_WIDTHS)[]
+  columnOrder: (keyof typeof DEFAULT_WIDTHS)[],
+  focusedIndex: number,
+  onRowClick: (index: number) => void
 }>) => {
-  const { filtered, recentlyAdded, onAdd, groups, groupMap, onContextMenu, columnWidths, columnOrder } = data;
+  const { filtered, recentlyAdded, onAdd, groups, groupMap, onContextMenu, columnWidths, columnOrder, focusedIndex, onRowClick } = data;
 
   if (index >= filtered.length) return <div style={style} />;
 
   const contact = filtered[index];
   const membership = groupMap.get(contact.email.toLowerCase()) || [];
+  const isFocused = index === focusedIndex;
 
   return (
     <div
-        style={style}
+        style={{
+          ...style,
+          outline: isFocused ? '2px solid var(--color-accent-blue)' : 'none',
+          outlineOffset: '-2px',
+          background: isFocused ? 'rgba(59, 130, 246, 0.1)' : undefined
+        }}
         onContextMenu={(e) => onContextMenu(e, contact)}
+        onClick={() => onRowClick(index)}
+        data-row-index={index}
+        role="row"
+        aria-selected={isFocused}
+        tabIndex={isFocused ? 0 : -1}
     >
         <ContactCard
           name={contact.name}
@@ -212,6 +225,7 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
           groups={membership}
           columnWidths={columnWidths}
           columnOrder={columnOrder}
+          selected={isFocused}
         />
     </div>
   );
@@ -223,6 +237,11 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const debouncedSearch = useDebounce(search, 300);
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+
+  // Keyboard navigation state
+  const [focusedIndex, setFocusedIndex] = useState<number>(-1);
+  const listRef = useRef<List>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
 
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
 
@@ -483,6 +502,80 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       setContextMenu({ x: e.clientX, y: e.clientY, contact });
   }, []);
 
+  // Row click handler for keyboard navigation
+  const onRowClick = useCallback((index: number) => {
+    setFocusedIndex(index);
+  }, []);
+
+  // Keyboard navigation handler
+  const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (filtered.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = prev < filtered.length - 1 ? prev + 1 : prev;
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setFocusedIndex(prev => {
+          const next = prev > 0 ? prev - 1 : 0;
+          listRef.current?.scrollToItem(next, 'smart');
+          return next;
+        });
+        break;
+      case 'Home':
+        e.preventDefault();
+        setFocusedIndex(0);
+        listRef.current?.scrollToItem(0, 'start');
+        break;
+      case 'End':
+        e.preventDefault();
+        setFocusedIndex(filtered.length - 1);
+        listRef.current?.scrollToItem(filtered.length - 1, 'end');
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        if (focusedIndex >= 0 && focusedIndex < filtered.length) {
+          handleAddWrapper(filtered[focusedIndex]);
+        }
+        break;
+      case 'F10':
+        // Shift+F10 opens context menu (standard Windows accessibility pattern)
+        if (e.shiftKey && focusedIndex >= 0 && focusedIndex < filtered.length) {
+          e.preventDefault();
+          const contact = filtered[focusedIndex];
+          // Calculate position based on focused row
+          const listContainer = listContainerRef.current;
+          if (listContainer) {
+            const rect = listContainer.getBoundingClientRect();
+            const rowTop = focusedIndex * 40 - (listRef.current as any)?._outerRef?.scrollTop || 0;
+            setContextMenu({
+              x: rect.left + 100,
+              y: rect.top + rowTop + 20,
+              contact
+            });
+          }
+        }
+        break;
+      case 'Escape':
+        setFocusedIndex(-1);
+        break;
+    }
+  }, [filtered, focusedIndex, handleAddWrapper]);
+
+  // Reset focus when filtered results change
+  useEffect(() => {
+    if (focusedIndex >= filtered.length) {
+      setFocusedIndex(filtered.length > 0 ? filtered.length - 1 : -1);
+    }
+  }, [filtered.length, focusedIndex]);
+
   const itemData = useMemo(() => ({
     filtered,
     recentlyAdded,
@@ -491,8 +584,10 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     groupMap,
     onContextMenu,
     columnWidths: scaledWidths, // Pass scaled widths
-    columnOrder
-  }), [filtered, recentlyAdded, handleAddWrapper, groups, groupMap, onContextMenu, scaledWidths, columnOrder]);
+    columnOrder,
+    focusedIndex,
+    onRowClick
+  }), [filtered, recentlyAdded, handleAddWrapper, groups, groupMap, onContextMenu, scaledWidths, columnOrder, focusedIndex, onRowClick]);
 
   const LABELS: Record<keyof typeof DEFAULT_WIDTHS, string> = {
       name: 'Name',
@@ -576,15 +671,31 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       </div>
 
       {/* Virtualized List - Compact */}
-      <div style={{ flex: 1 }}>
+      <div
+        ref={listContainerRef}
+        style={{ flex: 1 }}
+        onKeyDown={handleListKeyDown}
+        role="grid"
+        aria-label="Contacts list"
+        aria-rowcount={filtered.length}
+      >
         <AutoSizer onResize={({ width }) => setListWidth(width)}>
           {({ height, width }) => (
             <List
+              ref={listRef}
               height={height}
               itemCount={filtered.length}
               itemSize={40}
               width={width}
               itemData={itemData}
+              tabIndex={0}
+              style={{ outline: 'none' }}
+              onItemsRendered={() => {
+                // Ensure focused item is visible when list updates
+                if (focusedIndex >= 0) {
+                  listRef.current?.scrollToItem(focusedIndex, 'smart');
+                }
+              }}
             >
               {VirtualRow}
             </List>

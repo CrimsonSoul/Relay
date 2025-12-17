@@ -16,6 +16,8 @@ const CONTACT_FILES = ['contacts.csv'];
 const SERVER_FILES = ['servers.csv'];
 const DEBOUNCE_MS = 100;
 
+type FileType = 'groups' | 'contacts' | 'servers';
+
 export class FileManager {
   private watcher: chokidar.FSWatcher | null = null;
   private rootDir: string;
@@ -23,6 +25,14 @@ export class FileManager {
   private mainWindow: BrowserWindow;
   private debounceTimer: NodeJS.Timeout | null = null;
   private isInternalWrite = false;
+  // Cache for incremental updates
+  private cachedData: { groups: GroupMap; contacts: Contact[]; servers: Server[] } = {
+    groups: {},
+    contacts: [],
+    servers: []
+  };
+  // Track which files need updating in debounce window
+  private pendingFileUpdates: Set<FileType> = new Set();
 
   constructor(window: BrowserWindow, rootDir: string, bundledPath: string) {
     this.mainWindow = window;
@@ -51,12 +61,23 @@ export class FileManager {
       }
     });
 
-    this.watcher.on('all', (event, path) => {
+    this.watcher.on('all', (event, changedPath) => {
       if (this.isInternalWrite) {
-        console.log(`[FileManager] Ignoring internal write event: ${event} on ${path}`);
+        console.log(`[FileManager] Ignoring internal write event: ${event} on ${changedPath}`);
         return;
       }
-      console.log(`[FileManager] File event: ${event} on ${path}`);
+      console.log(`[FileManager] File event: ${event} on ${changedPath}`);
+
+      // Identify which file type changed
+      const fileName = changedPath.split(/[/\\]/).pop() || '';
+      if (GROUP_FILES.includes(fileName)) {
+        this.pendingFileUpdates.add('groups');
+      } else if (CONTACT_FILES.includes(fileName)) {
+        this.pendingFileUpdates.add('contacts');
+      } else if (SERVER_FILES.includes(fileName)) {
+        this.pendingFileUpdates.add('servers');
+      }
+
       this.debouncedRead();
     });
   }
@@ -72,8 +93,53 @@ export class FileManager {
   private debouncedRead() {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
-      this.readAndEmit();
+      this.readAndEmitIncremental();
     }, DEBOUNCE_MS);
+  }
+
+  // Incremental update: only parse files that changed
+  private async readAndEmitIncremental() {
+    const filesToUpdate = new Set(this.pendingFileUpdates);
+    this.pendingFileUpdates.clear();
+
+    // If no specific files tracked (shouldn't happen, but fallback), do full read
+    if (filesToUpdate.size === 0) {
+      await this.readAndEmit();
+      return;
+    }
+
+    console.log(`[FileManager] Incremental update for: ${Array.from(filesToUpdate).join(', ')}`);
+    this.emitReloadStarted();
+
+    try {
+      // Parse only the files that changed, in parallel if multiple
+      const updates = await Promise.all([
+        filesToUpdate.has('groups') ? this.parseGroups() : Promise.resolve(null),
+        filesToUpdate.has('contacts') ? this.parseContacts() : Promise.resolve(null),
+        filesToUpdate.has('servers') ? this.parseServers() : Promise.resolve(null)
+      ]);
+
+      // Update cache with new values (only if parsed)
+      if (updates[0] !== null) this.cachedData.groups = updates[0];
+      if (updates[1] !== null) this.cachedData.contacts = updates[1];
+      if (updates[2] !== null) this.cachedData.servers = updates[2];
+
+      const payload: AppData = {
+        groups: this.cachedData.groups,
+        contacts: this.cachedData.contacts,
+        servers: this.cachedData.servers,
+        lastUpdated: Date.now()
+      };
+
+      if (!this.mainWindow.isDestroyed()) {
+        this.mainWindow.webContents.send(IPC_CHANNELS.DATA_UPDATED, payload);
+        console.log('[FileManager] Incremental data emitted to renderer.');
+      }
+      this.emitReloadCompleted(true);
+    } catch (error) {
+      console.error('[FileManager] Error in incremental update:', error);
+      this.emitReloadCompleted(false);
+    }
   }
 
   private emitReloadStarted() {
@@ -102,7 +168,7 @@ export class FileManager {
   }
 
   public async readAndEmit() {
-    console.log('[FileManager] Reading data files...');
+    console.log('[FileManager] Reading all data files...');
     this.emitReloadStarted();
     try {
       // Parse all files in parallel for faster data loading
@@ -111,6 +177,9 @@ export class FileManager {
         this.parseContacts(),
         this.parseServers()
       ]);
+
+      // Update cache for future incremental updates
+      this.cachedData = { groups, contacts, servers };
 
       const payload: AppData = {
         groups,
@@ -753,11 +822,17 @@ export class FileManager {
               return idx;
           };
 
+          // Pre-build empty slot index per column for O(1) insertion lookups
+          // Maps: columnIndex -> array of row indices with empty cells
+          const emptySlotsByColumn = new Map<number, number[]>();
+
           for (let col = 0; col < sourceHeader.length; col++) {
               const groupName = sourceHeader[col];
               if (!groupName) continue;
 
               const targetColIdx = getTargetGroupIdx(groupName);
+
+              // Collect source emails using Set for O(1) duplicate check
               const sourceEmails = new Set<string>();
               for (const row of sourceRows) {
                   const email = row[col];
@@ -766,25 +841,29 @@ export class FileManager {
                   }
               }
 
+              // Build existing emails Set and empty slots array in a single pass
               const existingEmails = new Set<string>();
+              const emptySlots: number[] = [];
               for (let i = 1; i < targetData.length; i++) {
                   const email = targetData[i][targetColIdx];
                   if (email && String(email).trim()) {
                       existingEmails.add(String(email).trim());
+                  } else {
+                      emptySlots.push(i);
                   }
               }
+              emptySlotsByColumn.set(targetColIdx, emptySlots);
 
+              // Insert new emails using pre-computed empty slots (O(1) per insertion)
+              let slotIndex = 0;
               for (const email of sourceEmails) {
                   if (!existingEmails.has(email)) {
-                      let added = false;
-                      for (let i = 1; i < targetData.length; i++) {
-                          if (!targetData[i][targetColIdx]) {
-                              targetData[i][targetColIdx] = email;
-                              added = true;
-                              break;
-                          }
-                      }
-                      if (!added) {
+                      if (slotIndex < emptySlots.length) {
+                          // Use pre-computed empty slot
+                          targetData[emptySlots[slotIndex]][targetColIdx] = email;
+                          slotIndex++;
+                      } else {
+                          // Need to add new row
                           const newRow = new Array(targetHeader.length).fill('');
                           newRow[targetColIdx] = email;
                           targetData.push(newRow);
@@ -874,6 +953,15 @@ export class FileManager {
           const tgtPhoneIdx = getTargetIdx('Phone');
           const tgtTitleIdx = getTargetIdx('Title');
 
+          // Build email -> row index map for O(1) lookups (instead of O(n) per contact)
+          const emailToRowIdx = new Map<string, number>();
+          for (let i = 1; i < targetData.length; i++) {
+              const existingEmail = targetData[i][tgtEmailIdx]?.trim().toLowerCase();
+              if (existingEmail) {
+                  emailToRowIdx.set(existingEmail, i);
+              }
+          }
+
           for (const srcRow of sourceRows) {
               const email = srcRow[srcEmailIdx]?.trim();
               if (!email) continue;
@@ -884,15 +972,10 @@ export class FileManager {
 
               if (phone) phone = cleanAndFormatPhoneNumber(String(phone));
 
-              let matchRowIdx = -1;
-              for (let i = 1; i < targetData.length; i++) {
-                  if (targetData[i][tgtEmailIdx]?.trim().toLowerCase() === email.toLowerCase()) {
-                      matchRowIdx = i;
-                      break;
-                  }
-              }
+              // O(1) lookup using Map instead of O(n) loop
+              const matchRowIdx = emailToRowIdx.get(email.toLowerCase());
 
-              if (matchRowIdx !== -1) {
+              if (matchRowIdx !== undefined) {
                   if (name) targetData[matchRowIdx][tgtNameIdx] = name;
                   if (phone) targetData[matchRowIdx][tgtPhoneIdx] = phone;
                   if (title) targetData[matchRowIdx][tgtTitleIdx] = title;
@@ -903,6 +986,8 @@ export class FileManager {
                   newRow[tgtPhoneIdx] = phone;
                   newRow[tgtTitleIdx] = title;
                   targetData.push(newRow);
+                  // Add to map so subsequent duplicates in source can find it
+                  emailToRowIdx.set(email.toLowerCase(), targetData.length - 1);
               }
           }
 
@@ -1121,21 +1206,25 @@ export class FileManager {
           const t_contactIdx = ensureTargetCol('IT Contact');
           const t_osIdx = ensureTargetCol('OS');
 
+          // Build server name -> row index map for O(1) lookups (instead of O(n) per server)
+          const nameToRowIdx = new Map<string, number>();
+          for (let i = 1; i < targetData.length; i++) {
+              const existingName = targetData[i][t_nameIdx]?.trim().toLowerCase();
+              if (existingName) {
+                  nameToRowIdx.set(existingName, i);
+              }
+          }
+
           for (const row of sourceRows) {
               const name = row[s_nameIdx]?.trim();
               if (!name) continue;
 
-              let matchRowIdx = -1;
-              for (let i = 1; i < targetData.length; i++) {
-                  if (targetData[i][t_nameIdx]?.trim().toLowerCase() === name.toLowerCase()) {
-                      matchRowIdx = i;
-                      break;
-                  }
-              }
+              // O(1) lookup using Map instead of O(n) loop
+              const matchRowIdx = nameToRowIdx.get(name.toLowerCase());
 
               const getValue = (idx: number) => (idx !== -1 && row[idx]) ? row[idx].trim() : '';
 
-              if (matchRowIdx !== -1) {
+              if (matchRowIdx !== undefined) {
                   const tRow = targetData[matchRowIdx];
                   if (s_baIdx !== -1) tRow[t_baIdx] = getValue(s_baIdx);
                   if (s_lobIdx !== -1) tRow[t_lobIdx] = getValue(s_lobIdx);
@@ -1153,6 +1242,8 @@ export class FileManager {
                   newRow[t_contactIdx] = getValue(s_contactIdx);
                   newRow[t_osIdx] = getValue(s_osTypeIdx);
                   targetData.push(newRow);
+                  // Add to map so subsequent duplicates in source can find it
+                  nameToRowIdx.set(name.toLowerCase(), targetData.length - 1);
               }
           }
 

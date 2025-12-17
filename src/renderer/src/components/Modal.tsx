@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type Props = {
   isOpen: boolean;
@@ -10,6 +11,34 @@ type Props = {
 };
 
 export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width = '480px' }) => {
+  // Focus trap to prevent focus from leaving modal
+  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
+
+  // Handle Escape key to close modal
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleKeyDown]);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (isOpen) {
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return createPortal(
@@ -30,8 +59,10 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
         zIndex: 20000
       }}
       onClick={onClose}
+      role="presentation"
     >
       <div
+        ref={focusTrapRef}
         className="animate-scale-in"
         style={{
           background: 'var(--color-bg-surface)',
@@ -50,6 +81,7 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? 'modal-title' : undefined}
       >
         {/* Subtle gradient accent at top */}
         <div style={{
@@ -72,13 +104,16 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           flexShrink: 0,
           background: 'rgba(255, 255, 255, 0.01)'
         }}>
-          <h2 style={{
-            margin: 0,
-            fontSize: '14px',
-            fontWeight: 600,
-            color: 'var(--color-text-primary)',
-            letterSpacing: '-0.01em'
-          }}>
+          <h2
+            id="modal-title"
+            style={{
+              margin: 0,
+              fontSize: '14px',
+              fontWeight: 600,
+              color: 'var(--color-text-primary)',
+              letterSpacing: '-0.01em'
+            }}
+          >
             {title}
           </h2>
           <button
