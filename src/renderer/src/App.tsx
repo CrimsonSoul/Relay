@@ -3,8 +3,8 @@ import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
 import { WindowControls } from './components/WindowControls';
-import { ToastProvider } from './components/Toast';
-import { AppData, Contact } from '@shared/ipc';
+import { ToastProvider, useToast } from './components/Toast';
+import { AppData, Contact, DataError } from '@shared/ipc';
 import { TabFallback } from './components/TabFallback';
 import './styles.css';
 
@@ -96,7 +96,29 @@ const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => 
 
 type Tab = 'Compose' | 'People' | 'Servers' | 'Reports' | 'Live';
 
+// Format data errors for user-friendly display
+function formatDataError(error: DataError): string {
+  const file = error.file ? ` in ${error.file}` : '';
+  switch (error.type) {
+    case 'validation':
+      if (Array.isArray(error.details) && error.details.length > 0) {
+        const count = error.details.length;
+        return `Data validation: ${count} issue${count > 1 ? 's' : ''} found${file}`;
+      }
+      return error.message;
+    case 'parse':
+      return `Failed to parse data${file}: ${error.message}`;
+    case 'write':
+      return `Failed to save changes${file}`;
+    case 'read':
+      return `Failed to read data${file}`;
+    default:
+      return error.message || 'An unknown error occurred';
+  }
+}
+
 export function MainApp() {
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>('Compose');
   const [data, setData] = useState<AppData>({ groups: {}, contacts: [], servers: [], lastUpdated: 0 });
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
@@ -158,8 +180,14 @@ export function MainApp() {
     window.api.onReloadComplete(() => {
       settleReloadIndicator();
     });
+    // Subscribe to data errors and surface them to the user
+    window.api.onDataError((error: DataError) => {
+      console.error('[App] Data error received:', error);
+      const errorMessage = formatDataError(error);
+      showToast(errorMessage, 'error');
+    });
     return () => { if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current); };
-  }, [settleReloadIndicator]);
+  }, [settleReloadIndicator, showToast]);
 
   // Bolt: Memoize handlers to prevent re-renders of heavy AssemblerTab/DirectoryTab lists
   const handleAddToAssembler = useCallback((contact: Contact) => {

@@ -60,13 +60,28 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
       return { flex: defaultFlex, minWidth: 0 };
   };
 
+  // Build accessible description for screen readers
+  const accessibleDescription = [
+    displayName,
+    title && `Title: ${title}`,
+    `Email: ${email}`,
+    formattedPhone && `Phone: ${formattedPhone}`,
+    groups.length > 0 && `Groups: ${groups.join(', ')}`
+  ].filter(Boolean).join('. ');
+
   const renderCell = (key: string) => {
       switch (key) {
           case 'name':
               return (
-                <div key="name" style={{ ...getStyle('name', 1.5), display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div
+                  key="name"
+                  role="gridcell"
+                  aria-label={`Name: ${displayName}`}
+                  style={{ ...getStyle('name', 1.5), display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
                     {/* Avatar - Compact */}
-                    <div style={{
+                    <div
+                      style={{
                         width: '24px',
                         height: '24px',
                         borderRadius: 'var(--radius-sm)',
@@ -81,7 +96,9 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                         flexShrink: 0,
                         position: 'relative',
                         overflow: 'hidden'
-                    }}>
+                      }}
+                      aria-hidden="true"
+                    >
                         {/* Subtle shine effect */}
                         <div style={{
                             position: 'absolute',
@@ -108,7 +125,10 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                         {displayName}
                     </div>
                      {sourceLabel && (
-                        <span className="source-label" style={{
+                        <span
+                          className="source-label"
+                          aria-label={`Source: ${sourceLabel}`}
+                          style={{
                             fontSize: '8px',
                             background: 'rgba(255, 255, 255, 0.08)',
                             color: 'var(--color-text-tertiary)',
@@ -126,25 +146,45 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
               );
           case 'title':
               return (
-                <div key="title" style={{ ...getStyle('title', 1), fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div
+                  key="title"
+                  role="gridcell"
+                  aria-label={`Job title: ${title || 'Not specified'}`}
+                  style={{ ...getStyle('title', 1), fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
                     {title || '-'}
                 </div>
               );
           case 'email':
               return (
-                <div key="email" style={{ ...getStyle('email', 1.2), fontSize: '12px', color: 'var(--color-text-primary)', opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div
+                  key="email"
+                  role="gridcell"
+                  aria-label={`Email: ${email}`}
+                  style={{ ...getStyle('email', 1.2), fontSize: '12px', color: 'var(--color-text-primary)', opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
                     {email}
                 </div>
               );
           case 'phone':
               return (
-                <div key="phone" style={{ ...getStyle('phone', 1), fontSize: '12px', color: 'var(--color-text-primary)', opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div
+                  key="phone"
+                  role="gridcell"
+                  aria-label={`Phone: ${formattedPhone || 'Not specified'}`}
+                  style={{ ...getStyle('phone', 1), fontSize: '12px', color: 'var(--color-text-primary)', opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                >
                     {formattedPhone || '-'}
                 </div>
               );
           case 'groups':
               return (
-                <div key="groups" style={{ ...getStyle('groups', 1), display: 'flex', gap: '3px', overflow: 'hidden' }}>
+                <div
+                  key="groups"
+                  role="gridcell"
+                  aria-label={groups.length > 0 ? `Groups: ${groups.join(', ')}` : 'No groups'}
+                  style={{ ...getStyle('groups', 1), display: 'flex', gap: '3px', overflow: 'hidden' }}
+                >
                     {groups.slice(0, 2).map(g => {
                          const c = getColorForString(g);
                          return (
@@ -162,7 +202,12 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                          )
                     })}
                     {groups.length > 2 && (
-                        <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', padding: '1px 3px' }}>+{groups.length - 2}</span>
+                        <span
+                          aria-label={`and ${groups.length - 2} more groups`}
+                          style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', padding: '1px 3px' }}
+                        >
+                          +{groups.length - 2}
+                        </span>
                     )}
                 </div>
               );
@@ -177,6 +222,10 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
 
   return (
     <div
+      role="row"
+      aria-label={accessibleDescription}
+      aria-selected={selected}
+      tabIndex={selected ? 0 : -1}
       style={{
         width: '100%',
         height: '100%',
