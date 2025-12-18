@@ -14,6 +14,7 @@ import { ResizableHeader } from '../components/ResizableHeader';
 import { getColorForString } from '../utils/colors';
 import { scaleColumns, reverseScale } from '../utils/columnSizing';
 import { loadColumnWidths, saveColumnWidths, loadColumnOrder, saveColumnOrder } from '../utils/columnStorage';
+import { Tooltip } from '../components/Tooltip';
 
 // Custom PointerSensor that ignores resize handles
 class CustomPointerSensor extends PointerSensor {
@@ -124,6 +125,7 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
     return resolvedParts;
   };
 
+
   const renderCell = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
     const rawVal = server[key] || '';
     let content: React.ReactNode = formatValue(key, rawVal);
@@ -152,9 +154,11 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
               {avatarLetter}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }} title={allNames}>
-                {allNames}
-              </span>
+              <Tooltip content={allNames}>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }}>
+                  {allNames}
+                </span>
+              </Tooltip>
             </div>
           </div>
         );
