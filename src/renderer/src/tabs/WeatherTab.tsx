@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TactileButton } from '../components/TactileButton';
 import { Input } from '../components/Input';
 import { TabFallback } from '../components/TabFallback';
@@ -51,8 +51,6 @@ const getWeatherIcon = (code: number, size = 24) => {
     path = "M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z";
     color = '#A1A1AA';
   } else if (code >= 51 && code <= 65) { // Rain
-    path = "M19 19a5 5 0 0 0-5-5v5l-3-8h5.5l-2 6h5l-4.5 9L19 19z M12 3a9 9 0 0 0-9 9 9 9 0 0 0 9 9 9 9 0 0 0 9-9 9 9 0 0 0-9-9z"; // Simplified rain/cloud
-    path = "M16 13v-1.26a8 8 0 1 0-5.4 14.61 M20 20h-8 M16 16v4 M12 16v4"; // Custom rain
     return (
        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
          <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9" />
@@ -61,6 +59,9 @@ const getWeatherIcon = (code: number, size = 24) => {
          <path d="M12 16v6" />
        </svg>
     );
+  } else if (code >= 71 && code <= 77) { // Snow
+    color = '#E5E7EB';
+    path = "M20 17.58A5 5 0 0 0 18 8h-1.26A8 8 0 1 0 4 16.25";
   } else if (code >= 95) { // Storm
     color = '#60A5FA';
     path = "M19 16.9A5 5 0 0 0 18 7h-1.26a8 8 0 1 0-11.62 9 M13 11l-4 6h6l-4 6";
@@ -79,28 +80,87 @@ const getWeatherIcon = (code: number, size = 24) => {
 export const WeatherTab: React.FC = () => {
   const [location, setLocation] = useState<Location | null>(null);
   const [weather, setWeather] = useState<WeatherData | null>(null);
-  const [loading, setLoading] = useState(true); // Start loading to check persistence
+  const [loading, setLoading] = useState(true);
   const [manualInput, setManualInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [radarLoaded, setRadarLoaded] = useState(false);
+  const webviewRef = useRef<Electron.WebviewTag | null>(null);
 
-  // Persistence: Load from localStorage on mount
-  useEffect(() => {
-    const savedLocation = localStorage.getItem('weather_location');
-    if (savedLocation) {
-      try {
-        const parsed = JSON.parse(savedLocation);
-        setLocation(parsed);
-        fetchWeather(parsed.latitude, parsed.longitude);
-      } catch (e) {
-        // If parsing fails, fall back to auto location
-        handleAutoLocation();
+  // Reverse geocode coordinates to get location name
+  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+      const data = await window.api.searchLocation(`${lat},${lon}`);
+      if (data.results && data.results.length > 0) {
+        const { name, admin1, country_code } = data.results[0];
+        return `${name}, ${admin1 || ''} ${country_code}`.trim();
       }
-    } else {
-      handleAutoLocation();
+    } catch {
+      // Fallback to coordinate-based search
+      try {
+        const nearbyData = await window.api.searchLocation(`${lat.toFixed(2)} ${lon.toFixed(2)}`);
+        if (nearbyData.results && nearbyData.results.length > 0) {
+          const { name, admin1, country_code } = nearbyData.results[0];
+          return `${name}, ${admin1 || ''} ${country_code}`.trim();
+        }
+      } catch {
+        // Ignore
+      }
     }
+    return 'Current Location';
+  };
+
+  // Auto-locate on mount
+  useEffect(() => {
+    const initLocation = async () => {
+      // Check for saved location first
+      const savedLocation = localStorage.getItem('weather_location');
+      if (savedLocation) {
+        try {
+          const parsed = JSON.parse(savedLocation);
+          // Only use saved location if it has a real name (not "Current Location")
+          if (parsed.name && parsed.name !== 'Current Location') {
+            setLocation(parsed);
+            fetchWeather(parsed.latitude, parsed.longitude);
+            return;
+          }
+        } catch {
+          // Fall through to auto-locate
+        }
+      }
+
+      // Auto-locate using geolocation
+      if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            const { latitude, longitude } = position.coords;
+            const name = await reverseGeocode(latitude, longitude);
+            const newLoc = { latitude, longitude, name };
+            setLocation(newLoc);
+            localStorage.setItem('weather_location', JSON.stringify(newLoc));
+            fetchWeather(latitude, longitude);
+          },
+          (err) => {
+            console.error('Geolocation error:', err);
+            // Fall back to a default location (US center) or show error
+            setError('Could not detect location. Please search for your city.');
+            setLoading(false);
+          },
+          {
+            timeout: 10000,
+            maximumAge: 300000, // 5 min cache
+            enableHighAccuracy: true
+          }
+        );
+      } else {
+        setError('Geolocation is not supported. Please search for your city.');
+        setLoading(false);
+      }
+    };
+
+    initLocation();
   }, []);
 
-  // Persistence: Save to localStorage whenever location changes
+  // Save location to localStorage when it changes
   useEffect(() => {
     if (location) {
       localStorage.setItem('weather_location', JSON.stringify(location));
@@ -121,49 +181,22 @@ export const WeatherTab: React.FC = () => {
     }
   };
 
-  const handleAutoLocation = () => {
-    setLoading(true);
-    setError(null);
-
-    if ('geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const newLoc = { latitude, longitude, name: 'Current Location' };
-          setLocation(newLoc);
-          fetchWeather(latitude, longitude);
-        },
-        (err) => {
-          console.error(err);
-          setError('Location access denied or unavailable. Please try manual entry.');
-          setLoading(false);
-        },
-        {
-          timeout: 8000, // 8 seconds timeout for the API itself
-          maximumAge: 600000, // Accept cached position (10 mins)
-          enableHighAccuracy: false
-        }
-      );
-    } else {
-      setError('Geolocation is not supported by this environment.');
-      setLoading(false);
-    }
-  };
-
   const handleManualSearch = async () => {
-    if (!manualInput) return;
+    if (!manualInput.trim()) return;
     setLoading(true);
     setError(null);
     try {
       const data = await window.api.searchLocation(manualInput);
       if (data.results && data.results.length > 0) {
         const { latitude, longitude, name, admin1, country_code } = data.results[0];
-        const label = `${name}, ${admin1 || ''} ${country_code}`;
+        const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
         const newLoc = { latitude, longitude, name: label };
         setLocation(newLoc);
+        setRadarLoaded(false); // Reset radar loading state
         fetchWeather(latitude, longitude);
+        setManualInput(''); // Clear input after successful search
       } else {
-        setError('Location not found.');
+        setError('Location not found. Try a different search term.');
         setLoading(false);
       }
     } catch (err: any) {
@@ -172,17 +205,52 @@ export const WeatherTab: React.FC = () => {
     }
   };
 
+  // Refresh weather periodically
   useEffect(() => {
-    // Refresh weather periodically
+    if (!location) return;
     const interval = setInterval(() => {
-        if (location) {
-            fetchWeather(location.latitude, location.longitude);
-        }
-    }, 300000); // Update every 5 minutes
+      fetchWeather(location.latitude, location.longitude);
+    }, 300000); // 5 minutes
     return () => clearInterval(interval);
-  }, [location]); // Depend on location to ensure we fetch for the correct place
+  }, [location]);
+
+  // Handle webview events
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const handleDidFinishLoad = () => setRadarLoaded(true);
+    const handleDidFailLoad = () => {
+      console.error('Radar webview failed to load');
+      setRadarLoaded(true); // Still mark as loaded to hide spinner
+    };
+
+    webview.addEventListener('did-finish-load', handleDidFinishLoad);
+    webview.addEventListener('did-fail-load', handleDidFailLoad);
+
+    return () => {
+      webview.removeEventListener('did-finish-load', handleDidFinishLoad);
+      webview.removeEventListener('did-fail-load', handleDidFailLoad);
+    };
+  }, [location]);
 
   if (!location && loading) return <TabFallback />;
+
+  // Filter hourly forecast to only show future hours
+  const getFilteredHourlyForecast = () => {
+    if (!weather) return [];
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    return weather.hourly.time
+      .map((t, i) => ({ time: t, temp: weather.hourly.temperature_2m[i], code: weather.hourly.weathercode[i], index: i }))
+      .filter((item, i) => {
+        const date = new Date(item.time);
+        // Show current hour and future hours, up to 12 items
+        return date >= new Date(now.getFullYear(), now.getMonth(), now.getDate(), currentHour) && i < 24;
+      })
+      .slice(0, 12);
+  };
 
   return (
     <div style={{
@@ -191,114 +259,279 @@ export const WeatherTab: React.FC = () => {
       height: '100%',
       width: '100%',
       background: 'var(--color-bg-app)',
-      padding: '24px',
-      gap: '24px',
-      overflowY: 'auto'
+      padding: '20px',
+      gap: '16px',
+      overflow: 'hidden'
     }}>
       {/* Top Bar: Location & Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-             <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-                {location?.name || 'Weather Radar'}
-             </h2>
-             {weather && (
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                     {getWeatherIcon(weather.current_weather.weathercode, 32)}
-                     <span style={{ fontSize: '24px', fontWeight: 500 }}>
-                         {Math.round(weather.current_weather.temperature)}°F
-                     </span>
-                 </div>
-             )}
-        </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div style={{ width: '200px' }}>
-                <Input
-                    value={manualInput}
-                    onChange={(e) => setManualInput(e.target.value)}
-                    placeholder="Search city..."
-                    onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
-                />
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '12px',
+        flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: '22px', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+            {location?.name || 'Weather'}
+          </h2>
+          {weather && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {getWeatherIcon(weather.current_weather.weathercode, 28)}
+              <span style={{ fontSize: '22px', fontWeight: 500 }}>
+                {Math.round(weather.current_weather.temperature)}°F
+              </span>
             </div>
-            <TactileButton onClick={handleManualSearch} style={{ color: 'white' }}>SEARCH</TactileButton>
-            <TactileButton onClick={handleAutoLocation} style={{ color: 'white' }}>LOCATE ME</TactileButton>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <Input
+            value={manualInput}
+            onChange={(e) => setManualInput(e.target.value)}
+            placeholder="Search city..."
+            onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
+            style={{ width: '180px' }}
+          />
+          <TactileButton onClick={handleManualSearch}>SEARCH</TactileButton>
         </div>
       </div>
 
       {error && (
-          <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.1)', color: '#EF4444', borderRadius: '6px' }}>
-              {error}
-          </div>
+        <div style={{
+          padding: '10px 14px',
+          background: 'rgba(239, 68, 68, 0.1)',
+          color: '#EF4444',
+          borderRadius: '8px',
+          fontSize: '13px',
+          flexShrink: 0
+        }}>
+          {error}
+        </div>
       )}
 
-      {/* Main Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', flex: 1, minHeight: 0 }}>
-          {/* Left: Forecast */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', overflowY: 'auto' }}>
-              {/* Hourly Forecast */}
-              <div style={{ background: 'var(--color-bg-card)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border-subtle)' }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)' }}>HOURLY FORECAST</h3>
-                  <div style={{ display: 'flex', gap: '16px', overflowX: 'auto', paddingBottom: '8px' }}>
-                      {weather?.hourly.time.slice(0, 24).map((t, i) => {
-                          const date = new Date(t);
-                          const now = new Date();
-                          if (date < now && i !== 0) return null; // Skip past hours, keep current
-                          return (
-                              <div key={t} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '40px' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '4px' }}>
-                                      {date.getHours() === now.getHours() ? 'Now' : date.toLocaleTimeString([], { hour: 'numeric' })}
-                                  </span>
-                                  <div style={{ marginBottom: '4px' }}>
-                                    {getWeatherIcon(weather.hourly.weathercode[i], 20)}
-                                  </div>
-                                  <span style={{ fontSize: '13px', fontWeight: 500 }}>
-                                      {Math.round(weather.hourly.temperature_2m[i])}°
-                                  </span>
-                              </div>
-                          );
-                      })}
+      {/* Main Content - Responsive Grid */}
+      <div style={{
+        display: 'flex',
+        gap: '16px',
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden'
+      }}>
+        {/* Left: Forecast */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+          flex: '0 0 380px',
+          minWidth: '320px',
+          maxWidth: '420px',
+          overflowY: 'auto'
+        }}>
+          {/* Hourly Forecast */}
+          <div style={{
+            background: 'var(--color-bg-card)',
+            borderRadius: '10px',
+            padding: '14px',
+            border: '1px solid rgba(255,255,255,0.08)',
+            flexShrink: 0
+          }}>
+            <h3 style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              marginBottom: '12px',
+              color: 'var(--color-text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}>
+              Hourly Forecast
+            </h3>
+            <div style={{
+              display: 'flex',
+              gap: '4px',
+              overflowX: 'auto',
+              paddingBottom: '4px'
+            }}>
+              {getFilteredHourlyForecast().map((item, idx) => {
+                const date = new Date(item.time);
+                const now = new Date();
+                const isNow = date.getHours() === now.getHours() && date.getDate() === now.getDate();
+                return (
+                  <div
+                    key={item.time}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      padding: '8px 10px',
+                      borderRadius: '8px',
+                      background: isNow ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                      minWidth: '48px',
+                      flexShrink: 0
+                    }}
+                  >
+                    <span style={{
+                      fontSize: '11px',
+                      color: isNow ? 'var(--color-accent-blue)' : 'var(--color-text-tertiary)',
+                      marginBottom: '6px',
+                      fontWeight: isNow ? 600 : 400
+                    }}>
+                      {isNow ? 'Now' : date.toLocaleTimeString([], { hour: 'numeric' })}
+                    </span>
+                    <div style={{ marginBottom: '6px' }}>
+                      {getWeatherIcon(item.code, 18)}
+                    </div>
+                    <span style={{ fontSize: '13px', fontWeight: 500 }}>
+                      {Math.round(item.temp)}°
+                    </span>
                   </div>
-              </div>
-
-              {/* Weekly Forecast */}
-              <div style={{ background: 'var(--color-bg-card)', borderRadius: '12px', padding: '16px', border: '1px solid var(--border-subtle)', flex: 1 }}>
-                  <h3 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '16px', color: 'var(--color-text-secondary)' }}>7-DAY FORECAST</h3>
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {weather?.daily.time.map((t, i) => (
-                          <div key={t} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                              <span style={{ width: '60px', fontWeight: 500 }}>
-                                  {new Date(t).toLocaleDateString([], { weekday: 'short' })}
-                              </span>
-                              <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                                  {getWeatherIcon(weather.daily.weathercode[i], 24)}
-                              </div>
-                              <div style={{ display: 'flex', gap: '12px', width: '80px', justifyContent: 'flex-end' }}>
-                                  <span style={{ fontWeight: 600 }}>{Math.round(weather.daily.temperature_2m_max[i])}°</span>
-                                  <span style={{ color: 'var(--color-text-tertiary)' }}>{Math.round(weather.daily.temperature_2m_min[i])}°</span>
-                              </div>
-                          </div>
-                      ))}
-                   </div>
-              </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Right: Radar */}
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <div style={{ flex: 1, background: '#000', borderRadius: '12px', overflow: 'hidden', position: 'relative', border: '1px solid var(--border-subtle)' }}>
-                  {location ? (
-                      <webview
-                        src={`https://www.rainviewer.com/map.html?loc=${location.latitude},${location.longitude},8&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=90&lm=1&layer=radar&sm=1&sn=1`}
-                        style={{ width: '100%', height: '100%', border: 'none', background: 'white' }}
-                      />
-                  ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)' }}>
-                          Map unavailable
-                      </div>
-                  )}
-              </div>
-              <div style={{ marginTop: '12px', fontSize: '11px', color: 'var(--color-text-tertiary)', textAlign: 'right' }}>
-                  Radar data provided by RainViewer | Forecast by Open-Meteo
-              </div>
+          {/* Weekly Forecast */}
+          <div style={{
+            background: 'var(--color-bg-card)',
+            borderRadius: '10px',
+            padding: '14px',
+            border: '1px solid rgba(255,255,255,0.08)',
+            flex: 1,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <h3 style={{
+              fontSize: '12px',
+              fontWeight: 600,
+              marginBottom: '12px',
+              color: 'var(--color-text-secondary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+              flexShrink: 0
+            }}>
+              7-Day Forecast
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'auto' }}>
+              {weather?.daily.time.map((t, i) => {
+                const date = new Date(t);
+                const isToday = date.toDateString() === new Date().toDateString();
+                return (
+                  <div
+                    key={t}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      padding: '10px 8px',
+                      borderRadius: '6px',
+                      background: isToday ? 'rgba(59, 130, 246, 0.1)' : 'transparent'
+                    }}
+                  >
+                    <span style={{
+                      width: '44px',
+                      fontWeight: isToday ? 600 : 500,
+                      fontSize: '13px',
+                      color: isToday ? 'var(--color-accent-blue)' : 'var(--color-text-primary)'
+                    }}>
+                      {isToday ? 'Today' : date.toLocaleDateString([], { weekday: 'short' })}
+                    </span>
+                    <div style={{ width: '32px', display: 'flex', justifyContent: 'center' }}>
+                      {getWeatherIcon(weather.daily.weathercode[i], 20)}
+                    </div>
+                    <div style={{ flex: 1 }} />
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, fontSize: '14px', minWidth: '32px', textAlign: 'right' }}>
+                        {Math.round(weather.daily.temperature_2m_max[i])}°
+                      </span>
+                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: '14px', minWidth: '32px', textAlign: 'right' }}>
+                        {Math.round(weather.daily.temperature_2m_min[i])}°
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
+        </div>
+
+        {/* Right: Radar */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0
+        }}>
+          <div style={{
+            flex: 1,
+            background: '#1a1a2e',
+            borderRadius: '10px',
+            overflow: 'hidden',
+            position: 'relative',
+            border: '1px solid rgba(255,255,255,0.08)',
+            minHeight: '300px'
+          }}>
+            {location ? (
+              <>
+                {!radarLoaded && (
+                  <div style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#1a1a2e',
+                    zIndex: 10
+                  }}>
+                    <div style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>
+                      <div className="animate-spin" style={{
+                        width: '32px',
+                        height: '32px',
+                        border: '3px solid rgba(255,255,255,0.1)',
+                        borderTopColor: 'var(--color-accent-blue)',
+                        borderRadius: '50%',
+                        margin: '0 auto 12px'
+                      }} />
+                      Loading radar...
+                    </div>
+                  </div>
+                )}
+                <webview
+                  ref={webviewRef as any}
+                  src={`https://www.rainviewer.com/map.html?loc=${location.latitude},${location.longitude},8&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=90&lm=1&layer=radar&sm=1&sn=1`}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    border: 'none',
+                    opacity: radarLoaded ? 1 : 0,
+                    transition: 'opacity 0.3s ease'
+                  }}
+                  partition="persist:rainviewer"
+                  // @ts-ignore - webview attributes
+                  allowpopups="false"
+                />
+              </>
+            ) : (
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                height: '100%',
+                color: 'var(--color-text-tertiary)'
+              }}>
+                Search for a location to view radar
+              </div>
+            )}
+          </div>
+          <div style={{
+            marginTop: '8px',
+            fontSize: '10px',
+            color: 'var(--color-text-quaternary)',
+            textAlign: 'right'
+          }}>
+            Radar by RainViewer • Forecast by Open-Meteo
+          </div>
+        </div>
       </div>
     </div>
   );
