@@ -210,12 +210,24 @@ body.platform-win32 .window-controls-container {
   font-size: 13px;
   color: var(--color-text-secondary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 800px) {
+  .header-breadcrumb {
+    display: none !important;
+  }
 }
 
 .header-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
@@ -223,6 +235,56 @@ body.platform-win32 .window-controls-container {
   align-items: center;
   gap: 10px;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+/* Responsive World Clock - Keeping visible but compact */
+@media (max-width: 950px) {
+  .world-clock-container {
+    gap: 12px !important;
+  }
+
+  .world-clock-secondary {
+    gap: 8px !important;
+  }
+
+  .world-clock-separator {
+    display: none !important;
+  }
+
+  .world-clock-details {
+    display: none !important;
+  }
+
+  .world-clock-label {
+    font-size: 8px !important;
+  }
+
+  .world-clock-time {
+    font-size: 11px !important;
+  }
+
+  .world-clock-primary-time {
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 750px) {
+  .world-clock-container {
+    gap: 8px !important;
+  }
+
+  .world-clock-secondary {
+    gap: 6px !important;
+  }
+
+  .world-clock-label {
+    display: none !important;
+  }
+
+  .header-title {
+    max-width: 100px;
+  }
 }
 
 .content-view {
@@ -547,4 +609,23 @@ body.platform-win32 .window-controls-container {
 
 .weather-scroll-container::-webkit-scrollbar-thumb:hover {
   background-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Responsive Weather Tab */
+@media (max-width: 1000px) {
+  .weather-tab-root {
+    flex-direction: column !important;
+    overflow-y: auto !important;
+  }
+
+  .weather-forecast-column {
+    flex: none !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  /* Ensure radar maintains some height when stacked */
+  .weather-tab-root>div:last-child {
+    min-height: 400px;
+  }
 }

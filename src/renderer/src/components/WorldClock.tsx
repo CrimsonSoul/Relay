@@ -39,20 +39,20 @@ export const WorldClock: React.FC = () => {
   const primaryZoneName = getFormatter(primaryZone.timeZone, { timeZoneName: 'short' }).formatToParts(time).find(p => p.type === 'timeZoneName')?.value || 'CT';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+    <div className="world-clock-container" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
 
       {/* Secondary Zones - NOW ON LEFT */}
-      <div style={{ display: 'flex', gap: '16px' }}>
+      <div className="world-clock-secondary" style={{ display: 'flex', gap: '16px' }}>
         {secondaryZones.map(z => {
           const timeStr = getFormatter(z.timeZone, { hour: 'numeric', minute: '2-digit', hour12: true }).format(time);
           const zoneName = getFormatter(z.timeZone, { timeZoneName: 'short' }).formatToParts(time).find(p => p.type === 'timeZoneName')?.value || z.label;
 
           return (
-            <div key={z.label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 600, marginBottom: '2px' }}>
+            <div key={z.label} className="world-clock-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <span className="world-clock-label" style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 600, marginBottom: '2px' }}>
                 {zoneName}
               </span>
-              <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-base)', fontWeight: 500 }}>
+              <span className="world-clock-time" style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontFamily: 'var(--font-family-base)', fontWeight: 500 }}>
                 {timeStr}
               </span>
             </div>
@@ -61,18 +61,18 @@ export const WorldClock: React.FC = () => {
       </div>
 
       {/* Separator */}
-      <div style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
+      <div className="world-clock-separator" style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
 
       {/* Primary Zone (CST) - NOW ON RIGHT */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="world-clock-primary" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-          <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: '1.2' }}>
+          <span className="world-clock-primary-time" style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: '1.2' }}>
             {primaryTimeStr}
           </span>
-          <div style={{ display: 'flex', gap: '6px', fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
-             <span>{primaryZoneName}</span>
-             <span>•</span>
-             <span>{primaryDateStr}</span>
+          <div className="world-clock-details" style={{ display: 'flex', gap: '6px', fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 500 }}>
+            <span>{primaryZoneName}</span>
+            <span>•</span>
+            <span>{primaryDateStr}</span>
           </div>
         </div>
       </div>
