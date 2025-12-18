@@ -276,14 +276,37 @@ app.on('login', (event, _webContents, _request, authInfo, callback) => {
 });
 
   app.whenReady().then(async () => {
-    // Permission handling for Geolocation
-    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-      if (permission === 'geolocation') {
-        callback(true);
-        return;
-      }
-      callback(false);
-    });
+    // Permission handling for Geolocation - apply to all sessions
+    const setupPermissions = (sess: Electron.Session) => {
+      sess.setPermissionRequestHandler((_webContents, permission, callback) => {
+        // Allow geolocation for weather features
+        if (permission === 'geolocation') {
+          callback(true);
+          return;
+        }
+        // Allow media for potential future features
+        if (permission === 'media') {
+          callback(true);
+          return;
+        }
+        callback(false);
+      });
+
+      // Also handle permission checks (for cached permissions)
+      sess.setPermissionCheckHandler((_webContents, permission) => {
+        if (permission === 'geolocation' || permission === 'media') {
+          return true;
+        }
+        return false;
+      });
+    };
+
+    // Setup permissions for default session
+    setupPermissions(session.defaultSession);
+
+    // Setup permissions for rainviewer webview partition
+    const rainviewerSession = session.fromPartition('persist:rainviewer');
+    setupPermissions(rainviewerSession);
 
     // Initialize IPC handlers first
     setupIpc();
