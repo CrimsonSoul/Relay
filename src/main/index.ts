@@ -304,9 +304,9 @@ app.on('login', (event, _webContents, _request, authInfo, callback) => {
     // Setup permissions for default session
     setupPermissions(session.defaultSession);
 
-    // Setup permissions for rainviewer webview partition
-    const rainviewerSession = session.fromPartition('persist:rainviewer');
-    setupPermissions(rainviewerSession);
+    // Setup permissions for NWS radar webview partition
+    const nwsRadarSession = session.fromPartition('persist:nwsradar');
+    setupPermissions(nwsRadarSession);
 
     // Initialize IPC handlers first
     setupIpc();

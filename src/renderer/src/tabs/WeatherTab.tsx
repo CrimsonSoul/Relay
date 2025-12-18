@@ -31,6 +31,19 @@ interface Location {
   name?: string;
 }
 
+// Generate NWS radar URL with location centered
+const getNWSRadarUrl = (lat: number, lon: number): string => {
+  const settings = {
+    agenda: {
+      id: null,
+      center: [lon, lat],
+      zoom: 8
+    }
+  };
+  const encoded = btoa(JSON.stringify(settings));
+  return `https://radar.weather.gov/?settings=v1_${encodeURIComponent(encoded)}`;
+};
+
 const getWeatherIcon = (code: number, size = 24) => {
   // WMO Weather interpretation codes (WW)
   // 0: Clear sky
@@ -697,7 +710,7 @@ export const WeatherTab: React.FC = () => {
                 )}
                 <webview
                   ref={webviewRef as any}
-                  src={`https://www.rainviewer.com/map.html?loc=${location.latitude},${location.longitude},8&oFa=0&oC=1&oU=0&oCS=1&oF=0&oAP=1&c=3&o=90&lm=1&layer=radar&sm=1&sn=1`}
+                  src={getNWSRadarUrl(location.latitude, location.longitude)}
                   style={{
                     width: '100%',
                     height: '100%',
@@ -705,7 +718,7 @@ export const WeatherTab: React.FC = () => {
                     opacity: radarLoaded ? 1 : 0,
                     transition: 'opacity 0.3s ease'
                   }}
-                  partition="persist:rainviewer"
+                  partition="persist:nwsradar"
                   // @ts-ignore - webview attributes
                   allowpopups="false"
                 />
@@ -728,7 +741,7 @@ export const WeatherTab: React.FC = () => {
             color: 'var(--color-text-quaternary)',
             textAlign: 'right'
           }}>
-            Radar by RainViewer • Forecast by Open-Meteo • Alerts by NWS
+            Radar & Alerts by NWS • Forecast by Open-Meteo
           </div>
         </div>
       </div>
