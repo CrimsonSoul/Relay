@@ -84,22 +84,39 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       WebkitAppRegion: 'drag' as any
     }}>
       {/* App Icon - Restored and pushed down on macOS */}
-      <div style={{
-        width: '40px',
-        height: '40px',
-        background: 'linear-gradient(135deg, var(--color-accent-blue) 0%, #2563EB 100%)',
-        borderRadius: '12px',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white',
-        fontWeight: 600,
-        fontSize: '16px',
-        WebkitAppRegion: 'no-drag' as any,
-        cursor: 'pointer',
-        transition: 'border-radius 0.2s ease'
-      }}>
-        R
+      <div
+        onClick={() => onTabChange('Compose')}
+        style={{
+          width: '40px',
+          height: '40px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(59, 130, 246, 0.08)',
+          borderRadius: '12px',
+          WebkitAppRegion: 'no-drag' as any,
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          border: '1px solid rgba(59, 130, 246, 0.15)'
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
+          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.08)';
+          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.15)';
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          {/* Stylized R with "Relay" Nodes */}
+          <path d="M7 21V5a2 2 0 0 1 2-2h5a5 5 0 0 1 0 10h-5" />
+          <path d="M14 13l4.5 7.5" />
+          {/* Connection Nodes */}
+          <circle cx="7" cy="21" r="1.5" fill="#60A5FA" stroke="none" />
+          <circle cx="14" cy="13" r="1.5" fill="#60A5FA" stroke="none" />
+          <circle cx="18.5" cy="20.5" r="1.5" fill="#60A5FA" stroke="none" />
+        </svg>
       </div>
 
       {/* Separator */}
