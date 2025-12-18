@@ -511,7 +511,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       )}
 
       {/* Main Content - Responsive Grid */}
-      <div style={{
+      <div className="weather-tab-root" style={{
         display: 'flex',
         gap: '16px',
         flex: 1,
@@ -519,13 +519,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         overflow: 'hidden'
       }}>
         {/* Left: Forecast */}
-        <div className="weather-scroll-container" style={{
+        <div className="weather-forecast-column weather-scroll-container" style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
-          flex: '0 0 380px',
-          minWidth: '320px',
-          maxWidth: '420px',
+          flex: '0 0 35%',
+          minWidth: '300px',
           overflowY: 'auto'
         }}>
           {/* Hourly Forecast */}

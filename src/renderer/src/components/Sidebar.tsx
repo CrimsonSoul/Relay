@@ -77,7 +77,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      paddingTop: window.api?.platform === 'darwin' ? '35px' : '16px',
+      paddingTop: window.api?.platform === 'darwin' ? '35px' : '8px',
       paddingBottom: '16px',
       gap: '8px',
       zIndex: 9002,
