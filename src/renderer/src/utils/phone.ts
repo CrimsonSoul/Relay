@@ -14,15 +14,10 @@ const formatSingleNumber = (clean: string): string => {
     const { isUS, digits } = normalizeUSPhone(clean);
 
     if (isUS) {
-        return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+        return digits; // Return raw 10 digits for US numbers
     }
 
-    // Handles Internal numbers / Short codes (e.g. 5555)
-    if (clean.length > 0 && clean.length <= 5 && !clean.startsWith('+')) {
-        return clean;
-    }
-
-    // International / Extensions: Keep as-is with prefix but make sure + is there if needed
+    // International: Keep as-is with + prefix
     return clean;
 };
 
@@ -35,25 +30,18 @@ const formatSingleNumber = (clean: string): string => {
  */
 export const formatPhoneNumber = (phone: string): string => {
     if (!phone) return '';
+    const clean = sanitizePhoneNumber(phone);
 
-    // Split by common separators if they exist
-    const parts = phone.split(/[,;/]/).map(p => p.trim()).filter(p => p);
-
-    const formattedParts = parts.map(part => {
-        const clean = sanitizePhoneNumber(part);
-
-        // Check for "Run-on" numbers (concatenated 10-digit numbers)
-        // e.g. 55555555551111111111 (20 digits) -> split
-        if (/^\d+$/.test(clean) && clean.length > 10 && clean.length % 10 === 0) {
-            const subparts: string[] = [];
-            for (let i = 0; i < clean.length; i += 10) {
-                subparts.push(clean.slice(i, i + 10));
-            }
-            return subparts.map(formatSingleNumber).join(', ');
+    // Check for "Run-on" numbers (concatenated 10-digit numbers)
+    // e.g. 55555555551111111111 (20 digits) -> split
+    // Logic: multiple of 10 digits, > 10
+    if (/^\d+$/.test(clean) && clean.length > 10 && clean.length % 10 === 0) {
+        const parts: string[] = [];
+        for (let i = 0; i < clean.length; i += 10) {
+            parts.push(clean.slice(i, i + 10));
         }
+        return parts.map(formatSingleNumber).join(', ');
+    }
 
-        return formatSingleNumber(clean);
-    });
-
-    return formattedParts.join(' | '); // Use pipe for cleaner visual separation of multiple numbers
+    return formatSingleNumber(clean);
 };

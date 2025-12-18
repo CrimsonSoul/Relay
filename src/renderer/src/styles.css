@@ -215,7 +215,7 @@ body.platform-win32 .window-controls-container {
   text-overflow: ellipsis;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 700px) {
   .header-breadcrumb {
     display: none !important;
   }
@@ -239,7 +239,7 @@ body.platform-win32 .window-controls-container {
 }
 
 /* Responsive World Clock - Keeping visible but compact */
-@media (max-width: 950px) {
+@media (max-width: 800px) {
   .world-clock-container {
     gap: 12px !important;
   }
@@ -269,7 +269,7 @@ body.platform-win32 .window-controls-container {
   }
 }
 
-@media (max-width: 750px) {
+@media (max-width: 650px) {
   .world-clock-container {
     gap: 8px !important;
   }
@@ -612,9 +612,9 @@ body.platform-win32 .window-controls-container {
 }
 
 /* Responsive Weather Tab */
-@media (max-width: 1000px) {
+@media (max-width: 850px) {
   .weather-tab-root {
-    flex-direction: column !important;
+    flex-direction: column-reverse !important;
     overflow-y: auto !important;
   }
 
@@ -626,9 +626,10 @@ body.platform-win32 .window-controls-container {
 
   /* Ensure radar maintains some height when stacked */
   .weather-tab-root>div:last-child {
-    min-height: 400px;
+    min-height: 450px;
   }
 }
+
 /* Responsive Server Cards */
 @media (max-width: 750px) {
   .server-card-comment {
@@ -640,6 +641,7 @@ body.platform-win32 .window-controls-container {
   .server-card-people {
     width: 180px !important;
   }
+
   .server-card-info {
     flex: 0 0 160px !important;
   }
@@ -663,7 +665,7 @@ body.platform-win32 .window-controls-container {
   border-radius: 8px;
   font-size: 11px;
   color: var(--color-text-primary);
-  whiteSpace: nowrap;
+  white-space: nowrap;
   z-index: 1000;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   pointer-events: none;
@@ -681,7 +683,7 @@ body.platform-win32 .window-controls-container {
   opacity: 0.5;
   margin-left: 4px;
   cursor: pointer;
-  text-decoration: underline dotted rgba(255,255,255,0.2);
+  text-decoration: underline dotted rgba(255, 255, 255, 0.2);
   transition: opacity 0.2s;
 }
 
