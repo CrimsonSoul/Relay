@@ -629,3 +629,18 @@ body.platform-win32 .window-controls-container {
     min-height: 400px;
   }
 }
+/* Responsive Server Cards */
+@media (max-width: 750px) {
+  .server-card-comment {
+    display: none !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .server-card-people {
+    width: 180px !important;
+  }
+  .server-card-info {
+    flex: 0 0 160px !important;
+  }
+}
