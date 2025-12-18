@@ -47,14 +47,15 @@ const getInitials = (name: string, email: string) => {
   return (email && email.length > 0) ? email[0].toUpperCase() : '?';
 };
 
-import { Tooltip } from './Tooltip';
-
 const GroupPill = ({ group }: { group: string }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
   const c = getColorForString(group);
 
   return (
-    <Tooltip content={group} position="bottom">
+    <div style={{ position: 'relative' }}>
       <span
+        onMouseEnter={() => setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
         style={{
           fontSize: '12px',
           color: c.text,
@@ -73,11 +74,31 @@ const GroupPill = ({ group }: { group: string }) => {
       >
         {group}
       </span>
-    </Tooltip>
+      {showTooltip && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          right: 0,
+          marginTop: '4px',
+          background: '#18181B',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '6px',
+          padding: '6px 10px',
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+          zIndex: 100,
+          whiteSpace: 'nowrap',
+          fontSize: '12px',
+          color: 'var(--color-text-primary)'
+        }}>
+          {group}
+        </div>
+      )}
+    </div>
   );
 };
 
 export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected }: ContactRowProps) => {
+  const [showOverflowTooltip, setShowOverflowTooltip] = useState(false);
 
   const color = avatarColor || getAvatarColor(name || email);
   const formattedPhone = formatPhoneNumber(phone || '');
@@ -237,16 +258,10 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
               <GroupPill key={g} group={g} />
             ))}
             {groups.length > 2 && (
-              <Tooltip
-                position="bottom"
-                content={
-                  <div>
-                    <div style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Additional Groups</div>
-                    <div style={{ fontSize: '12px' }}>{groups.slice(2).join(', ')}</div>
-                  </div>
-                }
-              >
+              <>
                 <span
+                  onMouseEnter={() => setShowOverflowTooltip(true)}
+                  onMouseLeave={() => setShowOverflowTooltip(false)}
                   style={{
                     fontSize: '11px',
                     color: 'var(--color-text-primary)',
@@ -261,7 +276,42 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                 >
                   +{groups.length - 2}
                 </span>
-              </Tooltip>
+
+                {/* Custom Hover Tooltip */}
+                {showOverflowTooltip && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '4px',
+                    background: '#18181B',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '6px',
+                    padding: '8px 12px',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                    zIndex: 100,
+                    minWidth: 'max-content',
+                    maxWidth: '200px'
+                  }}>
+                    <div style={{
+                      fontSize: '11px',
+                      color: 'var(--color-text-secondary)',
+                      marginBottom: '4px',
+                      fontWeight: 600,
+                      textTransform: 'uppercase'
+                    }}>
+                      Additional Groups
+                    </div>
+                    <div style={{
+                      fontSize: '13px',
+                      color: 'var(--color-text-primary)',
+                      lineHeight: '1.4'
+                    }}>
+                      {groups.slice(2).join(', ')}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
