@@ -115,13 +115,11 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
   const resolveContact = (val: string) => {
     if (!val) return null;
     const parts = val.split(';').map(p => p.trim()).filter(p => p);
-    const resolvedParts = parts.map(part => {
+    return parts.map(part => {
       const lowerVal = part.toLowerCase();
       const found = contactLookup.get(lowerVal);
       return found ? found : { name: part, email: part };
     });
-
-    return resolvedParts;
   };
 
   const renderCell = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
@@ -130,32 +128,29 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
 
     if ((key === 'owner' || key === 'contact') && rawVal && content !== '-') {
       const resolvedList = resolveContact(rawVal);
-
       if (resolvedList && resolvedList.length > 0) {
         const primary = resolvedList[0];
-        const displayName = primary.name || primary.email; // Fallback
-        const avatarLetter = displayName.charAt(0).toUpperCase();
-        const color = getColorForString(displayName);
-
-        // If multiple, join names
+        const displayName = primary.name || primary.email;
+        const colorScheme = getColorForString(displayName);
+        const color = colorScheme.text;
         const allNames = resolvedList.map(c => c.name || c.email).join('; ');
 
         content = (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
             <div style={{
-              width: '24px', height: '24px', borderRadius: '50%',
-              background: color, color: '#18181b',
-              fontSize: '12px', fontWeight: 600,
+              width: '20px', height: '20px', borderRadius: '50%',
+              background: `linear-gradient(135deg, ${color}20 0%, ${color}40 100%)`,
+              color: color,
+              border: `1px solid ${color}40`,
+              fontSize: '10px', fontWeight: 700,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               flexShrink: 0
             }}>
-              {avatarLetter}
+              {displayName.charAt(0).toUpperCase()}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }} title={allNames}>
-                {allNames}
-              </span>
-            </div>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={allNames}>
+              {allNames}
+            </span>
           </div>
         );
       }
@@ -168,8 +163,9 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
-        fontSize: '14px',
-        color: 'var(--color-text-primary)'
+        fontSize: '13px',
+        color: key === 'name' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)',
+        fontWeight: key === 'name' ? 600 : 400
       }}>
         {content}
       </div>
@@ -178,7 +174,7 @@ const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
 
   return (
     <div
-      style={{ ...style, display: 'flex', alignItems: 'center', borderBottom: 'var(--border-subtle)', padding: '0 16px', gap: '16px' }}
+      style={{ ...style, display: 'flex', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.04)', padding: '0 16px', gap: '16px' }}
       onContextMenu={(e) => onContextMenu(e, server)}
       className="contact-row hover-bg"
     >
