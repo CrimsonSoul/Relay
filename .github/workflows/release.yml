@@ -1,0 +1,28 @@
+name: Build on Release
+on:
+  pull_request:
+    branches:
+      - main
+    types: 
+      - closed
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Automatically generated release from PR #${{ github.event.pull_request.number }}
+            Merged branch: ${{ github.event.pull_request.head.ref }}
+          draft: false
+          prerelease: false
