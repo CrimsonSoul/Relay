@@ -48,7 +48,7 @@ const getWeatherIcon = (code: number, size = 24) => {
   if (code === 0 || code === 1) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FDB813" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="5" fill="rgba(253, 184, 19, 0.1)" />
+        <circle cx="12" cy="12" r="4" fill="rgba(253, 184, 19, 0.1)" />
         <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m12.73-12.73l-1.41 1.41" />
       </svg>
     );
@@ -58,8 +58,16 @@ const getWeatherIcon = (code: number, size = 24) => {
   if (code === 2) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2v2m-7.07.93l1.41 1.41M2 12h2" stroke="#FDB813" />
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(161, 161, 170, 0.1)" stroke="#A1A1AA" />
+        {/* Sun peaking behind */}
+        <path d="M12 2v2m-6.36 1.64 1.41 1.41M2 12h2" stroke="#FDB813" />
+        <circle cx="12" cy="12" r="3" stroke="#FDB813" />
+        {/* Cloud in front */}
+        <path
+          d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8"
+          stroke="#A1A1AA"
+          fill="rgba(15, 15, 18, 0.8)"
+          transform="scale(0.8) translate(4, 4)"
+        />
       </svg>
     );
   }
@@ -68,7 +76,7 @@ const getWeatherIcon = (code: number, size = 24) => {
   if (code === 3 || code === 45 || code === 48) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(161, 161, 170, 0.1)" />
+        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" fill="rgba(161, 161, 170, 0.05)" />
       </svg>
     );
   }
@@ -77,8 +85,8 @@ const getWeatherIcon = (code: number, size = 24) => {
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(96, 165, 250, 0.1)" />
-        <path d="M8 18v2m4-2v2m4-2v2" />
+        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
+        <path d="M8 20l-1 2m4-2l-1 2m4-2l-1 2" stroke="#60A5FA" />
       </svg>
     );
   }
@@ -87,8 +95,8 @@ const getWeatherIcon = (code: number, size = 24) => {
   if (code >= 71 && code <= 77) {
     return (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(229, 231, 235, 0.1)" />
-        <path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01" />
+        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
+        <path d="M8 20h.01M12 20h.01M16 20h.01" stroke="#E5E7EB" strokeWidth="3" />
       </svg>
     );
   }
@@ -96,10 +104,9 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Thunderstorm
   if (code >= 95) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FDE047" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" stroke="#60A5FA" fill="rgba(96, 165, 250, 0.1)" />
-        <path d="M13 11l-4 6h6l-4 6" fill="#FDE047" stroke="none" />
-        <path d="M13 11l-4 6h6l-4 6" />
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
+        <path d="m13 14-4 6h5l-4 6" stroke="#FDE047" fill="rgba(253, 224, 71, 0.1)" />
       </svg>
     );
   }
@@ -107,7 +114,7 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Default / Cloudy
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" />
+      <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" />
     </svg>
   );
 };
