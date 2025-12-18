@@ -33,6 +33,8 @@ const UserAvatar = ({ name, color }: { name: string, color: string }) => (
     </div>
 );
 
+import { Tooltip } from './Tooltip';
+
 const PersonInfo = ({ label, value, contactLookup }: { label: string, value: string, contactLookup: Map<string, Contact> }) => {
     if (!value || value === '-' || value === '0') return null;
 
@@ -42,31 +44,40 @@ const PersonInfo = ({ label, value, contactLookup }: { label: string, value: str
     const displayName = found ? found.name : primary;
     const color = getColorForString(displayName).text;
 
-    const allNames = parts.map(part => {
-        const f = contactLookup.get(part.toLowerCase());
-        return f ? f.name : part;
-    }).join('; ');
+    const tooltipContent = parts.length > 1 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {parts.map((p, i) => {
+                const c = contactLookup.get(p.toLowerCase());
+                return <span key={i}>{c ? c.name : p}</span>;
+            })}
+        </div>
+    ) : null;
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
             <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 600, fontSize: '10px', width: '60px' }}>{label}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <UserAvatar name={displayName} color={color} />
                 <span style={{ color: 'var(--color-text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {displayName}
                     {parts.length > 1 && (
-                        <div className="tooltip-container">
-                            <span className="spillover-badge">
+                        <Tooltip content={tooltipContent} position="top">
+                            <span
+                                className="spillover-badge"
+                                style={{
+                                    opacity: 0.5,
+                                    marginLeft: '6px',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    padding: '1px 5px',
+                                    borderRadius: '10px',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    cursor: 'pointer'
+                                }}
+                            >
                                 +{parts.length - 1}
                             </span>
-                            <div className="tooltip-content">
-                                {parts.map((p, i) => {
-                                    const c = contactLookup.get(p.toLowerCase());
-                                    const name = c ? c.name : p;
-                                    return <div key={i} style={{ marginBottom: i === parts.length - 1 ? 0 : '4px', whiteSpace: 'nowrap' }}>{name}</div>;
-                                })}
-                            </div>
-                        </div>
+                        </Tooltip>
                     )}
                 </span>
             </div>
@@ -92,19 +103,21 @@ export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }:
                 cursor: 'default'
             }}
             className="contact-row hover-bg"
-            title={server.comment && server.comment !== '-' ? `Comment: ${server.comment}` : undefined}
         >
             {/* Platform Icon & Main Title Section */}
             <div className="server-card-info" style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: '0 0 200px', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{
-                        fontSize: '15px',
-                        fontWeight: 700,
-                        color: 'var(--color-text-primary)',
-                        letterSpacing: '-0.01em'
-                    }}>
-                        {server.name}
-                    </span>
+                    <Tooltip content={server.comment && server.comment !== '-' ? server.comment : null} position="top">
+                        <span style={{
+                            fontSize: '15px',
+                            fontWeight: 700,
+                            color: 'var(--color-text-primary)',
+                            letterSpacing: '-0.01em',
+                            cursor: server.comment && server.comment !== '-' ? 'help' : 'default'
+                        }}>
+                            {server.name}
+                        </span>
+                    </Tooltip>
                     <span style={{
                         fontSize: '9px',
                         fontWeight: 800,
