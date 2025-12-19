@@ -272,35 +272,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         webview.insertCSS(`
           html, body { 
             background-color: #0f0f12 !important; 
-            overflow: hidden !important;
           }
-          /* Aggressively Hide RainViewer UI Clutter */
-          .menu-container, 
-          .left-menu, 
-          .right-menu, 
-          .top-menu,
-          .bottom-menu,
-          .search-container, 
-          .logo-alt,
-          .map-legend,
-          .leaflet-control,
-          .promo-container,
-          .bottom-info,
-          .header-container,
-          .app-promo,
-          .larger-map-btn,
-          .refresh-btn,
-          #search-input-container,
-          .leaflet-top.leaflet-right,
-          .leaflet-top.leaflet-left,
-          .leaflet-bottom.leaflet-left,
-          .leaflet-bottom.leaflet-right,
-          .leaflet-control-container,
-          #radar-info,
-          .info-box { 
-            display: none !important; 
+          /* Hide non-essential UI buttons only */
+          .larger-map-btn, .refresh-btn, .app-promo, .promo-container, .logo-alt, .header-container {
+            display: none !important;
           }
-          /* Ensure player is visible and positioned nicely */
+          /* Ensure player remains visible and centered */
           .player-container {
             display: block !important;
             bottom: 30px !important;
@@ -313,10 +290,6 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
             padding: 8px 16px !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
             z-index: 999999 !important;
-          }
-          /* Hide the text overlays that RainViewer injects */
-          div[style*="z-index"][style*="position: absolute"] {
-             pointer-events: none !important;
           }
         `);
 
