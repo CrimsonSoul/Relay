@@ -344,7 +344,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: isGroupSidebarCollapsed ? '20px 1fr' : '192px 1fr',
+            gridTemplateColumns: isGroupSidebarCollapsed ? '20px 1fr' : '212px 1fr',
             gap: '0px',
             height: '100%',
             alignItems: 'start',
@@ -372,8 +372,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                                 padding: '12px 16px',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '14px',
-                                width: '180px' // Fixed content width
+                                gap: '14px'
                             }}>
                                 {/* Quick Add Section */}
                                 <div ref={suggestionWrapperRef} style={{ position: 'relative', marginBottom: '16px' }}>
