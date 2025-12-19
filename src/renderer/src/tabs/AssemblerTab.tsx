@@ -344,11 +344,12 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: isGroupSidebarCollapsed ? '20px 1fr' : '212px 1fr',
+            gridTemplateColumns: isGroupSidebarCollapsed ? '24px 1fr' : '240px 1fr',
             gap: '0px',
             height: '100%',
             alignItems: 'start',
-            transition: 'grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+            transition: 'grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            overflow: 'hidden'
         }}>
 
             {/* Sidebar Controls - Compact */}
@@ -364,15 +365,16 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
             }}>
                 {!isGroupSidebarCollapsed ? (
                     <>
-                        <div style={{ display: 'flex', height: '100%' }}>
+                        <div style={{ display: 'flex', height: '100%', width: '100%' }}>
                             <div style={{
                                 flex: 1,
                                 overflowY: 'auto',
                                 overflowX: 'hidden',
-                                padding: '12px 16px',
+                                padding: '16px 20px',
                                 display: 'flex',
                                 flexDirection: 'column',
-                                gap: '14px'
+                                gap: '16px',
+                                alignItems: 'flex-start' // Ensure things stay left-aligned
                             }}>
                                 {/* Quick Add Section */}
                                 <div ref={suggestionWrapperRef} style={{ position: 'relative', marginBottom: '16px' }}>
@@ -516,15 +518,16 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             <div
                                 onClick={() => setIsGroupSidebarCollapsed(true)}
                                 style={{
-                                    width: '20px',
+                                    width: '24px',
                                     height: '100%',
                                     cursor: 'pointer',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    borderLeft: '1px solid rgba(255,255,255,0.02)',
+                                    borderLeft: '1px solid rgba(255,255,255,0.03)',
                                     transition: 'all var(--transition-fast)',
-                                    color: 'var(--color-text-tertiary)'
+                                    color: 'var(--color-text-tertiary)',
+                                    flexShrink: 0
                                 }}
                                 onMouseEnter={e => {
                                     e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
@@ -553,7 +556,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            width: '20px',
+                            width: '24px',
                             transition: 'all var(--transition-fast)'
                         }}
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
@@ -574,6 +577,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                 height: '100%',
                 overflow: 'hidden',
                 background: 'var(--color-bg-app)', // Seamless with sidebar
+                paddingLeft: '20px' // Fix the overlap/clipping!
             }}>
 
                 {/* Toolbar - Compact */}
