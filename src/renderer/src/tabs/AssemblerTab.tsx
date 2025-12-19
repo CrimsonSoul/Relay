@@ -344,7 +344,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     return (
         <div style={{
             display: 'grid',
-            gridTemplateColumns: isGroupSidebarCollapsed ? '32px 1fr' : '212px 1fr',
+            gridTemplateColumns: isGroupSidebarCollapsed ? '12px 1fr' : '192px 1fr',
             gap: '0px',
             height: '100%',
             alignItems: 'start',
@@ -517,7 +517,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             <div
                                 onClick={() => setIsGroupSidebarCollapsed(true)}
                                 style={{
-                                    width: '32px',
+                                    width: '12px',
                                     height: '100%',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -537,7 +537,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                                 }}
                                 title="Collapse Sidebar"
                             >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                     <polyline points="15 18 9 12 15 6" />
                                 </svg>
                             </div>
@@ -554,14 +554,14 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             alignItems: 'center',
                             justifyContent: 'center',
                             cursor: 'pointer',
-                            width: '100%',
+                            width: '12px',
                             transition: 'all var(--transition-fast)'
                         }}
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         title="Expand Sidebar"
                     >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(180deg)' }}>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(180deg)' }}>
                             <polyline points="15 18 9 12 15 6" />
                         </svg>
                     </div>
