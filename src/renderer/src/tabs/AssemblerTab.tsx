@@ -630,7 +630,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                                 <List
                                     height={height}
                                     itemCount={log.length}
-                                    itemSize={64}
+                                    itemSize={100}
                                     width={width}
                                     itemData={itemData}
                                 >
