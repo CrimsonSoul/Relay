@@ -312,16 +312,35 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
           }
         `);
 
-        // DOM Removal as a second layer of defense
+        // DOM Removal - Ultra Aggressive
         webview.executeJavaScript(`
           const cleanup = () => {
-            const selectors = ['.menu-container', '.left-menu', '.right-menu', '.top-menu', '.bottom-menu', '.search-container', '.logo-alt', '.map-legend', '.leaflet-control', '.promo-container', '.bottom-info', '.header-container', '.app-promo', '.larger-map-btn', '.refresh-btn', '#search-input-container'];
-            selectors.forEach(s => {
-              document.querySelectorAll(s).forEach(el => el.style.display = 'none');
+            // Hide all standard control containers
+            const containers = document.querySelectorAll('.leaflet-control-container, .menu-container, .top-menu, .bottom-menu, .left-menu, .right-menu, .header-container, .promo-container');
+            containers.forEach(c => {
+               if (c) c.style.display = 'none';
             });
+
+            // Specific problematic buttons
+            const selectors = ['.larger-map-btn', '.refresh-btn', '.app-promo', '.logo-alt', '.search-container', '#search-input-container', '.view-selector'];
+            selectors.forEach(s => {
+              document.querySelectorAll(s).forEach(el => {
+                if (el) el.style.display = 'none';
+              });
+            });
+
+            // Ensure player stays visible
+            const player = document.querySelector('.player-container');
+            if (player) {
+              player.style.setProperty('display', 'block', 'important');
+              player.style.setProperty('z-index', '99999', 'important');
+            }
           };
+          
           cleanup();
-          setTimeout(cleanup, 2000); // Repeat once to catch late-renders
+          // Hammer it for the first 5 seconds to catch late loads
+          const interval = setInterval(cleanup, 500);
+          setTimeout(() => clearInterval(interval), 5000);
         `);
       }
     };
@@ -404,7 +423,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       height: '100%',
       width: '100%',
       background: 'var(--color-bg-app)',
-      padding: '20px',
+      padding: '20px 32px',
       gap: '16px',
       overflow: 'hidden'
     }}>
