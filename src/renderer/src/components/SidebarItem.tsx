@@ -55,7 +55,7 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
         }
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', overflow: 'hidden' }}>
         <span style={{
           display: 'flex',
           alignItems: 'center',
