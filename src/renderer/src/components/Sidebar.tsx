@@ -109,23 +109,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         }}
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Main Signal Wave / Relay Path */}
+          {/* A high-tech 'R' formed by two paths (relay) */}
           <path
-            d="M4 11L9 6M9 18L15 12M15 12L20 7M15 12L20 17"
-            stroke="url(#relay-gradient)"
+            d="M7 21V5a3 3 0 0 1 3-3h4a5 5 0 0 1 0 10H8"
+            stroke="url(#relay-r-grad-1)"
             strokeWidth="3.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          {/* Dynamic Nodes */}
-          <circle cx="4" cy="11" r="2.5" fill="#3B82F6" />
-          <circle cx="15" cy="12" r="2.5" fill="#60A5FA" />
-          <circle cx="20" cy="17" r="2.5" fill="#93C5FD" />
-
+          <path
+            d="M13 12L19 21"
+            stroke="url(#relay-r-grad-2)"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
           <defs>
-            <linearGradient id="relay-gradient" x1="4" y1="11" x2="20" y2="12" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#3B82F6" />
-              <stop offset="1" stopColor="#93C5FD" />
+            <linearGradient id="relay-r-grad-1" x1="7" y1="2" x2="7" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#60A5FA" />
+              <stop offset="1" stopColor="#3B82F6" />
+            </linearGradient>
+            <linearGradient id="relay-r-grad-2" x1="13" y1="12" x2="19" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#60A5FA" />
+              <stop offset="1" stopColor="#3B82F6" />
             </linearGradient>
           </defs>
         </svg>
