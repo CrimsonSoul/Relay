@@ -184,29 +184,27 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
             </Tooltip>
           </div>
 
-          {/* Bottom Row: Phone & Groups */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginTop: '2px'
-          }}>
-            {formattedPhone && (
+          {/* Phone & Groups with stable spacing */}
+          <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: '12px' }}>
+            {formattedPhone ? (
               <span style={{
                 fontSize: '18px',
-                color: '#60A5FA', // Brighter blue for 10ft visibility
+                color: '#60A5FA',
                 fontWeight: 700,
                 letterSpacing: '0.05em',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                minWidth: '160px',
+                flexShrink: 0
               }}>
                 {formattedPhone}
               </span>
+            ) : (
+              <div style={{ minWidth: '160px', height: '18px', flexShrink: 0 }} />
             )}
 
             {groups.length > 0 && (
               <Tooltip content={groups.join(', ')}>
-                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help' }}>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'nowrap', overflow: 'hidden' }}>
                   {groups.slice(0, 1).map(g => (
                     <GroupPill key={g} group={g} />
                   ))}
@@ -217,7 +215,8 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                       fontWeight: 700,
                       background: 'rgba(255,255,255,0.05)',
                       padding: '2px 6px',
-                      borderRadius: '6px'
+                      borderRadius: '6px',
+                      flexShrink: 0
                     }}>
                       +{groups.length - 1}
                     </span>

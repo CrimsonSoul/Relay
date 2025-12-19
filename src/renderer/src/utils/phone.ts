@@ -30,15 +30,19 @@ const formatSingleNumber = (phone: string): string => {
     }
 
     // Format US 11-digit starting with 1
-    if (clean.length === 11 && clean.startsWith('1')) {
-        const d = clean.slice(1);
+    if (clean.length === 11 && (clean.startsWith('1') || (hasPlus && phone.startsWith('+1')))) {
+        const d = clean.startsWith('1') ? clean.slice(1) : clean;
         return `+1 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
     }
 
-    // International (non-US) fallback or shorter/longer numbers
-    if (hasPlus || clean.length > 11) {
+    // International fallback or catch-all for custom lengths (8, 9, 11, 12, etc.)
+    if (hasPlus || clean.length > 10 || (clean.length > 7 && clean.length < 10)) {
         const p = hasPlus ? '+' : '';
-        // Group by 3 or 4 for readability
+        // For 8 or 9 digits, group in the middle
+        if (clean.length === 8) return `${p}${clean.slice(0, 4)} ${clean.slice(4)}`;
+        if (clean.length === 9) return `${p}${clean.slice(0, 3)} ${clean.slice(3, 6)} ${clean.slice(6)}`;
+
+        // Group everything else by the last 4 and the 3 before it
         if (clean.length > 7) {
             return `${p}${clean.slice(0, clean.length - 7)} ${clean.slice(clean.length - 7, clean.length - 4)} ${clean.slice(clean.length - 4)}`;
         }
