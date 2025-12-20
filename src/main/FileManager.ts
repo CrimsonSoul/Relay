@@ -629,8 +629,8 @@ export class FileManager {
         contents = await fs.readFile(path, 'utf-8');
       }
 
-      const data = await parseCsvAsync(contents);
-      const workingData = data.map(row => row.map(c => desanitizeField(c)));
+      const data = await parseCsvAsync(contents) as string[][];
+      const workingData = data.map((row: string[]) => row.map((c: string) => desanitizeField(c)));
 
       if (workingData.length === 0) {
         workingData.push([groupName]);
@@ -658,8 +658,8 @@ export class FileManager {
       if (!existsSync(path)) return false;
 
       const contents = await fs.readFile(path, 'utf-8');
-      const data = await parseCsvAsync(contents);
-      const workingData = data.map(row => row.map(c => desanitizeField(c)));
+      const data = await parseCsvAsync(contents) as string[][];
+      const workingData = data.map((row: string[]) => row.map((c: string) => desanitizeField(c)));
 
       if (workingData.length === 0) return false;
 
@@ -715,8 +715,8 @@ export class FileManager {
       if (!existsSync(path)) return false;
 
       const contents = await fs.readFile(path, 'utf-8');
-      const data = await parseCsvAsync(contents);
-      const workingData = data.map(row => row.map(c => desanitizeField(c)));
+      const data = await parseCsvAsync(contents) as string[][];
+      const workingData = data.map((row: string[]) => row.map((c: string) => desanitizeField(c)));
 
       if (workingData.length === 0) return false;
 
@@ -742,8 +742,8 @@ export class FileManager {
       if (!existsSync(path)) return false;
 
       const contents = await fs.readFile(path, 'utf-8');
-      const data = await parseCsvAsync(contents);
-      const workingData = data.map(row => row.map(c => desanitizeField(c)));
+      const data = await parseCsvAsync(contents) as string[][];
+      const workingData = data.map((row: string[]) => row.map((c: string) => desanitizeField(c)));
 
       if (workingData.length === 0) return false;
 
@@ -1283,11 +1283,11 @@ export class FileManager {
 
     try {
       const contents = await fs.readFile(path, 'utf-8');
-      const data = await parseCsvAsync(contents);
+      const data = await parseCsvAsync(contents) as string[][];
 
       if (data.length < 2) return [];
 
-      const header = data[0].map((h: any) => desanitizeField(String(h).trim().toLowerCase()));
+      const header = data[0].map((h: string) => desanitizeField(h.trim().toLowerCase()));
       const rows = data.slice(1);
 
       const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
@@ -1299,7 +1299,7 @@ export class FileManager {
         return [];
       }
 
-      return rows.map((row: any[]) => ({
+      return rows.map((row: string[]) => ({
         team: row[teamIdx],
         primary: row[primaryIdx],
         backup: row[backupIdx],
@@ -1319,14 +1319,14 @@ export class FileManager {
         contents = await fs.readFile(path, 'utf-8');
       }
 
-      const data = await parseCsvAsync(contents);
-      const workingData = data.map(row => row.map(cell => desanitizeField(cell)));
+      const data = await parseCsvAsync(contents) as string[][];
+      const workingData = data.map((row: string[]) => row.map((cell: string) => desanitizeField(cell)));
 
       if (workingData.length === 0) {
         workingData.push([...STD_ONCALL_HEADERS]);
       }
 
-      const header = workingData[0].map(h => String(h).trim().toLowerCase()); // Bolt: Added trim() just in case and logging
+      const header = workingData[0].map((h: string) => h.trim().toLowerCase()); // Bolt: Added trim() just in case and logging
       console.log('[FileManager] updateOnCall headers:', header);
 
       const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());

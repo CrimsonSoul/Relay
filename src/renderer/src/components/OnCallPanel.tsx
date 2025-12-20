@@ -3,7 +3,8 @@ import { OnCallEntry, Contact, GroupMap } from '@shared/ipc';
 import { TactileButton } from './TactileButton';
 import { Modal } from './Modal';
 import { Input } from './Input';
-import { ContextMenu } from './ContextMenu';
+import { Tooltip } from './Tooltip';
+import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import {
     DndContext,
     closestCenter,
@@ -32,7 +33,7 @@ interface SortableTeamCardProps {
     setEditingTeam: (team: string) => void;
     setRenamingTeam: (val: { old: string, new: string }) => void;
     onRemoveTeam: (team: string) => void;
-    setMenu: (menu: { x: number, y: number, items: any[] } | null) => void;
+    setMenu: (menu: { x: number, y: number, items: ContextMenuItem[] } | null) => void;
 }
 
 interface OnCallPanelProps {
@@ -232,7 +233,7 @@ export const OnCallPanel: React.FC<OnCallPanelProps> = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [renamingTeam, setRenamingTeam] = useState<{ old: string, new: string } | null>(null);
     const [localOnCall, setLocalOnCall] = useState<OnCallEntry[]>(onCall);
-    const [menu, setMenu] = useState<{ x: number, y: number, items: any[] } | null>(null);
+    const [menu, setMenu] = useState<{ x: number, y: number, items: ContextMenuItem[] } | null>(null);
 
     const sensors = useSensors(
         useSensor(PointerSensor, {

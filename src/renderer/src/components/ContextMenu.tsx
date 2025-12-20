@@ -1,17 +1,19 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+export type ContextMenuItem = {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+};
+
 type ContextMenuProps = {
   x: number;
   y: number;
   onClose: () => void;
-  items: {
-    label: string;
-    onClick: () => void;
-    danger?: boolean;
-    icon?: React.ReactNode;
-    disabled?: boolean;
-  }[];
+  items: ContextMenuItem[];
 };
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }) => {
