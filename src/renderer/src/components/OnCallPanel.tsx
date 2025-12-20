@@ -24,6 +24,17 @@ import { CSS } from '@dnd-kit/utilities';
 
 import { getColorForString } from '../utils/colors';
 
+const shortenOnCallText = (text: string) => {
+    if (!text) return text;
+    return text
+        .replace(/TELECOMMUNICATIONS/gi, 'TELECOM')
+        .replace(/WEEKEND/gi, 'WKND')
+        .replace(/ADMINISTRATOR/gi, 'ADMIN')
+        .replace(/ENGINEER/gi, 'ENGR')
+        .replace(/TECHNICIAN/gi, 'TECH')
+        .replace(/CONSULTANT/gi, 'CONS');
+};
+
 interface SortableTeamCardProps {
     team: string;
     entry: OnCallEntry | undefined;
@@ -86,8 +97,8 @@ const SortableTeamCard = ({
             <div
                 style={{
                     height: '100%',
-                    minHeight: '130px', // Ensure enough height for all content
-                    padding: '16px 16px 16px 20px', // More left padding for accent strip
+                    minHeight: '110px', // Slightly reduced minHeight
+                    padding: '10px 12px 10px 16px', // Reduced padding
                     background: 'rgba(255, 255, 255, 0.03)',
                     borderRadius: '12px',
                     border: '1px solid rgba(255, 255, 255, 0.05)',
@@ -95,7 +106,7 @@ const SortableTeamCard = ({
                     transition: 'all 0.2s',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '8px',
+                    gap: '4px', // Reduced gap between sections
                     position: 'relative'
                     // Note: overflow:hidden removed to prevent content clipping
                 }}
@@ -133,24 +144,32 @@ const SortableTeamCard = ({
                     opacity: 0.8
                 }} />
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <div
                         style={{
-                            fontSize: '12px',
+                            fontSize: '11px', // Slightly smaller team name
                             fontWeight: 800,
                             color: colorScheme.text, // Dynamic color for team name
                             letterSpacing: '0.08em',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
-                            maxWidth: '200px'
+                            maxWidth: '180px' // Adjusted to fit grabber better
                         }}
                         title={team.toUpperCase()}
                     >
-                        {team.toUpperCase()}
+                        {shortenOnCallText(team.toUpperCase())}
                     </div>
-                    {/* Drag Handle Icon (optional visual cue) */}
-                    <div style={{ color: 'var(--color-text-tertiary)', opacity: 0.5, flexShrink: 0 }}>
+                    {/* Drag Handle Icon - Absolute top-right to save space */}
+                    <div style={{
+                        position: 'absolute',
+                        top: '10px',
+                        right: '10px',
+                        color: 'var(--color-text-tertiary)',
+                        opacity: 0.3,
+                        fontSize: '10px',
+                        pointerEvents: 'none'
+                    }}>
                         ⋮⋮
                     </div>
                 </div>
@@ -162,13 +181,13 @@ const SortableTeamCard = ({
                         <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>PRI</span>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <span
-                                style={{ fontSize: '16px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 title={primaryContact?.name || entry?.primary || 'UNASSIGNED'}
                             >
-                                {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
+                                {shortenOnCallText(primaryContact?.name || entry?.primary || 'UNASSIGNED')}
                             </span>
                             {primaryContact?.phone && (
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {primaryContact.phone}
                                 </span>
                             )}
@@ -181,10 +200,10 @@ const SortableTeamCard = ({
                                 style={{ fontSize: '13px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 title={backupContact?.name || entry?.backup || 'UNASSIGNED'}
                             >
-                                {backupContact?.name || entry?.backup || 'UNASSIGNED'}
+                                {shortenOnCallText(backupContact?.name || entry?.backup || 'UNASSIGNED')}
                             </span>
                             {backupContact?.phone && (
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {backupContact.phone}
                                 </span>
                             )}
