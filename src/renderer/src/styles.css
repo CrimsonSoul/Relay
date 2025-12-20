@@ -441,16 +441,16 @@ body.platform-win32 .window-controls-container {
 /* Enhanced Tactile Button - Attio Style - Compact */
 .tactile-button {
   position: relative;
-  padding: 4px 12px;
+  padding: 6px 16px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
   color: var(--color-text-primary);
   transition: all var(--transition-fast);
-  height: 28px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;

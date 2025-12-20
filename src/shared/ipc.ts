@@ -20,10 +20,19 @@ export type Server = {
     raw: Record<string, any>;
 };
 
+export type OnCallEntry = {
+    team: string;
+    primary: string;
+    backup: string;
+};
+
+export type OnCallData = OnCallEntry[];
+
 export type AppData = {
     groups: GroupMap;
     contacts: Contact[];
     servers: Server[];
+    onCall: OnCallData;
     lastUpdated: number;
 };
 
@@ -103,6 +112,10 @@ export type BridgeAPI = {
     getDataPath: () => Promise<string>;
     removeGroup: (groupName: string) => Promise<boolean>;
     renameGroup: (oldName: string, newName: string) => Promise<boolean>;
+    updateOnCall: (entry: OnCallEntry) => Promise<boolean>;
+    removeOnCallTeam: (team: string) => Promise<boolean>;
+    renameOnCallTeam: (oldName: string, newName: string) => Promise<boolean>;
+    saveAllOnCall: (entries: OnCallEntry[]) => Promise<boolean>;
     windowMinimize: () => void;
     windowMaximize: () => void;
     windowClose: () => void;
@@ -131,6 +144,10 @@ export const IPC_CHANNELS = {
     ADD_CONTACT_TO_GROUP: 'data:addContactToGroup',
     REMOVE_CONTACT_FROM_GROUP: 'data:removeContactFromGroup',
     RENAME_GROUP: 'data:renameGroup',
+    UPDATE_ONCALL: 'data:updateOnCall',
+    REMOVE_ONCALL_TEAM: 'data:removeOnCallTeam',
+    RENAME_ONCALL_TEAM: 'data:renameOnCallTeam',
+    SAVE_ALL_ONCALL: 'data:saveAllOnCall',
     IMPORT_CONTACTS_WITH_MAPPING: 'data:importContactsWithMapping',
     DATA_UPDATED: 'data:updated',
     DATA_RELOAD: 'data:reload',
@@ -152,28 +169,28 @@ export const IPC_CHANNELS = {
 } as const;
 
 export type BridgeEvent = {
-  timestamp: number;
-  groups: string[];
+    timestamp: number;
+    groups: string[];
 };
 
 export type MetricsData = {
-  bridgesLast7d: number;
-  bridgesLast30d: number;
-  bridgesLast6m: number;
-  bridgesLast1y: number;
-  topGroups: { name: string; count: number }[];
+    bridgesLast7d: number;
+    bridgesLast30d: number;
+    bridgesLast6m: number;
+    bridgesLast1y: number;
+    topGroups: { name: string; count: number }[];
 };
 
 export type WeatherAlert = {
-  id: string;
-  event: string;
-  headline: string;
-  description: string;
-  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
-  urgency: 'Immediate' | 'Expected' | 'Future' | 'Past' | 'Unknown';
-  certainty: 'Observed' | 'Likely' | 'Possible' | 'Unlikely' | 'Unknown';
-  effective: string;
-  expires: string;
-  senderName: string;
-  areaDesc: string;
+    id: string;
+    event: string;
+    headline: string;
+    description: string;
+    severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
+    urgency: 'Immediate' | 'Expected' | 'Future' | 'Past' | 'Unknown';
+    certainty: 'Observed' | 'Likely' | 'Possible' | 'Unlikely' | 'Unknown';
+    effective: string;
+    expires: string;
+    senderName: string;
+    areaDesc: string;
 };

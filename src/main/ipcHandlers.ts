@@ -193,9 +193,18 @@ export function setupIpcHandlers(
     return handleMergeImport('contacts', 'Merge Contacts CSV');
   });
 
+  // Helper for URL validation
+  const validateUrl = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+    } catch {
+      return false;
+    }
+  };
+
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
-    // Basic protocol validation
-    if (!url.match(/^(https?|mailto):/i)) {
+    if (!validateUrl(url)) {
       console.error(`Blocked opening external URL with unsafe protocol: ${url}`);
       return;
     }
@@ -365,6 +374,26 @@ export function setupIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.RENAME_GROUP, async (_event, oldName, newName) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.renameGroup(oldName, newName) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL, async (_event, entry) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.updateOnCall(entry) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_event, team) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.removeOnCallTeam(team) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_event, oldName, newName) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_event, entries) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.saveAllOnCall(entries) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {

@@ -384,6 +384,7 @@ export function MainApp() {
               <AssemblerTab
                 groups={data.groups}
                 contacts={data.contacts}
+                onCall={data.onCall}
                 selectedGroups={selectedGroups}
                 manualAdds={manualAdds}
                 manualRemoves={manualRemoves}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TactileButton } from '../components/TactileButton';
 import { Input } from '../components/Input';
 import { TabFallback } from '../components/TabFallback';
@@ -40,14 +40,38 @@ const getRadarUrl = (lat: number, lon: number): string => {
 };
 
 const getWeatherIcon = (code: number, size = 24) => {
-  const strokeWidth = 2;
+  const strokeWidth = 2; // Standard stroke
+
+  // Common styles
+  const commonProps = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    strokeWidth: strokeWidth,
+    strokeLinecap: "round" as "round",
+    strokeLinejoin: "round" as "round",
+    style: { overflow: 'visible' as const }
+  };
+
+  // Helper: Cloud Path (Standardized)
+  // A nice fluffy cloud base
+  const cloudPath = "M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8";
 
   // Clear / Sun
   if (code === 0 || code === 1) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FDB813" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        <circle cx="12" cy="12" r="4" fill="rgba(253, 184, 19, 0.1)" />
-        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m12.73-12.73l-1.41 1.41" />
+      <svg {...commonProps} stroke="#FDB813">
+        <circle cx="12" cy="12" r="5" fill="rgba(253, 184, 19, 0.1)" />
+        {/* Explicit rays for perfect symmetry without path distortion */}
+        <line x1="12" y1="1" x2="12" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" />
+        <line x1="21" y1="12" x2="23" y2="12" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
       </svg>
     );
   }
@@ -55,26 +79,36 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Partly Cloudy
   if (code === 2) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        {/* Sun peaking behind */}
-        <path d="M12 2v2m-6.36 1.64 1.41 1.41M2 12h2" stroke="#FDB813" />
-        <circle cx="12" cy="12" r="3" stroke="#FDB813" />
-        {/* Cloud in front */}
+      <svg {...commonProps} stroke="currentColor">
+        {/* Sun behind */}
+        <g stroke="#FDB813">
+          <circle cx="16" cy="8" r="4" fill="rgba(253, 184, 19, 0.1)" />
+          <line x1="16" y1="1" x2="16" y2="2.5" />
+          <line x1="21.5" y1="2.5" x2="20.5" y2="3.5" />
+          <line x1="23" y1="8" x2="21.5" y2="8" />
+        </g>
+        {/* Cloud Front */}
         <path
-          d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8"
+          d={cloudPath}
           stroke="#A1A1AA"
-          fill="rgba(15, 15, 18, 0.8)"
-          transform="scale(0.8) translate(4, 4)"
+          fill="rgba(15, 15, 18, 0.9)" // Slightly opaque to hide sun line overlap
         />
       </svg>
     );
   }
 
-  // Overcast / Fog
+  // Overcast / Fog (Moved Fog in here for similar look)
   if (code === 3 || code === 45 || code === 48) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" fill="rgba(161, 161, 170, 0.05)" />
+      <svg {...commonProps} stroke="#A1A1AA">
+        <path d={cloudPath} fill="rgba(161, 161, 170, 0.1)" />
+        {/* Simple Fog / Overcast lines if needed, for now just a solid cloud is standard */}
+        {code === 45 || code === 48 ? (
+          <>
+            <line x1="6" y1="22" x2="18" y2="22" strokeOpacity="0.5" />
+            <line x1="8" y1="25" x2="16" y2="25" strokeOpacity="0.3" />
+          </>
+        ) : null}
       </svg>
     );
   }
@@ -82,9 +116,11 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Drizzle / Rain
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
-        <path d="M8 20l-1 2m4-2l-1 2m4-2l-1 2" stroke="#60A5FA" />
+      <svg {...commonProps} stroke="#60A5FA">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        <line x1="8" y1="21" x2="8" y2="24" />
+        <line x1="12" y1="21" x2="12" y2="24" />
+        <line x1="16" y1="21" x2="16" y2="24" />
       </svg>
     );
   }
@@ -92,9 +128,13 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Snow
   if (code >= 71 && code <= 77) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
-        <path d="M8 20h.01M12 20h.01M16 20h.01" stroke="#E5E7EB" strokeWidth="3" />
+      <svg {...commonProps} stroke="#E5E7EB">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        <g transform="translate(0, 2)">
+          <line x1="8" y1="21" x2="8" y2="21.01" strokeWidth="3" />
+          <line x1="12" y1="21" x2="12" y2="21.01" strokeWidth="3" />
+          <line x1="16" y1="21" x2="16" y2="21.01" strokeWidth="3" />
+        </g>
       </svg>
     );
   }
@@ -102,17 +142,18 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Thunderstorm
   if (code >= 95) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-        <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" stroke="#A1A1AA" />
-        <path d="m13 14-4 6h5l-4 6" stroke="#FDE047" fill="rgba(253, 224, 71, 0.1)" />
+      <svg {...commonProps} stroke="currentColor">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        {/* Adjusted bolt to fit in viewbox 24x24 */}
+        <path d="M13 14L10 18H14L11 23" stroke="#FDE047" fill="rgba(253, 224, 71, 0.1)" />
       </svg>
     );
   }
 
-  // Default / Cloudy
+  // Default / Cloudy Fallback
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ overflow: 'visible' }}>
-      <path d="M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8" />
+    <svg {...commonProps} stroke="#A1A1AA">
+      <path d={cloudPath} />
     </svg>
   );
 };
@@ -317,7 +358,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   if (!location && loading) return <TabFallback />;
 
   // Filter hourly forecast to only show future hours
-  const getFilteredHourlyForecast = () => {
+  const getFilteredHourlyForecast = useMemo(() => {
     if (!weather) return [];
     const now = new Date();
     const currentHour = now.getHours();
@@ -336,7 +377,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         return date >= new Date(now.getFullYear(), now.getMonth(), now.getDate(), currentHour) && i < 24;
       })
       .slice(0, 12);
-  };
+  }, [weather]);
 
   return (
     <div className="weather-scroll-container" style={{
@@ -583,7 +624,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
               overflowX: 'auto',
               paddingBottom: '4px'
             }}>
-              {getFilteredHourlyForecast().map((item, idx) => {
+              {getFilteredHourlyForecast.map((item, idx) => {
                 const date = new Date(item.time);
                 const now = new Date();
                 const isNow = date.getHours() === now.getHours() && date.getDate() === now.getDate();

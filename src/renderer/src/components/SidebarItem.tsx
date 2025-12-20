@@ -27,26 +27,26 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       style={{
-        padding: '4px 8px',
-        borderRadius: '6px',
+        padding: '6px 10px',
+        borderRadius: '8px',
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'space-between',
+        justifyContent: 'center',
         background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
-        transition: 'all 0.1s ease',
+        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
         userSelect: 'none',
         border: 'none',
         width: '100%',
         fontFamily: 'inherit',
-        textAlign: 'left',
+        textAlign: 'center',
         outline: 'none',
         overflow: 'hidden',
-        minHeight: '32px'
+        minHeight: '40px'
       }}
       onMouseEnter={(e) => {
         if (!active) {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
         }
       }}
       onMouseLeave={(e) => {
@@ -55,17 +55,17 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
         }
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
         <span style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '6px',
-          fontSize: '12px',
+          gap: '8px',
+          fontSize: '13px',
           color: color.text,
           background: color.bg,
           border: `1px solid ${color.border}`,
-          padding: '2px 8px',
-          borderRadius: '12px',
+          padding: '4px 10px',
+          borderRadius: '16px',
           fontWeight: 600,
           maxWidth: '100%',
           overflow: 'hidden'
