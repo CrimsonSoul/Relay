@@ -1,5 +1,5 @@
 import React, { useMemo, useState, memo, useRef, useEffect, useCallback } from 'react';
-import { GroupMap, Contact } from '@shared/ipc';
+import { GroupMap, Contact, OnCallEntry } from '@shared/ipc';
 import { useDebounce } from '../hooks/useDebounce';
 import { useGroupMaps } from '../hooks/useGroupMaps';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
@@ -13,10 +13,12 @@ import { Input } from '../components/Input';
 import { TactileButton } from '../components/TactileButton';
 import { SidebarItem } from '../components/SidebarItem';
 import { ContextMenu } from '../components/ContextMenu';
+import { OnCallPanel } from '../components/OnCallPanel';
 
 type Props = {
     groups: GroupMap;
     contacts: Contact[];
+    onCall: OnCallEntry[];
     selectedGroups: string[];
     manualAdds: string[];
     manualRemoves: string[];
@@ -112,7 +114,7 @@ const SortableHeader = ({
     );
 };
 
-export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups, manualAdds, manualRemoves, onToggleGroup, onAddManual, onRemoveManual, onUndoRemove, onResetManual }) => {
+export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, selectedGroups, manualAdds, manualRemoves, onToggleGroup, onAddManual, onRemoveManual, onUndoRemove, onResetManual }) => {
     const { showToast } = useToast();
     const [adhocInput, setAdhocInput] = useState('');
     const debouncedAdhocInput = useDebounce(adhocInput, 300);
@@ -131,6 +133,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
     const [groupToRename, setGroupToRename] = useState<string | null>(null);
     const [renamedGroupName, setRenamedGroupName] = useState('');
     const [renameConflict, setRenameConflict] = useState<string | null>(null);
+    const [sidebarContextMenu, setSidebarContextMenu] = useState<{ x: number, y: number } | null>(null);
 
     const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
 
@@ -348,226 +351,252 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
             gap: '0px',
             height: '100%',
             alignItems: 'start',
-            transition: 'grid-template-columns 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-            overflow: 'hidden'
+            transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+            overflow: 'visible' // Allow shadow to spill out if needed
         }}>
 
             {/* Sidebar Controls - Compact */}
-            {/* Sidebar Controls - Compact */}
-            <div style={{
-                display: 'flex',
-                padding: '0',
-                borderRight: 'var(--border-subtle)',
-                height: '100%',
-                position: 'relative',
-                background: 'rgba(255, 255, 255, 0.01)',
-                transition: 'all var(--transition-base)'
-            }}>
-                {!isGroupSidebarCollapsed ? (
-                    <>
-                        <div style={{ display: 'flex', height: '100%', width: '100%' }}>
-                            <div style={{
-                                flex: 1,
-                                overflowY: 'auto',
-                                overflowX: 'hidden',
-                                padding: '16px 20px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: '16px',
-                                alignItems: 'flex-start' // Ensure things stay left-aligned
-                            }}>
-                                {/* Quick Add Section */}
-                                <div ref={suggestionWrapperRef} style={{ position: 'relative', marginBottom: '16px' }}>
+            <div
+                onContextMenu={(e) => {
+                    e.preventDefault();
+                    if (!groupContextMenu) {
+                        setSidebarContextMenu({ x: e.clientX, y: e.clientY });
+                    }
+                }}
+                style={{
+                    display: 'flex',
+                    padding: '0',
+                    height: '100%',
+                    position: 'relative',
+                    background: 'rgba(0, 0, 0, 0.4)',
+                    backdropFilter: 'blur(20px)',
+                    zIndex: 20 // Sidebar above main content to show shadow
+                }}
+            >
+                <div style={{
+                    display: 'flex',
+                    height: '100%',
+                    width: '100%',
+                    overflow: 'visible', // Allow shadow to spill right
+                    justifyContent: 'flex-end' // Pin toggle to right, slide content left
+                }}>
+                    {/* Flexible Content Area */}
+                    <div style={{
+                        width: '216px', // Lock width to prevent layout smear/reflow during collapse
+                        display: 'flex',
+                        flexDirection: 'column',
+                        overflow: 'hidden',
+                        opacity: isGroupSidebarCollapsed ? 0 : 1,
+                        visibility: isGroupSidebarCollapsed ? 'hidden' : 'visible',
+                        transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.4s',
+                        flexShrink: 0
+                    }}>
+                        <div style={{
+                            flex: 1,
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            padding: '16px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center'
+                        }}>
+                            {/* Quick Add Section */}
+                            <div ref={suggestionWrapperRef} style={{ position: 'relative', marginBottom: '0', width: '100%' }}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    height: '24px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    margin: '0 -20px 16px -20px',
+                                    padding: '0 20px',
+                                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                                }}>
                                     <div style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        marginBottom: '8px'
-                                    }}>
-                                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.05em' }}>QUICK ADD</div>
-                                    </div>
-                                    <Input
-                                        placeholder="Add by email..."
-                                        value={adhocInput}
-                                        style={{
-                                            fontSize: '14px',
-                                            padding: '8px 12px',
-                                            height: '36px'
-                                        }}
-                                        onChange={(e) => {
-                                            setAdhocInput(e.target.value);
-                                            setShowSuggestions(true);
-                                        }}
-                                        onFocus={() => setShowSuggestions(true)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                handleQuickAdd();
-                                                e.currentTarget.blur();
-                                            }
-                                        }}
-                                    />
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: 'var(--color-text-primary)',
+                                        letterSpacing: '0.05em'
+                                    }}>QUICK ADD</div>
+                                </div>
+                                <Input
+                                    placeholder="Add by email..."
+                                    value={adhocInput}
+                                    style={{
+                                        fontSize: '14px',
+                                        padding: '8px 12px',
+                                        height: '42px',
+                                        borderRadius: '8px'
+                                    }}
+                                    onChange={(e) => {
+                                        setAdhocInput(e.target.value);
+                                        setShowSuggestions(true);
+                                    }}
+                                    onFocus={() => setShowSuggestions(true)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleQuickAdd();
+                                            e.currentTarget.blur();
+                                        }
+                                    }}
+                                />
 
-                                    {/* Suggestions Dropdown */}
-                                    {showSuggestions && suggestions.length > 0 && (
-                                        <div style={{
-                                            position: 'absolute',
-                                            top: '100%',
-                                            left: 0,
-                                            right: 0,
-                                            marginTop: '4px',
-                                            background: 'var(--color-bg-surface)',
-                                            border: 'var(--border-subtle)',
-                                            borderRadius: '6px',
-                                            zIndex: 100,
-                                            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                                            overflow: 'hidden'
-                                        }}>
-                                            {suggestions.map(c => (
-                                                <div
-                                                    key={c.email}
-                                                    onClick={() => handleQuickAdd(c.email)}
-                                                    style={{
-                                                        padding: '10px 12px',
-                                                        cursor: 'pointer',
-                                                        fontSize: '14px',
-                                                        color: 'var(--color-text-primary)',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: '8px'
-                                                    }}
-                                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                                                >
-                                                    <div style={{
-                                                        width: '24px', height: '24px', borderRadius: '4px',
-                                                        background: 'rgba(59, 130, 246, 0.2)', color: '#3B82F6',
-                                                        fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                                    }}>
-                                                        {c.name ? c.name[0].toUpperCase() : c.email[0].toUpperCase()}
-                                                    </div>
-                                                    <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {c.name || c.email}
-                                                        {c.name && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '6px', fontSize: '12px' }}>{c.email}</span>}
-                                                    </div>
+                                {/* Suggestions Dropdown */}
+                                {showSuggestions && suggestions.length > 0 && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        left: 0,
+                                        right: 0,
+                                        marginTop: '4px',
+                                        background: 'var(--color-bg-surface)',
+                                        border: 'var(--border-subtle)',
+                                        borderRadius: '6px',
+                                        zIndex: 100,
+                                        boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                                        overflow: 'hidden'
+                                    }}>
+                                        {suggestions.map(c => (
+                                            <div
+                                                key={c.email}
+                                                onClick={() => handleQuickAdd(c.email)}
+                                                style={{
+                                                    padding: '10px 12px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px',
+                                                    color: 'var(--color-text-primary)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '8px'
+                                                }}
+                                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                            >
+                                                <div style={{
+                                                    width: '24px', height: '24px', borderRadius: '4px',
+                                                    background: 'rgba(59, 130, 246, 0.2)', color: '#3B82F6',
+                                                    fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                                }}>
+                                                    {c.name ? c.name[0].toUpperCase() : c.email[0].toUpperCase()}
                                                 </div>
-                                            ))}
+                                                <div style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {c.name || c.email}
+                                                    {c.name && <span style={{ color: 'var(--color-text-tertiary)', marginLeft: '6px', fontSize: '12px' }}>{c.email}</span>}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Groups Selection */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, marginTop: '16px', width: '100%' }}>
+                                <div style={{
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    height: '24px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    margin: '0 -20px 8px -20px',
+                                    padding: '0 20px',
+                                    position: 'relative',
+                                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                                }}>
+                                    <div style={{
+                                        fontSize: '11px',
+                                        fontWeight: 600,
+                                        color: 'var(--color-text-primary)',
+                                        letterSpacing: '0.05em'
+                                    }}>GROUPS</div>
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    {sortedGroupKeys.map(g => {
+                                        const isSelected = selectedGroups.includes(g);
+                                        return (
+                                            <SidebarItem
+                                                key={g}
+                                                label={g}
+                                                count={groups[g].length}
+                                                active={isSelected}
+                                                onClick={handleGroupToggle}
+                                                onContextMenu={handleGroupContextMenu}
+                                            />
+                                        );
+                                    })}
+                                    {sortedGroupKeys.length === 0 && (
+                                        <div style={{ color: 'var(--color-text-tertiary)', fontSize: '13px', fontStyle: 'italic', paddingLeft: '4px' }}>
+                                            No groups.
                                         </div>
                                     )}
                                 </div>
-
-                                {/* Groups Selection */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, marginTop: '20px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', padding: '0 4px' }}>
-                                        <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-tertiary)', letterSpacing: '0.05em' }}>GROUPS</div>
-                                        <div
-                                            onClick={() => setIsGroupModalOpen(true)}
-                                            style={{
-                                                color: 'var(--color-text-tertiary)',
-                                                cursor: 'pointer',
-                                                padding: '4px',
-                                                borderRadius: '4px',
-                                                background: 'transparent',
-                                                transition: 'all var(--transition-fast)',
-                                                width: '20px',
-                                                height: '20px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}
-                                            onMouseEnter={e => {
-                                                e.currentTarget.style.color = 'var(--color-text-primary)';
-                                                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-                                            }}
-                                            onMouseLeave={e => {
-                                                e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                                                e.currentTarget.style.background = 'transparent';
-                                            }}
-                                            title="Create Group"
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                <line x1="12" y1="5" x2="12" y2="19" />
-                                                <line x1="5" y1="12" x2="19" y2="12" />
-                                            </svg>
-                                        </div>
-                                    </div>
-
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        {sortedGroupKeys.map(g => {
-                                            const isSelected = selectedGroups.includes(g);
-                                            return (
-                                                <SidebarItem
-                                                    key={g}
-                                                    label={g}
-                                                    count={groups[g].length}
-                                                    active={isSelected}
-                                                    onClick={handleGroupToggle}
-                                                    onContextMenu={handleGroupContextMenu}
-                                                />
-                                            );
-                                        })}
-                                        {sortedGroupKeys.length === 0 && (
-                                            <div style={{ color: 'var(--color-text-tertiary)', fontSize: '13px', fontStyle: 'italic', paddingLeft: '4px' }}>
-                                                No groups.
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Full Height Vertical Toggle Strip */}
-                            <div
-                                onClick={() => setIsGroupSidebarCollapsed(true)}
-                                style={{
-                                    width: '24px',
-                                    height: '100%',
-                                    cursor: 'pointer',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    borderLeft: '1px solid rgba(255,255,255,0.03)',
-                                    transition: 'all var(--transition-fast)',
-                                    color: 'var(--color-text-tertiary)',
-                                    flexShrink: 0
-                                }}
-                                onMouseEnter={e => {
-                                    e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
-                                    e.currentTarget.style.color = 'var(--color-text-primary)';
-                                }}
-                                onMouseLeave={e => {
-                                    e.currentTarget.style.background = 'transparent';
-                                    e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                                }}
-                                title="Collapse Sidebar"
-                            >
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="15 18 9 12 15 6" />
-                                </svg>
                             </div>
                         </div>
-                    </>
-                ) : (
-                    // Collapsed State
+                    </div>
+
+                    {/* Stable Full Height Vertical Toggle Strip - Fixed 24px */}
                     <div
-                        onClick={() => setIsGroupSidebarCollapsed(false)}
+                        onClick={() => setIsGroupSidebarCollapsed(!isGroupSidebarCollapsed)}
+                        onMouseEnter={e => {
+                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                            const icon = e.currentTarget.querySelector('div');
+                            if (icon) icon.style.color = 'var(--color-text-primary)';
+                        }}
+                        onMouseLeave={e => {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                            const icon = e.currentTarget.querySelector('div');
+                            if (icon) icon.style.color = 'var(--color-text-tertiary)';
+                        }}
                         style={{
-                            flex: 1,
+                            width: '24px',
+                            height: '100%',
                             display: 'flex',
-                            flexDirection: 'column',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            cursor: 'pointer',
-                            width: '24px',
-                            transition: 'all var(--transition-fast)'
+                            background: 'rgba(255, 255, 255, 0.03)',
+                            borderLeft: 'var(--border-subtle)', // Symmetrical framing
+                            borderRight: 'var(--border-subtle)',
+                            flexShrink: 0,
+                            boxShadow: isGroupSidebarCollapsed ? 'none' : '4px 0 20px rgba(0,0,0,0.3)',
+                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                            zIndex: 10, // Ensure shadow stays above content
+                            cursor: 'pointer'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        title="Expand Sidebar"
+                        title={isGroupSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                     >
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: 'rotate(180deg)' }}>
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
+                        <div
+                            style={{
+                                width: '20px',
+                                height: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                borderRadius: '4px',
+                                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                color: 'var(--color-text-tertiary)'
+                            }}
+                        >
+                            <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                style={{
+                                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                    transform: isGroupSidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'
+                                }}
+                            >
+                                <polyline points="15 18 9 12 15 6" />
+                            </svg>
+                        </div>
                     </div>
-                )}
+                </div>
             </div>
 
             {/* Main Log Area - Table Layout */}
@@ -577,7 +606,8 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                 height: '100%',
                 overflow: 'hidden',
                 background: 'var(--color-bg-app)', // Seamless with sidebar
-                paddingLeft: '8px' // Reduced padding for better card fit
+                position: 'relative',
+                zIndex: 5 // Below sidebar
             }}>
 
                 {/* Toolbar - Compact */}
@@ -612,7 +642,8 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                 <div style={{
                     flex: 1,
                     overflow: 'hidden', // AutoSizer handles scrolling
-                    padding: '0 12px' // Give some room for card rounding
+                    padding: '0 12px', // Give some room for card rounding
+                    paddingLeft: '20px' // Restore list indentation
                 }}>
                     {log.length === 0 ? (
                         <div style={{
@@ -643,6 +674,30 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                         </AutoSizer>
                     )}
                 </div>
+
+                {/* On-Call Panel */}
+                <OnCallPanel
+                    onCall={onCall}
+                    contacts={contacts}
+                    groups={groups}
+                    onUpdate={async (entry) => {
+
+                        const success = await window.api?.updateOnCall(entry);
+                        if (!success) showToast('Failed to update on-call', 'error');
+                    }}
+                    onRemoveTeam={async (team) => {
+                        const success = await window.api?.removeOnCallTeam(team);
+                        if (!success) showToast('Failed to remove team', 'error');
+                    }}
+                    onRenameTeam={async (oldName, newName) => {
+                        const success = await window.api?.renameOnCallTeam(oldName, newName);
+                        if (!success) showToast('Failed to rename team', 'error');
+                    }}
+                    onAddTeam={async (team) => {
+                        const success = await window.api?.updateOnCall({ team, primary: '', backup: '' });
+                        if (!success) showToast('Failed to add team', 'error');
+                    }}
+                />
             </div>
 
             <AddContactModal
@@ -856,6 +911,21 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, selectedGroups
                             onClick: () => setGroupToDelete(groupContextMenu.group),
                             danger: true,
                             icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        }
+                    ]}
+                />
+            )}
+            {/* Sidebar Context Menu */}
+            {sidebarContextMenu && (
+                <ContextMenu
+                    x={sidebarContextMenu.x}
+                    y={sidebarContextMenu.y}
+                    onClose={() => setSidebarContextMenu(null)}
+                    items={[
+                        {
+                            label: 'Add New Group',
+                            onClick: () => setIsGroupModalOpen(true),
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         }
                     ]}
                 />

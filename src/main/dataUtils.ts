@@ -50,14 +50,14 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
       // If we are in dev, bundledDataPath might be relative or different.
       // But typically we pass a valid path.
       if (fs.existsSync(bundledDataPath)) {
-          const sourcePath = join(bundledDataPath, file);
-          if (fs.existsSync(sourcePath)) {
-            try {
-              fs.copyFileSync(sourcePath, targetPath);
-            } catch (e) {
-              console.error(`Failed to copy default ${file}:`, e);
-            }
+        const sourcePath = join(bundledDataPath, file);
+        if (fs.existsSync(sourcePath)) {
+          try {
+            fs.copyFileSync(sourcePath, targetPath);
+          } catch (e) {
+            console.error(`Failed to copy default ${file}:`, e);
           }
+        }
       }
     }
   }
@@ -65,7 +65,7 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
 
 // Async version for non-blocking file copying with parallel operations
 export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string, bundledDataPath: string): Promise<boolean> {
-  const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
+  const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
 
   // Ensure target exists
   try {
@@ -117,7 +117,7 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
 
 // Sync version for compatibility (used during path changes)
 export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDataPath: string) {
-  const essentialFiles = ['contacts.csv', 'groups.csv', 'history.json'];
+  const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
   let filesCopied = false;
 
   // Ensure target exists
@@ -126,33 +126,33 @@ export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDat
   }
 
   for (const file of essentialFiles) {
-      const source = join(sourceRoot, file);
-      const target = join(targetRoot, file);
-      // Only copy if target DOES NOT exist
-      if (!fs.existsSync(target)) {
-          // Try sourceRoot
-          if (fs.existsSync(source)) {
-              try {
-                  fs.copyFileSync(source, target);
-                  filesCopied = true;
-                  console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
-              } catch (e) {
-                  console.error(`Failed to copy ${file}:`, e);
-              }
-          } else {
-             // Fallback to bundle if sourceRoot fails
-             const bundled = join(bundledDataPath, file);
-             if (fs.existsSync(bundled)) {
-                 try {
-                     fs.copyFileSync(bundled, target);
-                     filesCopied = true;
-                     console.log(`Copied ${file} from bundle to ${targetRoot}`);
-                 } catch (e) {
-                     console.error(`Failed to copy bundled ${file}:`, e);
-                 }
-             }
+    const source = join(sourceRoot, file);
+    const target = join(targetRoot, file);
+    // Only copy if target DOES NOT exist
+    if (!fs.existsSync(target)) {
+      // Try sourceRoot
+      if (fs.existsSync(source)) {
+        try {
+          fs.copyFileSync(source, target);
+          filesCopied = true;
+          console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
+        } catch (e) {
+          console.error(`Failed to copy ${file}:`, e);
+        }
+      } else {
+        // Fallback to bundle if sourceRoot fails
+        const bundled = join(bundledDataPath, file);
+        if (fs.existsSync(bundled)) {
+          try {
+            fs.copyFileSync(bundled, target);
+            filesCopied = true;
+            console.log(`Copied ${file} from bundle to ${targetRoot}`);
+          } catch (e) {
+            console.error(`Failed to copy bundled ${file}:`, e);
           }
+        }
       }
+    }
   }
   return filesCopied;
 }

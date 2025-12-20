@@ -133,6 +133,23 @@ export const DUMMY_DATA: AppData = {
         ]
     },
     contacts: DUMMY_CONTACTS,
+    onCall: [
+        {
+            team: "Engineering",
+            primary: "emily.davis@example.com",
+            backup: "it.support@example.com"
+        },
+        {
+            team: "Executive Leadership",
+            primary: "sarah.connors@example.com",
+            backup: "john.smith@example.com"
+        },
+        {
+            team: "Security",
+            primary: "b.calhoun@security.mesa",
+            backup: "john.smith@example.com"
+        }
+    ],
     servers: [],
     lastUpdated: Date.now()
 };
