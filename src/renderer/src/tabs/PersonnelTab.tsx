@@ -359,29 +359,7 @@ export const PersonnelTab: React.FC<{
                     <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>{weekRange}</p>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
-                    <TactileButton
-                        variant="ghost"
-                        onClick={async () => {
-                            if (confirm('Replace all data with dummy data? This cannot be undone.')) {
-                                try {
-                                    const success = await window.api?.generateDummyData();
-                                    if (success) {
-                                        showToast('Dummy data generated!', 'success');
-                                        setTimeout(() => window.location.reload(), 1000); // Force reload to be sure
-                                    } else {
-                                        showToast('Failed to generate data', 'error');
-                                    }
-                                } catch (e) {
-                                    console.error('[Renderer] Error calling generateDummyData:', e);
-                                    showToast('Error generating data', 'error');
-                                }
-                            }
-                        }}
-                        style={{ padding: '0 12px', opacity: 0.5 }}
-                        title="Dev: Fill Dummy Data"
-                    >
-                        <span style={{ fontSize: '16px' }}>🧪</span>
-                    </TactileButton>
+
                     <TactileButton variant="primary" style={{ padding: '12px 24px', fontSize: '14px' }} onClick={() => setIsAddingTeam(true)}>
                         + ADD TEAM
                     </TactileButton>
