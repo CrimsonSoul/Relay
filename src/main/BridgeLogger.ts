@@ -24,7 +24,10 @@ export class BridgeLogger {
   private historyPath: string;
   private events: BridgeEvent[] = [];
   private isLoaded = false;
+  private loadPromise: Promise<void>;
   private savePromise: Promise<void> | null = null;
+  // Events added before loading completes (to avoid losing them)
+  private pendingEvents: BridgeEvent[] = [];
 
   // Metrics cache
   private metricsCache: MetricsData | null = null;
@@ -32,24 +35,33 @@ export class BridgeLogger {
 
   constructor(dataRoot: string) {
     this.historyPath = join(dataRoot, 'history.json');
-    this.loadAsync();
+    this.loadPromise = this.loadAsync();
   }
 
   private async loadAsync() {
     try {
       if (existsSync(this.historyPath)) {
         const raw = await fs.readFile(this.historyPath, 'utf-8');
-        this.events = JSON.parse(raw);
+        const loadedEvents: BridgeEvent[] = JSON.parse(raw);
+        // Merge any events added during loading (they would have timestamps after loaded events)
+        this.events = [...loadedEvents, ...this.pendingEvents];
+        this.pendingEvents = [];
         // Trim to max size on load if needed
         if (this.events.length > MAX_HISTORY_EVENTS) {
           this.events = this.events.slice(-MAX_HISTORY_EVENTS);
           this.saveAsync(); // Save trimmed version
         }
+      } else {
+        // No history file - just use pending events
+        this.events = this.pendingEvents;
+        this.pendingEvents = [];
       }
       this.isLoaded = true;
     } catch (e) {
       console.error('[BridgeLogger] Failed to load history:', e);
-      this.events = [];
+      // On error, keep any pending events
+      this.events = this.pendingEvents;
+      this.pendingEvents = [];
       this.isLoaded = true;
     }
   }
@@ -74,10 +86,18 @@ export class BridgeLogger {
   }
 
   public logBridge(groups: string[]) {
-    this.events.push({
+    const event: BridgeEvent = {
       timestamp: Date.now(),
       groups
-    });
+    };
+
+    // If still loading, add to pending queue to avoid race condition
+    if (!this.isLoaded) {
+      this.pendingEvents.push(event);
+      return;
+    }
+
+    this.events.push(event);
 
     // Enforce max history size (keep most recent events)
     if (this.events.length > MAX_HISTORY_EVENTS) {
@@ -92,8 +112,11 @@ export class BridgeLogger {
   }
 
   public async reset(): Promise<boolean> {
+    // Wait for loading to complete first
+    await this.loadPromise;
     try {
       this.events = [];
+      this.pendingEvents = [];
       this.metricsCache = null;
       await this.saveAsync();
       return true;
@@ -103,7 +126,9 @@ export class BridgeLogger {
     }
   }
 
-  public getMetrics(): MetricsData {
+  public async getMetrics(): Promise<MetricsData> {
+    // Wait for loading to complete first
+    await this.loadPromise;
     const now = Date.now();
 
     // Return cached metrics if still valid
