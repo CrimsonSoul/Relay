@@ -295,24 +295,30 @@ export function MainApp() {
 
   useEffect(() => {
     if (!window.api) return;
-    window.api.subscribeToData((newData: AppData) => {
+    const unsubscribeData = window.api.subscribeToData((newData: AppData) => {
       setData(newData);
       settleReloadIndicator();
     });
-    window.api.onReloadStart(() => {
+    const unsubscribeReloadStart = window.api.onReloadStart(() => {
       reloadStartRef.current = performance.now();
       setIsReloading(true);
     });
-    window.api.onReloadComplete(() => {
+    const unsubscribeReloadComplete = window.api.onReloadComplete(() => {
       settleReloadIndicator();
     });
     // Subscribe to data errors and surface them to the user
-    window.api.onDataError((error: DataError) => {
+    const unsubscribeDataError = window.api.onDataError((error: DataError) => {
       console.error('[App] Data error received:', error);
       const errorMessage = formatDataError(error);
       showToast(errorMessage, 'error');
     });
-    return () => { if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current); };
+    return () => {
+      unsubscribeData();
+      unsubscribeReloadStart();
+      unsubscribeReloadComplete();
+      unsubscribeDataError();
+      if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
+    };
   }, [settleReloadIndicator, showToast]);
 
   // Bolt: Memoize handlers to prevent re-renders of heavy AssemblerTab/DirectoryTab lists
