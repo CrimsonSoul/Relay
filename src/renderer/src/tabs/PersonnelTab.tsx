@@ -20,7 +20,7 @@ import {
     arrayMove,
     SortableContext,
     sortableKeyboardCoordinates,
-    verticalListSortingStrategy,
+    rectSortingStrategy,
     useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -73,8 +73,8 @@ const SortableTeamCard = ({
     const [isEditing, setIsEditing] = useState(false);
 
     const style = {
-        transform: CSS.Transform.toString(transform),
-        transition,
+        transform: CSS.Translate.toString(transform),
+        transition: isDragging ? 'none' : transition,
         opacity: isDragging ? 0.5 : 1,
         zIndex: isDragging ? 999 : 'auto',
     };
@@ -285,10 +285,27 @@ export const PersonnelTab: React.FC<{
     }, [localOnCall]);
 
     const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
-        // Optimistic update
+        // Optimistic update - preserves existing team order
         setLocalOnCall(prev => {
-            const others = prev.filter(r => r.team !== team);
-            return [...others, ...rows];
+            // Find all teams in their current order
+            const teamOrder = Array.from(new Set(prev.map(r => r.team)));
+
+            // If it's a new team, it will be handled by handleAddTeam
+            // But just in case, we'll ensure we handle it here too
+            if (!teamOrder.includes(team)) {
+                return [...prev, ...rows];
+            }
+
+            // Replace rows for the specific team while maintaining the overall team sequence
+            const newFlatList: OnCallRow[] = [];
+            teamOrder.forEach(t => {
+                if (t === team) {
+                    newFlatList.push(...rows);
+                } else {
+                    newFlatList.push(...prev.filter(r => r.team === t));
+                }
+            });
+            return newFlatList;
         });
 
         const success = await window.api?.updateOnCallTeam(team, rows);
@@ -385,7 +402,7 @@ export const PersonnelTab: React.FC<{
                 paddingBottom: '40px'
             }}>
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleTeamDragEnd}>
-                    <SortableContext items={teams} strategy={verticalListSortingStrategy}>
+                    <SortableContext items={teams} strategy={rectSortingStrategy}>
                         {teams.map(team => (
                             <SortableTeamCard
                                 key={team}
