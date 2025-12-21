@@ -56,7 +56,7 @@ const SidebarButton = ({
         <div
           style={{
             position: 'absolute',
-            left: window.api?.platform === 'darwin' ? '-12px' : '0',
+            left: '-12px',
             top: '50%',
             transform: 'translateY(-50%)',
             height: '24px',
@@ -80,9 +80,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      paddingTop: window.api?.platform === 'darwin' ? '38px' : '16px',
+      paddingTop: window.api?.platform === 'darwin' ? '38px' : '4px',
       paddingBottom: '16px',
-      gap: '8px',
+      gap: '12px',
       zIndex: 9002,
       WebkitAppRegion: 'drag' as any
     }}>
@@ -219,7 +219,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '8px',
+        gap: '12px',
         WebkitAppRegion: 'no-drag' as any
       }}>
         <SidebarButton
