@@ -56,7 +56,7 @@ const SidebarButton = ({
         <div
           style={{
             position: 'absolute',
-            left: '-12px',
+            left: window.api?.platform === 'darwin' ? '-12px' : '0',
             top: '50%',
             transform: 'translateY(-50%)',
             height: '24px',
