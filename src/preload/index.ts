@@ -12,30 +12,30 @@ const api: BridgeAPI = {
 
   subscribeToData: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.DATA_UPDATED);
-    ipcRenderer.on(IPC_CHANNELS.DATA_UPDATED, (_event, data: AppData) => {
-      callback(data);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, data: AppData) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.DATA_UPDATED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_UPDATED, handler);
   },
 
   onReloadStart: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.DATA_RELOAD_STARTED);
-    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_STARTED, () => {
-      callback();
-    });
+    const handler = () => callback();
+    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_STARTED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_RELOAD_STARTED, handler);
   },
 
   onReloadComplete: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.DATA_RELOAD_COMPLETED);
-    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_COMPLETED, (_event, success: boolean) => {
-      callback(success);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, success: boolean) => callback(success);
+    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_COMPLETED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_RELOAD_COMPLETED, handler);
   },
 
   onDataError: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.DATA_ERROR);
-    ipcRenderer.on(IPC_CHANNELS.DATA_ERROR, (_event, error: DataError) => {
-      callback(error);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, error: DataError) => callback(error);
+    ipcRenderer.on(IPC_CHANNELS.DATA_ERROR, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_ERROR, handler);
   },
 
   onImportProgress: (callback) => {
