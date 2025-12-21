@@ -1,17 +1,19 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+export type ContextMenuItem = {
+  label: string;
+  onClick: () => void;
+  danger?: boolean;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+};
+
 type ContextMenuProps = {
   x: number;
   y: number;
   onClose: () => void;
-  items: {
-    label: string;
-    onClick: () => void;
-    danger?: boolean;
-    icon?: React.ReactNode;
-    disabled?: boolean;
-  }[];
+  items: ContextMenuItem[];
 };
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }) => {
@@ -52,10 +54,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
           zIndex: 99999,
           padding: 'var(--space-1)',
           minWidth: '180px',
+          overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          gap: '1px',
-          overflow: 'hidden'
+          gap: '1px'
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -82,26 +84,24 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
               display: 'flex',
               alignItems: 'center',
               gap: 'var(--space-2)',
-              transition: 'all var(--transition-fast)',
+              transition: 'all var(--transition-micro)',
               fontWeight: 500,
               letterSpacing: '-0.01em',
               position: 'relative',
-              overflow: 'hidden',
-              opacity: item.disabled ? 0.5 : 1
+              opacity: item.disabled ? 0.5 : 1,
             }}
             onMouseEnter={e => {
               if (!item.disabled) {
-                e.currentTarget.style.background = item.danger ? 'var(--color-danger-subtle)' : 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.transform = 'translateX(2px)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
                 if (item.danger) {
                   e.currentTarget.style.color = 'var(--color-danger-hover)';
+                  e.currentTarget.style.background = 'rgba(232, 17, 35, 0.1)';
                 }
               }
             }}
             onMouseLeave={e => {
               if (!item.disabled) {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.transform = 'translateX(0)';
                 if (item.danger) {
                   e.currentTarget.style.color = 'var(--color-danger)';
                 }

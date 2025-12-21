@@ -11,16 +11,12 @@ export const TabFallback = () => (
     color: 'var(--color-text-tertiary)',
     fontSize: '13px'
   }}>
-    <div className="spin" style={{
-        width: '24px',
-        height: '24px',
-        border: '2px solid var(--color-border)',
-        borderTopColor: 'var(--color-accent-blue)',
-        borderRadius: '50%'
+    <div className="animate-spin" style={{
+      width: '24px',
+      height: '24px',
+      border: '2px solid rgba(255, 255, 255, 0.1)',
+      borderTopColor: 'var(--color-accent-blue)',
+      borderRadius: '50%'
     }} />
-    <style>{`
-        .spin { animation: spin 0.8s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    `}</style>
   </div>
 );

@@ -4,6 +4,7 @@ import { getColorForString } from '../utils/colors';
 import { ToolbarButton } from '../components/ToolbarButton';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
+import { TactileButton } from '../components/TactileButton';
 
 export const MetricsTab: React.FC = () => {
     const [metrics, setMetrics] = useState<MetricsData | null>(null);
@@ -73,50 +74,36 @@ export const MetricsTab: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
-            overflow: 'hidden',
-            background: 'var(--color-bg-app)'
+            padding: '20px 24px 24px 24px',
+            background: 'var(--color-bg-app)',
+            overflowY: 'auto'
         }}>
             {/* Header */}
-            <div style={{
-                padding: '16px 24px',
-                borderBottom: 'var(--border-subtle)',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-            }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Reports</h2>
-                    <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>
-                        {metrics ? 'Data Loaded' : 'Loading...'}
-                    </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+                <div>
+                    <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Reports & Analytics</h1>
+                    <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>Mission logging and bridge metrics</p>
                 </div>
-
                 <ToolbarButton
                     label="RESET HISTORY"
                     onClick={() => setIsResetModalOpen(true)}
+                    style={{ padding: '12px 24px', fontSize: '12px' }}
                 />
             </div>
 
-            {/* Scrollable Content */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '32px' }}>
+            {/* Content Area */}
+            <div style={{ flex: 1, minHeight: 0 }}>
                 {error ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', flexDirection: 'column', gap: '16px', color: 'var(--color-text-tertiary)' }}>
                         <div style={{ fontSize: '48px', opacity: 0.3 }}>⚠</div>
                         <div style={{ color: 'var(--color-text-secondary)' }}>{error}</div>
-                        <button
+                        <TactileButton
                             onClick={fetchMetrics}
-                            style={{
-                                padding: '8px 16px',
-                                background: 'rgba(255,255,255,0.1)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                color: 'var(--color-text-primary)',
-                                cursor: 'pointer',
-                                fontSize: '13px'
-                            }}
+                            variant="primary"
+                            size="sm"
                         >
                             Retry
-                        </button>
+                        </TactileButton>
                     </div>
                 ) : !metrics ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--color-text-tertiary)' }}>
@@ -151,7 +138,7 @@ export const MetricsTab: React.FC = () => {
                                 ) : (
                                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                         <tbody>
-                                            {metrics.topGroups.map((g, i) => {
+                                            {metrics.topGroups.map((g: any, i: number) => {
                                                 const color = getColorForString(g.name);
                                                 return (
                                                     <tr key={g.name} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>

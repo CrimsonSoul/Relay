@@ -50,13 +50,14 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0, 0, 0, 0.6)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
+        background: 'rgba(0, 0, 0, 0.4)', // Slightly lighter for more glass effect
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 20000
+        zIndex: 20000,
+        transition: 'all var(--transition-premium)'
       }}
       onClick={onClose}
       role="presentation"
@@ -75,8 +76,8 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           flexDirection: 'column',
           boxShadow: 'var(--shadow-modal)',
           transformOrigin: 'center center',
-          position: 'relative',
-          overflow: 'hidden'
+          position: 'relative'
+          // overflow: 'hidden' // Removed to allow tooltips/dropdowns to overflow
         }}
         onClick={e => e.stopPropagation()}
         role="dialog"

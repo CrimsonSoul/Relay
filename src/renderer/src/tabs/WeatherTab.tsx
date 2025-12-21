@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TactileButton } from '../components/TactileButton';
 import { Input } from '../components/Input';
 import { TabFallback } from '../components/TabFallback';
@@ -36,20 +36,42 @@ interface Location {
 
 // Generate RainViewer URL with location centered
 const getRadarUrl = (lat: number, lon: number): string => {
-  // theme=dark, color=2 (Universal Blue), opacity=0.8, smooth=1 (smoothed radar rendering)
-  // loc=lat,lon,zoom
-  return `https://www.rainviewer.com/map.html?loc=${lat},${lon},8&theme=dark&color=2&opacity=0.8&smooth=1&animation=1`;
+  return `https://www.rainviewer.com/map.html?loc=${lat},${lon},6&theme=dark&color=1&opacity=0.7`;
 };
 
 const getWeatherIcon = (code: number, size = 24) => {
-  const strokeWidth = 2;
+  const strokeWidth = 2; // Standard stroke
+
+  // Common styles
+  const commonProps = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    strokeWidth: strokeWidth,
+    strokeLinecap: "round" as "round",
+    strokeLinejoin: "round" as "round",
+    style: { overflow: 'visible' as const }
+  };
+
+  // Helper: Cloud Path (Standardized)
+  // A nice fluffy cloud base
+  const cloudPath = "M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8";
 
   // Clear / Sun
   if (code === 0 || code === 1) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FDB813" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+      <svg {...commonProps} stroke="#FDB813">
         <circle cx="12" cy="12" r="5" fill="rgba(253, 184, 19, 0.1)" />
-        <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41m12.73-12.73l-1.41 1.41" />
+        {/* Explicit rays for perfect symmetry without path distortion */}
+        <line x1="12" y1="1" x2="12" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" />
+        <line x1="21" y1="12" x2="23" y2="12" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
       </svg>
     );
   }
@@ -57,18 +79,36 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Partly Cloudy
   if (code === 2) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2v2m-7.07.93l1.41 1.41M2 12h2" stroke="#FDB813" />
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(161, 161, 170, 0.1)" stroke="#A1A1AA" />
+      <svg {...commonProps} stroke="currentColor">
+        {/* Sun behind */}
+        <g stroke="#FDB813">
+          <circle cx="16" cy="8" r="4" fill="rgba(253, 184, 19, 0.1)" />
+          <line x1="16" y1="1" x2="16" y2="2.5" />
+          <line x1="21.5" y1="2.5" x2="20.5" y2="3.5" />
+          <line x1="23" y1="8" x2="21.5" y2="8" />
+        </g>
+        {/* Cloud Front */}
+        <path
+          d={cloudPath}
+          stroke="#A1A1AA"
+          fill="rgba(15, 15, 18, 0.9)" // Slightly opaque to hide sun line overlap
+        />
       </svg>
     );
   }
 
-  // Overcast / Fog
+  // Overcast / Fog (Moved Fog in here for similar look)
   if (code === 3 || code === 45 || code === 48) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(161, 161, 170, 0.1)" />
+      <svg {...commonProps} stroke="#A1A1AA">
+        <path d={cloudPath} fill="rgba(161, 161, 170, 0.1)" />
+        {/* Simple Fog / Overcast lines if needed, for now just a solid cloud is standard */}
+        {code === 45 || code === 48 ? (
+          <>
+            <line x1="6" y1="22" x2="18" y2="22" strokeOpacity="0.5" />
+            <line x1="8" y1="25" x2="16" y2="25" strokeOpacity="0.3" />
+          </>
+        ) : null}
       </svg>
     );
   }
@@ -76,9 +116,11 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Drizzle / Rain
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(96, 165, 250, 0.1)" />
-        <path d="M8 18v2m4-2v2m4-2v2" />
+      <svg {...commonProps} stroke="#60A5FA">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        <line x1="8" y1="21" x2="8" y2="24" />
+        <line x1="12" y1="21" x2="12" y2="24" />
+        <line x1="16" y1="21" x2="16" y2="24" />
       </svg>
     );
   }
@@ -86,9 +128,13 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Snow
   if (code >= 71 && code <= 77) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" fill="rgba(229, 231, 235, 0.1)" />
-        <path d="M8 18h.01M12 18h.01M16 18h.01M10 21h.01M14 21h.01" />
+      <svg {...commonProps} stroke="#E5E7EB">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        <g transform="translate(0, 2)">
+          <line x1="8" y1="21" x2="8" y2="21.01" strokeWidth="3" />
+          <line x1="12" y1="21" x2="12" y2="21.01" strokeWidth="3" />
+          <line x1="16" y1="21" x2="16" y2="21.01" strokeWidth="3" />
+        </g>
       </svg>
     );
   }
@@ -96,18 +142,18 @@ const getWeatherIcon = (code: number, size = 24) => {
   // Thunderstorm
   if (code >= 95) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#FDE047" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" stroke="#60A5FA" fill="rgba(96, 165, 250, 0.1)" />
-        <path d="M13 11l-4 6h6l-4 6" fill="#FDE047" stroke="none" />
-        <path d="M13 11l-4 6h6l-4 6" />
+      <svg {...commonProps} stroke="currentColor">
+        <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
+        {/* Adjusted bolt to fit in viewbox 24x24 */}
+        <path d="M13 14L10 18H14L11 23" stroke="#FDE047" fill="rgba(253, 224, 71, 0.1)" />
       </svg>
     );
   }
 
-  // Default / Cloudy
+  // Default / Cloudy Fallback
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#A1A1AA" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 17.5A4.5 4.5 0 0 0 17.5 9h-1.8a7 7 0 1 0-11.7 6.9" />
+    <svg {...commonProps} stroke="#A1A1AA">
+      <path d={cloudPath} />
     </svg>
   );
 };
@@ -149,8 +195,31 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     setError(null);
     setPermissionDenied(false);
 
+    const tryIPLocation = async () => {
+      try {
+        // Attempting IP-based location fallback...
+        const response = await fetch('https://ipapi.co/json/');
+        const data = await response.json();
+
+        if (data.latitude && data.longitude) {
+          const newLoc = {
+            latitude: data.latitude,
+            longitude: data.longitude,
+            name: `${data.city}, ${data.region_code} ${data.country_code}`
+          };
+          onLocationChange(newLoc);
+          localStorage.setItem('weather_location', JSON.stringify(newLoc));
+          onManualRefresh(data.latitude, data.longitude);
+          return true;
+        }
+      } catch (e) {
+        console.error('[Weather] IP Location fallback failed:', e);
+      }
+      return false;
+    };
+
     if (!('geolocation' in navigator)) {
-      setError('Geolocation is not supported by your system.');
+      await tryIPLocation();
       return;
     }
 
@@ -163,22 +232,27 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         localStorage.setItem('weather_location', JSON.stringify(newLoc));
         onManualRefresh(latitude, longitude);
       },
-      (err) => {
-        console.error('Geolocation error:', err);
-        if (err.code === 1) { // PERMISSION_DENIED
-          setPermissionDenied(true);
-          setError('Location access was denied. Please check your macOS System Settings or type your city below.');
-        } else {
-          setError('Could not detect location. Please search for your city manualy.');
+      async (err) => {
+        console.error('[Weather] Geolocation failed:', err.message);
+
+        const ipSuccess = await tryIPLocation();
+
+        if (!ipSuccess) {
+          if (err.code === 1) { // PERMISSION_DENIED
+            setPermissionDenied(true);
+            setError('Location access was denied and fallback failed. Please search for your city manualy.');
+          } else {
+            setError('Could not detect location automatically. Please search for your city manualy.');
+          }
         }
       },
       {
-        timeout: 10000,
+        timeout: 5000,
         maximumAge: 300000,
-        enableHighAccuracy: true
+        enableHighAccuracy: false // Use false initially for faster response on desktop
       }
     );
-  }, [onLocationChange, onManualRefresh]);
+  }, [onLocationChange, onManualRefresh, reverseGeocode]);
 
   // Auto-locate on mount if no location
   useEffect(() => {
@@ -232,10 +306,122 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       }
       setRadarLoaded(true);
 
-      // RainViewer handles dark mode natively via URL params, so we just force background to avoid white flash
-      if (webview) {
-        webview.insertCSS(`html, body { background-color: #0f0f12 !important; }`);
-      }
+      // Inject CSS to fix UI overlap, improve readability, and hide redundant elements
+      webview.insertCSS(`
+        .map-buttons-play {
+          background: rgba(0, 0, 0, 0.6) !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+          padding: 6px 16px !important;
+          border-radius: 30px !important;
+          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+          top: 8px !important;
+          left: 8px !important;
+          display: flex !important;
+          align-items: center !important;
+          gap: 12px !important;
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
+        }
+        .forecast-period {
+          color: #ffffff !important;
+          font-weight: 600 !important;
+          font-size: 14px !important;
+          margin-right: 4px !important;
+          text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+        }
+        .map-buttons-play svg {
+          fill: #ffffff !important;
+          width: 20px !important;
+          height: 20px !important;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) !important;
+        }
+        
+        /* Zoom Controls refined as glassmorphic pills */
+        .map-buttons-zoom-in-out {
+          background: rgba(0, 0, 0, 0.6) !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+          padding: 4px !important;
+          border-radius: 30px !important;
+          border: 1px solid rgba(255, 255, 255, 0.15) !important;
+          right: 8px !important;
+          bottom: 40px !important;
+          display: flex !important;
+          flex-direction: column !important;
+          gap: 4px !important;
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important;
+        }
+        .map-button-zoom-in, .map-button-zoom-out {
+          background: transparent !important;
+          width: 32px !important;
+          height: 32px !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          border: none !important;
+          padding: 0 !important;
+        }
+        .map-button-zoom-in svg, .map-button-zoom-out svg {
+          fill: #ffffff !important;
+          width: 18px !important;
+          height: 18px !important;
+          filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) !important;
+        }
+
+        #menu-bar { 
+          top: auto !important;
+          bottom: 8px !important; 
+          left: 8px !important;
+          right: auto !important;
+          width: auto !important;
+          background: transparent !important;
+          border: none !important;
+          box-shadow: none !important;
+        }
+        #app-icon, .get-the-app { 
+          background: rgba(0, 0, 0, 0.5) !important;
+          padding: 6px 12px !important;
+          border-radius: 12px !important;
+          backdrop-filter: blur(12px) !important;
+          -webkit-backdrop-filter: blur(12px) !important;
+          border: 1px solid rgba(255, 255, 255, 0.1) !important;
+          display: flex !important;
+          align-items: center !important;
+          gap: 8px !important;
+          color: #ffffff !important;
+          text-decoration: none !important;
+          font-size: 11px !important;
+          font-weight: 600 !important;
+          letter-spacing: 0.02em !important;
+        }
+        #app-icon .small-hide { 
+          display: none !important; 
+        }
+        .map-link, .map-link.small-hide, #search-icon, .search-box, .maplibregl-ctrl-logo { 
+          display: none !important; 
+        }
+      `).catch(err => console.error('Failed to inject radar CSS:', err));
+
+      // Fallback: Ensure positioning via execution
+      webview.executeJavaScript(`
+        const menu = document.getElementById('menu-bar');
+        if (menu) {
+          menu.style.top = 'auto';
+          menu.style.bottom = '8px';
+          menu.style.left = '8px';
+          menu.style.right = 'auto';
+          menu.style.width = 'auto';
+        }
+        const play = document.querySelector('.map-buttons-play');
+        if (play) play.style.top = '8px';
+        const zoom = document.querySelector('.map-buttons-zoom-in-out');
+        if (zoom) {
+          zoom.style.right = '8px';
+          zoom.style.bottom = '40px';
+        }
+        const iconWrap = document.querySelector('#app-icon .small-hide');
+        if (iconWrap) iconWrap.style.display = 'none';
+      `).catch(() => { });
     };
 
     const handleDidFailLoad = () => {
@@ -288,7 +474,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   if (!location && loading) return <TabFallback />;
 
   // Filter hourly forecast to only show future hours
-  const getFilteredHourlyForecast = () => {
+  const getFilteredHourlyForecast = useMemo(() => {
     if (!weather) return [];
     const now = new Date();
     const currentHour = now.getHours();
@@ -307,16 +493,16 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         return date >= new Date(now.getFullYear(), now.getMonth(), now.getDate(), currentHour) && i < 24;
       })
       .slice(0, 12);
-  };
+  }, [weather]);
 
   return (
-    <div style={{
+    <div className="weather-scroll-container" style={{
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
       width: '100%',
       background: 'var(--color-bg-app)',
-      padding: '20px',
+      padding: '20px 24px',
       gap: '16px',
       overflow: 'hidden'
     }}>
@@ -329,14 +515,14 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         gap: '12px',
         flexShrink: 0
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+          <h2 style={{ fontSize: '32px', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.02em' }}>
             {location?.name || 'Weather'}
           </h2>
           {weather && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {getWeatherIcon(weather.current_weather.weathercode, 28)}
-              <span style={{ fontSize: '24px', fontWeight: 500 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+              {getWeatherIcon(weather.current_weather.weathercode, 36)}
+              <span style={{ fontSize: '32px', fontWeight: 600, color: '#FDB813' }}>
                 {Math.round(weather.current_weather.temperature)}°F
               </span>
             </div>
@@ -397,7 +583,16 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                   borderRadius: '8px',
                   padding: '10px 14px',
                   cursor: 'pointer',
-                  transition: 'all 0.2s ease'
+                  transition: 'all var(--transition-smooth)',
+                  transformOrigin: 'center center'
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-1px) scale(1.01)';
+                  e.currentTarget.style.boxShadow = 'var(--shadow-md)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                  e.currentTarget.style.boxShadow = 'none';
                 }}
                 onClick={() => setExpandedAlert(isExpanded ? null : alert.id)}
               >
@@ -421,42 +616,45 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       <span style={{
-                        fontWeight: 600,
-                        fontSize: '15px',
-                        color: colors.text
+                        fontWeight: 700,
+                        fontSize: '18px',
+                        color: colors.text,
+                        letterSpacing: '-0.01em'
                       }}>
                         {alert.event}
                       </span>
                       <span style={{
-                        fontSize: '11px',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        background: 'rgba(0,0,0,0.2)',
+                        fontSize: '12px',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(0,0,0,0.3)',
                         color: colors.text,
                         textTransform: 'uppercase',
-                        fontWeight: 500
+                        fontWeight: 800
                       }}>
                         {alert.severity}
                       </span>
                       {alert.urgency === 'Immediate' && (
                         <span style={{
-                          fontSize: '11px',
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: 'rgba(220, 38, 38, 0.3)',
-                          color: '#FCA5A5',
+                          fontSize: '12px',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          background: 'rgba(220, 38, 38, 0.4)',
+                          color: '#FFF',
                           textTransform: 'uppercase',
-                          fontWeight: 500
+                          fontWeight: 800
                         }}>
-                          Immediate
+                          🚨 Immediate
                         </span>
                       )}
                     </div>
                     <p style={{
-                      fontSize: '14px',
-                      color: 'var(--color-text-secondary)',
-                      margin: '4px 0 0',
-                      lineHeight: '1.4'
+                      fontSize: '16px',
+                      color: 'var(--color-text-primary)',
+                      opacity: 0.9,
+                      margin: '6px 0 0',
+                      lineHeight: '1.4',
+                      fontWeight: 500
                     }}>
                       {alert.headline}
                     </p>
@@ -498,7 +696,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                     style={{
                       flexShrink: 0,
                       transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s ease'
+                      transition: 'transform var(--transition-smooth)'
                     }}
                   >
                     <polyline points="6 9 12 15 18 9" />
@@ -511,7 +709,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       )}
 
       {/* Main Content - Responsive Grid */}
-      <div style={{
+      <div className="weather-tab-root weather-scroll-container" style={{
         display: 'flex',
         gap: '16px',
         flex: 1,
@@ -519,13 +717,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         overflow: 'hidden'
       }}>
         {/* Left: Forecast */}
-        <div className="weather-scroll-container" style={{
+        <div className="weather-forecast-column weather-scroll-container" style={{
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
-          flex: '0 0 380px',
-          minWidth: '320px',
-          maxWidth: '420px',
+          flex: '0 0 35%',
+          minWidth: '300px',
           overflowY: 'auto'
         }}>
           {/* Hourly Forecast */}
@@ -548,11 +745,13 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
             </h3>
             <div className="weather-scroll-container" style={{
               display: 'flex',
+              alignItems: 'center', // Prevent items from stretching and clipping
               gap: '4px',
               overflowX: 'auto',
-              paddingBottom: '4px'
+              overflowY: 'hidden',
+              padding: '24px 10px' // Generous symmetrical buffer for scale/lift
             }}>
-              {getFilteredHourlyForecast().map((item, idx) => {
+              {getFilteredHourlyForecast.map((item, idx) => {
                 const date = new Date(item.time);
                 const now = new Date();
                 const isNow = date.getHours() === now.getHours() && date.getDate() === now.getDate();
@@ -567,7 +766,18 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                       borderRadius: '8px',
                       background: isNow ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
                       minWidth: '48px',
-                      flexShrink: 0
+                      flexShrink: 0,
+                      transition: 'all var(--transition-smooth)',
+                      transformOrigin: 'center center',
+                      cursor: 'default'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = isNow ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.05)';
+                      e.currentTarget.style.transform = 'translateY(-4px) scale(1.1)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = isNow ? 'rgba(59, 130, 246, 0.15)' : 'transparent';
+                      e.currentTarget.style.transform = 'translateY(0) scale(1)';
                     }}
                   >
                     <span style={{
@@ -625,7 +835,15 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
             }}>
               16-Day Forecast
             </h3>
-            <div className="weather-scroll-container" style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, overflow: 'auto' }}>
+            <div className="weather-scroll-container" style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              flex: 1,
+              overflowY: 'auto',
+              overflowX: 'hidden', // Prevent translateX from triggering scrollbars
+              padding: '10px 20px' // Balanced horizontal buffer for translateX
+            }}>
               {weather?.daily.time.map((t, i) => {
                 const date = new Date(t);
                 const isToday = date.toDateString() === new Date().toDateString();
@@ -637,7 +855,17 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                       alignItems: 'center',
                       padding: '10px 8px',
                       borderRadius: '6px',
-                      background: isToday ? 'rgba(59, 130, 246, 0.1)' : 'transparent'
+                      background: isToday ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                      transition: 'all var(--transition-base)',
+                      cursor: 'default'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = isToday ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)';
+                      e.currentTarget.style.transform = 'translateX(4px)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = isToday ? 'rgba(59, 130, 246, 0.1)' : 'transparent';
+                      e.currentTarget.style.transform = 'translateX(0)';
                     }}
                   >
                     <span style={{
@@ -690,11 +918,11 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         }}>
           <div style={{
             flex: 1,
-            background: '#1a1a2e',
-            borderRadius: '10px',
+            background: 'black',
+            borderRadius: '12px',
             overflow: 'hidden',
             position: 'relative',
-            border: '1px solid rgba(255,255,255,0.08)',
+            border: 'var(--border-subtle)',
             minHeight: '300px'
           }}>
             {location ? (
@@ -730,7 +958,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                     height: '100%',
                     border: 'none',
                     opacity: radarLoaded ? 1 : 0,
-                    transition: 'opacity 0.3s ease'
+                    transition: 'opacity var(--transition-smooth)'
                   }}
                   partition="persist:weather"
                   // @ts-ignore - webview attributes
@@ -748,14 +976,6 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                 Search for a location to view radar
               </div>
             )}
-          </div>
-          <div style={{
-            marginTop: '8px',
-            fontSize: '10px',
-            color: 'var(--color-text-quaternary)',
-            textAlign: 'right'
-          }}>
-            Radar & Alerts by NWS • Forecast by Open-Meteo
           </div>
         </div>
       </div>

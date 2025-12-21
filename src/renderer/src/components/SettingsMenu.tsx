@@ -42,9 +42,9 @@ export const SettingsMenu = ({
   };
 
   const handleChangeFolder = async () => {
-     await window.api?.changeDataFolder();
-     window.api?.getDataPath().then(setDataPath);
-     // App handles hot swap, no restart needed
+    await window.api?.changeDataFolder();
+    window.api?.getDataPath().then(setDataPath);
+    // App handles hot swap, no restart needed
   };
 
   return (
@@ -68,12 +68,12 @@ export const SettingsMenu = ({
           borderRadius: '8px',
           boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
           zIndex: 100,
-          overflow: 'hidden',
+          // overflow: 'hidden', // Removing to prevent clipping of button hover effects (shadow/scale)
           backdropFilter: 'blur(20px)'
         }}>
-          <div style={{ padding: '4px' }}>
-             {/* Data Location */}
-             <div style={{
+          <div style={{ padding: '8px' }}> {/* Increased padding to separate content slightly */}
+            {/* Data Location */}
+            <div style={{
               padding: '8px 12px 4px',
               fontSize: '10px',
               fontWeight: 600,
@@ -84,63 +84,41 @@ export const SettingsMenu = ({
               Data Storage
             </div>
             <div style={{ padding: '4px 12px 8px', fontSize: '11px', color: 'var(--text-secondary)', wordBreak: 'break-all', opacity: 0.7 }}>
-               {dataPath || 'Loading...'}
+              {dataPath || 'Loading...'}
             </div>
-            <button
-              className="menu-item"
+            <TactileButton
               onClick={handleChangeFolder}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Change Folder...
-            </button>
-            <button
-              className="menu-item"
+            </TactileButton>
+            <TactileButton
               onClick={async () => {
                 await window.api?.resetDataFolder();
                 window.api?.getDataPath().then(setDataPath);
               }}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Reset to Default
-            </button>
+            </TactileButton>
 
             <div style={{ height: '1px', background: 'var(--color-border)', margin: '4px 8px' }} />
 
@@ -154,58 +132,36 @@ export const SettingsMenu = ({
             }}>
               Groups
             </div>
-            <button
-              className="menu-item"
+            <TactileButton
               onClick={() => handleAction(onOpenGroups)}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Open File
-            </button>
-            <button
-              className="menu-item"
+            </TactileButton>
+            <TactileButton
               onClick={() => handleAction(onImportGroups)}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Import File...
-            </button>
+            </TactileButton>
 
             <div style={{ height: '1px', background: 'var(--color-border)', margin: '4px 8px' }} />
 
@@ -219,58 +175,36 @@ export const SettingsMenu = ({
             }}>
               Contacts
             </div>
-            <button
-              className="menu-item"
+            <TactileButton
               onClick={() => handleAction(onOpenContacts)}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Open File
-            </button>
-            <button
-              className="menu-item"
+            </TactileButton>
+            <TactileButton
               onClick={() => handleAction(onImportContacts)}
+              variant="ghost"
+              block
               style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 12px',
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--text-secondary)',
-                fontSize: '13px',
                 borderRadius: '4px',
-                cursor: 'pointer',
-                transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--color-glass-hover)';
-                e.currentTarget.style.color = 'var(--text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                textTransform: 'none',
+                justifyContent: 'flex-start',
+                fontSize: '13px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)'
               }}
             >
               Import File...
-            </button>
+            </TactileButton>
           </div>
         </div>
       )}

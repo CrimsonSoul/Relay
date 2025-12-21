@@ -29,3 +29,6 @@ resources/*.xlsx
 
 # Enigma Virtual Box
 .github/enigma/enigma-project.evb
+
+# Local Electron Binaries
+.electron/

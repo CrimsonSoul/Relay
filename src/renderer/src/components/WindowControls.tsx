@@ -1,12 +1,36 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+
 
 export const WindowControls = () => {
     const [isMaximized, setIsMaximized] = useState(false);
 
+    // Sync with actual window maximize state
+    useEffect(() => {
+        // Check initial state
+        window.api?.isMaximized?.().then((maximized: boolean) => {
+            setIsMaximized(maximized);
+        }).catch(() => {
+            // Fallback if API not available yet
+        });
+
+        // Listen for maximize/unmaximize events from main process
+        const handleMaximizeChange = (_event: any, maximized: boolean) => {
+            setIsMaximized(maximized);
+        };
+
+        window.api?.onMaximizeChange?.(handleMaximizeChange);
+
+        return () => {
+            window.api?.removeMaximizeListener?.();
+        };
+    }, []);
+
     const handleMinimize = () => window.api?.windowMinimize();
     const handleMaximize = () => {
         window.api?.windowMaximize();
-        setIsMaximized(!isMaximized);
+        // Optimistically toggle state immediately for responsive UI
+        // The listener will correct if needed
+        setIsMaximized(prev => !prev);
     };
     const handleClose = () => window.api?.windowClose();
 
@@ -16,15 +40,16 @@ export const WindowControls = () => {
     return (
         <div style={{
             display: 'flex',
-            height: '32px',
-            WebkitAppRegion: 'no-drag' as any,
+            height: '48px',
+            // @ts-ignore - Electron specific property
+            WebkitAppRegion: 'no-drag',
             zIndex: 10000,
             position: 'relative' // Ensure z-index works
         }}>
             <style>{`
             .window-control-btn {
-                width: 46px;
-                height: 32px;
+                width: 48px;
+                height: 48px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -32,7 +57,7 @@ export const WindowControls = () => {
                 border: none;
                 color: var(--color-text-secondary);
                 cursor: default;
-                transition: background 0.1s ease, color 0.1s ease;
+                transition: background var(--transition-micro), color var(--transition-micro);
                 -webkit-app-region: no-drag;
                 outline: none;
             }
@@ -52,12 +77,24 @@ export const WindowControls = () => {
             >
                 <svg width="10" height="1" viewBox="0 0 10 1"><path d="M0 0h10v1H0z" fill="currentColor" /></svg>
             </button>
+
             <button
                 onClick={handleMaximize}
                 className={btnClass}
-                title="Maximize"
+                title={isMaximized ? "Restore Down" : "Maximize"}
             >
-                <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" /></svg>
+                {isMaximized ? (
+                    // Restore icon (two overlapping squares, like Edge/Windows)
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                        {/* Front window */}
+                        <path d="M0 2v8h8V2H0zm7 7H1V3h6v6z" />
+                        {/* Back window (top-right offset) */}
+                        <path d="M2 0v2h1V1h6v6H8v1h2V0H2z" />
+                    </svg>
+                ) : (
+                    // Maximize icon (single square)
+                    <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" /></svg>
+                )}
             </button>
             <button
                 onClick={handleClose}

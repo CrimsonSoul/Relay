@@ -21,26 +21,23 @@ export const RadarTab: React.FC = () => {
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      overflow: 'hidden',
-      background: 'var(--color-bg-app)'
+      padding: '20px 24px 24px 24px',
+      background: 'var(--color-bg-app)',
+      overflow: 'hidden'
     }}>
 
       {/* Header */}
-      <div style={{
-        padding: '16px 24px',
-        borderBottom: 'var(--border-subtle)',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0 }}>Live</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Dispatcher Radar</h1>
+          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>Live CW intra-web monitoring</p>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <ToolbarButton
             onClick={handleRefresh}
             label={isLoading ? 'REFRESHING' : 'REFRESH'}
+            style={{ padding: '12px 24px', fontSize: '12px' }}
             icon={
               <svg
                 width="12"
@@ -62,7 +59,14 @@ export const RadarTab: React.FC = () => {
       </div>
 
       {/* Webview Container - Full Bleed */}
-      <div style={{ flex: 1, position: 'relative', background: 'black', overflow: 'hidden' }}>
+      <div style={{
+        flex: 1,
+        position: 'relative',
+        background: 'black',
+        overflow: 'hidden',
+        borderRadius: '12px',
+        border: 'var(--border-subtle)'
+      }}>
         <webview
           ref={webviewRef}
           src={url}

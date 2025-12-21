@@ -47,10 +47,10 @@ describe('FileManager', () => {
     if (fileManager) fileManager.destroy();
     // Wait a bit to ensure file locks are released
     try {
-        await fs.rm(tmpDir, { recursive: true, force: true });
-        await fs.rm(bundledDir, { recursive: true, force: true });
+      await fs.rm(tmpDir, { recursive: true, force: true });
+      await fs.rm(bundledDir, { recursive: true, force: true });
     } catch (e) {
-        // Ignore cleanup errors
+      // Ignore cleanup errors
     }
   });
 
@@ -412,6 +412,70 @@ describe('FileManager', () => {
       const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
       expect(content).not.toContain('Group1');
       expect(content).toContain('Group2');
+    });
+  });
+  describe('Daily Backups', () => {
+    it('creates a backup of current data', async () => {
+      // Setup initial data
+      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), 'test data');
+
+      // Trigger backup (access private method)
+      await (fileManager as any).performDailyBackup();
+
+      // Check if backup folder exists
+      const backupDir = path.join(tmpDir, 'backups');
+      const backups = await fs.readdir(backupDir);
+      expect(backups.length).toBeGreaterThan(0);
+
+      // Get today's local date part manually to match implementation
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      const today = (new Date(now.getTime() - offset)).toISOString().slice(0, 10);
+
+      // Expect at least one folder starting with today's date
+      const backupFolder = backups.find(b => b.startsWith(today));
+      expect(backupFolder).toBeDefined();
+
+      // Check file content
+      if (backupFolder) {
+        const backupContent = await fs.readFile(path.join(backupDir, backupFolder, 'contacts.csv'), 'utf-8');
+        expect(backupContent).toBe('test data');
+      }
+    });
+
+    it('prunes old backups keeping only last 30 days', async () => {
+      const backupDir = path.join(tmpDir, 'backups');
+      await fs.mkdir(backupDir, { recursive: true });
+
+      // Create old backup folders
+      const today = new Date();
+      const offset = today.getTimezoneOffset() * 60000;
+      const localToday = new Date(today.getTime() - offset);
+
+      // 35 days ago (Should be pruned)
+      const date35 = new Date(localToday);
+      date35.setDate(localToday.getDate() - 35);
+      const str35 = date35.toISOString().slice(0, 10) + '_00-00-00';
+      await fs.mkdir(path.join(backupDir, str35));
+
+      // 1 day ago (Should be kept)
+      const date1 = new Date(localToday);
+      date1.setDate(localToday.getDate() - 1);
+      const str1 = date1.toISOString().slice(0, 10) + '_00-00-00';
+      await fs.mkdir(path.join(backupDir, str1));
+
+      // Trigger backup
+      await (fileManager as any).performBackup();
+
+      const backups = await fs.readdir(backupDir);
+
+      expect(backups).not.toContain(str35);
+      expect(backups).toContain(str1);
+
+      // Check that a new backup for today was created
+      const todayStr = localToday.toISOString().slice(0, 10);
+      const newBackup = backups.find(b => b.startsWith(todayStr));
+      expect(newBackup).toBeDefined();
     });
   });
 });

@@ -4,10 +4,11 @@ import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
 import { WindowControls } from './components/WindowControls';
 import { ToastProvider, useToast } from './components/Toast';
-import { AppData, Contact, DataError } from '@shared/ipc';
+import { AppData, Contact, DataError, WeatherAlert } from '@shared/ipc';
 import { TabFallback } from './components/TabFallback';
+import { TactileButton } from './components/TactileButton';
 import './styles.css';
-import { DUMMY_DATA } from './dummyData';
+
 
 // Error Boundary to prevent full app crashes from component errors
 interface ErrorBoundaryProps {
@@ -64,22 +65,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           }}>
             {this.state.error?.message || 'Unknown error'}
           </pre>
-          <button
+          <TactileButton
             onClick={() => window.location.reload()}
-            style={{
-              marginTop: '24px',
-              padding: '10px 20px',
-              background: 'var(--color-accent-blue)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 500
-            }}
+            variant="primary"
+            style={{ marginTop: '24px' }}
           >
             Reload Application
-          </button>
+          </TactileButton>
         </div>
       );
     }
@@ -94,9 +86,10 @@ const ServersTab = lazy(() => import('./tabs/ServersTab').then(m => ({ default: 
 const RadarTab = lazy(() => import('./tabs/RadarTab').then(m => ({ default: m.RadarTab })));
 const WeatherTab = lazy(() => import('./tabs/WeatherTab').then(m => ({ default: m.WeatherTab })));
 const MetricsTab = lazy(() => import('./tabs/MetricsTab').then(m => ({ default: m.MetricsTab })));
+const PersonnelTab = lazy(() => import('./tabs/PersonnelTab').then(m => ({ default: m.PersonnelTab })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 
-type Tab = 'Compose' | 'People' | 'Servers' | 'Reports' | 'Radar' | 'Weather';
+type Tab = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Reports' | 'Radar' | 'Weather';
 
 // Format data errors for user-friendly display
 function formatDataError(error: DataError): string {
@@ -153,7 +146,13 @@ interface Location {
 export function MainApp() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>('Compose');
-  const [data, setData] = useState<AppData>(DUMMY_DATA);
+  const [data, setData] = useState<AppData>({
+    groups: {},
+    contacts: [],
+    servers: [],
+    onCall: [],
+    lastUpdated: 0
+  });
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
@@ -165,9 +164,9 @@ export function MainApp() {
   // Weather State (Lifted)
   const [weatherLocation, setWeatherLocation] = useState<Location | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
-  const [weatherAlerts, setWeatherAlerts] = useState<any[]>([]);
+  const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const [lastAlertIds, setLastAlertIds] = useState<Set<string>>(new Set());
+  const lastAlertIdsRef = useRef<Set<string>>(new Set());
 
   // Restore Weather Location
   useEffect(() => {
@@ -192,18 +191,14 @@ export function MainApp() {
       // Handle Realtime Alerts
       if (aData.length > 0) {
         // Find new alerts we haven't shown yet
-        const newAlerts = aData.filter((a: any) => !lastAlertIds.has(a.id));
+        const newAlerts = aData.filter((a: any) => !lastAlertIdsRef.current.has(a.id));
         if (newAlerts.length > 0) {
           // Toast the most severe one to avoid spam
           const severe = newAlerts.find((a: any) => a.severity === 'Extreme' || a.severity === 'Severe') || newAlerts[0];
           showToast(`Weather Alert: ${severe.event}`, 'error');
 
           // Update known IDs
-          setLastAlertIds(prev => {
-            const next = new Set(prev);
-            newAlerts.forEach((a: any) => next.add(a.id));
-            return next;
-          });
+          newAlerts.forEach((a: any) => lastAlertIdsRef.current.add(a.id));
         }
       }
 
@@ -212,27 +207,22 @@ export function MainApp() {
     } finally {
       if (!silent) setWeatherLoading(false);
     }
-  }, [lastAlertIds, showToast]);
+  }, [showToast]);
 
-  // Weather Polling (Every 15 mins) & Tab Switch Refresh
+  // Weather Polling (Every 2 mins) & Tab Switch Refresh
   useEffect(() => {
     if (!weatherLocation) return;
 
-    // Fetch immediately if switching to tab or initial load
-    if (activeTab === 'Weather') {
-      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, !!weatherData); // Silent if we already have data
-    } else {
-      // If we are not on the tab, but location is set, we might want to poll for alerts 
-      // We'll rely on the interval for background updates
-    }
+    // Fetch immediately on mount or location change
+    fetchWeather(weatherLocation.latitude, weatherLocation.longitude, !!weatherData);
 
-    // Poll every 15 minutes
+    // Poll every 2 minutes for background alerts
     const interval = setInterval(() => {
       fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true);
-    }, 15 * 60 * 1000);
+    }, 2 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [weatherLocation, activeTab, fetchWeather]); // Re-run when tab changes or location changes
+  }, [weatherLocation, fetchWeather]); // Re-run when location changes
 
 
   // Sync ref
@@ -242,7 +232,29 @@ export function MainApp() {
   useEffect(() => {
     const platform = window.api?.platform || (navigator.platform.toLowerCase().includes('mac') ? 'darwin' : 'win32');
     document.body.classList.add(`platform-${platform}`);
-    console.log(`[App] Platform detected: ${platform}`);
+
+
+    // Horizontal Scroll Wheel Support
+    const handleGlobalWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      const horizontalContainer = target.closest('.weather-scroll-container, [style*="overflow-x: auto"], [style*="overflow-x: scroll"]') as HTMLElement;
+
+      if (horizontalContainer && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        // If it's primarily a vertical scroll but we are on a container that prefers horizontal
+        // or has horizontal overflow but NO vertical overflow
+        const style = window.getComputedStyle(horizontalContainer);
+        const isHorizontalOnly = (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
+          (style.overflowY === 'hidden' || horizontalContainer.scrollHeight <= horizontalContainer.clientHeight);
+
+        if (isHorizontalOnly) {
+          horizontalContainer.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }
+    };
+
+    window.addEventListener('wheel', handleGlobalWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleGlobalWheel);
   }, []);
 
   const settleReloadIndicator = useCallback(() => {
@@ -283,7 +295,7 @@ export function MainApp() {
 
   useEffect(() => {
     if (!window.api) return;
-    window.api.subscribeToData((newData) => {
+    window.api.subscribeToData((newData: AppData) => {
       setData(newData);
       settleReloadIndicator();
     });
@@ -370,14 +382,6 @@ export function MainApp() {
             <span className="header-breadcrumb">
               Relay / {activeTab}
             </span>
-            <span className="header-title">
-              {activeTab === 'Compose' && 'Data Composition'}
-              {activeTab === 'People' && 'Contact Directory'}
-              {activeTab === 'Servers' && 'Infrastructure Servers'}
-              {activeTab === 'Reports' && 'Reports'}
-              {activeTab === 'Radar' && 'Dispatcher Radar'}
-              {activeTab === 'Weather' && 'Weather & Radar'}
-            </span>
           </div>
 
           {/* Actions Area */}
@@ -393,6 +397,7 @@ export function MainApp() {
               <AssemblerTab
                 groups={data.groups}
                 contacts={data.contacts}
+                onCall={data.onCall}
                 selectedGroups={selectedGroups}
                 manualAdds={manualAdds}
                 manualRemoves={manualRemoves}
@@ -402,6 +407,17 @@ export function MainApp() {
                 onUndoRemove={handleUndoRemove}
                 onResetManual={handleReset}
               />
+            </div>
+          )}
+          {activeTab === 'Personnel' && (
+            <div className="animate-fade-in" style={{ height: '100%' }}>
+              <Suspense fallback={<TabFallback />}>
+                <PersonnelTab
+                  onCall={data.onCall}
+                  contacts={data.contacts}
+                  groups={data.groups}
+                />
+              </Suspense>
             </div>
           )}
           {activeTab === 'People' && (
@@ -418,7 +434,6 @@ export function MainApp() {
           {activeTab === 'Weather' && (
             <div className="animate-fade-in" style={{ height: '100%' }}>
               <Suspense fallback={<TabFallback />}>
-                {/* @ts-ignore - props mismatch until WeatherTab is updated */}
                 <WeatherTab
                   weather={weatherData}
                   alerts={weatherAlerts}
