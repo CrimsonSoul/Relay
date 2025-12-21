@@ -79,6 +79,10 @@ const SortableTeamCard = ({
     // Derived state for rows to ensure they are stable
     const teamRows = useMemo(() => rows || [], [rows]);
 
+    // Check if any row in this team has a time window to determine grid layout
+    const hasAnyTimeWindow = useMemo(() => teamRows.some(r => r.timeWindow && r.timeWindow.trim()), [teamRows]);
+    const rowGridTemplate = hasAnyTimeWindow ? '60px 1fr 150px 90px' : '60px 1fr 150px';
+
     return (
         <>
             <div
@@ -146,7 +150,7 @@ const SortableTeamCard = ({
                         {teamRows.map(row => (
                             <div key={row.id} style={{
                                 display: 'grid',
-                                gridTemplateColumns: '60px 1fr 150px 90px',
+                                gridTemplateColumns: rowGridTemplate,
                                 gap: '16px',
                                 alignItems: 'center',
                                 padding: '6px 0',
@@ -196,20 +200,22 @@ const SortableTeamCard = ({
                                 }} title={row.contact}>
                                     {formatPhoneNumber(row.contact)}
                                 </div>
-                                <div style={{
-                                    color: 'var(--color-text-tertiary)',
-                                    fontSize: '14px',
-                                    textAlign: 'center',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    padding: row.timeWindow ? '4px 8px' : '0',
-                                    borderRadius: '4px',
-                                    background: row.timeWindow ? 'rgba(255,255,255,0.05)' : 'transparent',
-                                    opacity: row.timeWindow ? 0.9 : 0
-                                }} title={row.timeWindow}>
-                                    {row.timeWindow}
-                                </div>
+                                {hasAnyTimeWindow && (
+                                    <div style={{
+                                        color: 'var(--color-text-tertiary)',
+                                        fontSize: '14px',
+                                        textAlign: 'center',
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        padding: row.timeWindow ? '4px 8px' : '0',
+                                        borderRadius: '4px',
+                                        background: row.timeWindow ? 'rgba(255,255,255,0.05)' : 'transparent',
+                                        opacity: row.timeWindow ? 0.9 : 0
+                                    }} title={row.timeWindow}>
+                                        {row.timeWindow}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
