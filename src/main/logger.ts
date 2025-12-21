@@ -79,12 +79,14 @@ class Logger {
       const stats = fs.statSync(this.currentLogFile);
       if (stats.size < this.config.maxFileSize) return;
 
-      // Rotate logs
-      for (let i = this.config.maxFiles - 1; i >= 1; i--) {
+      // Rotate logs: shift relay.N.log -> relay.(N+1).log, delete oldest
+      // With maxFiles=3, we keep relay.1.log, relay.2.log, relay.3.log as backups
+      for (let i = this.config.maxFiles; i >= 1; i--) {
         const oldFile = path.join(this.logPath, `relay.${i}.log`);
         const newFile = path.join(this.logPath, `relay.${i + 1}.log`);
         if (fs.existsSync(oldFile)) {
-          if (i === this.config.maxFiles - 1) {
+          if (i === this.config.maxFiles) {
+            // Delete the oldest backup to make room
             fs.unlinkSync(oldFile);
           } else {
             fs.renameSync(oldFile, newFile);

@@ -2,6 +2,7 @@ import { ipcMain, dialog, shell } from 'electron';
 import { BrowserWindow } from 'electron';
 import { join, relative, isAbsolute, resolve, normalize } from 'path';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { FileManager } from './FileManager';
 import { BridgeLogger } from './BridgeLogger';
@@ -18,9 +19,9 @@ function isUncPath(path: string): boolean {
  * Safely resolve a path to its real location, following symlinks
  * Returns null if the path doesn't exist or can't be resolved
  */
-function safeRealPath(path: string): string | null {
+async function safeRealPath(path: string): Promise<string | null> {
   try {
-    return fs.realpathSync(path);
+    return await fsPromises.realpath(path);
   } catch {
     // Path doesn't exist or can't be resolved
     return null;
@@ -71,7 +72,7 @@ export function setupIpcHandlers(
 
   // Helper for hardened path validation
   // Protects against: symlink attacks, path traversal, UNC path escapes
-  const validatePath = (requestedPath: string): boolean => {
+  const validatePath = async (requestedPath: string): Promise<boolean> => {
     const root = getDataRoot();
     if (!requestedPath || !root) return false;
 
@@ -101,14 +102,14 @@ export function setupIpcHandlers(
 
     // Second check: resolve symlinks if path exists
     // This prevents symlink-based escapes from the data root
-    const realRoot = safeRealPath(root);
+    const realRoot = await safeRealPath(root);
     if (!realRoot) {
       console.warn(`[Security] Could not resolve real path for root: ${root}`);
       return false;
     }
 
     // If the path exists, verify its real location
-    const realPath = safeRealPath(absPath);
+    const realPath = await safeRealPath(absPath);
     if (realPath) {
       const realRel = relative(realRoot, realPath);
       if (realRel.startsWith('..') || isAbsolute(realRel)) {
@@ -122,7 +123,7 @@ export function setupIpcHandlers(
 
   // FS IPCs
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
-    if (!validatePath(path)) {
+    if (!await validatePath(path)) {
       console.error(`Blocked access to path outside data root: ${path}`);
       return;
     }

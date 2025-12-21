@@ -34,7 +34,8 @@ export class FileManager {
   private bundledDataPath: string;
   private mainWindow: BrowserWindow;
   private debounceTimer: NodeJS.Timeout | null = null;
-  private isInternalWrite = false;
+  // Counter to track pending internal writes (avoids race conditions with single boolean flag)
+  private internalWriteCount = 0;
   // Cache for incremental updates
   private cachedData: { groups: GroupMap; contacts: Contact[]; servers: Server[]; onCall: OnCallEntry[] } = {
     groups: {},
@@ -73,7 +74,7 @@ export class FileManager {
     });
 
     this.watcher.on('all', (event, changedPath) => {
-      if (this.isInternalWrite) {
+      if (this.internalWriteCount > 0) {
         return;
       }
 
@@ -486,7 +487,7 @@ export class FileManager {
   }
 
   private async rewriteFileDetached(path: string, content: string) {
-    this.isInternalWrite = true;
+    this.internalWriteCount++;
     try {
       const tmpPath = `${path}.tmp`;
       await fs.writeFile(tmpPath, content, 'utf-8');
@@ -495,22 +496,24 @@ export class FileManager {
     } catch (err) {
       console.error(`[FileManager] Failed to rewrite ${path}`, err);
     } finally {
-      setTimeout(() => { this.isInternalWrite = false; }, 1000);
+      // Delay decrement to allow filesystem events to propagate before re-enabling watcher
+      setTimeout(() => { this.internalWriteCount--; }, 1000);
     }
   }
 
   // --- Write Operations ---
 
   private async writeAndEmit(path: string, content: string) {
-    this.isInternalWrite = true;
+    this.internalWriteCount++;
     try {
       const tmpPath = `${path}.tmp`;
       await fs.writeFile(tmpPath, content, 'utf-8');
       await fs.rename(tmpPath, path);
       await this.readAndEmit();
     } finally {
+      // Delay decrement to allow filesystem events to propagate before re-enabling watcher
       setTimeout(() => {
-        this.isInternalWrite = false;
+        this.internalWriteCount--;
       }, 500);
     }
   }
@@ -1590,7 +1593,6 @@ export class FileManager {
 
       // Create folder and copy files
       await fs.mkdir(backupPath, { recursive: true });
-      // console.log(`[FileManager] Creating backup (${reason}): ${backupPath}`);
 
       const filesToBackup = [...GROUP_FILES, ...CONTACT_FILES, ...SERVER_FILES, ...ONCALL_FILES];
       for (const file of filesToBackup) {
