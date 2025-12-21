@@ -193,9 +193,18 @@ export function setupIpcHandlers(
     return handleMergeImport('contacts', 'Merge Contacts CSV');
   });
 
+  // Helper for URL validation
+  const validateUrl = (url: string): boolean => {
+    try {
+      const parsed = new URL(url);
+      return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
+    } catch {
+      return false;
+    }
+  };
+
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
-    // Basic protocol validation
-    if (!url.match(/^(https?|mailto):/i)) {
+    if (!validateUrl(url)) {
       console.error(`Blocked opening external URL with unsafe protocol: ${url}`);
       return;
     }
@@ -367,8 +376,42 @@ export function setupIpcHandlers(
     return getFileManager()?.renameGroup(oldName, newName) ?? false;
   });
 
+  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_event, team, rows) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.updateOnCallTeam(team, rows) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_event, team) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.removeOnCallTeam(team) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_event, oldName, newName) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_event, rows) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    return getFileManager()?.saveAllOnCall(rows) ?? false;
+  });
+
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
     return handleMergeImport('contacts', 'Merge Contacts CSV');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
+    console.log('[Main] Received GENERATE_DUMMY_DATA request');
+    if (!checkMutationRateLimit()) {
+      console.warn('[Main] Rate limit exceeded for dummy data');
+      return { success: false, rateLimited: true };
+    }
+    const fm = getFileManager();
+    if (!fm) {
+      console.error('[Main] FileManager not available');
+      return false;
+    }
+    return fm.generateDummyData();
   });
 
   // Server Handlers (rate limited)
@@ -419,4 +462,20 @@ export function setupIpcHandlers(
   ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
     getMainWindow()?.close();
   });
+
+  // Maximize state query
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, () => {
+    return getMainWindow()?.isMaximized() ?? false;
+  });
+
+  // Listen for maximize/unmaximize events and notify renderer
+  const mw = getMainWindow();
+  if (mw) {
+    mw.on('maximize', () => {
+      mw.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, true);
+    });
+    mw.on('unmaximize', () => {
+      mw.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, false);
+    });
+  }
 }

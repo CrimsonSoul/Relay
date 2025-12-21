@@ -1,272 +1,48 @@
 import React, { useState, useMemo, memo, useCallback } from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { Server, Contact } from '@shared/ipc';
 import { useDebounce } from '../hooks/useDebounce';
 import { Input } from '../components/Input';
 import { ContextMenu } from '../components/ContextMenu';
 import { AddServerModal } from '../components/AddServerModal';
 import { ToolbarButton } from '../components/ToolbarButton';
-import { ResizableHeader } from '../components/ResizableHeader';
-import { getColorForString } from '../utils/colors';
-import { scaleColumns, reverseScale } from '../utils/columnSizing';
-import { loadColumnWidths, saveColumnWidths, loadColumnOrder, saveColumnOrder } from '../utils/columnStorage';
-
-// Custom PointerSensor that ignores resize handles
-class CustomPointerSensor extends PointerSensor {
-  static activators = [
-    {
-      eventName: 'onPointerDown' as const,
-      handler: ({ nativeEvent: event }: React.PointerEvent) => {
-        // Ignore if clicking on a resize handle
-        if ((event.target as HTMLElement).closest('[data-resize-handle]')) {
-          return false;
-        }
-        return true;
-      },
-    },
-  ];
-}
+import { TactileButton } from '../components/TactileButton';
+import { ServerCard } from '../components/ServerCard';
 
 interface ServersTabProps {
   servers: Server[];
   contacts: Contact[];
 }
 
-type SortField = keyof Server;
-type SortOrder = 'asc' | 'desc';
-
-// Default widths
-const DEFAULT_WIDTHS = {
-  name: 200,
-  businessArea: 150,
-  lob: 150,
-  comment: 200,
-  owner: 200,
-  contact: 200,
-  os: 30
-};
-
-// Default Column Order
-const DEFAULT_ORDER: (keyof typeof DEFAULT_WIDTHS)[] = [
-  'name', 'businessArea', 'lob', 'comment', 'owner', 'contact', 'os'
-];
-
-// OS Formatter
-const formatOS = (val: string | undefined) => {
-  if (!val) return '-';
-  const lower = val.toLowerCase();
-  if (lower.includes('win')) return 'W';
-  if (lower.includes('lin')) return 'L';
-  if (lower.includes('vmware') || lower.includes('esx')) return 'V';
-  // Fallback: First letter capitalized
-  const clean = val.trim();
-  return clean ? clean.charAt(0).toUpperCase() : '-';
-};
-
-// Draggable Header Component
-const DraggableHeader = ({ id, children }: { id: string, children: React.ReactNode }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    display: 'flex',
-    alignItems: 'center',
-    zIndex: isDragging ? 10 : 'auto',
-    position: isDragging ? 'relative' : undefined,
-    cursor: 'grab'
-  } as React.CSSProperties;
-
-  return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      {children}
-    </div>
-  );
-};
-
-// Row Component
-const ServerRow = memo(({ index, style, data }: ListChildComponentProps<{
+// Row Component Wrapper for react-window
+const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   servers: Server[],
   contactLookup: Map<string, Contact>,
-  columns: typeof DEFAULT_WIDTHS,
-  columnOrder: (keyof typeof DEFAULT_WIDTHS)[],
   onContextMenu: (e: React.MouseEvent, server: Server) => void
 }>) => {
-  const { servers, contactLookup, columns, columnOrder, onContextMenu } = data;
+  const { servers, contactLookup, onContextMenu } = data;
   if (index >= servers.length) return null;
 
   const server = servers[index];
 
-  const formatValue = (key: keyof typeof DEFAULT_WIDTHS, val: string | undefined) => {
-    if (key === 'os') {
-      return formatOS(val);
-    }
-    if (!val) return '-';
-    const s = String(val).trim();
-    if (s === '' || s === '0' || s === '#N/A' || s.toLowerCase() === 'nan') return '-';
-    return s;
-  };
-
-  const resolveContact = (val: string) => {
-    if (!val) return null;
-    const parts = val.split(';').map(p => p.trim()).filter(p => p);
-    const resolvedParts = parts.map(part => {
-      const lowerVal = part.toLowerCase();
-      const found = contactLookup.get(lowerVal);
-      return found ? found : { name: part, email: part };
-    });
-
-    return resolvedParts;
-  };
-
-  const renderCell = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
-    const rawVal = server[key] || '';
-    let content: React.ReactNode = formatValue(key, rawVal);
-
-    if ((key === 'owner' || key === 'contact') && rawVal && content !== '-') {
-      const resolvedList = resolveContact(rawVal);
-
-      if (resolvedList && resolvedList.length > 0) {
-        const primary = resolvedList[0];
-        const displayName = primary.name || primary.email; // Fallback
-        const avatarLetter = displayName.charAt(0).toUpperCase();
-        const color = getColorForString(displayName);
-
-        // If multiple, join names
-        const allNames = resolvedList.map(c => c.name || c.email).join('; ');
-
-        content = (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-            <div style={{
-              width: '24px', height: '24px', borderRadius: '50%',
-              background: color, color: '#18181b',
-              fontSize: '12px', fontWeight: 600,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              {avatarLetter}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: '1.2' }} title={allNames}>
-                {allNames}
-              </span>
-            </div>
-          </div>
-        );
-      }
-    }
-
-    return (
-      <div key={key} style={{
-        width,
-        paddingRight: '12px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        fontSize: '14px',
-        color: 'var(--color-text-primary)'
-      }}>
-        {content}
-      </div>
-    );
-  };
-
   return (
-    <div
-      style={{ ...style, display: 'flex', alignItems: 'center', borderBottom: 'var(--border-subtle)', padding: '0 16px', gap: '16px' }}
-      onContextMenu={(e) => onContextMenu(e, server)}
-      className="contact-row hover-bg"
-    >
-      {columnOrder.map(key => renderCell(key, columns[key]))}
-    </div>
+    <ServerCard
+      style={style}
+      server={server}
+      contactLookup={contactLookup}
+      onContextMenu={onContextMenu}
+    />
   );
 });
 
 export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, server: Server } | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<Server | undefined>(undefined);
-
-  // Column Widths State (Base pixels)
-  const [baseWidths, setBaseWidths] = useState(() =>
-    loadColumnWidths({
-      storageKey: 'relay-servers-columns',
-      defaults: DEFAULT_WIDTHS
-    })
-  );
-
-  const [listWidth, setListWidth] = useState(0);
-
-  const scaledWidths = useMemo(() => {
-    if (!listWidth) return baseWidths;
-
-    // Account for horizontal padding (16px left + 16px right = 32px)
-    // and gaps between columns (7 columns = 6 gaps * 16px = 96px)
-    // plus ~12px for scrollbar
-    const RESERVED_SPACE = 32 + 96 + 12;
-
-    return scaleColumns({
-      baseWidths,
-      availableWidth: listWidth,
-      minColumnWidth: 30,
-      reservedSpace: RESERVED_SPACE
-    }) as typeof DEFAULT_WIDTHS;
-  }, [baseWidths, listWidth]);
-
-
-  const [columnOrder, setColumnOrder] = useState<(keyof typeof DEFAULT_WIDTHS)[]>(() =>
-    loadColumnOrder({
-      storageKey: 'relay-servers-order',
-      defaults: DEFAULT_ORDER
-    })
-  );
-
-  const sensors = useSensors(
-    useSensor(CustomPointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      }
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleResize = (key: keyof typeof DEFAULT_WIDTHS, width: number) => {
-    const RESERVED_SPACE = 32 + 96 + 12;
-
-    let newBase = width;
-    if (listWidth) {
-      const totalBaseWidth = Object.values(baseWidths).reduce((a, b) => (a as number) + (b as number), 0) as number;
-      newBase = reverseScale(width, listWidth, totalBaseWidth, RESERVED_SPACE);
-    }
-
-    const newWidths = { ...baseWidths, [key]: newBase };
-    setBaseWidths(newWidths);
-    saveColumnWidths('relay-servers-columns', newWidths);
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setColumnOrder((items) => {
-        const oldIndex = items.indexOf(active.id as keyof typeof DEFAULT_WIDTHS);
-        const newIndex = items.indexOf(over.id as keyof typeof DEFAULT_WIDTHS);
-        const newOrder = arrayMove(items, oldIndex, newIndex);
-        saveColumnOrder('relay-servers-order', newOrder);
-        return newOrder;
-      });
-    }
-  };
 
   const contactLookup = useMemo(() => {
     const map = new Map<string, Contact>();
@@ -284,22 +60,13 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
       result = result.filter(s => s._searchString.includes(q));
     }
     return result.sort((a, b) => {
-      const valA = (a[sortField] || '').toString().toLowerCase();
-      const valB = (b[sortField] || '').toString().toLowerCase();
+      const valA = (a.name || '').toLowerCase();
+      const valB = (b.name || '').toLowerCase();
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [servers, debouncedSearch, sortField, sortOrder]);
-
-  const handleHeaderSort = (field: any) => {
-    if (sortField === field) {
-      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field as SortField);
-      setSortOrder('asc');
-    }
-  };
+  }, [servers, debouncedSearch, sortOrder]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, server: Server) => {
     e.preventDefault();
@@ -309,10 +76,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const itemData = useMemo(() => ({
     servers: filteredServers,
     contactLookup,
-    columns: scaledWidths, // Pass scaled
-    columnOrder,
     onContextMenu: handleContextMenu
-  }), [filteredServers, contactLookup, scaledWidths, columnOrder, handleContextMenu]);
+  }), [filteredServers, contactLookup, handleContextMenu]);
 
   const handleDelete = async () => {
     if (contextMenu) {
@@ -338,35 +103,47 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
     return;
   }, [contextMenu]);
 
-  const LABELS: Record<keyof typeof DEFAULT_WIDTHS, string> = {
-    name: 'Name',
-    businessArea: 'Business Area',
-    lob: 'LOB',
-    comment: 'Comment',
-    owner: 'Owner',
-    contact: 'IT Contact',
-    os: 'OS'
-  };
-
-
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-app)' }}>
-      {/* Header / Actions - Matching DirectoryTab Style */}
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '20px 24px 24px 24px',
+      background: 'var(--color-bg-app)',
+      overflow: 'hidden'
+    }}>
+      {/* Hero Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Infrastructure Hub</h1>
+          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>
+            Management and status of distributed node infrastructure
+          </p>
+        </div>
+        <TactileButton
+          onClick={() => { setEditingServer(undefined); setIsAddModalOpen(true); }}
+          variant="primary"
+          style={{ padding: '12px 24px', fontSize: '13px' }}
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
+        >
+          ADD SERVER
+        </TactileButton>
+      </div>
+
+      {/* Secondary Action Row */}
       <div style={{
-        padding: '12px 16px',
-        borderBottom: 'var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
-        gap: '12px'
+        gap: '16px',
+        marginBottom: '16px'
       }}>
         <Input
+          placeholder="Search infrastructure..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search servers..."
-          icon={
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-          }
-          style={{ width: '300px' }}
+          autoFocus
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
+          style={{ width: '340px' }}
         />
         {filteredServers.length > 0 && (
           <div style={{ fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
@@ -374,68 +151,69 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
           </div>
         )}
         <div style={{ flex: 1 }}></div>
-        <ToolbarButton
-          label="ADD SERVER"
-          onClick={() => { setEditingServer(undefined); setIsAddModalOpen(true); }}
-          primary
-        />
-      </div>
 
-      {/* Header Row */}
-      <div style={{
-        display: 'flex',
-        padding: '10px 16px',
-        borderBottom: 'var(--border-subtle)',
-        background: 'rgba(255,255,255,0.02)',
-        fontSize: '12px',
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-        color: 'var(--color-text-tertiary)',
-        gap: '16px',
-        overflow: 'hidden'
-      }}>
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
+        {/* Sort Toggle */}
+        <div
+          onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+          style={{
+            fontSize: '11px',
+            fontWeight: 800,
+            color: 'var(--color-text-tertiary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            transition: 'all 0.2s',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+            e.currentTarget.style.color = 'var(--color-text-primary)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
+          }}
         >
-          <SortableContext
-            items={columnOrder}
-            strategy={horizontalListSortingStrategy}
-          >
-            {columnOrder.map(key => (
-              <DraggableHeader key={key} id={key}>
-                <ResizableHeader
-                  label={LABELS[key]}
-                  width={scaledWidths[key]}
-                  sortKey={key}
-                  currentSort={{ key: sortField, direction: sortOrder }}
-                  onSort={handleHeaderSort}
-                  onResize={w => handleResize(key, w)}
-                  minWidth={key === 'os' ? 25 : 50}
-                />
-              </DraggableHeader>
-            ))}
-          </SortableContext>
-        </DndContext>
+          SORT: NAME {sortOrder === 'asc' ? '↑' : '↓'}
+        </div>
       </div>
 
-      {/* List */}
+      {/* List Container */}
       <div style={{ flex: 1 }}>
-        <AutoSizer onResize={({ width }) => setListWidth(width)}>
+        <AutoSizer>
           {({ height, width }) => (
             <List
               height={height}
               width={width}
               itemCount={filteredServers.length}
-              itemSize={56} // Denser row
+              itemSize={104} // Standardized card height + gap
               itemData={itemData}
             >
-              {ServerRow}
+              {VirtualRow}
             </List>
           )}
         </AutoSizer>
+        {filteredServers.length === 0 && (
+          <div style={{
+            height: '200px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-text-tertiary)',
+            fontStyle: 'italic',
+            flexDirection: 'column',
+            gap: '8px'
+          }}>
+            <div style={{ fontSize: '24px', opacity: 0.3 }}>∅</div>
+            <div>No infrastructure found</div>
+          </div>
+        )}
       </div>
 
       {/* Context Menu */}

@@ -86,7 +86,7 @@ const GroupSelector = ({ contact, groups, onClose }: { contact: Contact, groups:
     const mem: Record<string, boolean> = {};
     const contactEmail = contact.email.toLowerCase();
     Object.entries(groups).forEach(([gName, emails]) => {
-      mem[gName] = emails.some(e => e.toLowerCase() === contactEmail);
+      mem[gName] = (emails as string[]).some((e: string) => e.toLowerCase() === contactEmail);
     });
     setMembership(mem);
   }, [contact, groups]);
@@ -203,29 +203,22 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   const isFocused = index === focusedIndex;
 
   return (
-    <div
+    <ContactCard
       style={{
         ...style,
         outline: isFocused ? '2px solid var(--color-accent-blue)' : 'none',
         outlineOffset: '-2px',
         background: isFocused ? 'rgba(59, 130, 246, 0.1)' : undefined
       }}
+      name={contact.name}
+      email={contact.email}
+      title={contact.title}
+      phone={contact.phone}
+      groups={membership}
+      selected={isFocused}
       onContextMenu={(e) => onContextMenu(e, contact)}
-      onClick={() => onRowClick(index)}
-      data-row-index={index}
-      role="row"
-      aria-selected={isFocused}
-      tabIndex={isFocused ? 0 : -1}
-    >
-      <ContactCard
-        name={contact.name}
-        email={contact.email}
-        title={contact.title}
-        phone={contact.phone}
-        groups={membership}
-        selected={isFocused}
-      />
-    </div>
+      onRowClick={() => onRowClick(index)}
+    />
   );
 });
 
@@ -600,16 +593,34 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      overflow: 'hidden',
-      background: 'var(--color-bg-app)'
+      padding: '20px 24px 24px 24px',
+      background: 'var(--color-bg-app)',
+      overflow: 'hidden'
     }}>
-      {/* Header / Actions - Compact */}
+      {/* Hero Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Personnel Directory</h1>
+          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>
+            Global search and management of organization contacts
+          </p>
+        </div>
+        <TactileButton
+          variant="primary"
+          style={{ padding: '12px 24px', fontSize: '13px' }}
+          onClick={() => setIsAddModalOpen(true)}
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
+        >
+          ADD CONTACT
+        </TactileButton>
+      </div>
+
+      {/* Secondary Action Row */}
       <div style={{
-        padding: '12px 16px',
-        borderBottom: 'var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
-        gap: '10px'
+        gap: '16px',
+        marginBottom: '16px'
       }}>
         <Input
           placeholder="Search people..."
@@ -617,7 +628,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           onChange={(e) => setSearch(e.target.value)}
           autoFocus
           icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
-          style={{ width: '300px' }}
+          style={{ width: '340px' }}
         />
         {filtered.length > 0 && (
           <div style={{ fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
@@ -625,14 +636,40 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           </div>
         )}
         <div style={{ flex: 1 }}></div>
-        <ToolbarButton
-          label="ADD CONTACT"
-          onClick={() => setIsAddModalOpen(true)}
-          primary
-        />
+
+        {/* Sort Toggle */}
+        <div
+          onClick={() => setSortConfig(prev => ({ ...prev, direction: prev.direction === 'asc' ? 'desc' : 'asc' }))}
+          style={{
+            fontSize: '11px',
+            fontWeight: 800,
+            color: 'var(--color-text-tertiary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            background: 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.05)',
+            transition: 'all 0.2s',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.06)';
+            e.currentTarget.style.color = 'var(--color-text-primary)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.03)';
+            e.currentTarget.style.color = 'var(--color-text-tertiary)';
+          }}
+        >
+          SORT: {LABELS[sortConfig.key]} {sortConfig.direction === 'asc' ? '↑' : '↓'}
+        </div>
       </div>
 
-      {/* Virtualized List - Compact */}
+      {/* Virtualized List Container */}
       <div
         ref={listContainerRef}
         onKeyDown={handleListKeyDown}
@@ -648,7 +685,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               ref={listRef}
               height={height}
               itemCount={filtered.length}
-              itemSize={64}
+              itemSize={104} // Standardized card height + gap
               width={width}
               itemData={itemData}
               style={{ outline: 'none' }}
@@ -721,7 +758,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             onClose={() => setContextMenu(null)}
             items={[
               {
-                label: recentlyAdded.has(contextMenu.contact.email) ? 'Added to Assembler' : 'Add to Assembler',
+                label: recentlyAdded.has(contextMenu.contact.email) ? 'Added to Composer' : 'Add to Composer',
                 onClick: () => {
                   handleAddWrapper(contextMenu.contact);
                   setContextMenu(null);
@@ -823,6 +860,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           </Modal>
         )
       }
-    </div >
+    </div>
   );
 };

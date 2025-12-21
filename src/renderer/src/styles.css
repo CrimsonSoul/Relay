@@ -1,14 +1,14 @@
 :root {
-  /* Colors - Glass/Acrylic Optimized */
-  --color-bg-app: rgba(11, 13, 18, 0.7);
+  /* Colors - Solid Dark Mode */
+  --color-bg-app: #0B0D12;
   /* Main panel body */
-  --color-bg-surface: rgba(24, 24, 27, 0.3);
+  --color-bg-surface: #18181B;
   --color-bg-surface-opaque: #18181B;
   /* Secondary headers/surfaces */
-  --color-bg-surface-elevated: rgba(30, 30, 33, 0.4);
+  --color-bg-surface-elevated: #1E1E21;
   --color-bg-card: rgba(255, 255, 255, 0.03);
   --color-bg-card-hover: rgba(255, 255, 255, 0.06);
-  --color-bg-sidebar: rgba(15, 17, 21, 0.4);
+  --color-bg-sidebar: #0F1115;
   /* Server list / Window background */
 
   /* Text */
@@ -83,9 +83,11 @@
   --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-smooth: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-bouncy: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-premium: 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-micro: 0.1s ease-out;
 
   /* Layout - Compact */
-  --sidebar-width-collapsed: 48px;
+  --sidebar-width-collapsed: 72px;
   --header-height: 44px;
 }
 
@@ -93,7 +95,7 @@
   box-sizing: border-box;
 }
 
-/* Refined Minimalist Scrollbar - Attio Style */
+/* Refined Minimalist Scrollbar - Attio Style - Auto Hide */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -104,25 +106,36 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0);
   border-radius: var(--radius-sm);
   border: 2px solid transparent;
   background-clip: content-box;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-base);
+}
+
+/* Show scrollbars on hover of the scrollable area */
+*:hover> ::-webkit-scrollbar-thumb,
+*:focus-within> ::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(255, 255, 255, 0.12);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-  background-clip: content-box;
+  background-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 ::-webkit-scrollbar-corner {
   background: transparent;
 }
 
+input {
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
 input:focus {
   outline: none;
   border-color: var(--color-accent-blue) !important;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 body {
@@ -132,15 +145,29 @@ body {
   color: var(--color-text-primary);
   font-family: var(--font-family-base);
   -webkit-font-smoothing: antialiased;
+  scroll-behavior: smooth;
+}
+
+/* Global Interaction Utilities */
+button:active {
+  transform: scale(0.98);
+  transition: transform var(--transition-micro);
+}
+
+.hover-lift {
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
+}
+
+.hover-lift:hover {
+  transform: translateY(-1px) scale(1.02);
 }
 
 .app-container {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background: var(--color-bg-sidebar);
+  background: var(--color-bg-app);
   /* Unified Frame background */
-  backdrop-filter: blur(20px);
   /* Shared blur to prevent seams */
   color: var(--color-text-primary);
   overflow: hidden;
@@ -166,7 +193,7 @@ body.platform-darwin .app-header {
 
 /* Windows titlebar clearance */
 body.platform-win32 .app-header {
-  padding-right: 140px;
+  padding-right: 180px;
   /* Space for Min/Max/Close controls */
   -webkit-app-region: drag;
 }
@@ -191,7 +218,7 @@ body.platform-win32 .window-controls-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 24px;
   flex-shrink: 0;
   position: relative;
   z-index: 9001;
@@ -210,12 +237,24 @@ body.platform-win32 .window-controls-container {
   font-size: 13px;
   color: var(--color-text-secondary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 700px) {
+  .header-breadcrumb {
+    display: none !important;
+  }
 }
 
 .header-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-actions {
@@ -223,6 +262,56 @@ body.platform-win32 .window-controls-container {
   align-items: center;
   gap: 10px;
   -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+/* Responsive World Clock - Keeping visible but compact */
+@media (max-width: 800px) {
+  .world-clock-container {
+    gap: 12px !important;
+  }
+
+  .world-clock-secondary {
+    gap: 8px !important;
+  }
+
+  .world-clock-separator {
+    display: none !important;
+  }
+
+  .world-clock-details {
+    display: none !important;
+  }
+
+  .world-clock-label {
+    font-size: 8px !important;
+  }
+
+  .world-clock-time {
+    font-size: 11px !important;
+  }
+
+  .world-clock-primary-time {
+    font-size: 13px !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .world-clock-container {
+    gap: 8px !important;
+  }
+
+  .world-clock-secondary {
+    gap: 6px !important;
+  }
+
+  .world-clock-label {
+    display: none !important;
+  }
+
+  .header-title {
+    max-width: 100px;
+  }
 }
 
 .content-view {
@@ -233,7 +322,6 @@ body.platform-win32 .window-controls-container {
   flex-direction: column;
   background: var(--color-bg-app);
   /* The darker content pane */
-  backdrop-filter: blur(40px);
 
   /* Precision Discord Rounding - Internal Pane only */
   border-top-left-radius: 8px;
@@ -264,7 +352,7 @@ body.platform-win32 .window-controls-container {
 }
 
 .animate-fade-in {
-  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeIn var(--transition-premium) forwards;
 }
 
 @keyframes slideUp {
@@ -280,7 +368,7 @@ body.platform-win32 .window-controls-container {
 }
 
 .animate-slide-up {
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideUp var(--transition-premium) forwards;
 }
 
 @keyframes slideDown {
@@ -296,7 +384,7 @@ body.platform-win32 .window-controls-container {
 }
 
 .animate-slide-down {
-  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slideDown var(--transition-premium) forwards;
 }
 
 @keyframes scaleIn {
@@ -312,7 +400,7 @@ body.platform-win32 .window-controls-container {
 }
 
 .animate-scale-in {
-  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: scaleIn var(--transition-premium) forwards;
 }
 
 @keyframes scaleInBouncy {
@@ -370,32 +458,34 @@ body.platform-win32 .window-controls-container {
 
 /* Utility Classes - Attio Style */
 .glass-panel {
-  background: var(--color-bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--color-bg-surface-elevated);
   border: var(--border-subtle);
 }
 
 /* Enhanced Tactile Button - Attio Style - Compact */
+/* Enhanced Tactile Button - Attio Style - Compact */
 .tactile-button {
   position: relative;
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--color-text-primary);
-  transition: all var(--transition-fast);
-  height: 28px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text-primary);
+  transition: all var(--transition-smooth);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   outline: none;
   overflow: hidden;
+  user-select: none;
+  white-space: nowrap;
 }
 
 .tactile-button::before {
@@ -407,7 +497,8 @@ body.platform-win32 .window-controls-container {
       rgba(255, 255, 255, 0) 50%,
       rgba(255, 255, 255, 0.08) 100%);
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-smooth);
+  pointer-events: none;
 }
 
 .tactile-button:hover::before {
@@ -415,38 +506,43 @@ body.platform-win32 .window-controls-container {
 }
 
 .tactile-button:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-0.5px);
-  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: var(--shadow-md);
 }
 
 .tactile-button:active {
-  background: rgba(255, 255, 255, 0.04);
-  transform: translateY(0px);
+  transform: translateY(0px) scale(0.97);
   box-shadow: none;
+  transition: transform var(--transition-micro);
 }
 
 .tactile-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+  box-shadow: none;
 }
 
-.tactile-button:disabled:hover {
+/* Secondary / Default Variant */
+.tactile-button--secondary {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.12);
-  transform: none;
-  box-shadow: none;
+}
+
+.tactile-button--secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.tactile-button--secondary:active {
+  background: rgba(255, 255, 255, 0.04);
 }
 
 /* Primary Variant */
 .tactile-button--primary {
-  background: var(--color-accent-blue);
   background: linear-gradient(135deg, var(--color-accent-blue) 0%, #2563EB 100%);
   border-color: var(--color-accent-blue);
   color: white !important;
-  font-weight: 600;
 }
 
 .tactile-button--primary::before {
@@ -458,13 +554,32 @@ body.platform-win32 .window-controls-container {
 
 .tactile-button--primary:hover {
   background: linear-gradient(135deg, var(--color-accent-blue-hover) 0%, var(--color-accent-blue) 100%);
-  box-shadow: var(--shadow-md), var(--shadow-glow-blue);
-  transform: translateY(-1px);
+  box-shadow: var(--shadow-lg), var(--shadow-glow-blue);
+  transform: translateY(-2px) scale(1.02);
+  border-color: var(--color-accent-blue-hover);
 }
 
 .tactile-button--primary:active {
   background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-  transform: translateY(0px);
+  transform: translateY(0px) scale(0.97);
+}
+
+/* Ghost Variant */
+.tactile-button--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  box-shadow: none !important;
+}
+
+.tactile-button--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  transform: translateY(-0.5px);
+}
+
+.tactile-button--ghost:active {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 /* Danger Variant */
@@ -485,6 +600,31 @@ body.platform-win32 .window-controls-container {
   background: var(--color-accent-blue-subtle);
   border-color: var(--color-accent-blue);
   color: var(--color-accent-blue);
+}
+
+/* Sizes */
+.tactile-button--sm {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.tactile-button--md {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+
+/* Icon Only Modifier */
+.tactile-button--icon-only {
+  padding: 0;
+  width: 36px;
+  /* Matches default height */
+  justify-content: center;
+}
+
+.tactile-button--sm.tactile-button--icon-only {
+  width: 28px;
 }
 
 /* Hover Background Utility */
@@ -511,40 +651,98 @@ body.platform-win32 .window-controls-container {
   transform: translateY(-0.5px);
 }
 
-
-/* Custom Scrollbar for Weather Sections */
-.weather-scroll-container {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  transition: scrollbar-color 0.2s ease;
+.server-card-hover:hover,
+.contact-card-hover:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
-.weather-scroll-container:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+/* Responsive Weather Tab */
+@media (max-width: 850px) {
+  .weather-tab-root {
+    flex-direction: column-reverse !important;
+    overflow-y: auto !important;
+    padding-bottom: 40px !important;
+    gap: 24px !important;
+  }
+
+  /* Radar Header (Right Column when desktop) */
+  .weather-tab-root>div:last-child {
+    flex: none !important;
+    height: 450px !important;
+    min-height: 450px !important;
+    width: 100% !important;
+    z-index: 5;
+  }
+
+  .weather-forecast-column {
+    flex: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    overflow-y: visible !important;
+  }
 }
 
-.weather-scroll-container::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-  background: transparent;
+/* Responsive Server Cards */
+@media (max-width: 750px) {
+  .server-card-comment {
+    display: none !important;
+  }
 }
 
-.weather-scroll-container::-webkit-scrollbar-track {
-  background: transparent;
+@media (max-width: 650px) {
+  .server-card-people {
+    width: 180px !important;
+  }
+
+  .server-card-info {
+    flex: 0 0 160px !important;
+  }
 }
 
-.weather-scroll-container::-webkit-scrollbar-thumb {
-  background-color: transparent;
-  border-radius: 20px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  transition: background-color 0.2s ease;
+/* Custom Tooltip System */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
 }
 
-.weather-scroll-container:hover::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.2);
+.tooltip-content {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background: #0F0F0F;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.weather-scroll-container::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(255, 255, 255, 0.4);
+.tooltip-container:hover .tooltip-content {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.spillover-badge {
+  opacity: 0.5;
+  margin-left: 4px;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.2);
+  transition: opacity 0.2s;
+}
+
+.spillover-badge:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
 }
