@@ -193,7 +193,7 @@ body.platform-darwin .app-header {
 
 /* Windows titlebar clearance */
 body.platform-win32 .app-header {
-  padding-right: 160px;
+  padding-right: 180px;
   /* Space for Min/Max/Close controls */
   -webkit-app-region: drag;
 }
