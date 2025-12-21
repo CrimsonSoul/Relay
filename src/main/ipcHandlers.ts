@@ -376,9 +376,9 @@ export function setupIpcHandlers(
     return getFileManager()?.renameGroup(oldName, newName) ?? false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL, async (_event, entry) => {
+  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_event, team, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.updateOnCall(entry) ?? false;
+    return getFileManager()?.updateOnCallTeam(team, rows) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_event, team) => {
@@ -391,13 +391,27 @@ export function setupIpcHandlers(
     return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_event, entries) => {
+  ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_event, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.saveAllOnCall(entries) ?? false;
+    return getFileManager()?.saveAllOnCall(rows) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
     return handleMergeImport('contacts', 'Merge Contacts CSV');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
+    console.log('[Main] Received GENERATE_DUMMY_DATA request');
+    if (!checkMutationRateLimit()) {
+      console.warn('[Main] Rate limit exceeded for dummy data');
+      return { success: false, rateLimited: true };
+    }
+    const fm = getFileManager();
+    if (!fm) {
+      console.error('[Main] FileManager not available');
+      return false;
+    }
+    return fm.generateDummyData();
   });
 
   // Server Handlers (rate limited)

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useRef, useEffect } from 'react';
 import { Server, Contact } from '@shared/ipc';
 import { getColorForString } from '../utils/colors';
 import { Tooltip } from './Tooltip';
@@ -91,14 +91,32 @@ const PersonInfo = ({ label, value, contactLookup }: { label: string, value: str
 };
 
 export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }: ServerCardProps) => {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [isWide, setIsWide] = useState(false);
+
+    useEffect(() => {
+        if (!containerRef.current) return;
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setIsWide(entry.contentRect.width > 900);
+            }
+        });
+        observer.observe(containerRef.current);
+        return () => observer.disconnect();
+    }, []);
+
     const osInfo = getPlatformColor(server.os);
+
+    const cardPadding = isWide ? 24 : 12;
 
     return (
         <div
+            ref={containerRef}
             onContextMenu={(e) => onContextMenu(e, server)}
             style={{
+                width: '100%',
+                height: '100%',
                 ...style,
-                padding: '0 16px',
                 display: 'flex',
                 alignItems: 'center'
             }}
@@ -106,14 +124,15 @@ export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }:
             <div
                 style={{
                     width: '100%',
-                    height: 'calc(100% - 12px)',
+                    height: 'calc(100% - 8px)',
                     display: 'flex',
                     alignItems: 'center',
-                    padding: '0 20px',
+                    paddingLeft: `${cardPadding + 4}px`, // Offset for 4px accent strip
+                    paddingRight: `${cardPadding}px`,
                     background: 'rgba(255, 255, 255, 0.02)',
                     border: '1px solid rgba(255, 255, 255, 0.05)',
                     borderRadius: '12px',
-                    gap: '24px',
+                    gap: `${cardPadding}px`,
                     transition: 'all 0.2s ease',
                     cursor: 'default',
                     position: 'relative',
@@ -155,88 +174,97 @@ export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }:
                     </svg>
                 </div>
 
-                {/* Main Content Stack - Vertical for 10ft readability */}
+                {/* Main Content Stack */}
                 <div style={{
                     display: 'flex',
-                    flexDirection: 'column',
+                    flexDirection: isWide ? 'row' : 'column',
+                    alignItems: isWide ? 'center' : 'stretch',
                     flex: 1,
                     minWidth: 0,
-                    gap: '4px',
-                    justifyContent: 'center'
+                    gap: isWide ? '40px' : '4px',
+                    justifyContent: isWide ? 'space-between' : 'center'
                 }}>
-                    {/* Row 1: Name and Platform Badge */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <Tooltip content={server.name}>
+                    {/* Left: Identity & Scope */}
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '4px', flex: isWide ? 1 : 'unset' }}>
+                        {/* Row 1: Name and Platform Badge */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <Tooltip content={server.name}>
+                                <span style={{
+                                    fontSize: isWide ? '24px' : '22px',
+                                    fontWeight: 800,
+                                    color: 'var(--color-text-primary)',
+                                    letterSpacing: '-0.02em',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    display: 'block'
+                                }}>
+                                    {server.name}
+                                </span>
+                            </Tooltip>
                             <span style={{
-                                fontSize: '22px', // Slightly larger for server names
-                                fontWeight: 800,
-                                color: 'var(--color-text-primary)',
-                                letterSpacing: '-0.02em',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                display: 'block'
+                                fontSize: '10px',
+                                fontWeight: 900,
+                                padding: '2px 8px',
+                                borderRadius: '6px',
+                                background: osInfo.bg,
+                                border: `1px solid ${osInfo.border}`,
+                                color: osInfo.text,
+                                letterSpacing: '0.05em',
+                                textTransform: 'uppercase'
                             }}>
-                                {server.name}
+                                {osInfo.label}
                             </span>
-                        </Tooltip>
-                        <span style={{
-                            fontSize: '10px',
-                            fontWeight: 900,
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            background: osInfo.bg,
-                            border: `1px solid ${osInfo.border}`,
-                            color: osInfo.text,
-                            letterSpacing: '0.05em',
-                            textTransform: 'uppercase'
+                        </div>
+
+                        {/* Row 2: Business Area | LOB | Comments */}
+                        <div style={{
+                            fontSize: '14px',
+                            color: 'var(--color-text-secondary)',
+                            fontWeight: 550,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden'
                         }}>
-                            {osInfo.label}
-                        </span>
+                            <span style={{ color: '#E5E7EB', opacity: 0.9, flexShrink: 0 }}>{server.businessArea}</span>
+                            <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>
+                            <span style={{ flexShrink: 0 }}>{server.lob}</span>
+                            {server.comment && server.comment !== '-' && (
+                                <>
+                                    <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>
+                                    <Tooltip content={server.comment}>
+                                        <span style={{
+                                            fontStyle: 'italic',
+                                            opacity: 0.6,
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            cursor: 'help',
+                                            display: 'block'
+                                        }}>
+                                            {server.comment}
+                                        </span>
+                                    </Tooltip>
+                                </>
+                            )}
+                        </div>
                     </div>
 
-                    {/* Row 2: Business Area | LOB | Comments */}
-                    <div style={{
-                        fontSize: '14px',
-                        color: 'var(--color-text-secondary)',
-                        fontWeight: 550,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden'
-                    }}>
-                        <span style={{ color: '#E5E7EB', opacity: 0.9, flexShrink: 0 }}>{server.businessArea}</span>
-                        <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>
-                        <span style={{ flexShrink: 0 }}>{server.lob}</span>
-                        {server.comment && server.comment !== '-' && (
-                            <>
-                                <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>
-                                <Tooltip content={server.comment}>
-                                    <span style={{
-                                        fontStyle: 'italic',
-                                        opacity: 0.6,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        cursor: 'help',
-                                        display: 'block'
-                                    }}>
-                                        {server.comment}
-                                    </span>
-                                </Tooltip>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Row 3: Owners & IT Contacts */}
+                    {/* Right: Responsibility Info */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '24px',
-                        marginTop: '6px'
+                        gap: isWide ? '40px' : '24px',
+                        marginTop: isWide ? 0 : '6px',
+                        justifyContent: isWide ? 'flex-end' : 'flex-start'
                     }}>
                         <PersonInfo label="OWNER" value={server.owner || ''} contactLookup={contactLookup} />
-                        <PersonInfo label="SUPPORT" value={server.contact || ''} contactLookup={contactLookup} />
+                        {!isWide && <PersonInfo label="SUPPORT" value={server.contact || ''} contactLookup={contactLookup} />}
+                        {isWide && (
+                            <div style={{ width: '2px', height: '32px', background: 'rgba(255,255,255,0.05)', borderRadius: '1px' }} />
+                        )}
+                        {isWide && <PersonInfo label="SUPPORT" value={server.contact || ''} contactLookup={contactLookup} />}
                     </div>
                 </div>
             </div>

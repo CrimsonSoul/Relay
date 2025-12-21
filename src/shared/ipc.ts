@@ -20,14 +20,16 @@ export type Server = {
     raw: Record<string, any>;
 };
 
-export type OnCallEntry = {
+export type OnCallRow = {
+    id: string;
     team: string;
-    primary: string;
-    backup: string;
-    backupLabel?: string;
+    role: string;
+    name: string;
+    contact: string;
+    timeWindow?: string;
 };
 
-export type OnCallData = OnCallEntry[];
+export type OnCallData = OnCallRow[];
 
 export type AppData = {
     groups: GroupMap;
@@ -113,16 +115,17 @@ export type BridgeAPI = {
     getDataPath: () => Promise<string>;
     removeGroup: (groupName: string) => Promise<boolean>;
     renameGroup: (oldName: string, newName: string) => Promise<boolean>;
-    updateOnCall: (entry: OnCallEntry) => Promise<boolean>;
+    updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<boolean>;
     removeOnCallTeam: (team: string) => Promise<boolean>;
     renameOnCallTeam: (oldName: string, newName: string) => Promise<boolean>;
-    saveAllOnCall: (entries: OnCallEntry[]) => Promise<boolean>;
+    saveAllOnCall: (rows: OnCallRow[]) => Promise<boolean>;
     windowMinimize: () => void;
     windowMaximize: () => void;
     windowClose: () => void;
     isMaximized: () => Promise<boolean>;
     onMaximizeChange: (callback: (event: any, maximized: boolean) => void) => void;
     removeMaximizeListener: () => void;
+    generateDummyData: () => Promise<boolean>;
 };
 
 export const IPC_CHANNELS = {
@@ -150,11 +153,12 @@ export const IPC_CHANNELS = {
     ADD_CONTACT_TO_GROUP: 'data:addContactToGroup',
     REMOVE_CONTACT_FROM_GROUP: 'data:removeContactFromGroup',
     RENAME_GROUP: 'data:renameGroup',
-    UPDATE_ONCALL: 'data:updateOnCall',
+    UPDATE_ONCALL_TEAM: 'data:updateOnCallTeam',
     REMOVE_ONCALL_TEAM: 'data:removeOnCallTeam',
     RENAME_ONCALL_TEAM: 'data:renameOnCallTeam',
     SAVE_ALL_ONCALL: 'data:saveAllOnCall',
     IMPORT_CONTACTS_WITH_MAPPING: 'data:importContactsWithMapping',
+    GENERATE_DUMMY_DATA: 'data:generateDummyData',
     DATA_UPDATED: 'data:updated',
     DATA_RELOAD: 'data:reload',
     DATA_RELOAD_STARTED: 'data:reload-started',

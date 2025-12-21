@@ -6,8 +6,9 @@ import { WindowControls } from './components/WindowControls';
 import { ToastProvider, useToast } from './components/Toast';
 import { AppData, Contact, DataError, WeatherAlert } from '@shared/ipc';
 import { TabFallback } from './components/TabFallback';
+import { TactileButton } from './components/TactileButton';
 import './styles.css';
-import { DUMMY_DATA } from './dummyData';
+
 
 // Error Boundary to prevent full app crashes from component errors
 interface ErrorBoundaryProps {
@@ -64,22 +65,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           }}>
             {this.state.error?.message || 'Unknown error'}
           </pre>
-          <button
+          <TactileButton
             onClick={() => window.location.reload()}
-            style={{
-              marginTop: '24px',
-              padding: '10px 20px',
-              background: 'var(--color-accent-blue)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 500
-            }}
+            variant="primary"
+            style={{ marginTop: '24px' }}
           >
             Reload Application
-          </button>
+          </TactileButton>
         </div>
       );
     }
@@ -94,9 +86,10 @@ const ServersTab = lazy(() => import('./tabs/ServersTab').then(m => ({ default: 
 const RadarTab = lazy(() => import('./tabs/RadarTab').then(m => ({ default: m.RadarTab })));
 const WeatherTab = lazy(() => import('./tabs/WeatherTab').then(m => ({ default: m.WeatherTab })));
 const MetricsTab = lazy(() => import('./tabs/MetricsTab').then(m => ({ default: m.MetricsTab })));
+const PersonnelTab = lazy(() => import('./tabs/PersonnelTab').then(m => ({ default: m.PersonnelTab })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(m => ({ default: m.SettingsModal })));
 
-type Tab = 'Compose' | 'People' | 'Servers' | 'Reports' | 'Radar' | 'Weather';
+type Tab = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Reports' | 'Radar' | 'Weather';
 
 // Format data errors for user-friendly display
 function formatDataError(error: DataError): string {
@@ -153,7 +146,13 @@ interface Location {
 export function MainApp() {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<Tab>('Compose');
-  const [data, setData] = useState<AppData>(DUMMY_DATA);
+  const [data, setData] = useState<AppData>({
+    groups: {},
+    contacts: [],
+    servers: [],
+    onCall: [],
+    lastUpdated: 0
+  });
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
@@ -233,7 +232,29 @@ export function MainApp() {
   useEffect(() => {
     const platform = window.api?.platform || (navigator.platform.toLowerCase().includes('mac') ? 'darwin' : 'win32');
     document.body.classList.add(`platform-${platform}`);
-    console.log(`[App] Platform detected: ${platform}`);
+
+
+    // Horizontal Scroll Wheel Support
+    const handleGlobalWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      const horizontalContainer = target.closest('.weather-scroll-container, [style*="overflow-x: auto"], [style*="overflow-x: scroll"]') as HTMLElement;
+
+      if (horizontalContainer && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        // If it's primarily a vertical scroll but we are on a container that prefers horizontal
+        // or has horizontal overflow but NO vertical overflow
+        const style = window.getComputedStyle(horizontalContainer);
+        const isHorizontalOnly = (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
+          (style.overflowY === 'hidden' || horizontalContainer.scrollHeight <= horizontalContainer.clientHeight);
+
+        if (isHorizontalOnly) {
+          horizontalContainer.scrollLeft += e.deltaY;
+          e.preventDefault();
+        }
+      }
+    };
+
+    window.addEventListener('wheel', handleGlobalWheel, { passive: false });
+    return () => window.removeEventListener('wheel', handleGlobalWheel);
   }, []);
 
   const settleReloadIndicator = useCallback(() => {
@@ -274,7 +295,7 @@ export function MainApp() {
 
   useEffect(() => {
     if (!window.api) return;
-    window.api.subscribeToData((newData) => {
+    window.api.subscribeToData((newData: AppData) => {
       setData(newData);
       settleReloadIndicator();
     });
@@ -361,14 +382,6 @@ export function MainApp() {
             <span className="header-breadcrumb">
               Relay / {activeTab}
             </span>
-            <span className="header-title">
-              {activeTab === 'Compose' && 'Data Composition'}
-              {activeTab === 'People' && 'Contact Directory'}
-              {activeTab === 'Servers' && 'Infrastructure Servers'}
-              {activeTab === 'Reports' && 'Reports'}
-              {activeTab === 'Radar' && 'Dispatcher Radar'}
-              {activeTab === 'Weather' && 'Weather & Radar'}
-            </span>
           </div>
 
           {/* Actions Area */}
@@ -394,6 +407,17 @@ export function MainApp() {
                 onUndoRemove={handleUndoRemove}
                 onResetManual={handleReset}
               />
+            </div>
+          )}
+          {activeTab === 'Personnel' && (
+            <div className="animate-fade-in" style={{ height: '100%' }}>
+              <Suspense fallback={<TabFallback />}>
+                <PersonnelTab
+                  onCall={data.onCall}
+                  contacts={data.contacts}
+                  groups={data.groups}
+                />
+              </Suspense>
             </div>
           )}
           {activeTab === 'People' && (

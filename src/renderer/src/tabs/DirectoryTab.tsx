@@ -203,29 +203,22 @@ const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{
   const isFocused = index === focusedIndex;
 
   return (
-    <div
+    <ContactCard
       style={{
         ...style,
         outline: isFocused ? '2px solid var(--color-accent-blue)' : 'none',
         outlineOffset: '-2px',
         background: isFocused ? 'rgba(59, 130, 246, 0.1)' : undefined
       }}
+      name={contact.name}
+      email={contact.email}
+      title={contact.title}
+      phone={contact.phone}
+      groups={membership}
+      selected={isFocused}
       onContextMenu={(e) => onContextMenu(e, contact)}
-      onClick={() => onRowClick(index)}
-      data-row-index={index}
-      role="row"
-      aria-selected={isFocused}
-      tabIndex={isFocused ? 0 : -1}
-    >
-      <ContactCard
-        name={contact.name}
-        email={contact.email}
-        title={contact.title}
-        phone={contact.phone}
-        groups={membership}
-        selected={isFocused}
-      />
-    </div>
+      onRowClick={() => onRowClick(index)}
+    />
   );
 });
 
@@ -600,16 +593,34 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       display: 'flex',
       flexDirection: 'column',
       height: '100%',
-      overflow: 'hidden',
-      background: 'var(--color-bg-app)'
+      padding: '20px 24px 24px 24px',
+      background: 'var(--color-bg-app)',
+      overflow: 'hidden'
     }}>
-      {/* Header / Actions - Compact */}
+      {/* Hero Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Personnel Directory</h1>
+          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>
+            Global search and management of organization contacts
+          </p>
+        </div>
+        <TactileButton
+          variant="primary"
+          style={{ padding: '12px 24px', fontSize: '13px' }}
+          onClick={() => setIsAddModalOpen(true)}
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
+        >
+          ADD CONTACT
+        </TactileButton>
+      </div>
+
+      {/* Secondary Action Row */}
       <div style={{
-        padding: '16px 12px',
-        borderBottom: 'var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
-        gap: '16px'
+        gap: '16px',
+        marginBottom: '16px'
       }}>
         <Input
           placeholder="Search people..."
@@ -654,17 +665,11 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             e.currentTarget.style.color = 'var(--color-text-tertiary)';
           }}
         >
-          SORT: NAME {sortConfig.direction === 'asc' ? '↑' : '↓'}
+          SORT: {LABELS[sortConfig.key]} {sortConfig.direction === 'asc' ? '↑' : '↓'}
         </div>
-
-        <ToolbarButton
-          label="ADD CONTACT"
-          onClick={() => setIsAddModalOpen(true)}
-          primary
-        />
       </div>
 
-      {/* Virtualized List - Compact */}
+      {/* Virtualized List Container */}
       <div
         ref={listContainerRef}
         onKeyDown={handleListKeyDown}
@@ -672,7 +677,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         aria-label="Contacts list"
         aria-rowcount={filtered.length}
         tabIndex={0}
-        style={{ flex: 1, outline: 'none', paddingTop: '16px', paddingLeft: '12px', paddingRight: '12px' }}
+        style={{ flex: 1, outline: 'none' }}
       >
         <AutoSizer onResize={({ width }) => setListWidth(width)}>
           {({ height, width }) => (
@@ -680,7 +685,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               ref={listRef}
               height={height}
               itemCount={filtered.length}
-              itemSize={100} // Larger cards for readability
+              itemSize={104} // Standardized card height + gap
               width={width}
               itemData={itemData}
               style={{ outline: 'none' }}
@@ -855,6 +860,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           </Modal>
         )
       }
-    </div >
+    </div>
   );
 };

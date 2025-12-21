@@ -1,4 +1,4 @@
-import React, { memo, useState } from 'react';
+import React, { memo, useState, useRef, useEffect } from 'react';
 import { getColorForString } from '../utils/colors';
 import { formatPhoneNumber } from '../utils/phone';
 import { Tooltip } from './Tooltip';
@@ -15,6 +15,8 @@ type ContactRowProps = {
   sourceLabel?: string;
   groups?: string[];
   selected?: boolean;
+  onContextMenu?: (e: React.MouseEvent, contact: any) => void;
+  onRowClick?: () => void;
 };
 
 const isValidName = (name: string) => {
@@ -53,37 +55,54 @@ const GroupPill = ({ group }: { group: string }) => {
   );
 };
 
-export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected }: ContactRowProps) => {
+export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, className, sourceLabel, groups = [], selected, onContextMenu, onRowClick }: ContactRowProps) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isWide, setIsWide] = useState(false);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setIsWide(entry.contentRect.width > 900);
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
   const colorScheme = getColorForString(name || email);
   const color = avatarColor || colorScheme.text;
   const formattedPhone = formatPhoneNumber(phone || '');
   const validName = isValidName(name);
   const displayName = validName ? name : email;
 
+  const cardPadding = isWide ? 24 : 12;
+
   return (
     <div
+      ref={containerRef}
+      onContextMenu={(e) => onContextMenu?.(e, { name, email, title, phone, groups })}
+      onClick={onRowClick}
       style={{
         width: '100%',
         height: '100%',
         ...style,
         display: 'flex',
-        alignItems: 'center',
-        padding: '0 8px',
-        position: 'relative',
-        boxSizing: 'border-box'
+        alignItems: 'center'
       }}
     >
       <div
         style={{
-          flex: 1,
-          height: 'calc(100% - 10px)',
+          width: '100%',
+          height: 'calc(100% - 8px)',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 8px',
+          paddingLeft: `${cardPadding + 4}px`,
+          paddingRight: `${cardPadding}px`,
           background: selected ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
           border: selected ? '1px solid rgba(59, 130, 246, 0.2)' : '1px solid rgba(255, 255, 255, 0.05)',
           borderRadius: '12px',
-          gap: '10px',
+          gap: `${cardPadding}px`,
           transition: 'all 0.2s ease',
           cursor: 'default',
           position: 'relative',
@@ -123,81 +142,91 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
           {getInitials(name, email)}
         </div>
 
-        {/* Main Info Stack - Vertical for maximum narrow-width compatibility */}
+        {/* Main Info Stack */}
         <div style={{
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection: isWide ? 'row' : 'column',
+          alignItems: isWide ? 'center' : 'stretch',
           flex: 1,
           minWidth: 0,
-          gap: '4px',
-          justifyContent: 'center'
+          gap: isWide ? '32px' : '4px',
+          justifyContent: isWide ? 'space-between' : 'center'
         }}>
-          {/* Top Row: Name */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-            <Tooltip content={displayName}>
-              <span style={{
-                fontSize: '20px',
-                fontWeight: 800,
-                color: 'var(--color-text-primary)',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                letterSpacing: '-0.02em',
-                display: 'block'
-              }}>
-                {displayName}
-              </span>
-            </Tooltip>
-            {sourceLabel && (
-              <span style={{
-                fontSize: '10px',
-                background: 'rgba(255, 255, 255, 0.12)',
-                color: 'var(--color-text-primary)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                fontWeight: 900,
-                textTransform: 'uppercase',
-                flexShrink: 0,
-                letterSpacing: '0.05em'
-              }}>
-                {sourceLabel}
-              </span>
-            )}
+          {/* Left Side: Name and Title/Email */}
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '4px', flex: isWide ? 1 : 'unset' }}>
+            {/* Top Row: Name */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+              <Tooltip content={displayName}>
+                <span style={{
+                  fontSize: isWide ? '22px' : '20px',
+                  fontWeight: 800,
+                  color: 'var(--color-text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  letterSpacing: '-0.02em',
+                  display: 'block'
+                }}>
+                  {displayName}
+                </span>
+              </Tooltip>
+              {sourceLabel && (
+                <span style={{
+                  fontSize: '10px',
+                  background: 'rgba(255, 255, 255, 0.12)',
+                  color: 'var(--color-text-primary)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  flexShrink: 0,
+                  letterSpacing: '0.05em'
+                }}>
+                  {sourceLabel}
+                </span>
+              )}
+            </div>
+
+            {/* Middle Row: Title | Email */}
+            <div style={{
+              fontSize: '14px',
+              color: 'var(--color-text-secondary)',
+              fontWeight: 550,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden'
+            }}>
+              {title && (
+                <Tooltip content={title}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+                </Tooltip>
+              )}
+              {title && <span style={{ opacity: 0.3, fontSize: '16px' }}>|</span>}
+              <Tooltip content={email}>
+                <span style={{ opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</span>
+              </Tooltip>
+            </div>
           </div>
 
-          {/* Middle Row: Title | Email */}
+          {/* Right Side: Phone & Groups */}
           <div style={{
-            fontSize: '14px',
-            color: 'var(--color-text-secondary)',
-            fontWeight: 550,
             display: 'flex',
             alignItems: 'center',
-            gap: '8px',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden'
+            minWidth: 0,
+            gap: isWide ? '24px' : '12px',
+            justifyContent: isWide ? 'flex-end' : 'flex-start'
           }}>
-            {title && (
-              <Tooltip content={title}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-              </Tooltip>
-            )}
-            {title && <span style={{ opacity: 0.3, fontSize: '16px' }}>|</span>}
-            <Tooltip content={email}>
-              <span style={{ opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</span>
-            </Tooltip>
-          </div>
-
-          {/* Phone & Groups with stable spacing */}
-          <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: '12px' }}>
             {formattedPhone ? (
               <Tooltip content={formattedPhone}>
                 <span style={{
-                  fontSize: '18px',
+                  fontSize: isWide ? '20px' : '18px',
                   color: '#60A5FA',
                   fontWeight: 700,
                   letterSpacing: '0.05em',
                   whiteSpace: 'nowrap',
-                  minWidth: '160px',
+                  minWidth: isWide ? 'auto' : '160px',
                   flexShrink: 0,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -207,16 +236,16 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                 </span>
               </Tooltip>
             ) : (
-              <div style={{ minWidth: '160px', height: '18px', flexShrink: 0 }} />
+              !isWide && <div style={{ minWidth: '160px', height: '18px', flexShrink: 0 }} />
             )}
 
             {groups.length > 0 && (
               <Tooltip content={groups.join(', ')}>
                 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'nowrap', overflow: 'hidden' }}>
-                  {groups.slice(0, 1).map(g => (
+                  {groups.slice(0, isWide ? 3 : 1).map(g => (
                     <GroupPill key={g} group={g} />
                   ))}
-                  {groups.length > 1 && (
+                  {groups.length > (isWide ? 3 : 1) && (
                     <span style={{
                       fontSize: '12px',
                       color: 'var(--color-text-tertiary)',
@@ -226,7 +255,7 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
                       borderRadius: '6px',
                       flexShrink: 0
                     }}>
-                      +{groups.length - 1}
+                      +{groups.length - (isWide ? 3 : 1)}
                     </span>
                   )}
                 </div>
@@ -236,24 +265,26 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         </div>
       </div>
 
-      {action && (
-        <div className="row-actions" style={{
-          position: 'absolute',
-          right: '32px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          background: 'var(--color-bg-surface)',
-          padding: '4px 8px',
-          borderRadius: '8px',
-          display: 'flex',
-          gap: '4px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          zIndex: 10
-        }}>
-          {action}
-        </div>
-      )}
+      {
+        action && (
+          <div className="row-actions" style={{
+            position: 'absolute',
+            right: '32px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'var(--color-bg-surface)',
+            padding: '4px 8px',
+            borderRadius: '8px',
+            display: 'flex',
+            gap: '4px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            zIndex: 10
+          }}>
+            {action}
+          </div>
+        )
+      }
     </div>
   );
 });
