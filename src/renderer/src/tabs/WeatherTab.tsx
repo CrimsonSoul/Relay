@@ -176,6 +176,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   const [permissionDenied, setPermissionDenied] = useState(false);
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const radarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoLocateAttemptedRef = useRef(false);
 
   // Reverse geocode coordinates to get location name
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
@@ -256,12 +257,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
 
   // Auto-locate on mount if no location
   useEffect(() => {
-    if (!location && !loading) {
+    if (!location && !loading && !autoLocateAttemptedRef.current) {
       // Only auto-locate if we don't have a location and aren't already loading one (from app init)
-      // Actually, App passed null if nothing in storage.
+      autoLocateAttemptedRef.current = true;
       handleAutoLocate();
     }
-  }, []);
+  }, [location, loading, handleAutoLocate]);
 
   const handleManualSearch = async () => {
     if (!manualInput.trim()) return;

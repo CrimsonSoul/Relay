@@ -85,10 +85,10 @@ export type BridgeAPI = {
     importGroupsFile: () => Promise<boolean>;
     importContactsFile: () => Promise<boolean>;
     importServersFile: () => Promise<boolean>;
-    subscribeToData: (callback: (data: AppData) => void) => void;
-    onReloadStart: (callback: () => void) => void;
-    onReloadComplete: (callback: (success: boolean) => void) => void;
-    onDataError: (callback: (error: DataError) => void) => void;
+    subscribeToData: (callback: (data: AppData) => void) => () => void;
+    onReloadStart: (callback: () => void) => () => void;
+    onReloadComplete: (callback: (success: boolean) => void) => () => void;
+    onDataError: (callback: (error: DataError) => void) => () => void;
     onImportProgress: (callback: (progress: ImportProgress) => void) => void;
     reloadData: () => Promise<void>;
     onAuthRequested: (callback: (request: AuthRequest) => void) => void;
