@@ -5,12 +5,20 @@ import { IPC_CHANNELS, type AppData, type Contact, type GroupMap, type Server, t
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { stringify } from 'csv-stringify/sync';
+import {
+  ensureDataFilesAsync,
+  copyDataFilesAsync,
+  loadConfigAsync,
+  saveConfigAsync,
+  generateDummyDataAsync
+} from './dataUtils';
 import { parseCsvAsync, sanitizeField, desanitizeField, stringifyCsv } from './csvUtils';
 import { cleanAndFormatPhoneNumber } from './phoneUtils';
 import { HeaderMatcher } from './HeaderMatcher';
 import { validateContacts, validateServers } from './csvValidation';
 import { STD_SERVER_HEADERS, STD_CONTACT_HEADERS, SERVER_COLUMN_ALIASES, CONTACT_COLUMN_ALIASES, ONCALL_COLUMNS, STD_ONCALL_HEADERS } from '@shared/csvTypes';
-import { OnCallEntry } from '@shared/ipc';
+import { OnCallEntry, OnCallRow } from '@shared/ipc';
+import { v4 } from 'uuid';
 
 const GROUP_FILES = ['groups.csv'];
 const CONTACT_FILES = ['contacts.csv'];
@@ -50,6 +58,7 @@ export class FileManager {
   public init() {
     this.startWatching();
     this.readAndEmit();
+    this.performBackup('init');
   }
 
   private startWatching() {
@@ -541,6 +550,7 @@ export class FileManager {
       if (removed) {
         const csvOutput = stringify(newData);
         await this.writeAndEmit(path, csvOutput);
+        this.performBackup('removeContact');
         return true;
       }
       return false;
@@ -614,6 +624,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('addContact');
       return true;
     } catch (e) {
       console.error('[FileManager] addContact error:', e);
@@ -645,6 +656,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('addGroup');
       return true;
     } catch (e) {
       console.error('[FileManager] addGroup error:', e);
@@ -702,6 +714,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('updateGroupMembership');
       return true;
     } catch (e) {
       console.error('[FileManager] updateGroupMembership error:', e);
@@ -729,6 +742,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('removeGroup');
       return true;
     } catch (e) {
       console.error('[FileManager] removeGroup error:', e);
@@ -769,6 +783,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('renameGroup');
       return true;
 
     } catch (e) {
@@ -877,6 +892,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(targetData);
       await this.writeAndEmit(targetPath, csvOutput);
+      this.performBackup('importGroups');
       return true;
     } catch (e) {
       console.error('[FileManager] importGroupsWithMapping error:', e);
@@ -996,6 +1012,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(targetData);
       await this.writeAndEmit(targetPath, csvOutput);
+      this.performBackup('importContacts');
       return true;
 
     } catch (e) {
@@ -1064,6 +1081,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(workingData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('addServer');
       return true;
     } catch (e) {
       console.error('[FileManager] addServer error:', e);
@@ -1101,6 +1119,7 @@ export class FileManager {
       if (removed) {
         const csvOutput = this.safeStringify(newData);
         await this.writeAndEmit(path, csvOutput);
+        this.performBackup('removeServer');
         return true;
       }
       return false;
@@ -1252,6 +1271,7 @@ export class FileManager {
 
       const csvOutput = this.safeStringify(targetData);
       await this.writeAndEmit(targetPath, csvOutput);
+      this.performBackup('importServers');
 
       // Trigger cleanup after successful import
       await this.cleanupServerContacts();
@@ -1263,7 +1283,7 @@ export class FileManager {
     }
   }
 
-  private async parseOnCall(): Promise<OnCallEntry[]> {
+  private async parseOnCall(): Promise<OnCallRow[]> {
     let path = this.resolveExistingFile(ONCALL_FILES);
 
     // Auto-create if missing
@@ -1271,7 +1291,6 @@ export class FileManager {
       console.log('[FileManager] oncall.csv not found. Creating default...');
       path = join(this.rootDir, ONCALL_FILES[0]);
       const defaultContent = STD_ONCALL_HEADERS.join(',') + '\n';
-      // Write standard headers
       try {
         await fs.writeFile(path, defaultContent, 'utf-8');
         console.log(`[FileManager] Created ${path}`);
@@ -1290,97 +1309,89 @@ export class FileManager {
       const header = data[0].map((h: string) => desanitizeField(h.trim().toLowerCase()));
       const rows = data.slice(1);
 
-      const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
-      const primaryIdx = header.indexOf(ONCALL_COLUMNS.PRIMARY.toLowerCase());
-      const backupIdx = header.indexOf(ONCALL_COLUMNS.BACKUP.toLowerCase());
-      const labelIdx = header.indexOf(ONCALL_COLUMNS.LABEL.toLowerCase());
+      // MIGRATION DETECTION
+      // Check for old headers
+      const isLegacy = header.includes('primary') && header.includes('backup');
 
-      if (teamIdx === -1 || primaryIdx === -1 || backupIdx === -1) {
-        return [];
+      if (isLegacy) {
+        console.log('[FileManager] Detected legacy on-call format. Migrating...');
+        // Legacy Columns: Team, Primary, Backup, Label
+        const teamIdx = header.indexOf('team');
+        const primaryIdx = header.indexOf('primary');
+        const backupIdx = header.indexOf('backup');
+        const labelIdx = header.indexOf('label');
+
+        if (teamIdx === -1) return [];
+
+        const migratedRows: OnCallRow[] = [];
+
+        for (const row of rows) {
+          const team = desanitizeField(row[teamIdx]);
+          const primary = primaryIdx !== -1 ? desanitizeField(row[primaryIdx]) : '';
+          const backup = backupIdx !== -1 ? desanitizeField(row[backupIdx]) : '';
+          const label = labelIdx !== -1 ? desanitizeField(row[labelIdx]) : 'BACKUP';
+
+          if (team) {
+            if (primary) {
+              migratedRows.push({
+                id: v4(),
+                team,
+                role: 'Primary',
+                name: '', // Will be resolved by frontend match if possible, or just used as lookups
+                contact: primary
+              });
+            }
+            if (backup) {
+              migratedRows.push({
+                id: v4(),
+                team,
+                role: label || 'Backup',
+                name: '',
+                contact: backup
+              });
+            }
+          }
+        }
+
+        // Save immediately to complete migration
+        await this.saveAllOnCall(migratedRows);
+        return migratedRows;
       }
+      const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
+      const roleIdx = header.indexOf(ONCALL_COLUMNS.ROLE.toLowerCase());
+      const nameIdx = header.indexOf(ONCALL_COLUMNS.NAME.toLowerCase());
+      const contactIdx = header.findIndex(h => h === ONCALL_COLUMNS.CONTACT.toLowerCase() || h === 'email' || h === 'phone');
+      const timeWindowIdx = header.findIndex(h => h === 'time window' || h === 'timewindow' || h === 'shift' || h === 'hours');
 
       return rows.map((row: string[]) => ({
-        team: row[teamIdx],
-        primary: row[primaryIdx],
-        backup: row[backupIdx],
-        backupLabel: labelIdx !== -1 ? row[labelIdx] : undefined
-      }));
+        id: v4(),
+        team: desanitizeField(row[teamIdx] || ''),
+        role: roleIdx !== -1 ? desanitizeField(row[roleIdx] || '') : '',
+        name: nameIdx !== -1 ? desanitizeField(row[nameIdx] || '') : '',
+        contact: contactIdx !== -1 ? desanitizeField(row[contactIdx] || '') : '',
+        timeWindow: timeWindowIdx !== -1 ? desanitizeField(row[timeWindowIdx] || '') : ''
+      })).filter(r => r.team); // Filter out empty teams
+
     } catch (e) {
       console.error('Error parsing oncall:', e);
       return [];
     }
   }
 
-  public async updateOnCall(entry: OnCallEntry): Promise<boolean> {
+  public async updateOnCallTeam(team: string, rows: OnCallRow[]): Promise<boolean> {
     try {
-      const path = join(this.rootDir, ONCALL_FILES[0]);
-      let contents = '';
-      if (existsSync(path)) {
-        contents = await fs.readFile(path, 'utf-8');
-      }
+      // We do a full read-modify-write here to ensure we don't blow away other teams
+      const allRows = await this.parseOnCall();
 
-      const data = await parseCsvAsync(contents) as string[][];
-      const workingData = data.map((row: string[]) => row.map((cell: string) => desanitizeField(cell)));
+      // Filter out ANY rows for this team
+      const otherRows = allRows.filter(r => r.team !== team);
 
-      if (workingData.length === 0) {
-        workingData.push([...STD_ONCALL_HEADERS]);
-      }
+      // Add the new rows
+      const merged = [...otherRows, ...rows];
 
-      const header = workingData[0].map((h: string) => h.trim().toLowerCase()); // Bolt: Added trim() just in case and logging
-      console.log('[FileManager] updateOnCall headers:', header);
-
-      const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
-      const primaryIdx = header.indexOf(ONCALL_COLUMNS.PRIMARY.toLowerCase());
-      const backupIdx = header.indexOf(ONCALL_COLUMNS.BACKUP.toLowerCase());
-      const labelIdx = header.indexOf(ONCALL_COLUMNS.LABEL.toLowerCase());
-
-      console.log(`[FileManager] Indices - Team: ${teamIdx}, Primary: ${primaryIdx}, Backup: ${backupIdx}, Label: ${labelIdx}`);
-
-      if (teamIdx === -1 || primaryIdx === -1 || backupIdx === -1) {
-        // This shouldn't happen if we just pushed STD_ONCALL_HEADERS, but for safety:
-        console.error('[FileManager] Missing columns in oncall.csv');
-        return false;
-      }
-
-      let rowIndex = workingData.findIndex((row, idx) => idx > 0 && row[teamIdx] === entry.team);
-
-      if (rowIndex !== -1) {
-        workingData[rowIndex][primaryIdx] = entry.primary;
-        workingData[rowIndex][backupIdx] = entry.backup;
-        if (labelIdx !== -1) {
-          workingData[rowIndex][labelIdx] = entry.backupLabel || '';
-        } else if (entry.backupLabel) {
-          // If label exists in entry but not in CSV header, add the column
-          workingData[0].push(ONCALL_COLUMNS.LABEL);
-          const newLabelIdx = workingData[0].length - 1;
-          // Fill existing rows with empty label
-          for (let i = 1; i < workingData.length; i++) {
-            workingData[i].push('');
-          }
-          workingData[rowIndex][newLabelIdx] = entry.backupLabel;
-        }
-      } else {
-        const newRow = new Array(workingData[0].length).fill('');
-        newRow[teamIdx] = entry.team;
-        newRow[primaryIdx] = entry.primary;
-        newRow[backupIdx] = entry.backup;
-        if (labelIdx !== -1) {
-          newRow[labelIdx] = entry.backupLabel || '';
-        } else if (entry.backupLabel) {
-          workingData[0].push(ONCALL_COLUMNS.LABEL);
-          for (let i = 1; i < workingData.length; i++) {
-            workingData[i].push('');
-          }
-          newRow.push(entry.backupLabel);
-        }
-        workingData.push(newRow);
-      }
-
-      const csvOutput = this.safeStringify(workingData);
-      await this.writeAndEmit(path, csvOutput);
-      return true;
+      return await this.saveAllOnCall(merged);
     } catch (e) {
-      console.error('[FileManager] updateOnCall error:', e);
+      console.error('[FileManager] updateOnCallTeam error:', e);
       return false;
     }
   }
@@ -1397,22 +1408,23 @@ export class FileManager {
       if (workingData.length < 2) return false;
 
       const header = workingData[0].map(h => String(h).toLowerCase());
-      const teamIdx = header.indexOf('team');
+      const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
       if (teamIdx === -1) return false;
 
       const newData = [workingData[0]];
       let removed = false;
       for (let i = 1; i < workingData.length; i++) {
-        if (workingData[i][teamIdx] === team) {
-          removed = true;
-        } else {
+        if (workingData[i][teamIdx] !== team) {
           newData.push(workingData[i]);
+        } else {
+          removed = true;
         }
       }
 
       if (removed) {
         const csvOutput = this.safeStringify(newData);
         await this.writeAndEmit(path, csvOutput);
+        this.performBackup('removeOnCallTeam');
         return true;
       }
       return false;
@@ -1434,7 +1446,7 @@ export class FileManager {
       if (workingData.length < 2) return false;
 
       const header = workingData[0].map(h => String(h).toLowerCase());
-      const teamIdx = header.indexOf('team');
+      const teamIdx = header.indexOf(ONCALL_COLUMNS.TEAM.toLowerCase());
       if (teamIdx === -1) return false;
 
       let renamed = false;
@@ -1448,6 +1460,7 @@ export class FileManager {
       if (renamed) {
         const csvOutput = this.safeStringify(workingData);
         await this.writeAndEmit(path, csvOutput);
+        this.performBackup('renameOnCallTeam');
         return true;
       }
       return false;
@@ -1512,6 +1525,7 @@ export class FileManager {
       if (changed) {
         const csvOutput = this.safeStringify(data);
         await this.writeAndEmit(path, csvOutput);
+        this.performBackup('cleanupServerContacts');
         console.log('[FileManager] Server contacts cleanup completed. Updated file.');
       } else {
         console.log('[FileManager] No server contacts needed cleanup.');
@@ -1522,29 +1536,98 @@ export class FileManager {
     }
   }
 
-  public async saveAllOnCall(entries: OnCallEntry[]): Promise<boolean> {
+  public async saveAllOnCall(rows: OnCallRow[]): Promise<boolean> {
     try {
       const path = join(this.rootDir, ONCALL_FILES[0]);
 
-      const workingData: (string | number)[][] = [
-        [...STD_ONCALL_HEADERS] // Header row
+      const csvData = [
+        [...STD_ONCALL_HEADERS, 'Time Window'], // Header row: Team, Role, Name, Contact, Time Window
+        ...rows.map(r => [
+          r.team,
+          r.role,
+          r.name,
+          r.contact,
+          r.timeWindow || ''
+        ])
       ];
 
-      // Reconstruct data from entries in the correct order
-      entries.forEach(entry => {
-        workingData.push([
-          entry.team,
-          entry.primary,
-          entry.backup
-        ]);
-      });
-
-      const csvOutput = this.safeStringify(workingData);
+      const csvOutput = this.safeStringify(csvData);
       await this.writeAndEmit(path, csvOutput);
+      this.performBackup('saveAllOnCall');
       return true;
     } catch (e) {
       console.error('[FileManager] saveAllOnCall error:', e);
       return false;
+    }
+  }
+
+  public async generateDummyData(): Promise<boolean> {
+    console.log('[FileManager] generateDummyData called');
+    const success = await generateDummyDataAsync(this.rootDir);
+    console.log('[FileManager] generateDummyDataAsync result:', success);
+    if (success) {
+      console.log('[FileManager] Triggering readAndEmit...');
+      await this.readAndEmit();
+    }
+    return success;
+  }
+
+  private async performBackup(reason: string = 'auto') {
+    try {
+      const backupDir = join(this.rootDir, 'backups');
+      // Ensure backup root exists
+      await fs.mkdir(backupDir, { recursive: true });
+
+      // Use higher resolution timestamp for "on change" backups
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      const localTime = new Date(now.getTime() - offset);
+      const datePart = localTime.toISOString().slice(0, 10);
+      const timePart = localTime.toISOString().slice(11, 19).replace(/:/g, '-');
+      const backupFolderName = `${datePart}_${timePart}`;
+
+      const backupPath = join(backupDir, backupFolderName);
+
+      // Create folder and copy files
+      await fs.mkdir(backupPath, { recursive: true });
+      // console.log(`[FileManager] Creating backup (${reason}): ${backupPath}`);
+
+      const filesToBackup = [...GROUP_FILES, ...CONTACT_FILES, ...SERVER_FILES, ...ONCALL_FILES];
+      for (const file of filesToBackup) {
+        const sourcePath = join(this.rootDir, file);
+        const destPath = join(backupPath, file);
+        try {
+          await fs.copyFile(sourcePath, destPath);
+        } catch (err: any) {
+          // Ignore if file doesn't exist (might be fresh install)
+          if (err.code !== 'ENOENT') {
+            console.error(`[FileManager] Failed to backup ${file}:`, err);
+          }
+        }
+      }
+
+      // Retention Policy: Keep last 30 DAYS worth of data
+      // We will parse the folder names to find their date
+      const backups = await fs.readdir(backupDir);
+      const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+      const nowMs = Date.now();
+
+      for (const dirName of backups) {
+        // Match YYYY-MM-DD_...
+        const match = dirName.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (match) {
+          const folderDate = new Date(match[1]);
+          // Simple cleanup: if older than 30 days, delete
+          if (nowMs - folderDate.getTime() > THIRTY_DAYS_MS) {
+            const dirPath = join(backupDir, dirName);
+            await fs.rm(dirPath, { recursive: true, force: true });
+            console.log(`[FileManager] Pruned old backup: ${dirName}`);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('[FileManager] Backup failed:', error);
     }
   }
 

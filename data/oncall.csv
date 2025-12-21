@@ -1,7 +1,14 @@
-Team,Primary,Backup
-Engineering,reese.dalton100@agency.net,avery.sinclair101@agency.net
-Operations,sawyer.granger106@agency.net,casey.sinclair107@agency.net
-Logistics,finley.porter102@agency.net,avery.kerr108@agency.net
-Intelligence,kendall.kensington104@agency.net,finley.granger113@agency.net
-Analysis,skyler.quinn105@agency.net,skyler.granger114@agency.net
-Communications,elliot.quinn109@agency.net,parker.harper125@agency.net
+Team,Role,Name,Contact
+SRE,Primary,Alice Smith,555-0100
+SRE,Backup,Bob Jones,555-0101
+SRE,Shadow,Charlie Day,555-0103
+DevOps,Primary,David Lee,555-0200
+DevOps,Secondary,Eve Chen,555-0201
+DevOps,On-Call,Frank White,555-0202
+Support,Morning,Grace Ho,555-0300
+Support,Evening,Heidi Klum,555-0301
+Support,Night,Ivan Drago,555-0302
+Network,Primary,Jack Black,555-0400
+Network,Backup,Karen Gillan,555-0401
+Security,Lead,Liam Neeson,555-0500
+Security,Analyst,Mary Poppins,555-0501

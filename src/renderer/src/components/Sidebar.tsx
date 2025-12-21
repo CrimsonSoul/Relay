@@ -1,6 +1,6 @@
 import React from 'react';
 
-type Tab = 'Compose' | 'People' | 'Reports' | 'Radar' | 'Servers' | 'Weather';
+type Tab = 'Compose' | 'Personnel' | 'People' | 'Reports' | 'Radar' | 'Servers' | 'Weather';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -42,9 +42,11 @@ const SidebarButton = ({
         cursor: 'pointer',
         position: 'relative',
         color: isActive || isHovered ? 'white' : 'var(--color-text-tertiary)',
-        transition: 'all 0.2s ease',
+        transition: 'all var(--transition-smooth)',
         borderRadius: isActive || isHovered ? '12px' : '20px',
-        outline: 'none'
+        outline: 'none',
+        transform: isHovered ? (isActive ? 'scale(1.05)' : 'translateY(-1px) scale(1.05)') : 'scale(1)',
+        boxShadow: isHovered ? '0 4px 12px rgba(0, 0, 0, 0.2)' : 'none'
       }}
     >
       {icon}
@@ -60,7 +62,8 @@ const SidebarButton = ({
             height: '24px',
             width: '4px',
             background: 'white',
-            borderRadius: '0 4px 4px 0'
+            borderRadius: '0 4px 4px 0',
+            boxShadow: '0 0 10px rgba(255, 255, 255, 0.5)'
           }}
         />
       )}
@@ -77,60 +80,124 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      paddingTop: window.api?.platform === 'darwin' ? '35px' : '8px',
+      paddingTop: window.api?.platform === 'darwin' ? '38px' : '12px',
       paddingBottom: '16px',
       gap: '8px',
       zIndex: 9002,
       WebkitAppRegion: 'drag' as any
     }}>
-      {/* App Icon - Restored and pushed down on macOS */}
+      {/* App Icon - 3-Click Easter Egg to Weather */}
       <div
-        onClick={() => onTabChange('Compose')}
+        onClick={() => {
+          // Check for rapid clicks (Easter Egg)
+          const now = Date.now();
+          const timeDiff = now - (window as any).lastAppIconClickTime || 0;
+          (window as any).lastAppIconClickTime = now;
+
+          if (timeDiff > 500) {
+            (window as any).appIconClickCount = 1;
+          } else {
+            (window as any).appIconClickCount = ((window as any).appIconClickCount || 0) + 1;
+          }
+
+          // Trigger visual feedback (Lightning/Storm effect)
+          const iconEl = document.getElementById('app-icon-container');
+          const pathResults = document.querySelectorAll('.relay-icon-path');
+
+          if (iconEl) {
+            // Thunder Shock animation
+            iconEl.style.transform = 'scale(0.92) rotate(2deg)';
+            iconEl.style.borderColor = 'rgba(255, 255, 255, 0.9)';
+            iconEl.style.boxShadow = '0 0 30px rgba(147, 197, 253, 0.8), inset 0 0 20px rgba(255, 255, 255, 0.6)';
+            iconEl.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.5) 0%, rgba(255, 255, 255, 0.3) 100%)';
+            iconEl.style.filter = 'brightness(1.3)'; // Extra flash
+
+            // Flash text/paths
+            pathResults.forEach((p: any) => p.style.stroke = '#fff');
+
+            setTimeout(() => {
+              iconEl.style.transform = '';
+              iconEl.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+              iconEl.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2), inset 0 0 12px rgba(59, 130, 246, 0.1)';
+              iconEl.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)';
+              iconEl.style.filter = '';
+              pathResults.forEach((p: any) => p.style.stroke = 'url(#relay-icon-grad)');
+            }, 120);
+          }
+
+          if ((window as any).appIconClickCount >= 3) {
+            // Final Big Flash
+            if (iconEl) {
+              iconEl.style.transition = 'all 0.05s ease';
+              iconEl.style.filter = 'brightness(2) contrast(1.2) drop-shadow(0 0 10px white)';
+              setTimeout(() => {
+                iconEl.style.filter = '';
+                iconEl.style.transition = 'all var(--transition-premium)';
+                onTabChange('Weather');
+              }, 200);
+            } else {
+              onTabChange('Weather');
+            }
+            (window as any).appIconClickCount = 0;
+          } else {
+            onTabChange('Compose');
+          }
+        }}
+        id="app-icon-container"
         style={{
-          width: '40px',
-          height: '40px',
+          width: '42px',
+          height: '42px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'rgba(59, 130, 246, 0.08)',
-          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)',
+          borderRadius: '50%',
           WebkitAppRegion: 'no-drag' as any,
           cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          border: '1px solid rgba(59, 130, 246, 0.15)'
+          transition: 'all 0.1s cubic-bezier(0.16, 1, 0.3, 1)',
+          border: '1.5px solid rgba(59, 130, 246, 0.3)',
+          boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2), inset 0 0 12px rgba(59, 130, 246, 0.1)',
+          marginBottom: '4px'
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
-          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+          if (!(window as any).appIconClickCount) { // Only styling hover if not actively clicking
+            e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.25) 0%, rgba(37, 99, 235, 0.1) 100%)';
+            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.5)';
+            e.currentTarget.style.transform = 'scale(1.05) translateY(-1px)';
+            e.currentTarget.style.borderRadius = '14px';
+            e.currentTarget.style.boxShadow = '0 8px 25px rgba(59, 130, 246, 0.2), inset 0 0 15px rgba(59, 130, 246, 0.2)';
+          }
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.08)';
-          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.15)';
+          e.currentTarget.style.background = 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)';
+          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+          e.currentTarget.style.transform = 'scale(1) translateY(0)';
+          e.currentTarget.style.borderRadius = '50%';
+          e.currentTarget.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.2), inset 0 0 12px rgba(59, 130, 246, 0.1)';
         }}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* A high-tech 'R' formed by two paths (relay) */}
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(0 0 8px rgba(96, 165, 250, 0.4))' }}>
+          {/* A modern, abstract 'Relay' mark: two interlocking arcs and a central pulse line */}
           <path
-            d="M7 21V5a3 3 0 0 1 3-3h4a5 5 0 0 1 0 10H8"
-            stroke="url(#relay-r-grad-1)"
-            strokeWidth="3.5"
+            className="relay-icon-path"
+            d="M15 6C17.2091 6 19 7.79086 19 10V14C19 16.2091 17.2091 18 15 18M9 18C6.79086 18 5 16.2091 5 14V10C5 7.79086 6.79086 6 9 6"
+            stroke="url(#relay-icon-grad)"
+            strokeWidth="2.5"
             strokeLinecap="round"
-            strokeLinejoin="round"
           />
           <path
-            d="M13 12L19 21"
-            stroke="url(#relay-r-grad-2)"
-            strokeWidth="3.5"
+            className="relay-icon-path"
+            d="M8 12H16"
+            stroke="url(#relay-icon-grad)"
+            strokeWidth="2.5"
             strokeLinecap="round"
-            strokeLinejoin="round"
           />
+          <circle cx="12" cy="12" r="1.5" fill="white">
+            <animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite" />
+          </circle>
           <defs>
-            <linearGradient id="relay-r-grad-1" x1="7" y1="2" x2="7" y2="21" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#60A5FA" />
-              <stop offset="1" stopColor="#3B82F6" />
-            </linearGradient>
-            <linearGradient id="relay-r-grad-2" x1="13" y1="12" x2="19" y2="21" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#60A5FA" />
+            <linearGradient id="relay-icon-grad" x1="5" y1="6" x2="19" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#93C5FD" />
               <stop offset="1" stopColor="#3B82F6" />
             </linearGradient>
           </defs>
@@ -162,6 +229,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
           icon={
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke="#60A5FA" />
+            </svg>
+          }
+        />
+        <SidebarButton
+          label="Personnel"
+          isActive={activeTab === 'Personnel'}
+          onClick={() => onTabChange('Personnel')}
+          icon={
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {/* Pager Body */}
+              <rect x="2" y="5" width="20" height="14" rx="2" stroke="#60A5FA" />
+              {/* Pager Screen */}
+              <rect x="5" y="8" width="10" height="6" rx="1" stroke="#60A5FA" opacity="0.8" />
+              {/* Pager Buttons */}
+              <circle cx="18" cy="9" r="1.5" fill="#60A5FA" />
+              <circle cx="18" cy="15" r="1.5" fill="#60A5FA" />
             </svg>
           }
         />
@@ -217,25 +300,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
             </svg>
           }
         />
-        <SidebarButton
-          label="Weather"
-          isActive={activeTab === 'Weather'}
-          onClick={() => onTabChange('Weather')}
-          icon={
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v2" stroke="#FDB813" />
-              <path d="m4.93 4.93 1.41 1.41" stroke="#FDB813" />
-              <path d="M20 12h2" stroke="#FDB813" />
-              <path d="m19.07 4.93-1.41 1.41" stroke="#FDB813" />
-              <path d="M15.947 12.65a4 4 0 0 0-5.925-4.128" stroke="#FDB813" />
-              <path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z" />
-            </svg>
-          }
-        />
       </nav>
 
       {/* Settings section */}
-      <div style={{ WebkitAppRegion: 'no-drag' as any, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ WebkitAppRegion: 'no-drag', display: 'flex', flexDirection: 'column', gap: '12px' } as any}>
         <SidebarButton
           label="Settings"
           isActive={false}

@@ -88,25 +88,30 @@ const SortableTeamCard = ({
                 style={{
                     height: 'auto',
                     minHeight: '0',
-                    padding: '10px 12px 10px 16px', // Reduced padding
+                    padding: '12px 16px', // Slightly more padding
                     background: 'rgba(255, 255, 255, 0.03)',
                     borderRadius: '12px',
                     border: '1px solid rgba(255, 255, 255, 0.05)',
-                    cursor: 'grab', // Changed to grab for draggable
-                    transition: 'all 0.2s',
+                    cursor: 'grab',
+                    transition: 'all var(--transition-smooth)',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '4px', // Reduced gap between sections
+                    gap: '6px',
                     position: 'relative',
-                    overflow: 'hidden' // Restore overflow:hidden to clip accent strip corners
+                    overflow: 'hidden',
+                    transformOrigin: 'center center'
                 }}
                 onMouseEnter={e => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)';
                     e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                    e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
                 }}
                 onMouseLeave={e => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
                     e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+                    e.currentTarget.style.transform = 'translateY(0) scale(1)';
+                    e.currentTarget.style.boxShadow = 'none';
                 }}
                 onClick={() => setEditingTeam(team)}
                 onContextMenu={(e) => {

@@ -21,15 +21,6 @@ export const CONTACT_COLUMNS = {
   TITLE: 'Title'
 } as const;
 
-// On-Call CSV column constants
-export const ONCALL_COLUMNS = {
-  TEAM: 'Team',
-  PRIMARY: 'Primary',
-  BACKUP: 'Backup',
-  LABEL: 'Label'
-} as const;
-
-// Standard headers for each CSV type
 export const STD_SERVER_HEADERS = [
   SERVER_COLUMNS.NAME,
   SERVER_COLUMNS.BUSINESS_AREA,
@@ -42,16 +33,26 @@ export const STD_SERVER_HEADERS = [
 
 export const STD_CONTACT_HEADERS = [
   CONTACT_COLUMNS.NAME,
-  CONTACT_COLUMNS.TITLE,
   CONTACT_COLUMNS.EMAIL,
-  CONTACT_COLUMNS.PHONE
+  CONTACT_COLUMNS.PHONE,
+  CONTACT_COLUMNS.TITLE
 ] as const;
+
+// On-Call CSV column constants
+export const ONCALL_COLUMNS = {
+  TEAM: 'Team',
+  ROLE: 'Role',
+  NAME: 'Name',
+  CONTACT: 'Contact'
+} as const;
+
+// ...
 
 export const STD_ONCALL_HEADERS = [
   ONCALL_COLUMNS.TEAM,
-  ONCALL_COLUMNS.PRIMARY,
-  ONCALL_COLUMNS.BACKUP,
-  ONCALL_COLUMNS.LABEL
+  ONCALL_COLUMNS.ROLE,
+  ONCALL_COLUMNS.NAME,
+  ONCALL_COLUMNS.CONTACT
 ] as const;
 
 // Column alias mappings for flexible header matching

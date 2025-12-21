@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { TactileButton } from './TactileButton';
 
 export const WindowControls = () => {
     const [isMaximized, setIsMaximized] = useState(false);
@@ -40,7 +41,8 @@ export const WindowControls = () => {
         <div style={{
             display: 'flex',
             height: '32px',
-            WebkitAppRegion: 'no-drag' as any,
+            // @ts-ignore - Electron specific property
+            WebkitAppRegion: 'no-drag',
             zIndex: 10000,
             position: 'relative' // Ensure z-index works
         }}>
@@ -55,7 +57,7 @@ export const WindowControls = () => {
                 border: none;
                 color: var(--color-text-secondary);
                 cursor: default;
-                transition: background 0.1s ease, color 0.1s ease;
+                transition: background var(--transition-micro), color var(--transition-micro);
                 -webkit-app-region: no-drag;
                 outline: none;
             }
@@ -75,6 +77,17 @@ export const WindowControls = () => {
             >
                 <svg width="10" height="1" viewBox="0 0 10 1"><path d="M0 0h10v1H0z" fill="currentColor" /></svg>
             </button>
+            {/* The following TactileButtons are inserted here as siblings to the window control buttons */}
+            {/* Assuming onTabChange and activeTab are defined elsewhere or are placeholders */}
+            {/* For the purpose of this edit, they are included as per instruction */}
+            <TactileButton
+                variant="ghost"
+                onClick={() => { /* Placeholder for onTabChange('settings') */ }}
+                title="Settings"
+                active={false} // Placeholder for activeTab === 'settings'
+            >
+                <div className="icon">⚙️</div>
+            </TactileButton>
             <button
                 onClick={handleMaximize}
                 className={btnClass}

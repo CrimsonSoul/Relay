@@ -24,6 +24,17 @@ const formatSingleNumber = (phone: string): string => {
         clean = clean.slice(1);
     }
 
+
+    // Format Cisco 8-digit (7-XXX-XXXX)
+    if (clean.length === 8 && clean.startsWith('7')) {
+        return `7-${clean.slice(1, 4)}-${clean.slice(4)}`;
+    }
+
+    // Format Cisco 5-digit (7-XXXX)
+    if (clean.length === 5 && clean.startsWith('7')) {
+        return `7-${clean.slice(1)}`;
+    }
+
     // Format US 10-digit: (XXX) XXX-XXXX
     if (clean.length === 10 && (!hasPlus || (hasPlus && phone.startsWith('+1')))) {
         return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;

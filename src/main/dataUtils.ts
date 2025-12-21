@@ -206,6 +206,82 @@ export async function saveConfigAsync(config: { dataRoot?: string }): Promise<vo
   }
 }
 
+export async function generateDummyDataAsync(targetRoot: string): Promise<boolean> {
+  console.log('[dataUtils] generateDummyDataAsync starting for:', targetRoot);
+  try {
+    const contactsCsv = [
+      'Name,Email,Phone,Title',
+      'Alice Johnson,alice@example.com,555-0100,Senior Engineer',
+      'Bob Smith,bob@example.com,555-0101,DevOps Lead',
+      'Charlie Brown,charlie@example.com,555-0102,Product Manager',
+      'Diana Prince,diana@example.com,555-0103,Security Engineer',
+      'Evan Wright,evan@example.com,555-0104,Database Admin',
+      'Fiona Lee,fiona@example.com,555-0105,Backend Developer',
+      'George King,george@example.com,555-0106,Frontend Developer',
+      'Hannah Scott,hannah@example.com,555-0107,QA Engineer',
+      'Ian Clark,ian@example.com,555-0108,SRE',
+      'Jane Doe,jane@example.com,555-0109,Director of Engineering',
+      'Kyle Reese,kyle@example.com,555-0110,Incident Commander',
+      'Laura Croft,laura@example.com,555-0111,Network Engineer',
+      'Mike Ross,mike@example.com,555-0112,Legal Counsel',
+      'Nina Patel,nina@example.com,555-0113,HR Manager',
+      'Oscar Wilde,oscar@example.com,555-0114,Content Strategist',
+      'Paul Atreides,paul@example.com,555-0115,Operations Manager',
+      'Quinn Fabray,quinn@example.com,555-0116,Designer',
+      'Rachel Green,rachel@example.com,555-0117,Marketing Lead',
+      'Steve Rogers,steve@example.com,555-0118,Team Lead',
+      'Tony Stark,tony@example.com,555-0119,CTO'
+    ].join('\n');
+
+    const groupsCsv = [
+      'Group,Members',
+      'Core Engineering,alice@example.com;bob@example.com;ian@example.com;steve@example.com',
+      'Product Team,charlie@example.com;quinn@example.com;rachel@example.com',
+      'Leadership,jane@example.com;tony@example.com;mike@example.com',
+      'DevOps,bob@example.com;evan@example.com;laura@example.com;kyle@example.com',
+      'Frontend Guild,george@example.com;fiona@example.com'
+    ].join('\n');
+
+    const serversCsv = [
+      'Server,IP,Port,Protocol,Owner,Comment',
+      'web-prod-01,10.0.1.10,443,HTTPS,alice@example.com,Primary web server',
+      'web-prod-02,10.0.1.11,443,HTTPS,alice@example.com,Secondary web server',
+      'db-primary,10.0.2.50,5432,PostgreSQL,evan@example.com,Main production DB',
+      'db-replica,10.0.2.51,5432,PostgreSQL,evan@example.com,Read replica',
+      'cache-cluster,10.0.3.10,6379,Redis,bob@example.com,Session cache',
+      'monitoring,10.0.4.5,3000,Grafana,ian@example.com,Metrics dashboard',
+      'ci-runner,10.0.5.20,22,SSH,bob@example.com,Build agent',
+      'staging-web,10.1.1.10,80,HTTP,fiona@example.com,Staging environment',
+      'bastion-host,10.0.0.1,22,SSH,diana@example.com,Jump box',
+      'backup-server,10.0.6.100,445,SMB,kyle@example.com,Daily backups location'
+    ].join('\n');
+
+    // On-Call: Team, Role, Name, Contact, Time Window
+    // We'll generate a few teams.
+    const onCallCsv = [
+      'Team,Role,Name,Contact,Time Window',
+      'SRE,Primary,Ian Clark,555-0108,9am - 5pm',
+      'SRE,Secondary,Kyle Reese,555-0110,9am - 5pm',
+      'SRE,Backup,Bob Smith,555-0101,Off-hours',
+      'Platform,Primary,Alice Johnson,555-0100,24/7',
+      'Platform,Shadow,Steve Rogers,555-0118,9am - 5pm',
+      'Security,Primary,Diana Prince,555-0103,24/7',
+      'Security,Escalation,Tony Stark,555-0119,Always',
+      'Data,Primary,Evan Wright,555-0104,8am - 4pm'
+    ].join('\n');
+
+    await fsPromises.writeFile(join(targetRoot, 'contacts.csv'), contactsCsv, 'utf-8');
+    await fsPromises.writeFile(join(targetRoot, 'groups.csv'), groupsCsv, 'utf-8');
+    await fsPromises.writeFile(join(targetRoot, 'servers.csv'), serversCsv, 'utf-8');
+    await fsPromises.writeFile(join(targetRoot, 'oncall.csv'), onCallCsv, 'utf-8');
+
+    return true;
+  } catch (e) {
+    console.error('[dataUtils] generateDummyData error:', e);
+    return false;
+  }
+}
+
 // Sync version for compatibility
 export function saveConfig(config: { dataRoot?: string }) {
   try {

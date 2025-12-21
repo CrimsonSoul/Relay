@@ -96,9 +96,7 @@ async function createWindow() {
     minWidth: 400,
     minHeight: 600,
     center: true,
-    backgroundColor: '#00000000',
-    vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
-    backgroundMaterial: process.platform === 'win32' ? 'acrylic' : undefined,
+    backgroundColor: '#0B0D12',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 12, y: 12 },
     show: true,
@@ -124,29 +122,32 @@ async function createWindow() {
     await mainWindow.loadFile(indexHtml);
   }
 
-  // Show window immediately when ready - don't wait for data initialization
+  // Initialize data immediately (async)
+  (async () => {
+    console.log('[Main] Starting data initialization...');
+    try {
+      // Resolve data root
+      currentDataRoot = await getDataRootAsync();
+      console.log('[Main] Data root:', currentDataRoot);
+
+      // Initialize FileManager and BridgeLogger
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        fileManager = new FileManager(mainWindow, currentDataRoot, getBundledDataPath());
+        bridgeLogger = new BridgeLogger(currentDataRoot);
+
+        // Start watching files and load initial data
+        fileManager.init();
+        console.log('[Main] FileManager initialized successfully');
+      }
+    } catch (error) {
+      console.error('[Main] Failed to initialize data:', error);
+    }
+  })();
+
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
     mainWindow?.focus();
-
-    // Initialize data asynchronously AFTER window is shown for much faster startup
-    setImmediate(async () => {
-      try {
-        // Resolve data root in background (fully async, non-blocking)
-        currentDataRoot = await getDataRootAsync();
-
-        // Initialize FileManager and BridgeLogger after data root is known
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          fileManager = new FileManager(mainWindow, currentDataRoot, getBundledDataPath());
-          bridgeLogger = new BridgeLogger(currentDataRoot);
-
-          // Start watching files and load initial data
-          fileManager.init();
-        }
-      } catch (error) {
-        console.error('[Main] Failed to initialize data:', error);
-      }
-    });
+    console.log('[Main] ready-to-show fired');
   });
 
   // Security: Restrict WebView navigation

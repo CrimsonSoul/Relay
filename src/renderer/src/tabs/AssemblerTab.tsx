@@ -13,7 +13,6 @@ import { Input } from '../components/Input';
 import { TactileButton } from '../components/TactileButton';
 import { SidebarItem } from '../components/SidebarItem';
 import { ContextMenu } from '../components/ContextMenu';
-import { OnCallPanel } from '../components/OnCallPanel';
 
 type Props = {
     groups: GroupMap;
@@ -351,7 +350,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
             gap: '0px',
             height: '100%',
             alignItems: 'start',
-            transition: 'grid-template-columns 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: 'grid-template-columns 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
             overflow: 'visible' // Allow shadow to spill out if needed
         }}>
 
@@ -368,9 +367,8 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                     padding: '0',
                     height: '100%',
                     position: 'relative',
-                    background: 'rgba(0, 0, 0, 0.4)',
-                    backdropFilter: 'blur(20px)',
-                    zIndex: 20 // Sidebar above main content to show shadow
+                    background: 'transparent',
+                    zIndex: 20
                 }}
             >
                 <div style={{
@@ -395,7 +393,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                             flex: 1,
                             overflowY: 'auto',
                             overflowX: 'hidden',
-                            padding: '16px 20px',
+                            padding: '40px 20px 16px 20px',
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center'
@@ -404,21 +402,19 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                             <div ref={suggestionWrapperRef} style={{ position: 'relative', marginBottom: '0', width: '100%' }}>
                                 <div style={{
                                     display: 'flex',
-                                    justifyContent: 'center',
+                                    justifyContent: 'flex-start',
                                     alignItems: 'center',
                                     height: '24px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    margin: '0 -20px 16px -20px',
-                                    padding: '0 20px',
-                                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                                    marginBottom: '12px',
+                                    padding: '0'
                                 }}>
                                     <div style={{
                                         fontSize: '11px',
-                                        fontWeight: 600,
-                                        color: 'var(--color-text-primary)',
-                                        letterSpacing: '0.05em'
-                                    }}>QUICK ADD</div>
+                                        fontWeight: 700,
+                                        color: 'var(--color-text-tertiary)',
+                                        letterSpacing: '0.1em',
+                                        textTransform: 'uppercase'
+                                    }}>Quick Add</div>
                                 </div>
                                 <Input
                                     placeholder="Add by email..."
@@ -494,22 +490,19 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, marginTop: '16px', width: '100%' }}>
                                 <div style={{
                                     display: 'flex',
-                                    justifyContent: 'center',
+                                    justifyContent: 'flex-start',
                                     alignItems: 'center',
                                     height: '24px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    margin: '0 -20px 8px -20px',
-                                    padding: '0 20px',
-                                    position: 'relative',
-                                    borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
+                                    marginBottom: '12px',
+                                    padding: '0'
                                 }}>
                                     <div style={{
                                         fontSize: '11px',
-                                        fontWeight: 600,
-                                        color: 'var(--color-text-primary)',
-                                        letterSpacing: '0.05em'
-                                    }}>GROUPS</div>
+                                        fontWeight: 700,
+                                        color: 'var(--color-text-tertiary)',
+                                        letterSpacing: '0.1em',
+                                        textTransform: 'uppercase'
+                                    }}>Groups</div>
                                 </div>
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -536,114 +529,100 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                         </div>
                     </div>
 
-                    {/* Stable Full Height Vertical Toggle Strip - Fixed 24px */}
+                    {/* Floating Pill Toggle Handle */}
                     <div
                         onClick={() => setIsGroupSidebarCollapsed(!isGroupSidebarCollapsed)}
                         onMouseEnter={e => {
-                            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                            const icon = e.currentTarget.querySelector('div');
-                            if (icon) icon.style.color = 'var(--color-text-primary)';
+                            e.currentTarget.style.background = 'rgba(59, 130, 246, 0.3)';
+                            e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
+                            e.currentTarget.style.boxShadow = '0 0 20px rgba(59, 130, 246, 0.25)';
+                            e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1.05)';
+                            const icon = e.currentTarget.querySelector('svg');
+                            if (icon) icon.style.color = 'white';
                         }}
                         onMouseLeave={e => {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                            const icon = e.currentTarget.querySelector('div');
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+                            e.currentTarget.style.boxShadow = 'none';
+                            e.currentTarget.style.transform = 'translate(-50%, -50%) scale(1)';
+                            const icon = e.currentTarget.querySelector('svg');
                             if (icon) icon.style.color = 'var(--color-text-tertiary)';
                         }}
                         style={{
+                            position: 'absolute',
+                            left: '100%', // Locked to the seam
+                            top: '50%',
+                            transform: 'translate(-50%, -50%)',
                             width: '24px',
-                            height: '100%',
+                            height: '56px', // Slightly taller for better 10ft target
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            background: 'rgba(255, 255, 255, 0.03)',
-                            borderLeft: 'var(--border-subtle)', // Symmetrical framing
-                            borderRight: 'var(--border-subtle)',
-                            flexShrink: 0,
-                            boxShadow: isGroupSidebarCollapsed ? 'none' : '4px 0 20px rgba(0,0,0,0.3)',
-                            transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                            zIndex: 10, // Ensure shadow stays above content
-                            cursor: 'pointer'
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '12px',
+                            cursor: 'pointer',
+                            zIndex: 100,
+                            transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                            backdropFilter: 'blur(16px)',
+                            boxSizing: 'border-box'
                         }}
-                        title={isGroupSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                        title={isGroupSidebarCollapsed ? "Expand Groups" : "Collapse Groups"}
                     >
-                        <div
+                        <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="4"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
                             style={{
-                                width: '20px',
-                                height: '20px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                borderRadius: '4px',
-                                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                                transform: isGroupSidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)',
                                 color: 'var(--color-text-tertiary)'
                             }}
                         >
-                            <svg
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="3.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                style={{
-                                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    transform: isGroupSidebarCollapsed ? 'rotate(180deg)' : 'rotate(0deg)'
-                                }}
-                            >
-                                <polyline points="15 18 9 12 15 6" />
-                            </svg>
-                        </div>
+                            <polyline points="15 18 9 12 15 6" />
+                        </svg>
                     </div>
                 </div>
             </div>
 
-            {/* Main Log Area - Table Layout */}
+            {/* Main Listing Area */}
             <div style={{
                 display: 'flex',
                 flexDirection: 'column',
                 height: '100%',
+                padding: '20px 24px 24px 24px',
+                background: 'var(--color-bg-app)',
                 overflow: 'hidden',
-                background: 'var(--color-bg-app)', // Seamless with sidebar
                 position: 'relative',
-                zIndex: 5 // Below sidebar
+                zIndex: 5
             }}>
-
-                {/* Toolbar - Compact */}
-                <div style={{
-                    padding: '10px 12px',
-                    borderBottom: 'var(--border-subtle)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>Composition</h2>
-                        <span style={{ fontSize: '14px', color: 'var(--color-text-tertiary)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '10px' }}>
-                            {log.length}
-                        </span>
+                {/* 10FT HEADER */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+                    <div>
+                        <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Data Composition</h1>
+                        <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>Assemble bridge recipients and manage emergency communications</p>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                         {manualRemoves.length > 0 && (
-                            <ToolbarButton label="UNDO" onClick={onUndoRemove} />
+                            <ToolbarButton label="UNDO" onClick={onUndoRemove} style={{ padding: '12px 20px', fontSize: '12px' }} />
                         )}
-                        <ToolbarButton label="RESET" onClick={onResetManual} />
-                        <ToolbarButton label="COPY" onClick={handleCopy} />
-                        <ToolbarButton label="DRAFT BRIDGE" onClick={handleDraftBridge} primary />
+                        <ToolbarButton label="RESET" onClick={onResetManual} style={{ padding: '12px 20px', fontSize: '12px' }} />
+                        <ToolbarButton label="COPY" onClick={handleCopy} style={{ padding: '12px 20px', fontSize: '12px' }} />
+                        <ToolbarButton label="DRAFT BRIDGE" onClick={handleDraftBridge} primary style={{ padding: '12px 24px', fontSize: '12px' }} />
                     </div>
                 </div>
 
-                {/* Header Row - Removed for Card Layout */}
-                {/* We can add a Sort By dropdown here later if needed, but standard alphabetical is fine for now or we rely on the implicit sort */}
-
-                {/* List */}
+                {/* List Container */}
                 <div style={{
                     flex: 1,
                     overflow: 'hidden', // AutoSizer handles scrolling
-                    padding: '0 12px', // Give some room for card rounding
-                    paddingLeft: '20px' // Restore list indentation
+                    position: 'relative'
                 }}>
                     {log.length === 0 ? (
                         <div style={{
@@ -664,7 +643,7 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                                 <List
                                     height={height}
                                     itemCount={log.length}
-                                    itemSize={100}
+                                    itemSize={104}
                                     width={width}
                                     itemData={itemData}
                                 >
@@ -674,30 +653,6 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
                         </AutoSizer>
                     )}
                 </div>
-
-                {/* On-Call Panel */}
-                <OnCallPanel
-                    onCall={onCall}
-                    contacts={contacts}
-                    groups={groups}
-                    onUpdate={async (entry) => {
-
-                        const success = await window.api?.updateOnCall(entry);
-                        if (!success) showToast('Failed to update on-call', 'error');
-                    }}
-                    onRemoveTeam={async (team) => {
-                        const success = await window.api?.removeOnCallTeam(team);
-                        if (!success) showToast('Failed to remove team', 'error');
-                    }}
-                    onRenameTeam={async (oldName, newName) => {
-                        const success = await window.api?.renameOnCallTeam(oldName, newName);
-                        if (!success) showToast('Failed to rename team', 'error');
-                    }}
-                    onAddTeam={async (team) => {
-                        const success = await window.api?.updateOnCall({ team, primary: '', backup: '' });
-                        if (!success) showToast('Failed to add team', 'error');
-                    }}
-                />
             </div>
 
             <AddContactModal
@@ -892,73 +847,79 @@ export const AssemblerTab: React.FC<Props> = ({ groups, contacts, onCall, select
             </Modal>
 
             {/* Group Context Menu */}
-            {groupContextMenu && (
-                <ContextMenu
-                    x={groupContextMenu.x}
-                    y={groupContextMenu.y}
-                    onClose={() => setGroupContextMenu(null)}
-                    items={[
-                        {
-                            label: 'Rename',
-                            onClick: () => {
-                                setGroupToRename(groupContextMenu.group);
-                                setRenamedGroupName(groupContextMenu.group);
+            {
+                groupContextMenu && (
+                    <ContextMenu
+                        x={groupContextMenu.x}
+                        y={groupContextMenu.y}
+                        onClose={() => setGroupContextMenu(null)}
+                        items={[
+                            {
+                                label: 'Rename',
+                                onClick: () => {
+                                    setGroupToRename(groupContextMenu.group);
+                                    setRenamedGroupName(groupContextMenu.group);
+                                },
+                                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             },
-                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                        },
-                        {
-                            label: 'Delete Group',
-                            onClick: () => setGroupToDelete(groupContextMenu.group),
-                            danger: true,
-                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                        }
-                    ]}
-                />
-            )}
+                            {
+                                label: 'Delete Group',
+                                onClick: () => setGroupToDelete(groupContextMenu.group),
+                                danger: true,
+                                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            }
+                        ]}
+                    />
+                )
+            }
             {/* Sidebar Context Menu */}
-            {sidebarContextMenu && (
-                <ContextMenu
-                    x={sidebarContextMenu.x}
-                    y={sidebarContextMenu.y}
-                    onClose={() => setSidebarContextMenu(null)}
-                    items={[
-                        {
-                            label: 'Add New Group',
-                            onClick: () => setIsGroupModalOpen(true),
-                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        }
-                    ]}
-                />
-            )}
+            {
+                sidebarContextMenu && (
+                    <ContextMenu
+                        x={sidebarContextMenu.x}
+                        y={sidebarContextMenu.y}
+                        onClose={() => setSidebarContextMenu(null)}
+                        items={[
+                            {
+                                label: 'Add New Group',
+                                onClick: () => setIsGroupModalOpen(true),
+                                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            }
+                        ]}
+                    />
+                )
+            }
 
             {/* Composition List Context Menu */}
-            {compositionContextMenu && (
-                <ContextMenu
-                    x={compositionContextMenu.x}
-                    y={compositionContextMenu.y}
-                    onClose={() => setCompositionContextMenu(null)}
-                    items={[
-                        ...(compositionContextMenu.isUnknown ? [{
-                            label: 'Save to Contacts',
-                            onClick: () => {
-                                handleAddToContacts(compositionContextMenu.email);
-                                setCompositionContextMenu(null);
-                            },
-                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M16 11h6m-3-3v6"></path></svg>
-                        }] : []),
-                        {
-                            label: 'Remove from List',
-                            onClick: () => {
-                                onRemoveManual(compositionContextMenu.email);
-                                setCompositionContextMenu(null);
-                            },
-                            danger: true,
-                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                        }
-                    ]}
-                />
-            )}
+            {
+                compositionContextMenu && (
+                    <ContextMenu
+                        x={compositionContextMenu.x}
+                        y={compositionContextMenu.y}
+                        onClose={() => setCompositionContextMenu(null)}
+                        items={[
+                            ...(compositionContextMenu.isUnknown ? [{
+                                label: 'Save to Contacts',
+                                onClick: () => {
+                                    handleAddToContacts(compositionContextMenu.email);
+                                    setCompositionContextMenu(null);
+                                },
+                                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M16 11h6m-3-3v6"></path></svg>
+                            }] : []),
+                            {
+                                label: 'Remove from List',
+                                onClick: () => {
+                                    onRemoveManual(compositionContextMenu.email);
+                                    setCompositionContextMenu(null);
+                                },
+                                danger: true,
+                                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            }
+                        ]}
+                    />
+                )
+            }
 
-        </div>
+        </div >
     );
 };

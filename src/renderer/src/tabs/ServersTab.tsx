@@ -7,6 +7,7 @@ import { Input } from '../components/Input';
 import { ContextMenu } from '../components/ContextMenu';
 import { AddServerModal } from '../components/AddServerModal';
 import { ToolbarButton } from '../components/ToolbarButton';
+import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
 
 interface ServersTabProps {
@@ -103,22 +104,45 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   }, [contextMenu]);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--color-bg-app)' }}>
-      {/* Header / Actions */}
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      padding: '20px 24px 24px 24px',
+      background: 'var(--color-bg-app)',
+      overflow: 'hidden'
+    }}>
+      {/* Hero Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+        <div>
+          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Infrastructure Hub</h1>
+          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>
+            Management and status of distributed node infrastructure
+          </p>
+        </div>
+        <TactileButton
+          onClick={() => { setEditingServer(undefined); setIsAddModalOpen(true); }}
+          variant="primary"
+          style={{ padding: '12px 24px', fontSize: '13px' }}
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>}
+        >
+          ADD SERVER
+        </TactileButton>
+      </div>
+
+      {/* Secondary Action Row */}
       <div style={{
-        padding: '16px 24px',
-        borderBottom: 'var(--border-subtle)',
         display: 'flex',
         alignItems: 'center',
-        gap: '16px'
+        gap: '16px',
+        marginBottom: '16px'
       }}>
         <Input
+          placeholder="Search infrastructure..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search infrastructure..."
-          icon={
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
-          }
+          autoFocus
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
           style={{ width: '340px' }}
         />
         {filteredServers.length > 0 && (
@@ -158,23 +182,17 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         >
           SORT: NAME {sortOrder === 'asc' ? '↑' : '↓'}
         </div>
-
-        <ToolbarButton
-          label="ADD SERVER"
-          onClick={() => { setEditingServer(undefined); setIsAddModalOpen(true); }}
-          primary
-        />
       </div>
 
-      {/* List */}
-      <div style={{ flex: 1, paddingTop: '16px' }}>
+      {/* List Container */}
+      <div style={{ flex: 1 }}>
         <AutoSizer>
           {({ height, width }) => (
             <List
               height={height}
               width={width}
               itemCount={filteredServers.length}
-              itemSize={112} // Taller cards
+              itemSize={104} // Standardized card height + gap
               itemData={itemData}
             >
               {VirtualRow}

@@ -56,8 +56,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
           minWidth: '180px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '1px',
-          overflow: 'hidden'
+          gap: '1px'
+          // overflow: 'hidden' // Removed to allow hover effects (scale/shadow) to spill out
         }}
         onClick={e => e.stopPropagation()}
       >
@@ -84,17 +84,18 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
               display: 'flex',
               alignItems: 'center',
               gap: 'var(--space-2)',
-              transition: 'all var(--transition-fast)',
+              transition: 'all var(--transition-smooth)',
               fontWeight: 500,
               letterSpacing: '-0.01em',
               position: 'relative',
               overflow: 'hidden',
-              opacity: item.disabled ? 0.5 : 1
+              opacity: item.disabled ? 0.5 : 1,
+              transformOrigin: 'left center'
             }}
             onMouseEnter={e => {
               if (!item.disabled) {
-                e.currentTarget.style.background = item.danger ? 'var(--color-danger-subtle)' : 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.transform = 'translateX(2px)';
+                e.currentTarget.style.background = item.danger ? 'var(--color-accent-blue-subtle)' : 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.transform = 'translateX(4px) scale(1.02)';
                 if (item.danger) {
                   e.currentTarget.style.color = 'var(--color-danger-hover)';
                 }
@@ -103,7 +104,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
             onMouseLeave={e => {
               if (!item.disabled) {
                 e.currentTarget.style.background = 'transparent';
-                e.currentTarget.style.transform = 'translateX(0)';
+                e.currentTarget.style.transform = 'translateX(0) scale(1)';
                 if (item.danger) {
                   e.currentTarget.style.color = 'var(--color-danger)';
                 }
