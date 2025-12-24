@@ -40,6 +40,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
+                        willChange: 'font-size',
                     }}
                 >
                     {title}
@@ -56,6 +57,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                         transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                         display: 'flex',
                         alignItems: 'center',
+                        willChange: 'opacity, max-height',
                     }}
                 >
                     {subtitle}
