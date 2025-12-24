@@ -204,15 +204,15 @@ const TeamCard = ({
                 </div>
                 <div
                   style={{
-                    color: "var(--color-text-secondary)",
-                    fontSize: "17px",
+                    color: "var(--color-text-primary)",
+                    fontSize: "20px",
                     fontFamily: "var(--font-mono)",
                     textAlign: "right",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
-                    fontWeight: 500,
-                    width: "150px",
+                    fontWeight: 700,
+                    width: "180px",
                   }}
                   title={row.contact}
                 >
@@ -323,6 +323,37 @@ export const PersonnelTab: React.FC<{
     old: string;
     new: string;
   } | null>(null);
+
+  // Date range state
+  const [weekRange, setWeekRange] = useState(getWeekRange());
+  const [currentDay, setCurrentDay] = useState(new Date().getDay());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWeekRange(getWeekRange());
+      setCurrentDay(new Date().getDay());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Alert Logic
+  const getAlertKey = (type: string) => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${type}`;
+  };
+
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
+    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle')];
+    const saved = new Set<string>();
+    check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
+    return saved;
+  });
+
+  const dismissAlert = (type: string) => {
+    const key = getAlertKey(type);
+    localStorage.setItem(`dismissed-${key}`, 'true');
+    setDismissedAlerts(prev => { const next = new Set(prev); next.add(key); return next; });
+  };
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [menu, setMenu] = useState<{
     x: number;
@@ -445,6 +476,13 @@ export const PersonnelTab: React.FC<{
   }, [teams.length]);
 
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
+    // Auto-dismiss alerts
+    const day = new Date().getDay();
+    const lowerTeam = team.toLowerCase();
+    if (day === 1) dismissAlert('general');
+    if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
+    if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
+
     setLocalOnCall((prev) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
       if (!teamOrder.includes(team)) {
@@ -505,7 +543,21 @@ export const PersonnelTab: React.FC<{
     }
   };
 
-  const weekRange = useMemo(() => getWeekRange(), []);
+  // Removed static weekRange memo, now using state above
+
+  const renderAlerts = () => {
+    const alerts: JSX.Element[] = [];
+    if (currentDay === 1 && !dismissedAlerts.has(getAlertKey('general'))) {
+      alerts.push(<div key="general" onClick={() => dismissAlert('general')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-on-accent)', background: 'var(--color-accent-primary)', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Weekly Schedule</div>);
+    }
+    if (currentDay === 3 && !dismissedAlerts.has(getAlertKey('sql'))) {
+      alerts.push(<div key="sql" onClick={() => dismissAlert('sql')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#8fbce6', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update SQL DBA</div>);
+    }
+    if (currentDay === 4 && !dismissedAlerts.has(getAlertKey('oracle'))) {
+      alerts.push(<div key="oracle" onClick={() => dismissAlert('oracle')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#e68f8f', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Oracle DBA</div>);
+    }
+    return alerts;
+  };
 
   return (
     <div
@@ -545,9 +597,12 @@ export const PersonnelTab: React.FC<{
               color: "var(--color-text-tertiary)",
               margin: "8px 0 0 0",
               fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
             }}
           >
             {weekRange}
+            {renderAlerts()}
           </p>
         </div>
         <div style={{ display: "flex", gap: "12px" }}>
