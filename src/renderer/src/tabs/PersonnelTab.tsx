@@ -15,6 +15,7 @@ import { ContextMenu, ContextMenuItem } from "../components/ContextMenu";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { getColorForString } from "../utils/colors";
 import { useToast } from "../components/Toast";
+import { Tooltip } from "../components/Tooltip";
 import { CollapsibleHeader, useCollapsibleHeader } from "../components/CollapsibleHeader";
 
 import { GridStack } from "gridstack";
@@ -139,7 +140,9 @@ const TeamCard = ({
                 textTransform: "uppercase",
               }}
             >
-              {team}
+              <Tooltip content={team}>
+                <span>{team}</span>
+              </Tooltip>
             </div>
           </div>
 
@@ -162,84 +165,88 @@ const TeamCard = ({
                   padding: "4px 0",
                 }}
               >
-                <div
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    fontSize: "13px",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    alignSelf: "center",
-                    opacity: 0.8,
-                  }}
-                  title={row.role}
-                >
-                  {(() => {
-                    const r = row.role.toLowerCase();
-                    if (r.includes("primary")) return "PRI";
-                    if (r.includes("secondary")) return "SEC";
-                    if (r.includes("backup")) return "BKP";
-                    if (r.includes("shadow")) return "SHD";
-                    if (r.includes("escalation")) return "ESC";
-                    return row.role.substring(0, 3).toUpperCase();
-                  })()}
-                </div>
-                <div
-                  style={{
-                    color: row.name
-                      ? "var(--color-text-primary)"
-                      : "var(--color-text-quaternary)",
-                    fontSize: "20px",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    lineHeight: 1.2,
-                  }}
-                  title={row.name}
-                >
-                  {row.name || "—"}
-                </div>
-                <div
-                  style={{
-                    color: "var(--color-text-primary)",
-                    fontSize: "20px",
-                    fontFamily: "var(--font-mono)",
-                    textAlign: "right",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    fontWeight: 700,
-                    width: "180px",
-                  }}
-                  title={row.contact}
-                >
-                  {formatPhoneNumber(row.contact)}
-                </div>
-                {hasAnyTimeWindow && (
+                <Tooltip content={row.role}>
                   <div
                     style={{
                       color: "var(--color-text-tertiary)",
-                      fontSize: "14px",
-                      textAlign: "center",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
-                      padding: row.timeWindow ? "4px 8px" : "0",
-                      borderRadius: "4px",
-                      background: row.timeWindow
-                        ? "rgba(255,255,255,0.05)"
-                        : "transparent",
-                      opacity: row.timeWindow ? 0.9 : 0,
-                      width: "90px",
+                      alignSelf: "center",
+                      opacity: 0.8,
                     }}
-                    title={row.timeWindow}
                   >
-                    {row.timeWindow}
+                    {(() => {
+                      const r = row.role.toLowerCase();
+                      if (r.includes("primary")) return "PRI";
+                      if (r.includes("secondary")) return "SEC";
+                      if (r.includes("backup")) return "BKP";
+                      if (r.includes("shadow")) return "SHD";
+                      if (r.includes("escalation")) return "ESC";
+                      return row.role.substring(0, 3).toUpperCase();
+                    })()}
                   </div>
+                </Tooltip>
+                <Tooltip content={row.name}>
+                  <div
+                    style={{
+                      color: row.name
+                        ? "var(--color-text-primary)"
+                        : "var(--color-text-quaternary)",
+                      fontSize: "20px",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {row.name || "—"}
+                  </div>
+                </Tooltip>
+                <Tooltip content={row.contact}>
+                  <div
+                    style={{
+                      color: "var(--color-text-primary)",
+                      fontSize: "20px",
+                      fontFamily: "var(--font-mono)",
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      fontWeight: 700,
+                      width: "180px",
+                    }}
+                  >
+                    {formatPhoneNumber(row.contact)}
+                  </div>
+                </Tooltip>
+                {hasAnyTimeWindow && (
+                  <Tooltip content={row.timeWindow}>
+                    <div
+                      style={{
+                        color: "var(--color-text-tertiary)",
+                        fontSize: "14px",
+                        textAlign: "center",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        padding: row.timeWindow ? "4px 8px" : "0",
+                        borderRadius: "4px",
+                        background: row.timeWindow
+                          ? "rgba(255,255,255,0.05)"
+                          : "transparent",
+                        opacity: row.timeWindow ? 0.9 : 0,
+                        width: "90px",
+                      }}
+                    >
+                      {row.timeWindow}
+                    </div>
+                  </Tooltip>
                 )}
               </div>
             ))}
@@ -483,11 +490,15 @@ export const PersonnelTab: React.FC<{
   }, []);
 
   useEffect(() => {
+    let timeout: NodeJS.Timeout;
     if (gridInstanceRef.current) {
-      setTimeout(() => {
+      timeout = setTimeout(() => {
         gridInstanceRef.current?.compact();
       }, 100);
     }
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
   }, [teams.length]);
 
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {

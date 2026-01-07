@@ -1,4 +1,5 @@
 import React, { useRef } from "react";
+import { Tooltip } from "./Tooltip";
 
 type Tab =
   | "Compose"
@@ -30,56 +31,57 @@ const SidebarButton = ({
   const [isHovered, setIsHovered] = React.useState(false);
 
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={label}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: "40px",
-        height: "40px",
-        background: isActive
-          ? "var(--color-accent-blue)"
-          : isHovered
+    <Tooltip content={label} position="right">
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "40px",
+          height: "40px",
+          background: isActive
             ? "var(--color-accent-blue)"
-            : "rgba(255, 255, 255, 0.03)",
-        border: "none",
-        cursor: "pointer",
-        position: "relative",
-        color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
-        transition: "all var(--transition-smooth)",
-        borderRadius: isActive || isHovered ? "12px" : "20px",
-        outline: "none",
-        transform: isHovered
-          ? isActive
-            ? "scale(1.05)"
-            : "translateY(-1px) scale(1.05)"
-          : "scale(1)",
-        boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
-      }}
-    >
-      {icon}
+            : isHovered
+              ? "var(--color-accent-blue)"
+              : "rgba(255, 255, 255, 0.03)",
+          border: "none",
+          cursor: "pointer",
+          position: "relative",
+          color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
+          transition: "all var(--transition-smooth)",
+          borderRadius: isActive || isHovered ? "12px" : "20px",
+          outline: "none",
+          transform: isHovered
+            ? isActive
+              ? "scale(1.05)"
+              : "translateY(-1px) scale(1.05)"
+            : "scale(1)",
+          boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
+        }}
+      >
+        {icon}
 
-      {/* Active indicator bar */}
-      {isActive && (
-        <div
-          style={{
-            position: "absolute",
-            left: "-12px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            height: "24px",
-            width: "4px",
-            background: "white",
-            borderRadius: "0 4px 4px 0",
-            boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
-          }}
-        />
-      )}
-    </button>
+        {/* Active indicator bar */}
+        {isActive && (
+          <div
+            style={{
+              position: "absolute",
+              left: "-12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              height: "24px",
+              width: "4px",
+              background: "white",
+              borderRadius: "0 4px 4px 0",
+              boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
+            }}
+          />
+        )}
+      </button>
+    </Tooltip>
   );
 };
 

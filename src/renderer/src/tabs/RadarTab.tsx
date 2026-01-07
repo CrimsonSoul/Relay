@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { ToolbarButton } from '../components/ToolbarButton';
+import { Tooltip } from '../components/Tooltip';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
 export const RadarTab: React.FC = () => {
@@ -36,6 +37,7 @@ export const RadarTab: React.FC = () => {
         <ToolbarButton
           onClick={handleRefresh}
           label={isLoading ? 'REFRESHING' : 'REFRESH'}
+          tooltip="Refresh Radar"
           style={{ padding: '8px 16px', fontSize: '11px' }}
           icon={
             <svg
@@ -63,12 +65,26 @@ export const RadarTab: React.FC = () => {
         background: 'black',
         overflow: 'hidden',
         borderRadius: '12px',
-        border: 'var(--border-subtle)',
-        // Robust SVG clipping for Windows artifacts
-        clipPath: 'url(#radar-clip)',
-        WebkitClipPath: 'url(#radar-clip)',
+        // Force the GPU to clip the webview using a mask-image hack
+        WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+        maskImage: 'radial-gradient(white, black)',
         transform: 'translateZ(0)',
       }}>
+        {/* 
+           CRITICAL: Border Overlay (The "Choke")
+           We use a border + a tiny box-shadow to "thicken" the mask 
+           and ensure it perfectly covers the aliased edges of the webview.
+        */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '12px',
+          border: '1px solid var(--border-subtle)',
+          boxShadow: '0 0 0 0.5px var(--border-subtle)', // Choke the edge
+          pointerEvents: 'none',
+          zIndex: 10,
+        }} />
+
         <webview
           ref={webviewRef}
           src={url}
@@ -77,19 +93,10 @@ export const RadarTab: React.FC = () => {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: 'white'
+            background: 'transparent' // Prevent white bleed
           }}
         />
       </div>
-
-      {/* Hidden SVG for precise corner clipping */}
-      <svg width="0" height="0" style={{ position: 'absolute' }}>
-        <defs>
-          <clipPath id="radar-clip" clipPathUnits="objectBoundingBox">
-            <rect x="0" y="0" width="1" height="1" rx="0.012" ry="0.012" />
-          </clipPath>
-        </defs>
-      </svg>
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
