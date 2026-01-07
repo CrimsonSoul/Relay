@@ -64,9 +64,10 @@ export const RadarTab: React.FC = () => {
         overflow: 'hidden',
         borderRadius: '12px',
         border: 'var(--border-subtle)',
-        // Fix for Windows visual artifacts on rounded corners
+        // Robust SVG clipping for Windows artifacts
+        clipPath: 'url(#radar-clip)',
+        WebkitClipPath: 'url(#radar-clip)',
         transform: 'translateZ(0)',
-        WebkitMaskImage: '-webkit-radial-gradient(white, black)',
       }}>
         <webview
           ref={webviewRef}
@@ -76,11 +77,19 @@ export const RadarTab: React.FC = () => {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: 'white',
-            borderRadius: '12px'
+            background: 'white'
           }}
         />
       </div>
+
+      {/* Hidden SVG for precise corner clipping */}
+      <svg width="0" height="0" style={{ position: 'absolute' }}>
+        <defs>
+          <clipPath id="radar-clip" clipPathUnits="objectBoundingBox">
+            <rect x="0" y="0" width="1" height="1" rx="0.012" ry="0.012" />
+          </clipPath>
+        </defs>
+      </svg>
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
