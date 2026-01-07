@@ -63,7 +63,10 @@ export const RadarTab: React.FC = () => {
         background: 'black',
         overflow: 'hidden',
         borderRadius: '12px',
-        border: 'var(--border-subtle)'
+        border: 'var(--border-subtle)',
+        // Fix for Windows visual artifacts on rounded corners
+        transform: 'translateZ(0)',
+        WebkitMaskImage: '-webkit-radial-gradient(white, black)',
       }}>
         <webview
           ref={webviewRef}
@@ -73,7 +76,8 @@ export const RadarTab: React.FC = () => {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: 'white'
+            background: 'white',
+            borderRadius: '12px'
           }}
         />
       </div>

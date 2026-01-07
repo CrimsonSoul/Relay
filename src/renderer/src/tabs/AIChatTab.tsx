@@ -155,6 +155,9 @@ export const AIChatTab: React.FC = () => {
                     overflow: 'hidden',
                     borderRadius: '12px',
                     border: 'var(--border-subtle)',
+                    // Fix for Windows visual artifacts on rounded corners
+                    transform: 'translateZ(0)',
+                    WebkitMaskImage: '-webkit-radial-gradient(white, black)',
                 }}
             >
                 {/* Gemini Webview - Always mounted, visibility controlled */}
