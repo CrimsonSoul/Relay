@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, session } from 'electron';
+import v8 from 'v8';
 import { join } from 'path';
 import fs from 'fs';
 import { FileManager } from './FileManager';
@@ -321,6 +322,45 @@ app.whenReady().then(async () => {
   // Create window immediately for fastest startup
   // All data initialization happens asynchronously after window is shown
   await createWindow();
+
+  // Periodic maintenance task (runs every 24 hours)
+  const maintenanceInterval = setInterval(() => {
+    loggers.main.info('Running periodic maintenance...');
+    
+    // 1. Log memory usage
+    const memory = process.memoryUsage();
+    loggers.main.info('Memory Stats:', {
+      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`,
+      external: `${Math.round(memory.external / 1024 / 1024)}MB`
+    });
+
+    // 2. Performance: Trigger V8 heap compaction/GC hint
+    // This is a "soft" hint to V8 that it's a good time to clean up
+    if (global.gc) {
+      try {
+        global.gc();
+        loggers.main.info('Triggered manual garbage collection');
+      } catch (e) {
+        loggers.main.warn('Failed to trigger manual GC', { error: e });
+      }
+    }
+
+    // 3. Cleanup: Prune old backups
+    if (fileManager) {
+      fileManager.performBackup('periodic maintenance');
+    }
+  }, 24 * 60 * 60 * 1000);
+
+  // Initial maintenance check after 1 minute
+  setTimeout(() => {
+    const memory = process.memoryUsage();
+    loggers.main.info('Startup Memory Stats:', {
+      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`
+    });
+  }, 60000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

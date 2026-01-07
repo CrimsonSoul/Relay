@@ -344,6 +344,31 @@ export function MainApp() {
     };
 
     window.addEventListener("wheel", handleGlobalWheel, { passive: false });
+
+    // Periodic Cleanup: Remove old dismissed alerts from localStorage
+    try {
+      const now = new Date();
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('dismissed-')) {
+          // Key format: dismissed-YYYY-MM-DD-type
+          const match = key.match(/dismissed-(\d{4}-\d{2}-\d{2})/);
+          if (match) {
+            const date = new Date(match[1]);
+            if (now.getTime() - date.getTime() > SEVEN_DAYS_MS) {
+              localStorage.removeItem(key);
+              // Decrement index because we removed an item
+              i--;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[App] Failed to prune localStorage:', e);
+    }
+
     return () => window.removeEventListener("wheel", handleGlobalWheel);
   }, []);
 

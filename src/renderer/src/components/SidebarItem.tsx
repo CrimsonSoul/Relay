@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { getColorForString } from '../utils/colors';
+import { Tooltip } from './Tooltip';
 
 type SidebarItemProps = {
   label: string;
@@ -23,71 +24,73 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
   };
 
   return (
-    <button
-      onClick={handleClick}
-      onContextMenu={handleContextMenu}
-      style={{
-        padding: '6px 10px',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
-        transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-        userSelect: 'none',
-        border: 'none',
-        width: '100%',
-        fontFamily: 'inherit',
-        textAlign: 'center',
-        outline: 'none',
-        overflow: 'hidden',
-        minHeight: '40px'
-      }}
-      onMouseEnter={(e) => {
-        if (!active) {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (!active) {
-          e.currentTarget.style.background = 'transparent';
-        }
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-        <span style={{
+    <Tooltip content={label}>
+      <button
+        onClick={handleClick}
+        onContextMenu={handleContextMenu}
+        style={{
+          padding: '4px 8px', // Slightly tightened
+          borderRadius: '8px',
+          cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
-          gap: '8px',
-          fontSize: '13px',
-          color: color.text,
-          background: color.bg,
-          border: `1px solid ${color.border}`,
-          padding: '4px 10px',
-          borderRadius: '16px',
-          fontWeight: 600,
-          maxWidth: '100%',
-          overflow: 'hidden'
-        }}>
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {label}
-          </span>
-          {count !== undefined && (
-            <span style={{
-              opacity: 0.8,
-              fontSize: '11px',
-              fontWeight: 500,
-              borderLeft: `1px solid ${color.border}`,
-              paddingLeft: '6px',
-              flexShrink: 0
-            }}>
-              {count}
+          justifyContent: 'center',
+          background: active ? 'rgba(255,255,255,0.06)' : 'transparent',
+          transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          userSelect: 'none',
+          border: 'none',
+          width: '100%',
+          fontFamily: 'inherit',
+          textAlign: 'center',
+          outline: 'none',
+          overflow: 'hidden',
+          minHeight: '32px' // Slightly tightened
+        }}
+        onMouseEnter={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (!active) {
+            e.currentTarget.style.background = 'transparent';
+          }
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
+          <span style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '13px',
+            color: color.text,
+            background: color.bg,
+            border: `1px solid ${color.border}`,
+            padding: '4px 10px',
+            borderRadius: '16px',
+            fontWeight: 600,
+            maxWidth: '100%',
+            overflow: 'hidden'
+          }}>
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {label}
             </span>
-          )}
-        </span>
-      </div>
-    </button>
+            {count !== undefined && (
+              <span style={{
+                opacity: 0.8,
+                fontSize: '11px',
+                fontWeight: 500,
+                borderLeft: `1px solid ${color.border}`,
+                paddingLeft: '6px',
+                flexShrink: 0
+              }}>
+                {count}
+              </span>
+            )}
+          </span>
+        </div>
+      </button>
+    </Tooltip>
   );
 });
 
