@@ -335,10 +335,21 @@ export const PersonnelTab: React.FC<{
   useEffect(() => {
     const interval = setInterval(() => {
       setWeekRange(getWeekRange());
-      setCurrentDay(new Date().getDay());
+      const newDay = new Date().getDay();
+      if (newDay !== currentDay) {
+        setCurrentDay(newDay);
+        // Reset dismissed alerts state to pick up new keys for the new day
+        const types = ['general', 'sql', 'oracle', 'network'];
+        const saved = new Set<string>();
+        types.forEach(type => {
+            const key = getAlertKey(type);
+            if (localStorage.getItem(`dismissed-${key}`)) saved.add(key);
+        });
+        setDismissedAlerts(saved);
+      }
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [currentDay]);
 
   // Alert Logic
   const getAlertKey = (type: string) => {
@@ -347,7 +358,7 @@ export const PersonnelTab: React.FC<{
   };
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
-    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle')];
+    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle'), getAlertKey('network')];
     const saved = new Set<string>();
     check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
     return saved;
@@ -486,6 +497,7 @@ export const PersonnelTab: React.FC<{
     if (day === 1) dismissAlert('general');
     if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
+    if (day === 5 && (lowerTeam.includes('network') || lowerTeam.includes('voice') || lowerTeam.includes('fts'))) dismissAlert('network');
 
     setLocalOnCall((prev) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
@@ -559,6 +571,9 @@ export const PersonnelTab: React.FC<{
     }
     if (currentDay === 4 && !dismissedAlerts.has(getAlertKey('oracle'))) {
       alerts.push(<div key="oracle" onClick={() => dismissAlert('oracle')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Oracle DBA</div>);
+    }
+    if (currentDay === 5 && !dismissedAlerts.has(getAlertKey('network'))) {
+      alerts.push(<div key="network" onClick={() => dismissAlert('network')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#3B82F6', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Network/Voice/FTS</div>);
     }
     return alerts;
   };
