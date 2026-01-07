@@ -155,9 +155,10 @@ export const AIChatTab: React.FC = () => {
                     overflow: 'hidden',
                     borderRadius: '12px',
                     border: 'var(--border-subtle)',
-                    // Fix for Windows visual artifacts on rounded corners
+                    // Robust SVG clipping for Windows artifacts
+                    clipPath: 'url(#webview-clip)',
+                    WebkitClipPath: 'url(#webview-clip)',
                     transform: 'translateZ(0)',
-                    WebkitMaskImage: '-webkit-radial-gradient(white, black)',
                 }}
             >
                 {/* Gemini Webview - Always mounted, visibility controlled */}
@@ -174,7 +175,6 @@ export const AIChatTab: React.FC = () => {
                         height: '100%',
                         border: 'none',
                         background: 'white',
-                        borderRadius: '12px',
                         visibility: activeService === 'gemini' ? 'visible' : 'hidden',
                     }}
                 />
@@ -193,11 +193,19 @@ export const AIChatTab: React.FC = () => {
                         height: '100%',
                         border: 'none',
                         background: 'white',
-                        borderRadius: '12px',
                         visibility: activeService === 'chatgpt' ? 'visible' : 'hidden',
                     }}
                 />
             </div>
+
+            {/* Hidden SVG for precise corner clipping */}
+            <svg width="0" height="0" style={{ position: 'absolute' }}>
+                <defs>
+                    <clipPath id="webview-clip" clipPathUnits="objectBoundingBox">
+                        <rect x="0" y="0" width="1" height="1" rx="0.012" ry="0.012" />
+                    </clipPath>
+                </defs>
+            </svg>
 
             <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
