@@ -3,6 +3,7 @@ import { OnCallEntry, Contact, GroupMap } from '@shared/ipc';
 import { TactileButton } from './TactileButton';
 import { Modal } from './Modal';
 import { Input } from './Input';
+import { Tooltip } from './Tooltip';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { ConfirmModal } from './ConfirmModal';
 import {
@@ -18,12 +19,8 @@ import {
     arrayMove,
     SortableContext,
     sortableKeyboardCoordinates,
-    horizontalListSortingStrategy,
-    useSortable
+    horizontalListSortingStrategy
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-
-import { getColorForString } from '../utils/colors';
 
 import { SortableTeamCard } from './SortableTeamCard';
 
@@ -177,65 +174,65 @@ export const OnCallPanel: React.FC<OnCallPanelProps> = ({
                     cursor: 'pointer',
                     transition: 'background 0.2s ease'
                 }}
-                title={isCollapsed ? "Expand Panel" : "Collapse Panel"}
             >
+                <Tooltip content={isCollapsed ? "Expand Panel" : "Collapse Panel"} position="top">
+                    {/* Content inside Tooltip trigger */}
+                    <div style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <div
+                                style={{
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    color: 'var(--color-text-primary)',
+                                    letterSpacing: '0.05em',
+                                    display: 'flex',
+                                    alignItems: 'center'
+                                }}
+                            >
+                                ON-CALL STATUS
+                            </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div
-                        style={{
-                            fontSize: '11px',
-                            fontWeight: 600,
-                            color: 'var(--color-text-primary)',
-                            letterSpacing: '0.05em',
-                            display: 'flex',
-                            alignItems: 'center'
-                        }}
-                    >
-                        ON-CALL STATUS
+
+                            <div style={{ fontSize: '9px', color: 'var(--color-text-tertiary)', fontWeight: 500, letterSpacing: '0.05em', opacity: 0.8 }}>
+                                {weekRange}
+                            </div>
+
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div
+                                className="chevron-icon"
+                                style={{
+                                    width: '20px',
+                                    height: '20px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    borderRadius: '4px',
+                                    transition: 'all var(--transition-fast)',
+                                    color: 'var(--color-text-tertiary)'
+                                }}
+                            >
+                                <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="3.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    style={{
+                                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        transform: isCollapsed ? 'rotate(90deg)' : 'rotate(270deg)'
+                                    }}
+                                >
+                                    <polyline points="15 18 9 12 15 6" />
+                                </svg>
+                            </div>
+                        </div>
                     </div>
-
-
-                    <div style={{ fontSize: '9px', color: 'var(--color-text-tertiary)', fontWeight: 500, letterSpacing: '0.05em', opacity: 0.8 }}>
-                        {weekRange}
-                    </div>
-
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div
-                        className="chevron-icon"
-                        style={{
-                            width: '20px',
-                            height: '20px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            borderRadius: '4px',
-                            transition: 'all var(--transition-fast)',
-                            color: 'var(--color-text-tertiary)'
-                        }}
-                    >
-                        <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            style={{
-                                transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                                transform: isCollapsed ? 'rotate(90deg)' : 'rotate(270deg)'
-                            }}
-                        >
-                            <polyline points="15 18 9 12 15 6" />
-                        </svg>
-                    </div>
-                </div>
-
-
-
+                </Tooltip>
             </div>
 
             <div
@@ -412,14 +409,21 @@ export const OnCallPanel: React.FC<OnCallPanelProps> = ({
                                         variant={currentEntry?.primary === c.email ? 'primary' : 'secondary'}
                                     >
                                         <div style={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                                            <div
-                                                style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.primary === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                title={c.name || c.email}
-                                            >
-                                                {c.name || c.email}
-                                            </div>
-                                            {c.title && <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.title}>{c.title}</div>}
-                                            <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.email}>{c.email}</div>
+                                            <Tooltip content={c.name || c.email}>
+                                                <div
+                                                    style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.primary === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                >
+                                                    {c.name || c.email}
+                                                </div>
+                                            </Tooltip>
+                                            {c.title && (
+                                                <Tooltip content={c.title}>
+                                                    <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                                                </Tooltip>
+                                            )}
+                                            <Tooltip content={c.email}>
+                                                <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>
+                                            </Tooltip>
                                         </div>
                                     </TactileButton>
                                 ))}
@@ -468,14 +472,21 @@ export const OnCallPanel: React.FC<OnCallPanelProps> = ({
                                         variant={currentEntry?.backup === c.email ? 'primary' : 'secondary'}
                                     >
                                         <div style={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
-                                            <div
-                                                style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.backup === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                title={c.name || c.email}
-                                            >
-                                                {c.name || c.email}
-                                            </div>
-                                            {c.title && <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.title}>{c.title}</div>}
-                                            <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={c.email}>{c.email}</div>
+                                            <Tooltip content={c.name || c.email}>
+                                                <div
+                                                    style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.backup === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                >
+                                                    {c.name || c.email}
+                                                </div>
+                                            </Tooltip>
+                                            {c.title && (
+                                                <Tooltip content={c.title}>
+                                                    <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                                                </Tooltip>
+                                            )}
+                                            <Tooltip content={c.email}>
+                                                <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>
+                                            </Tooltip>
                                         </div>
                                     </TactileButton>
                                 ))}

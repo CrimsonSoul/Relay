@@ -1,6 +1,7 @@
 import React from "react";
 import { TactileButton } from "../../components/TactileButton";
 import { Input } from "../../components/Input";
+import { Tooltip } from "../../components/Tooltip";
 import type { WeatherData, Location } from "./types";
 import { getWeatherIcon } from "./utils";
 
@@ -75,7 +76,9 @@ export const LocationBar: React.FC<LocationBarProps> = ({
           onKeyDown={(e) => e.key === "Enter" && onSearch()}
           style={{ width: "180px" }}
         />
-        <TactileButton onClick={onSearch}>SEARCH</TactileButton>
+        <Tooltip content="Search for weather by city or location" position="bottom">
+          <TactileButton onClick={onSearch}>SEARCH</TactileButton>
+        </Tooltip>
       </div>
     </div>
   );

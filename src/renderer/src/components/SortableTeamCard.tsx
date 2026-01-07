@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { OnCallEntry, Contact } from '@shared/ipc';
 import { ContextMenuItem } from './ContextMenu';
+import { Tooltip } from './Tooltip';
 import { getColorForString } from '../utils/colors';
 
 export interface SortableTeamCardProps {
@@ -112,21 +113,22 @@ export const SortableTeamCard = ({
                 }} />
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <div
-                        style={{
-                            fontSize: '11px', // Slightly smaller team name
-                            fontWeight: 800,
-                            color: colorScheme.text, // Dynamic color for team name
-                            letterSpacing: '0.08em',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            maxWidth: '180px' // Adjusted to fit grabber better
-                        }}
-                        title={team.toUpperCase()}
-                    >
-                        {team.toUpperCase()}
-                    </div>
+                    <Tooltip content={team.toUpperCase()}>
+                        <div
+                            style={{
+                                fontSize: '11px', // Slightly smaller team name
+                                fontWeight: 800,
+                                color: colorScheme.text, // Dynamic color for team name
+                                letterSpacing: '0.08em',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '180px' // Adjusted to fit grabber better
+                            }}
+                        >
+                            {team.toUpperCase()}
+                        </div>
+                    </Tooltip>
                     {/* Drag Handle Icon - Absolute top-right to save space */}
                     <div style={{
                         position: 'absolute',
@@ -147,12 +149,13 @@ export const SortableTeamCard = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>PRI</span>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
-                            <span
-                                style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
-                                title={primaryContact?.name || entry?.primary || 'UNASSIGNED'}
-                            >
-                                {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
-                            </span>
+                            <Tooltip content={primaryContact?.name || entry?.primary || 'UNASSIGNED'}>
+                                <span
+                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                >
+                                    {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
+                                </span>
+                            </Tooltip>
                             {primaryContact?.phone && (
                                 <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {primaryContact.phone}
@@ -163,12 +166,13 @@ export const SortableTeamCard = ({
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                         <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>{entry?.backupLabel || 'BAK'}</span>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
-                            <span
-                                style={{ fontSize: '13px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
-                                title={backupContact?.name || entry?.backup || 'UNASSIGNED'}
-                            >
-                                {backupContact?.name || entry?.backup || 'UNASSIGNED'}
-                            </span>
+                            <Tooltip content={backupContact?.name || entry?.backup || 'UNASSIGNED'}>
+                                <span
+                                    style={{ fontSize: '13px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                >
+                                    {backupContact?.name || entry?.backup || 'UNASSIGNED'}
+                                </span>
+                            </Tooltip>
                             {backupContact?.phone && (
                                 <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {backupContact.phone}

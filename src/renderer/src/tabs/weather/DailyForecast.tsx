@@ -1,6 +1,7 @@
 import React from "react";
+import { Tooltip } from "../../components/Tooltip";
 import type { WeatherData } from "./types";
-import { getWeatherIcon } from "./utils";
+import { getWeatherIcon, getWeatherDescription } from "./utils";
 
 interface DailyForecastProps {
   weather: WeatherData | null;
@@ -89,15 +90,17 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
                   ? "Today"
                   : date.toLocaleDateString([], { weekday: "short" })}
               </span>
-              <div
-                style={{
-                  width: "32px",
-                  display: "flex",
-                  justifyContent: "center",
-                }}
-              >
-                {getWeatherIcon(weather.daily.weathercode[i], 20)}
-              </div>
+              <Tooltip content={getWeatherDescription(weather.daily.weathercode[i])} position="top">
+                <div
+                  style={{
+                    width: "32px",
+                    display: "flex",
+                    justifyContent: "center",
+                  }}
+                >
+                  {getWeatherIcon(weather.daily.weathercode[i], 20)}
+                </div>
+              </Tooltip>
               {/* Wind and Precip */}
               <div
                 style={{
@@ -109,50 +112,54 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
                 }}
               >
                 {weather.daily.wind_speed_10m_max[i] > 8 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "3px",
-                      color: "var(--color-text-tertiary)",
-                      background: "rgba(255,255,255,0.03)",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                  <Tooltip content="Max Wind Speed" position="top">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "3px",
+                        color: "var(--color-text-tertiary)",
+                        background: "rgba(255,255,255,0.03)",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                      }}
                     >
-                      <path d="M5 12h14M12 5l7 7-7 7" />
-                    </svg>
-                    <span style={{ fontSize: "11px", fontWeight: 500 }}>
-                      {Math.round(weather.daily.wind_speed_10m_max[i])}
-                    </span>
-                  </div>
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                      </svg>
+                      <span style={{ fontSize: "11px", fontWeight: 500 }}>
+                        {Math.round(weather.daily.wind_speed_10m_max[i])}
+                      </span>
+                    </div>
+                  </Tooltip>
                 )}
                 {weather.daily.precipitation_probability_max[i] > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "3px",
-                      color: "#60A5FA",
-                      background: "rgba(96, 165, 250, 0.08)",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    <span style={{ fontSize: "11px", fontWeight: 600 }}>
-                      {weather.daily.precipitation_probability_max[i]}%
-                    </span>
-                  </div>
+                  <Tooltip content="Precipitation Probability" position="top">
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "3px",
+                        color: "#60A5FA",
+                        background: "rgba(96, 165, 250, 0.08)",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      <span style={{ fontSize: "11px", fontWeight: 600 }}>
+                        {weather.daily.precipitation_probability_max[i]}%
+                      </span>
+                    </div>
+                  </Tooltip>
                 )}
               </div>
               <div

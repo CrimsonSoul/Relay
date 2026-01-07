@@ -11,6 +11,25 @@ import { setupWeatherHandlers } from './handlers/weatherHandlers';
 import { setupWindowHandlers, setupWindowListeners } from './handlers/windowHandlers';
 import { loggers } from './logger';
 
+// IP Geolocation API Response Types
+interface IpApiCoResponse {
+  latitude?: number;
+  longitude?: number;
+  city?: string;
+  region?: string;
+  country_name?: string;
+  timezone?: string;
+}
+
+interface IpApiComResponse {
+  lat?: number;
+  lon?: number;
+  city?: string;
+  regionName?: string;
+  country?: string;
+  timezone?: string;
+}
+
 /**
  * Check if a path is a Windows UNC path (\\server\share)
  */
@@ -261,7 +280,7 @@ export function setupIpcHandlers(
         headers: { 'User-Agent': 'Relay-App' }
       });
       if (res.ok) {
-        const data: any = await res.json();
+        const data = await res.json() as IpApiCoResponse;
         return {
           lat: data.latitude,
           lon: data.longitude,
@@ -280,7 +299,7 @@ export function setupIpcHandlers(
       // Note: This endpoint is free but rate-limited (45 req/min)
       const res = await fetch('http://ip-api.com/json/');
       if (res.ok) {
-        const data: any = await res.json();
+        const data = await res.json() as IpApiComResponse;
         return {
           lat: data.lat,
           lon: data.lon,

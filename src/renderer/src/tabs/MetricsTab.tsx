@@ -193,19 +193,19 @@ export const MetricsTab: React.FC = () => {
                         This action cannot be undone. All metrics and reports will be reset to zero.
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-                        <button
+                        <TactileButton
+                            variant="secondary"
                             onClick={() => setIsResetModalOpen(false)}
-                            className="tactile-button"
                         >
                             Cancel
-                        </button>
-                        <button
+                        </TactileButton>
+                        <TactileButton
+                            variant="primary"
                             onClick={handleReset}
-                            className="tactile-button"
                             style={{ background: '#EF4444', borderColor: 'transparent', color: '#FFF' }}
                         >
                             Reset Data
-                        </button>
+                        </TactileButton>
                     </div>
                 </div>
             </Modal>
