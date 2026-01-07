@@ -197,8 +197,8 @@ export const AIChatTab: React.FC = () => {
                     overflow: 'hidden',
                     borderRadius: '12px',
                     // Force the GPU to clip the webview using a mask-image hack
-                    WebkitMaskImage: '-webkit-radial-gradient(white, black)',
-                    maskImage: 'radial-gradient(white, black)',
+                    WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+                    maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
                     transform: 'translateZ(0)',
                 }}
             >
@@ -211,8 +211,8 @@ export const AIChatTab: React.FC = () => {
                     position: 'absolute',
                     inset: 0,
                     borderRadius: '12px',
-                    border: '1px solid var(--border-subtle)',
-                    boxShadow: '0 0 0 0.5px var(--border-subtle)', // Choke the edge
+                    border: '1.5px solid var(--color-bg-app)', // Use app background color to mask
+                    boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', // Extra sub-pixel choke
                     pointerEvents: 'none',
                     zIndex: 10,
                 }} />
