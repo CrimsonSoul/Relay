@@ -104,7 +104,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         paddingBottom: "16px",
         gap: "12px",
         zIndex: 9002,
-        WebkitAppRegion: "drag" as any,
+        WebkitAppRegion: "drag",
       }}
     >
       {/* App Icon - 3-Click Easter Egg to Weather */}
@@ -120,7 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           background:
             "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)",
           borderRadius: "50%",
-          WebkitAppRegion: "no-drag" as any,
+          WebkitAppRegion: "no-drag",
           cursor: "pointer",
           transition: "all 0.1s cubic-bezier(0.16, 1, 0.3, 1)",
           border: "1.5px solid rgba(59, 130, 246, 0.3)",
@@ -216,7 +216,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           flexDirection: "column",
           alignItems: "center",
           gap: "12px",
-          WebkitAppRegion: "no-drag" as any,
+          WebkitAppRegion: "no-drag",
         }}
       >
         <SidebarButton
@@ -461,7 +461,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             display: "flex",
             flexDirection: "column",
             gap: "12px",
-          } as any
+        }
         }
       >
         <SidebarButton

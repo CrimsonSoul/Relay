@@ -202,20 +202,7 @@ export const RADAR_INJECT_CSS = `
     box-shadow: none !important;
   }
   #app-icon, .get-the-app { 
-    background: rgba(0, 0, 0, 0.5) !important;
-    padding: 6px 12px !important;
-    border-radius: 12px !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    color: #ffffff !important;
-    text-decoration: none !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.02em !important;
+    display: none !important; 
   }
   #app-icon .small-hide { 
     display: none !important; 

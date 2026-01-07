@@ -33,7 +33,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         return `${name}, ${admin1 || ""} ${country_code}`.trim();
       }
     } catch {
-      // Fallback
+      // Geocoding API failure is non-critical - use fallback name
     }
     return "Current Location";
   };

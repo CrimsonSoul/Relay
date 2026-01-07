@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { OnCallRow, Contact } from "@shared/ipc";
-import { formatPhoneNumber } from "../utils/phone";
+import { formatPhoneNumber } from '../../../shared/phoneUtils';
 import { TactileButton } from "../components/TactileButton";
 import { Modal } from "../components/Modal";
 import { MaintainTeamModal } from "../components/MaintainTeamModal";

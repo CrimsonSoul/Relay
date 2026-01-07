@@ -7,6 +7,7 @@ import { IPC_CHANNELS } from '../shared/ipc';
 import { copyDataFiles, ensureDataFiles, ensureDataFilesAsync, loadConfig, loadConfigAsync, saveConfig } from './dataUtils';
 import { validateDataPath } from './pathValidation';
 import { setupIpcHandlers } from './ipcHandlers';
+import { loggers } from './logger';
 import {
   generateAuthNonce,
   registerAuthRequest,
@@ -124,11 +125,11 @@ async function createWindow() {
 
   // Initialize data immediately (async)
   (async () => {
-    console.log('[Main] Starting data initialization...');
+    loggers.main.info('Starting data initialization...');
     try {
       // Resolve data root
       currentDataRoot = await getDataRootAsync();
-      console.log('[Main] Data root:', currentDataRoot);
+      loggers.main.info('Data root:', { path: currentDataRoot });
 
       // Initialize FileManager and BridgeLogger
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -137,17 +138,17 @@ async function createWindow() {
 
         // Start watching files and load initial data
         fileManager.init();
-        console.log('[Main] FileManager initialized successfully');
+        loggers.main.info('FileManager initialized successfully');
       }
     } catch (error) {
-      console.error('[Main] Failed to initialize data:', error);
+      loggers.main.error('Failed to initialize data', { error });
     }
   })();
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
     mainWindow?.focus();
-    console.log('[Main] ready-to-show fired');
+    loggers.main.debug('ready-to-show fired');
   });
 
   // Security: Restrict WebView navigation
@@ -161,7 +162,7 @@ async function createWindow() {
 
     // Verify URL (Basic check)
     if (params.src && !params.src.startsWith('http')) {
-      console.warn(`[Security] Blocked WebView navigation to non-http URL: ${params.src}`);
+      loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`);
       event.preventDefault();
     }
   });
@@ -222,7 +223,7 @@ function setupIpc() {
   ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (_event, { nonce, username, password, remember }) => {
     const authRequest = consumeAuthRequest(nonce);
     if (!authRequest) {
-      console.warn('[Auth] Invalid or expired auth nonce');
+      loggers.auth.warn('Invalid or expired auth nonce');
       return false;
     }
 
@@ -239,13 +240,13 @@ function setupIpc() {
   ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, { nonce }) => {
     const authRequest = consumeAuthRequest(nonce);
     if (!authRequest) {
-      console.warn('[Auth] Invalid or expired auth nonce for cached auth');
+      loggers.auth.warn('Invalid or expired auth nonce for cached auth');
       return false;
     }
 
     const cached = getCachedCredentials(authRequest.host);
     if (!cached) {
-      console.warn('[Auth] No cached credentials for host:', authRequest.host);
+      loggers.auth.warn('No cached credentials for host', { host: authRequest.host });
       return false;
     }
 
