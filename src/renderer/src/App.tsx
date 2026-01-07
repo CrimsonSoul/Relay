@@ -1,3 +1,4 @@
+import { LocationProvider, useLocation } from './contexts';
 import React, {
   useState,
   useEffect,
@@ -199,6 +200,8 @@ interface Location {
 
 export function MainApp() {
   const { showToast } = useToast();
+  // Use Location Context
+  const deviceLocation = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>("Compose");
   const [data, setData] = useState<AppData>({
     groups: {},
@@ -223,14 +226,29 @@ export function MainApp() {
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
 
   // Restore Weather Location
+  // Restore Weather Location or Sync from Device
   useEffect(() => {
+    // 1. Try saved manual location
     const saved = localStorage.getItem("weather_location");
     if (saved) {
       try {
         setWeatherLocation(JSON.parse(saved));
-      } catch { }
+        return;
+      } catch {
+        // Invalid JSON in localStorage - ignore and use fallback
+      }
     }
-  }, []);
+
+    // 2. Fallback to Device Location if loaded
+    if (!deviceLocation.loading && deviceLocation.lat && deviceLocation.lon) {
+      console.log('[App] Initializing weather location from device:', deviceLocation);
+      setWeatherLocation({
+        latitude: deviceLocation.lat,
+        longitude: deviceLocation.lon,
+        name: deviceLocation.city ? `${deviceLocation.city}, ${deviceLocation.region}` : 'Current Location'
+      });
+    }
+  }, [deviceLocation.loading, deviceLocation.lat, deviceLocation.lon]);
 
   const fetchWeather = useCallback(
     async (lat: number, lon: number, silent = false) => {
@@ -592,7 +610,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <MainApp />
+        <LocationProvider>
+          <MainApp />
+        </LocationProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

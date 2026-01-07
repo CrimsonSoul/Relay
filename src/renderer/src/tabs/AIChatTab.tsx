@@ -171,6 +171,7 @@ export const AIChatTab: React.FC = () => {
                         height: '100%',
                         border: 'none',
                         background: 'white',
+                        borderRadius: '12px',
                         visibility: activeService === 'gemini' ? 'visible' : 'hidden',
                     }}
                 />
@@ -189,6 +190,7 @@ export const AIChatTab: React.FC = () => {
                         height: '100%',
                         border: 'none',
                         background: 'white',
+                        borderRadius: '12px',
                         visibility: activeService === 'chatgpt' ? 'visible' : 'hidden',
                     }}
                 />

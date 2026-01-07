@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { Contact } from '@shared/ipc';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
-import { sanitizePhoneNumber, formatPhoneNumber } from '../utils/phone';
+import { sanitizePhoneNumber, formatPhoneNumber } from '../../../shared/phoneUtils';
 
 type Props = {
   isOpen: boolean;
