@@ -14,23 +14,23 @@ describe('Input Component', () => {
     const input = screen.getByPlaceholderText('Uncontrolled');
 
     // Initially no clear button
-    expect(container.querySelector('div[title="Clear"]')).toBeNull();
+    expect(screen.queryByTestId('input-clear-button')).toBeNull();
 
     fireEvent.change(input, { target: { value: 'Hello' } });
 
     // Should now have clear button
-    expect(container.querySelector('div[title="Clear"]')).toBeInTheDocument();
+    expect(screen.getByTestId('input-clear-button')).toBeInTheDocument();
   });
 
   test('clears input when button clicked', () => {
     const handleChange = vi.fn();
-    const { container } = render(<Input value="Test" onChange={handleChange} />);
+    render(<Input value="Test" onChange={handleChange} />);
 
-    const clearBtn = container.querySelector('div[title="Clear"]');
+    const clearBtn = screen.getByTestId('input-clear-button');
     expect(clearBtn).toBeInTheDocument();
 
     // Click the clear button
-    fireEvent.click(clearBtn!);
+    fireEvent.click(clearBtn);
 
     expect(handleChange).toHaveBeenCalled();
   });

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useLayoutEffect } from 'react';
+import { Tooltip } from './Tooltip';
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   icon?: React.ReactNode;
@@ -130,45 +131,47 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
       />
 
       {hasValue && !props.readOnly && !props.disabled && (
-        <div
-          onClick={handleClear}
-          style={{
-            position: 'absolute',
-            right: 'var(--space-2)',
-            top: '50%',
-            transform: 'translateY(-50%)',
-            color: 'var(--color-text-secondary)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '18px',
-            height: '18px',
-            borderRadius: 'var(--radius-round)',
-            background: 'rgba(255, 255, 255, 0.08)',
-            zIndex: 50,
-            transition: 'all var(--transition-fast)',
-            border: '1px solid transparent'
-          }}
-          onMouseEnter={e => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-            e.currentTarget.style.color = 'var(--color-text-primary)';
-            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-            e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = 'var(--color-text-secondary)';
-            e.currentTarget.style.borderColor = 'transparent';
-            e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
-          }}
-          title="Clear"
-        >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </div>
+          <Tooltip content="Clear" position="top">
+            <div
+              onClick={handleClear}
+              data-testid="input-clear-button"
+              style={{
+                position: 'absolute',
+                right: 'var(--space-2)',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--color-text-secondary)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '18px',
+                height: '18px',
+                borderRadius: 'var(--radius-round)',
+                background: 'rgba(255, 255, 255, 0.08)',
+                zIndex: 50,
+                transition: 'all var(--transition-fast)',
+                border: '1px solid transparent'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </div>
+          </Tooltip>
       )}
     </div>
   );

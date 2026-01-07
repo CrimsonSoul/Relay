@@ -1,6 +1,39 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
+// NWS API Response Types (for type safety)
+interface NWSPointProperties {
+  county?: string;
+  forecastZone?: string;
+}
+
+interface NWSPointResponse {
+  properties?: NWSPointProperties;
+}
+
+interface NWSAlertProperties {
+  id?: string;
+  event?: string;
+  headline?: string;
+  description?: string;
+  severity?: string;
+  urgency?: string;
+  certainty?: string;
+  effective?: string;
+  expires?: string;
+  senderName?: string;
+  areaDesc?: string;
+}
+
+interface NWSAlertFeature {
+  id?: string;
+  properties?: NWSAlertProperties;
+}
+
+interface NWSAlertsResponse {
+  features?: NWSAlertFeature[];
+}
+
 export function setupWeatherHandlers() {
   // Weather Handlers
   ipcMain.handle(IPC_CHANNELS.GET_WEATHER, async (_event, lat, lon) => {
@@ -46,7 +79,7 @@ export function setupWeatherHandlers() {
         throw new Error('Failed to get location info from NWS');
       }
 
-      const pointData: any = await pointRes.json();
+      const pointData = await pointRes.json() as NWSPointResponse;
       const countyZone = pointData.properties?.county;
       const forecastZone = pointData.properties?.forecastZone;
 
@@ -60,11 +93,11 @@ export function setupWeatherHandlers() {
         throw new Error('Failed to fetch weather alerts');
       }
 
-      const alertData: any = await alertRes.json();
+      const alertData = await alertRes.json() as NWSAlertsResponse;
       const features = alertData.features || [];
 
       // Map to our WeatherAlert type
-      return features.map((f: any) => ({
+      return features.map((f: NWSAlertFeature) => ({
         id: f.properties?.id || f.id,
         event: f.properties?.event || 'Unknown Event',
         headline: f.properties?.headline || '',

@@ -88,11 +88,11 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
             // PERMISSION_DENIED
             setPermissionDenied(true);
             setError(
-              "Location access was denied and fallback failed. Please search for your city manualy."
+              "Location access was denied and fallback failed. Please search for your city manually."
             );
           } else {
             setError(
-              "Could not detect location automatically. Please search for your city manualy."
+              "Could not detect location automatically. Please search for your city manually."
             );
           }
         }

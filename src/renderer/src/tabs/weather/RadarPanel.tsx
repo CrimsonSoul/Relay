@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
+import { Tooltip } from "../../components/Tooltip";
 import type { Location } from "./types";
 import { getRadarUrl, RADAR_INJECT_CSS, RADAR_INJECT_JS } from "./utils";
 
@@ -69,11 +70,13 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               }
             }
           })
-          .catch(() => {
+          .catch((e) => {
             // Not ready yet, wait for events
+            console.debug('[Radar] Webview not ready for JS - waiting for did-finish-load:', e?.message);
           });
-      } catch {
+      } catch (e) {
         // Webview not ready for JS execution yet - wait for did-finish-load event
+        console.debug('[Radar] Webview not ready:', e);
       }
     }, 2000);
 
@@ -97,17 +100,31 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         minHeight: 0,
       }}
     >
-      <div
-        style={{
-          flex: 1,
-          background: "black",
-          borderRadius: "12px",
-          overflow: "hidden",
-          position: "relative",
-          border: "var(--border-subtle)",
-          minHeight: "300px",
-        }}
-      >
+        <div
+            style={{
+                flex: 1,
+                background: "black",
+                borderRadius: "12px",
+                overflow: "hidden",
+                position: "relative",
+                border: "var(--border-subtle)",
+                minHeight: "300px",
+                // Force the GPU to clip the webview
+                WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+                maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+                transform: 'translateZ(0)',
+            }}
+        >
+            {/* Border Overlay Choke */}
+            <div style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '12px',
+                border: '1.5px solid var(--color-bg-app)',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
+                pointerEvents: 'none',
+                zIndex: 20,
+            }} />
         {location ? (
           <>
             {!radarLoaded && (
@@ -158,62 +175,64 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               allowpopups="false"
             />
             {/* Custom External View Button */}
-            <button
-              onClick={() => {
-                if (location && window.api?.openExternal) {
-                  window.api.openExternal(
-                    getRadarUrl(location.latitude, location.longitude)
-                  );
-                }
-              }}
-              style={{
-                position: "absolute",
-                bottom: "8px",
-                left: "8px",
-                background: "rgba(0, 0, 0, 0.6)",
-                padding: "6px 12px",
-                borderRadius: "12px",
-                backdropFilter: "blur(12px)",
-                WebkitBackdropFilter: "blur(12px)",
-                border: "1px solid rgba(255, 255, 255, 0.15)",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                color: "#ffffff",
-                textDecoration: "none",
-                fontSize: "11px",
-                fontWeight: 600,
-                letterSpacing: "0.02em",
-                cursor: "pointer",
-                zIndex: 20,
-                transition: "all 0.2s ease",
-                boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)";
-                e.currentTarget.style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M15 3h6v6" />
-                <path d="M10 14L21 3" />
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              </svg>
-              View Larger Map
-            </button>
+            <Tooltip content="Open radar in browser for a larger view" position="top">
+                <button
+                    onClick={() => {
+                        if (location && window.api?.openExternal) {
+                            window.api.openExternal(
+                                getRadarUrl(location.latitude, location.longitude)
+                            );
+                        }
+                    }}
+                    style={{
+                        position: "absolute",
+                        bottom: "8px",
+                        left: "8px",
+                        background: "rgba(0, 0, 0, 0.6)",
+                        padding: "6px 12px",
+                        borderRadius: "12px",
+                        backdropFilter: "blur(12px)",
+                        WebkitBackdropFilter: "blur(12px)",
+                        border: "1px solid rgba(255, 255, 255, 0.15)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        color: "#ffffff",
+                        textDecoration: "none",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        letterSpacing: "0.02em",
+                        cursor: "pointer",
+                        zIndex: 30, // Increased to be above border overlay
+                        transition: "all 0.2s ease",
+                        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
+                    }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)";
+                        e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)";
+                        e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                >
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                    >
+                        <path d="M15 3h6v6" />
+                        <path d="M10 14L21 3" />
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    </svg>
+                    View Larger Map
+                </button>
+            </Tooltip>
           </>
         ) : (
           <div

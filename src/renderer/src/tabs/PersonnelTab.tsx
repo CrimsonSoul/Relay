@@ -575,16 +575,40 @@ export const PersonnelTab: React.FC<{
   const renderAlerts = () => {
     const alerts: JSX.Element[] = [];
     if (currentDay === 1 && !dismissedAlerts.has(getAlertKey('general'))) {
-      alerts.push(<div key="general" onClick={() => dismissAlert('general')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-on-accent)', background: 'var(--color-accent-primary)', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Weekly Schedule</div>);
+      alerts.push(
+        <Tooltip key="general" content="Click to dismiss">
+          <div onClick={() => dismissAlert('general')} style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-on-accent)', background: 'var(--color-accent-primary)', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Weekly Schedule
+          </div>
+        </Tooltip>
+      );
     }
     if (currentDay === 3 && !dismissedAlerts.has(getAlertKey('sql'))) {
-      alerts.push(<div key="sql" onClick={() => dismissAlert('sql')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update SQL DBA</div>);
+      alerts.push(
+        <Tooltip key="sql" content="Click to dismiss">
+          <div onClick={() => dismissAlert('sql')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update SQL DBA
+          </div>
+        </Tooltip>
+      );
     }
     if (currentDay === 4 && !dismissedAlerts.has(getAlertKey('oracle'))) {
-      alerts.push(<div key="oracle" onClick={() => dismissAlert('oracle')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Oracle DBA</div>);
+      alerts.push(
+        <Tooltip key="oracle" content="Click to dismiss">
+          <div onClick={() => dismissAlert('oracle')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Oracle DBA
+          </div>
+        </Tooltip>
+      );
     }
     if (currentDay === 5 && !dismissedAlerts.has(getAlertKey('network'))) {
-      alerts.push(<div key="network" onClick={() => dismissAlert('network')} title="Click to dismiss" style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#3B82F6', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>Update Network/Voice/FTS</div>);
+      alerts.push(
+        <Tooltip key="network" content="Click to dismiss">
+          <div onClick={() => dismissAlert('network')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#3B82F6', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Network/Voice/FTS
+          </div>
+        </Tooltip>
+      );
     }
     return alerts;
   };

@@ -111,8 +111,9 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
           await fsPromises.writeFile(target, headers + '\n', 'utf-8');
           logger.debug('DataUtils', `Created empty ${file} with headers only`);
           return true;
-        } catch {
-          // Failed to create
+        } catch (writeErr) {
+          // Failed to create - log for debugging
+          console.debug(`[DataUtils] Failed to create ${file}:`, writeErr);
         }
       }
       return false;
