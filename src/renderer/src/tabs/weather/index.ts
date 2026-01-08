@@ -5,6 +5,7 @@ export * from "./types";
 export {
   getRadarUrl,
   getWeatherIcon,
+  getWeatherDescription,
   RADAR_INJECT_CSS,
   RADAR_INJECT_JS,
   SEVERITY_COLORS,

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from '../contexts';
 
-const ZONES = [
+const OFFICE_ZONES = [
   { label: 'PST', timeZone: 'America/Los_Angeles' },
   { label: 'MST', timeZone: 'America/Denver' },
+  { label: 'CST', timeZone: 'America/Chicago' },
   { label: 'EST', timeZone: 'America/New_York' },
-  { label: 'CST', timeZone: 'America/Chicago', primary: true }
 ];
 
 // Bolt: Cache Intl formatters to avoid constructing several new formatter instances on every tick
@@ -14,7 +15,12 @@ const getFormatter = (timeZone: string, options: Intl.DateTimeFormatOptions) => 
   let formatter = formatterCache.get(key);
 
   if (!formatter) {
-    formatter = new Intl.DateTimeFormat('en-US', { timeZone, ...options });
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', { timeZone, ...options });
+    } catch (e) {
+      // Fallback for invalid timezones
+      formatter = new Intl.DateTimeFormat('en-US', { ...options });
+    }
     formatterCache.set(key, formatter);
   }
 
@@ -23,32 +29,47 @@ const getFormatter = (timeZone: string, options: Intl.DateTimeFormatOptions) => 
 
 export const WorldClock: React.FC = () => {
   const [time, setTime] = useState(new Date());
+  const { timezone } = useLocation();
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Sort: Primary first, then others. Memoize to avoid recalculating on every second tick.
-  const primaryZone = useMemo(() => ZONES.find(z => z.primary)!, []);
-  const secondaryZones = useMemo(() => ZONES.filter(z => !z.primary), []);
+  const { primaryZone, secondaryZones } = useMemo(() => {
+    const currentTz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    
+    // Check if current matches one of our office zones
+    const knownZone = OFFICE_ZONES.find(z => z.timeZone === currentTz);
+    
+    const primary = {
+      label: knownZone?.label || 'Local',
+      timeZone: currentTz,
+      primary: true
+    };
 
-  // CST: Full details
+    // Filter out the primary zone from secondaries so we don't show it twice
+    const secondaries = OFFICE_ZONES.filter(z => z.timeZone !== currentTz);
+
+    return { primaryZone: primary, secondaryZones: secondaries };
+  }, [timezone]);
+
+  // Primary Zone Formatting
   const primaryTimeStr = getFormatter(primaryZone.timeZone, { hour: 'numeric', minute: '2-digit', hour12: true }).format(time);
   const primaryDateStr = getFormatter(primaryZone.timeZone, { month: 'short', day: 'numeric', weekday: 'short' }).format(time);
-  const primaryZoneName = getFormatter(primaryZone.timeZone, { timeZoneName: 'short' }).formatToParts(time).find(p => p.type === 'timeZoneName')?.value || 'CT';
+  const primaryZoneName = getFormatter(primaryZone.timeZone, { timeZoneName: 'short' }).formatToParts(time).find(p => p.type === 'timeZoneName')?.value || primaryZone.label;
 
   return (
     <div className="world-clock-container" style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
 
-      {/* Secondary Zones - NOW ON LEFT */}
+      {/* Secondary Zones */}
       <div className="world-clock-secondary" style={{ display: 'flex', gap: '16px' }}>
         {secondaryZones.map(z => {
           const timeStr = getFormatter(z.timeZone, { hour: 'numeric', minute: '2-digit', hour12: true }).format(time);
           const zoneName = getFormatter(z.timeZone, { timeZoneName: 'short' }).formatToParts(time).find(p => p.type === 'timeZoneName')?.value || z.label;
 
           return (
-            <div key={z.label} className="world-clock-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div key={z.timeZone} className="world-clock-item" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <span className="world-clock-label" style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 600, marginBottom: '2px' }}>
                 {zoneName}
               </span>
@@ -63,7 +84,7 @@ export const WorldClock: React.FC = () => {
       {/* Separator */}
       <div className="world-clock-separator" style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
 
-      {/* Primary Zone (CST) - NOW ON RIGHT */}
+      {/* Primary Zone */}
       <div className="world-clock-primary" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
           <span className="world-clock-primary-time" style={{ fontSize: '15px', fontWeight: 600, color: 'var(--color-text-primary)', lineHeight: '1.2' }}>

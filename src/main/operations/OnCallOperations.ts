@@ -12,6 +12,7 @@ import type { OnCallRow } from "@shared/ipc";
 import { ONCALL_COLUMNS, STD_ONCALL_HEADERS } from "@shared/csvTypes";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { FileContext, ONCALL_FILES } from "./FileContext";
+import { logger } from "../logger";
 
 /**
  * Parse oncall.csv into an array of OnCallRow objects
@@ -22,14 +23,14 @@ export async function parseOnCall(ctx: FileContext): Promise<OnCallRow[]> {
 
   // Auto-create if missing
   if (!path) {
-    console.log("[OnCallOperations] oncall.csv not found. Creating default...");
+    logger.debug("OnCallOperations", "oncall.csv not found. Creating default...");
     path = join(ctx.rootDir, ONCALL_FILES[0]);
     const defaultContent = STD_ONCALL_HEADERS.join(",") + "\n";
     try {
       await fs.writeFile(path, defaultContent, "utf-8");
-      console.log(`[OnCallOperations] Created ${path}`);
+      logger.debug("OnCallOperations", `Created ${path}`);
     } catch (e) {
-      console.error("[OnCallOperations] Failed to create oncall.csv:", e);
+      logger.error("OnCallOperations", "Failed to create oncall.csv", { error: e });
       return [];
     }
   }
@@ -50,9 +51,7 @@ export async function parseOnCall(ctx: FileContext): Promise<OnCallRow[]> {
     const isLegacy = header.includes("primary") && header.includes("backup");
 
     if (isLegacy) {
-      console.log(
-        "[OnCallOperations] Detected legacy on-call format. Migrating..."
-      );
+      logger.info("OnCallOperations", "Detected legacy on-call format. Migrating...");
       // Legacy Columns: Team, Primary, Backup, Label
       const teamIdx = header.indexOf("team");
       const primaryIdx = header.indexOf("primary");
@@ -128,7 +127,7 @@ export async function parseOnCall(ctx: FileContext): Promise<OnCallRow[]> {
       }))
       .filter((r) => r.team); // Filter out empty teams
   } catch (e) {
-    console.error("[OnCallOperations] Error parsing oncall:", e);
+    logger.error("OnCallOperations", "Error parsing oncall", { error: e });
     return [];
   }
 }
@@ -143,18 +142,33 @@ export async function updateOnCallTeam(
   rows: OnCallRow[]
 ): Promise<boolean> {
   try {
-    // We do a full read-modify-write here to ensure we don't blow away other teams
     const allRows = await parseOnCall(ctx);
 
-    // Filter out ANY rows for this team
-    const otherRows = allRows.filter((r) => r.team !== team);
+    // Get unique teams in order to preserve existing layout
+    const existingTeams = Array.from(new Set(allRows.map((r) => r.team)));
 
-    // Add the new rows
-    const merged = [...otherRows, ...rows];
+    // If this is a new team, append it
+    if (!existingTeams.includes(team)) {
+      const merged = [...allRows, ...rows];
+      return await saveAllOnCall(ctx, merged);
+    }
+
+    // Reconstruct the list preserving team order
+    const merged: OnCallRow[] = [];
+    
+    existingTeams.forEach((t) => {
+      if (t === team) {
+        // Insert new rows for the team being updated
+        merged.push(...rows);
+      } else {
+        // Keep existing rows for other teams
+        merged.push(...allRows.filter((r) => r.team === t));
+      }
+    });
 
     return await saveAllOnCall(ctx, merged);
   } catch (e) {
-    console.error("[OnCallOperations] updateOnCallTeam error:", e);
+    logger.error("OnCallOperations", "updateOnCallTeam error", { error: e });
     return false;
   }
 }
@@ -200,7 +214,7 @@ export async function removeOnCallTeam(
     }
     return false;
   } catch (e) {
-    console.error("[OnCallOperations] removeOnCallTeam error:", e);
+    logger.error("OnCallOperations", "removeOnCallTeam error", { error: e });
     return false;
   }
 }
@@ -245,7 +259,7 @@ export async function renameOnCallTeam(
     }
     return false;
   } catch (e) {
-    console.error("[OnCallOperations] renameOnCallTeam error:", e);
+    logger.error("OnCallOperations", "renameOnCallTeam error", { error: e });
     return false;
   }
 }
@@ -276,7 +290,7 @@ export async function saveAllOnCall(
     ctx.performBackup("saveAllOnCall");
     return true;
   } catch (e) {
-    console.error("[OnCallOperations] saveAllOnCall error:", e);
+    logger.error("OnCallOperations", "saveAllOnCall error", { error: e });
     return false;
   }
 }

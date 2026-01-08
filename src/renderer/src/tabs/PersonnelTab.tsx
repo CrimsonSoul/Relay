@@ -6,7 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import { OnCallRow, Contact } from "@shared/ipc";
-import { formatPhoneNumber } from "../utils/phone";
+import { formatPhoneNumber } from '../../../shared/phoneUtils';
 import { TactileButton } from "../components/TactileButton";
 import { Modal } from "../components/Modal";
 import { MaintainTeamModal } from "../components/MaintainTeamModal";
@@ -15,6 +15,8 @@ import { ContextMenu, ContextMenuItem } from "../components/ContextMenu";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { getColorForString } from "../utils/colors";
 import { useToast } from "../components/Toast";
+import { Tooltip } from "../components/Tooltip";
+import { CollapsibleHeader, useCollapsibleHeader } from "../components/CollapsibleHeader";
 
 import { GridStack } from "gridstack";
 import "gridstack/dist/gridstack.min.css";
@@ -138,7 +140,9 @@ const TeamCard = ({
                 textTransform: "uppercase",
               }}
             >
-              {team}
+              <Tooltip content={team}>
+                <span>{team}</span>
+              </Tooltip>
             </div>
           </div>
 
@@ -161,84 +165,88 @@ const TeamCard = ({
                   padding: "4px 0",
                 }}
               >
-                <div
-                  style={{
-                    color: "var(--color-text-tertiary)",
-                    fontSize: "13px",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    alignSelf: "center",
-                    opacity: 0.8,
-                  }}
-                  title={row.role}
-                >
-                  {(() => {
-                    const r = row.role.toLowerCase();
-                    if (r.includes("primary")) return "PRI";
-                    if (r.includes("secondary")) return "SEC";
-                    if (r.includes("backup")) return "BKP";
-                    if (r.includes("shadow")) return "SHD";
-                    if (r.includes("escalation")) return "ESC";
-                    return row.role.substring(0, 3).toUpperCase();
-                  })()}
-                </div>
-                <div
-                  style={{
-                    color: row.name
-                      ? "var(--color-text-primary)"
-                      : "var(--color-text-quaternary)",
-                    fontSize: "20px",
-                    fontWeight: 700,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    lineHeight: 1.2,
-                  }}
-                  title={row.name}
-                >
-                  {row.name || "—"}
-                </div>
-                <div
-                  style={{
-                    color: "var(--color-text-secondary)",
-                    fontSize: "17px",
-                    fontFamily: "var(--font-mono)",
-                    textAlign: "right",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    fontWeight: 500,
-                    width: "150px",
-                  }}
-                  title={row.contact}
-                >
-                  {formatPhoneNumber(row.contact)}
-                </div>
-                {hasAnyTimeWindow && (
+                <Tooltip content={row.role}>
                   <div
                     style={{
                       color: "var(--color-text-tertiary)",
-                      fontSize: "14px",
-                      textAlign: "center",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
-                      padding: row.timeWindow ? "4px 8px" : "0",
-                      borderRadius: "4px",
-                      background: row.timeWindow
-                        ? "rgba(255,255,255,0.05)"
-                        : "transparent",
-                      opacity: row.timeWindow ? 0.9 : 0,
-                      width: "90px",
+                      alignSelf: "center",
+                      opacity: 0.8,
                     }}
-                    title={row.timeWindow}
                   >
-                    {row.timeWindow}
+                    {(() => {
+                      const r = row.role.toLowerCase();
+                      if (r.includes("primary")) return "PRI";
+                      if (r.includes("secondary")) return "SEC";
+                      if (r.includes("backup")) return "BKP";
+                      if (r.includes("shadow")) return "SHD";
+                      if (r.includes("escalation")) return "ESC";
+                      return row.role.substring(0, 3).toUpperCase();
+                    })()}
                   </div>
+                </Tooltip>
+                <Tooltip content={row.name}>
+                  <div
+                    style={{
+                      color: row.name
+                        ? "var(--color-text-primary)"
+                        : "var(--color-text-quaternary)",
+                      fontSize: "20px",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {row.name || "—"}
+                  </div>
+                </Tooltip>
+                <Tooltip content={row.contact}>
+                  <div
+                    style={{
+                      color: "var(--color-text-primary)",
+                      fontSize: "20px",
+                      fontFamily: "var(--font-mono)",
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      fontWeight: 700,
+                      width: "180px",
+                    }}
+                  >
+                    {formatPhoneNumber(row.contact)}
+                  </div>
+                </Tooltip>
+                {hasAnyTimeWindow && (
+                  <Tooltip content={row.timeWindow}>
+                    <div
+                      style={{
+                        color: "var(--color-text-tertiary)",
+                        fontSize: "14px",
+                        textAlign: "center",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        padding: row.timeWindow ? "4px 8px" : "0",
+                        borderRadius: "4px",
+                        background: row.timeWindow
+                          ? "rgba(255,255,255,0.05)"
+                          : "transparent",
+                        opacity: row.timeWindow ? 0.9 : 0,
+                        width: "90px",
+                      }}
+                    >
+                      {row.timeWindow}
+                    </div>
+                  </Tooltip>
                 )}
               </div>
             ))}
@@ -323,6 +331,51 @@ export const PersonnelTab: React.FC<{
     old: string;
     new: string;
   } | null>(null);
+
+  // Collapsible header
+  const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
+
+  // Date range state
+  const [weekRange, setWeekRange] = useState(getWeekRange());
+  const [currentDay, setCurrentDay] = useState(new Date().getDay());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setWeekRange(getWeekRange());
+      const newDay = new Date().getDay();
+      if (newDay !== currentDay) {
+        setCurrentDay(newDay);
+        // Reset dismissed alerts state to pick up new keys for the new day
+        const types = ['general', 'sql', 'oracle', 'network'];
+        const saved = new Set<string>();
+        types.forEach(type => {
+            const key = getAlertKey(type);
+            if (localStorage.getItem(`dismissed-${key}`)) saved.add(key);
+        });
+        setDismissedAlerts(saved);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [currentDay]);
+
+  // Alert Logic
+  const getAlertKey = (type: string) => {
+    const now = new Date();
+    return `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}-${type}`;
+  };
+
+  const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
+    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle'), getAlertKey('network')];
+    const saved = new Set<string>();
+    check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
+    return saved;
+  });
+
+  const dismissAlert = (type: string) => {
+    const key = getAlertKey(type);
+    localStorage.setItem(`dismissed-${key}`, 'true');
+    setDismissedAlerts(prev => { const next = new Set(prev); next.add(key); return next; });
+  };
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [menu, setMenu] = useState<{
     x: number;
@@ -437,14 +490,26 @@ export const PersonnelTab: React.FC<{
   }, []);
 
   useEffect(() => {
+    let timeout: NodeJS.Timeout;
     if (gridInstanceRef.current) {
-      setTimeout(() => {
+      timeout = setTimeout(() => {
         gridInstanceRef.current?.compact();
       }, 100);
     }
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
   }, [teams.length]);
 
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
+    // Auto-dismiss alerts
+    const day = new Date().getDay();
+    const lowerTeam = team.toLowerCase();
+    if (day === 1) dismissAlert('general');
+    if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
+    if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
+    if (day === 5 && (lowerTeam.includes('network') || lowerTeam.includes('voice') || lowerTeam.includes('fts'))) dismissAlert('network');
+
     setLocalOnCall((prev) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
       if (!teamOrder.includes(team)) {
@@ -505,10 +570,52 @@ export const PersonnelTab: React.FC<{
     }
   };
 
-  const weekRange = useMemo(() => getWeekRange(), []);
+  // Removed static weekRange memo, now using state above
+
+  const renderAlerts = () => {
+    const alerts: JSX.Element[] = [];
+    if (currentDay === 1 && !dismissedAlerts.has(getAlertKey('general'))) {
+      alerts.push(
+        <Tooltip key="general" content="Click to dismiss">
+          <div onClick={() => dismissAlert('general')} style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-text-on-accent)', background: 'var(--color-accent-primary)', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Weekly Schedule
+          </div>
+        </Tooltip>
+      );
+    }
+    if (currentDay === 3 && !dismissedAlerts.has(getAlertKey('sql'))) {
+      alerts.push(
+        <Tooltip key="sql" content="Click to dismiss">
+          <div onClick={() => dismissAlert('sql')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update SQL DBA
+          </div>
+        </Tooltip>
+      );
+    }
+    if (currentDay === 4 && !dismissedAlerts.has(getAlertKey('oracle'))) {
+      alerts.push(
+        <Tooltip key="oracle" content="Click to dismiss">
+          <div onClick={() => dismissAlert('oracle')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#EF4444', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Oracle DBA
+          </div>
+        </Tooltip>
+      );
+    }
+    if (currentDay === 5 && !dismissedAlerts.has(getAlertKey('network'))) {
+      alerts.push(
+        <Tooltip key="network" content="Click to dismiss">
+          <div onClick={() => dismissAlert('network')} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: '#3B82F6', padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>
+            Update Network/Voice/FTS
+          </div>
+        </Tooltip>
+      );
+    }
+    return alerts;
+  };
 
   return (
     <div
+      ref={scrollContainerRef}
       style={{
         height: "100%",
         display: "flex",
@@ -520,46 +627,19 @@ export const PersonnelTab: React.FC<{
     >
       <style>{gridStackStyles}</style>
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "32px",
-        }}
+      <CollapsibleHeader
+        title="On-Call Schedule"
+        subtitle={<>{weekRange}{renderAlerts()}</>}
+        isCollapsed={isCollapsed}
       >
-        <div>
-          <h1
-            style={{
-              fontSize: "32px",
-              fontWeight: 800,
-              margin: 0,
-              color: "var(--color-text-primary)",
-            }}
-          >
-            On-Call Schedule
-          </h1>
-          <p
-            style={{
-              fontSize: "16px",
-              color: "var(--color-text-tertiary)",
-              margin: "8px 0 0 0",
-              fontWeight: 500,
-            }}
-          >
-            {weekRange}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <TactileButton
-            variant="primary"
-            style={{ padding: "12px 24px", fontSize: "14px" }}
-            onClick={() => setIsAddingTeam(true)}
-          >
-            + ADD TEAM
-          </TactileButton>
-        </div>
-      </div>
+        <TactileButton
+          variant="primary"
+          style={{ padding: isCollapsed ? '8px 16px' : '12px 24px', fontSize: isCollapsed ? '12px' : '14px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          onClick={() => setIsAddingTeam(true)}
+        >
+          + ADD TEAM
+        </TactileButton>
+      </CollapsibleHeader>
 
       <div
         ref={gridRef}

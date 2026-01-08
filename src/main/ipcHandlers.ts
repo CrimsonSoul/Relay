@@ -7,6 +7,28 @@ import { IPC_CHANNELS } from '../shared/ipc';
 import { FileManager } from './FileManager';
 import { BridgeLogger } from './BridgeLogger';
 import { rateLimiters } from './rateLimiter';
+import { setupWeatherHandlers } from './handlers/weatherHandlers';
+import { setupWindowHandlers, setupWindowListeners } from './handlers/windowHandlers';
+import { loggers } from './logger';
+
+// IP Geolocation API Response Types
+interface IpApiCoResponse {
+  latitude?: number;
+  longitude?: number;
+  city?: string;
+  region?: string;
+  country_name?: string;
+  timezone?: string;
+}
+
+interface IpApiComResponse {
+  lat?: number;
+  lon?: number;
+  city?: string;
+  regionName?: string;
+  country?: string;
+  timezone?: string;
+}
 
 /**
  * Check if a path is a Windows UNC path (\\server\share)
@@ -36,6 +58,64 @@ export function setupIpcHandlers(
   onDataPathChange: (newPath: string) => void,
   getDefaultDataPath: () => string
 ) {
+
+  // Setup Weather Handlers
+  setupWeatherHandlers();
+
+  // Setup Window Handlers
+  setupWindowHandlers(getMainWindow);
+
+  // Helper for hardened path validation
+  // Protects against: symlink attacks, path traversal, UNC path escapes
+  const validatePath = async (requestedPath: string): Promise<boolean> => {
+    const root = getDataRoot();
+    if (!requestedPath || !root) return false;
+
+    // Block UNC paths entirely (Windows network paths like \\server\share)
+    if (isUncPath(requestedPath)) {
+      loggers.security.warn(`Blocked UNC path: ${requestedPath}`);
+      return false;
+    }
+
+    // Normalize and resolve the path to handle ../ sequences
+    const normalizedPath = normalize(requestedPath);
+
+    // Block if normalization reveals UNC path
+    if (isUncPath(normalizedPath)) {
+      loggers.security.warn(`Blocked normalized UNC path: ${normalizedPath}`);
+      return false;
+    }
+
+    // Resolve to absolute path
+    const absPath = resolve(root, normalizedPath);
+
+    // First check: simple path containment
+    const rel = relative(root, absPath);
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      return false;
+    }
+
+    // Second check: resolve symlinks if path exists
+    // This prevents symlink-based escapes from the data root
+    const realRoot = await safeRealPath(root);
+    if (!realRoot) {
+      loggers.security.warn(`Could not resolve real path for root: ${root}`);
+      return false;
+    }
+
+    // If the path exists, verify its real location
+    const realPath = await safeRealPath(absPath);
+    if (realPath) {
+      const realRel = relative(realRoot, realPath);
+      if (realRel.startsWith('..') || isAbsolute(realRel)) {
+        loggers.security.warn(`Path escapes root via symlink: ${requestedPath} -> ${realPath}`);
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   // Config IPCs
   ipcMain.handle(IPC_CHANNELS.GET_DATA_PATH, async () => {
     return getDataRoot();
@@ -70,61 +150,11 @@ export function setupIpcHandlers(
     }
   });
 
-  // Helper for hardened path validation
-  // Protects against: symlink attacks, path traversal, UNC path escapes
-  const validatePath = async (requestedPath: string): Promise<boolean> => {
-    const root = getDataRoot();
-    if (!requestedPath || !root) return false;
-
-    // Block UNC paths entirely (Windows network paths like \\server\share)
-    if (isUncPath(requestedPath)) {
-      console.warn(`[Security] Blocked UNC path: ${requestedPath}`);
-      return false;
-    }
-
-    // Normalize and resolve the path to handle ../ sequences
-    const normalizedPath = normalize(requestedPath);
-
-    // Block if normalization reveals UNC path
-    if (isUncPath(normalizedPath)) {
-      console.warn(`[Security] Blocked normalized UNC path: ${normalizedPath}`);
-      return false;
-    }
-
-    // Resolve to absolute path
-    const absPath = resolve(root, normalizedPath);
-
-    // First check: simple path containment
-    const rel = relative(root, absPath);
-    if (rel.startsWith('..') || isAbsolute(rel)) {
-      return false;
-    }
-
-    // Second check: resolve symlinks if path exists
-    // This prevents symlink-based escapes from the data root
-    const realRoot = await safeRealPath(root);
-    if (!realRoot) {
-      console.warn(`[Security] Could not resolve real path for root: ${root}`);
-      return false;
-    }
-
-    // If the path exists, verify its real location
-    const realPath = await safeRealPath(absPath);
-    if (realPath) {
-      const realRel = relative(realRoot, realPath);
-      if (realRel.startsWith('..') || isAbsolute(realRel)) {
-        console.warn(`[Security] Path escapes root via symlink: ${requestedPath} -> ${realPath}`);
-        return false;
-      }
-    }
-
-    return true;
-  };
 
   // FS IPCs
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
     if (!await validatePath(path)) {
-      console.error(`Blocked access to path outside data root: ${path}`);
+      loggers.security.error(`Blocked access to path outside data root: ${path}`);
       return;
     }
     await shell.openPath(path);
@@ -163,7 +193,7 @@ export function setupIpcHandlers(
     // Rate limit file imports (expensive operations)
     const rateLimitResult = rateLimiters.fileImport.tryConsume();
     if (!rateLimitResult.allowed) {
-      console.warn(`[RateLimit] Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      loggers.ipc.warn(`Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
       return { success: false, rateLimited: true };
     }
 
@@ -200,13 +230,14 @@ export function setupIpcHandlers(
       const parsed = new URL(url);
       return ['http:', 'https:', 'mailto:'].includes(parsed.protocol);
     } catch {
+      // Invalid URL format - return false for validation
       return false;
     }
   };
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
     if (!validateUrl(url)) {
-      console.error(`Blocked opening external URL with unsafe protocol: ${url}`);
+      loggers.security.error(`Blocked opening external URL with unsafe protocol: ${url}`);
       return;
     }
     await shell.openExternal(url);
@@ -216,20 +247,11 @@ export function setupIpcHandlers(
     // Rate limit data reloads
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) {
-      console.warn(`[RateLimit] Data reload blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      loggers.ipc.warn(`Data reload blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
       return { success: false, rateLimited: true };
     }
     getFileManager()?.readAndEmit();
   });
-
-  let authCallback: ((username: string, password: string) => void) | null = null;
-  // Note: we can't easily move the app.on('login') handler here without passing app.
-  // But we can handle the IPCs related to auth.
-
-  // Auth IPCs are handled in index.ts because they require access to the authCallback closure
-
-  // Actually, let's keep AUTH in index.ts for now as it's tied to app lifecycle events.
-  // Or we can expose a function to register the callback.
 
   ipcMain.on(IPC_CHANNELS.RADAR_DATA, (_event, payload) => {
     const mainWindow = getMainWindow();
@@ -250,85 +272,48 @@ export function setupIpcHandlers(
     return getBridgeLogger()?.reset() ?? false;
   });
 
-  // Weather Handlers
-  ipcMain.handle(IPC_CHANNELS.GET_WEATHER, async (_event, lat, lon) => {
+  // Location Handler
+  ipcMain.handle(IPC_CHANNELS.GET_IP_LOCATION, async () => {
     try {
-      const res = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16`
-      );
-      if (!res.ok) throw new Error('Failed to fetch weather data');
-      return await res.json();
-    } catch (err: any) {
-      console.error('[Weather] Fetch error:', err);
-      throw err;
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.SEARCH_LOCATION, async (_event, query) => {
-    try {
-      const res = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
-      );
-      if (!res.ok) throw new Error('Geocoding failed');
-      return await res.json();
-    } catch (err: any) {
-      console.error('[Weather] Search error:', err);
-      throw err;
-    }
-  });
-
-  // Weather Alerts (NWS API - US only)
-  ipcMain.handle(IPC_CHANNELS.GET_WEATHER_ALERTS, async (_event, lat: number, lon: number) => {
-    try {
-      // NWS requires a point lookup first to get the zone/county for alerts
-      const pointRes = await fetch(
-        `https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`,
-        { headers: { 'User-Agent': 'Relay-Weather-App', 'Accept': 'application/geo+json' } }
-      );
-
-      if (!pointRes.ok) {
-        // Location might be outside US - return empty alerts
-        if (pointRes.status === 404) {
-          return [];
-        }
-        throw new Error('Failed to get location info from NWS');
+      // Primary: ipapi.co (HTTPS)
+      const res = await fetch('https://ipapi.co/json/', {
+        headers: { 'User-Agent': 'Relay-App' }
+      });
+      if (res.ok) {
+        const data = await res.json() as IpApiCoResponse;
+        return {
+          lat: data.latitude,
+          lon: data.longitude,
+          city: data.city,
+          region: data.region,
+          country: data.country_name,
+          timezone: data.timezone
+        };
       }
-
-      const pointData: any = await pointRes.json();
-      const countyZone = pointData.properties?.county;
-      const forecastZone = pointData.properties?.forecastZone;
-
-      // Fetch alerts for the area
-      const alertRes = await fetch(
-        `https://api.weather.gov/alerts/active?point=${lat.toFixed(4)},${lon.toFixed(4)}`,
-        { headers: { 'User-Agent': 'Relay-Weather-App', 'Accept': 'application/geo+json' } }
-      );
-
-      if (!alertRes.ok) {
-        throw new Error('Failed to fetch weather alerts');
-      }
-
-      const alertData: any = await alertRes.json();
-      const features = alertData.features || [];
-
-      // Map to our WeatherAlert type
-      return features.map((f: any) => ({
-        id: f.properties?.id || f.id,
-        event: f.properties?.event || 'Unknown Event',
-        headline: f.properties?.headline || '',
-        description: f.properties?.description || '',
-        severity: f.properties?.severity || 'Unknown',
-        urgency: f.properties?.urgency || 'Unknown',
-        certainty: f.properties?.certainty || 'Unknown',
-        effective: f.properties?.effective || '',
-        expires: f.properties?.expires || '',
-        senderName: f.properties?.senderName || 'National Weather Service',
-        areaDesc: f.properties?.areaDesc || ''
-      }));
-    } catch (err: any) {
-      console.error('[Weather] Alerts fetch error:', err);
-      return []; // Return empty array on error to not break the UI
+    } catch (err) {
+      loggers.ipc.warn('Location primary provider failed, trying fallback', { error: err });
     }
+
+    try {
+      // Fallback: ip-api.com (HTTP)
+      // Note: This endpoint is free but rate-limited (45 req/min)
+      const res = await fetch('http://ip-api.com/json/');
+      if (res.ok) {
+        const data = await res.json() as IpApiComResponse;
+        return {
+          lat: data.lat,
+          lon: data.lon,
+          city: data.city,
+          region: data.regionName,
+          country: data.country,
+          timezone: data.timezone
+        };
+      }
+    } catch (err) {
+      loggers.ipc.error('All location providers failed', { error: err });
+    }
+    
+    return null;
   });
 
   // --- Data Mutation Handlers (rate limited) ---
@@ -337,7 +322,7 @@ export function setupIpcHandlers(
   const checkMutationRateLimit = () => {
     const result = rateLimiters.dataMutation.tryConsume();
     if (!result.allowed) {
-      console.warn(`[RateLimit] Data mutation blocked, retry after ${result.retryAfterMs}ms`);
+      loggers.ipc.warn(`Data mutation blocked, retry after ${result.retryAfterMs}ms`);
     }
     return result.allowed;
   };
@@ -402,14 +387,14 @@ export function setupIpcHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
-    console.log('[Main] Received GENERATE_DUMMY_DATA request');
+    loggers.ipc.debug('Received GENERATE_DUMMY_DATA request');
     if (!checkMutationRateLimit()) {
-      console.warn('[Main] Rate limit exceeded for dummy data');
+      loggers.ipc.warn('Rate limit exceeded for dummy data');
       return { success: false, rateLimited: true };
     }
     const fm = getFileManager();
     if (!fm) {
-      console.error('[Main] FileManager not available');
+      loggers.ipc.error('FileManager not available');
       return false;
     }
     return fm.generateDummyData();
@@ -430,7 +415,7 @@ export function setupIpcHandlers(
     // Rate limit file imports
     const rateLimitResult = rateLimiters.fileImport.tryConsume();
     if (!rateLimitResult.allowed) {
-      console.warn(`[RateLimit] Server import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+      loggers.ipc.warn(`Server import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
       return { success: false, rateLimited: true };
     }
 
@@ -448,35 +433,10 @@ export function setupIpcHandlers(
     return fileManager?.importServersWithMapping(filePaths[0]) ?? { success: false, message: 'File Manager not initialized' };
   });
 
-  // Window Controls
-  ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
-    getMainWindow()?.minimize();
-  });
-  ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
-    const mw = getMainWindow();
-    if (mw?.isMaximized()) {
-      mw.unmaximize();
-    } else {
-      mw?.maximize();
-    }
-  });
-  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
-    getMainWindow()?.close();
-  });
-
-  // Maximize state query
-  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, () => {
-    return getMainWindow()?.isMaximized() ?? false;
-  });
-
   // Listen for maximize/unmaximize events and notify renderer
   const mw = getMainWindow();
   if (mw) {
-    mw.on('maximize', () => {
-      mw.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, true);
-    });
-    mw.on('unmaximize', () => {
-      mw.webContents.send(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, false);
-    });
+    setupWindowListeners(mw);
   }
 }
+

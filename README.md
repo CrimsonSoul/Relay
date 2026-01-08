@@ -1,45 +1,54 @@
 # Relay
 
-Relay is a desktop application that pairs a Vite-powered UI with an Electron shell to help operators manage and bridge contact data with high precision. It serves as a focused environment for composing contact lists from local data sources and bridging them to external communication tools like Microsoft Teams.
+Relay is a high-performance desktop application designed for operators to manage on-call schedules, monitor environment data, and leverage AI assistance in a unified, premium interface. Built with **Electron, Vite, and React**, it provides a "Matte Dark" environment that is both visually stunning and functionally robust.
 
-## Purpose
+## Core Features
 
-The application acts as a "Relay" between local CSV-based data silos and modern collaboration platforms. It emphasizes:
-- **Data Composition**: Quickly assembling ad-hoc lists of contacts from various groups.
-- **Bridging**: Seamlessly transferring these composed lists into actionable contexts (e.g., Teams meetings).
-- **Data Management**: Providing a clean, fast interface for managing contact directories and group memberships without the overhead of heavy CRM systems.
+### 📅 On-Call Schedule
+- **Dynamic Scheduling**: Manage team rotations with a drag-and-drop grid interface.
+- **Auto-Positioning**: Cards automatically size and position themselves for optimal visibility.
+- **Smart Reminders**: Contextual alerts (Monday/Wednesday/Friday) ensure schedules are updated on time, with auto-refresh logic that updates even if the app is left running.
+- **Persistence**: Layouts and member data are saved locally and synced across sessions.
 
-## Design Philosophy: Matte Dark
+### 🌤️ Weather & Environmental Monitoring
+- **Live Weather Dashboard**: Real-time updates based on auto-detected or manually set locations.
+- **Interactive Radar**: Live radar monitoring with specialized fixes for consistent rendering on Windows.
+- **Severe Weather Alerts**: Automatic toast notifications for extreme or severe conditions in your area.
 
-The user interface follows a 'Matte Dark' aesthetic, utilizing a deep charcoal palette (#141414) with subtle, pastel-colored accents for categorization. The design emphasizes high contrast, purposeful motion, and tactile interactions to create a professional and focused data composition environment.
+### 🤖 AI Chat Tabs
+- **Integrated AI Services**: Quick access to Gemini and ChatGPT in a private, sandboxed environment.
+- **Secure Sessions**: Data is cleared when you leave the tab, ensuring privacy.
+- **Visual Excellence**: Robust SVG masking ensures clean, rounded corners on Windows without visual flickering.
 
-- **Visuals**: Dark, opaque surfaces to prevent visual bleeding; crisp typography (Inter, JetBrains Mono) for readability.
-- **Interactions**: Controls favor tactile cues (outlined buttons, toggles) and subtle scale/fade animations to provide feedback without distraction.
-- **Layout**: Prioritizes hierarchy and legibility for fast scanning, designed for a vertical slice of a 1080p screen.
+### 🖥️ System & Management
+- **Server Monitoring**: Unified view of server health and contact points.
+- **Directory Services**: Bridging local contact data with external communication tools like Microsoft Teams.
+- **World Clock**: Keep track of global operations at a glance.
 
-## Getting started (Electron + Vite)
+## Design Philosophy: "Matte Dark"
 
-1. **Install dependencies**: `npm install`
-2. **Start the development shell**: `npm run dev` (launches Vite with Electron)
-3. **Build a distributable**: `npm run build` (bundles Vite assets and packages Electron)
+Relay prioritized a premium, state-of-the-art aesthetic:
+- **Palette**: Deep charcoal background (#141414) with vibrant, harmonious accent colors.
+- **Typography**: Optimized with modern fonts (Inter, JetBrains Mono).
+- **Interactions**: Smooth micro-animations and tactile feedback (glassmorphism effects).
 
-## Structure
+## Technical Overview
 
-- `src/main`: Electron main process (window creation, IPC, file management).
-- `src/preload`: Context bridge exposing typed IPC helpers to the renderer.
-- `src/renderer`: React renderer powered by Vite with tabs for Composition, Directory, and Reports.
-- `src/shared`: Shared IPC contracts used across processes.
+- **Frontend**: React 18, Vite 5, CSS-in-JS (Vanilla CSS).
+- **Backend**: Electron Main process with secure IPC communication.
+- **Data**: Local-first architecture (JSON/CSV) for speed and privacy.
+- **Security**: Strict sandboxing and Context Isolation.
 
-## Architecture Highlights
+## Getting Started
 
-- **Local-First Data**: Operates directly on CSV/JSON files in a user-defined data folder.
-- **IPC Bridge**: Keeps renderer and main process isolated; only vetted commands cross the boundary.
-- **Hot-Reloading**: The application watches for file changes and updates the UI in real-time.
-- **Security**: Strict Context Security Policy (CSP) and sandboxed renderer processes.
+1. **Install Dependencies**: `npm install`
+2. **Launch App**: `npm run dev`
+3. **Type Checking**: `npm run typecheck`
+4. **Build Production**: `npm run build`
 
-## Testing Strategy
+## Project Structure
 
-- **Unit Tests**: `npm run test:unit` runs Vitest for logic and component testing.
-- **E2E Tests**: `npm test` runs Playwright to verify end-to-end flows against the built renderer.
-
-For deeper implementation guidance, review `docs/architecture.md` or `DESIGN_HANDOFF.md`.
+- `src/main`: Electron backend logic, IPC handlers, and window management.
+- `src/renderer`: React frontend components and tabs.
+- `src/preload`: Secure bridge for exposing APIs to the UI.
+- `src/shared`: TypeScript types and shared utility functions.

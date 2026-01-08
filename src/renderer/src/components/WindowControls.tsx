@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Tooltip } from './Tooltip';
 
 
 export const WindowControls = () => {
@@ -70,39 +71,42 @@ export const WindowControls = () => {
                 color: #FFFFFF;
             }
         `}</style>
-            <button
-                onClick={handleMinimize}
-                className={btnClass}
-                title="Minimize"
-            >
-                <svg width="10" height="1" viewBox="0 0 10 1"><path d="M0 0h10v1H0z" fill="currentColor" /></svg>
-            </button>
+            <Tooltip content="Minimize" position="bottom">
+                <button
+                    onClick={handleMinimize}
+                    className={btnClass}
+                >
+                    <svg width="10" height="1" viewBox="0 0 10 1"><path d="M0 0h10v1H0z" fill="currentColor" /></svg>
+                </button>
+            </Tooltip>
 
-            <button
-                onClick={handleMaximize}
-                className={btnClass}
-                title={isMaximized ? "Restore Down" : "Maximize"}
-            >
-                {isMaximized ? (
-                    // Restore icon (two overlapping squares, like Edge/Windows)
-                    <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-                        {/* Front window */}
-                        <path d="M0 2v8h8V2H0zm7 7H1V3h6v6z" />
-                        {/* Back window (top-right offset) */}
-                        <path d="M2 0v2h1V1h6v6H8v1h2V0H2z" />
-                    </svg>
-                ) : (
-                    // Maximize icon (single square)
-                    <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" /></svg>
-                )}
-            </button>
-            <button
-                onClick={handleClose}
-                className={`${btnClass} close-btn`}
-                title="Close"
-            >
-                <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.05 0L0 1.05 3.95 5 0 8.95 1.05 10 5 6.05 8.95 10 10 8.95 6.05 5 10 1.05 8.95 0 5 3.95z" fill="currentColor" /></svg>
-            </button>
+            <Tooltip content={isMaximized ? "Restore Down" : "Maximize"} position="bottom">
+                <button
+                    onClick={handleMaximize}
+                    className={btnClass}
+                >
+                    {isMaximized ? (
+                        // Restore icon (two overlapping squares, like Edge/Windows)
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+                            {/* Front window */}
+                            <path d="M0 2v8h8V2H0zm7 7H1V3h6v6z" />
+                            {/* Back window (top-right offset) */}
+                            <path d="M2 0v2h1V1h6v6H8v1h2V0H2z" />
+                        </svg>
+                    ) : (
+                        // Maximize icon (single square)
+                        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 0v10h10V0H0zm9 9H1V1h8v8z" fill="currentColor" /></svg>
+                    )}
+                </button>
+            </Tooltip>
+            <Tooltip content="Close" position="bottom">
+                <button
+                    onClick={handleClose}
+                    className={`${btnClass} close-btn`}
+                >
+                    <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.05 0L0 1.05 3.95 5 0 8.95 1.05 10 5 6.05 8.95 10 10 8.95 6.05 5 10 1.05 8.95 0 5 3.95z" fill="currentColor" /></svg>
+                </button>
+            </Tooltip>
         </div>
     );
 };

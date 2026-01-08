@@ -129,6 +129,24 @@ export const getWeatherIcon = (code: number, size = 24) => {
   );
 };
 
+// Map WMO codes to human-readable descriptions
+export const getWeatherDescription = (code: number): string => {
+  if (code === 0) return "Clear Sky";
+  if (code === 1) return "Mainly Clear";
+  if (code === 2) return "Partly Cloudy";
+  if (code === 3) return "Overcast";
+  if (code === 45 || code === 48) return "Foggy";
+  if (code >= 51 && code <= 55) return "Drizzle";
+  if (code >= 61 && code <= 65) return "Rainy";
+  if (code >= 66 && code <= 67) return "Freezing Rain";
+  if (code >= 71 && code <= 75) return "Snowy";
+  if (code === 77) return "Snow Grains";
+  if (code >= 80 && code <= 82) return "Rain Showers";
+  if (code >= 85 && code <= 86) return "Snow Showers";
+  if (code >= 95) return "Thunderstorm";
+  return "Cloudy";
+};
+
 // CSS to inject into radar webview for styling
 export const RADAR_INJECT_CSS = `
   .map-buttons-play {
@@ -202,20 +220,7 @@ export const RADAR_INJECT_CSS = `
     box-shadow: none !important;
   }
   #app-icon, .get-the-app { 
-    background: rgba(0, 0, 0, 0.5) !important;
-    padding: 6px 12px !important;
-    border-radius: 12px !important;
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(255, 255, 255, 0.1) !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    color: #ffffff !important;
-    text-decoration: none !important;
-    font-size: 11px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.02em !important;
+    display: none !important; 
   }
   #app-icon .small-hide { 
     display: none !important; 

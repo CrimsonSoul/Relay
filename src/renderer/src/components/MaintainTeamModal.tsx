@@ -24,7 +24,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { formatPhoneNumber } from "../utils/phone";
+import { formatPhoneNumber } from "../../../shared/phoneUtils";
 
 interface MaintainTeamModalProps {
   isOpen: boolean;

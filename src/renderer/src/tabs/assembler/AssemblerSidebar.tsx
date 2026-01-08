@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { GroupMap, Contact } from "@shared/ipc";
 import { SidebarItem } from "../../components/SidebarItem";
 import { ContextMenu } from "../../components/ContextMenu";
+import { Tooltip } from "../../components/Tooltip";
 import { QuickAddInput } from "./QuickAddInput";
 import { CreateGroupModal } from "./CreateGroupModal";
 import { DeleteGroupModal } from "./DeleteGroupModal";
@@ -180,71 +181,70 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
           </div>
 
           {/* Floating Pill Toggle Handle */}
-          <div
-            onClick={onToggleCollapse}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "rgba(59, 130, 246, 0.3)";
-              e.currentTarget.style.borderColor = "rgba(59, 130, 246, 0.4)";
-              e.currentTarget.style.boxShadow =
-                "0 0 20px rgba(59, 130, 246, 0.25)";
-              e.currentTarget.style.transform =
-                "translate(-50%, -50%) scale(1.05)";
-              const icon = e.currentTarget.querySelector("svg");
-              if (icon) (icon as SVGElement).style.color = "white";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
-              e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
-              e.currentTarget.style.boxShadow = "none";
-              e.currentTarget.style.transform =
-                "translate(-50%, -50%) scale(1)";
-              const icon = e.currentTarget.querySelector("svg");
-              if (icon)
-                (icon as SVGElement).style.color = "var(--color-text-tertiary)";
-            }}
-            style={{
-              position: "absolute",
-              left: "100%",
-              top: "50%",
-              transform: "translate(-50%, -50%)",
-              width: "24px",
-              height: "56px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(255, 255, 255, 0.05)",
-              border: "1px solid rgba(255, 255, 255, 0.1)",
-              borderRadius: "12px",
-              cursor: "pointer",
-              zIndex: 100,
-              transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
-              backdropFilter: "blur(16px)",
-              boxSizing: "border-box",
-            }}
-            title={
-              isGroupSidebarCollapsed ? "Expand Groups" : "Collapse Groups"
-            }
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <Tooltip content={isGroupSidebarCollapsed ? "Expand Groups" : "Collapse Groups"}>
+            <div
+              onClick={onToggleCollapse}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(59, 130, 246, 0.3)";
+                e.currentTarget.style.borderColor = "rgba(59, 130, 246, 0.4)";
+                e.currentTarget.style.boxShadow =
+                  "0 0 20px rgba(59, 130, 246, 0.25)";
+                e.currentTarget.style.transform =
+                  "translate(-50%, -50%) scale(1.05)";
+                const icon = e.currentTarget.querySelector("svg");
+                if (icon) (icon as SVGElement).style.color = "white";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.05)";
+                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)";
+                e.currentTarget.style.boxShadow = "none";
+                e.currentTarget.style.transform =
+                  "translate(-50%, -50%) scale(1)";
+                const icon = e.currentTarget.querySelector("svg");
+                if (icon)
+                  (icon as SVGElement).style.color = "var(--color-text-tertiary)";
+              }}
               style={{
-                transition: "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
-                transform: isGroupSidebarCollapsed
-                  ? "rotate(180deg)"
-                  : "rotate(0deg)",
-                color: "var(--color-text-tertiary)",
+                position: "absolute",
+                left: "100%",
+                top: "50%",
+                transform: "translate(-50%, -50%)",
+                width: "24px",
+                height: "56px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1px solid rgba(255, 255, 255, 0.1)",
+                borderRadius: "12px",
+                cursor: "pointer",
+                zIndex: 100,
+                transition: "all 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+                backdropFilter: "blur(16px)",
+                boxSizing: "border-box",
               }}
             >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </div>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{
+                  transition: "transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+                  transform: isGroupSidebarCollapsed
+                    ? "rotate(180deg)"
+                    : "rotate(0deg)",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </div>
+          </Tooltip>
         </div>
       </div>
 

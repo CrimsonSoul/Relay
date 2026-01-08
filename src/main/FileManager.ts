@@ -25,6 +25,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import { generateDummyDataAsync } from "./dataUtils";
 import { stringifyCsv } from "./csvUtils";
+import { loggers } from "./logger";
 
 // Import operation modules
 import {
@@ -95,7 +96,7 @@ export class FileManager implements FileContext {
     this.rootDir = rootDir;
     this.bundledDataPath = bundledPath;
 
-    console.log(`[FileManager] Initialized. Root: ${this.rootDir}`);
+    loggers.fileManager.info(`Initialized. Root: ${this.rootDir}`);
     // Don't start watching or reading yet - do it lazily after window is shown
   }
 
@@ -205,7 +206,7 @@ export class FileManager implements FileContext {
       }
       this.emitReloadCompleted(true);
     } catch (error) {
-      console.error("[FileManager] Error in incremental update:", error);
+      loggers.fileManager.error("Error in incremental update", { error });
       this.emitReloadCompleted(false);
     }
   }
@@ -228,10 +229,7 @@ export class FileManager implements FileContext {
   public emitError(error: DataError) {
     if (!this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send(IPC_CHANNELS.DATA_ERROR, error);
-      console.error(
-        `[FileManager] Error: ${error.type} - ${error.message}`,
-        error.details
-      );
+      loggers.fileManager.error(`Error: ${error.type} - ${error.message}`, error.details);
     }
   }
 
@@ -268,7 +266,7 @@ export class FileManager implements FileContext {
       }
       this.emitReloadCompleted(true);
     } catch (error) {
-      console.error("[FileManager] Error reading files:", error);
+      loggers.fileManager.error("Error reading files", { error });
       this.emitReloadCompleted(false);
     }
   }
@@ -288,7 +286,7 @@ export class FileManager implements FileContext {
 
       return normCurrent === normBundled;
     } catch (e) {
-      console.error("[FileManager] isDummyData check failed:", e);
+      loggers.fileManager.error("isDummyData check failed", { error: e });
       return false;
     }
   }
@@ -316,9 +314,9 @@ export class FileManager implements FileContext {
       const tmpPath = `${path}.tmp`;
       await fs.writeFile(tmpPath, content, "utf-8");
       await fs.rename(tmpPath, path);
-      console.log(`[FileManager] Rewrote ${path}`);
+      loggers.fileManager.debug(`Rewrote ${path}`);
     } catch (err) {
-      console.error(`[FileManager] Failed to rewrite ${path}`, err);
+      loggers.fileManager.error(`Failed to rewrite ${path}`, { error: err });
     } finally {
       // Delay decrement to allow filesystem events to propagate before re-enabling watcher
       setTimeout(() => {
@@ -416,11 +414,11 @@ export class FileManager implements FileContext {
 
   // Utility operations
   public async generateDummyData(): Promise<boolean> {
-    console.log("[FileManager] generateDummyData called");
+    loggers.fileManager.debug("generateDummyData called");
     const success = await generateDummyDataAsync(this.rootDir);
-    console.log("[FileManager] generateDummyDataAsync result:", success);
+    loggers.fileManager.debug("generateDummyDataAsync result", { success });
     if (success) {
-      console.log("[FileManager] Triggering readAndEmit...");
+      loggers.fileManager.debug("Triggering readAndEmit...");
       await this.readAndEmit();
     }
     return success;
@@ -459,7 +457,7 @@ export class FileManager implements FileContext {
         } catch (err: any) {
           // Ignore if file doesn't exist (might be fresh install)
           if (err.code !== "ENOENT") {
-            console.error(`[FileManager] Failed to backup ${file}:`, err);
+            loggers.fileManager.error(`Failed to backup ${file}`, { error: err });
           }
         }
       }
@@ -479,12 +477,12 @@ export class FileManager implements FileContext {
           if (nowMs - folderDate.getTime() > THIRTY_DAYS_MS) {
             const dirPath = join(backupDir, dirName);
             await fs.rm(dirPath, { recursive: true, force: true });
-            console.log(`[FileManager] Pruned old backup: ${dirName}`);
+            loggers.fileManager.debug(`Pruned old backup: ${dirName}`);
           }
         }
       }
     } catch (error) {
-      console.error("[FileManager] Backup failed:", error);
+      loggers.fileManager.error("Backup failed", { error });
     }
   }
 

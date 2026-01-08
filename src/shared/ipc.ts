@@ -77,6 +77,43 @@ export type ImportProgress = {
   message: string;
 };
 
+// Weather and Location Types
+export type WeatherPeriod = {
+  name: string;
+  temperature: number;
+  temperatureUnit: string;
+  windSpeed: string;
+  windDirection: string;
+  shortForecast: string;
+  detailedForecast: string;
+  icon: string;
+  isDaytime: boolean;
+  startTime: string;
+};
+
+export type WeatherData = {
+  current: WeatherPeriod;
+  hourly: WeatherPeriod[];
+  daily: WeatherPeriod[];
+} | null;
+
+export type LocationSearchResult = {
+  name: string;
+  lat: number;
+  lon: number;
+  state?: string;
+  country: string;
+};
+
+export type IpLocationResult = {
+  lat: number;
+  lon: number;
+  city: string;
+  region: string;
+  country: string;
+  timezone?: string;
+} | null;
+
 export type BridgeAPI = {
   openPath: (path: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
@@ -104,8 +141,8 @@ export type BridgeAPI = {
   logBridge: (groups: string[]) => void;
   getMetrics: () => Promise<MetricsData>;
   resetMetrics: () => Promise<boolean>;
-  getWeather: (lat: number, lon: number) => Promise<any>;
-  searchLocation: (query: string) => Promise<any>;
+  getWeather: (lat: number, lon: number) => Promise<WeatherData>;
+  searchLocation: (query: string) => Promise<LocationSearchResult[]>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
   addContact: (contact: Partial<Contact>) => Promise<boolean>;
   removeContact: (email: string) => Promise<boolean>;
@@ -136,6 +173,7 @@ export type BridgeAPI = {
   ) => void;
   removeMaximizeListener: () => void;
   generateDummyData: () => Promise<boolean>;
+  getIpLocation: () => Promise<IpLocationResult>;
 };
 
 export const IPC_CHANNELS = {
@@ -186,6 +224,7 @@ export const IPC_CHANNELS = {
   GET_WEATHER: "weather:get",
   SEARCH_LOCATION: "weather:search",
   GET_WEATHER_ALERTS: "weather:alerts",
+  GET_IP_LOCATION: "location:ip",
 } as const;
 
 export type BridgeEvent = {

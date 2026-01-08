@@ -1,5 +1,6 @@
 import React, { useState, ReactNode } from 'react';
 import { TactileButton } from './TactileButton';
+import { Tooltip } from './Tooltip';
 
 type Props = {
     label?: string;
@@ -11,9 +12,10 @@ type Props = {
     children?: ReactNode;
     style?: React.CSSProperties;
     disabled?: boolean;
+    tooltip?: string;
 };
 
-export const ToolbarButton = ({ onClick, label, icon, primary = false, active = false, successLabel, children, style, disabled }: Props) => {
+export const ToolbarButton = ({ onClick, label, icon, primary = false, active = false, successLabel, children, style, disabled, tooltip }: Props) => {
     const [isSuccess, setIsSuccess] = useState(false);
 
     const handleClick = () => {
@@ -28,22 +30,13 @@ export const ToolbarButton = ({ onClick, label, icon, primary = false, active = 
     const content = children || label;
     const showSuccess = isSuccess && successLabel;
 
-    return (
+    const button = (
         <TactileButton
             onClick={handleClick}
             variant={primary ? 'primary' : 'secondary'}
             active={active}
             disabled={disabled}
             style={style}
-            // If showing success state, we might want to force a green style
-            // But TactileButton doesn't support "success" variant yet.
-            // For now, let's stick to standard variants, or perform a small override if needed.
-            // Actually, the original design had a green gradient for success.
-            // Let's implement a 'success' style override via style prop for now to match exactly what it was,
-            // or better yet, verify if we can add a 'success' variant to TactileButton later?
-            // For standardization, let's use 'primary' (blue) or 'danger' (red). 
-            // If the user *really* wants green checks, we can assume 'primary' is clear enough or add a class.
-            // However, to keep it "buttery", let's use the style override for the green success state if active.
             className={showSuccess ? 'toolbar-btn-success' : ''}
             icon={!showSuccess ? icon : undefined}
         >
@@ -64,5 +57,11 @@ export const ToolbarButton = ({ onClick, label, icon, primary = false, active = 
                 `}</style>
             )}
         </TactileButton>
-    )
+    );
+
+    if (tooltip && !showSuccess) {
+        return <Tooltip content={tooltip}>{button}</Tooltip>;
+    }
+
+    return button;
 }
