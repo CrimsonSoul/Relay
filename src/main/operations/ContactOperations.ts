@@ -10,7 +10,7 @@ import { existsSync } from "fs";
 import { stringify } from "csv-stringify/sync";
 import type { Contact, DataError } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField, stringifyCsv } from "../csvUtils";
-import { cleanAndFormatPhoneNumber } from "../phoneUtils";
+import { cleanAndFormatPhoneNumber } from '../../shared/phoneUtils';
 import { HeaderMatcher } from "../HeaderMatcher";
 import { validateContacts } from "../csvValidation";
 import { CONTACT_COLUMN_ALIASES } from "@shared/csvTypes";

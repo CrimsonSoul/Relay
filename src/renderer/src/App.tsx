@@ -1,3 +1,4 @@
+import { LocationProvider, useLocation } from './contexts';
 import React, {
   useState,
   useEffect,
@@ -131,6 +132,9 @@ const SettingsModal = lazy(() =>
     default: m.SettingsModal,
   }))
 );
+const AIChatTab = lazy(() =>
+  import("./tabs/AIChatTab").then((m) => ({ default: m.AIChatTab }))
+);
 
 type Tab =
   | "Compose"
@@ -139,7 +143,8 @@ type Tab =
   | "Servers"
   | "Reports"
   | "Radar"
-  | "Weather";
+  | "Weather"
+  | "AI";
 
 // Format data errors for user-friendly display
 function formatDataError(error: DataError): string {
@@ -148,9 +153,8 @@ function formatDataError(error: DataError): string {
     case "validation":
       if (Array.isArray(error.details) && error.details.length > 0) {
         const count = error.details.length;
-        return `Data validation: ${count} issue${
-          count > 1 ? "s" : ""
-        } found${file}`;
+        return `Data validation: ${count} issue${count > 1 ? "s" : ""
+          } found${file}`;
       }
       return error.message;
     case "parse":
@@ -196,6 +200,8 @@ interface Location {
 
 export function MainApp() {
   const { showToast } = useToast();
+  // Use Location Context
+  const deviceLocation = useLocation();
   const [activeTab, setActiveTab] = useState<Tab>("Compose");
   const [data, setData] = useState<AppData>({
     groups: {},
@@ -220,14 +226,29 @@ export function MainApp() {
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
 
   // Restore Weather Location
+  // Restore Weather Location or Sync from Device
   useEffect(() => {
+    // 1. Try saved manual location
     const saved = localStorage.getItem("weather_location");
     if (saved) {
       try {
         setWeatherLocation(JSON.parse(saved));
-      } catch {}
+        return;
+      } catch {
+        // Invalid JSON in localStorage - ignore and use fallback
+      }
     }
-  }, []);
+
+    // 2. Fallback to Device Location if loaded
+    if (!deviceLocation.loading && deviceLocation.lat && deviceLocation.lon) {
+      console.log('[App] Initializing weather location from device:', deviceLocation);
+      setWeatherLocation({
+        latitude: deviceLocation.lat,
+        longitude: deviceLocation.lon,
+        name: deviceLocation.city ? `${deviceLocation.city}, ${deviceLocation.region}` : 'Current Location'
+      });
+    }
+  }, [deviceLocation.loading, deviceLocation.lat, deviceLocation.lon]);
 
   const fetchWeather = useCallback(
     async (lat: number, lon: number, silent = false) => {
@@ -313,7 +334,7 @@ export function MainApp() {
           (style.overflowX === "auto" || style.overflowX === "scroll") &&
           (style.overflowY === "hidden" ||
             horizontalContainer.scrollHeight <=
-              horizontalContainer.clientHeight);
+            horizontalContainer.clientHeight);
 
         if (isHorizontalOnly) {
           horizontalContainer.scrollLeft += e.deltaY;
@@ -323,6 +344,31 @@ export function MainApp() {
     };
 
     window.addEventListener("wheel", handleGlobalWheel, { passive: false });
+
+    // Periodic Cleanup: Remove old dismissed alerts from localStorage
+    try {
+      const now = new Date();
+      const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('dismissed-')) {
+          // Key format: dismissed-YYYY-MM-DD-type
+          const match = key.match(/dismissed-(\d{4}-\d{2}-\d{2})/);
+          if (match) {
+            const date = new Date(match[1]);
+            if (now.getTime() - date.getTime() > SEVEN_DAYS_MS) {
+              localStorage.removeItem(key);
+              // Decrement index because we removed an item
+              i--;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[App] Failed to prune localStorage:', e);
+    }
+
     return () => window.removeEventListener("wheel", handleGlobalWheel);
   }, []);
 
@@ -553,6 +599,13 @@ export function MainApp() {
               </Suspense>
             </div>
           )}
+          {activeTab === "AI" && (
+            <div className="animate-fade-in" style={{ height: "100%" }}>
+              <Suspense fallback={<TabFallback />}>
+                <AIChatTab />
+              </Suspense>
+            </div>
+          )}
         </div>
       </main>
 
@@ -582,7 +635,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <MainApp />
+        <LocationProvider>
+          <MainApp />
+        </LocationProvider>
       </ToastProvider>
     </ErrorBoundary>
   );

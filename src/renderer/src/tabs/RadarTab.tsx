@@ -1,6 +1,8 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { ToolbarButton } from '../components/ToolbarButton';
+import { Tooltip } from '../components/Tooltip';
+import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
 export const RadarTab: React.FC = () => {
   const [url, setUrl] = useState('https://cw-intra-web/CWDashboard/Home/Radar');
@@ -27,36 +29,34 @@ export const RadarTab: React.FC = () => {
     }}>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
-        <div>
-          <h1 style={{ fontSize: '32px', fontWeight: 800, margin: 0, color: 'var(--color-text-primary)' }}>Dispatcher Radar</h1>
-          <p style={{ fontSize: '16px', color: 'var(--color-text-tertiary)', margin: '8px 0 0 0', fontWeight: 500 }}>Live CW intra-web monitoring</p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <ToolbarButton
-            onClick={handleRefresh}
-            label={isLoading ? 'REFRESHING' : 'REFRESH'}
-            style={{ padding: '12px 24px', fontSize: '12px' }}
-            icon={
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={isLoading ? 'spin' : ''}
-                style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
-              >
-                <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-              </svg>
-            }
-          />
-        </div>
-      </div>
+      <CollapsibleHeader
+        title="Dispatcher Radar"
+        subtitle="Live CW intra-web monitoring"
+        isCollapsed={true}
+      >
+        <ToolbarButton
+          onClick={handleRefresh}
+          label={isLoading ? 'REFRESHING' : 'REFRESH'}
+          tooltip="Refresh Radar"
+          style={{ padding: '8px 16px', fontSize: '11px' }}
+          icon={
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={isLoading ? 'spin' : ''}
+              style={{ animation: isLoading ? 'spin 1s linear infinite' : 'none' }}
+            >
+              <path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          }
+        />
+      </CollapsibleHeader>
 
       {/* Webview Container - Full Bleed */}
       <div style={{
@@ -65,8 +65,26 @@ export const RadarTab: React.FC = () => {
         background: 'black',
         overflow: 'hidden',
         borderRadius: '12px',
-        border: 'var(--border-subtle)'
+        // Force the GPU to clip the webview using a mask-image hack
+        WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+        maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+        transform: 'translateZ(0)',
       }}>
+        {/* 
+           CRITICAL: Border Overlay (The "Choke")
+           We use a border + a tiny box-shadow to "thicken" the mask 
+           and ensure it perfectly covers the aliased edges of the webview.
+        */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: '12px',
+          border: '1.5px solid var(--color-bg-app)', // Use app background color to mask
+          boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', // Extra sub-pixel choke
+          pointerEvents: 'none',
+          zIndex: 10,
+        }} />
+
         <webview
           ref={webviewRef}
           src={url}
@@ -75,7 +93,7 @@ export const RadarTab: React.FC = () => {
             width: '100%',
             height: '100%',
             border: 'none',
-            background: 'white'
+            background: 'transparent' // Prevent white bleed
           }}
         />
       </div>

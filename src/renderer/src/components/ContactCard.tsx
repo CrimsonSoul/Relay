@@ -1,6 +1,6 @@
 import React, { memo, useState, useRef, useEffect } from 'react';
 import { getColorForString } from '../utils/colors';
-import { formatPhoneNumber } from '../utils/phone';
+import { formatPhoneNumber } from '../../../shared/phoneUtils';
 import { Tooltip } from './Tooltip';
 
 type ContactRowProps = {

@@ -1,7 +1,9 @@
 import fs from 'fs';
 import fsPromises from 'fs/promises';
 import { join } from 'path';
+import { cleanAndFormatPhoneNumber } from '../shared/phoneUtils';
 import { app } from 'electron';
+import { logger } from './logger';
 
 // Default headers for each file type - used when creating new files
 const DEFAULT_HEADERS: Record<string, string> = {
@@ -18,7 +20,7 @@ export async function ensureDataFilesAsync(targetRoot: string, bundledDataPath: 
   try {
     await fsPromises.mkdir(targetRoot, { recursive: true });
   } catch (e) {
-    console.error('Failed to create persistent data directory:', e);
+    logger.error('DataUtils', 'Failed to create persistent data directory', { error: e });
   }
 
   // Ensure groups.csv and contacts.csv exist - create with headers only, never copy bundled data
@@ -33,9 +35,9 @@ export async function ensureDataFilesAsync(targetRoot: string, bundledDataPath: 
       try {
         const headers = DEFAULT_HEADERS[file] || '';
         await fsPromises.writeFile(targetPath, headers + '\n', 'utf-8');
-        console.log(`[dataUtils] Created empty ${file} with headers only (no sample data)`);
+        logger.debug('DataUtils', `Created empty ${file} with headers only`);
       } catch (e) {
-        console.error(`Failed to create ${file}:`, e);
+        logger.error('DataUtils', `Failed to create ${file}`, { error: e });
       }
     }
   }
@@ -49,7 +51,7 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
     try {
       fs.mkdirSync(targetRoot, { recursive: true });
     } catch (e) {
-      console.error('Failed to create persistent data directory:', e);
+      logger.error('DataUtils', 'Failed to create persistent data directory', { error: e });
     }
   }
 
@@ -62,9 +64,9 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
       try {
         const headers = DEFAULT_HEADERS[file] || '';
         fs.writeFileSync(targetPath, headers + '\n', 'utf-8');
-        console.log(`[dataUtils] Created empty ${file} with headers only (no sample data)`);
+        logger.debug('DataUtils', `Created empty ${file} with headers only`);
       } catch (e) {
-        console.error(`Failed to create ${file}:`, e);
+        logger.error('DataUtils', `Failed to create ${file}`, { error: e });
       }
     }
   }
@@ -79,7 +81,7 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
   try {
     await fsPromises.mkdir(targetRoot, { recursive: true });
   } catch (e) {
-    console.error('Failed to create target directory:', e);
+    logger.error('DataUtils', 'Failed to create target directory', { error: e });
   }
 
   // Build array of copy operations to run in parallel
@@ -99,7 +101,7 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
     try {
       await fsPromises.access(source);
       await fsPromises.copyFile(source, target);
-      console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
+      logger.debug('DataUtils', `Copied ${file}`, { from: sourceRoot, to: targetRoot });
       return true;
     } catch {
       // Source doesn't exist - create empty file with headers (NO bundled data)
@@ -107,10 +109,11 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
       if (headers) {
         try {
           await fsPromises.writeFile(target, headers + '\n', 'utf-8');
-          console.log(`Created empty ${file} with headers only (no sample data)`);
+          logger.debug('DataUtils', `Created empty ${file} with headers only`);
           return true;
-        } catch {
-          // Failed to create
+        } catch (writeErr) {
+          // Failed to create - log for debugging
+          console.debug(`[DataUtils] Failed to create ${file}:`, writeErr);
         }
       }
       return false;
@@ -130,7 +133,7 @@ export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDat
 
   // Ensure target exists
   if (!fs.existsSync(targetRoot)) {
-    try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { console.error(e); }
+    try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create target dir', { error: e }); }
   }
 
   for (const file of essentialFiles) {
@@ -143,9 +146,9 @@ export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDat
         try {
           fs.copyFileSync(source, target);
           filesCopied = true;
-          console.log(`Copied ${file} from ${sourceRoot} to ${targetRoot}`);
+          logger.debug('DataUtils', `Copied ${file}`, { from: sourceRoot, to: targetRoot });
         } catch (e) {
-          console.error(`Failed to copy ${file}:`, e);
+          logger.error('DataUtils', `Failed to copy ${file}`, { error: e });
         }
       } else {
         // Source doesn't exist - create empty file with headers (NO bundled data)
@@ -154,9 +157,9 @@ export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDat
           try {
             fs.writeFileSync(target, headers + '\n', 'utf-8');
             filesCopied = true;
-            console.log(`Created empty ${file} with headers only (no sample data)`);
+            logger.debug('DataUtils', `Created empty ${file} with headers only`);
           } catch (e) {
-            console.error(`Failed to create ${file}:`, e);
+            logger.error('DataUtils', `Failed to create ${file}`, { error: e });
           }
         }
       }
@@ -177,7 +180,7 @@ export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {
       return {};
     }
   } catch (error) {
-    console.error('Failed to load config:', error);
+    logger.error('DataUtils', 'Failed to load config', { error });
     return {};
   }
 }
@@ -191,7 +194,7 @@ export function loadConfig(): { dataRoot?: string } {
       return JSON.parse(content);
     }
   } catch (error) {
-    console.error('Failed to load config:', error);
+    logger.error('DataUtils', 'Failed to load config', { error });
   }
   return {};
 }
@@ -202,12 +205,12 @@ export async function saveConfigAsync(config: { dataRoot?: string }): Promise<vo
     const configPath = join(app.getPath('userData'), 'config.json');
     await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Failed to save config:', error);
+    logger.error('DataUtils', 'Failed to save config', { error });
   }
 }
 
 export async function generateDummyDataAsync(targetRoot: string): Promise<boolean> {
-  console.log('[dataUtils] generateDummyDataAsync starting for:', targetRoot);
+  logger.debug('DataUtils', 'generateDummyDataAsync starting', { path: targetRoot });
   try {
     const contactsCsv = [
       'Name,Email,Phone,Title',
@@ -277,7 +280,7 @@ export async function generateDummyDataAsync(targetRoot: string): Promise<boolea
 
     return true;
   } catch (e) {
-    console.error('[dataUtils] generateDummyData error:', e);
+    logger.error('DataUtils', 'generateDummyData error', { error: e });
     return false;
   }
 }
@@ -288,6 +291,6 @@ export function saveConfig(config: { dataRoot?: string }) {
     const configPath = join(app.getPath('userData'), 'config.json');
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Failed to save config:', error);
+    logger.error('DataUtils', 'Failed to save config', { error });
   }
 }

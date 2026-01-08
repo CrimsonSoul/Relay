@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Tooltip } from './Tooltip';
 
 type Props = {
   isOpen: boolean;
@@ -117,37 +118,39 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           >
             {title}
           </h2>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: '1px solid transparent',
-              color: 'var(--color-text-tertiary)',
-              cursor: 'pointer',
-              padding: 'var(--space-2)',
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'all var(--transition-fast)',
-              outline: 'none'
-            }}
-            className="hover-bg"
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--color-text-primary)';
-              e.currentTarget.style.borderColor = 'var(--border-subtle)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--color-text-tertiary)';
-              e.currentTarget.style.borderColor = 'transparent';
-            }}
-            aria-label="Close"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          <Tooltip content="Close" position="left">
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: '1px solid transparent',
+                color: 'var(--color-text-tertiary)',
+                cursor: 'pointer',
+                padding: 'var(--space-2)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all var(--transition-fast)',
+                outline: 'none'
+              }}
+              className="hover-bg"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+                e.currentTarget.style.borderColor = 'var(--border-subtle)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--color-text-tertiary)';
+                e.currentTarget.style.borderColor = 'transparent';
+              }}
+              aria-label="Close"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
 
         {/* Content - Compact */}

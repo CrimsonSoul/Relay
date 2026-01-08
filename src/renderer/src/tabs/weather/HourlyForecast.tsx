@@ -1,6 +1,7 @@
 import React, { useMemo } from "react";
 import type { WeatherData } from "./types";
-import { getWeatherIcon } from "./utils";
+import { Tooltip } from "../../components/Tooltip";
+import { getWeatherIcon, getWeatherDescription } from "./utils";
 
 interface HourlyForecastProps {
   weather: WeatherData | null;
@@ -121,9 +122,11 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
                   ? "Now"
                   : date.toLocaleTimeString([], { hour: "numeric" })}
               </span>
-              <div style={{ marginBottom: "6px" }}>
-                {getWeatherIcon(item.code, 18)}
-              </div>
+              <Tooltip content={getWeatherDescription(item.code)} position="top">
+                <div style={{ marginBottom: "6px" }}>
+                  {getWeatherIcon(item.code, 18)}
+                </div>
+              </Tooltip>
               {/* Rain Chance */}
               {item.precip > 0 ? (
                 <div

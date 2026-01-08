@@ -94,6 +94,7 @@ export function isSafeStorageAvailable(): boolean {
   try {
     return safeStorage.isEncryptionAvailable();
   } catch {
+    // safeStorage may not be available on all platforms - fail gracefully
     return false;
   }
 }

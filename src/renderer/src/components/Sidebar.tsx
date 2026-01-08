@@ -1,4 +1,5 @@
 import React, { useRef } from "react";
+import { Tooltip } from "./Tooltip";
 
 type Tab =
   | "Compose"
@@ -7,7 +8,8 @@ type Tab =
   | "Reports"
   | "Radar"
   | "Servers"
-  | "Weather";
+  | "Weather"
+  | "AI";
 
 interface SidebarProps {
   activeTab: Tab;
@@ -29,56 +31,57 @@ const SidebarButton = ({
   const [isHovered, setIsHovered] = React.useState(false);
 
   return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      title={label}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: "40px",
-        height: "40px",
-        background: isActive
-          ? "var(--color-accent-blue)"
-          : isHovered
-          ? "var(--color-accent-blue)"
-          : "rgba(255, 255, 255, 0.03)",
-        border: "none",
-        cursor: "pointer",
-        position: "relative",
-        color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
-        transition: "all var(--transition-smooth)",
-        borderRadius: isActive || isHovered ? "12px" : "20px",
-        outline: "none",
-        transform: isHovered
-          ? isActive
-            ? "scale(1.05)"
-            : "translateY(-1px) scale(1.05)"
-          : "scale(1)",
-        boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
-      }}
-    >
-      {icon}
+    <Tooltip content={label} position="right">
+      <button
+        onClick={onClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "40px",
+          height: "40px",
+          background: isActive
+            ? "var(--color-accent-blue)"
+            : isHovered
+              ? "var(--color-accent-blue)"
+              : "rgba(255, 255, 255, 0.03)",
+          border: "none",
+          cursor: "pointer",
+          position: "relative",
+          color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
+          transition: "all var(--transition-smooth)",
+          borderRadius: isActive || isHovered ? "12px" : "20px",
+          outline: "none",
+          transform: isHovered
+            ? isActive
+              ? "scale(1.05)"
+              : "translateY(-1px) scale(1.05)"
+            : "scale(1)",
+          boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
+        }}
+      >
+        {icon}
 
-      {/* Active indicator bar */}
-      {isActive && (
-        <div
-          style={{
-            position: "absolute",
-            left: "-12px",
-            top: "50%",
-            transform: "translateY(-50%)",
-            height: "24px",
-            width: "4px",
-            background: "white",
-            borderRadius: "0 4px 4px 0",
-            boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
-          }}
-        />
-      )}
-    </button>
+        {/* Active indicator bar */}
+        {isActive && (
+          <div
+            style={{
+              position: "absolute",
+              left: "-12px",
+              top: "50%",
+              transform: "translateY(-50%)",
+              height: "24px",
+              width: "4px",
+              background: "white",
+              borderRadius: "0 4px 4px 0",
+              boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
+            }}
+          />
+        )}
+      </button>
+    </Tooltip>
   );
 };
 
@@ -103,7 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         paddingBottom: "16px",
         gap: "12px",
         zIndex: 9002,
-        WebkitAppRegion: "drag" as any,
+        WebkitAppRegion: "drag",
       }}
     >
       {/* App Icon - 3-Click Easter Egg to Weather */}
@@ -119,7 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           background:
             "linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.05) 100%)",
           borderRadius: "50%",
-          WebkitAppRegion: "no-drag" as any,
+          WebkitAppRegion: "no-drag",
           cursor: "pointer",
           transition: "all 0.1s cubic-bezier(0.16, 1, 0.3, 1)",
           border: "1.5px solid rgba(59, 130, 246, 0.3)",
@@ -215,7 +218,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           flexDirection: "column",
           alignItems: "center",
           gap: "12px",
-          WebkitAppRegion: "no-drag" as any,
+          WebkitAppRegion: "no-drag",
         }}
       >
         <SidebarButton
@@ -277,6 +280,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {/* Pager Buttons */}
               <circle cx="18" cy="9" r="1.5" fill="#60A5FA" />
               <circle cx="18" cy="15" r="1.5" fill="#60A5FA" />
+            </svg>
+          }
+        />
+        <SidebarButton
+          label="AI Chat"
+          isActive={activeTab === "AI"}
+          onClick={() => onTabChange("AI")}
+          icon={
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {/* Chat bubble with sparkle for AI */}
+              <path
+                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                stroke="#F472B6"
+              />
+              {/* AI sparkle */}
+              <path d="M12 8v2" stroke="#F472B6" strokeWidth="2" />
+              <path d="M12 12v1" stroke="#F472B6" strokeWidth="2" />
+              <circle cx="12" cy="10" r="0.5" fill="#F472B6" />
             </svg>
           }
         />
@@ -433,7 +463,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             display: "flex",
             flexDirection: "column",
             gap: "12px",
-          } as any
+        }
         }
       >
         <SidebarButton
