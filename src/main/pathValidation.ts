@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { join } from 'path';
+import { loggers, ErrorCategory } from './logger';
 
 export interface ValidationResult {
     success: boolean;
@@ -25,7 +26,11 @@ export function validateDataPath(path: string): ValidationResult {
 
         return { success: true };
     } catch (error: any) {
-        console.error(`Validation failed for path ${path}:`, error);
+        loggers.fileManager.error('Path validation failed', {
+            errorCode: error.code,
+            category: ErrorCategory.FILE_SYSTEM,
+            // Don't log full path in production for security
+        });
         if (error.code === 'EACCES' || error.code === 'EPERM') {
             return { success: false, error: 'Write permission denied. Please choose a different folder.' };
         }

@@ -3,6 +3,7 @@ import { join } from 'path';
 import { FileManager } from '../FileManager';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
+import { setupLoggerHandlers } from '../handlers/loggerHandlers';
 import { loggers } from '../logger';
 import { copyDataFiles, ensureDataFiles, ensureDataFilesAsync, loadConfig, loadConfigAsync, saveConfig } from '../dataUtils';
 import { validateDataPath } from '../pathValidation';
@@ -59,6 +60,7 @@ export function setupIpc() {
   setupIpcHandlers(() => state.mainWindow, () => state.fileManager, () => state.currentDataRoot, handleDataPathChange, getDefaultDataPath);
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);
+  setupLoggerHandlers();
 }
 
 export function setupPermissions(sess: Electron.Session) {

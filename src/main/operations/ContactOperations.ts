@@ -143,7 +143,7 @@ export async function removeContact(ctx: FileContext, email: string): Promise<bo
     }
 
     if (removed) {
-      const csvOutput = stringify(newData);
+      const csvOutput = ctx.safeStringify(newData);
       await ctx.writeAndEmit(path, csvOutput);
       ctx.performBackup("removeContact");
       return true;

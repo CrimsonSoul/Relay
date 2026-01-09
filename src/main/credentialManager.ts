@@ -5,6 +5,7 @@
 
 import { safeStorage } from 'electron';
 import * as crypto from 'crypto';
+import { loggers, ErrorCategory } from './logger';
 
 // In-memory store for pending auth requests (nonce -> callback)
 const pendingAuthRequests = new Map<string, {
@@ -104,7 +105,10 @@ export function isSafeStorageAvailable(): boolean {
  */
 export function cacheCredentials(host: string, username: string, password: string): boolean {
   if (!isSafeStorageAvailable()) {
-    console.warn('[CredentialManager] safeStorage not available, credentials will not be cached');
+    loggers.security.warn('safeStorage not available, credentials will not be cached', {
+      host,
+      category: ErrorCategory.AUTH
+    });
     return false;
   }
 
@@ -112,8 +116,13 @@ export function cacheCredentials(host: string, username: string, password: strin
     const encryptedPassword = safeStorage.encryptString(password);
     credentialCache.set(host, { username, encryptedPassword });
     return true;
-  } catch (error) {
-    console.error('[CredentialManager] Failed to cache credentials:', error);
+  } catch (error: any) {
+    loggers.security.error('Failed to cache credentials', {
+      error: error.message,
+      stack: error.stack,
+      category: ErrorCategory.AUTH,
+      host
+    });
     return false;
   }
 }
@@ -130,8 +139,13 @@ export function getCachedCredentials(host: string): { username: string; password
   try {
     const password = safeStorage.decryptString(cached.encryptedPassword);
     return { username: cached.username, password };
-  } catch (error) {
-    console.error('[CredentialManager] Failed to decrypt cached credentials:', error);
+  } catch (error: any) {
+    loggers.security.error('Failed to decrypt cached credentials', {
+      error: error.message,
+      stack: error.stack,
+      category: ErrorCategory.AUTH,
+      host
+    });
     // Remove corrupted cache entry
     credentialCache.delete(host);
     return null;

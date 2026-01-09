@@ -3,6 +3,8 @@
  * Prevents DoS from repeated expensive operations.
  */
 
+import { loggers } from './logger';
+
 interface RateLimiterConfig {
   maxTokens: number;      // Maximum number of tokens (burst capacity)
   refillRate: number;     // Tokens added per second
@@ -52,7 +54,11 @@ export class RateLimiter {
     const tokensNeeded = cost - this.tokens;
     const retryAfterMs = Math.ceil((tokensNeeded / this.refillRate) * 1000);
 
-    console.warn(`[${this.name}] Rate limited. Retry after ${retryAfterMs}ms`);
+    loggers.ipc.warn(`Rate limited: ${this.name}`, {
+      retryAfterMs,
+      cost,
+      availableTokens: this.tokens
+    });
     return { allowed: false, retryAfterMs };
   }
 

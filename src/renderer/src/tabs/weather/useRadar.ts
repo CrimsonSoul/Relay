@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from "react";
 import { RADAR_INJECT_CSS, RADAR_INJECT_JS } from "./utils";
+import { loggers, ErrorCategory } from "../../utils/logger";
 import type { Location } from "./types";
 
 export function useRadar(location: Location | null) {
@@ -16,13 +17,25 @@ export function useRadar(location: Location | null) {
     const handleDidFinishLoad = () => {
       if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current);
       setRadarLoaded(true);
-      webview.insertCSS(RADAR_INJECT_CSS).catch((err) => console.error("Failed to inject radar CSS:", err));
+      webview.insertCSS(RADAR_INJECT_CSS).catch((err) => {
+        loggers.weather.error("Failed to inject radar CSS", { 
+          error: err.message, 
+          category: ErrorCategory.UI 
+        });
+      });
       webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {});
     };
 
-    const handleDidFailLoad = () => { console.error("Radar webview failed to load"); if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current); setRadarLoaded(true); };
+    const handleDidFailLoad = () => { 
+      loggers.weather.error("Radar webview failed to load", { category: ErrorCategory.NETWORK });
+      if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current); 
+      setRadarLoaded(true); 
+    };
 
-    radarTimeoutRef.current = setTimeout(() => { console.warn("Radar load timeout - forcing display"); setRadarLoaded(true); }, 10000);
+    radarTimeoutRef.current = setTimeout(() => { 
+      loggers.weather.warn("Radar load timeout - forcing display");
+      setRadarLoaded(true); 
+    }, 10000);
 
     webview.addEventListener("did-finish-load", handleDidFinishLoad);
     webview.addEventListener("did-fail-load", handleDidFailLoad);
