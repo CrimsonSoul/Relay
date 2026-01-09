@@ -104,7 +104,12 @@ export const ResizableHeader = ({
 
             {/* Resize Handle Area - Enhanced */}
             <div
+                role="slider"
                 aria-label="Resize column"
+                aria-valuemin={minWidth}
+                aria-valuenow={width}
+                aria-orientation="horizontal"
+                tabIndex={0}
                 data-resize-handle="true"
                 style={{
                     position: 'absolute',
@@ -126,6 +131,19 @@ export const ResizableHeader = ({
                     startX.current = e.clientX;
                     startWidth.current = width;
                     document.body.style.cursor = 'col-resize';
+                }}
+                onKeyDown={(e) => {
+                    // Keyboard resizing with arrow keys
+                    if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const newWidth = Math.max(minWidth, width - 10);
+                        onResize(newWidth);
+                    } else if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onResize(width + 10);
+                    }
                 }}
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
