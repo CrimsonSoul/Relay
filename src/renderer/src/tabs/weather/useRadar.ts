@@ -11,21 +11,30 @@ export function useRadar(location: Location | null) {
     if (!webview || !location) return;
     
     const handleDidFinishLoad = () => {
-      webview.insertCSS(RADAR_INJECT_CSS).catch((err) => {
-        loggers.weather.error("Failed to inject radar CSS", { 
-          error: err.message, 
-          category: ErrorCategory.UI 
-        });
-      });
+      webview.insertCSS(RADAR_INJECT_CSS).catch(() => {});
       webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {});
     };
 
+    const handleDidFailLoad = (e: any) => {
+      loggers.weather.error("Radar failed to load", { 
+        errorCode: e.errorCode,
+        errorDescription: e.errorDescription,
+        validatedURL: e.validatedURL 
+      });
+    };
+
     webview.addEventListener("did-finish-load", handleDidFinishLoad);
+    webview.addEventListener("did-fail-load", handleDidFailLoad);
 
     return () => {
       webview.removeEventListener("did-finish-load", handleDidFinishLoad);
+      webview.removeEventListener("did-fail-load", handleDidFailLoad);
     };
   }, [location]);
 
-  return { webviewRef };
+  const reload = () => {
+    webviewRef.current?.reloadIgnoringCache();
+  };
+
+  return { webviewRef, reload };
 }

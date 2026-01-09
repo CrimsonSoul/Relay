@@ -47,9 +47,9 @@ async function createWindow() {
           "script-src 'self' 'unsafe-inline'; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
-          "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co; " +
+          "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co https://*.rainviewer.com; " +
           "font-src 'self' data:; " +
-          "frame-src 'none'"
+          "frame-src 'self' https://www.rainviewer.com https://your-intranet;"
         ],
         'X-Content-Type-Options': ['nosniff'],
         'X-Frame-Options': ['DENY'],
