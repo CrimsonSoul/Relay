@@ -93,7 +93,14 @@ async function createWindow() {
 
 // Auth interception is set up in appState.ts to avoid circular dependency
 
-app.whenReady().then(async () => {
+// App-level global listeners (Synchronous)
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+// Main process initialization
+try {
+  await app.whenReady();
   setupPermissions(session.defaultSession);
   setupPermissions(session.fromPartition('persist:weather'));
   setupPermissions(session.fromPartition('persist:dispatcher-radar'));
@@ -104,8 +111,7 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) void createWindow();
   });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+} catch (error) {
+  loggers.main.error('Critical startup failure', { error });
+  process.exit(1);
+}
