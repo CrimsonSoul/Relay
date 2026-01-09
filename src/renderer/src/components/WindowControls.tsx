@@ -42,11 +42,10 @@ export const WindowControls = () => {
         <div style={{
             display: 'flex',
             height: '48px',
-            // @ts-ignore - Electron specific property
             WebkitAppRegion: 'no-drag',
             zIndex: 10000,
             position: 'relative' // Ensure z-index works
-        }}>
+        } as React.CSSProperties}>
             <style>{`
             .window-control-btn {
                 width: 48px;

@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AppData, DataError } from "@shared/ipc";
+import { loggers } from '../utils/logger';
+
+// Constants
+const RELOAD_INDICATOR_MIN_DURATION_MS = 900;
+const STUCK_SYNC_TIMEOUT_MS = 5000;
 
 // Format data errors for user-friendly display
 function formatDataError(error: DataError): string {
@@ -47,7 +52,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       return;
     }
     const elapsed = performance.now() - reloadStartRef.current;
-    const delay = Math.max(900 - elapsed, 0);
+    const delay = Math.max(RELOAD_INDICATOR_MIN_DURATION_MS - elapsed, 0);
     if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
     reloadTimeoutRef.current = setTimeout(() => {
       setIsReloading(false);
@@ -61,13 +66,11 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     if (isReloading) {
       const safety = setTimeout(() => {
         if (isReloadingRef.current) {
-          console.warn(
-            "[useAppData] Force clearing stuck sync indicator after timeout"
-          );
+          loggers.app.warn('Force clearing stuck sync indicator after timeout');
           setIsReloading(false);
           reloadStartRef.current = null;
         }
-      }, 5000);
+      }, STUCK_SYNC_TIMEOUT_MS);
       return () => clearTimeout(safety);
     }
   }, [isReloading]);
@@ -86,7 +89,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       settleReloadIndicator();
     });
     const unsubscribeDataError = window.api.onDataError((error: DataError) => {
-      console.error("[useAppData] Data error received:", error);
+      loggers.app.error('Data error received', { error });
       const errorMessage = formatDataError(error);
       showToast(errorMessage, "error");
     });

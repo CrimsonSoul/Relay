@@ -1,37 +1,21 @@
-import React, { useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { DndContext, closestCenter, KeyboardSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy } from '@dnd-kit/sortable';
 import { Contact, GroupMap } from '@shared/ipc';
 
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
 import { SearchInput } from '../components/SearchInput';
 import { TactileButton } from '../components/TactileButton';
-import { ResizableHeader } from '../components/ResizableHeader';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
-import { DraggableHeader } from '../components/directory/DraggableHeader';
 import { GroupSelector } from '../components/directory/GroupSelector';
 import { VirtualRow } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
 import { useDirectory } from '../hooks/useDirectory';
 import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
-import { CustomPointerSensor } from '../utils/sensors';
 
 type Props = { contacts: Contact[]; groups: GroupMap; onAddToAssembler: (contact: Contact) => void };
-
-const LABELS: Record<string, string> = { name: 'Name', title: 'Job Title', email: 'Email', phone: 'Phone', groups: 'Groups' };
-
-
-const ItemData = React.memo(({ data, style }: any) => {
-  const { filtered, recentlyAdded, onAdd, groups, groupMap, onContextMenu, columnWidths, columnOrder, focusedIndex, onRowClick } = data;
-  const index = style.itemIndex; // Add this if needed or just pass index directly
-  // ... (VirtualRow logic if it was inline, but it is imported)
-  // Since VirtualRow is imported, we just pass the props to it or use it as child
-  return <VirtualRow index={index} style={style} data={data} />;
-});
 
 // Define constant for row height to avoid magic numbers and allow easy updates
 const ROW_HEIGHT = 104;
@@ -50,11 +34,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const listRef = useRef<List>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
 
-  const sensors = useSensors(
-    useSensor(CustomPointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
   const { handleListKeyDown } = useDirectoryKeyboard({
     listRef, filtered: dir.filtered, focusedIndex: dir.focusedIndex, setFocusedIndex: dir.setFocusedIndex,
     handleAddWrapper: dir.handleAddWrapper, setContextMenu: dir.setContextMenu, listContainerRef
@@ -71,9 +50,9 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const itemData = useMemo(() => ({
     filtered: dir.filtered, recentlyAdded: dir.recentlyAdded, onAdd: dir.handleAddWrapper, groups, groupMap: dir.groupMap,
     onContextMenu: (e: React.MouseEvent, contact: Contact) => { e.preventDefault(); dir.setContextMenu({ x: e.clientX, y: e.clientY, contact }); },
-    columnWidths: dir.scaledWidths, columnOrder: dir.columnOrder, focusedIndex: dir.focusedIndex,
+    focusedIndex: dir.focusedIndex,
     onRowClick: (i: number) => dir.setFocusedIndex(i)
-  }), [dir.filtered, dir.recentlyAdded, dir.handleAddWrapper, groups, dir.groupMap, dir.scaledWidths, dir.columnOrder, dir.focusedIndex, dir.setFocusedIndex, dir.setContextMenu]);
+  }), [dir.filtered, dir.recentlyAdded, dir.handleAddWrapper, groups, dir.groupMap, dir.focusedIndex, dir.setFocusedIndex, dir.setContextMenu]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px 24px 24px 24px', background: 'var(--color-bg-app)', overflow: 'hidden' }}>
@@ -88,8 +67,8 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       </CollapsibleHeader>
 
 
-      <div ref={listContainerRef} onKeyDown={handleListKeyDown} role="grid" aria-label="Contacts list" aria-rowcount={dir.filtered.length} tabIndex={0} style={{ flex: 1, outline: 'none' }}>
-        <AutoSizer onResize={({ width }) => dir.setListWidth(width)}>
+      <div ref={listContainerRef} onKeyDown={handleListKeyDown} role="list" aria-label="Contacts list" tabIndex={0} style={{ flex: 1, outline: 'none' }}>
+        <AutoSizer>
           {({ height, width }) => (
             <List
               ref={listRef}

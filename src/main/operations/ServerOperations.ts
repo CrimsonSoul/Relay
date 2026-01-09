@@ -10,6 +10,7 @@ import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { HeaderMatcher } from "../HeaderMatcher";
 import { STD_SERVER_HEADERS, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { FileContext, SERVER_FILES } from "./FileContext";
+import { loggers } from "../logger";
 
 export { parseServers } from "./ServerParser";
 
@@ -55,7 +56,7 @@ export async function addServer(ctx: FileContext, server: Partial<Server>): Prom
     await ctx.writeAndEmit(path, csvOutput);
     ctx.performBackup("addServer");
     return true;
-  } catch (e) { console.error("[ServerOperations] addServer error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[ServerOperations] addServer error:", { error: e }); return false; }
 }
 
 export async function removeServer(ctx: FileContext, name: string): Promise<boolean> {
@@ -77,5 +78,5 @@ export async function removeServer(ctx: FileContext, name: string): Promise<bool
     }
     if (removed) { await ctx.writeAndEmit(path, ctx.safeStringify(newData)); ctx.performBackup("removeServer"); return true; }
     return false;
-  } catch (e) { console.error("[ServerOperations] removeServer error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[ServerOperations] removeServer error:", { error: e }); return false; }
 }

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { loggers, ErrorCategory } from '../utils/logger';
 
 export interface LocationState {
   lat: number | null;
@@ -49,7 +50,6 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     // Helper to handle IP location fallback
     const tryIpFallback = async () => {
       try {
-        console.log('[Location] GPS failed/timed out, trying IP fallback...');
         const data = await window.api.getIpLocation();
         
         if (data) {
@@ -67,8 +67,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         } else {
           throw new Error('IP location service returned null');
         }
-      } catch (err) {
-        console.error('[Location] Fallback failed:', err);
+      } catch (err: any) {
+        loggers.location.error('IP location fallback failed', { 
+          error: err.message, 
+          category: ErrorCategory.NETWORK 
+        });
         setState(prev => ({ 
           ...prev, 
           loading: false, 
@@ -92,11 +95,11 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       handleGpsSuccess(pos);
     } catch (err: any) {
       if (err.code === err.PERMISSION_DENIED) {
-        console.warn('[Location] GPS Permission denied.');
+        loggers.location.warn('GPS Permission denied');
       } else if (err.code === err.TIMEOUT) {
-        console.warn('[Location] GPS Timeout.');
+        loggers.location.warn('GPS Timeout');
       } else {
-        console.warn('[Location] GPS Error:', err.message);
+        loggers.location.warn('GPS Error', { error: err.message });
       }
       // If GPS fails for any reason, try IP fallback
       await tryIpFallback();

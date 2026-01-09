@@ -63,7 +63,7 @@ describe('FileManager', () => {
     expect(success).toBe(true);
 
     const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-    expect(content).toContain('Name,Title,Email,Phone');
+    expect(content).toContain('\uFEFFName,Title,Email,Phone');
     expect(content).toContain('Test User');
     expect(content).toContain('test@example.com');
   });
@@ -137,6 +137,9 @@ describe('FileManager', () => {
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
 
       await fileManager.readAndEmit();
+
+      // Wait for async file rewrite to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // International numbers get formatted by the phone utility

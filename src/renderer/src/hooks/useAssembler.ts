@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
+import { secureStorage } from '../utils/secureStorage';
 import { GroupMap, Contact } from "@shared/ipc";
 import { useGroupMaps } from "./useGroupMaps";
 import { useToast } from "../components/Toast";
@@ -23,12 +24,15 @@ export function useAssembler({ groups, contacts, selectedGroups, manualAdds, man
   const [pendingEmail, setPendingEmail] = useState("");
   const [compositionContextMenu, setCompositionContextMenu] = useState<{ x: number; y: number; email: string; isUnknown: boolean } | null>(null);
   const [isGroupSidebarCollapsed, setIsGroupSidebarCollapsed] = useState(() => {
-    const saved = localStorage.getItem("assembler_sidebar_collapsed");
-    return saved ? JSON.parse(saved) : false;
+    try {
+      return secureStorage.getItemSync<boolean>('assembler_sidebar_collapsed', false);
+    } catch {
+      return false;
+    }
   });
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
 
-  useEffect(() => { localStorage.setItem("assembler_sidebar_collapsed", JSON.stringify(isGroupSidebarCollapsed)); }, [isGroupSidebarCollapsed]);
+  useEffect(() => { secureStorage.setItemSync('assembler_sidebar_collapsed', isGroupSidebarCollapsed); }, [isGroupSidebarCollapsed]);
 
   const handleToggleSidebarCollapse = useCallback(() => setIsGroupSidebarCollapsed((prev: boolean) => !prev), []);
 

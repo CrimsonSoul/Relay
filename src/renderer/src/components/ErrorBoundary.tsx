@@ -1,5 +1,6 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { TactileButton } from "./TactileButton";
+import { loggers, ErrorCategory } from "../utils/logger";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -21,7 +22,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("[ErrorBoundary] Caught error:", error, errorInfo);
+    loggers.ui.error("React component error caught by ErrorBoundary", {
+      error: error.message,
+      stack: error.stack,
+      componentStack: errorInfo.componentStack,
+      category: ErrorCategory.COMPONENT
+    });
   }
 
   render() {

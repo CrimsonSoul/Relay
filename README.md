@@ -52,3 +52,32 @@ Relay prioritized a premium, state-of-the-art aesthetic:
 - `src/renderer`: React frontend components and tabs.
 - `src/preload`: Secure bridge for exposing APIs to the UI.
 - `src/shared`: TypeScript types and shared utility functions.
+
+## 📋 Comprehensive Error Logging
+
+Relay includes a production-ready logging system that captures all errors, warnings, and important events to disk.
+
+### Features
+- ✅ **Automatic error capture** - Uncaught exceptions, promise rejections, React errors
+- ✅ **Stack traces** - Full context for every error
+- ✅ **Performance tracking** - Built-in timers for optimization
+- ✅ **Categorization** - Network, File System, Auth, Validation, etc.
+- ✅ **Log rotation** - Automatic file rotation at 10MB
+- ✅ **Security** - Sensitive data automatically sanitized
+
+### Log Files
+Logs are automatically stored in platform-specific locations:
+- **Windows:** `%AppData%\Relay\logs\`
+- **macOS:** `~/Library/Application Support/Relay/logs/`
+- **Linux:** `~/.config/Relay/logs/`
+
+Files include:
+- `relay.log` - All application logs
+- `errors.log` - Errors only, for quick review
+- Rotated backups kept for historical reference
+
+### Documentation
+- **[Full Logging Guide](docs/LOGGING.md)** - Complete usage documentation
+- **[Examples](docs/LOGGING_EXAMPLES.ts)** - Common patterns and best practices
+- **[Implementation Details](docs/LOGGING_IMPLEMENTATION.md)** - Technical overview
+

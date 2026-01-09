@@ -2,7 +2,11 @@ import { app, BrowserWindow, session } from 'electron';
 import { join } from 'path';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
+import { validateEnv } from './env';
 import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+
+// Validate environment early
+validateEnv();
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 
 // Windows-specific optimizations
@@ -21,9 +25,38 @@ async function createWindow() {
     width: 960, height: 800, minWidth: 400, minHeight: 600, center: true,
     backgroundColor: '#0B0D12', titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 12 }, show: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true,
+      preload: join(__dirname, '../preload/index.cjs'), 
+      contextIsolation: true, 
+      nodeIntegration: false, 
+      sandbox: true, 
+      webviewTag: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
       ...(process.platform === 'win32' && { spellcheck: false, enableWebSQL: false, v8CacheOptions: 'none' })
     }
+  });
+
+  // Set Content Security Policy
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; " +
+          "script-src 'self' 'unsafe-inline'; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data: https:; " +
+          "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co; " +
+          "font-src 'self' data:; " +
+          "frame-src 'none'"
+        ],
+        'X-Content-Type-Options': ['nosniff'],
+        'X-Frame-Options': ['DENY'],
+        'X-XSS-Protection': ['1; mode=block'],
+        'Referrer-Policy': ['strict-origin-when-cross-origin']
+      }
+    });
   });
 
   if (process.env.ELECTRON_RENDERER_URL) await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -37,11 +70,8 @@ async function createWindow() {
       loggers.main.info('Data root:', { path: state.currentDataRoot });
       if (state.mainWindow && !state.mainWindow.isDestroyed()) {
         state.fileManager = new FileManager(state.mainWindow, state.currentDataRoot, getBundledDataPath());
-        // TEMPORARY: Generate dummy data for testing session as requested
-        loggers.main.info('Generating dummy data for testing session...');
-        // We run this BEFORE init() to avoid triggering the file watcher immediately and causing race conditions/crashes
+        // Initialize BEFORE triggering file watcher to avoid race conditions
         state.fileManager.init();
-        
         loggers.main.info('FileManager initialized successfully');
       }
     } catch (error) {

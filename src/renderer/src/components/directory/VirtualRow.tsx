@@ -10,28 +10,27 @@ interface VirtualRowData {
   groups: GroupMap;
   groupMap: Map<string, string[]>;
   onContextMenu: (e: React.MouseEvent, contact: Contact) => void;
-  columnWidths: any;
-  columnOrder: string[];
   focusedIndex: number;
   onRowClick: (index: number) => void;
 }
 
 export const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<VirtualRowData>) => {
-  const { filtered, recientementeAdded, onAdd, groups, groupMap, onContextMenu, columnWidths, columnOrder, focusedIndex, onRowClick } = data;
+  const { filtered, recentlyAdded, onAdd, groups, groupMap, onContextMenu, focusedIndex, onRowClick } = data;
 
   if (index >= filtered.length) return <div style={style} />;
 
   const contact = filtered[index];
   const membership = groupMap.get(contact.email.toLowerCase()) || [];
   const isFocused = index === focusedIndex;
+  const isRecentlyAdded = recentlyAdded.has(contact.email);
 
   return (
     <ContactCard
       style={{
         ...style,
-        outline: isFocused ? '2px solid var(--color-accent-blue)' : 'none',
+        outline: isFocused ? '2px solid var(--color-accent-blue)' : isRecentlyAdded ? '2px solid var(--color-accent-green)' : 'none',
         outlineOffset: '-2px',
-        background: isFocused ? 'rgba(59, 130, 246, 0.1)' : undefined
+        background: isFocused ? 'rgba(59, 130, 246, 0.1)' : isRecentlyAdded ? 'rgba(34, 197, 94, 0.05)' : undefined
       }}
       name={contact.name}
       email={contact.email}
