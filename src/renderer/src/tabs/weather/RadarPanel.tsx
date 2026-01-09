@@ -17,6 +17,7 @@ const RadarLoadingIndicator = () => (
 
 const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
   <Tooltip content="Open radar in browser for a larger view" position="top">
+    {/* eslint-disable-next-line no-restricted-globals */}
     <button onClick={() => window.api?.openExternal?.(getRadarUrl(location.latitude, location.longitude))}
       style={{ position: "absolute", bottom: "8px", left: "8px", background: "rgba(0, 0, 0, 0.6)", padding: "6px 12px", borderRadius: "12px", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", gap: "8px", color: "#ffffff", textDecoration: "none", fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em", cursor: "pointer", zIndex: 30, transition: "all 0.2s ease", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)" }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
@@ -30,7 +31,7 @@ const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
 const containerStyle: React.CSSProperties = { flex: 1, background: "black", borderRadius: "12px", overflow: "hidden", position: "relative", border: "var(--border-subtle)", minHeight: "300px", WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, transform: 'translateZ(0)' };
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { radarLoaded, radarError, webviewRef } = useRadar(location);
+  const { radarLoaded, webviewRef } = useRadar(location);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -39,6 +40,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         {location ? (
           <>
             {!radarLoaded && <RadarLoadingIndicator />}
+            {/* eslint-disable-next-line react/no-unknown-property */}
             <webview ref={webviewRef as any} src={getRadarUrl(location.latitude, location.longitude)} style={{ width: "100%", height: "100%", border: "none", opacity: radarLoaded ? 1 : 0, transition: "opacity var(--transition-smooth)" }} partition="persist:weather" allowpopups="false" />
             <ExternalViewButton location={location} />
           </>
