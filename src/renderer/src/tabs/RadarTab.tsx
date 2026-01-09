@@ -87,6 +87,7 @@ export const RadarTab: React.FC = () => {
           ref={webviewRef}
           src={url}
           onDidStopLoading={handleLoadStop}
+          partition="persist:dispatcher-radar"
           style={{
             width: '100%',
             height: '100%',

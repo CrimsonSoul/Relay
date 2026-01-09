@@ -95,7 +95,8 @@ async function createWindow() {
 
 app.whenReady().then(async () => {
   setupPermissions(session.defaultSession);
-  setupPermissions(session.fromPartition('persist:nwsradar'));
+  setupPermissions(session.fromPartition('persist:weather'));
+  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
   setupIpc();
   await createWindow();
   setupMaintenanceTasks(() => state.fileManager);
