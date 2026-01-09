@@ -10,7 +10,8 @@
     "allowpopups",
     "Csvg",
     "Crect",
-    "unmaximize"
+    "unmaximize",
+    "softprops"
   ],
   "ignorePaths": [
     "node_modules",
