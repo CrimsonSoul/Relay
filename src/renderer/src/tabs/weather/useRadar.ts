@@ -48,15 +48,10 @@ export function useRadar(location: Location | null) {
     webview.addEventListener("did-finish-load", handleDidFinishLoad);
     webview.addEventListener("did-fail-load", handleDidFailLoad);
 
-    const checkLoaded = setTimeout(() => {
-      webview.executeJavaScript("true").then(() => { if (!radarLoaded) { setRadarLoaded(true); if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current); } }).catch(() => {});
-    }, 2000);
-
     return () => {
       webview.removeEventListener("did-finish-load", handleDidFinishLoad);
       webview.removeEventListener("did-fail-load", handleDidFailLoad);
       if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current);
-      clearTimeout(checkLoaded);
     };
   }, [location]);
 
