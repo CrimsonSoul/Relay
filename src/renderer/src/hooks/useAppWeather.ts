@@ -53,12 +53,12 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
 
   // Restore Weather Location and Cached Data (Stale-while-revalidate)
   useEffect(() => {
-    // 1. Restore Location
+    // 1. Restore Location from standard secure storage
     const savedLocation = secureStorage.getItemSync<Location>("weather_location");
     if (savedLocation) {
       setWeatherLocation(savedLocation);
-    } else if (!deviceLocation.loading && deviceLocation.lat && deviceLocation.lon) {
-      // Fallback to Device Location
+    } else if (!deviceLocation.loading && deviceLocation.lat !== null && deviceLocation.lon !== null) {
+      // Fallback to Device Location from global context
       setWeatherLocation({
         latitude: deviceLocation.lat,
         longitude: deviceLocation.lon,
@@ -66,7 +66,7 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
       });
     }
 
-    // 2. Restore Cached Data (Stale-while-revalidate)
+    // 2. Restore cached weather data and alerts for SWR
     const cachedWeather = secureStorage.getItemSync<WeatherData>(WEATHER_CACHE_KEY);
     const cachedAlerts = secureStorage.getItemSync<WeatherAlert[]>(WEATHER_ALERTS_CACHE_KEY);
     
@@ -162,4 +162,3 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
     fetchWeather
   };
 }
-
