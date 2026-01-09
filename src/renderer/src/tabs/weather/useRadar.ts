@@ -26,15 +26,19 @@ export function useRadar(location: Location | null) {
 
     const handleDidFinishLoad = () => {
       if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current);
-      setRadarLoaded(true);
-      setRadarError(false);
-      webview.insertCSS(RADAR_INJECT_CSS).catch((err) => {
-        loggers.weather.error("Failed to inject radar CSS", { 
-          error: err.message, 
-          category: ErrorCategory.UI 
+      
+      // Delay setting loaded to true to allow radar tiles to actually render
+      setTimeout(() => {
+        setRadarLoaded(true);
+        setRadarError(false);
+        webview.insertCSS(RADAR_INJECT_CSS).catch((err) => {
+          loggers.weather.error("Failed to inject radar CSS", { 
+            error: err.message, 
+            category: ErrorCategory.UI 
+          });
         });
-      });
-      webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {});
+        webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {});
+      }, 1200);
     };
 
     const handleDidFailLoad = (event: any) => { 
