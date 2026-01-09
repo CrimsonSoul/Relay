@@ -6,14 +6,22 @@ import type { Location } from "./types";
 export function useRadar(location: Location | null) {
   const [radarLoaded, setRadarLoaded] = useState(false);
   const [radarError, setRadarError] = useState(false);
+  const [prevLocation, setPrevLocation] = useState(location);
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const radarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Immediate state reset during render when location changes to prevent flashing
+  if (location?.latitude !== prevLocation?.latitude || location?.longitude !== prevLocation?.longitude) {
+    setPrevLocation(location);
+    setRadarLoaded(false);
+    setRadarError(false);
+  }
 
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview || !location) return;
-    setRadarLoaded(false);
-    setRadarError(false);
+    
+    // Safety check in case render reset didn't catch it
     if (radarTimeoutRef.current) clearTimeout(radarTimeoutRef.current);
 
     const handleDidFinishLoad = () => {

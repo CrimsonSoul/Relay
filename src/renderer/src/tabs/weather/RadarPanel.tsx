@@ -40,7 +40,18 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
           <>
             {!radarLoaded && <RadarLoadingIndicator />}
             {/* eslint-disable-next-line react/no-unknown-property */}
-            <webview ref={webviewRef as any} src={getRadarUrl(location.latitude, location.longitude)} style={{ width: "100%", height: "100%", border: "none", opacity: radarLoaded ? 1 : 0, transition: "opacity var(--transition-smooth)" }} partition="persist:weather" />
+            <webview 
+              ref={webviewRef as any} 
+              src={getRadarUrl(location.latitude, location.longitude)} 
+              style={{ 
+                width: "100%", 
+                height: "100%", 
+                border: "none", 
+                opacity: radarLoaded ? 1 : 0, 
+                transition: radarLoaded ? "opacity var(--transition-smooth)" : "none" 
+              }} 
+              partition="persist:weather" 
+            />
             {radarLoaded && <ExternalViewButton location={location} />}
           </>
         ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
