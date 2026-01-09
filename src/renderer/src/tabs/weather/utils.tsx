@@ -1,5 +1,9 @@
-export const getRadarUrl = (lat: number, lon: number): string =>
-  `https://www.rainviewer.com/map.html?loc=${lat.toFixed(4)},${lon.toFixed(4)},6&theme=dark&color=1&opacity=0.7`;
+export const getRadarUrl = (lat: any, lon: any): string => {
+  const nLat = Number(lat);
+  const nLon = Number(lon);
+  if (isNaN(nLat) || isNaN(nLon)) return "";
+  return `https://www.rainviewer.com/map.html?loc=${nLat.toFixed(4)},${nLon.toFixed(4)},6&theme=dark&color=1&opacity=0.7`;
+};
 
 export { getWeatherIcon } from "./WeatherIcons";
 

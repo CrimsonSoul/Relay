@@ -60,8 +60,8 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
     } else if (!deviceLocation.loading && deviceLocation.lat !== null && deviceLocation.lon !== null) {
       // Fallback to Device Location from global context
       setWeatherLocation({
-        latitude: deviceLocation.lat,
-        longitude: deviceLocation.lon,
+        latitude: Number(deviceLocation.lat),
+        longitude: Number(deviceLocation.lon),
         name: deviceLocation.city ? `${deviceLocation.city}, ${deviceLocation.region}` : 'Current Location'
       });
     }
