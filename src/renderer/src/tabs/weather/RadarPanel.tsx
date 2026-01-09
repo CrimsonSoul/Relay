@@ -17,8 +17,7 @@ const RadarLoadingIndicator = () => (
 
 const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
   <Tooltip content="Open radar in browser for a larger view" position="top">
-    {/* @ts-expect-error - window.api is injected by Electron preload */}
-    <button onClick={() => window.api?.openExternal?.(getRadarUrl(location.latitude, location.longitude))}
+    <button onClick={() => globalThis.window.api?.openExternal?.(getRadarUrl(location.latitude, location.longitude))}
       style={{ position: "absolute", bottom: "8px", left: "8px", background: "rgba(0, 0, 0, 0.6)", padding: "6px 12px", borderRadius: "12px", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", gap: "8px", color: "#ffffff", textDecoration: "none", fontSize: "11px", fontWeight: 600, letterSpacing: "0.02em", cursor: "pointer", zIndex: 30, transition: "all 0.2s ease", boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)" }}
       onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)"; e.currentTarget.style.transform = "translateY(-1px)"; }}
       onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"; e.currentTarget.style.transform = "translateY(0)"; }}>
@@ -40,7 +39,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         {location ? (
           <>
             {!radarLoaded && <RadarLoadingIndicator />}
-            {/* @ts-expect-error - partition is an Electron webview-specific attribute */}
+            {/* eslint-disable-next-line react/no-unknown-property */}
             <webview ref={webviewRef as any} src={getRadarUrl(location.latitude, location.longitude)} style={{ width: "100%", height: "100%", border: "none", opacity: radarLoaded ? 1 : 0, transition: "opacity var(--transition-smooth)" }} partition="persist:weather" />
             <ExternalViewButton location={location} />
           </>
