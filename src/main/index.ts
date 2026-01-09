@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, session, dialog } from 'electron';
 import { join } from 'node:path';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
@@ -7,6 +7,12 @@ import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions
 
 // Validate environment early
 validateEnv();
+loggers.main.info('Startup Info:', { 
+  arch: process.arch, 
+  platform: process.platform,
+  electron: process.versions.electron,
+  node: process.versions.node
+});
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 
 // Windows-specific optimizations
@@ -91,7 +97,12 @@ async function createWindow() {
   state.mainWindow.on('closed', () => { state.mainWindow = null; state.fileManager = null; });
 }
 
-// Auth interception is set up in appState.ts to avoid circular dependency
+// Catch errors during early startup
+process.on('uncaughtException', (error) => {
+  loggers.main.error('Uncaught Exception during startup', { error });
+  dialog.showErrorBox('Startup Error', error.message || 'The application failed to start.');
+  process.exit(1);
+});
 
 // App-level global listeners (Synchronous)
 app.on('window-all-closed', () => {
@@ -99,19 +110,26 @@ app.on('window-all-closed', () => {
 });
 
 // Main process initialization
-try {
-  await app.whenReady();
-  setupPermissions(session.defaultSession);
-  setupPermissions(session.fromPartition('persist:weather'));
-  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-  setupIpc();
-  await createWindow();
-  setupMaintenanceTasks(() => state.fileManager);
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-  });
-} catch (error) {
-  loggers.main.error('Critical startup failure', { error });
+app.whenReady().then(async () => {
+  try {
+    loggers.main.info('App ready, initializing...');
+    setupPermissions(session.defaultSession);
+    setupPermissions(session.fromPartition('persist:weather'));
+    setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+    setupIpc();
+    await createWindow();
+    setupMaintenanceTasks(() => state.fileManager);
+    
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
+  } catch (error: any) {
+    loggers.main.error('Critical startup failure in whenReady', { error });
+    dialog.showErrorBox('Startup Error', error.message || 'Failed to initialize the application.');
+    process.exit(1);
+  }
+}).catch((error) => {
+  loggers.main.error('Initialization failed before whenReady', { error });
+  dialog.showErrorBox('Startup Error', 'The application failed to start correctly.');
   process.exit(1);
-}
+});
