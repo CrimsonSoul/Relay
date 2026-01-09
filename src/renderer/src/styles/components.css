@@ -1,10 +1,10 @@
-/* Utility Classes - Attio Style */
+/* Utility Classes */
 .glass-panel {
   background: var(--color-bg-surface-elevated);
   border: var(--border-subtle);
 }
 
-/* Enhanced Tactile Button - Attio Style - Compact */
+/* Enhanced Tactile Button - Compact */
 .tactile-button {
   position: relative;
   display: inline-flex;

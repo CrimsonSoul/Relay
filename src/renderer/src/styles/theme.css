@@ -33,7 +33,7 @@
   --border-medium: 1px solid rgba(255, 255, 255, 0.12);
   --border-strong: 1px solid rgba(255, 255, 255, 0.16);
 
-  /* Shadows - Elegant Attio Style */
+  /* Shadows - Elegant Design */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1),
     0 1px 2px rgba(0, 0, 0, 0.06);
@@ -78,7 +78,7 @@
   --radius-pill: 16px;
   --radius-round: 50%;
 
-  /* Transitions - Smooth Attio Cubic Bezier Curves */
+  /* Transitions - Smooth Cubic Bezier Curves */
   --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-smooth: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -95,7 +95,7 @@
   box-sizing: border-box;
 }
 
-/* Refined Minimalist Scrollbar - Attio Style - Auto Hide */
+/* Refined Minimalist Scrollbar - Auto Hide */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
