@@ -76,19 +76,19 @@ export function desanitizeField(value: string | null | undefined): string {
 export function validateEncoding(content: string): boolean {
     // Check for null bytes (indicates binary or corrupted file)
     if (content.includes('\x00')) {
-        console.warn('[CSV] Null bytes detected - possible binary or corrupted file');
+        loggers.fileManager.warn('[CSV] Null bytes detected - possible binary or corrupted file');
         return false;
     }
 
     // Check for replacement character (indicates encoding issues)
     if (content.includes('\uFFFD')) {
-        console.warn('[CSV] Replacement character detected - possible encoding issue');
+        loggers.fileManager.warn('[CSV] Replacement character detected - possible encoding issue');
         return false;
     }
 
     // Check for private use area characters (suspicious)
     if (/[\uE000-\uF8FF]/.test(content)) {
-        console.warn('[CSV] Private use area characters detected');
+        loggers.fileManager.warn('[CSV] Private use area characters detected');
         return false;
     }
 
@@ -118,7 +118,7 @@ export function sanitizeCsvContent(content: string): string {
 export function parseCsvAsync(contents: string): Promise<CsvRow[]> {
     // Validate encoding first
     if (!validateEncoding(contents)) {
-        console.warn('[CSV] Encoding validation failed, proceeding with sanitization');
+        loggers.fileManager.warn('[CSV] Encoding validation failed, proceeding with sanitization');
     }
 
     // Sanitize content before parsing

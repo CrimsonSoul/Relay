@@ -172,6 +172,7 @@ export type BridgeAPI = {
   removeMaximizeListener: () => void;
   generateDummyData: () => Promise<boolean>;
   getIpLocation: () => Promise<IpLocationResult>;
+  logToMain: (entry: { level: string; module: string; message: string; data?: any }) => void;
 };
 
 export const IPC_CHANNELS = {
@@ -221,6 +222,7 @@ export const IPC_CHANNELS = {
   SEARCH_LOCATION: "weather:search",
   GET_WEATHER_ALERTS: "weather:alerts",
   GET_IP_LOCATION: "location:ip",
+  LOG_TO_MAIN: "logger:toMain",
 } as const;
 
 export type BridgeEvent = {

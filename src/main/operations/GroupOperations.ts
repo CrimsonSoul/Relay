@@ -9,6 +9,7 @@ import { existsSync } from "fs";
 import type { GroupMap } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { FileContext, GROUP_FILES } from "./FileContext";
+import { loggers } from "../logger";
 
 export async function parseGroups(ctx: FileContext): Promise<GroupMap> {
   const path = ctx.resolveExistingFile(GROUP_FILES);
@@ -30,7 +31,7 @@ export async function parseGroups(ctx: FileContext): Promise<GroupMap> {
       groups[String(groupName).trim()] = emails;
     }
     return groups;
-  } catch (e) { console.error("Error parsing groups:", e); return {}; }
+  } catch (e) { loggers.fileManager.error("Error parsing groups:", { error: e }); return {}; }
 }
 
 export async function addGroup(ctx: FileContext, groupName: string): Promise<boolean> {
@@ -49,7 +50,7 @@ export async function addGroup(ctx: FileContext, groupName: string): Promise<boo
     await ctx.writeAndEmit(path, csvOutput);
     ctx.performBackup("addGroup");
     return true;
-  } catch (e) { console.error("[GroupOperations] addGroup error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[GroupOperations] addGroup error:", { error: e }); return false; }
 }
 
 export async function updateGroupMembership(ctx: FileContext, groupName: string, email: string, remove: boolean): Promise<boolean> {
@@ -80,7 +81,7 @@ export async function updateGroupMembership(ctx: FileContext, groupName: string,
     await ctx.writeAndEmit(path, csvOutput);
     ctx.performBackup("updateGroupMembership");
     return true;
-  } catch (e) { console.error("[GroupOperations] updateGroupMembership error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[GroupOperations] updateGroupMembership error:", { error: e }); return false; }
 }
 
 export async function removeGroup(ctx: FileContext, groupName: string): Promise<boolean> {
@@ -98,7 +99,7 @@ export async function removeGroup(ctx: FileContext, groupName: string): Promise<
     await ctx.writeAndEmit(path, csvOutput);
     ctx.performBackup("removeGroup");
     return true;
-  } catch (e) { console.error("[GroupOperations] removeGroup error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[GroupOperations] removeGroup error:", { error: e }); return false; }
 }
 
 export async function renameGroup(ctx: FileContext, oldName: string, newName: string): Promise<boolean> {
@@ -120,5 +121,5 @@ export async function renameGroup(ctx: FileContext, oldName: string, newName: st
     await ctx.writeAndEmit(path, csvOutput);
     ctx.performBackup("renameGroup");
     return true;
-  } catch (e) { console.error("[GroupOperations] renameGroup error:", e); return false; }
+  } catch (e) { loggers.fileManager.error("[GroupOperations] renameGroup error:", { error: e }); return false; }
 }
