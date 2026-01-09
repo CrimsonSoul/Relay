@@ -32,7 +32,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
             {/* eslint-disable react/no-unknown-property */}
             <webview 
               ref={webviewRef as any} 
-              key={`${location.latitude}-${location.longitude}`} 
+              key={`${location.latitude.toFixed(2)}-${location.longitude.toFixed(2)}`} 
               src={getRadarUrl(location.latitude, location.longitude)} 
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
               style={{ width: "100%", height: "100%", border: "none" }} 

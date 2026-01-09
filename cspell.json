@@ -11,7 +11,11 @@
     "Csvg",
     "Crect",
     "unmaximize",
-    "softprops"
+    "softprops",
+    "windspeed",
+    "winddirection",
+    "backgrounding",
+    "nosniff"
   ],
   "ignorePaths": [
     "node_modules",
