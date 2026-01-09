@@ -7,10 +7,10 @@ import { useRadar } from "./useRadar";
 interface RadarPanelProps { location: Location | null }
 
 const RadarLoadingIndicator = () => (
-  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#0f0f12", zIndex: 10 }}>
+  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "#0f0f12", zIndex: 25, borderRadius: "12px" }}>
     <div style={{ textAlign: "center", color: "var(--color-text-tertiary)" }}>
       <div className="animate-spin" style={{ width: "32px", height: "32px", border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "var(--color-accent-blue)", borderRadius: "50%", margin: "0 auto 12px" }} />
-      Loading radar...
+      <div style={{ fontSize: "12px", fontWeight: 500, letterSpacing: "0.02em" }}>Loading radar...</div>
     </div>
   </div>
 );
@@ -35,13 +35,13 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
       <div style={containerStyle}>
-        <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 20 }} />
+        <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 40 }} />
         {location ? (
           <>
             {!radarLoaded && <RadarLoadingIndicator />}
             {/* eslint-disable-next-line react/no-unknown-property */}
             <webview ref={webviewRef as any} src={getRadarUrl(location.latitude, location.longitude)} style={{ width: "100%", height: "100%", border: "none", opacity: radarLoaded ? 1 : 0, transition: "opacity var(--transition-smooth)" }} partition="persist:weather" />
-            <ExternalViewButton location={location} />
+            {radarLoaded && <ExternalViewButton location={location} />}
           </>
         ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
       </div>
