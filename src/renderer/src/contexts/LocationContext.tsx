@@ -54,8 +54,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         
         if (data) {
           setState({
-            lat: data.lat,
-            lon: data.lon,
+            lat: Number(data.lat),
+            lon: Number(data.lon),
             city: data.city,
             region: data.region,
             country: data.country,
