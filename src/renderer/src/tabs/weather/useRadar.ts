@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { RADAR_INJECT_CSS, RADAR_INJECT_JS } from "./utils";
-import { loggers, ErrorCategory } from "../../utils/logger";
+import { loggers } from "../../utils/logger";
 import type { Location } from "./types";
 
 export function useRadar(location: Location | null) {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WeatherAlert } from "@shared/ipc";
+import { WeatherAlert } from "../../../shared/ipc";
+import { LocationState } from '../contexts/LocationContext';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers, ErrorCategory } from '../utils/logger';
 
@@ -44,7 +45,7 @@ interface Location {
  * @param deviceLocation - Current GPS coordinates from device context
  * @param showToast - Notification callback for weather alerts
  */
-export function useAppWeather(deviceLocation: any, showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
+export function useAppWeather(deviceLocation: LocationState, showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
   const [weatherLocation, setWeatherLocation] = useState<Location | null>(null);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
@@ -54,9 +55,17 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
   // Restore Weather Location and Cached Data (Stale-while-revalidate)
   useEffect(() => {
     // 1. Restore Location from standard secure storage
-    const savedLocation = secureStorage.getItemSync<Location>("weather_location");
+    const savedLocation = secureStorage.getItemSync<any>("weather_location");
     if (savedLocation) {
-      setWeatherLocation(savedLocation);
+      // Defensively handle both 'latitude' (new) and 'lat' (legacy) keys
+      const sanitized: Location = {
+        latitude: Number(savedLocation.latitude ?? savedLocation.lat),
+        longitude: Number(savedLocation.longitude ?? savedLocation.lon),
+        name: savedLocation.name || 'Saved Location'
+      };
+      if (!isNaN(sanitized.latitude) && !isNaN(sanitized.longitude)) {
+        setWeatherLocation(sanitized);
+      }
     } else if (!deviceLocation.loading && deviceLocation.lat !== null && deviceLocation.lon !== null) {
       // Fallback to Device Location from global context
       setWeatherLocation({
@@ -89,8 +98,8 @@ export function useAppWeather(deviceLocation: any, showToast: (msg: string, type
       if (!silent) setWeatherLoading(true);
       try {
         const [wData, aData] = await Promise.all([
-          window.api.getWeather(lat, lon),
-          window.api.getWeatherAlerts(lat, lon).catch(() => []),
+          globalThis.window.api.getWeather(lat, lon),
+          globalThis.window.api.getWeatherAlerts(lat, lon).catch(() => []),
         ]);
 
         setWeatherData(wData);

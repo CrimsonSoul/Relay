@@ -35,8 +35,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     // Helper to normalize GeolocationPosition
     const handleGpsSuccess = (pos: GeolocationPosition) => {
       setState({
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
+        lat: Number(pos.coords.latitude.toFixed(4)),
+        lon: Number(pos.coords.longitude.toFixed(4)),
         city: null, 
         region: null,
         country: null,

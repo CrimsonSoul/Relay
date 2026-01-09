@@ -1,5 +1,5 @@
 import { app, BrowserWindow, session } from 'electron';
-import { join } from 'path';
+import { join } from 'node:path';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
 import { validateEnv } from './env';
@@ -93,14 +93,13 @@ async function createWindow() {
 
 // Auth interception is set up in appState.ts to avoid circular dependency
 
-app.whenReady().then(async () => {
-  setupPermissions(session.defaultSession);
-  setupPermissions(session.fromPartition('persist:weather'));
-  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-  setupIpc();
-  await createWindow();
-  setupMaintenanceTasks(() => state.fileManager);
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
-});
+await app.whenReady();
+setupPermissions(session.defaultSession);
+setupPermissions(session.fromPartition('persist:weather'));
+setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+setupIpc();
+await createWindow();
+setupMaintenanceTasks(() => state.fileManager);
+app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
