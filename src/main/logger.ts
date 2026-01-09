@@ -90,7 +90,6 @@ class Logger {
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.sessionStartTime = Date.now();
-    this.setupGlobalErrorHandlers();
   }
 
   /**
@@ -145,35 +144,6 @@ class Logger {
     }
   }
 
-  private setupGlobalErrorHandlers(): void {
-    // Catch uncaught exceptions
-    process.on('uncaughtException', (error: Error) => {
-      this.fatal('Process', 'Uncaught Exception', {
-        error: error.message,
-        stack: error.stack,
-        category: ErrorCategory.UNKNOWN
-      });
-      // Don't exit immediately - let the log flush
-      setTimeout(() => process.exit(1), 1000);
-    });
-
-    // Catch unhandled promise rejections
-    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-      this.error('Process', 'Unhandled Promise Rejection', {
-        reason: reason?.message || reason,
-        stack: reason?.stack,
-        category: ErrorCategory.UNKNOWN
-      });
-    });
-
-    // Log warnings
-    process.on('warning', (warning: Error) => {
-      this.warn('Process', 'Process Warning', {
-        name: warning.name,
-        message: warning.message,
-        stack: warning.stack
-      });
-    });
   }
 
   private formatTimestamp(): string {
