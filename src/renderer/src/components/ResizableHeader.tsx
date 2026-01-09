@@ -52,6 +52,9 @@ export const ResizableHeader = ({
 
     return (
         <div
+            role="button"
+            tabIndex={0}
+            aria-label={`Sort by ${children}${sortDirection ? `, currently sorted ${sortDirection === 'asc' ? 'ascending' : 'descending'}` : ''}`}
             style={{
                 width: width,
                 flex: 'none',
@@ -63,6 +66,12 @@ export const ResizableHeader = ({
                 paddingRight: '16px' // Reserve space for resize handle
             }}
             onClick={onSort}
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSort();
+                }
+            }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
@@ -88,6 +97,10 @@ export const ResizableHeader = ({
 
             {/* Resize Handle Area - Enhanced */}
             <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize column"
+                tabIndex={0}
                 data-resize-handle="true"
                 style={{
                     position: 'absolute',
@@ -109,6 +122,19 @@ export const ResizableHeader = ({
                     startX.current = e.clientX;
                     startWidth.current = width;
                     document.body.style.cursor = 'col-resize';
+                }}
+                onKeyDown={(e) => {
+                    // Allow keyboard-based resizing with arrow keys
+                    if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const newWidth = Math.max(minWidth, width - 10);
+                        onResize(newWidth);
+                    } else if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onResize(width + 10);
+                    }
                 }}
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
