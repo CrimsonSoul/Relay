@@ -1,0 +1,133 @@
+/* ===========================
+   Reusable Utility Classes
+   =========================== */
+
+/* Card base styles */
+.card-base {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.card-base:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Accent strip for left border */
+.accent-strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  opacity: 0.6;
+  border-radius: 16px 0 0 16px;
+}
+
+/* Smooth transition utility */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* GPU-accelerated transitions */
+.gpu-accelerated {
+  will-change: transform, opacity;
+  transform: translateZ(0);
+}
+
+/* Text truncation */
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Flex utilities */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Badge/pill styles */
+.badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Header title styles */
+.tab-title {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.tab-title.collapsed {
+  font-size: 20px;
+}
+
+.tab-subtitle {
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  font-weight: 500;
+  margin: 8px 0 0 0;
+}
+
+/* Hover Background Utility */
+.hover-bg {
+  transition: background-color var(--transition-fast);
+}
+
+.hover-bg:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+.hover-bg:active {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Interactive Element Base */
+.interactive {
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+
+.interactive:hover {
+  transform: translateY(-0.5px);
+}
+
+.server-card-hover:hover,
+.contact-card-hover:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.spillover-badge {
+  opacity: 0.5;
+  margin-left: 4px;
+  cursor: pointer;
+  text-decoration: underline dotted rgba(255, 255, 255, 0.2);
+  transition: opacity 0.2s;
+}
+
+.spillover-badge:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
+}

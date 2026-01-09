@@ -20,7 +20,11 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
     useEffect(() => {
         if (isVisible && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect();
+            // Retrieve the first child element if it exists; otherwise fall back to the wrapper.
+            // This ensures we get the correct bounding box even if the wrapper has collapsed 
+            // due to an absolutely positioned child (e.g. SidebarToggleHandle).
+            const target = triggerRef.current.firstElementChild || triggerRef.current;
+            const rect = target.getBoundingClientRect();
             const scrollY = window.scrollY;
             const scrollX = window.scrollX;
 

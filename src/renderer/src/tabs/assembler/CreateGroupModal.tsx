@@ -37,24 +37,27 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Create Group" width="400px">
       <form onSubmit={handleCreateGroup}>
-        <label
-          style={{
-            display: "block",
-            fontSize: "14px",
-            color: "var(--color-text-secondary)",
-            marginBottom: "6px",
-          }}
-        >
-          Group Name
-        </label>
         <Input
+          label="Group Name"
           autoFocus
+          variant="vivid"
           value={newGroupName}
           onChange={(e) => setNewGroupName(e.target.value)}
           placeholder="e.g. Marketing"
           required
-          style={{ marginBottom: "16px" }}
+          style={{ marginBottom: "24px" }}
         />
+        <div
+          style={{
+            fontSize: "12px",
+            fontWeight: 800,
+            color: "var(--color-text-tertiary)",
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+          }}
+        >
+          Quick Add
+        </div>
         <div
           style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}
         >

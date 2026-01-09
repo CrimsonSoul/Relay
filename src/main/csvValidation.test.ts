@@ -91,14 +91,24 @@ describe('isValidPhone', () => {
   });
 
   // Invalid phones
+  // Invalid phones
   it('rejects strings with too few digits', () => {
-    expect(isValidPhone('123')).toBe(false);
-    expect(isValidPhone('12-34-56')).toBe(false);
+    expect(isValidPhone('12')).toBe(false);
     expect(isValidPhone('abc')).toBe(false);
   });
 
   it('rejects strings with too many digits', () => {
     expect(isValidPhone('1234567890123456')).toBe(false); // 16 digits
+  });
+
+  it('accepts short internal extensions', () => {
+    expect(isValidPhone('123')).toBe(true);
+    expect(isValidPhone('123456')).toBe(true);
+  });
+
+  it('accepts multiple comma-separated numbers', () => {
+    expect(isValidPhone('123-456-7890, 999')).toBe(true);
+    expect(isValidPhone('123-456-7890, 987-654-3210')).toBe(true);
   });
 
   it('rejects strings with invalid characters', () => {

@@ -16,4 +16,3 @@ export { WeatherAlertCard } from "./WeatherAlertCard";
 export { HourlyForecast } from "./HourlyForecast";
 export { DailyForecast } from "./DailyForecast";
 export { RadarPanel } from "./RadarPanel";
-export { LocationBar } from "./LocationBar";

@@ -131,10 +131,10 @@ export const SettingsModal: React.FC<Props> = ({
                     <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                         Data Management
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                        <TactileButton onClick={handleImportGroupsClick}>Import Groups...</TactileButton>
-                        <TactileButton onClick={handleImportContactsClick}>Import Contacts...</TactileButton>
-                        <TactileButton onClick={handleImportServersClick} style={{ gridColumn: 'span 2', justifyContent: 'center' }}>Import Servers...</TactileButton>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <TactileButton onClick={handleImportGroupsClick} style={{ justifyContent: 'center' }}>Import Groups...</TactileButton>
+                        <TactileButton onClick={handleImportContactsClick} style={{ justifyContent: 'center' }}>Import Contacts...</TactileButton>
+                        <TactileButton onClick={handleImportServersClick} style={{ justifyContent: 'center' }}>Import Servers...</TactileButton>
                     </div>
                 </div>
 
@@ -147,11 +147,13 @@ export const SettingsModal: React.FC<Props> = ({
                     <div style={{
                         fontSize: '12px',
                         color: 'var(--color-text-secondary)',
-                        padding: '8px 12px',
+                        padding: '10px 14px',
                         background: 'rgba(0,0,0,0.2)',
-                        border: 'var(--border-subtle)',
-                        borderRadius: '6px',
-                        wordBreak: 'break-all',
+                        border: '1px solid var(--border-subtle)',
+                        borderRadius: '8px',
+                        wordBreak: 'break-word',
+                        overflowWrap: 'anywhere',
+                        lineHeight: '1.5',
                         fontFamily: 'var(--font-family-mono)'
                     }}>
                         <DataPathDisplay key={pathKey} />

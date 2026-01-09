@@ -32,7 +32,7 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
               now.getMonth(),
               now.getDate(),
               currentHour
-            ) && i < 24
+            )
         );
       })
       .slice(0, 12);

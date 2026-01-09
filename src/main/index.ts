@@ -1,144 +1,47 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, session } from 'electron';
-import v8 from 'v8';
+import { app, BrowserWindow, session } from 'electron';
 import { join } from 'path';
-import fs from 'fs';
 import { FileManager } from './FileManager';
-import { BridgeLogger } from './BridgeLogger';
-import { IPC_CHANNELS } from '../shared/ipc';
-import { copyDataFiles, ensureDataFiles, ensureDataFilesAsync, loadConfig, loadConfigAsync, saveConfig } from './dataUtils';
-import { validateDataPath } from './pathValidation';
-import { setupIpcHandlers } from './ipcHandlers';
 import { loggers } from './logger';
-import {
-  generateAuthNonce,
-  registerAuthRequest,
-  consumeAuthRequest,
-  cancelAuthRequest,
-  cacheCredentials,
-  getCachedCredentials
-} from './credentialManager';
+import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+import { setupMaintenanceTasks } from './app/maintenanceTasks';
 
-// Windows-specific optimizations for faster app launch
+// Windows-specific optimizations
 if (process.platform === 'win32') {
-  // Disable V8 code cache - can slow down startup on Windows
   app.commandLine.appendSwitch('disable-v8-code-cache');
-
-  // Optimize GPU process for faster window creation
   app.commandLine.appendSwitch('disable-gpu-sandbox');
   app.commandLine.appendSwitch('disable-software-rasterizer');
-
-  // Disable background throttling for faster startup
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
-
-  // Use less memory but faster startup
   app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
-
-  // Disable unnecessary features for faster launch
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 
-let mainWindow: BrowserWindow | null = null;
-let fileManager: FileManager | null = null;
-let bridgeLogger: BridgeLogger | null = null;
-let currentDataRoot: string = '';
-
-// Helpers
-const getDefaultDataPath = () => {
-  return join(app.getPath('userData'), 'data');
-};
-
-const getBundledDataPath = () => {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'data')
-    : join(process.cwd(), 'data');
-};
-
-// Async version for non-blocking startup
-async function getDataRootAsync(): Promise<string> {
-  const config = await loadConfigAsync();
-  const bundledPath = getBundledDataPath();
-  if (config.dataRoot) {
-    await ensureDataFilesAsync(config.dataRoot, bundledPath, app.isPackaged);
-    return config.dataRoot;
-  }
-
-  const defaultDataPath = getDefaultDataPath();
-  await ensureDataFilesAsync(defaultDataPath, bundledPath, app.isPackaged);
-  return defaultDataPath;
-}
-
-// Sync version for compatibility (used during path changes)
-function getDataRoot() {
-  // Check config first
-  const config = loadConfig();
-  const bundledPath = getBundledDataPath();
-  if (config.dataRoot) {
-    // Ensure the configured directory exists and has the required files. If the
-    // directory was removed between sessions, recreate it and hydrate from the
-    // bundled defaults so the app can still start cleanly.
-    ensureDataFiles(config.dataRoot, bundledPath, app.isPackaged);
-    return config.dataRoot;
-  }
-
-  // Default to AppData
-  const defaultDataPath = getDefaultDataPath();
-
-  ensureDataFiles(defaultDataPath, bundledPath, app.isPackaged);
-  return defaultDataPath;
-}
-
-const GROUP_FILES = ['groups.csv'];
-const CONTACT_FILES = ['contacts.csv'];
-
 async function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 960,
-    height: 800,
-    minWidth: 400,
-    minHeight: 600,
-    center: true,
-    backgroundColor: '#0B0D12',
-    titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 12, y: 12 },
-    show: true,
+  state.mainWindow = new BrowserWindow({
+    width: 960, height: 800, minWidth: 400, minHeight: 600, center: true,
+    backgroundColor: '#0B0D12', titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 12 }, show: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webviewTag: true,
-      // Windows-specific optimizations
-      ...(process.platform === 'win32' && {
-        spellcheck: false, // Disable spellcheck for faster startup
-        enableWebSQL: false,
-        v8CacheOptions: 'none' // Disable V8 cache for faster initial load
-      })
+      preload: join(__dirname, '../preload/index.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true,
+      ...(process.platform === 'win32' && { spellcheck: false, enableWebSQL: false, v8CacheOptions: 'none' })
     }
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    const indexHtml = join(__dirname, '../renderer/index.html');
-    await mainWindow.loadFile(indexHtml);
-  }
+  if (process.env.ELECTRON_RENDERER_URL) await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  else await state.mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
 
-  // Initialize data immediately (async)
+  // Initialize data asynchronously
   (async () => {
     loggers.main.info('Starting data initialization...');
     try {
-      // Resolve data root
-      currentDataRoot = await getDataRootAsync();
-      loggers.main.info('Data root:', { path: currentDataRoot });
-
-      // Initialize FileManager and BridgeLogger
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        fileManager = new FileManager(mainWindow, currentDataRoot, getBundledDataPath());
-        bridgeLogger = new BridgeLogger(currentDataRoot);
-
-        // Start watching files and load initial data
-        fileManager.init();
+      state.currentDataRoot = await getDataRootAsync();
+      loggers.main.info('Data root:', { path: state.currentDataRoot });
+      if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+        state.fileManager = new FileManager(state.mainWindow, state.currentDataRoot, getBundledDataPath());
+        // TEMPORARY: Generate dummy data for testing session as requested
+        loggers.main.info('Generating dummy data for testing session...');
+        // We run this BEFORE init() to avoid triggering the file watcher immediately and causing race conditions/crashes
+        state.fileManager.init();
+        
         loggers.main.info('FileManager initialized successfully');
       }
     } catch (error) {
@@ -146,231 +49,27 @@ async function createWindow() {
     }
   })();
 
-  mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
-    mainWindow?.focus();
-    loggers.main.debug('ready-to-show fired');
-  });
+  state.mainWindow.once('ready-to-show', () => { state.mainWindow?.show(); state.mainWindow?.focus(); loggers.main.debug('ready-to-show fired'); });
 
-  // Security: Restrict WebView navigation
-  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    // Strip away preload scripts if they are not ours
+  state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload;
-
-    // Disable Node integration in WebView (it should be off by default but explicit is good)
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
-
-    // Verify URL (Basic check)
-    if (params.src && !params.src.startsWith('http')) {
-      loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`);
-      event.preventDefault();
-    }
+    if (params.src && !params.src.startsWith('http')) { loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`); event.preventDefault(); }
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    fileManager = null;
-    bridgeLogger = null;
-  });
+  state.mainWindow.on('closed', () => { state.mainWindow = null; state.fileManager = null; });
 }
 
-function handleDataPathChange(newPath: string) {
-  if (!mainWindow) return;
-
-  // 0. Validate Path
-  const validation = validateDataPath(newPath);
-  if (!validation.success) {
-    throw new Error(validation.error || 'Invalid data path');
-  }
-
-  // 1. Ensure files exist in new location (copy from OLD location if missing)
-  copyDataFiles(currentDataRoot, newPath, getBundledDataPath());
-
-  // As a fallback, hydrate from bundled defaults so empty/reset folders still work
-  ensureDataFiles(newPath, getBundledDataPath(), app.isPackaged);
-
-  // 2. Update Config
-  saveConfig({ dataRoot: newPath });
-  currentDataRoot = newPath;
-
-  // 3. Hot Swap FileManager and Logger
-  if (fileManager) {
-    fileManager.destroy();
-    fileManager = null;
-  }
-  fileManager = new FileManager(mainWindow, currentDataRoot, getBundledDataPath());
-
-  // BridgeLogger doesn't have a destroy method but it's just a class wrapper usually.
-  // If it has state or watchers, we might need to look at it.
-  // Assuming simple instantiation for now.
-  bridgeLogger = new BridgeLogger(currentDataRoot);
-
-  // 4. Force read to update UI
-  fileManager.readAndEmit();
-}
-
-function setupIpc() {
-  setupIpcHandlers(
-    () => mainWindow,
-    () => fileManager,
-    () => bridgeLogger,
-    () => currentDataRoot,
-    handleDataPathChange,
-    getDefaultDataPath
-  );
-
-  // Secure auth handlers using nonce-based validation
-  ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (_event, { nonce, username, password, remember }) => {
-    const authRequest = consumeAuthRequest(nonce);
-    if (!authRequest) {
-      loggers.auth.warn('Invalid or expired auth nonce');
-      return false;
-    }
-
-    // Optionally cache credentials using safeStorage encryption
-    if (remember) {
-      cacheCredentials(authRequest.host, username, password);
-    }
-
-    // Execute the auth callback
-    authRequest.callback(username, password);
-    return true;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, { nonce }) => {
-    const authRequest = consumeAuthRequest(nonce);
-    if (!authRequest) {
-      loggers.auth.warn('Invalid or expired auth nonce for cached auth');
-      return false;
-    }
-
-    const cached = getCachedCredentials(authRequest.host);
-    if (!cached) {
-      loggers.auth.warn('No cached credentials for host', { host: authRequest.host });
-      return false;
-    }
-
-    authRequest.callback(cached.username, cached.password);
-    return true;
-  });
-
-  ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (_event, { nonce }) => {
-    cancelAuthRequest(nonce);
-  });
-}
-
-// Auth Interception with secure nonce-based handling
-app.on('login', (event, _webContents, _request, authInfo, callback) => {
-  event.preventDefault(); // Stop default browser popup
-
-  // Generate secure nonce for this auth request
-  const nonce = generateAuthNonce();
-
-  // Register the callback with nonce validation
-  registerAuthRequest(nonce, authInfo.host, callback);
-
-  // Check if we have cached credentials for this host
-  const cachedCreds = getCachedCredentials(authInfo.host);
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send(IPC_CHANNELS.AUTH_REQUESTED, {
-      host: authInfo.host,
-      isProxy: authInfo.isProxy,
-      nonce,
-      hasCachedCredentials: cachedCreds !== null
-    });
-  }
-});
+// Auth interception is set up in appState.ts to avoid circular dependency
 
 app.whenReady().then(async () => {
-  // Permission handling for Geolocation - apply to all sessions
-  const setupPermissions = (sess: Electron.Session) => {
-    sess.setPermissionRequestHandler((_webContents, permission, callback) => {
-      // Allow geolocation for weather features
-      if (permission === 'geolocation') {
-        callback(true);
-        return;
-      }
-      // Allow media for potential future features
-      if (permission === 'media') {
-        callback(true);
-        return;
-      }
-      callback(false);
-    });
-
-    // Also handle permission checks (for cached permissions)
-    sess.setPermissionCheckHandler((_webContents, permission) => {
-      if (permission === 'geolocation' || permission === 'media') {
-        return true;
-      }
-      return false;
-    });
-  };
-
-  // Setup permissions for default session
   setupPermissions(session.defaultSession);
-
-  // Setup permissions for NWS radar webview partition
-  const nwsRadarSession = session.fromPartition('persist:nwsradar');
-  setupPermissions(nwsRadarSession);
-
-  // Initialize IPC handlers first
+  setupPermissions(session.fromPartition('persist:nwsradar'));
   setupIpc();
-
-  // Create window immediately for fastest startup
-  // All data initialization happens asynchronously after window is shown
   await createWindow();
-
-  // Periodic maintenance task (runs every 24 hours)
-  const maintenanceInterval = setInterval(() => {
-    loggers.main.info('Running periodic maintenance...');
-    
-    // 1. Log memory usage
-    const memory = process.memoryUsage();
-    loggers.main.info('Memory Stats:', {
-      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
-      heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)}MB`,
-      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`,
-      external: `${Math.round(memory.external / 1024 / 1024)}MB`
-    });
-
-    // 2. Performance: Trigger V8 heap compaction/GC hint
-    // This is a "soft" hint to V8 that it's a good time to clean up
-    if (global.gc) {
-      try {
-        global.gc();
-        loggers.main.info('Triggered manual garbage collection');
-      } catch (e) {
-        loggers.main.warn('Failed to trigger manual GC', { error: e });
-      }
-    }
-
-    // 3. Cleanup: Prune old backups
-    if (fileManager) {
-      fileManager.performBackup('periodic maintenance');
-    }
-  }, 24 * 60 * 60 * 1000);
-
-  // Initial maintenance check after 1 minute
-  setTimeout(() => {
-    const memory = process.memoryUsage();
-    loggers.main.info('Startup Memory Stats:', {
-      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
-      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`
-    });
-  }, 60000);
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow();
-    }
-  });
+  setupMaintenanceTasks(() => state.fileManager);
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

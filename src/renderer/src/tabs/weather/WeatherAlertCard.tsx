@@ -28,11 +28,11 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
           transformOrigin: "center center",
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "translateY(-1px) scale(1.01)";
+          e.currentTarget.style.transform = "none";
           e.currentTarget.style.boxShadow = "var(--shadow-md)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0) scale(1)";
+          e.currentTarget.style.transform = "none";
           e.currentTarget.style.boxShadow = "none";
         }}
         onClick={onToggle}
@@ -84,7 +84,9 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
                   fontWeight: 800,
                 }}
               >
-                {alert.severity}
+                {alert.severity === "Unknown" 
+                  ? (alert.event.toLowerCase().includes("outlook") ? "Outlook" : "Advisory")
+                  : alert.severity}
               </span>
               {alert.urgency === "Immediate" && (
                 <span
@@ -107,48 +109,59 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
                 fontSize: "16px",
                 color: "var(--color-text-primary)",
                 opacity: 0.9,
-                margin: "6px 0 0",
+                margin: "8px 0 4px", // More room around headline
                 lineHeight: "1.4",
-                fontWeight: 500,
+                fontWeight: 600, // Slightly bolder for better contrast
               }}
             >
               {alert.headline}
             </p>
-            {isExpanded && (
-              <div
-                className="weather-scroll-container"
-                style={{
-                  marginTop: "10px",
-                  paddingTop: "10px",
-                  borderTop: `1px solid ${colors.border}`,
-                }}
-              >
-                <p
-                  style={{
-                    fontSize: "14px",
-                    color: "var(--color-text-tertiary)",
-                    margin: "0 0 8px",
-                    lineHeight: "1.5",
-                    whiteSpace: "pre-wrap",
-                    maxHeight: "120px",
-                    overflowY: "auto",
-                  }}
-                >
-                  {alert.description}
-                </p>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                transition: "grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+              }}
+            >
+              <div style={{ overflow: "hidden" }}>
                 <div
+                  className="weather-scroll-container"
                   style={{
-                    display: "flex",
-                    gap: "16px",
-                    fontSize: "12px",
-                    color: "var(--color-text-quaternary)",
+                    marginTop: "10px",
+                    paddingTop: "10px",
+                    borderTop: `1px solid ${colors.border}`,
+                    opacity: isExpanded ? 1 : 0,
+                    transform: isExpanded ? "translateY(0)" : "translateY(-5px)",
+                    transition: "opacity 0.3s ease-out, transform 0.3s ease-out",
                   }}
                 >
-                  <span>Expires: {new Date(alert.expires).toLocaleString()}</span>
-                  <span>{alert.senderName}</span>
+                  <p
+                    style={{
+                      fontSize: "14px",
+                      color: "var(--color-text-tertiary)",
+                      margin: "0 0 8px",
+                      lineHeight: "1.5",
+                      whiteSpace: "pre-wrap",
+                      maxHeight: "120px",
+                      overflowY: "auto",
+                    }}
+                  >
+                    {alert.description}
+                  </p>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "16px",
+                      fontSize: "12px",
+                      color: "var(--color-text-quaternary)",
+                    }}
+                  >
+                    <span>Expires: {new Date(alert.expires).toLocaleString()}</span>
+                    <span>{alert.senderName}</span>
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
           {/* Expand/Collapse Arrow */}
           <svg

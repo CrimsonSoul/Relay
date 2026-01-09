@@ -97,19 +97,29 @@ export function setupWeatherHandlers() {
       const features = alertData.features || [];
 
       // Map to our WeatherAlert type
-      return features.map((f: NWSAlertFeature) => ({
-        id: f.properties?.id || f.id,
-        event: f.properties?.event || 'Unknown Event',
-        headline: f.properties?.headline || '',
-        description: f.properties?.description || '',
-        severity: f.properties?.severity || 'Unknown',
-        urgency: f.properties?.urgency || 'Unknown',
-        certainty: f.properties?.certainty || 'Unknown',
-        effective: f.properties?.effective || '',
-        expires: f.properties?.expires || '',
-        senderName: f.properties?.senderName || 'National Weather Service',
-        areaDesc: f.properties?.areaDesc || ''
-      }));
+      return features.map((f: NWSAlertFeature) => {
+        const props = f.properties;
+        
+        // Helper to capitalize first letter and handle missing values
+        const normalize = (val: string | undefined) => {
+          if (!val) return 'Unknown';
+          return val.charAt(0).toUpperCase() + val.slice(1).toLowerCase();
+        };
+
+        return {
+          id: props?.id || f.id,
+          event: props?.event || 'Unknown Event',
+          headline: props?.headline || '',
+          description: props?.description || '',
+          severity: normalize(props?.severity),
+          urgency: normalize(props?.urgency),
+          certainty: normalize(props?.certainty),
+          effective: props?.effective || '',
+          expires: props?.expires || '',
+          senderName: props?.senderName || 'National Weather Service',
+          areaDesc: props?.areaDesc || ''
+        };
+      });
     } catch (err: any) {
       console.error('[Weather] Alerts fetch error:', err);
       return []; // Return empty array on error to not break the UI

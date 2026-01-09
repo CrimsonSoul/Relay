@@ -3,7 +3,7 @@ import { Modal } from './Modal';
 import { Contact } from '@shared/ipc';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
-import { sanitizePhoneNumber, formatPhoneNumber } from '../../../shared/phoneUtils';
+import { sanitizePhoneNumber, formatPhoneNumber } from '@shared/phoneUtils';
 
 type Props = {
   isOpen: boolean;
@@ -54,14 +54,14 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
 
   const labelStyle: React.CSSProperties = {
     display: 'block',
-    fontSize: '14px',
-    fontWeight: 500,
+    fontSize: '15px',
+    fontWeight: 600,
     color: 'var(--color-text-secondary)',
-    marginBottom: '6px'
+    marginBottom: '8px'
   };
 
   const fieldStyle: React.CSSProperties = {
-    marginBottom: '16px'
+    marginBottom: '20px'
   }
 
   return (
@@ -69,9 +69,10 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
       <form onSubmit={handleSubmit}>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Full Name <span style={{ color: '#EF4444' }}>*</span></label>
           <Input
+            label="Full Name"
             value={name}
+            variant="vivid"
             onChange={e => setName(e.target.value)}
             placeholder="e.g. Alice Smith"
             required
@@ -80,9 +81,10 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Email Address <span style={{ color: '#EF4444' }}>*</span></label>
           <Input
+            label="Email Address"
             type="email"
+            variant="vivid"
             value={email}
             onChange={e => setEmail(e.target.value)}
             placeholder="alice@example.com"
@@ -91,8 +93,9 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Job Title</label>
           <Input
+            label="Job Title"
+            variant="vivid"
             value={title}
             onChange={e => setTitle(e.target.value)}
             placeholder="e.g. Marketing Director"
@@ -100,9 +103,10 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
         </div>
 
         <div style={fieldStyle}>
-          <label style={labelStyle}>Phone Number</label>
           <Input
+            label="Phone Number"
             type="tel"
+            variant="vivid"
             value={phone}
             onChange={e => setPhone(e.target.value)}
             onBlur={handlePhoneBlur}

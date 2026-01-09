@@ -139,8 +139,6 @@ export type BridgeAPI = {
   useCachedAuth: (nonce: string) => Promise<boolean>;
   subscribeToRadar: (callback: (data: RadarSnapshot) => void) => void;
   logBridge: (groups: string[]) => void;
-  getMetrics: () => Promise<MetricsData>;
-  resetMetrics: () => Promise<boolean>;
   getWeather: (lat: number, lon: number) => Promise<WeatherData>;
   searchLocation: (query: string) => Promise<LocationSearchResult[]>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
@@ -219,8 +217,6 @@ export const IPC_CHANNELS = {
   AUTH_USE_CACHED: "auth:useCached",
   RADAR_DATA: "radar:data",
   LOG_BRIDGE: "metrics:logBridge",
-  GET_METRICS: "metrics:get",
-  RESET_METRICS: "metrics:reset",
   GET_WEATHER: "weather:get",
   SEARCH_LOCATION: "weather:search",
   GET_WEATHER_ALERTS: "weather:alerts",
@@ -230,14 +226,6 @@ export const IPC_CHANNELS = {
 export type BridgeEvent = {
   timestamp: number;
   groups: string[];
-};
-
-export type MetricsData = {
-  bridgesLast7d: number;
-  bridgesLast30d: number;
-  bridgesLast6m: number;
-  bridgesLast1y: number;
-  topGroups: { name: string; count: number }[];
 };
 
 export type WeatherAlert = {

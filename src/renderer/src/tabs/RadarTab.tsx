@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
-import { ToolbarButton } from '../components/ToolbarButton';
+import { TactileButton } from '../components/TactileButton';
 import { Tooltip } from '../components/Tooltip';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
@@ -34,19 +34,17 @@ export const RadarTab: React.FC = () => {
         subtitle="Live CW intra-web monitoring"
         isCollapsed={true}
       >
-        <ToolbarButton
+        <TactileButton
           onClick={handleRefresh}
-          label={isLoading ? 'REFRESHING' : 'REFRESH'}
-          tooltip="Refresh Radar"
-          style={{ padding: '8px 16px', fontSize: '11px' }}
+          title={isLoading ? 'Refreshing' : 'Refresh'}
           icon={
             <svg
-              width="12"
-              height="12"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
               className={isLoading ? 'spin' : ''}

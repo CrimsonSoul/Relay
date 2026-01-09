@@ -71,7 +71,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={serverToEdit ? 'Edit Server' : 'Add Server'}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
         <Input
           label="Server Name (Required)"
           value={formData.name}
@@ -79,7 +79,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. SRV-001"
           autoFocus
         />
-        <div style={{ display: 'flex', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '24px' }}>
              <Input
                label="Business Area"
                value={formData.businessArea}
@@ -103,7 +103,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
            placeholder="Notes..."
         />
 
-        <div style={{ display: 'flex', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '24px' }}>
             <Input
               label="LOB Owner (Email)"
               value={formData.owner}
@@ -127,7 +127,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. Windows"
         />
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
           <TactileButton onClick={handleSubmit} disabled={isSubmitting || !formData.name}>
             {isSubmitting ? 'Saving...' : 'Save Server'}
           </TactileButton>

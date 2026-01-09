@@ -2,7 +2,7 @@
  * Tests for column storage utilities
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   loadColumnWidths,
   saveColumnWidths,
@@ -10,6 +10,28 @@ import {
   saveColumnOrder,
   clearColumnStorage
 } from './columnStorage';
+
+// Simple mock for localStorage if not present or broken in jsdom
+const localStorageMock = (function() {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    }
+  };
+})();
+
+// Override global localStorage
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock
+});
 
 describe('columnStorage', () => {
   beforeEach(() => {

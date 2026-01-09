@@ -1,0 +1,60 @@
+/* Responsive Weather Tab */
+@media (max-width: 850px) {
+  .weather-tab-root {
+    flex-direction: column-reverse !important;
+    overflow-y: auto !important;
+    padding-bottom: 40px !important;
+    gap: 24px !important;
+  }
+
+  .weather-tab-root>div:last-child {
+    flex: none !important;
+    height: 450px !important;
+    min-height: 450px !important;
+    width: 100% !important;
+    z-index: 5;
+  }
+
+  .weather-forecast-column {
+    flex: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    overflow-y: visible !important;
+  }
+}
+
+/* Responsive Server Cards */
+@media (max-width: 750px) {
+  .server-card-comment {
+    display: none !important;
+  }
+}
+
+@media (max-width: 650px) {
+  .server-card-people {
+    width: 180px !important;
+  }
+
+  .server-card-info {
+    flex: 0 0 160px !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .world-clock-container {
+    gap: 8px !important;
+  }
+
+  .world-clock-secondary {
+    gap: 6px !important;
+  }
+
+  .world-clock-label {
+    display: none !important;
+  }
+
+  .header-title {
+    max-width: 100px;
+  }
+}

@@ -74,8 +74,6 @@ const api: BridgeAPI = {
   },
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
-  getMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.GET_METRICS),
-  resetMetrics: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_METRICS),
   getWeather: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER, lat, lon),
   searchLocation: (query) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_LOCATION, query),
   getWeatherAlerts: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER_ALERTS, lat, lon),
