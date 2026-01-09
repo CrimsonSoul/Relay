@@ -6,21 +6,19 @@ type SortConfig = {
 };
 
 export const ResizableHeader = ({
-    label,
+    children,
     width,
     minWidth = 50,
-    sortKey,
-    currentSort,
+    sortDirection,
     onResize,
     onSort
 }: {
-    label: string,
+    children: React.ReactNode,
     width: number,
     minWidth?: number,
-    sortKey: string,
-    currentSort: SortConfig,
+    sortDirection?: 'asc' | 'desc',
     onResize: (w: number) => void,
-    onSort: (key: any) => void
+    onSort: () => void
 }) => {
     const [isResizing, setIsResizing] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
@@ -50,7 +48,7 @@ export const ResizableHeader = ({
         };
     }, [isResizing, minWidth, onResize]);
 
-    const isSorted = currentSort.key === sortKey;
+    const isSorted = !!sortDirection;
 
     return (
         <div
@@ -64,7 +62,7 @@ export const ResizableHeader = ({
                 cursor: 'pointer',
                 paddingRight: '16px' // Reserve space for resize handle
             }}
-            onClick={() => onSort(sortKey)}
+            onClick={onSort}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
@@ -74,7 +72,7 @@ export const ResizableHeader = ({
                 whiteSpace: 'nowrap',
                 flex: 1
             }}>
-                {label}
+                {children}
             </span>
 
             {isSorted && (
@@ -84,7 +82,7 @@ export const ResizableHeader = ({
                     flexShrink: 0,
                     marginRight: '2px'
                 }}>
-                    {currentSort.direction === 'asc' ? '▲' : '▼'}
+                    {sortDirection === 'asc' ? '▲' : '▼'}
                 </span>
             )}
 

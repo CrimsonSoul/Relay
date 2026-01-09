@@ -4,6 +4,7 @@ interface CollapsibleHeaderProps {
     title: string;
     subtitle?: ReactNode;
     children?: ReactNode; // Toolbar buttons
+    search?: ReactNode; // Integrated search bar
     isCollapsed?: boolean; // Allow external control
     onCollapsedChange?: (collapsed: boolean) => void;
 }
@@ -16,6 +17,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
     title,
     subtitle,
     children,
+    search,
     isCollapsed = false,
 }) => {
     return (
@@ -24,15 +26,17 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: isCollapsed ? 'center' : 'flex-end',
-                marginBottom: isCollapsed ? '12px' : '24px',
+                marginBottom: isCollapsed ? '8px' : '16px',
+                gap: '12px',
+                flexWrap: 'wrap',
                 transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                 flexShrink: 0,
             }}
         >
-            <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ minWidth: '200px', flex: 1 }}>
                 <h1
                     style={{
-                        fontSize: isCollapsed ? '20px' : '32px',
+                        fontSize: isCollapsed ? '32px' : '40px',
                         fontWeight: 800,
                         margin: 0,
                         color: 'var(--color-text-primary)',
@@ -47,9 +51,9 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 </h1>
                 <div
                     style={{
-                        fontSize: '16px',
+                        fontSize: '18px',
                         color: 'var(--color-text-tertiary)',
-                        margin: isCollapsed ? '0' : '8px 0 0 0',
+                        margin: isCollapsed ? '0' : '10px 0 0 0',
                         fontWeight: 500,
                         maxHeight: isCollapsed ? '0px' : '50px',
                         opacity: isCollapsed ? 0 : 1,
@@ -64,17 +68,35 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 </div>
             </div>
 
-            {children && (
+            {(search || children) && (
                 <div
                     style={{
                         display: 'flex',
-                        gap: isCollapsed ? '6px' : '8px',
+                        gap: isCollapsed ? '12px' : '16px', // Reduced from 24px for tighter cohesion
                         alignItems: 'center',
-                        flexShrink: 0,
-                        transition: 'gap 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                        flex: '0 1 auto',
+                        justifyContent: 'flex-end',
+                        transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                     }}
                 >
-                    {children}
+                    {search && (
+                        <div style={{ 
+                            flex: '0 1 420px',
+                            minWidth: '180px',
+                            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}>
+                            {search}
+                        </div>
+                    )}
+                    {children && (
+                        <div style={{
+                            display: 'flex',
+                            gap: isCollapsed ? '8px' : '12px', // Increased from 8px for better touch targets
+                            alignItems: 'center',
+                        }}>
+                            {children}
+                        </div>
+                    )}
                 </div>
             )}
         </div>

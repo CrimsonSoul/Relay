@@ -1,0 +1,244 @@
+/* Utility Classes - Attio Style */
+.glass-panel {
+  background: var(--color-bg-surface-elevated);
+  border: var(--border-subtle);
+}
+
+/* Enhanced Tactile Button - Attio Style - Compact */
+.tactile-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  height: 44px;
+  border-radius: var(--radius-pill);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text-primary);
+  transition: all var(--transition-smooth);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  outline: none;
+  overflow: hidden;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tactile-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0) 50%,
+      rgba(255, 255, 255, 0.08) 100%);
+  opacity: 0;
+  transition: opacity var(--transition-smooth);
+  pointer-events: none;
+}
+
+.tactile-button:hover::before {
+  opacity: 1;
+}
+
+.tactile-button:hover {
+  transform: translateY(-1px) scale(1.01);
+  box-shadow: var(--shadow-md);
+}
+
+.tactile-button:active {
+  transform: translateY(0px) scale(0.97);
+  box-shadow: none;
+  transition: transform var(--transition-micro);
+}
+
+.tactile-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Secondary / Default Variant */
+.tactile-button--secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.tactile-button--secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.tactile-button--secondary:active {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Primary Variant */
+.tactile-button--primary {
+  background: linear-gradient(135deg, var(--color-accent-blue) 0%, #2563EB 100%);
+  border-color: var(--color-accent-blue);
+  color: white !important;
+}
+
+.tactile-button--primary::before {
+  background: linear-gradient(135deg,
+      rgba(255, 255, 255, 0.2) 0%,
+      rgba(255, 255, 255, 0) 50%,
+      rgba(255, 255, 255, 0.2) 100%);
+}
+
+.tactile-button--primary:hover {
+  background: linear-gradient(135deg, var(--color-accent-blue-hover) 0%, var(--color-accent-blue) 100%);
+  box-shadow: var(--shadow-lg), var(--shadow-glow-blue);
+  transform: translateY(-2px) scale(1.02);
+  border-color: var(--color-accent-blue-hover);
+}
+
+.tactile-button--primary:active {
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  transform: translateY(0px) scale(0.97);
+}
+
+/* Ghost Variant */
+.tactile-button--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-text-secondary);
+  box-shadow: none !important;
+}
+
+.tactile-button--ghost:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-primary);
+  transform: translateY(-0.5px);
+}
+
+.tactile-button--ghost:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Danger Variant */
+.tactile-button--danger {
+  background: rgba(255, 92, 92, 0.1);
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.tactile-button--danger:hover {
+  background: var(--color-danger);
+  color: white;
+  box-shadow: var(--shadow-md), 0 0 20px rgba(255, 92, 92, 0.3);
+}
+
+/* Active State */
+.tactile-button.is-active {
+  background: var(--color-accent-blue-subtle);
+  color: var(--color-accent-blue);
+  border-color: var(--color-accent-blue-subtle);
+}
+
+/* Tactile Input - Matching Button Aesthetic */
+.tactile-input {
+  height: 44px;
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: var(--radius-pill) !important;
+  color: var(--color-text-primary) !important;
+  font-size: 15px !important;
+  transition: all var(--transition-smooth) !important;
+  padding-left: 44px !important;
+  padding-right: 16px !important;
+}
+
+.tactile-input:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.tactile-input:focus {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: var(--color-accent-blue) !important;
+  box-shadow: 0 0 0 2px var(--color-accent-blue-subtle), var(--shadow-sm) !important;
+}
+
+.tactile-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.tactile-input-icon {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  z-index: 10;
+  transition: color 0.2s ease;
+}
+
+.tactile-input:focus ~ .tactile-input-icon,
+.tactile-input:hover ~ .tactile-input-icon {
+  color: var(--color-text-primary);
+}
+
+/* Sizes */
+.tactile-button--sm {
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+.tactile-button--md {
+  height: 44px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+
+/* Icon Only Modifier */
+.tactile-button--icon-only {
+  padding: 0;
+  width: 44px;
+  justify-content: center;
+}
+
+.tactile-button--sm.tactile-button--icon-only {
+  width: 32px;
+}
+
+/* Custom Tooltip System */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 8px;
+  background: #0F0F0F;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  z-index: 1000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.tooltip-container:hover .tooltip-content {
+  opacity: 1;
+  transform: translateY(0);
+}

@@ -189,7 +189,7 @@ export const cleanAndFormatPhoneNumber = (input: string): string => {
   if (!input) return '';
 
   // Normalize: Replace known separators with a unique token '|'
-  let normalized = input.replace(/(?:Office|Ext|Home|Work|Cell|Fax|Tel|Phone|[:;])/gi, ' | ');
+  let normalized = input.replace(/(?:Office|Ext|Home|Work|Cell|Fax|Tel|Phone|[:;x])/gi, ' | ');
 
   // Split by '|' or ','
   const rawParts = normalized.split(/[|,]/).map(s => s.trim()).filter(s => s);

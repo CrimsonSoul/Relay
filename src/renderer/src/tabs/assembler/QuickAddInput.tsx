@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Contact } from "@shared/ipc";
 import { useDebounce } from "../../hooks/useDebounce";
-import { Input } from "../../components/Input";
+import { SearchInput } from "../../components/SearchInput";
 
 type QuickAddInputProps = {
   contacts: Contact[];
@@ -61,24 +61,22 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
       >
         <div
           style={{
-            fontSize: "11px",
-            fontWeight: 700,
+            fontSize: "12px",
+            fontWeight: 800,
             color: "var(--color-text-tertiary)",
-            letterSpacing: "0.1em",
+            letterSpacing: "0.12em",
             textTransform: "uppercase",
           }}
         >
           Quick Add
         </div>
       </div>
-      <Input
+      <SearchInput
         placeholder="Add by email..."
         value={adhocInput}
         style={{
-          fontSize: "14px",
-          padding: "8px 12px",
-          height: "42px",
-          borderRadius: "8px",
+          fontSize: "15px",
+          height: "44px",
         }}
         onChange={(e) => {
           setAdhocInput(e.target.value);
@@ -114,13 +112,13 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
               key={c.email}
               onClick={() => handleQuickAdd(c.email)}
               style={{
-                padding: "10px 12px",
+                padding: "12px 16px",
                 cursor: "pointer",
-                fontSize: "14px",
+                fontSize: "15px",
                 color: "var(--color-text-primary)",
                 display: "flex",
                 alignItems: "center",
-                gap: "8px",
+                gap: "10px",
               }}
               onMouseEnter={(e) =>
                 (e.currentTarget.style.background = "rgba(255,255,255,0.05)")
@@ -131,13 +129,13 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
             >
               <div
                 style={{
-                  width: "24px",
-                  height: "24px",
-                  borderRadius: "4px",
+                  width: "32px",
+                  height: "32px",
+                  borderRadius: "8px",
                   background: "rgba(59, 130, 246, 0.2)",
                   color: "#3B82F6",
-                  fontSize: "11px",
-                  fontWeight: 700,
+                  fontSize: "13px",
+                  fontWeight: 800,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",

@@ -1,0 +1,212 @@
+:root {
+  /* Colors - Solid Dark Mode */
+  --color-bg-app: #0B0D12;
+  /* Main panel body */
+  --color-bg-surface: #18181B;
+  --color-bg-surface-opaque: #18181B;
+  /* Secondary headers/surfaces */
+  --color-bg-surface-elevated: #1E1E21;
+  --color-bg-card: rgba(255, 255, 255, 0.03);
+  --color-bg-card-hover: rgba(255, 255, 255, 0.06);
+  --color-bg-sidebar: #0F1115;
+  /* Server list / Window background */
+
+  /* Text */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A1A1AA;
+  --color-text-tertiary: #71717A;
+  --color-text-quaternary: #52525B;
+
+  /* Accents */
+  --color-accent-blue: #3B82F6;
+  --color-accent-blue-hover: #60A5FA;
+  --color-accent-blue-dim: rgba(59, 130, 246, 0.5);
+  --color-accent-blue-subtle: rgba(59, 130, 246, 0.1);
+  --color-accent-green: #10B981;
+  --color-accent-green-subtle: rgba(16, 185, 129, 0.1);
+  --color-danger: #FF5C5C;
+  --color-danger-hover: #FF7A7A;
+  --color-danger-subtle: rgba(255, 92, 92, 0.1);
+
+  /* Borders */
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.08);
+  --border-medium: 1px solid rgba(255, 255, 255, 0.12);
+  --border-strong: 1px solid rgba(255, 255, 255, 0.16);
+
+  /* Shadows - Elegant Attio Style */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15),
+    0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.25),
+    0 6px 12px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+
+  /* Typography */
+  --font-family-base: 'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  --font-family-mono: 'SF Mono',
+    'Monaco',
+    'Inconsolata',
+    'Fira Code',
+    monospace;
+
+  /* Spacing Scale - Compact */
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 10px;
+  --space-4: 14px;
+  --space-5: 18px;
+  --space-6: 20px;
+  --space-8: 28px;
+  --space-10: 36px;
+  --space-12: 44px;
+
+  /* Border Radius */
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 10px;
+  --radius-pill: 16px;
+  --radius-round: 50%;
+
+  /* Transitions - Smooth Attio Cubic Bezier Curves */
+  --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-bouncy: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-premium: 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-micro: 0.1s ease-out;
+
+  /* Layout - Compact */
+  --sidebar-width-collapsed: 72px;
+  --header-height: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Refined Minimalist Scrollbar - Attio Style - Auto Hide */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 0.2s ease;
+}
+
+*:hover > ::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-thumb:hover,
+.personnel-list:hover ::-webkit-scrollbar-thumb,
+.oncall-panel:hover ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  height: 100vh;
+}
+
+.content-view {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-app);
+  /* The darker content pane */
+
+  /* Precision Discord Rounding - Internal Pane only */
+  border-top-left-radius: 8px;
+  border-left: var(--border-subtle);
+  border-top: var(--border-subtle);
+  box-shadow: -2px -1px 4px rgba(0, 0, 0, 0.15);
+  /* Subtle inner depth */
+  position: relative;
+}
+
+.app-container {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: var(--color-bg-app);
+  overflow: hidden;
+  position: relative;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+.app-header {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  background: transparent;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+}
+
+.header-title-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-breadcrumb {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls-container {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 10001;
+  pointer-events: auto;
+}

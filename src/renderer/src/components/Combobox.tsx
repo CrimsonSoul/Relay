@@ -67,6 +67,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
             <Input
                 ref={inputRef}
                 value={value}
+                variant="vivid"
                 onChange={e => {
                     onChange(e.target.value);
                     if (!isOpen) setIsOpen(true);
@@ -83,9 +84,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                 autoFocus={autoFocus}
                 style={{
                     ...style,
-                    width: '100%',
-                    background: hasFocus ? 'var(--color-bg-surface-elevated)' : 'rgba(255, 255, 255, 0.03)',
-                    borderColor: hasFocus ? 'var(--color-accent-blue)' : 'rgba(255, 255, 255, 0.1)'
+                    width: '100%'
                 }}
             />
 

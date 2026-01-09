@@ -1,0 +1,16 @@
+Name,Business Area,LOB,Comment,Owner,IT Contact,OS
+db-staging-00,Retail,Compliance,Primary db server for Retail,edward.hill3@example.com,carol.gonzalez29@example.com,CentOS 7
+api-prod-01,Risk,Compliance,Primary api server for Risk,betty.scott39@example.com,mary.jackson2@example.com,CentOS 7
+api-dev-02,Risk,Banking,Primary api server for Risk,kimberly.roberts34@example.com,deborah.adams43@example.com,Ubuntu 22.04
+db-staging-03,Retail,Analytics,Primary db server for Retail,michael.harris42@example.com,michael.harris42@example.com,CentOS 7
+api-staging-04,Wealth,Analytics,Primary api server for Wealth,carol.young26@example.com,emily.lee47@example.com,Windows Server 2022
+mon-prod-05,Risk,Banking,Primary mon server for Risk,matthew.adams16@example.com,richard.rivera40@example.com,Ubuntu 22.04
+web-prod-06,Institutional,Trading,Primary web server for Institutional,lisa.white32@example.com,donald.clark9@example.com,Ubuntu 22.04
+mon-dev-07,Retail,Analytics,Primary mon server for Retail,edward.hill3@example.com,michael.wilson4@example.com,Ubuntu 22.04
+cache-dev-08,Retail,Banking,Primary cache server for Retail,kimberly.roberts34@example.com,lisa.white32@example.com,Windows Server 2022
+bastion-prod-09,Wealth,Banking,Primary bastion server for Wealth,carol.young26@example.com,joseph.carter49@example.com,RHEL 8
+db-staging-10,Institutional,Trading,Primary db server for Institutional,susan.king8@example.com,edward.hill3@example.com,Windows Server 2022
+cache-staging-11,Retail,Banking,Primary cache server for Retail,christopher.williams23@example.com,michael.harris42@example.com,CentOS 7
+cache-prod-12,Institutional,Compliance,Primary cache server for Institutional,jennifer.lopez35@example.com,donald.clark9@example.com,Ubuntu 22.04
+bastion-prod-13,Retail,Banking,Primary bastion server for Retail,robert.allen36@example.com,amanda.hill11@example.com,RHEL 8
+bastion-staging-14,Wealth,Banking,Primary bastion server for Wealth,carol.gonzalez29@example.com,michael.harris42@example.com,RHEL 8

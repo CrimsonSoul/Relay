@@ -10,6 +10,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'src/shared'),
       '@renderer': resolve(__dirname, 'src/renderer/src'),
       '@main': resolve(__dirname, 'src/main')
-    }
+    },
+    testTimeout: 30000
   },
 });

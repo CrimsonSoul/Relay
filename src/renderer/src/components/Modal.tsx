@@ -11,7 +11,7 @@ type Props = {
   width?: string;
 };
 
-export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width = '480px' }) => {
+export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width = '560px' }) => {
   // Focus trap to prevent focus from leaving modal
   const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
 
@@ -98,7 +98,7 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
 
         {/* Header - Compact */}
         <div style={{
-          padding: 'var(--space-3) var(--space-4)',
+          padding: '24px 32px',
           borderBottom: 'var(--border-subtle)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -110,8 +110,8 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
             id="modal-title"
             style={{
               margin: 0,
-              fontSize: '18px',
-              fontWeight: 600,
+              fontSize: '22px',
+              fontWeight: 650,
               color: 'var(--color-text-primary)',
               letterSpacing: '-0.01em'
             }}
@@ -145,7 +145,7 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
               }}
               aria-label="Close"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -155,7 +155,7 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
 
         {/* Content - Compact */}
         <div style={{
-          padding: 'var(--space-4)',
+          padding: '32px',
           overflowY: 'auto',
           flex: 1,
           overscrollBehavior: 'contain'

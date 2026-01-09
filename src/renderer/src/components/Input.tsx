@@ -3,11 +3,18 @@ import { Tooltip } from './Tooltip';
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   icon?: React.ReactNode;
+  variant?: 'default' | 'vivid';
+  label?: string;
+  containerStyle?: React.CSSProperties;
 };
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant = 'default', label, containerStyle, ...props }, ref) => {
   const innerRef = useRef<HTMLInputElement>(null);
   const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
+
+  const isVivid = variant === 'vivid';
+  const focusColor = 'var(--color-accent-blue)';
+  const focusShadow = 'var(--color-accent-blue-dim)';
 
   // Separate layout styles for wrapper vs visual styles for input
   const {
@@ -74,23 +81,22 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
       height, minWidth, minHeight, maxWidth, maxHeight,
       margin, marginTop, marginBottom, marginLeft, marginRight,
       flex, flexGrow, flexShrink, flexBasis,
-      zIndex, top, bottom, left, right
+      zIndex, top, bottom, left, right,
+      ...containerStyle
     }}>
-      {icon && (
-        <div style={{
-          position: 'absolute',
-          left: '8px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          color: 'var(--color-text-tertiary)',
-          pointerEvents: 'none',
-          display: 'flex',
-          alignItems: 'center',
-          zIndex: 10
+      {label && (
+        <label style={{
+          display: 'block',
+          fontSize: '15px',
+          fontWeight: 650,
+          color: 'var(--color-text-secondary)',
+          marginBottom: '8px',
+          letterSpacing: '0.01em'
         }}>
-          {icon}
-        </div>
+          {label}
+        </label>
       )}
+      <div style={{ position: 'relative', width: '100%' }}>
       <input
         ref={innerRef}
         style={{
@@ -98,10 +104,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
           background: 'var(--color-bg-surface)',
           border: 'var(--border-medium)',
           borderRadius: 'var(--radius-md)',
-          padding: '5px 10px',
-          paddingLeft: icon ? '28px' : '10px',
-          paddingRight: hasValue ? '28px' : '10px',
-          fontSize: '12px',
+          padding: '8px 14px',
+          paddingLeft: icon ? '36px' : '14px',
+          paddingRight: hasValue ? '36px' : '14px',
+          fontSize: '15px',
           color: 'var(--color-text-primary)',
           outline: 'none',
           fontFamily: 'var(--font-family-base)',
@@ -111,24 +117,39 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
           ...inputStyle
         }}
         onFocus={(e) => {
-          e.currentTarget.style.borderColor = 'var(--color-accent-blue)';
-          e.currentTarget.style.boxShadow = '0 0 0 3px var(--color-accent-blue-dim), var(--shadow-sm)';
-          e.currentTarget.style.background = 'var(--color-bg-surface-elevated)';
+          setHasValue(!!e.target.value);
           props.onFocus?.(e);
         }}
         onBlur={(e) => {
-          e.currentTarget.style.borderColor = 'var(--border-medium)';
-          e.currentTarget.style.boxShadow = 'var(--shadow-xs)';
-          e.currentTarget.style.background = 'var(--color-bg-surface)';
+          setHasValue(!!e.target.value);
           props.onBlur?.(e);
         }}
         {...props}
+        className={className}
         onChange={(e) => {
           // Update local state for both controlled and uncontrolled
           setHasValue(!!e.target.value);
           props.onChange?.(e);
         }}
       />
+
+      {icon && (
+        <div 
+          className="input-icon"
+          style={{
+            position: 'absolute',
+            left: '16px', // Increased padding for pill style
+            top: '50%',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            zIndex: 10
+          }}
+        >
+          {icon}
+        </div>
+      )}
 
       {hasValue && !props.readOnly && !props.disabled && (
           <Tooltip content="Clear" position="top">
@@ -166,13 +187,14 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </div>
           </Tooltip>
       )}
+      </div>
     </div>
   );
 });
