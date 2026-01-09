@@ -119,7 +119,7 @@ export const ResizableHeader = ({
                     }
                 }}
             >
-                {/* Visual Grabber - Refined Attio Style */}
+                {/* Visual Grabber - Refined Style */}
                 <div style={{
                     width: '3px',
                     height: '16px',
