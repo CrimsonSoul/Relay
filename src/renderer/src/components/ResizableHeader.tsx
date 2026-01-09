@@ -49,12 +49,19 @@ export const ResizableHeader = ({
     }, [isResizing, minWidth, onResize]);
 
     const isSorted = !!sortDirection;
+    
+    // Create accessible label
+    const columnName = typeof children === 'string' ? children : 'column';
+    let sortLabel = `Sort by ${columnName}`;
+    if (sortDirection) {
+        const direction = sortDirection === 'asc' ? 'ascending' : 'descending';
+        sortLabel += `, currently sorted ${direction}`;
+    }
 
     return (
-        <div
-            role="button"
-            tabIndex={0}
-            aria-label={`Sort by ${children}${sortDirection ? `, currently sorted ${sortDirection === 'asc' ? 'ascending' : 'descending'}` : ''}`}
+        <button
+            type="button"
+            aria-label={sortLabel}
             style={{
                 width: width,
                 flex: 'none',
@@ -63,15 +70,15 @@ export const ResizableHeader = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                paddingRight: '16px' // Reserve space for resize handle
+                paddingRight: '16px', // Reserve space for resize handle
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'left'
             }}
             onClick={onSort}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onSort();
-                }
-            }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
@@ -97,10 +104,7 @@ export const ResizableHeader = ({
 
             {/* Resize Handle Area - Enhanced */}
             <div
-                role="separator"
-                aria-orientation="vertical"
                 aria-label="Resize column"
-                tabIndex={0}
                 data-resize-handle="true"
                 style={{
                     position: 'absolute',
@@ -123,19 +127,6 @@ export const ResizableHeader = ({
                     startWidth.current = width;
                     document.body.style.cursor = 'col-resize';
                 }}
-                onKeyDown={(e) => {
-                    // Allow keyboard-based resizing with arrow keys
-                    if (e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const newWidth = Math.max(minWidth, width - 10);
-                        onResize(newWidth);
-                    } else if (e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onResize(width + 10);
-                    }
-                }}
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
                 }}
@@ -157,6 +148,6 @@ export const ResizableHeader = ({
                     boxShadow: (isHovered || isResizing) ? '0 0 8px rgba(59, 130, 246, 0.3)' : 'none'
                 }} />
             </div>
-        </div>
+        </button>
     );
 };
