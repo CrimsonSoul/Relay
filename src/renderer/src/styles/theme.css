@@ -182,6 +182,11 @@ body {
   flex-shrink: 0;
 }
 
+/* Reserve space for window controls on Windows/Linux */
+.platform-win32 .app-header {
+  padding-right: 168px; /* 144px for controls + 24px margin */
+}
+
 .header-title-container {
   display: flex;
   align-items: center;
