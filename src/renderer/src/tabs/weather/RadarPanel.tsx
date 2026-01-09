@@ -21,7 +21,7 @@ const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
 const containerStyle: React.CSSProperties = { flex: 1, background: "black", borderRadius: "12px", overflow: "hidden", position: "relative", border: "var(--border-subtle)", minHeight: "300px", WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, transform: 'translateZ(0)' };
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { webviewRef } = useRadar(location);
+  const { webviewRef, reload } = useRadar(location);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -34,11 +34,19 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               ref={webviewRef as any} 
               key={`${location.latitude}-${location.longitude}`} 
               src={getRadarUrl(location.latitude, location.longitude)} 
+              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
               style={{ width: "100%", height: "100%", border: "none" }} 
               partition="persist:weather" 
             />
             {/* eslint-enable react/no-unknown-property */}
             <ExternalViewButton location={location} />
+            <button 
+              onClick={reload}
+              style={{ position: "absolute", bottom: "8px", right: "8px", background: "rgba(0, 0, 0, 0.6)", width: "28px", height: "28px", borderRadius: "14px", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", cursor: "pointer", zIndex: 30, backdropFilter: "blur(12px)" }}
+              title="Refresh Radar Map"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+            </button>
           </>
         ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
       </div>
