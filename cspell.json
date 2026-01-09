@@ -15,7 +15,11 @@
     "windspeed",
     "winddirection",
     "backgrounding",
-    "nosniff"
+    "nosniff",
+    "gridstack",
+    "asar",
+    "fsevents",
+    "NSIS"
   ],
   "ignorePaths": [
     "node_modules",
