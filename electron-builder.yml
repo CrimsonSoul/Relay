@@ -22,9 +22,6 @@ removePackageScripts: true
 extraResources:
   - from: data
     to: data
-extraFiles:
-  - from: "node_modules/electron/dist/ffmpeg.dll"
-    to: "."
 win:
   target:
     - target: portable
