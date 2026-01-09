@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { loggers, ErrorCategory } from '../logger';
 
 // NWS API Response Types (for type safety)
 interface NWSPointProperties {
@@ -44,7 +45,13 @@ export function setupWeatherHandlers() {
       if (!res.ok) throw new Error('Failed to fetch weather data');
       return await res.json();
     } catch (err: any) {
-      console.error('[Weather] Fetch error:', err);
+      loggers.weather.error('Failed to fetch weather data', {
+        error: err.message,
+        stack: err.stack,
+        category: ErrorCategory.NETWORK,
+        lat,
+        lon
+      });
       throw err;
     }
   });
@@ -57,7 +64,12 @@ export function setupWeatherHandlers() {
       if (!res.ok) throw new Error('Geocoding failed');
       return await res.json();
     } catch (err: any) {
-      console.error('[Weather] Search error:', err);
+      loggers.weather.error('Location search failed', {
+        error: err.message,
+        stack: err.stack,
+        category: ErrorCategory.NETWORK,
+        query
+      });
       throw err;
     }
   });
@@ -121,7 +133,13 @@ export function setupWeatherHandlers() {
         };
       });
     } catch (err: any) {
-      console.error('[Weather] Alerts fetch error:', err);
+      loggers.weather.error('Failed to fetch weather alerts', {
+        error: err.message,
+        stack: err.stack,
+        category: ErrorCategory.NETWORK,
+        lat,
+        lon
+      });
       return []; // Return empty array on error to not break the UI
     }
   });

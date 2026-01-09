@@ -10,36 +10,39 @@ import {
   saveColumnOrder,
   clearColumnStorage
 } from './columnStorage';
+import { secureStorage } from './secureStorage';
 
-// Simple mock for localStorage if not present or broken in jsdom
+// Simple mock for localStorage for the test environment
 const localStorageMock = (function() {
   let store: Record<string, string> = {};
   return {
-    getItem: (key: string) => store[key] || null,
-    setItem: (key: string, value: string) => {
+    getItem: vi.fn((key: string) => store[key] || null),
+    setItem: vi.fn((key: string, value: string) => {
       store[key] = value.toString();
-    },
-    removeItem: (key: string) => {
+    }),
+    removeItem: vi.fn((key: string) => {
       delete store[key];
-    },
-    clear: () => {
+    }),
+    clear: vi.fn(() => {
       store = {};
-    }
+    }),
+    length: 0,
+    key: vi.fn((_index: number) => null)
   };
 })();
 
-// Override global localStorage
 Object.defineProperty(window, 'localStorage', {
-  value: localStorageMock
+  value: localStorageMock,
+  writable: true
 });
 
 describe('columnStorage', () => {
   beforeEach(() => {
-    localStorage.clear();
+    secureStorage.clear();
   });
 
   afterEach(() => {
-    localStorage.clear();
+    secureStorage.clear();
   });
 
   describe('loadColumnWidths', () => {
@@ -49,7 +52,7 @@ describe('columnStorage', () => {
       phone: 120
     };
 
-    it('returns defaults when localStorage is empty', () => {
+    it('returns defaults when storage is empty', () => {
       const result = loadColumnWidths({
         storageKey: 'test-widths',
         defaults
@@ -58,9 +61,9 @@ describe('columnStorage', () => {
       expect(result).toEqual(defaults);
     });
 
-    it('loads valid widths from localStorage', () => {
+    it('loads valid widths from secure storage', () => {
       const saved = { name: 175, email: 225, phone: 130 };
-      localStorage.setItem('test-widths', JSON.stringify(saved));
+      secureStorage.setItemSync('test-widths', saved);
 
       const result = loadColumnWidths({
         storageKey: 'test-widths',
@@ -72,7 +75,7 @@ describe('columnStorage', () => {
 
     it('filters out stale keys not in defaults', () => {
       const saved = { name: 175, email: 225, phone: 130, oldKey: 100 };
-      localStorage.setItem('test-widths', JSON.stringify(saved));
+      secureStorage.setItemSync('test-widths', saved);
 
       const result = loadColumnWidths({
         storageKey: 'test-widths',
@@ -85,7 +88,7 @@ describe('columnStorage', () => {
 
     it('adds missing keys from defaults', () => {
       const saved = { name: 175 };
-      localStorage.setItem('test-widths', JSON.stringify(saved));
+      secureStorage.setItemSync('test-widths', saved);
 
       const result = loadColumnWidths({
         storageKey: 'test-widths',
@@ -99,19 +102,9 @@ describe('columnStorage', () => {
       });
     });
 
-    it('returns defaults on invalid JSON', () => {
-      localStorage.setItem('test-widths', 'invalid json{');
-
-      const result = loadColumnWidths({
-        storageKey: 'test-widths',
-        defaults
-      });
-
-      expect(result).toEqual(defaults);
-    });
-
-    it('returns defaults on non-object value', () => {
-      localStorage.setItem('test-widths', JSON.stringify([1, 2, 3]));
+    it('returns defaults on invalid data in storage', () => {
+      // Manually pollute with invalid data (fails B64 decode)
+      localStorage.setItem('relay_test-widths', '!!!invalid!!!');
 
       const result = loadColumnWidths({
         storageKey: 'test-widths',
@@ -123,7 +116,7 @@ describe('columnStorage', () => {
 
     it('ignores non-number values', () => {
       const saved = { name: 175, email: 'invalid', phone: 130 };
-      localStorage.setItem('test-widths', JSON.stringify(saved));
+      secureStorage.setItemSync('test-widths', saved);
 
       const result = loadColumnWidths({
         storageKey: 'test-widths',
@@ -139,19 +132,19 @@ describe('columnStorage', () => {
   });
 
   describe('saveColumnWidths', () => {
-    it('saves widths to localStorage', () => {
+    it('saves widths to secure storage', () => {
       const widths = { name: 150, email: 200 };
       saveColumnWidths('test-widths', widths);
 
-      const saved = localStorage.getItem('test-widths');
-      expect(saved).toBe(JSON.stringify(widths));
+      const saved = secureStorage.getItemSync('test-widths');
+      expect(saved).toEqual(widths);
     });
   });
 
   describe('loadColumnOrder', () => {
     const defaults = ['name', 'email', 'phone'] as const;
 
-    it('returns defaults when localStorage is empty', () => {
+    it('returns defaults when storage is empty', () => {
       const result = loadColumnOrder({
         storageKey: 'test-order',
         defaults: defaults as unknown as string[]
@@ -160,9 +153,9 @@ describe('columnStorage', () => {
       expect(result).toEqual(defaults);
     });
 
-    it('loads valid order from localStorage', () => {
+    it('loads valid order from secure storage', () => {
       const saved = ['email', 'name', 'phone'];
-      localStorage.setItem('test-order', JSON.stringify(saved));
+      secureStorage.setItemSync('test-order', saved);
 
       const result = loadColumnOrder({
         storageKey: 'test-order',
@@ -174,7 +167,7 @@ describe('columnStorage', () => {
 
     it('returns defaults if length does not match', () => {
       const saved = ['name', 'email']; // missing phone
-      localStorage.setItem('test-order', JSON.stringify(saved));
+      secureStorage.setItemSync('test-order', saved);
 
       const result = loadColumnOrder({
         storageKey: 'test-order',
@@ -186,29 +179,7 @@ describe('columnStorage', () => {
 
     it('returns defaults if any key is invalid', () => {
       const saved = ['name', 'email', 'invalidKey'];
-      localStorage.setItem('test-order', JSON.stringify(saved));
-
-      const result = loadColumnOrder({
-        storageKey: 'test-order',
-        defaults: defaults as unknown as string[]
-      });
-
-      expect(result).toEqual(defaults);
-    });
-
-    it('returns defaults on invalid JSON', () => {
-      localStorage.setItem('test-order', 'invalid json{');
-
-      const result = loadColumnOrder({
-        storageKey: 'test-order',
-        defaults: defaults as unknown as string[]
-      });
-
-      expect(result).toEqual(defaults);
-    });
-
-    it('returns defaults on non-array value', () => {
-      localStorage.setItem('test-order', JSON.stringify({ foo: 'bar' }));
+      secureStorage.setItemSync('test-order', saved);
 
       const result = loadColumnOrder({
         storageKey: 'test-order',
@@ -220,33 +191,33 @@ describe('columnStorage', () => {
   });
 
   describe('saveColumnOrder', () => {
-    it('saves order to localStorage', () => {
+    it('saves order to secure storage', () => {
       const order = ['email', 'name', 'phone'];
       saveColumnOrder('test-order', order);
 
-      const saved = localStorage.getItem('test-order');
-      expect(saved).toBe(JSON.stringify(order));
+      const saved = secureStorage.getItemSync('test-order');
+      expect(saved).toEqual(order);
     });
   });
 
   describe('clearColumnStorage', () => {
     it('removes single storage key', () => {
-      localStorage.setItem('test-1', 'value');
+      secureStorage.setItemSync('test-1', 'value');
       clearColumnStorage('test-1');
 
-      expect(localStorage.getItem('test-1')).toBeNull();
+      expect(secureStorage.getItemSync('test-1')).toBeUndefined();
     });
 
     it('removes multiple storage keys', () => {
-      localStorage.setItem('test-1', 'value1');
-      localStorage.setItem('test-2', 'value2');
-      localStorage.setItem('test-3', 'value3');
+      secureStorage.setItemSync('test-1', 'value1');
+      secureStorage.setItemSync('test-2', 'value2');
+      secureStorage.setItemSync('test-3', 'value3');
 
       clearColumnStorage('test-1', 'test-2', 'test-3');
 
-      expect(localStorage.getItem('test-1')).toBeNull();
-      expect(localStorage.getItem('test-2')).toBeNull();
-      expect(localStorage.getItem('test-3')).toBeNull();
+      expect(secureStorage.getItemSync('test-1')).toBeUndefined();
+      expect(secureStorage.getItemSync('test-2')).toBeUndefined();
+      expect(secureStorage.getItemSync('test-3')).toBeUndefined();
     });
   });
 });

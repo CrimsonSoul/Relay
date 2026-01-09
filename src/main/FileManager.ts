@@ -66,8 +66,49 @@ export class FileManager implements FileContext {
     try { const [current, bundled] = await Promise.all([fs.readFile(join(this.rootDir, fileName), "utf-8"), fs.readFile(join(this.bundledDataPath, fileName), "utf-8")]); return current.replace(/\r\n/g, "\n").trim() === bundled.replace(/\r\n/g, "\n").trim(); } catch { return false; }
   }
 
-  public async writeAndEmit(path: string, content: string) { this.internalWriteCount++; try { await fs.writeFile(`${path}.tmp`, content, "utf-8"); await fs.rename(`${path}.tmp`, path); await this.readAndEmit(); } finally { setTimeout(() => this.internalWriteCount--, 500); } }
-  public async rewriteFileDetached(path: string, content: string) { this.internalWriteCount++; try { await fs.writeFile(`${path}.tmp`, content, "utf-8"); await fs.rename(`${path}.tmp`, path); } finally { setTimeout(() => this.internalWriteCount--, 1000); } }
+  private fileLocks: Map<string, Promise<void>> = new Map();
+
+  public async writeAndEmit(path: string, content: string) {
+    // Basic Mutex: Ensure one write per file at a time
+    const existingLock = this.fileLocks.get(path) || Promise.resolve();
+    
+    const newLock = existingLock.then(async () => {
+      this.internalWriteCount++;
+      try {
+        // Add UTF-8 BOM for Excel compatibility
+        const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
+        
+        await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
+        await fs.rename(`${path}.tmp`, path);
+        await this.readAndEmit();
+      } finally {
+        setTimeout(() => {
+          this.internalWriteCount--;
+        }, 500);
+      }
+    });
+
+    this.fileLocks.set(path, newLock);
+    return newLock;
+  }
+
+  public async rewriteFileDetached(path: string, content: string) {
+    const existingLock = this.fileLocks.get(path) || Promise.resolve();
+    
+    const newLock = existingLock.then(async () => {
+      this.internalWriteCount++;
+      try {
+        const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
+        await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
+        await fs.rename(`${path}.tmp`, path);
+      } finally {
+        setTimeout(() => this.internalWriteCount--, 1000);
+      }
+    });
+
+    this.fileLocks.set(path, newLock);
+    return newLock;
+  }
   public safeStringify(data: any[][]): string { return stringifyCsv(data); }
   public emitError(error: DataError) { this.emitter.emitError(error); }
   public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }

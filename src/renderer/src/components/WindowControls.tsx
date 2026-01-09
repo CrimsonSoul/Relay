@@ -8,7 +8,7 @@ export const WindowControls = () => {
     // Sync with actual window maximize state
     useEffect(() => {
         // Check initial state
-        window.api?.isMaximized?.().then((maximized: boolean) => {
+        globalThis.window.api?.isMaximized?.().then((maximized: boolean) => {
             setIsMaximized(maximized);
         }).catch(() => {
             // Fallback if API not available yet
@@ -19,34 +19,33 @@ export const WindowControls = () => {
             setIsMaximized(maximized);
         };
 
-        window.api?.onMaximizeChange?.(handleMaximizeChange);
+        globalThis.window.api?.onMaximizeChange?.(handleMaximizeChange);
 
         return () => {
-            window.api?.removeMaximizeListener?.();
+            globalThis.window.api?.removeMaximizeListener?.();
         };
     }, []);
 
-    const handleMinimize = () => window.api?.windowMinimize();
+    const handleMinimize = () => globalThis.window.api?.windowMinimize();
     const handleMaximize = () => {
-        window.api?.windowMaximize();
+        globalThis.window.api?.windowMaximize();
         // Optimistically toggle state immediately for responsive UI
         // The listener will correct if needed
         setIsMaximized(prev => !prev);
     };
-    const handleClose = () => window.api?.windowClose();
+    const handleClose = () => globalThis.window.api?.windowClose();
 
     const btnClass = "window-control-btn";
-    if (window.api?.platform === 'darwin') return null;
+    if (globalThis.window.api?.platform === 'darwin') return null;
 
     return (
         <div style={{
             display: 'flex',
             height: '48px',
-            // @ts-ignore - Electron specific property
             WebkitAppRegion: 'no-drag',
             zIndex: 10000,
             position: 'relative' // Ensure z-index works
-        }}>
+        } as React.CSSProperties}>
             <style>{`
             .window-control-btn {
                 width: 48px;
@@ -61,13 +60,29 @@ export const WindowControls = () => {
                 transition: background var(--transition-micro), color var(--transition-micro);
                 -webkit-app-region: no-drag;
                 outline: none;
+                position: relative;
+                isolation: isolate;
+                overflow: hidden;
+            }
+            .window-control-btn::before {
+                content: '';
+                position: absolute;
+                inset: 4px;
+                background: transparent;
+                transition: background var(--transition-micro);
+                z-index: -1;
+                border-radius: 2px;
             }
             .window-control-btn:hover {
-                background: rgba(255, 255, 255, 0.06);
                 color: var(--color-text-primary);
             }
-            .window-control-btn.close-btn:hover {
+            .window-control-btn:hover::before {
+                background: rgba(255, 255, 255, 0.06);
+            }
+            .window-control-btn.close-btn:hover::before {
                 background: #E81123;
+            }
+            .window-control-btn.close-btn:hover {
                 color: #FFFFFF;
             }
         `}</style>

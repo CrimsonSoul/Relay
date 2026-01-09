@@ -1,0 +1,22 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "oncall",
+    "onCall",
+    "weathercode",
+    "precip",
+    "trackpad",
+    "allowpopups",
+    "Csvg",
+    "Crect",
+    "unmaximize"
+  ],
+  "ignorePaths": [
+    "node_modules",
+    "dist",
+    "build",
+    "*.lock",
+    "package-lock.json"
+  ]
+}

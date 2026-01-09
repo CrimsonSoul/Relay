@@ -49,9 +49,19 @@ export const ResizableHeader = ({
     }, [isResizing, minWidth, onResize]);
 
     const isSorted = !!sortDirection;
+    
+    // Create accessible label
+    const columnName = typeof children === 'string' ? children : 'column';
+    let sortLabel = `Sort by ${columnName}`;
+    if (sortDirection) {
+        const direction = sortDirection === 'asc' ? 'ascending' : 'descending';
+        sortLabel += `, currently sorted ${direction}`;
+    }
 
     return (
-        <div
+        <button
+            type="button"
+            aria-label={sortLabel}
             style={{
                 width: width,
                 flex: 'none',
@@ -60,7 +70,13 @@ export const ResizableHeader = ({
                 alignItems: 'center',
                 gap: '4px',
                 cursor: 'pointer',
-                paddingRight: '16px' // Reserve space for resize handle
+                paddingRight: '16px', // Reserve space for resize handle
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                font: 'inherit',
+                color: 'inherit',
+                textAlign: 'left'
             }}
             onClick={onSort}
             onMouseEnter={() => setIsHovered(true)}
@@ -86,7 +102,8 @@ export const ResizableHeader = ({
                 </span>
             )}
 
-            {/* Resize Handle Area - Enhanced */}
+            {/* Resize Handle Area - Mouse-only interaction (standard for column resizing) */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div
                 data-resize-handle="true"
                 style={{
@@ -100,7 +117,8 @@ export const ResizableHeader = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    transition: 'background var(--transition-fast)'
+                    transition: 'background var(--transition-fast)',
+                    pointerEvents: 'auto'
                 }}
                 onMouseDown={(e) => {
                     e.preventDefault();
@@ -119,7 +137,7 @@ export const ResizableHeader = ({
                     }
                 }}
             >
-                {/* Visual Grabber - Refined Attio Style */}
+                {/* Visual Grabber - Refined Style */}
                 <div style={{
                     width: '3px',
                     height: '16px',
@@ -131,6 +149,6 @@ export const ResizableHeader = ({
                     boxShadow: (isHovered || isResizing) ? '0 0 8px rgba(59, 130, 246, 0.3)' : 'none'
                 }} />
             </div>
-        </div>
+        </button>
     );
 };

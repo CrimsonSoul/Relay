@@ -62,7 +62,7 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
       >
         Hourly Forecast
       </h3>
-      <div
+      <ul
         className="weather-scroll-container"
         style={{
           display: "flex",
@@ -71,6 +71,25 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
           overflowX: "auto",
           overflowY: "hidden",
           padding: "24px 10px",
+          scrollBehavior: "smooth",
+          listStyle: "none",
+          margin: 0,
+        }}
+        onWheel={(e) => {
+          // Smart horizontal scrolling: convert vertical scroll to horizontal
+          const container = e.currentTarget;
+          const hasHorizontalScroll = container.scrollWidth > container.clientWidth;
+          
+          if (hasHorizontalScroll) {
+            // Use deltaX if explicitly scrolling horizontally (trackpad gesture)
+            // Otherwise convert deltaY (mouse wheel) to horizontal scroll
+            const scrollAmount = e.deltaX === 0 ? e.deltaY : e.deltaX;
+            
+            if (scrollAmount !== 0) {
+              e.preventDefault();
+              container.scrollLeft += scrollAmount;
+            }
+          }
         }}
       >
         {filteredHourlyForecast.map((item) => {
@@ -79,9 +98,13 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
           const isNow =
             date.getHours() === now.getHours() &&
             date.getDate() === now.getDate();
+          const timeLabel = isNow ? "Current hour" : date.toLocaleTimeString([], { hour: "numeric" });
+          const precipLabel = item.precip > 0 ? `${item.precip}% chance of precipitation` : "no precipitation expected";
+          const ariaLabel = `${timeLabel}, ${Math.round(item.temp)} degrees, ${precipLabel}`;
           return (
-            <div
+            <li
               key={item.time}
+              aria-label={ariaLabel}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -145,10 +168,10 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
               <span style={{ fontSize: "14px", fontWeight: 500 }}>
                 {Math.round(item.temp)}°
               </span>
-            </div>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 };
