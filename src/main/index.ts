@@ -93,13 +93,19 @@ async function createWindow() {
 
 // Auth interception is set up in appState.ts to avoid circular dependency
 
-await app.whenReady();
-setupPermissions(session.defaultSession);
-setupPermissions(session.fromPartition('persist:weather'));
-setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-setupIpc();
-await createWindow();
-setupMaintenanceTasks(() => state.fileManager);
-app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
+app.whenReady().then(async () => {
+  setupPermissions(session.defaultSession);
+  setupPermissions(session.fromPartition('persist:weather'));
+  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+  setupIpc();
+  await createWindow();
+  setupMaintenanceTasks(() => state.fileManager);
+  
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  });
+});
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
