@@ -62,14 +62,16 @@ export const WindowControls = () => {
                 outline: none;
                 position: relative;
                 isolation: isolate;
+                overflow: hidden;
             }
             .window-control-btn::before {
                 content: '';
                 position: absolute;
-                inset: 0;
+                inset: 4px;
                 background: transparent;
                 transition: background var(--transition-micro);
                 z-index: -1;
+                border-radius: 2px;
             }
             .window-control-btn:hover {
                 color: var(--color-text-primary);
