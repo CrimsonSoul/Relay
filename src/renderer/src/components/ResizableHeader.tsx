@@ -102,14 +102,9 @@ export const ResizableHeader = ({
                 </span>
             )}
 
-            {/* Resize Handle Area - Enhanced */}
+            {/* Resize Handle Area - Mouse-only interaction (standard for column resizing) */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div
-                role="slider"
-                aria-label="Resize column"
-                aria-valuemin={minWidth}
-                aria-valuenow={width}
-                aria-orientation="horizontal"
-                tabIndex={0}
                 data-resize-handle="true"
                 style={{
                     position: 'absolute',
@@ -122,7 +117,8 @@ export const ResizableHeader = ({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    transition: 'background var(--transition-fast)'
+                    transition: 'background var(--transition-fast)',
+                    pointerEvents: 'auto'
                 }}
                 onMouseDown={(e) => {
                     e.preventDefault();
@@ -131,19 +127,6 @@ export const ResizableHeader = ({
                     startX.current = e.clientX;
                     startWidth.current = width;
                     document.body.style.cursor = 'col-resize';
-                }}
-                onKeyDown={(e) => {
-                    // Keyboard resizing with arrow keys
-                    if (e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const newWidth = Math.max(minWidth, width - 10);
-                        onResize(newWidth);
-                    } else if (e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onResize(width + 10);
-                    }
                 }}
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
