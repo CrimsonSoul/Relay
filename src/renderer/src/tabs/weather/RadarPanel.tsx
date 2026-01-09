@@ -6,31 +6,6 @@ import { useRadar } from "./useRadar";
 
 interface RadarPanelProps { location: Location | null }
 
-const RadarLoadingIndicator: React.FC<{ loaded: boolean }> = ({ loaded }) => (
-  <div 
-    style={{ 
-      position: "absolute", 
-      inset: 0, 
-      display: "flex", 
-      alignItems: "center", 
-      justifyContent: "center", 
-      background: "#0f0f12", 
-      zIndex: 45, 
-      borderRadius: "12px",
-      opacity: loaded ? 0 : 1,
-      pointerEvents: loaded ? "none" : "all",
-      transition: "opacity 0.4s ease-in-out",
-      // Force solid background even during transition
-      WebkitAppRegion: 'no-drag'
-    }}
-  >
-    <div style={{ textAlign: "center", color: "var(--color-text-tertiary)" }}>
-      <div className="animate-spin" style={{ width: "32px", height: "32px", border: "3px solid rgba(255,255,255,0.1)", borderTopColor: "var(--color-accent-blue)", borderRadius: "50%", margin: "0 auto 12px" }} />
-      <div style={{ fontSize: "12px", fontWeight: 500, letterSpacing: "0.02em" }}>Loading radar...</div>
-    </div>
-  </div>
-);
-
 const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
   <Tooltip content="Open radar in browser for a larger view" position="top">
     <button onClick={() => globalThis.window.api?.openExternal?.(getRadarUrl(location.latitude, location.longitude))}
@@ -46,7 +21,7 @@ const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
 const containerStyle: React.CSSProperties = { flex: 1, background: "black", borderRadius: "12px", overflow: "hidden", position: "relative", border: "var(--border-subtle)", minHeight: "300px", WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, transform: 'translateZ(0)' };
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { radarLoaded, webviewRef } = useRadar(location);
+  const { webviewRef } = useRadar(location);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -54,21 +29,14 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 50 }} />
         {location ? (
           <>
-            <RadarLoadingIndicator loaded={radarLoaded} />
             {/* eslint-disable-next-line react/no-unknown-property */}
             <webview 
               ref={webviewRef as any} 
               src={getRadarUrl(location.latitude, location.longitude)} 
-              style={{ 
-                width: "100%", 
-                height: "100%", 
-                border: "none", 
-                opacity: radarLoaded ? 1 : 0, 
-                transition: radarLoaded ? "opacity 0.4s ease-in-out" : "none" 
-              }} 
+              style={{ width: "100%", height: "100%", border: "none" }} 
               partition="persist:weather" 
             />
-            {radarLoaded && <ExternalViewButton location={location} />}
+            <ExternalViewButton location={location} />
           </>
         ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
       </div>
