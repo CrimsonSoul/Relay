@@ -29,13 +29,14 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 50 }} />
         {location ? (
           <>
-            {/* eslint-disable-next-line react/no-unknown-property */}
+            {/* eslint-disable react/no-unknown-property */}
             <webview 
               ref={webviewRef as any} 
               src={getRadarUrl(location.latitude, location.longitude)} 
               style={{ width: "100%", height: "100%", border: "none" }} 
               partition="persist:weather" 
             />
+            {/* eslint-enable react/no-unknown-property */}
             <ExternalViewButton location={location} />
           </>
         ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
