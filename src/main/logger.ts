@@ -1,6 +1,6 @@
 import { app } from 'electron';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
@@ -74,14 +74,14 @@ const DEFAULT_CONFIG: LoggerConfig = {
 };
 
 class Logger {
-  private config: LoggerConfig;
-  private logPath: string;
-  private currentLogFile: string;
-  private errorLogFile: string;
-  private writeQueue: string[] = [];
-  private errorQueue: string[] = [];
+  private readonly config: LoggerConfig;
+  private logPath!: string;
+  private currentLogFile!: string;
+  private errorLogFile!: string;
+  private readonly writeQueue: string[] = [];
+  private readonly errorQueue: string[] = [];
   private isWriting = false;
-  private sessionStartTime: number;
+  private readonly sessionStartTime: number;
   private errorCount = 0;
   private warnCount = 0;
   private lastMemorySample = 0;
@@ -90,30 +90,36 @@ class Logger {
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.sessionStartTime = Date.now();
-    
+    this.setupGlobalErrorHandlers();
+  }
+
+  /**
+   * Activates the logger by determining the appropriate log paths.
+   * This is separated from the constructor to avoid running asynchronous operations
+   * during object instantiation.
+   */
+  public activate(): void {
+    if (this.initialized) return;
+
     // Lazy initialization to handle environments where app isn't ready
     if (app && typeof app.isReady === 'function' && app.isReady()) {
       this.initialize();
-    } else {
+    } else if (app && typeof app.whenReady === 'function') {
       // Wait for app to be ready
-      if (app && typeof app.whenReady === 'function') {
-        app.whenReady().then(() => this.initialize()).catch(() => {
-          // If app doesn't initialize (e.g., in tests), use fallback
-          this.logPath = '/tmp/relay-logs';
-          this.currentLogFile = '/tmp/relay-logs/relay.log';
-          this.errorLogFile = '/tmp/relay-logs/errors.log';
-          this.initialized = true;
-        });
-      } else {
-        // In test environment without proper app mock
-        this.logPath = '/tmp/relay-logs';
-        this.currentLogFile = '/tmp/relay-logs/relay.log';
-        this.errorLogFile = '/tmp/relay-logs/errors.log';
-        this.initialized = true;
-      }
+      app.whenReady()
+        .then(() => this.initialize())
+        .catch(() => this.setupFallback());
+    } else {
+      this.setupFallback();
     }
-    
-    this.setupGlobalErrorHandlers();
+  }
+
+  private setupFallback(): void {
+    this.logPath = '/tmp/relay-logs';
+    this.currentLogFile = path.join(this.logPath, 'relay.log');
+    this.errorLogFile = path.join(this.logPath, 'errors.log');
+    this.initialized = true;
+    this.ensureLogDirectory();
   }
 
   private initialize(): void {
@@ -184,11 +190,11 @@ class Logger {
     if (data?.appState) context.appState = data.appState;
     if (data?.correlationId) context.correlationId = data.correlationId;
     
-    // Extract stack trace from Error objects
-    if (data?.error instanceof Error) {
+    // Extract stack trace from Error objects or objects with a stack property
+    if (data?.error?.stack) {
       context.stack = data.error.stack;
-    } else if (typeof data?.error === 'object' && data.error?.stack) {
-      context.stack = data.error.stack;
+    } else if (data?.stack) {
+      context.stack = data.stack;
     }
     
     // Add performance metrics if enabled
@@ -219,51 +225,43 @@ class Logger {
       entry.message
     ];
 
-    // Add standard data
-    if (entry.data) {
-      const sanitizedData = { ...entry.data };
-      // Remove sensitive fields
-      delete sanitizedData.password;
-      delete sanitizedData.token;
-      delete sanitizedData.apiKey;
-      delete sanitizedData.secret;
-      
-      if (Object.keys(sanitizedData).length > 0) {
-        parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);
-      }
-    }
-
-    // Add error context if present
-    if (entry.errorContext) {
-      if (entry.errorContext.category) {
-        parts.push(`| Category: ${entry.errorContext.category}`);
-      }
-      if (entry.errorContext.errorCode) {
-        parts.push(`| Code: ${entry.errorContext.errorCode}`);
-      }
-      if (entry.errorContext.correlationId) {
-        parts.push(`| CID: ${entry.errorContext.correlationId}`);
-      }
-      if (entry.errorContext.userAction) {
-        parts.push(`| Action: ${entry.errorContext.userAction}`);
-      }
-      if (entry.errorContext.performance?.duration) {
-        parts.push(`| Duration: ${entry.errorContext.performance.duration}ms`);
-      }
-      if (entry.errorContext.memoryUsage) {
-        const mem = entry.errorContext.memoryUsage;
-        parts.push(`| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`);
-      }
-    }
+    this.appendDataToParts(parts, entry.data);
+    this.appendErrorContextToParts(parts, entry.errorContext);
 
     let output = parts.join(' ');
 
-    // Add stack trace on new lines if present
     if (entry.errorContext?.stack) {
       output += '\n' + this.formatStackTrace(entry.errorContext.stack);
     }
 
     return output;
+  }
+
+  private appendDataToParts(parts: string[], data?: any): void {
+    if (!data) return;
+
+    const sanitizedData = { ...data };
+    const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
+    sensitiveFields.forEach(field => delete sanitizedData[field]);
+    
+    if (Object.keys(sanitizedData).length > 0) {
+      parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);
+    }
+  }
+
+  private appendErrorContextToParts(parts: string[], context?: ErrorContext): void {
+    if (!context) return;
+
+    if (context.category) parts.push(`| Category: ${context.category}`);
+    if (context.errorCode) parts.push(`| Code: ${context.errorCode}`);
+    if (context.correlationId) parts.push(`| CID: ${context.correlationId}`);
+    if (context.userAction) parts.push(`| Action: ${context.userAction}`);
+    if (context.performance?.duration) parts.push(`| Duration: ${context.performance.duration}ms`);
+    
+    if (context.memoryUsage) {
+      const mem = context.memoryUsage;
+      parts.push(`| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`);
+    }
   }
 
   private formatStackTrace(stack: string): string {
@@ -440,7 +438,13 @@ class Logger {
  * Child logger with a fixed module name for cleaner API
  */
 class ModuleLogger {
-  constructor(private parent: Logger, private module: string) {}
+  private readonly parent: Logger;
+  private readonly module: string;
+
+  constructor(parent: Logger, module: string) {
+    this.parent = parent;
+    this.module = module;
+  }
 
   debug(message: string, data?: any): void {
     this.parent.debug(this.module, message, data);
@@ -481,6 +485,9 @@ class ModuleLogger {
 export const logger = new Logger({
   level: process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
 });
+
+// Activate the logger to start looking for paths
+logger.activate();
 
 // Pre-configured module loggers for common modules
 export const loggers = {
