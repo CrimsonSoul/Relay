@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { LogData } from '@shared/types';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
@@ -33,7 +34,7 @@ interface ErrorContext {
   errorCode?: string;
   stack?: string;
   userAction?: string;
-  appState?: any;
+  appState?: Record<string, unknown>;
   performance?: PerformanceMetrics;
   memoryUsage?: NodeJS.MemoryUsage;
   correlationId?: string;
@@ -49,7 +50,7 @@ interface LogEntry {
   level: string;
   module: string;
   message: string;
-  data?: any;
+  data?: LogData;
   errorContext?: ErrorContext;
 }
 
@@ -123,7 +124,7 @@ class Logger {
 
   private initialize(): void {
     if (this.initialized) return;
-    
+
     this.logPath = path.join(app.getPath('userData'), 'logs');
     this.currentLogFile = path.join(this.logPath, 'relay.log');
     this.errorLogFile = path.join(this.logPath, 'errors.log');
@@ -148,23 +149,23 @@ class Logger {
     return new Date().toISOString();
   }
 
-  private extractErrorContext(data: any): ErrorContext {
+  private extractErrorContext(data: LogData): ErrorContext {
     const context: ErrorContext = {};
-    
+
     if (data?.category) context.category = data.category;
     if (data?.errorCode) context.errorCode = data.errorCode;
     if (data?.stack) context.stack = data.stack;
     if (data?.userAction) context.userAction = data.userAction;
     if (data?.appState) context.appState = data.appState;
     if (data?.correlationId) context.correlationId = data.correlationId;
-    
+
     // Extract stack trace from Error objects or objects with a stack property
     if (data?.error?.stack) {
       context.stack = data.error.stack;
     } else if (data?.stack) {
       context.stack = data.stack;
     }
-    
+
     // Add performance metrics if enabled
     if (this.config.includePerformanceMetrics) {
       context.performance = {
@@ -172,7 +173,7 @@ class Logger {
         duration: data?.duration
       };
     }
-    
+
     // Add memory usage if enabled (sampled to reduce overhead)
     if (this.config.includeMemoryUsage) {
       const now = Date.now();
@@ -181,7 +182,7 @@ class Logger {
         this.lastMemorySample = now;
       }
     }
-    
+
     return context;
   }
 
@@ -205,13 +206,13 @@ class Logger {
     return output;
   }
 
-  private appendDataToParts(parts: string[], data?: any): void {
+  private appendDataToParts(parts: string[], data?: LogData): void {
     if (!data) return;
 
     const sanitizedData = { ...data };
     const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
     sensitiveFields.forEach(field => delete sanitizedData[field]);
-    
+
     if (Object.keys(sanitizedData).length > 0) {
       parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);
     }
@@ -225,7 +226,7 @@ class Logger {
     if (context.correlationId) parts.push(`| CID: ${context.correlationId}`);
     if (context.userAction) parts.push(`| Action: ${context.userAction}`);
     if (context.performance?.duration) parts.push(`| Duration: ${context.performance.duration}ms`);
-    
+
     if (context.memoryUsage) {
       const mem = context.memoryUsage;
       parts.push(`| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`);
@@ -303,7 +304,7 @@ class Logger {
     }
   }
 
-  private log(level: LogLevel, module: string, message: string, data?: any): void {
+  private log(level: LogLevel, module: string, message: string, data?: LogData): void {
     if (!this.shouldLog(level)) return;
 
     // Track error/warn counts
@@ -312,7 +313,7 @@ class Logger {
 
     const levelName = LogLevel[level];
     const errorContext = (level >= LogLevel.WARN) ? this.extractErrorContext(data) : undefined;
-    
+
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
       level: levelName,
@@ -327,9 +328,11 @@ class Logger {
     if (this.config.console) {
       switch (level) {
         case LogLevel.DEBUG:
+          // eslint-disable-next-line no-console
           console.debug(formatted);
           break;
         case LogLevel.INFO:
+          // eslint-disable-next-line no-console
           console.info(formatted);
           break;
         case LogLevel.WARN:
@@ -354,23 +357,23 @@ class Logger {
     return new ModuleLogger(this, module);
   }
 
-  debug(module: string, message: string, data?: any): void {
+  debug(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.DEBUG, module, message, data);
   }
 
-  info(module: string, message: string, data?: any): void {
+  info(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.INFO, module, message, data);
   }
 
-  warn(module: string, message: string, data?: any): void {
+  warn(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.WARN, module, message, data);
   }
 
-  error(module: string, message: string, data?: any): void {
+  error(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.ERROR, module, message, data);
   }
 
-  fatal(module: string, message: string, data?: any): void {
+  fatal(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.FATAL, module, message, data);
   }
 
@@ -414,23 +417,23 @@ class ModuleLogger {
     this.module = module;
   }
 
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: LogData): void {
     this.parent.debug(this.module, message, data);
   }
 
-  info(message: string, data?: any): void {
+  info(message: string, data?: LogData): void {
     this.parent.info(this.module, message, data);
   }
 
-  warn(message: string, data?: any): void {
+  warn(message: string, data?: LogData): void {
     this.parent.warn(this.module, message, data);
   }
 
-  error(message: string, data?: any): void {
+  error(message: string, data?: LogData): void {
     this.parent.error(this.module, message, data);
   }
 
-  fatal(message: string, data?: any): void {
+  fatal(message: string, data?: LogData): void {
     this.parent.fatal(this.module, message, data);
   }
 
@@ -444,7 +447,7 @@ class ModuleLogger {
   /**
    * Log with error category
    */
-  errorWithCategory(message: string, category: ErrorCategory, data?: any): void {
+  errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
     this.parent.error(this.module, message, { ...data, category });
   }
 }

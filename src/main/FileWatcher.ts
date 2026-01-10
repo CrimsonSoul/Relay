@@ -5,7 +5,7 @@ import { GROUP_FILES, CONTACT_FILES, SERVER_FILES, ONCALL_FILES } from "./operat
 type FileType = "groups" | "contacts" | "servers" | "oncall";
 
 interface WatcherCallbacks {
-  onFileChange: (fileTypes: Set<FileType>) => void;
+  onFileChange: () => void;
   shouldIgnore: () => boolean;
 }
 
@@ -23,11 +23,11 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
   watcher.on("all", (_event, changedPath) => {
     if (callbacks.shouldIgnore()) return;
 
-    const fileName = changedPath.split(/[/\\]/).pop() || "";
-    if (GROUP_FILES.includes(fileName)) pendingUpdates.add("groups");
-    else if (CONTACT_FILES.includes(fileName)) pendingUpdates.add("contacts");
-    else if (SERVER_FILES.includes(fileName)) pendingUpdates.add("servers");
-    else if (ONCALL_FILES.includes(fileName)) pendingUpdates.add("oncall");
+    const fileName = changedPath.split(/[/\\]/).pop();
+    if (fileName && GROUP_FILES.includes(fileName)) pendingUpdates.add("groups");
+    else if (fileName && CONTACT_FILES.includes(fileName)) pendingUpdates.add("contacts");
+    else if (fileName && SERVER_FILES.includes(fileName)) pendingUpdates.add("servers");
+    else if (fileName && ONCALL_FILES.includes(fileName)) pendingUpdates.add("oncall");
 
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {

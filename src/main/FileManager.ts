@@ -109,7 +109,7 @@ export class FileManager implements FileContext {
     this.fileLocks.set(path, newLock);
     return newLock;
   }
-  public safeStringify(data: any[][]): string { return stringifyCsv(data); }
+  public safeStringify(data: string[][]): string { return stringifyCsv(data); }
   public emitError(error: DataError) { this.emitter.emitError(error); }
   public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }
 

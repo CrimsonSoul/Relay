@@ -56,8 +56,7 @@ export const SortableTeamCard = ({
             style={style}
             {...attributes}
             {...listeners}
-        >
-            {/* eslint-disable-next-line jsx-a11y/prefer-tag-over-role */}
+            >
             <div
                 role="button"
                 tabIndex={0}
@@ -120,14 +119,15 @@ export const SortableTeamCard = ({
                     <Tooltip content={team.toUpperCase()}>
                         <div
                             style={{
-                                fontSize: '13px', // Increased from 11px
+                                fontSize: '13px',
                                 fontWeight: 800,
-                                color: colorScheme.text, // Dynamic color for team name
+                                color: colorScheme.text,
                                 letterSpacing: '0.08em',
                                 overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                                maxWidth: '180px' // Adjusted to fit grabber better
+                                overflowWrap: 'break-word',
+                                wordBreak: 'keep-all',
+                                whiteSpace: 'normal',
+                                maxWidth: '180px'
                             }}
                         >
                             {team.toUpperCase()}
@@ -155,7 +155,7 @@ export const SortableTeamCard = ({
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={primaryContact?.name || entry?.primary || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', wordBreak: 'break-word', whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.2 }}
                                 >
                                     {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
                                 </span>
@@ -172,7 +172,7 @@ export const SortableTeamCard = ({
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={backupContact?.name || entry?.backup || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '14px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '14px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', wordBreak: 'break-word', whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.2 }}
                                 >
                                     {backupContact?.name || entry?.backup || 'UNASSIGNED'}
                                 </span>

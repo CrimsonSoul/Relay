@@ -38,12 +38,12 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                     style={{
                         fontSize: isCollapsed ? '32px' : '40px',
                         fontWeight: 800,
-                        margin: 0,
+                        margin: '0 0 8px 0',
                         color: 'var(--color-text-primary)',
                         transition: 'font-size 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                        whiteSpace: 'normal',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.1,
                         willChange: 'font-size',
                     }}
                 >
@@ -53,7 +53,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                     style={{
                         fontSize: '18px',
                         color: 'var(--color-text-tertiary)',
-                        margin: isCollapsed ? '0' : '10px 0 0 0',
+                        margin: 0,
                         fontWeight: 500,
                         maxHeight: isCollapsed ? '0px' : '50px',
                         opacity: isCollapsed ? 0 : 1,

@@ -61,7 +61,14 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
     try {
       const res = await fetch('https://ipwho.is/');
       if (res.ok) {
-        const data = await res.json() as any;
+        const data = await res.json() as {
+          latitude?: number;
+          longitude?: number;
+          city?: string;
+          region?: string;
+          country?: string;
+          timezone?: { id?: string };
+        };
         return {
           lat: data.latitude,
           lon: data.longitude,

@@ -1,4 +1,4 @@
-export const getRadarUrl = (lat: any, lon: any): string => {
+export const getRadarUrl = (lat: number, lon: number): string => {
   const nLat = Number(lat);
   const nLon = Number(lon);
   if (Number.isNaN(nLat) || Number.isNaN(nLon)) return "";

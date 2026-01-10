@@ -36,7 +36,7 @@ describe('FileManager', () => {
   let tmpDir: string;
   let bundledDir: string;
   let fileManager: FileManager;
-  let mockWindow: any;
+  let mockWindow: BrowserWindow;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-test-'));
@@ -47,12 +47,12 @@ describe('FileManager', () => {
   });
 
   afterEach(async () => {
-    if (fileManager) fileManager.destroy();
+    fileManager.destroy();
     // Wait a bit to ensure file locks are released
     try {
       await fs.rm(tmpDir, { recursive: true, force: true });
       await fs.rm(bundledDir, { recursive: true, force: true });
-    } catch (e) {
+    } catch {
       // Ignore cleanup errors
     }
   });
@@ -407,7 +407,7 @@ describe('FileManager', () => {
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), 'test data');
 
       // Trigger backup (access method)
-      await (fileManager as any).performBackup('test');
+      await ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)('test');
 
       // Check if backup folder exists
       const backupDir = path.join(tmpDir, 'backups');
@@ -424,10 +424,8 @@ describe('FileManager', () => {
       expect(backupFolder).toBeDefined();
 
       // Check file content
-      if (backupFolder) {
-        const backupContent = await fs.readFile(path.join(backupDir, backupFolder, 'contacts.csv'), 'utf-8');
-        expect(backupContent).toBe('test data');
-      }
+      const backupContent = await fs.readFile(path.join(backupDir, backupFolder!, 'contacts.csv'), 'utf-8');
+      expect(backupContent).toBe('test data');
     });
 
     it('prunes old backups keeping only last 30 days', async () => {
@@ -452,7 +450,7 @@ describe('FileManager', () => {
       await fs.mkdir(path.join(backupDir, str1));
 
       // Trigger backup
-      await (fileManager as any).performBackup();
+      await ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)();
 
       const backups = await fs.readdir(backupDir);
 

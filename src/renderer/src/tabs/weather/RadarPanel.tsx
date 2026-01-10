@@ -39,17 +39,17 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
         <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 50 }} />
         {isValidLocation ? (
           <>
-            {/* eslint-disable react/no-unknown-property */}
+            { }
             <webview 
-              ref={webviewRef as any} 
+              ref={webviewRef as React.RefObject<Electron.WebviewTag>} 
               key={`${location.latitude.toFixed(2)}-${location.longitude.toFixed(2)}`} 
               src={getRadarUrl(location.latitude, location.longitude)} 
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
               style={{ width: "100%", height: "100%", background: "transparent" }} 
               partition="persist:weather" 
-              allowpopups={true as any}
+              allowpopups="true"
             />
-            {/* eslint-enable react/no-unknown-property */}
+            { }
             <ExternalViewButton location={location} />
             <button 
               onClick={reload}

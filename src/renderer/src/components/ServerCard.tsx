@@ -23,12 +23,12 @@ export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }:
         <div style={{ display: 'flex', flexDirection: isWide ? 'row' : 'column', alignItems: isWide ? 'center' : 'stretch', flex: 1, minWidth: 0, gap: isWide ? '40px' : '4px', justifyContent: isWide ? 'space-between' : 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '4px', flex: isWide ? 1 : 'unset' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Tooltip content={server.name}><span style={{ fontSize: isWide ? '24px' : '22px', fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{server.name}</span></Tooltip>
+              <Tooltip content={server.name}><span style={{ fontSize: isWide ? '24px' : '22px', fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', whiteSpace: 'normal', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', display: 'block' }}>{server.name}</span></Tooltip>
               <span style={{ fontSize: '10px', fontWeight: 900, padding: '2px 8px', borderRadius: '6px', background: osInfo.bg, border: `1px solid ${osInfo.border}`, color: osInfo.text, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{osInfo.label}</span>
             </div>
-            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+            <div style={{ fontSize: '14px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'normal', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all' }}>
               <span style={{ color: '#E5E7EB', opacity: 0.9, flexShrink: 0 }}>{server.businessArea}</span><span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span><span style={{ flexShrink: 0 }}>{server.lob}</span>
-              {server.comment && server.comment !== '-' && <><span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span><Tooltip content={server.comment}><span style={{ fontStyle: 'italic', opacity: 0.6, overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'help', display: 'block' }}>{server.comment}</span></Tooltip></>}
+              {server.comment && server.comment !== '-' && <><span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span><Tooltip content={server.comment}><span style={{ fontStyle: 'italic', opacity: 0.6, overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', cursor: 'help', display: 'block' }}>{server.comment}</span></Tooltip></>}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: isWide ? '40px' : '24px', marginTop: isWide ? 0 : '6px', justifyContent: isWide ? 'flex-end' : 'flex-start' }}>

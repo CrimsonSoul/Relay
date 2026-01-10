@@ -8,7 +8,7 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
   const autoLocateAttemptedRef = useRef(false);
 
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
-    try { const data = await window.api.searchLocation(`${lat},${lon}`); if (data.results?.[0]) { const { name, admin1, country_code } = data.results[0]; return `${name}, ${admin1 || ''} ${country_code}`.trim(); } } catch {}
+    try { const data = await window.api.searchLocation(`${lat},${lon}`); if (data.results?.[0]) { const { name, admin1, country_code } = data.results[0]; return `${name}, ${admin1 || ''} ${country_code}`.trim(); } } catch { /* Geocoding failure - return fallback */ }
     return 'Current Location';
   };
 
@@ -16,19 +16,19 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
     setError(null); setPermissionDenied(false);
     if (!('geolocation' in navigator)) { setError('Auto-location not supported by this browser.'); return; }
     navigator.geolocation.getCurrentPosition(
-      async (position) => { 
-        const { latitude, longitude } = position.coords; 
+      async (position) => {
+        const { latitude, longitude } = position.coords;
         const lat = Number(latitude.toFixed(4));
         const lon = Number(longitude.toFixed(4));
         const name = await reverseGeocode(lat, lon);
-        const newLoc: Location = { latitude: lat, longitude: lon, name }; 
-        onLocationChange(newLoc); 
-        onManualRefresh(lat, lon); 
+        const newLoc: Location = { latitude: lat, longitude: lon, name };
+        onLocationChange(newLoc);
+        onManualRefresh(lat, lon);
       },
-      async (err) => { 
-        console.error('[Weather] Geolocation failed:', err.message); 
-        if (err.code === 1) { setPermissionDenied(true); setError('Location access was denied. Please search for your city manually.'); } 
-        else { setError('Could not detect location automatically. Please search for your city manually.'); } 
+      async (err) => {
+        console.error('[Weather] Geolocation failed:', err.message);
+        if (err.code === 1) { setPermissionDenied(true); setError('Location access was denied. Please search for your city manually.'); }
+        else { setError('Could not detect location automatically. Please search for your city manually.'); }
       },
       { timeout: 5000, maximumAge: 300000, enableHighAccuracy: false }
     );
@@ -38,11 +38,16 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
 
   const handleManualSearch = async () => {
     if (!manualInput.trim()) return; setError(null);
-    try { const data = await window.api.searchLocation(manualInput);
-      if (data.results?.[0]) { const { latitude, longitude, name, admin1, country_code } = data.results[0]; const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
+    try {
+      const data = await window.api.searchLocation(manualInput);
+      if (data.results?.[0]) {
+        const { latitude, longitude, name, admin1, country_code } = data.results[0]; const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
         const newLoc: Location = { latitude: Number(latitude.toFixed(4)), longitude: Number(longitude.toFixed(4)), name: label }; onLocationChange(newLoc); onManualRefresh(newLoc.latitude, newLoc.longitude); setManualInput('');
       } else { setError('Location not found. Try a different search term.'); }
-    } catch (err: any) { setError(err.message || 'Search failed'); }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || 'Search failed');
+    }
   };
 
   return { manualInput, setManualInput, error, permissionDenied, handleAutoLocate, handleManualSearch };

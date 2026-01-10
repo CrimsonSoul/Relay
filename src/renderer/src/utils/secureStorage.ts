@@ -74,7 +74,7 @@ class SecureStorage {
         false,
         ['encrypt', 'decrypt']
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Encryption initialization failed', {
         error: error.message,
         category: ErrorCategory.RENDERER
@@ -107,7 +107,7 @@ class SecureStorage {
 
       // Convert to base64
       return btoa(String.fromCharCode(...combined));
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.warn('Encryption failed, using obfuscation', {
         error: error.message,
         category: ErrorCategory.RENDERER
@@ -139,7 +139,7 @@ class SecureStorage {
       );
 
       return new TextDecoder().decode(decryptedData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Fallback to simple deobfuscation if decryption fails
       loggers.storage.warn('Decryption failed, trying deobfuscation', {
         error: error.message,
@@ -157,7 +157,7 @@ class SecureStorage {
       const serialized = JSON.stringify(value);
       const encrypted = await this.encrypt(serialized);
       localStorage.setItem(STORAGE_PREFIX + key, encrypted);
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to store item', {
         key,
         error: error.message,
@@ -177,7 +177,7 @@ class SecureStorage {
 
       const decrypted = await this.decrypt(stored);
       return JSON.parse(decrypted) as T;
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to retrieve item', {
         key,
         error: error.message,
@@ -195,7 +195,7 @@ class SecureStorage {
       const serialized = JSON.stringify(value);
       const obfuscated = simpleObfuscate(serialized);
       localStorage.setItem(STORAGE_PREFIX + key, obfuscated);
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to store item (sync)', {
         key,
         error: error.message,
@@ -225,7 +225,7 @@ class SecureStorage {
       }
 
       return JSON.parse(deobfuscated) as T;
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.warn('Failed to retrieve item (sync), clearing corrupted data', {
         key,
         error: error.message,

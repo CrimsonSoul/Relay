@@ -25,8 +25,9 @@ export function setupConfigHandlers(
     try {
       onDataPathChange(filePaths[0]);
       return { success: true };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { success: false, error: message };
     }
   });
 
@@ -35,8 +36,9 @@ export function setupConfigHandlers(
     try {
       onDataPathChange(defaultPath);
       return { success: true };
-    } catch (e: any) {
-      return { success: false, error: e.message };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      return { success: false, error: message };
     }
   });
 }

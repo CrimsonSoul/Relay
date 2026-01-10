@@ -60,7 +60,16 @@ export default defineConfig({
         '@shared': resolve(__dirname, 'src/shared')
       }
     },
-    plugins: [react()],
+    plugins: [react({
+      babel: {
+        plugins: []
+      }
+    })],
+    server: {
+      hmr: {
+        overlay: false
+      }
+    },
     build: {
       outDir: 'dist/renderer',
       // Windows-specific optimizations for faster load times

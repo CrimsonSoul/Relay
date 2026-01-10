@@ -30,7 +30,7 @@ export class HeaderMatcher {
    * @param data - Optional data array to extend with empty values
    * @returns Column index
    */
-  ensureColumn(aliases: string[], defaultName: string, data?: any[][]): number {
+  ensureColumn(aliases: string[], defaultName: string, data?: string[][]): number {
     let idx = this.findColumn(aliases);
 
     if (idx === -1) {
@@ -78,7 +78,7 @@ export class HeaderMatcher {
   requireColumn(aliases: string[], errorMessage?: string): number {
     const idx = this.findColumn(aliases);
     if (idx === -1) {
-      throw new Error(errorMessage || `Required column not found. Tried: ${aliases.join(', ')}`);
+      throw new Error(errorMessage ?? `Required column not found. Tried: ${aliases.join(', ')}`);
     }
     return idx;
   }

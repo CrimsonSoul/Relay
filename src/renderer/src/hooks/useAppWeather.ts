@@ -55,13 +55,14 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
   // Restore Weather Location and Cached Data (Stale-while-revalidate)
   useEffect(() => {
     // 1. Restore Location from standard secure storage
-    const savedLocation = secureStorage.getItemSync<any>("weather_location");
-    if (savedLocation) {
+    const savedLocation = secureStorage.getItemSync<unknown>("weather_location");
+    if (savedLocation && typeof savedLocation === 'object' && savedLocation !== null) {
       // Defensively handle both 'latitude' (new) and 'lat' (legacy) keys
+      const loc = savedLocation as Record<string, unknown>;
       const sanitized: Location = {
-        latitude: Number(savedLocation.latitude ?? savedLocation.lat),
-        longitude: Number(savedLocation.longitude ?? savedLocation.lon),
-        name: savedLocation.name || 'Saved Location'
+        latitude: Number(loc.latitude ?? loc.lat),
+        longitude: Number(loc.longitude ?? loc.lon),
+        name: (typeof loc.name === 'string' ? loc.name : undefined) || 'Saved Location'
       };
       if (!isNaN(sanitized.latitude) && !isNaN(sanitized.longitude)) {
         setWeatherLocation(sanitized);
@@ -78,7 +79,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     // 2. Restore cached weather data and alerts for SWR
     const cachedWeather = secureStorage.getItemSync<WeatherData>(WEATHER_CACHE_KEY);
     const cachedAlerts = secureStorage.getItemSync<WeatherAlert[]>(WEATHER_ALERTS_CACHE_KEY);
-    
+
     if (cachedWeather) setWeatherData(cachedWeather);
     if (cachedAlerts) {
       setWeatherAlerts(cachedAlerts);
@@ -98,8 +99,8 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
       if (!silent) setWeatherLoading(true);
       try {
         const [wData, aData] = await Promise.all([
-          globalThis.window.api.getWeather(lat, lon),
-          globalThis.window.api.getWeatherAlerts(lat, lon).catch(() => []),
+          globalThis.window.api!.getWeather(lat, lon),
+          globalThis.window.api!.getWeatherAlerts(lat, lon).catch(() => []),
         ]);
 
         setWeatherData(wData);
@@ -112,21 +113,22 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
         // Handle Realtime Alerts
         if (aData.length > 0) {
           const newAlerts = aData.filter(
-            (a: any) => !lastAlertIdsRef.current.has(a.id)
+            (a: WeatherAlert) => !lastAlertIdsRef.current.has(a.id)
           );
           if (newAlerts.length > 0) {
             const severe =
               newAlerts.find(
-                (a: any) => a.severity === "Extreme" || a.severity === "Severe"
+                (a: WeatherAlert) => a.severity === "Extreme" || a.severity === "Severe"
               ) || newAlerts[0];
             showToast(`Weather Alert: ${severe.event}`, "error");
 
-            newAlerts.forEach((a: any) => lastAlertIdsRef.current.add(a.id));
+            newAlerts.forEach((a: WeatherAlert) => lastAlertIdsRef.current.add(a.id));
           }
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         loggers.weather.error("Weather fetch failed", {
-          error: err.message,
+          error: message,
           category: ErrorCategory.NETWORK,
           location: { lat, lon }
         });

@@ -84,8 +84,9 @@ export const ResizableHeader = ({
         >
             <span style={{
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+                lineHeight: 1.3,
                 flex: 1
             }}>
                 {children}
@@ -103,7 +104,6 @@ export const ResizableHeader = ({
             )}
 
             {/* Resize Handle Area - Mouse-only interaction (standard for column resizing) */}
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div
                 data-resize-handle="true"
                 style={{

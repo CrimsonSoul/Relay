@@ -70,9 +70,11 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
             borderRadius: '16px',
             fontWeight: 600,
             maxWidth: '100%',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            wordBreak: 'break-word',
+            whiteSpace: 'normal'
           }}>
-            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <span style={{ display: 'block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
               {label}
             </span>
             {count !== undefined && (

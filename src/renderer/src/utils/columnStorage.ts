@@ -23,7 +23,7 @@ export function loadColumnWidths<T extends ColumnWidths>(
   const { storageKey, defaults } = options;
 
   try {
-    const parsed = secureStorage.getItemSync<any>(storageKey);
+    const parsed = secureStorage.getItemSync<unknown>(storageKey);
     if (!parsed || typeof parsed !== 'object') return defaults;
 
     // Filter to only include keys that exist in current schema
@@ -32,13 +32,13 @@ export function loadColumnWidths<T extends ColumnWidths>(
 
     for (const key of validKeys) {
       if (key in parsed && typeof parsed[key] === 'number') {
-        (filtered as any)[key] = parsed[key];
+        (filtered as Record<string, number>)[key] = parsed[key];
       }
     }
 
     // Merge with defaults to ensure all required keys are present
     return { ...defaults, ...filtered };
-  } catch (e: any) {
+  } catch (e: unknown) {
     loggers.storage.error(`Failed to load column widths from ${storageKey}`, {
       error: e.message,
       category: ErrorCategory.RENDERER
@@ -56,7 +56,7 @@ export function saveColumnWidths(
 ): void {
   try {
     secureStorage.setItemSync(storageKey, widths);
-  } catch (e: any) {
+  } catch (e: unknown) {
     loggers.storage.error(`Failed to save column widths to ${storageKey}`, {
       error: e.message,
       category: ErrorCategory.RENDERER
@@ -73,7 +73,7 @@ export function loadColumnOrder<T extends string>(
   const { storageKey, defaults } = options;
 
   try {
-    const parsed = secureStorage.getItemSync<any>(storageKey);
+    const parsed = secureStorage.getItemSync<unknown>(storageKey);
     if (!Array.isArray(parsed)) return defaults;
 
     // Validate length matches
@@ -86,7 +86,7 @@ export function loadColumnOrder<T extends string>(
     if (!isValid) return defaults;
 
     return parsed as T[];
-  } catch (e: any) {
+  } catch (e: unknown) {
     loggers.storage.error(`Failed to load column order from ${storageKey}`, {
       error: e.message,
       category: ErrorCategory.RENDERER
@@ -104,7 +104,7 @@ export function saveColumnOrder<T extends string>(
 ): void {
   try {
     secureStorage.setItemSync(storageKey, order);
-  } catch (e: any) {
+  } catch (e: unknown) {
     loggers.storage.error(`Failed to save column order to ${storageKey}`, {
       error: e.message,
       category: ErrorCategory.RENDERER
@@ -118,7 +118,7 @@ export function saveColumnOrder<T extends string>(
 export function clearColumnStorage(...storageKeys: string[]): void {
   try {
     storageKeys.forEach(key => secureStorage.removeItem(key));
-  } catch (e: any) {
+  } catch (e: unknown) {
     loggers.storage.error('Failed to clear column storage', {
       error: e.message,
       category: ErrorCategory.RENDERER

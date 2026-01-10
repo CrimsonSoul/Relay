@@ -12,8 +12,8 @@ interface EnvSchema {
     required?: boolean;
     type?: 'string' | 'number' | 'boolean';
     pattern?: RegExp;
-    defaultValue?: any;
-    validate?: (value: any) => boolean;
+    defaultValue?: string | number | boolean;
+    validate?: (_value: string) => boolean;
   };
 }
 

@@ -29,7 +29,7 @@ export async function parseServers(ctx: FileContext): Promise<Server[]> {
     const data = await parseCsvAsync(cleanContents);
     if (data.length < 2) return [];
 
-    const header = data[0].map((h: any) => desanitizeField(String(h).trim().toLowerCase()));
+    const header = data[0].map((h: unknown) => desanitizeField(String(h).trim().toLowerCase()));
     const rows = data.slice(1);
     const matcher = new HeaderMatcher(header);
 

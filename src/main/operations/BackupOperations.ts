@@ -41,7 +41,7 @@ export async function performBackup(rootDir: string, reason: string = "auto") {
       const destPath = join(backupPath, file);
       try {
         await fs.copyFile(sourcePath, destPath);
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Ignore if file doesn't exist (might be fresh install)
         if (err.code !== "ENOENT") {
           loggers.fileManager.error(`Failed to backup ${file}`, { error: err });

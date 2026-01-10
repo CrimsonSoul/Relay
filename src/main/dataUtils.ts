@@ -9,7 +9,7 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'servers.csv': 'Server,IP,Port,Protocol,Owner,Comment', 'oncall.csv': 'Team,Primary,Backup,Label'
 };
 
-export async function ensureDataFilesAsync(targetRoot: string, bundledDataPath: string, isPackaged: boolean) {
+export async function ensureDataFilesAsync(targetRoot: string, _bundledDataPath: string, _isPackaged: boolean) {
   try { await fsPromises.mkdir(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create persistent data directory', { error: e }); }
   const files = ['groups.csv', 'contacts.csv'];
   for (const file of files) {
@@ -21,7 +21,7 @@ export async function ensureDataFilesAsync(targetRoot: string, bundledDataPath: 
   }
 }
 
-export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isPackaged: boolean) {
+export function ensureDataFiles(targetRoot: string, _bundledDataPath: string, _isPackaged: boolean) {
   if (!fs.existsSync(targetRoot)) { try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create persistent data directory', { error: e }); } }
   const files = ['groups.csv', 'contacts.csv'];
   for (const file of files) {
@@ -33,19 +33,39 @@ export function ensureDataFiles(targetRoot: string, bundledDataPath: string, isP
   }
 }
 
-export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string, bundledDataPath: string): Promise<boolean> {
+export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string, _bundledDataPath: string): Promise<boolean> {
   const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
   try { await fsPromises.mkdir(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create target directory', { error: e }); }
   const results = await Promise.all(essentialFiles.map(async (file) => {
     const source = join(sourceRoot, file), target = join(targetRoot, file);
-    try { await fsPromises.access(target); return false; } catch {}
-    try { await fsPromises.access(source); await fsPromises.copyFile(source, target); logger.debug('DataUtils', `Copied ${file}`, { from: sourceRoot, to: targetRoot }); return true; }
-    catch { const headers = DEFAULT_HEADERS[file]; if (headers) { try { await fsPromises.writeFile(target, headers + '\n', 'utf-8'); logger.debug('DataUtils', `Created empty ${file} with headers only`); return true; } catch (writeErr) { console.debug(`[DataUtils] Failed to create ${file}:`, writeErr); } } return false; }
+    try {
+      await fsPromises.access(target);
+      return false;
+    } catch {
+      try {
+        await fsPromises.access(source);
+        await fsPromises.copyFile(source, target);
+        logger.debug('DataUtils', `Copied ${file}`, { from: sourceRoot, to: targetRoot });
+        return true;
+      } catch {
+        const headers = DEFAULT_HEADERS[file];
+        if (headers) {
+          try {
+            await fsPromises.writeFile(target, headers + '\n', 'utf-8');
+            logger.debug('DataUtils', `Created empty ${file} with headers only`);
+            return true;
+          } catch (writeErr) {
+            logger.debug('DataUtils', `Failed to create ${file}`, { error: writeErr });
+          }
+        }
+        return false;
+      }
+    }
   }));
   return results.some(copied => copied);
 }
 
-export function copyDataFiles(sourceRoot: string, targetRoot: string, bundledDataPath: string) {
+export function copyDataFiles(sourceRoot: string, targetRoot: string, _bundledDataPath: string) {
   const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
   let filesCopied = false;
   if (!fs.existsSync(targetRoot)) { try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create target dir', { error: e }); } }

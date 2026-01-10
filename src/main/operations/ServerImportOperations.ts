@@ -18,9 +18,9 @@ export async function importServersWithMapping(ctx: FileContext, sourcePath: str
     const lines = sourceContent.split(/\r?\n/);
     if (lines.length === 0) return { success: false, message: "Empty source file" };
 
-    if (await ctx.isDummyData(SERVER_FILES[0])) { 
-      loggers.fileManager.info("[ServerImport] Detected dummy servers. Clearing."); 
-      try { await fs.unlink(targetPath); } catch {} 
+    if (await ctx.isDummyData(SERVER_FILES[0])) {
+      loggers.fileManager.info("[ServerImport] Detected dummy servers. Clearing.");
+      try { await fs.unlink(targetPath); } catch { /* File may not exist */ }
     }
 
     let headerLineIndex = -1;
@@ -31,15 +31,15 @@ export async function importServersWithMapping(ctx: FileContext, sourcePath: str
     const sourceData = (await parseCsvAsync(cleanContents)).map((r) => r.map((c) => desanitizeField(c)));
     if (sourceData.length < 2) return { success: false, message: "File appears empty." };
 
-    const sourceHeader = sourceData[0].map((h: any) => String(h).toLowerCase().trim());
+    const sourceHeader = sourceData[0].map((h: unknown) => String(h).toLowerCase().trim());
     const sourceRows = sourceData.slice(1);
 
-    const mapHeader = (candidates: string[]) => { for (const c of candidates) { const idx = sourceHeader.indexOf(c); if (idx !== -1) return idx; } return -1; };
+    const mapHeader = (candidates: readonly string[]) => { for (const c of candidates) { const idx = sourceHeader.indexOf(c); if (idx !== -1) return idx; } return -1; };
     const s_nameIdx = mapHeader(SERVER_COLUMN_ALIASES.name), s_baIdx = mapHeader(SERVER_COLUMN_ALIASES.businessArea), s_lobIdx = mapHeader(SERVER_COLUMN_ALIASES.lob);
     const s_commentIdx = mapHeader(SERVER_COLUMN_ALIASES.comment), s_ownerIdx = mapHeader(SERVER_COLUMN_ALIASES.owner), s_contactIdx = mapHeader(SERVER_COLUMN_ALIASES.contact), s_osTypeIdx = mapHeader(SERVER_COLUMN_ALIASES.os);
     if (s_nameIdx === -1) return { success: false, message: 'No "Name" column found.' };
 
-    let targetData: any[][] = existsSync(targetPath) ? (await parseCsvAsync(await fs.readFile(targetPath, "utf-8"))).map((r) => r.map((c) => desanitizeField(c))) : [];
+    let targetData: string[][] = existsSync(targetPath) ? (await parseCsvAsync(await fs.readFile(targetPath, "utf-8"))).map((r) => r.map((c) => desanitizeField(c))) : [];
     if (targetData.length === 0) targetData.push(STD_HEADERS);
     const targetHeader = targetData[0].map((h) => String(h).toLowerCase());
 
@@ -59,5 +59,9 @@ export async function importServersWithMapping(ctx: FileContext, sourcePath: str
     await ctx.writeAndEmit(targetPath, ctx.safeStringify(targetData)); ctx.performBackup("importServers");
     await cleanupServerContacts(ctx);
     return { success: true };
-  } catch (e: any) { loggers.fileManager.error("[ServerImport] Error:", { error: e }); return { success: false, message: e.message }; }
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    loggers.fileManager.error("[ServerImport] Error:", { error: e });
+    return { success: false, message };
+  }
 }

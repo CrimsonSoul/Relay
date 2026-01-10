@@ -17,14 +17,14 @@ const getRoleAbbrev = (role: string) => {
 
 export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTemplate }) => (
   <div style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: "12px", alignItems: "center", padding: "3px 0" }}>
-    <Tooltip content={row.role}>
-      <div style={{ color: "var(--color-text-tertiary)", fontSize: "13px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", alignSelf: "center", opacity: 0.8 }}>{getRoleAbbrev(row.role)}</div>
-    </Tooltip>
+      <Tooltip content={row.role}>
+        <div style={{ color: "var(--color-text-tertiary)", fontSize: "13px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "normal", overflow: "hidden", overflowWrap: "break-word", wordBreak: "keep-all", alignSelf: "center", opacity: 0.8, minHeight: "19px" }}>{getRoleAbbrev(row.role)}</div>
+      </Tooltip>
     <Tooltip content={row.name}>
-      <div style={{ color: row.name ? "var(--color-text-primary)" : "var(--color-text-quaternary)", fontSize: "20px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.2 }}>{row.name || "—"}</div>
+      <div style={{ color: row.name ? "var(--color-text-primary)" : "var(--color-text-quaternary)", fontSize: "20px", fontWeight: 700, whiteSpace: "normal", overflow: "hidden", wordBreak: "break-word", lineHeight: 1.2, minWidth: 0 }}>{row.name || "—"}</div>
     </Tooltip>
     <Tooltip content={row.contact}>
-      <div style={{ color: "var(--color-text-primary)", fontSize: "18px", fontFamily: "var(--font-mono)", textAlign: "right", whiteSpace: "nowrap", fontWeight: 700, width: "180px" }}>{formatPhoneNumber(row.contact)}</div>
+      <div style={{ color: "var(--color-text-primary)", fontSize: "18px", fontFamily: "var(--font-mono)", textAlign: "right", whiteSpace: "nowrap", fontWeight: 700, width: "160px", overflow: "hidden", textOverflow: "ellipsis" }}>{formatPhoneNumber(row.contact)}</div>
     </Tooltip>
     {hasAnyTimeWindow && (
       <Tooltip content={row.timeWindow || ""}>

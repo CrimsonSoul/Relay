@@ -34,7 +34,7 @@ export interface FileContext {
   emitProgress(progress: ImportProgress): void;
 
   /** Stringify data array to CSV with proper sanitization */
-  safeStringify(data: any[][]): string;
+  safeStringify(data: string[][]): string;
 
   /** Find the first existing file from a list of candidates */
   resolveExistingFile(fileNames: string[]): string | null;

@@ -46,9 +46,10 @@ export function setupWeatherHandlers() {
       );
       if (!res.ok) throw new Error('Failed to fetch weather data');
       return await res.json();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       loggers.weather.error('Failed to fetch weather data', {
-        error: err.message,
+        error: message,
         category: ErrorCategory.NETWORK,
         lat,
         lon
@@ -64,9 +65,10 @@ export function setupWeatherHandlers() {
       );
       if (!res.ok) throw new Error('Geocoding failed');
       return await res.json();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       loggers.weather.error('Location search failed', {
-        error: err.message,
+        error: message,
         category: ErrorCategory.NETWORK,
         query
       });
@@ -99,7 +101,7 @@ export function setupWeatherHandlers() {
       // Map to our WeatherAlert type
       return features.map((f: NWSAlertFeature) => {
         const props = f.properties;
-        
+
         // Helper to capitalize first letter and handle missing values
         const normalize = (val: string | undefined) => {
           if (!val) return 'Unknown';
@@ -120,9 +122,10 @@ export function setupWeatherHandlers() {
           areaDesc: props?.areaDesc || ''
         };
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       loggers.weather.error('Failed to fetch weather alerts', {
-        error: err.message,
+        error: message,
         category: ErrorCategory.NETWORK,
         lat,
         lon
