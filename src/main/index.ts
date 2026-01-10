@@ -131,23 +131,34 @@ app.on('window-all-closed', () => {
 });
 
 loggers.main.info('Waiting for Electron ready...');
-try {
-  await app.whenReady();
-  loggers.main.info('Electron ready, performing setup...');
-  
-  setupPermissions(session.defaultSession);
-  setupPermissions(session.fromPartition('persist:weather'));
-  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-  
-  setupIpc();
-  await createWindow();
-  setupMaintenanceTasks(() => state.fileManager);
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-  });
-} catch (error: any) {
-  loggers.main.error('Failed to start application', { error: error.message });
-  dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
-  app.quit();
-}
+
+// PROMISE CHAIN USED INTENTIONALLY - DO NOT CHANGE TO TOP-LEVEL AWAIT
+// Top-level await causes the Electron main process to hang/deadlock on Windows,
+// resulting in a "zombie process" (running but no window).
+// We silence the linter here to prioritize application stability.
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+(async () => { // NOSONAR
+  try {
+    if (!app.isReady()) {
+      await app.whenReady();
+    }
+    
+    loggers.main.info('Electron ready, performing setup...');
+    
+    setupPermissions(session.defaultSession);
+    setupPermissions(session.fromPartition('persist:weather'));
+    setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+    
+    setupIpc();
+    await createWindow();
+    setupMaintenanceTasks(() => state.fileManager);
+    
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
+  } catch (error: any) {
+    loggers.main.error('Failed to start application', { error: error.message });
+    dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
+    app.quit();
+  }
+})();

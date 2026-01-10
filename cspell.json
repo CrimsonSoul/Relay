@@ -21,7 +21,8 @@
     "fsevents",
     "NSIS",
     "vitest",
-    "maplibregl"
+    "maplibregl",
+    "NOSONAR"
   ],
   "ignorePaths": [
     "node_modules",
