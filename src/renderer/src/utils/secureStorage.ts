@@ -66,7 +66,7 @@ class SecureStorage {
         {
           name: 'PBKDF2',
           salt: new TextEncoder().encode('relay-salt-2026'),
-          iterations: 100000,
+          iterations: 10000, // Reduced: this is obfuscation, not security-critical encryption
           hash: 'SHA-256'
         },
         keyMaterial,

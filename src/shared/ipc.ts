@@ -126,7 +126,7 @@ export type BridgeAPI = {
   onReloadStart: (callback: () => void) => () => void;
   onReloadComplete: (callback: (success: boolean) => void) => () => void;
   onDataError: (callback: (error: DataError) => void) => () => void;
-  onImportProgress: (callback: (progress: ImportProgress) => void) => void;
+  onImportProgress: (callback: (progress: ImportProgress) => void) => () => void;
   reloadData: () => Promise<void>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => void;
   submitAuth: (
