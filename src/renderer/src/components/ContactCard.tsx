@@ -4,7 +4,7 @@ import { formatPhoneNumber } from '@shared/phoneUtils';
 import { Tooltip } from './Tooltip';
 import { GroupPill, getInitials, Avatar } from './shared/AvatarUtils';
 
-type ContactRowProps = { name: string; email: string; title?: string; phone?: string; avatarColor?: string; action?: React.ReactNode; style?: React.CSSProperties; className?: string; sourceLabel?: string; groups?: string[]; selected?: boolean; onContextMenu?: (e: React.MouseEvent, contact: any) => void; onRowClick?: () => void };
+type ContactRowProps = { name: string; email: string; title?: string; phone?: string; avatarColor?: string; action?: React.ReactNode; style?: React.CSSProperties; className?: string; sourceLabel?: string; groups?: string[]; selected?: boolean; onContextMenu?: (e: React.MouseEvent, contact: { name: string; email: string; title?: string; phone?: string; groups?: string[] }) => void; onRowClick?: () => void };
 
 const isValidName = (name: string) => name && name.replace(/[.\s\-_]/g, '').length > 0;
 
@@ -20,20 +20,20 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: color, opacity: 0.6 }} />
         <Avatar name={name} email={email} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '4px', justifyContent: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
-            <Tooltip content={displayName}><span style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.02em', display: 'block' }}>{displayName}</span></Tooltip>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', minWidth: 0 }}>
+            <Tooltip content={displayName}><span style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-primary)', whiteSpace: 'normal', overflow: 'hidden', wordBreak: 'break-word', letterSpacing: '-0.02em', display: 'block', lineHeight: 1.2 }}>{displayName}</span></Tooltip>
             {sourceLabel && <span style={{ fontSize: '10px', background: 'rgba(255, 255, 255, 0.12)', color: 'var(--color-text-primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: 900, textTransform: 'uppercase', flexShrink: 0, letterSpacing: '0.05em' }}>{sourceLabel}</span>}
           </div>
-          <div style={{ fontSize: '15px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
-            {title && <Tooltip content={title}><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span></Tooltip>}
-            {title && <span style={{ opacity: 0.3, fontSize: '16px' }}>|</span>}
-            <Tooltip content={email}><span style={{ opacity: 0.8, overflow: 'hidden', textOverflow: 'ellipsis' }}>{email}</span></Tooltip>
+          <div style={{ fontSize: '15px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'normal', overflow: 'hidden', wordBreak: 'break-word', minWidth: 0 }}>
+            {title && <Tooltip content={title}><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all' }}>{title}</span></Tooltip>}
+            {title && <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>}
+            <Tooltip content={email}><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all', opacity: 0.8 }}>{email}</span></Tooltip>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: '12px', justifyContent: 'flex-end' }}>
-          {formattedPhone && <Tooltip content={formattedPhone}><span style={{ fontSize: '20px', color: '#60A5FA', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '180px', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', textAlign: 'right' }}>{formattedPhone}</span></Tooltip>}
+          {formattedPhone && <Tooltip content={formattedPhone}><span style={{ fontSize: '20px', color: '#60A5FA', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '160px', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', textAlign: 'right' }}>{formattedPhone}</span></Tooltip>}
           {groups.length > 0 && (
-            <Tooltip content={groups.join(', ')}><div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'nowrap', overflow: 'hidden' }}>
+            <Tooltip content={groups.join(', ')}><div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'wrap', overflow: 'hidden' }}>
               {groups.slice(0, 2).map(g => <GroupPill key={g} group={g} />)}
               {groups.length > 2 && <span style={{ fontSize: '12px', color: 'var(--color-text-tertiary)', fontWeight: 700, background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '6px', flexShrink: 0 }}>+{groups.length - 2}</span>}
             </div></Tooltip>

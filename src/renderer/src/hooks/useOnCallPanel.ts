@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { OnCallEntry, Contact } from '@shared/ipc';
 import { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
+import type { ContextMenuItem } from '../components/ContextMenu';
 
 const getWeekRange = () => {
     const now = new Date();
@@ -21,7 +22,7 @@ export function useOnCallPanel(onCall: OnCallEntry[], contacts: Contact[], onUpd
     const [searchQuery, setSearchQuery] = useState('');
     const [renamingTeam, setRenamingTeam] = useState<{ old: string, new: string } | null>(null);
     const [localOnCall, setLocalOnCall] = useState<OnCallEntry[]>(onCall);
-    const [menu, setMenu] = useState<{ x: number, y: number, items: any[] } | null>(null);
+    const [menu, setMenu] = useState<{ x: number, y: number, items: ContextMenuItem[] } | null>(null);
     const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
 
     useEffect(() => {

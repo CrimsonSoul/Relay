@@ -37,7 +37,7 @@ describe('validateDataPath', () => {
          // It's hard to simulate permission errors on actual OS tmp dirs without root/chmod
          // So we will spy on fs.writeFileSync to throw EACCES
          const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
-             const err: any = new Error('Permission denied');
+             const err = new Error('Permission denied');
              err.code = 'EACCES';
              throw err;
          });

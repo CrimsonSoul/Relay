@@ -214,7 +214,7 @@ describe('validateColumnWidths', () => {
   });
 
   it('rejects widths with non-number values', () => {
-    const widths = { name: 200, email: '150' as any, phone: 100 };
+    const widths = { name: 200, email: '150', phone: 100 } as unknown as Record<string, number>;
     const keys = ['name', 'email', 'phone'];
 
     const result = validateColumnWidths(widths, keys);
@@ -223,13 +223,13 @@ describe('validateColumnWidths', () => {
   });
 
   it('rejects null widths', () => {
-    const result = validateColumnWidths(null as any, ['name']);
+    const result = validateColumnWidths(null as unknown as Record<string, number>, ['name']);
 
     expect(result).toBeNull();
   });
 
   it('rejects undefined widths', () => {
-    const result = validateColumnWidths(undefined as any, ['name']);
+    const result = validateColumnWidths(undefined as unknown as Record<string, number>, ['name']);
 
     expect(result).toBeNull();
   });

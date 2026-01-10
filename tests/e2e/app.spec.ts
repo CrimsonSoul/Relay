@@ -11,8 +11,8 @@ test.describe('Application Shell', () => {
   test.afterEach(async ({ page }) => {
     // Clean up any global state to prevent cross-test pollution
     await page.evaluate(() => {
-      delete (globalThis as any).__triggerReloadStart;
-      delete (globalThis as any).__triggerReloadComplete;
+      delete (globalThis as Record<string, unknown>).__triggerReloadStart;
+      delete (globalThis as Record<string, unknown>).__triggerReloadComplete;
     });
   });
 

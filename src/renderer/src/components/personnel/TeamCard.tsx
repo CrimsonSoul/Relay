@@ -17,9 +17,8 @@ export const TeamCard = React.memo(({ team, rows, contacts, onUpdateRows, onRena
 
   return (
     <>
-      <div className="grid-stack-item-content" style={{ padding: "0 16px 20px 0", height: "100%", boxSizing: "border-box" }}>
-        {/* eslint-disable-next-line jsx-a11y/prefer-tag-over-role */}
-        <div 
+        <div className="grid-stack-item-content" style={{ padding: "0 16px 20px 0", height: "100%", boxSizing: "border-box" }}>
+        <div
           role="button"
           tabIndex={0}
           style={{ padding: "12px", background: "rgba(255, 255, 255, 0.03)", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.06)", display: "flex", flexDirection: "column", gap: "8px", position: "relative", overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", height: "100%", boxSizing: "border-box", cursor: "grab" }}
@@ -34,7 +33,7 @@ export const TeamCard = React.memo(({ team, rows, contacts, onUpdateRows, onRena
         >
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "5px", background: colorScheme.text, opacity: 0.9, borderRadius: "16px 0 0 16px" }} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "10px" }}>
-            <div style={{ fontSize: "20px", fontWeight: 800, color: colorScheme.text, letterSpacing: "0.05em", textTransform: "uppercase" }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: colorScheme.text, letterSpacing: "0.05em", textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "keep-all", whiteSpace: "normal" }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "14px" }}>
             {teamRows.map((row) => <TeamRow key={row.id} row={row} hasAnyTimeWindow={hasAnyTimeWindow} gridTemplate={rowGridTemplate} />)}

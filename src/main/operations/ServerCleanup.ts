@@ -22,7 +22,7 @@ export async function cleanupServerContacts(ctx: FileContext): Promise<void> {
     const data = (await parseCsvAsync(content)).map((r) => r.map((c) => desanitizeField(c)));
     if (data.length < 2) return;
 
-    const header = data[0].map((h: any) => String(h).toLowerCase().trim());
+    const header = data[0].map((h: unknown) => String(h).toLowerCase().trim());
     const ownerIdx = header.findIndex((h) => h === "owner" || h === "lob owner");
     const contactIdx = header.findIndex((h) => h === "it contact" || h === "it tech support contact");
     if (ownerIdx === -1 && contactIdx === -1) return;

@@ -53,28 +53,28 @@ export async function injectMockApi(page: Page) {
         return () => {};
       },
       onReloadStart: (callback) => {
-        (globalThis as any).__triggerReloadStart = callback;
+        (globalThis as Record<string, unknown>).__triggerReloadStart = callback;
         return () => {};
       },
       onReloadComplete: (callback) => {
-        (globalThis as any).__triggerReloadComplete = callback;
+        (globalThis as Record<string, unknown>).__triggerReloadComplete = callback;
         return () => {};
       },
-      onDataError: (callback) => {
+      onDataError: (_callback) => {
         return () => {};
       },
-      onImportProgress: (callback) => {
+      onImportProgress: (_callback) => {
         return () => {};
       },
       reloadData: async () => {
         // Simulate a reload cycle
-        if ((globalThis as any).__triggerReloadStart) (globalThis as any).__triggerReloadStart();
+        if ((globalThis as Record<string, unknown>).__triggerReloadStart) (globalThis as Record<string, unknown>).__triggerReloadStart();
         setTimeout(() => {
-            if ((globalThis as any).__triggerReloadComplete) (globalThis as any).__triggerReloadComplete(true);
+            if ((globalThis as Record<string, unknown>).__triggerReloadComplete) (globalThis as Record<string, unknown>).__triggerReloadComplete(true);
         }, 500);
       },
       onAuthRequested: () => () => {},
-      submitAuth: async (nonce, username, password, remember) => true,
+      submitAuth: async (_nonce, _username, _password, _remember) => true,
       cancelAuth: () => {},
       subscribeToRadar: (callback) => {
          callback(data.mockRadar);
@@ -100,6 +100,6 @@ export async function injectMockApi(page: Page) {
     };
 
     // Expose it as window.api
-    (globalThis as any).api = mockApi;
+    (globalThis as Record<string, unknown>).api = mockApi;
   }, { mockData: MOCK_DATA, mockRadar: MOCK_RADAR });
 }

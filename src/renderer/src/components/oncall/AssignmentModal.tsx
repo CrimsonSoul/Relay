@@ -72,18 +72,18 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                   <div style={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                     <Tooltip content={c.name || c.email}>
                       <div
-                        style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.primary === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.primary === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}
                       >
                         {c.name || c.email}
                       </div>
                     </Tooltip>
                     {c.title && (
                       <Tooltip content={c.title}>
-                        <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                        <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}>{c.title}</div>
                       </Tooltip>
                     )}
                     <Tooltip content={c.email}>
-                      <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>
+                      <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.primary === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}>{c.email}</div>
                     </Tooltip>
                   </div>
                 </TactileButton>
@@ -135,18 +135,18 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                   <div style={{ textAlign: 'left', width: '100%', display: 'flex', flexDirection: 'column', gap: '2px', overflow: 'hidden' }}>
                     <Tooltip content={c.name || c.email}>
                       <div
-                        style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.backup === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        style={{ fontWeight: 600, fontSize: '14px', color: currentEntry?.backup === c.email ? 'white' : 'var(--color-text-primary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}
                       >
                         {c.name || c.email}
                       </div>
                     </Tooltip>
                     {c.title && (
                       <Tooltip content={c.title}>
-                        <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</div>
+                        <div style={{ fontSize: '12px', opacity: 0.8, color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.9)' : 'var(--color-text-secondary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}>{c.title}</div>
                       </Tooltip>
                     )}
                     <Tooltip content={c.email}>
-                      <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>
+                      <div style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace', color: currentEntry?.backup === c.email ? 'rgba(255,255,255,0.7)' : 'var(--color-text-tertiary)', overflow: 'hidden', overflowWrap: 'break-word', wordBreak: 'keep-all', whiteSpace: 'normal' }}>{c.email}</div>
                     </Tooltip>
                   </div>
                 </TactileButton>

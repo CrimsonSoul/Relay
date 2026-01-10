@@ -10,7 +10,7 @@ type Props = {
     onSync: () => void;
     onImportGroups: () => Promise<boolean>;
     onImportContacts: () => Promise<boolean>;
-    onImportServers: () => Promise<any>;
+    onImportServers: () => Promise<{ success: boolean; message?: string } | boolean>;
 };
 
 const DataPathDisplay = () => {
@@ -63,9 +63,9 @@ export const SettingsModal: React.FC<Props> = ({
 
     const handleImportServersClick = async () => {
         const result = await onImportServers();
-        if (result && result.success) {
+        if (result === true) {
             showToast('Servers imported successfully', 'success');
-        } else if (result && result.message && result.message !== 'Cancelled') {
+        } else if (result && typeof result === 'object' && 'message' in result && result.message && result.message !== 'Cancelled') {
             showToast(`Import failed: ${result.message}`, 'error');
         }
     };
@@ -73,15 +73,17 @@ export const SettingsModal: React.FC<Props> = ({
     const handleChangeFolder = async () => {
         try {
             const result = await window.api?.changeDataFolder();
-            if (result && typeof result === 'object') {
-                if (result.success) {
-                    showToast('Data folder updated successfully', 'success');
-                } else if (result.error !== 'Cancelled') {
-                    showToast(`Failed to update data folder: ${result.error}`, 'error');
-                }
+            if (!result || typeof result !== 'object') return;
+
+            const resultObj = result as { success?: boolean; error?: string };
+            if (resultObj.success) {
+                showToast('Data folder updated successfully', 'success');
+            } else if (resultObj.error && resultObj.error !== 'Cancelled') {
+                showToast(`Failed to update data folder: ${resultObj.error}`, 'error');
             }
-        } catch (e: any) {
-            showToast(`Error: ${e.message}`, 'error');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            showToast(`Error: ${message}`, 'error');
         }
         setPathKey(p => p + 1);
     };
@@ -89,13 +91,17 @@ export const SettingsModal: React.FC<Props> = ({
     const handleResetFolder = async () => {
         try {
             const result = await window.api?.resetDataFolder();
-            if (result && result.success) {
+            if (result === true) {
                 showToast('Data folder reset to default', 'success');
-            } else if (result && result.error) {
-                showToast(result.error, 'error');
+            } else if (result && typeof result === 'object') {
+                const resultObj = result as { error?: string };
+                if (resultObj.error) {
+                    showToast(String(resultObj.error), 'error');
+                }
             }
-        } catch (e: any) {
-            showToast(e.message, 'error');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            showToast(message, 'error');
         }
         setPathKey(p => p + 1);
     };

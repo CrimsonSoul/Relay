@@ -39,7 +39,7 @@ export async function addServer(ctx: FileContext, server: Partial<Server>): Prom
       rowIndex = workingData.findIndex((row, idx) => idx > 0 && row[nameIdx]?.trim().toLowerCase() === lowerName);
     }
 
-    const setVal = (row: any[], idx: number, val?: string) => { if (idx !== -1 && val !== undefined) row[idx] = val; };
+    const setVal = (row: string[], idx: number, val?: string) => { if (idx !== -1 && val !== undefined) row[idx] = val; };
 
     if (rowIndex !== -1) {
       const row = workingData[rowIndex];

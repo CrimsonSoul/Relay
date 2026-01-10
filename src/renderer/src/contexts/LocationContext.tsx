@@ -69,7 +69,7 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
         } else {
           throw new Error('IP location service returned invalid or null data');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         loggers.location.error('IP location fallback failed', { 
           error: err.message, 
           category: ErrorCategory.NETWORK 
@@ -94,7 +94,7 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
     try {
       const pos = await getGpsPosition();
       handleGpsSuccess(pos);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err.code === 1) { // Permission Denied
         loggers.location.warn('GPS Permission denied');
       } else if (err.code === 3) { // Timeout

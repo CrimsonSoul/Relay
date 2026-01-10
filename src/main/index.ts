@@ -45,13 +45,15 @@ async function createWindow() {
   });
 
   // Set Content Security Policy
+  // In development, allow unsafe-eval for React HMR to work properly
+  const isDev = process.env.ELECTRON_RENDERER_URL !== undefined;
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
-          "script-src 'self' 'unsafe-inline'; " +
+          `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
           "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co http://ip-api.com https://ipwho.is https://*.rainviewer.com; " +
@@ -121,8 +123,8 @@ process.on('uncaughtException', (error) => {
   app.quit();
 });
 
-process.on('unhandledRejection', (reason: any) => {
-  loggers.main.error('Unhandled Rejection', { reason: reason?.message || reason });
+process.on('unhandledRejection', (reason: Error | unknown) => {
+  loggers.main.error('Unhandled Rejection', { reason: reason instanceof Error ? reason.message : String(reason) });
 });
 
 // App lifecycle
@@ -136,7 +138,7 @@ loggers.main.info('Waiting for Electron ready...');
 // Top-level await causes the Electron main process to hang/deadlock on Windows,
 // resulting in a "zombie process" (running but no window).
 // We silence the linter here to prioritize application stability.
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
+ 
 (async () => { // NOSONAR
   try {
     if (!app.isReady()) {
@@ -156,9 +158,10 @@ loggers.main.info('Waiting for Electron ready...');
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
     });
-  } catch (error: any) {
-    loggers.main.error('Failed to start application', { error: error.message });
-    dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
+  } catch (error: Error | unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    loggers.main.error('Failed to start application', { error: errorMessage });
+    dialog.showErrorBox('Critical Startup Error', errorMessage);
     app.quit();
   }
 })();

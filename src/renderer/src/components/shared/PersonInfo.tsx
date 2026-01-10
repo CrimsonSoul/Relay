@@ -39,9 +39,9 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px' }}>
       <span style={{ color: 'var(--color-text-tertiary)', fontWeight: 800, fontSize: '12px', width: '80px', letterSpacing: '0.08em' }}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden', minWidth: 0 }}>
         <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: colorScheme.bg, color: colorScheme.text, border: `1px solid ${colorScheme.border}`, fontSize: '14px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{displayName.charAt(0).toUpperCase()}</div>
-        <Tooltip content={allNames}><span style={{ color: 'var(--color-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, display: 'block' }}>{displayName}{parts.length > 1 && <span style={{ opacity: 0.5, marginLeft: '6px', fontSize: '12px' }}>+{parts.length - 1}</span>}</span></Tooltip>
+        <Tooltip content={allNames}><span style={{ color: 'var(--color-text-primary)', whiteSpace: 'normal', overflow: 'hidden', wordBreak: 'break-word', fontWeight: 600, display: 'block', maxWidth: '100%' }}>{displayName}{parts.length > 1 && <span style={{ opacity: 0.5, marginLeft: '6px', fontSize: '12px' }}>+{parts.length - 1}</span>}</span></Tooltip>
       </div>
     </div>
   );

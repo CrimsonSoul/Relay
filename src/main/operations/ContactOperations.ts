@@ -31,7 +31,7 @@ export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
 
     if (data.length < 2) return [];
 
-    const header = data[0].map((h: any) =>
+    const header = data[0].map((h: unknown) =>
       desanitizeField(String(h).trim().toLowerCase())
     );
     const rows = data.slice(1);
@@ -60,7 +60,7 @@ export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
       ctx.rewriteFileDetached(path, csvOutput);
     }
 
-    const results = rows.map((rowValues: any[]) => {
+    const results = rows.map((rowValues: string[]) => {
       const row: { [key: string]: string } = {};
       header.forEach((h: string, i: number) => {
         row[h] = desanitizeField(rowValues[i]);
@@ -125,7 +125,7 @@ export async function removeContact(ctx: FileContext, email: string): Promise<bo
 
     if (data.length < 2) return false;
 
-    const header = data[0].map((h: any) => desanitizeField(String(h).toLowerCase()));
+    const header = data[0].map((h: unknown) => desanitizeField(String(h).toLowerCase()));
     const emailIdx = header.findIndex((h: string) => ["email", "e-mail"].includes(h));
 
     if (emailIdx === -1) return false;

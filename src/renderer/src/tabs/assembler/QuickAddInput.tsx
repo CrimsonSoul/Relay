@@ -144,26 +144,27 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
                 {c.name ? c.name[0].toUpperCase() : c.email[0].toUpperCase()}
               </div>
               <div
-                style={{
-                  flex: 1,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {c.name || c.email}
-                {c.name && (
-                  <span
-                    style={{
-                      color: "var(--color-text-tertiary)",
-                      marginLeft: "6px",
-                      fontSize: "12px",
-                    }}
-                  >
-                    {c.email}
-                  </span>
-                )}
-              </div>
+                 style={{
+                   flex: 1,
+                   overflow: "hidden",
+                   overflowWrap: "break-word",
+                   wordBreak: "keep-all",
+                   whiteSpace: "normal",
+                 }}
+               >
+                 {c.name || c.email}
+                 {c.name && (
+                   <span
+                     style={{
+                       color: "var(--color-text-tertiary)",
+                       marginLeft: "6px",
+                       fontSize: "12px",
+                     }}
+                   >
+                     {c.email}
+                   </span>
+                 )}
+               </div>
             </div>
           ))}
         </div>
