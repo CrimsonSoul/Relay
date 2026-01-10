@@ -78,14 +78,6 @@ export async function injectMockApi(page: Page) {
          return () => {};
       },
       logBridge: () => {},
-      getMetrics: async () => ({
-        bridgesLast7d: 10,
-        bridgesLast30d: 50,
-        bridgesLast6m: 200,
-        bridgesLast1y: 1000,
-        topGroups: []
-      }),
-      resetMetrics: async () => true,
       addContact: async () => true,
       removeContact: async () => true,
       addServer: async () => true,
