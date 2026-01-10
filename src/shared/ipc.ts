@@ -31,6 +31,13 @@ export type OnCallRow = {
 
 export type OnCallData = OnCallRow[];
 
+export type OnCallEntry = {
+  team: string;
+  primary: string;  // email
+  backup: string;   // email
+  backupLabel?: string;
+};
+
 export type AppData = {
   groups: GroupMap;
   contacts: Contact[];
