@@ -19,6 +19,8 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
   return (
     <Tooltip content={label} position="right">
       <button
+        data-testid={`sidebar-${label.toLowerCase().replace(/\s+/g, '-')}`}
+        data-active={isActive}
         onClick={onClick}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
