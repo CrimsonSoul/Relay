@@ -49,10 +49,12 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
     // Helper to handle IP location fallback
     const tryIpFallback = async () => {
+      loggers.location.info('Trying IP-based location fallback...');
       try {
         const data = await window.api.getIpLocation();
         
-        if (data) {
+        if (data && data.lat && data.lon) {
+          loggers.location.info('IP location found', { city: data.city, source: 'ip' });
           setState({
             lat: Number(data.lat),
             lon: Number(data.lon),
@@ -65,7 +67,7 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             source: 'ip'
           });
         } else {
-          throw new Error('IP location service returned null');
+          throw new Error('IP location service returned invalid or null data');
         }
       } catch (err: any) {
         loggers.location.error('IP location fallback failed', { 
@@ -75,18 +77,17 @@ export function LocationProvider({ children }: { children: ReactNode }) {
         setState(prev => ({ 
           ...prev, 
           loading: false, 
-          error: 'Unable to determine location via GPS or IP.' 
+          error: 'Unable to determine location via GPS or IP. Please search for your city manually.' 
         }));
       }
     };
 
     // 1. Try HTML5 Geolocation with tight timeout
-    // We use a Promise wrapper to handle the timeout cleanly
     const getGpsPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false, // Fast/Low power
-        timeout: 4000,
-        maximumAge: 10 * 60 * 1000 // Accept 10 minute old cached position
+        enableHighAccuracy: false, 
+        timeout: 6000, // Slightly longer timeout for slower networks
+        maximumAge: 5 * 60 * 1000 
       });
     });
 
@@ -94,14 +95,14 @@ export function LocationProvider({ children }: { children: ReactNode }) {
       const pos = await getGpsPosition();
       handleGpsSuccess(pos);
     } catch (err: any) {
-      if (err.code === err.PERMISSION_DENIED) {
+      if (err.code === 1) { // Permission Denied
         loggers.location.warn('GPS Permission denied');
-      } else if (err.code === err.TIMEOUT) {
+      } else if (err.code === 3) { // Timeout
         loggers.location.warn('GPS Timeout');
       } else {
-        loggers.location.warn('GPS Error', { error: err.message });
+        loggers.location.warn('GPS Error', { error: err.message, code: err.code });
       }
-      // If GPS fails for any reason, try IP fallback
+      // If GPS fails (including 403/network errors on Windows), try IP fallback
       await tryIpFallback();
     }
   };

@@ -20,7 +20,7 @@ loggers.main.info('Startup Info:', {
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-v8-code-cache');
   app.commandLine.appendSwitch('disable-gpu-sandbox');
-  app.commandLine.appendSwitch('disable-software-rasterizer');
+  // Removed disable-software-rasterizer to allow fallback if GPU process hangs
   app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
@@ -54,7 +54,7 @@ async function createWindow() {
           "script-src 'self' 'unsafe-inline'; " +
           "style-src 'self' 'unsafe-inline'; " +
           "img-src 'self' data: https:; " +
-          "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co https://*.rainviewer.com; " +
+          "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co http://ip-api.com https://ipwho.is https://*.rainviewer.com; " +
           "font-src 'self' data:; " +
           "frame-src 'self' https://www.rainviewer.com https://cw-intra-web;"
         ],
@@ -130,10 +130,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Main startup sequence
-loggers.main.info('Waiting for Electron ready...');
-app.whenReady().then(async () => {
+/**
+ * Main startup sequence.
+ * We use top-level await wrapper to satisfy IDE linting while maintaining 
+ * the robust error handling required for Electron's async initialization.
+ */
+async function startApp() {
+  loggers.main.info('Waiting for Electron ready...');
   try {
+    await app.whenReady();
     loggers.main.info('Electron ready, performing setup...');
     
     setupPermissions(session.defaultSession);
@@ -152,6 +157,7 @@ app.whenReady().then(async () => {
     dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
     app.quit();
   }
-}).catch((error) => {
-  loggers.main.error('whenReady error', { error: error.message });
-});
+}
+
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
+startApp();

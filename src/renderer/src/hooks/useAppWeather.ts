@@ -106,8 +106,8 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
         setWeatherAlerts(aData);
 
         // Cache for SWR
-        secureStorage.setItem(WEATHER_CACHE_KEY, wData);
-        secureStorage.setItem(WEATHER_ALERTS_CACHE_KEY, aData);
+        secureStorage.setItemSync(WEATHER_CACHE_KEY, wData);
+        secureStorage.setItemSync(WEATHER_ALERTS_CACHE_KEY, aData);
 
         // Handle Realtime Alerts
         if (aData.length > 0) {
@@ -140,7 +140,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
   // Persistence of weather location
   useEffect(() => {
     if (weatherLocation) {
-      secureStorage.setItem("weather_location", weatherLocation);
+      secureStorage.setItemSync("weather_location", weatherLocation);
     }
   }, [weatherLocation]);
 
