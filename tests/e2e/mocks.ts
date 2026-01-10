@@ -53,24 +53,21 @@ export async function injectMockApi(page: Page) {
         return () => {};
       },
       onReloadStart: (callback) => {
-        (window as any).__triggerReloadStart = callback;
+        (globalThis as any).__triggerReloadStart = callback;
         return () => {};
       },
       onReloadComplete: (callback) => {
-        (window as any).__triggerReloadComplete = callback;
+        (globalThis as any).__triggerReloadComplete = callback;
         return () => {};
       },
       onDataError: (callback) => {
         return () => {};
       },
-      onSyncStatus: (callback) => {
-        return () => {};
-      },
       reloadData: async () => {
         // Simulate a reload cycle
-        if ((window as any).__triggerReloadStart) (window as any).__triggerReloadStart();
+        if ((globalThis as any).__triggerReloadStart) (globalThis as any).__triggerReloadStart();
         setTimeout(() => {
-            if ((window as any).__triggerReloadComplete) (window as any).__triggerReloadComplete(true);
+            if ((globalThis as any).__triggerReloadComplete) (globalThis as any).__triggerReloadComplete(true);
         }, 500);
       },
       onAuthRequested: () => () => {},
@@ -108,6 +105,6 @@ export async function injectMockApi(page: Page) {
     };
 
     // Expose it as window.api
-    (window as any).api = mockApi;
+    (globalThis as any).api = mockApi;
   }, { mockData: MOCK_DATA, mockRadar: MOCK_RADAR });
 }
