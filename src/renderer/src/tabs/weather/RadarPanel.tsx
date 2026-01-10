@@ -31,7 +31,7 @@ const containerStyle: React.CSSProperties = {
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
   const { webviewRef, reload } = useRadar(location);
-  const isValidLocation = location && !isNaN(location.latitude) && !isNaN(location.longitude);
+  const isValidLocation = location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -47,7 +47,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
               style={{ width: "100%", height: "100%", background: "transparent" }} 
               partition="persist:weather" 
-              allowpopups="true"
+              allowpopups={true as any}
             />
             {/* eslint-enable react/no-unknown-property */}
             <ExternalViewButton location={location} />
