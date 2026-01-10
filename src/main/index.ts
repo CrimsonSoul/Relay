@@ -1,7 +1,12 @@
 import { app, BrowserWindow, session, dialog } from 'electron';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 import { validateEnv } from './env';
 import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
