@@ -144,8 +144,6 @@ class Logger {
     }
   }
 
-  }
-
   private formatTimestamp(): string {
     return new Date().toISOString();
   }

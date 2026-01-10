@@ -4,16 +4,17 @@ import { FileManager } from './FileManager';
 import { loggers } from './logger';
 import { validateEnv } from './env';
 import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+import { setupMaintenanceTasks } from './app/maintenanceTasks';
 
-// Validate environment early
+// Validate environment early 
 validateEnv();
+
 loggers.main.info('Startup Info:', { 
   arch: process.arch, 
   platform: process.platform,
   electron: process.versions.electron,
   node: process.versions.node
 });
-import { setupMaintenanceTasks } from './app/maintenanceTasks';
 
 // Windows-specific optimizations
 if (process.platform === 'win32') {
@@ -65,8 +66,15 @@ async function createWindow() {
     });
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  else await state.mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  if (process.env.ELECTRON_RENDERER_URL) {
+    await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    const indexPath = join(__dirname, '../renderer/index.html');
+    await state.mainWindow.loadFile(indexPath).catch(err => {
+      loggers.main.error('Failed to load local index.html', { path: indexPath, error: err.message });
+      throw err;
+    });
+  }
 
   // Initialize data asynchronously
   (async () => {
@@ -76,7 +84,6 @@ async function createWindow() {
       loggers.main.info('Data root:', { path: state.currentDataRoot });
       if (state.mainWindow && !state.mainWindow.isDestroyed()) {
         state.fileManager = new FileManager(state.mainWindow, state.currentDataRoot, getBundledDataPath());
-        // Initialize BEFORE triggering file watcher to avoid race conditions
         state.fileManager.init();
         loggers.main.info('FileManager initialized successfully');
       }
@@ -85,51 +92,62 @@ async function createWindow() {
     }
   })();
 
-  state.mainWindow.once('ready-to-show', () => { state.mainWindow?.show(); state.mainWindow?.focus(); loggers.main.debug('ready-to-show fired'); });
+  state.mainWindow.once('ready-to-show', () => { 
+    state.mainWindow?.show(); 
+    state.mainWindow?.focus(); 
+    loggers.main.debug('ready-to-show fired'); 
+  });
 
   state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
-    if (params.src && !params.src.startsWith('http')) { loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`); event.preventDefault(); }
+    if (params.src && !params.src.startsWith('http')) { 
+      loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`); 
+      event.preventDefault(); 
+    }
   });
 
-  state.mainWindow.on('closed', () => { state.mainWindow = null; state.fileManager = null; });
+  state.mainWindow.on('closed', () => { 
+    state.mainWindow = null; 
+    state.fileManager = null; 
+  });
 }
 
-// Catch errors during early startup
+// Global Exception Handlers
 process.on('uncaughtException', (error) => {
-  loggers.main.error('Uncaught Exception during startup', { error });
-  dialog.showErrorBox('Startup Error', error.message || 'The application failed to start.');
-  process.exit(1);
+  loggers.main.error('Uncaught Exception', { error: error.message, stack: error.stack });
+  dialog.showErrorBox('Startup Error', `Relay encountered a critical error:\n\n${error.message}`);
+  app.quit();
 });
 
-// App-level global listeners (Synchronous)
+process.on('unhandledRejection', (reason: any) => {
+  loggers.main.error('Unhandled Rejection', { reason: reason?.message || reason });
+});
+
+// App lifecycle
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-// Main process initialization
-app.whenReady().then(async () => {
-  try {
-    loggers.main.info('App ready, initializing...');
-    setupPermissions(session.defaultSession);
-    setupPermissions(session.fromPartition('persist:weather'));
-    setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-    setupIpc();
-    await createWindow();
-    setupMaintenanceTasks(() => state.fileManager);
-    
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-    });
-  } catch (error: any) {
-    loggers.main.error('Critical startup failure in whenReady', { error });
-    dialog.showErrorBox('Startup Error', error.message || 'Failed to initialize the application.');
-    process.exit(1);
-  }
-}).catch((error) => {
-  loggers.main.error('Initialization failed before whenReady', { error });
-  dialog.showErrorBox('Startup Error', 'The application failed to start correctly.');
-  process.exit(1);
-});
+// Main startup sequence
+try {
+  await app.whenReady();
+  loggers.main.info('Electron ready, performing setup...');
+  
+  setupPermissions(session.defaultSession);
+  setupPermissions(session.fromPartition('persist:weather'));
+  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+  
+  setupIpc();
+  await createWindow();
+  setupMaintenanceTasks(() => state.fileManager);
+  
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  });
+} catch (error: any) {
+  loggers.main.error('Failed to start application', { error: error.message });
+  dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
+  app.quit();
+}
