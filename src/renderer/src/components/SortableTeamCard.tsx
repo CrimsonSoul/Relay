@@ -57,7 +57,10 @@ export const SortableTeamCard = ({
             {...attributes}
             {...listeners}
         >
+            {/* eslint-disable-next-line jsx-a11y/prefer-tag-over-role */}
             <div
+                role="button"
+                tabIndex={0}
                 style={{
                     height: 'auto',
                     minHeight: '0',
@@ -87,6 +90,7 @@ export const SortableTeamCard = ({
                     e.currentTarget.style.boxShadow = 'none';
                 }}
                 onClick={() => setEditingTeam(team)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setEditingTeam(team); } }}
                 onContextMenu={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -151,7 +155,7 @@ export const SortableTeamCard = ({
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={primaryContact?.name || entry?.primary || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '13px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 >
                                     {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
                                 </span>
@@ -168,7 +172,7 @@ export const SortableTeamCard = ({
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={backupContact?.name || entry?.backup || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '13px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '12px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 >
                                     {backupContact?.name || entry?.backup || 'UNASSIGNED'}
                                 </span>
