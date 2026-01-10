@@ -21,6 +21,7 @@
     "dev:test": "vite --config vite.renderer.config.ts --port 4173",
     "preview:renderer": "npm run build:renderer && vite preview --config vite.renderer.config.ts --host --port 4173",
     "test": "playwright test",
+    "test:electron": "playwright test -c playwright.electron.config.ts",
     "test:unit": "vitest run",
     "test:renderer": "vitest run -c vitest.renderer.config.ts"
   },
