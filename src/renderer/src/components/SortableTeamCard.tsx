@@ -120,7 +120,7 @@ export const SortableTeamCard = ({
                     <Tooltip content={team.toUpperCase()}>
                         <div
                             style={{
-                                fontSize: '11px', // Slightly smaller team name
+                                fontSize: '13px', // Increased from 11px
                                 fontWeight: 800,
                                 color: colorScheme.text, // Dynamic color for team name
                                 letterSpacing: '0.08em',
@@ -140,7 +140,7 @@ export const SortableTeamCard = ({
                         right: '10px',
                         color: 'var(--color-text-tertiary)',
                         opacity: 0.3,
-                        fontSize: '10px',
+                        fontSize: '11px', // Increased from 10px
                         pointerEvents: 'none'
                     }}>
                         ⋮⋮
@@ -151,34 +151,34 @@ export const SortableTeamCard = ({
                     style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}
                 >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>PRI</span>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>PRI</span>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={primaryContact?.name || entry?.primary || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '13px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 >
                                     {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
                                 </span>
                             </Tooltip>
                             {primaryContact?.phone && (
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {primaryContact.phone}
                                 </span>
                             )}
                         </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>{entry?.backupLabel || 'BAK'}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>{entry?.backupLabel || 'BAK'}</span>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
                             <Tooltip content={backupContact?.name || entry?.backup || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '12px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                                    style={{ fontSize: '14px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
                                 >
                                     {backupContact?.name || entry?.backup || 'UNASSIGNED'}
                                 </span>
                             </Tooltip>
                             {backupContact?.phone && (
-                                <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
                                     {backupContact.phone}
                                 </span>
                             )}
