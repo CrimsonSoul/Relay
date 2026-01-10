@@ -18,13 +18,8 @@ loggers.main.info('Startup Info:', {
 
 // Windows-specific optimizations
 if (process.platform === 'win32') {
-  app.commandLine.appendSwitch('disable-v8-code-cache');
   app.commandLine.appendSwitch('disable-gpu-sandbox');
-  // Removed disable-software-rasterizer to allow fallback if GPU process hangs
-  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
-  app.commandLine.appendSwitch('disable-renderer-backgrounding');
   app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
-  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
 
 async function createWindow() {
@@ -130,34 +125,24 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-/**
- * Main startup sequence.
- * We use top-level await wrapper to satisfy IDE linting while maintaining 
- * the robust error handling required for Electron's async initialization.
- */
-async function startApp() {
-  loggers.main.info('Waiting for Electron ready...');
-  try {
-    await app.whenReady();
-    loggers.main.info('Electron ready, performing setup...');
-    
-    setupPermissions(session.defaultSession);
-    setupPermissions(session.fromPartition('persist:weather'));
-    setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-    
-    setupIpc();
-    await createWindow();
-    setupMaintenanceTasks(() => state.fileManager);
-    
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-    });
-  } catch (error: any) {
-    loggers.main.error('Failed to start application', { error: error.message });
-    dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
-    app.quit();
-  }
+loggers.main.info('Waiting for Electron ready...');
+try {
+  await app.whenReady();
+  loggers.main.info('Electron ready, performing setup...');
+  
+  setupPermissions(session.defaultSession);
+  setupPermissions(session.fromPartition('persist:weather'));
+  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+  
+  setupIpc();
+  await createWindow();
+  setupMaintenanceTasks(() => state.fileManager);
+  
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+  });
+} catch (error: any) {
+  loggers.main.error('Failed to start application', { error: error.message });
+  dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
+  app.quit();
 }
-
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
-startApp();

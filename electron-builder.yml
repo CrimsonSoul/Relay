@@ -8,12 +8,17 @@ files:
   - package.json
   - resources/**
   - "!node_modules/fsevents/**"
-  - "!**/*.{md,ts,map}"
+  - "!**/*.{md,ts,map,log}"
   - "!**/LICENSE"
-  - "!**/.{git,github,vscode}"
+  - "!**/.{git,github,vscode,idea}"
   - "!**/tsconfig*.json"
   - "!**/.eslintrc*"
   - "!**/.prettierrc*"
+  - "!**/*.{test,spec}.{js,jsx,ts,tsx}"
+  - "!**/tests/**"
+  - "!**/test-results/**"
+  - "!**/playwright*"
+  - "!**/vitest*"
 directories:
   output: release
   buildResources: resources

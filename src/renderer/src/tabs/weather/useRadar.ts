@@ -16,11 +16,26 @@ export function useRadar(location: Location | null) {
     };
 
     const handleDidFailLoad = (e: any) => {
+      // Ignore aborts
+      if (e.errorCode === -3) return;
+
       loggers.weather.error("Radar failed to load", { 
         errorCode: e.errorCode,
         errorDescription: e.errorDescription,
         validatedURL: e.validatedURL 
       });
+
+      // Auto-retry a few times for transient network issues
+      // @ts-ignore - custom property
+      const retries = (webview as any)._retryCount || 0;
+      if (retries < 3) {
+        // @ts-ignore
+        (webview as any)._retryCount = retries + 1;
+        setTimeout(() => {
+          loggers.weather.info(`Retrying radar load (attempt ${retries + 1})...`);
+          webview.reload();
+        }, 1500 * (retries + 1));
+      }
     };
 
     webview.addEventListener("did-finish-load", handleDidFinishLoad);
