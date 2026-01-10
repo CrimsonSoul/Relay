@@ -53,7 +53,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
             <ExternalViewButton location={location} />
             <button 
               onClick={reload}
-              style={{ position: "absolute", bottom: "8px", right: "8px", background: "rgba(0, 0, 0, 0.6)", width: "32px", height: "32px", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", cursor: "pointer", zIndex: 30, backdropFilter: "blur(12px)", transition: "all 0.2s ease" }}
+              style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0, 0, 0, 0.6)", width: "32px", height: "32px", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", cursor: "pointer", zIndex: 30, backdropFilter: "blur(12px)", transition: "all 0.2s ease" }}
               title="Refresh Radar Map"
               onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)"}
               onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"}

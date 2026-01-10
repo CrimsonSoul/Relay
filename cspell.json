@@ -19,7 +19,8 @@
     "gridstack",
     "asar",
     "fsevents",
-    "NSIS"
+    "NSIS",
+    "vitest"
   ],
   "ignorePaths": [
     "node_modules",
