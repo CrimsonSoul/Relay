@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { AppData, BridgeAPI, GroupMap, Contact, RadarSnapshot } from '../../src/shared/ipc';
+import { AppData, BridgeAPI, RadarSnapshot } from '../../src/shared/ipc';
 
 export const MOCK_DATA: AppData = {
   groups: {
@@ -25,6 +25,7 @@ export const MOCK_DATA: AppData = {
     }
   ],
   servers: [],
+  onCall: [],
   lastUpdated: Date.now()
 };
 
@@ -49,12 +50,21 @@ export async function injectMockApi(page: Page) {
       subscribeToData: (callback) => {
         // Immediately callback with data
         callback(data.mockData);
+        return () => {};
       },
       onReloadStart: (callback) => {
         (window as any).__triggerReloadStart = callback;
+        return () => {};
       },
       onReloadComplete: (callback) => {
         (window as any).__triggerReloadComplete = callback;
+        return () => {};
+      },
+      onDataError: (callback) => {
+        return () => {};
+      },
+      onSyncStatus: (callback) => {
+        return () => {};
       },
       reloadData: async () => {
         // Simulate a reload cycle
@@ -63,11 +73,12 @@ export async function injectMockApi(page: Page) {
             if ((window as any).__triggerReloadComplete) (window as any).__triggerReloadComplete(true);
         }, 500);
       },
-      onAuthRequested: () => {},
-      submitAuth: () => {},
+      onAuthRequested: () => () => {},
+      submitAuth: async (nonce, username, password, remember) => true,
       cancelAuth: () => {},
       subscribeToRadar: (callback) => {
          callback(data.mockRadar);
+         return () => {};
       },
       logBridge: () => {},
       getMetrics: async () => ({

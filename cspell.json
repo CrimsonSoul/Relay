@@ -22,7 +22,8 @@
     "NSIS",
     "vitest",
     "maplibregl",
-    "NOSONAR"
+    "NOSONAR",
+    "servernum"
   ],
   "ignorePaths": [
     "node_modules",
