@@ -1,18 +1,41 @@
 export const getRadarUrl = (lat: any, lon: any): string => {
   const nLat = Number(lat);
   const nLon = Number(lon);
-  if (isNaN(nLat) || isNaN(nLon)) return "";
+  if (Number.isNaN(nLat) || Number.isNaN(nLon)) return "";
   return `https://www.rainviewer.com/map.html?loc=${nLat.toFixed(4)},${nLon.toFixed(4)},6&theme=dark&color=1&opacity=0.7`;
 };
 
 export { getWeatherIcon } from "./WeatherIcons";
 
+const WMO_CODES: Record<number, string> = {
+  0: "Clear Sky",
+  1: "Mainly Clear",
+  2: "Partly Cloudy",
+  3: "Overcast",
+  45: "Foggy",
+  48: "Foggy",
+  51: "Drizzle",
+  53: "Drizzle",
+  55: "Drizzle",
+  61: "Rainy",
+  63: "Rainy",
+  65: "Rainy",
+  66: "Freezing Rain",
+  67: "Freezing Rain",
+  71: "Snowy",
+  73: "Snowy",
+  75: "Snowy",
+  77: "Snow Grains",
+  80: "Rain Showers",
+  81: "Rain Showers",
+  82: "Rain Showers",
+  85: "Snow Showers",
+  86: "Snow Showers",
+  95: "Thunderstorm"
+};
+
 export const getWeatherDescription = (code: number): string => {
-  if (code === 0) return "Clear Sky"; if (code === 1) return "Mainly Clear"; if (code === 2) return "Partly Cloudy"; if (code === 3) return "Overcast";
-  if (code === 45 || code === 48) return "Foggy"; if (code >= 51 && code <= 55) return "Drizzle"; if (code >= 61 && code <= 65) return "Rainy";
-  if (code >= 66 && code <= 67) return "Freezing Rain"; if (code >= 71 && code <= 75) return "Snowy"; if (code === 77) return "Snow Grains";
-  if (code >= 80 && code <= 82) return "Rain Showers"; if (code >= 85 && code <= 86) return "Snow Showers"; if (code >= 95) return "Thunderstorm";
-  return "Cloudy";
+  return WMO_CODES[code] || "Cloudy";
 };
 
 export const RADAR_INJECT_CSS = `
