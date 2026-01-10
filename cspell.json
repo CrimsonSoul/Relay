@@ -20,7 +20,8 @@
     "asar",
     "fsevents",
     "NSIS",
-    "vitest"
+    "vitest",
+    "maplibregl"
   ],
   "ignorePaths": [
     "node_modules",
