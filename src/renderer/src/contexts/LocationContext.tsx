@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
 import { loggers, ErrorCategory } from '../utils/logger';
 
 export interface LocationState {
@@ -16,7 +16,7 @@ export interface LocationState {
 
 const LocationContext = createContext<LocationState | undefined>(undefined);
 
-export function LocationProvider({ children }: { children: ReactNode }) {
+export function LocationProvider({ children }: { readonly children: ReactNode }) {
   const [state, setState] = useState<Omit<LocationState, 'refresh'>>({
     lat: null,
     lon: null,
@@ -51,9 +51,9 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     const tryIpFallback = async () => {
       loggers.location.info('Trying IP-based location fallback...');
       try {
-        const data = await window.api.getIpLocation();
+        const data = await globalThis.window.api.getIpLocation();
         
-        if (data && data.lat && data.lon) {
+        if (data?.lat && data?.lon) {
           loggers.location.info('IP location found', { city: data.city, source: 'ip' });
           setState({
             lat: Number(data.lat),
@@ -111,8 +111,10 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     fetchLocation();
   }, []);
 
+  const value = useMemo(() => ({ ...state, refresh: fetchLocation }), [state]);
+
   return (
-    <LocationContext.Provider value={{ ...state, refresh: fetchLocation }}>
+    <LocationContext.Provider value={value}>
       {children}
     </LocationContext.Provider>
   );
