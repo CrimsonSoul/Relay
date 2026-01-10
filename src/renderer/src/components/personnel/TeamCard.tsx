@@ -34,7 +34,7 @@ export const TeamCard = React.memo(({ team, rows, contacts, onUpdateRows, onRena
         >
           <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "5px", background: colorScheme.text, opacity: 0.9, borderRadius: "16px 0 0 16px" }} />
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "10px" }}>
-            <div style={{ fontSize: "18px", fontWeight: 800, color: colorScheme.text, letterSpacing: "0.05em", textTransform: "uppercase" }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: colorScheme.text, letterSpacing: "0.05em", textTransform: "uppercase" }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "14px" }}>
             {teamRows.map((row) => <TeamRow key={row.id} row={row} hasAnyTimeWindow={hasAnyTimeWindow} gridTemplate={rowGridTemplate} />)}
