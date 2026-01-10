@@ -131,23 +131,27 @@ app.on('window-all-closed', () => {
 });
 
 // Main startup sequence
-try {
-  await app.whenReady();
-  loggers.main.info('Electron ready, performing setup...');
-  
-  setupPermissions(session.defaultSession);
-  setupPermissions(session.fromPartition('persist:weather'));
-  setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-  
-  setupIpc();
-  await createWindow();
-  setupMaintenanceTasks(() => state.fileManager);
-  
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) void createWindow();
-  });
-} catch (error: any) {
-  loggers.main.error('Failed to start application', { error: error.message });
-  dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
-  app.quit();
-}
+loggers.main.info('Waiting for Electron ready...');
+app.whenReady().then(async () => {
+  try {
+    loggers.main.info('Electron ready, performing setup...');
+    
+    setupPermissions(session.defaultSession);
+    setupPermissions(session.fromPartition('persist:weather'));
+    setupPermissions(session.fromPartition('persist:dispatcher-radar'));
+    
+    setupIpc();
+    await createWindow();
+    setupMaintenanceTasks(() => state.fileManager);
+    
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+    });
+  } catch (error: any) {
+    loggers.main.error('Failed to start application', { error: error.message });
+    dialog.showErrorBox('Critical Startup Error', error.message || 'An unknown error occurred during initialization.');
+    app.quit();
+  }
+}).catch((error) => {
+  loggers.main.error('whenReady error', { error: error.message });
+});
