@@ -209,18 +209,30 @@ class SecureStorage {
    * Retrieve deobfuscated data (synchronous)
    */
   getItemSync<T>(key: string, defaultValue?: T): T | undefined {
+    const storageKey = STORAGE_PREFIX + key;
     try {
-      const stored = localStorage.getItem(STORAGE_PREFIX + key);
+      const stored = localStorage.getItem(storageKey);
       if (!stored) return defaultValue;
 
+      // Robustness check: If the string contains non-printable characters or looks like binary,
+      // it was likely stored via the async 'encrypt' method and can't be read synchronously.
+      // We catch this here to prevent JSON.parse from exploding.
       const deobfuscated = simpleDeobfuscate(stored);
+      
+      // Basic JSON structure validation before parsing
+      if (!deobfuscated || (!deobfuscated.startsWith('{') && !deobfuscated.startsWith('['))) {
+         throw new Error('Stored data does not appear to be valid JSON after deobfuscation');
+      }
+
       return JSON.parse(deobfuscated) as T;
     } catch (error: any) {
-      loggers.storage.warn('Failed to retrieve item (sync), returning default', {
+      loggers.storage.warn('Failed to retrieve item (sync), clearing corrupted data', {
         key,
         error: error.message,
         category: ErrorCategory.RENDERER
       });
+      // Clear the corrupted key so we don't spam errors every frame/mount
+      localStorage.removeItem(storageKey);
       return defaultValue;
     }
   }

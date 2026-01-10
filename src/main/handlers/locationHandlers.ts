@@ -55,6 +55,23 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
         };
       }
     } catch (err) {
+      loggers.ipc.warn('Location secondary provider failed, trying third fallback', { error: err });
+    }
+
+    try {
+      const res = await fetch('https://ipwho.is/');
+      if (res.ok) {
+        const data = await res.json() as any;
+        return {
+          lat: data.latitude,
+          lon: data.longitude,
+          city: data.city,
+          region: data.region,
+          country: data.country,
+          timezone: data.timezone?.id
+        };
+      }
+    } catch (err) {
       loggers.ipc.error('All location providers failed', { error: err });
     }
     return null;
