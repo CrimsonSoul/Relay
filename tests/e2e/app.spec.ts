@@ -8,6 +8,15 @@ test.describe('Application Shell', () => {
     await page.goto('/');
   });
 
+  test.afterEach(async ({ page }) => {
+    // Clean up any global state to prevent cross-test pollution
+    await page.evaluate(() => {
+      delete (globalThis as any).__triggerReloadStart;
+      delete (globalThis as any).__triggerReloadComplete;
+    });
+  });
+
+
   test('navigates between tabs and visual check', async ({ page }) => {
     const composeTab = page.locator('[data-testid="sidebar-compose"]');
     const peopleTab = page.locator('[data-testid="sidebar-people"]');

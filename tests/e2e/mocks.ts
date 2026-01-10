@@ -63,6 +63,9 @@ export async function injectMockApi(page: Page) {
       onDataError: (callback) => {
         return () => {};
       },
+      onImportProgress: (callback) => {
+        return () => {};
+      },
       reloadData: async () => {
         // Simulate a reload cycle
         if ((globalThis as any).__triggerReloadStart) (globalThis as any).__triggerReloadStart();

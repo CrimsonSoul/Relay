@@ -40,9 +40,11 @@ const api: BridgeAPI = {
 
   onImportProgress: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.IMPORT_PROGRESS);
-    ipcRenderer.on(IPC_CHANNELS.IMPORT_PROGRESS, (_event, progress: ImportProgress) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: ImportProgress) => {
       callback(progress);
-    });
+    };
+    ipcRenderer.on(IPC_CHANNELS.IMPORT_PROGRESS, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.IMPORT_PROGRESS, handler);
   },
 
   reloadData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_RELOAD),

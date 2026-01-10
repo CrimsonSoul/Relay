@@ -111,10 +111,15 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Poll for async file rewrite to complete
+      const contactPath = path.join(tmpDir, 'contacts.csv');
+      let content = '';
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        content = await fs.readFile(contactPath, 'utf-8');
+        if (content.includes('(7) 998-4456, (877) 273-9002')) break;
+      }
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // Phone should be cleaned and formatted
       expect(content).toContain('(7) 998-4456, (877) 273-9002');
     });
@@ -125,10 +130,15 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Poll for async file rewrite to complete
+      const contactPath = path.join(tmpDir, 'contacts.csv');
+      let content = '';
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        content = await fs.readFile(contactPath, 'utf-8');
+        if (content.includes('(555) 123-4567')) break;
+      }
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       expect(content).toContain('(555) 123-4567');
     });
 
@@ -138,10 +148,15 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Poll for async file rewrite to complete
+      const contactPath = path.join(tmpDir, 'contacts.csv');
+      let content = '';
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        content = await fs.readFile(contactPath, 'utf-8');
+        if (content.includes('(91) 990 491 8167')) break;
+      }
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // International numbers get formatted by the phone utility
       expect(content).toContain('(91) 990 491 8167');
     });
@@ -168,10 +183,15 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Poll for async file rewrite to complete
+      const contactPath = path.join(tmpDir, 'contacts.csv');
+      let content = '';
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        content = await fs.readFile(contactPath, 'utf-8');
+        if (content.includes('(555) 987-6543')) break;
+      }
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // Should still work and format the phone
       expect(content).toContain('Legacy User');
       expect(content).toContain('(555) 987-6543');
@@ -183,10 +203,15 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Poll for async file rewrite to complete
+      const contactPath = path.join(tmpDir, 'contacts.csv');
+      let content = '';
+      for (let i = 0; i < 20; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        content = await fs.readFile(contactPath, 'utf-8');
+        if (content.includes('Smith, John')) break;
+      }
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       // All data should be preserved correctly
       expect(content).toContain('Smith, John');
       expect(content).toContain('VP of Sales & Marketing');
@@ -195,22 +220,6 @@ describe('FileManager', () => {
   });
 
   describe('Server CSV Header Migration', () => {
-    it.skip('migrates legacy server headers to new format', async () => {
-      // Legacy format with old column names
-      const legacyCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer1,Finance,Accounting,Test server,owner@a.com,tech@a.com,Windows';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), legacyCsv);
-
-      await fileManager.readAndEmit();
-
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should have new standardized headers
-      expect(content).toContain('Name,Business Area,LOB,Comment,Owner,IT Contact,OS');
-      expect(content).toContain('Server1');
-    });
-
     it('keeps modern server headers unchanged', async () => {
       const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), modernCsv);
@@ -222,23 +231,6 @@ describe('FileManager', () => {
       expect(content).toContain('Server2');
       expect(content).toContain('Name,Business Area,LOB');
     });
-
-    it.skip('handles very old legacy headers (Server Name instead of VM-M)', async () => {
-      const veryOldCsv = 'Server Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nOldServer,Sales,CRM,Legacy,old@a.com,oldtech@a.com,Unix';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), veryOldCsv);
-
-      await fileManager.readAndEmit();
-
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should be migrated to standard Name header
-      expect(content).toContain('Name,Business Area,LOB');
-      expect(content).toContain('OldServer');
-    });
-
-
   });
 
   describe('Dummy Data Detection and Import', () => {

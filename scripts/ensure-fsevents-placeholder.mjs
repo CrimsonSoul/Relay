@@ -11,6 +11,7 @@ const fseventsPath = path.join(projectRoot, 'node_modules', 'fsevents');
 async function ensurePlaceholder() {
   try {
     await fs.access(fseventsPath);
+    console.log('[fsevents] macOS fsevents already present, no action needed.');
     return;
   } catch {
     // Missing optional dependency on non-macOS platforms; create a placeholder so packaging doesn't fail.
@@ -21,6 +22,7 @@ async function ensurePlaceholder() {
     path.join(fseventsPath, 'README.txt'),
     'Placeholder for optional macOS-only fsevents dependency created during Windows packaging.'
   );
+  console.log('[fsevents] Created placeholder for macOS-only fsevents dependency.');
 }
 
 ensurePlaceholder().catch((error) => {
