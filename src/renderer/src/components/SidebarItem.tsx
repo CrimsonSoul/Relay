@@ -58,23 +58,22 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
-          <span style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            fontSize: '13px',
-            color: color.text,
-            background: color.bg,
-            border: `1px solid ${color.border}`,
-            padding: '4px 10px',
-            borderRadius: '16px',
-            fontWeight: 600,
-            maxWidth: '100%',
-            overflow: 'hidden',
-            wordBreak: 'break-word',
-            whiteSpace: 'normal'
-          }}>
-            <span style={{ display: 'block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all' }}>
+          <span
+            className="text-balance break-word"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '13px',
+              color: color.text,
+              background: color.bg,
+              border: `1px solid ${color.border}`,
+              padding: '4px 10px',
+              borderRadius: '16px',
+              fontWeight: 600,
+              maxWidth: '100%'
+            }}>
+            <span style={{ display: 'block', maxWidth: '100%' }}>
               {label}
             </span>
             {count !== undefined && (
@@ -92,7 +91,7 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
           </span>
         </div>
       </button>
-    </Tooltip>
+    </Tooltip >
   );
 });
 

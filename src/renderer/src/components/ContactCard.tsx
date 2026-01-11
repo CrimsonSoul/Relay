@@ -21,17 +21,17 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
         <Avatar name={name} email={email} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '4px', justifyContent: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', minWidth: 0 }}>
-            <Tooltip content={displayName}><span style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-primary)', whiteSpace: 'normal', overflow: 'hidden', wordBreak: 'break-word', letterSpacing: '-0.02em', display: 'block', lineHeight: 1.2 }}>{displayName}</span></Tooltip>
+            <Tooltip content={displayName}><span className="text-balance break-word" style={{ fontSize: '22px', fontWeight: 800, color: 'var(--color-text-primary)', letterSpacing: '-0.02em', display: 'block', lineHeight: 1.2 }}>{displayName}</span></Tooltip>
             {sourceLabel && <span style={{ fontSize: '10px', background: 'rgba(255, 255, 255, 0.12)', color: 'var(--color-text-primary)', padding: '2px 6px', borderRadius: '4px', fontWeight: 900, textTransform: 'uppercase', flexShrink: 0, letterSpacing: '0.05em' }}>{sourceLabel}</span>}
           </div>
-          <div style={{ fontSize: '15px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'normal', overflow: 'hidden', wordBreak: 'break-word', minWidth: 0 }}>
-            {title && <Tooltip content={title}><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all' }}>{title}</span></Tooltip>}
+          <div style={{ fontSize: '15px', color: 'var(--color-text-secondary)', fontWeight: 550, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+            {title && <Tooltip content={title}><span className="break-word" style={{ display: 'block', maxWidth: '100%' }}>{title}</span></Tooltip>}
             {title && <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>}
-            <Tooltip content={email}><span style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', overflowWrap: 'break-word', whiteSpace: 'normal', wordBreak: 'keep-all', opacity: 0.8 }}>{email}</span></Tooltip>
+            <Tooltip content={email}><span className="break-word" style={{ display: 'block', maxWidth: '100%', opacity: 0.8 }}>{email}</span></Tooltip>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: '12px', justifyContent: 'flex-end' }}>
-          {formattedPhone && <Tooltip content={formattedPhone}><span style={{ fontSize: '20px', color: '#60A5FA', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', minWidth: '160px', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', textAlign: 'right' }}>{formattedPhone}</span></Tooltip>}
+          {formattedPhone && <Tooltip content={formattedPhone}><span className="text-truncate" style={{ fontSize: '20px', color: '#60A5FA', fontWeight: 700, letterSpacing: '0.05em', minWidth: '160px', flexShrink: 0, display: 'block', textAlign: 'right' }}>{formattedPhone}</span></Tooltip>}
           {groups.length > 0 && (
             <Tooltip content={groups.join(', ')}><div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'wrap', overflow: 'hidden' }}>
               {groups.slice(0, 2).map(g => <GroupPill key={g} group={g} />)}

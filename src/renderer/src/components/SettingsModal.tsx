@@ -169,6 +169,30 @@ export const SettingsModal: React.FC<Props> = ({
                         <TactileButton onClick={handleResetFolder} style={{ flex: 1, justifyContent: 'center' }}>Reset to Default</TactileButton>
                     </div>
                 </div>
+
+                <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+
+                {import.meta.env.DEV && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Diagnostics & Demo
+                        </div>
+                        <TactileButton
+                            onClick={async () => {
+                                const result = await window.api?.generateDummyData();
+                                if (result) {
+                                    showToast('Dummy data loaded successfully', 'success');
+                                    onClose();
+                                } else {
+                                    showToast('Failed to load dummy data', 'error');
+                                }
+                            }}
+                            style={{ justifyContent: 'center' }}
+                        >
+                            Load Dummy Data
+                        </TactileButton>
+                    </div>
+                )}
             </div>
             <style>{`
             .spin { animation: spin 1s linear infinite; }

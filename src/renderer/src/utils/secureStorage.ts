@@ -193,15 +193,18 @@ class SecureStorage {
   setItemSync<T>(key: string, value: T): void {
     try {
       const serialized = JSON.stringify(value);
+      // JSON.stringify can return undefined for functions/undefined symbols
+      if (typeof serialized !== 'string') return;
+
       const obfuscated = simpleObfuscate(serialized);
       localStorage.setItem(STORAGE_PREFIX + key, obfuscated);
     } catch (error: unknown) {
       loggers.storage.error('Failed to store item (sync)', {
         key,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
-      throw error;
+      // Do not throw, just log. Throwing breaks the app loop.
     }
   }
 
@@ -218,10 +221,10 @@ class SecureStorage {
       // it was likely stored via the async 'encrypt' method and can't be read synchronously.
       // We catch this here to prevent JSON.parse from exploding.
       const deobfuscated = simpleDeobfuscate(stored);
-      
+
       // Basic JSON structure validation before parsing
       if (!deobfuscated || (!deobfuscated.startsWith('{') && !deobfuscated.startsWith('['))) {
-         throw new Error('Stored data does not appear to be valid JSON after deobfuscation');
+        throw new Error('Stored data does not appear to be valid JSON after deobfuscation');
       }
 
       return JSON.parse(deobfuscated) as T;

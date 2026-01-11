@@ -56,7 +56,7 @@ export const SortableTeamCard = ({
             style={style}
             {...attributes}
             {...listeners}
-            >
+        >
             <div
                 role="button"
                 tabIndex={0}
@@ -118,15 +118,12 @@ export const SortableTeamCard = ({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <Tooltip content={team.toUpperCase()}>
                         <div
+                            className="text-balance break-word"
                             style={{
                                 fontSize: '13px',
                                 fontWeight: 800,
                                 color: colorScheme.text,
                                 letterSpacing: '0.08em',
-                                overflow: 'hidden',
-                                overflowWrap: 'break-word',
-                                wordBreak: 'keep-all',
-                                whiteSpace: 'normal',
                                 maxWidth: '180px'
                             }}
                         >
@@ -150,35 +147,37 @@ export const SortableTeamCard = ({
                 <div
                     style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}
                 >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>PRI</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0 }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0, width: '32px' }}>PRI</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', textAlign: 'right' }}>
                             <Tooltip content={primaryContact?.name || entry?.primary || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', overflow: 'hidden', wordBreak: 'break-word', whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.2 }}
+                                    className="text-truncate"
+                                    style={{ fontSize: '15px', fontWeight: 700, color: entry?.primary ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)', lineHeight: 1.2, display: 'block' }}
                                 >
                                     {primaryContact?.name || entry?.primary || 'UNASSIGNED'}
                                 </span>
                             </Tooltip>
                             {primaryContact?.phone && (
-                                <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '14px', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
                                     {primaryContact.phone}
                                 </span>
                             )}
                         </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0 }}>{entry?.backupLabel || 'BAK'}</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: 0 }}>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 700, opacity: 0.6, flexShrink: 0, width: '32px' }}>{entry?.backupLabel || 'BAK'}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', textAlign: 'right' }}>
                             <Tooltip content={backupContact?.name || entry?.backup || 'UNASSIGNED'}>
                                 <span
-                                    style={{ fontSize: '14px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', overflow: 'hidden', wordBreak: 'break-word', whiteSpace: 'normal', maxWidth: '100%', lineHeight: 1.2 }}
+                                    className="text-truncate"
+                                    style={{ fontSize: '14px', fontWeight: 600, color: entry?.backup ? 'var(--color-text-secondary)' : 'var(--color-text-tertiary)', lineHeight: 1.2, display: 'block' }}
                                 >
                                     {backupContact?.name || entry?.backup || 'UNASSIGNED'}
                                 </span>
                             </Tooltip>
                             {backupContact?.phone && (
-                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '1px', fontFamily: 'var(--font-mono)' }}>
+                                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px', fontFamily: 'var(--font-mono)' }}>
                                     {backupContact.phone}
                                 </span>
                             )}

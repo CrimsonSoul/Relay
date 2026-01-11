@@ -18,6 +18,16 @@ export const RadarTab: React.FC = () => {
     setIsLoading(false);
   };
 
+  React.useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    webview.addEventListener('did-stop-loading', handleLoadStop);
+    return () => {
+      webview.removeEventListener('did-stop-loading', handleLoadStop);
+    };
+  }, []);
+
   return (
     <div style={{
       height: '100%',
@@ -86,7 +96,6 @@ export const RadarTab: React.FC = () => {
         <webview
           ref={webviewRef}
           src={url}
-          onDidStopLoading={handleLoadStop}
           partition="persist:dispatcher-radar"
           style={{
             width: '100%',

@@ -36,70 +36,74 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
             <div style={{ minWidth: '200px', flex: 1 }}>
                 <h1
                     style={{
-                        fontSize: isCollapsed ? '32px' : '40px',
+                        fontSize: isCollapsed ? 'clamp(20px, 4vw, 32px)' : 'clamp(26px, 5vw, 40px)',
                         fontWeight: 800,
                         margin: '0 0 8px 0',
                         color: 'var(--color-text-primary)',
                         transition: 'font-size 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                        whiteSpace: 'normal',
-                        wordBreak: 'break-word',
                         lineHeight: 1.1,
                         willChange: 'font-size',
+                        whiteSpace: 'normal',
+                        wordBreak: 'keep-all',
+                        overflowWrap: 'normal'
                     }}
                 >
                     {title}
                 </h1>
                 <div
                     style={{
-                        fontSize: '18px',
+                        fontSize: 'clamp(14px, 2vw, 18px)',
                         color: 'var(--color-text-tertiary)',
                         margin: 0,
                         fontWeight: 500,
-                        maxHeight: isCollapsed ? '0px' : '50px',
+                        maxHeight: isCollapsed ? '0px' : '150px',
                         opacity: isCollapsed ? 0 : 1,
                         overflow: 'hidden',
                         transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                        display: 'flex',
-                        alignItems: 'center',
+                        display: 'block',
+                        lineHeight: 1.4,
                         willChange: 'opacity, max-height',
+                        paddingBottom: isCollapsed ? 0 : '4px'
                     }}
                 >
                     {subtitle}
                 </div>
             </div>
 
-            {(search || children) && (
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: isCollapsed ? '12px' : '16px', // Reduced from 24px for tighter cohesion
-                        alignItems: 'center',
-                        flex: '0 1 auto',
-                        justifyContent: 'flex-end',
-                        transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                    }}
-                >
-                    {search && (
-                        <div style={{ 
-                            flex: '0 1 420px',
-                            minWidth: '180px',
-                            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                        }}>
-                            {search}
-                        </div>
-                    )}
-                    {children && (
-                        <div style={{
+            {
+                (search || children) && (
+                    <div
+                        style={{
                             display: 'flex',
-                            gap: isCollapsed ? '8px' : '12px', // Increased from 8px for better touch targets
+                            gap: isCollapsed ? '12px' : '16px', // Reduced from 24px for tighter cohesion
                             alignItems: 'center',
-                        }}>
-                            {children}
-                        </div>
-                    )}
-                </div>
-            )}
-        </div>
+                            flex: '0 1 auto',
+                            justifyContent: 'flex-end',
+                            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}
+                    >
+                        {search && (
+                            <div style={{
+                                flex: '0 1 420px',
+                                minWidth: '180px',
+                                transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                            }}>
+                                {search}
+                            </div>
+                        )}
+                        {children && (
+                            <div style={{
+                                display: 'flex',
+                                gap: isCollapsed ? '8px' : '12px', // Increased from 8px for better touch targets
+                                alignItems: 'center',
+                            }}>
+                                {children}
+                            </div>
+                        )}
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
