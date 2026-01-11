@@ -109,10 +109,12 @@ export function setupDataHandlers(
     return handleMergeImport('groups', 'Merge Groups CSV');
   });
 
-  ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.generateDummyData() ?? false;
-  });
+  if (process.env.NODE_ENV === 'development') {
+    ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
+      if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+      return getFileManager()?.generateDummyData() ?? false;
+    });
+  }
 
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_, server) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };

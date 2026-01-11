@@ -126,9 +126,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
                                     e.currentTarget.style.background = 'transparent';
                                 }}
                             >
-                                <span>{opt.label}</span>
+                                <span className="text-truncate">{opt.label}</span>
                                 {opt.subLabel && (
-                                    <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                                    <span className="text-truncate" style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
                                         {opt.subLabel}
                                     </span>
                                 )}

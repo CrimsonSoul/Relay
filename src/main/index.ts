@@ -10,12 +10,13 @@ const __dirname = dirname(__filename);
 import { validateEnv } from './env';
 import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
+import { setupWindowListeners } from './handlers/windowHandlers';
 
 // Validate environment early 
 validateEnv();
 
-loggers.main.info('Startup Info:', { 
-  arch: process.arch, 
+loggers.main.info('Startup Info:', {
+  arch: process.arch,
   platform: process.platform,
   electron: process.versions.electron,
   node: process.versions.node
@@ -32,10 +33,10 @@ async function createWindow() {
     width: 960, height: 800, minWidth: 400, minHeight: 600, center: true,
     backgroundColor: '#0B0D12', titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 12 }, show: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.cjs'), 
-      contextIsolation: true, 
-      nodeIntegration: false, 
-      sandbox: true, 
+      preload: join(__dirname, '../preload/index.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
       webviewTag: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
@@ -43,6 +44,8 @@ async function createWindow() {
       ...(process.platform === 'win32' && { spellcheck: false, enableWebSQL: false, v8CacheOptions: 'none' })
     }
   });
+
+  setupWindowListeners(state.mainWindow);
 
   // Set Content Security Policy
   // In development, allow unsafe-eval for React HMR to work properly
@@ -94,25 +97,25 @@ async function createWindow() {
     }
   })();
 
-  state.mainWindow.once('ready-to-show', () => { 
-    state.mainWindow?.show(); 
-    state.mainWindow?.focus(); 
-    loggers.main.debug('ready-to-show fired'); 
+  state.mainWindow.once('ready-to-show', () => {
+    state.mainWindow?.show();
+    state.mainWindow?.focus();
+    loggers.main.debug('ready-to-show fired');
   });
 
   state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
-    if (params.src && !params.src.startsWith('http')) { 
-      loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`); 
-      event.preventDefault(); 
+    if (params.src && !params.src.startsWith('http')) {
+      loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`);
+      event.preventDefault();
     }
   });
 
-  state.mainWindow.on('closed', () => { 
-    state.mainWindow = null; 
-    state.fileManager = null; 
+  state.mainWindow.on('closed', () => {
+    state.mainWindow = null;
+    state.fileManager = null;
   });
 }
 
@@ -138,23 +141,23 @@ loggers.main.info('Waiting for Electron ready...');
 // Top-level await causes the Electron main process to hang/deadlock on Windows,
 // resulting in a "zombie process" (running but no window).
 // We silence the linter here to prioritize application stability.
- 
+
 (async () => { // NOSONAR
   try {
     if (!app.isReady()) {
       await app.whenReady();
     }
-    
+
     loggers.main.info('Electron ready, performing setup...');
-    
+
     setupPermissions(session.defaultSession);
     setupPermissions(session.fromPartition('persist:weather'));
     setupPermissions(session.fromPartition('persist:dispatcher-radar'));
-    
+
     setupIpc();
     await createWindow();
     setupMaintenanceTasks(() => state.fileManager);
-    
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) void createWindow();
     });

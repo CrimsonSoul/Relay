@@ -49,7 +49,7 @@ export const ResizableHeader = ({
     }, [isResizing, minWidth, onResize]);
 
     const isSorted = !!sortDirection;
-    
+
     // Create accessible label
     const columnName = typeof children === 'string' ? children : 'column';
     let sortLabel = `Sort by ${columnName}`;
@@ -82,13 +82,7 @@ export const ResizableHeader = ({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            <span style={{
-                overflow: 'hidden',
-                whiteSpace: 'normal',
-                wordBreak: 'break-word',
-                lineHeight: 1.3,
-                flex: 1
-            }}>
+            <span className="text-truncate" style={{ flex: 1 }}>
                 {children}
             </span>
 

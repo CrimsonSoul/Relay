@@ -34,8 +34,6 @@ export function setupIpcHandlers(
   setupWindowHandlers(getMainWindow);
 
   // Listen for maximize/unmaximize events and notify renderer
-  const mw = getMainWindow();
-  if (mw) {
-    setupWindowListeners(mw);
-  }
+  // Handled in main/index.ts after window creation
+
 }
