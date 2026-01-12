@@ -16,7 +16,7 @@ export default defineConfig({
     build: {
       outDir: 'dist/main',
       minify: 'esbuild', // Faster minification
-      sourcemap: true, // Enable for error tracking
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts')
@@ -39,7 +39,7 @@ export default defineConfig({
     build: {
       outDir: 'dist/preload',
       minify: 'esbuild', // Minify for smaller size and faster load
-      sourcemap: true, // Enable for error tracking
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
       rollupOptions: {
         output: {
           format: 'cjs',
@@ -94,7 +94,7 @@ export default defineConfig({
       target: 'esnext',
       // Optimize for production startup
       reportCompressedSize: false, // Faster builds
-      sourcemap: true // Enable for error tracking
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden' // Hidden in production for security
     }
   }
 });
