@@ -4,7 +4,6 @@ import { logger } from './logger';
 
 export async function generateDummyDataAsync(targetRoot: string): Promise<boolean> {
   logger.debug('DummyDataGenerator', 'generateDummyDataAsync starting', { path: targetRoot });
-  console.log('generateDummyDataAsync called with path:', targetRoot);
   try {
     await fsPromises.mkdir(targetRoot, { recursive: true });
 
@@ -75,7 +74,6 @@ export async function generateDummyDataAsync(targetRoot: string): Promise<boolea
     return true;
   } catch (e) {
     logger.error('DummyDataGenerator', 'generateDummyData error', { error: e });
-    console.error('generateDummyDataAsync FAILED:', e);
     return false;
   }
 }
