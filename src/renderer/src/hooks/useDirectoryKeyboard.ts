@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import { Contact } from '@shared/ipc';
 

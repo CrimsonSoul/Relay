@@ -3,15 +3,6 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { loggers, ErrorCategory } from '../logger';
 
 // NWS API Response Types (for type safety)
-interface NWSPointProperties {
-  county?: string;
-  forecastZone?: string;
-}
-
-interface NWSPointResponse {
-  properties?: NWSPointProperties;
-}
-
 interface NWSAlertProperties {
   id?: string;
   event?: string;

@@ -1,10 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-type SortConfig = {
-    key: string;
-    direction: 'asc' | 'desc';
-};
-
 export const ResizableHeader = ({
     children,
     width,

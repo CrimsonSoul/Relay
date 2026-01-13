@@ -65,7 +65,11 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        'argsIgnorePattern': '^_',
+        'varsIgnorePattern': '^_',
+        'caughtErrorsIgnorePattern': '^_'
+      }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
@@ -125,7 +129,11 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        'argsIgnorePattern': '^_',
+        'varsIgnorePattern': '^_',
+        'caughtErrorsIgnorePattern': '^_'
+      }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
@@ -164,7 +172,11 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        'argsIgnorePattern': '^_',
+        'varsIgnorePattern': '^_',
+        'caughtErrorsIgnorePattern': '^_'
+      }],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'off',
       '@typescript-eslint/strict-boolean-expressions': 'off',
@@ -226,7 +238,11 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        'argsIgnorePattern': '^_',
+        'varsIgnorePattern': '^_',
+        'caughtErrorsIgnorePattern': '^_'
+      }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
@@ -291,7 +307,11 @@ export default [
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': 'warn',
+      '@typescript-eslint/no-unused-vars': ['warn', { 
+        'argsIgnorePattern': '^_',
+        'varsIgnorePattern': '^_',
+        'caughtErrorsIgnorePattern': '^_'
+      }],
     },
   },
 ];

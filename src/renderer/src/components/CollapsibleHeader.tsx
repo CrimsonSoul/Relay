@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, ReactNode, RefObject } from 'react';
+import React, { useState, useEffect, useRef, ReactNode } from 'react';
 
 interface CollapsibleHeaderProps {
     title: string;

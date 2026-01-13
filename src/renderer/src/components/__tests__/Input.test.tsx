@@ -10,7 +10,7 @@ describe('Input Component', () => {
   });
 
   test('shows clear button when typed into (uncontrolled)', () => {
-    const { container } = render(<Input placeholder="Uncontrolled" />);
+    render(<Input placeholder="Uncontrolled" />);
     const input = screen.getByPlaceholderText('Uncontrolled');
 
     // Initially no clear button

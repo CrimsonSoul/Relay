@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AppData, type AuthRequest, type RadarSnapshot, type DataError, type ImportProgress, type WeatherAlert } from '@shared/ipc';
+import { IPC_CHANNELS, type BridgeAPI, type AppData, type AuthRequest, type RadarSnapshot, type DataError, type ImportProgress } from '@shared/ipc';
 
 const api: BridgeAPI = {
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),

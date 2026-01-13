@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { loggers, LogLevel } from '../logger';
+import { loggers } from '../logger';
 
 /**
  * Setup IPC handler for renderer-to-main logging

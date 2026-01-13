@@ -54,7 +54,6 @@ export function scaleColumns(options: ScaleColumnsOptions): ColumnWidths {
 
   // Scale all columns
   const scaledWidths: ColumnWidths = {};
-  let totalScaled = 0;
   let belowMinCount = 0;
   let belowMinTotal = 0;
 
@@ -65,10 +64,8 @@ export function scaleColumns(options: ScaleColumnsOptions): ColumnWidths {
       scaledWidths[key] = minColumnWidth;
       belowMinCount++;
       belowMinTotal += minColumnWidth;
-      totalScaled += minColumnWidth;
     } else {
       scaledWidths[key] = scaled;
-      totalScaled += scaled;
     }
   });
 
@@ -80,11 +77,9 @@ export function scaleColumns(options: ScaleColumnsOptions): ColumnWidths {
 
     if (remainingBaseTotal > 0) {
       const adjustedScale = remainingSpace / remainingBaseTotal;
-      totalScaled = belowMinTotal;
 
       remainingKeys.forEach(key => {
         scaledWidths[key] = Math.max(minColumnWidth, baseWidths[key] * adjustedScale);
-        totalScaled += scaledWidths[key];
       });
     }
   }

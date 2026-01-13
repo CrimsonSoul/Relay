@@ -1,11 +1,10 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
-import { Tooltip } from '../components/Tooltip';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
 export const RadarTab: React.FC = () => {
-  const [url, setUrl] = useState('https://cw-intra-web/CWDashboard/Home/Radar');
+  const [url] = useState('https://cw-intra-web/CWDashboard/Home/Radar');
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
 

@@ -13,7 +13,6 @@ export interface SortableTeamCardProps {
     backupContact: Contact | undefined;
     setEditingTeam: (team: string) => void;
     setRenamingTeam: (val: { old: string, new: string }) => void;
-    onRemoveTeam: (team: string) => void;
     setConfirmRemove: (team: string | null) => void;
     setMenu: (menu: { x: number, y: number, items: ContextMenuItem[] } | null) => void;
 }
@@ -25,7 +24,6 @@ export const SortableTeamCard = ({
     backupContact,
     setEditingTeam,
     setRenamingTeam,
-    onRemoveTeam,
     setConfirmRemove,
     setMenu
 }: SortableTeamCardProps) => {
