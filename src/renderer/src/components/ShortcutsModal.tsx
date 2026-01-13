@@ -114,6 +114,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
           </div>
           <button
             onClick={onClose}
+            aria-label="Close"
             style={{
               background: "none",
               border: "1px solid transparent",

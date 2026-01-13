@@ -117,8 +117,10 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     <div style={{ display: "grid", gridTemplateColumns: asm.isGroupSidebarCollapsed ? "24px 1fr" : "240px 1fr", gap: "0px", height: "100%", alignItems: "start", transition: "grid-template-columns 0.4s cubic-bezier(0.16, 1, 0.3, 1)", overflow: "visible" }}>
       <AssemblerSidebar
         groups={groups}
+        contacts={props.contacts}
         selectedGroupIds={selectedGroupIds}
         onToggleGroup={onToggleGroup}
+        onAddManual={props.onAddManual}
         isCollapsed={asm.isGroupSidebarCollapsed}
         onToggleCollapse={asm.handleToggleSidebarCollapse}
         onSaveGroup={saveGroup}
