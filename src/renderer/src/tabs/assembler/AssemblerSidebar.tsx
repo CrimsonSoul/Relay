@@ -29,6 +29,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   onSaveGroup,
   onUpdateGroup,
   onDeleteGroup,
+  onImportFromCsv,
   currentEmails = [],
 }) => {
   const [groupContextMenu, setGroupContextMenu] = useState<{ x: number; y: number; group: BridgeGroup } | null>(null);

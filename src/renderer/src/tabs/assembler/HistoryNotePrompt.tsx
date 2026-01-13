@@ -64,7 +64,7 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
           fontSize: "13px",
           border: "1px solid var(--color-border-medium)",
           borderRadius: "6px",
-          background: "rgba(0, 0, 0, 0.2)",
+          background: "rgba(0, 0, 0, 0.5)",
           color: "var(--color-text-primary)",
           outline: "none",
           marginBottom: "12px",
