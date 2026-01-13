@@ -60,19 +60,6 @@ export function useAppAssembler(isReloading: boolean) {
     setActiveTab(tab);
   }, [isReloading]);
 
-  const handleImportGroups = useCallback(
-    async () => await window.api?.importGroupsFromCsv(),
-    []
-  );
-  const handleImportContacts = useCallback(
-    async () => await window.api?.importContactsFile(),
-    []
-  );
-  const handleImportServers = useCallback(
-    async () => await window.api?.importServersFile(),
-    []
-  );
-
   return {
     activeTab,
     setActiveTab: handleTabChange,
@@ -90,8 +77,5 @@ export function useAppAssembler(isReloading: boolean) {
     handleAddManual,
     handleRemoveManual,
     handleToggleGroup,
-    handleImportGroups,
-    handleImportContacts,
-    handleImportServers
   };
 }

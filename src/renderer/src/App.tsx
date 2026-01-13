@@ -42,7 +42,6 @@ export function MainApp() {
     manualRemoves, settingsOpen, setSettingsOpen,
     handleAddToAssembler, handleUndoRemove, handleReset,
     handleAddManual, handleRemoveManual, handleToggleGroup,
-    handleImportGroups, handleImportContacts, handleImportServers
   } = useAppAssembler(isReloading);
 
   // Command Palette and Shortcuts modal state
@@ -203,7 +202,6 @@ export function MainApp() {
           <SettingsModal
             isOpen={settingsOpen} onClose={() => setSettingsOpen(false)}
             isSyncing={isReloading} onSync={handleSync}
-            onImportGroups={handleImportGroups} onImportContacts={handleImportContacts} onImportServers={handleImportServers}
             onOpenDataManager={() => setIsDataManagerOpen(true)}
           />
         )}

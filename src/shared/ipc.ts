@@ -440,6 +440,7 @@ export type MigrationResult = {
   contacts: { migrated: number; errors: string[] };
   servers: { migrated: number; errors: string[] };
   oncall: { migrated: number; errors: string[] };
+  groups: { migrated: number; errors: string[] };
   backupPath?: string;
 };
 
