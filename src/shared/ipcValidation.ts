@@ -78,12 +78,11 @@ export type ValidatedGroupUpdate = z.infer<typeof GroupUpdateSchema>;
 // ==================== Bridge History Schemas ====================
 export const BridgeHistoryEntrySchema = z.object({
   id: z.string().optional(),
-  timestamp: z.number(),
-  fromName: z.string(),
-  fromPhone: z.string(),
-  toName: z.string(),
-  toPhone: z.string(),
-  notes: z.string().optional(),
+  timestamp: z.number().optional(),
+  note: z.string(),
+  groups: z.array(z.string()),
+  contacts: z.array(z.string()),
+  recipientCount: z.number(),
 });
 
 export type ValidatedBridgeHistoryEntry = z.infer<typeof BridgeHistoryEntrySchema>;
