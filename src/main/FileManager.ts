@@ -15,6 +15,10 @@ import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
 import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson } from "./operations";
 
+// File write coordination constants
+const WRITE_GUARD_DELAY_MS = 500; // Delay after write before allowing file watcher to react
+const DETACHED_WRITE_GUARD_DELAY_MS = 1000; // Longer delay for detached writes
+
 // Transform JSON records to legacy types for backward compatibility
 function contactRecordToContact(record: ContactRecord): Contact {
   return {
@@ -67,7 +71,16 @@ export class FileManager implements FileContext {
     loggers.fileManager.info(`Initialized. Root: ${this.rootDir}`);
   }
 
-  public init() { this.startWatching(); this.readAndEmit(); this.performBackup("init"); }
+  /**
+   * Initialize the FileManager by starting file watching, loading data, and performing backup.
+   * Intentionally fires async operations without awaiting for non-blocking startup.
+   * The operations complete in the background and emit events when ready.
+   */
+  public init(): void {
+    this.startWatching();
+    void this.readAndEmit();
+    void this.performBackup("init");
+  }
 
   private startWatching() {
     this.watcher = createFileWatcher(this.rootDir, {
@@ -167,7 +180,7 @@ export class FileManager implements FileContext {
       } finally {
         setTimeout(() => {
           this.internalWriteCount--;
-        }, 500);
+        }, WRITE_GUARD_DELAY_MS);
       }
     });
 
@@ -185,7 +198,7 @@ export class FileManager implements FileContext {
         await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
         await fs.rename(`${path}.tmp`, path);
       } finally {
-        setTimeout(() => this.internalWriteCount--, 1000);
+        setTimeout(() => this.internalWriteCount--, DETACHED_WRITE_GUARD_DELAY_MS);
       }
     });
 
@@ -208,7 +221,7 @@ export class FileManager implements FileContext {
   public async removeOnCallTeam(team: string) { return removeOnCallTeamOp(this, team); }
   public async renameOnCallTeam(oldName: string, newName: string) { return renameOnCallTeamOp(this, oldName, newName); }
   public async saveAllOnCall(rows: OnCallRow[]) { return saveAllOnCallOp(this, rows); }
-  public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) await this.readAndEmit(); return success; }
+  public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) { await this.readAndEmit(); } return success; }
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }
-  public destroy() { if (this.watcher) { this.watcher.close(); this.watcher = null; } }
+  public destroy() { if (this.watcher) { void this.watcher.close(); this.watcher = null; } }
 }

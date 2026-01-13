@@ -1,11 +1,26 @@
 /**
  * Secure Storage Wrapper for localStorage
- * 
+ *
  * Provides encryption for stored data using Web Crypto API when available,
  * with fallback to base64 obfuscation for older environments.
- * 
- * Note: This is obfuscation/encryption against casual inspection.
- * For truly sensitive data, use the main process credential manager.
+ *
+ * SECURITY NOTICE - ENCRYPTION LIMITATIONS:
+ * ==========================================
+ * This module provides OBFUSCATION, not cryptographically secure encryption.
+ *
+ * Key derivation uses navigator.userAgent (lines 57-59), which means:
+ * - The encryption key is predictable and identical for all users with the same browser
+ * - An attacker with access to localStorage can decrypt all data
+ * - This is intentional: we're protecting against casual inspection, not determined attackers
+ *
+ * USE CASES:
+ * - UI preferences and non-sensitive cached data: SAFE ✓
+ * - Passwords, API keys, or sensitive credentials: UNSAFE ✗
+ *
+ * For truly sensitive data (passwords, tokens, keys), use Electron's safeStorage API
+ * via the main process credential manager instead.
+ *
+ * This design is by choice for performance and user experience with non-sensitive data.
  */
 
 import { loggers, ErrorCategory } from './logger';
@@ -47,13 +62,17 @@ class SecureStorage {
 
   /**
    * Initialize encryption key (Web Crypto API)
+   *
+   * WARNING: This uses navigator.userAgent for key derivation, which is NOT secure.
+   * All users with the same browser version will have the same encryption key.
+   * This is intentional obfuscation for UI preferences, not security-critical data.
    */
   private async initializeEncryption(): Promise<void> {
     if (!CRYPTO_AVAILABLE) return;
 
     try {
-      // Generate a stable key based on user agent (simple approach)
-      // In production, you might derive this from a user-specific value
+      // SECURITY: Key derived from user agent - predictable and not unique per user
+      // This is obfuscation only. Do NOT store sensitive data here.
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
         new TextEncoder().encode(navigator.userAgent.substring(0, 32).padEnd(32, '0')),

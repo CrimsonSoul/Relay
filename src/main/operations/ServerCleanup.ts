@@ -36,12 +36,12 @@ export async function cleanupServerContacts(ctx: FileContext): Promise<void> {
       tryReplace(ownerIdx); tryReplace(contactIdx);
     }
 
-    if (changed) { 
-      await ctx.writeAndEmit(path, ctx.safeStringify(data)); 
-      ctx.performBackup("cleanupServerContacts"); 
-      loggers.fileManager.info("[ServerCleanup] Completed. Updated file."); 
-    } else { 
-      loggers.fileManager.info("[ServerCleanup] No contacts needed cleanup."); 
+    if (changed) {
+      await ctx.writeAndEmit(path, ctx.safeStringify(data));
+      void ctx.performBackup("cleanupServerContacts");
+      loggers.fileManager.info("[ServerCleanup] Completed. Updated file.");
+    } else {
+      loggers.fileManager.info("[ServerCleanup] No contacts needed cleanup.");
     }
   } catch (e) { 
     loggers.fileManager.error("[ServerCleanup] Error:", { error: e }); 

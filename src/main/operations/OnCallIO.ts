@@ -10,7 +10,7 @@ export async function saveAllOnCall(ctx: FileContext, rows: OnCallRow[]): Promis
     const csvData = [[...STD_ONCALL_HEADERS, "Time Window"], ...rows.map((r) => [r.team, r.role, r.name, r.contact, r.timeWindow || ""])];
     const csvOutput = ctx.safeStringify(csvData);
     await ctx.writeAndEmit(path, csvOutput);
-    ctx.performBackup("saveAllOnCall");
+    void ctx.performBackup("saveAllOnCall");
     return true;
   } catch (e) { logger.error("OnCallOperations", "saveAllOnCall error", { error: e }); return false; }
 }

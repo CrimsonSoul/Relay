@@ -82,7 +82,7 @@ async function createWindow() {
   }
 
   // Initialize data asynchronously
-  (async () => {
+  void (async () => {
     loggers.main.info('Starting data initialization...');
     try {
       state.currentDataRoot = await getDataRootAsync();
@@ -142,7 +142,7 @@ loggers.main.info('Waiting for Electron ready...');
 // resulting in a "zombie process" (running but no window).
 // We silence the linter here to prioritize application stability.
 
-(async () => { // NOSONAR
+void (async () => { // NOSONAR
   try {
     if (!app.isReady()) {
       await app.whenReady();

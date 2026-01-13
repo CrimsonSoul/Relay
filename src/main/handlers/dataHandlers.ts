@@ -3,6 +3,12 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { FileManager } from '../FileManager';
 import { rateLimiters } from '../rateLimiter';
 import { loggers } from '../logger';
+import {
+  ContactSchema,
+  ServerSchema,
+  OnCallRowsArraySchema,
+  validateIpcDataSafe,
+} from '../../shared/ipcValidation';
 
 export function setupDataHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -40,11 +46,20 @@ export function setupDataHandlers(
   // Contact operations
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_, contact) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.addContact(contact) ?? false;
+    const validatedContact = validateIpcDataSafe(ContactSchema, contact, 'ADD_CONTACT');
+    if (!validatedContact) {
+      loggers.ipc.error('Invalid contact data received');
+      return { success: false, error: 'Invalid contact data' };
+    }
+    return getFileManager()?.addContact(validatedContact) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_CONTACT, async (_, email) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof email !== 'string' || !email) {
+      loggers.ipc.error('Invalid email parameter');
+      return { success: false, error: 'Invalid email' };
+    }
     return getFileManager()?.removeContact(email) ?? false;
   });
 
@@ -54,22 +69,44 @@ export function setupDataHandlers(
   // On-Call operations
   ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_, team, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.updateOnCallTeam(team, rows) ?? false;
+    if (typeof team !== 'string' || !team) {
+      loggers.ipc.error('Invalid team parameter');
+      return { success: false, error: 'Invalid team name' };
+    }
+    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'UPDATE_ONCALL_TEAM');
+    if (!validatedRows) {
+      loggers.ipc.error('Invalid on-call rows data');
+      return { success: false, error: 'Invalid on-call data' };
+    }
+    return getFileManager()?.updateOnCallTeam(team, validatedRows) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_, team) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof team !== 'string' || !team) {
+      loggers.ipc.error('Invalid team parameter');
+      return { success: false, error: 'Invalid team name' };
+    }
     return getFileManager()?.removeOnCallTeam(team) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_, oldName, newName) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof oldName !== 'string' || !oldName || typeof newName !== 'string' || !newName) {
+      loggers.ipc.error('Invalid team name parameters');
+      return { success: false, error: 'Invalid team names' };
+    }
     return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.saveAllOnCall(rows) ?? false;
+    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'SAVE_ALL_ONCALL');
+    if (!validatedRows) {
+      loggers.ipc.error('Invalid on-call rows data');
+      return { success: false, error: 'Invalid on-call data' };
+    }
+    return getFileManager()?.saveAllOnCall(validatedRows) ?? false;
   });
 
   // Contact import operations
@@ -92,11 +129,20 @@ export function setupDataHandlers(
   // Server operations
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_, server) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.addServer(server) ?? false;
+    const validatedServer = validateIpcDataSafe(ServerSchema, server, 'ADD_SERVER');
+    if (!validatedServer) {
+      loggers.ipc.error('Invalid server data received');
+      return { success: false, error: 'Invalid server data' };
+    }
+    return getFileManager()?.addServer(validatedServer) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.REMOVE_SERVER, async (_, name) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof name !== 'string' || !name) {
+      loggers.ipc.error('Invalid server name parameter');
+      return { success: false, error: 'Invalid server name' };
+    }
     return getFileManager()?.removeServer(name) ?? false;
   });
 
@@ -122,6 +168,6 @@ export function setupDataHandlers(
   ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) return { success: false, rateLimited: true };
-    getFileManager()?.readAndEmit();
+    void getFileManager()?.readAndEmit();
   });
 }

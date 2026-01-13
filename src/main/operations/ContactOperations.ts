@@ -57,7 +57,7 @@ export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
     if (needsWrite) {
       loggers.fileManager.info("[ContactOperations] Cleaning phone numbers and rewriting contacts.csv...");
       const csvOutput = stringifyCsv(data);
-      ctx.rewriteFileDetached(path, csvOutput);
+      void ctx.rewriteFileDetached(path, csvOutput);
     }
 
     const results = rows.map((rowValues: string[]) => {
@@ -145,7 +145,7 @@ export async function removeContact(ctx: FileContext, email: string): Promise<bo
     if (removed) {
       const csvOutput = ctx.safeStringify(newData);
       await ctx.writeAndEmit(path, csvOutput);
-      ctx.performBackup("removeContact");
+      void ctx.performBackup("removeContact");
       return true;
     }
     return false;
@@ -229,7 +229,7 @@ export async function addContact(ctx: FileContext, contact: Partial<Contact>): P
 
     const csvOutput = ctx.safeStringify(workingData);
     await ctx.writeAndEmit(path, csvOutput);
-    ctx.performBackup("addContact");
+    void ctx.performBackup("addContact");
     return true;
   } catch (e) {
     loggers.fileManager.error("[ContactOperations] addContact error:", { error: e });

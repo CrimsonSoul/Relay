@@ -40,7 +40,7 @@ export async function removeOnCallTeam(ctx: FileContext, team: string): Promise<
     if (teamIdx === -1) return false;
     const newData = [workingData[0]]; let removed = false;
     for (let i = 1; i < workingData.length; i++) { if (workingData[i][teamIdx] !== team) newData.push(workingData[i]); else removed = true; }
-    if (removed) { const csvOutput = ctx.safeStringify(newData); await ctx.writeAndEmit(path, csvOutput); ctx.performBackup("removeOnCallTeam"); return true; }
+    if (removed) { const csvOutput = ctx.safeStringify(newData); await ctx.writeAndEmit(path, csvOutput); void ctx.performBackup("removeOnCallTeam"); return true; }
     return false;
   } catch (e) { logger.error("OnCallOperations", "removeOnCallTeam error", { error: e }); return false; }
 }
@@ -58,7 +58,7 @@ export async function renameOnCallTeam(ctx: FileContext, oldName: string, newNam
     if (teamIdx === -1) return false;
     let renamed = false;
     for (let i = 1; i < workingData.length; i++) { if (workingData[i][teamIdx] === oldName) { workingData[i][teamIdx] = newName; renamed = true; } }
-    if (renamed) { const csvOutput = ctx.safeStringify(workingData); await ctx.writeAndEmit(path, csvOutput); ctx.performBackup("renameOnCallTeam"); return true; }
+    if (renamed) { const csvOutput = ctx.safeStringify(workingData); await ctx.writeAndEmit(path, csvOutput); void ctx.performBackup("renameOnCallTeam"); return true; }
     return false;
   } catch (e) { logger.error("OnCallOperations", "renameOnCallTeam error", { error: e }); return false; }
 }

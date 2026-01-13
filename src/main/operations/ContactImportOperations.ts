@@ -131,7 +131,7 @@ export async function importContactsWithMapping(
 
     const csvOutput = ctx.safeStringify(targetData);
     await ctx.writeAndEmit(targetPath, csvOutput);
-    ctx.performBackup("importContacts");
+    void ctx.performBackup("importContacts");
     return true;
   } catch (e) {
     loggers.fileManager.error("[ContactImportOperations] importContactsWithMapping error:", { error: e });
