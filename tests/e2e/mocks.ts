@@ -1,5 +1,5 @@
 import { Page } from '@playwright/test';
-import { AppData, BridgeAPI, RadarSnapshot, BridgeGroup } from '../../src/shared/ipc';
+import { AppData, BridgeAPI, RadarSnapshot, BridgeGroup, Contact, Server, WeatherData, WeatherAlert } from '../../src/shared/ipc';
 
 export const MOCK_GROUPS: BridgeGroup[] = [
   {
@@ -50,8 +50,69 @@ export const MOCK_RADAR: RadarSnapshot = {
   lastUpdated: Date.now()
 };
 
-export async function injectMockApi(page: Page) {
-  await page.addInitScript((data) => {
+export type MockOverrides = {
+  mockData?: Partial<AppData>;
+  mockRadar?: Partial<RadarSnapshot>;
+  mockWeather?: WeatherData;
+  mockAlerts?: WeatherAlert[];
+};
+
+export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
+  // Mock geolocation before anything else
+  await page.addInitScript(() => {
+    const mockGeolocation = {
+      getCurrentPosition: (success: any) => {
+        setTimeout(() => {
+          success({
+            coords: {
+              latitude: 40.7128,
+              longitude: -74.0060,
+              accuracy: 100,
+              altitude: null,
+              altitudeAccuracy: null,
+              heading: null,
+              speed: null,
+            },
+            timestamp: Date.now(),
+          });
+        }, 100);
+      },
+      watchPosition: (success: any) => {
+        const id = Math.floor(Math.random() * 1000);
+        setTimeout(() => {
+          success({
+            coords: {
+              latitude: 40.7128,
+              longitude: -74.0060,
+              accuracy: 100,
+            },
+            timestamp: Date.now(),
+          });
+        }, 100);
+        return id;
+      },
+      clearWatch: () => {},
+    };
+    (navigator as any).geolocation = mockGeolocation;
+  });
+
+  await page.addInitScript((args) => {
+    const { mockData, mockRadar, mockWeather, mockAlerts } = args;
+    
+    // Stateful data container
+    const currentData: AppData = JSON.parse(JSON.stringify(mockData));
+    
+    let dataCallback: ((data: AppData) => void) | null = null;
+    let radarCallback: ((data: RadarSnapshot) => void) | null = null;
+
+    const broadcast = () => {
+      console.log('[Mock API] Broadcasting data update', currentData);
+      currentData.lastUpdated = Date.now();
+      if (dataCallback) {
+          dataCallback(JSON.parse(JSON.stringify(currentData)));
+      }
+    };
+
     // Create the mock API object
     const mockApi: Partial<BridgeAPI> = {
       openPath: async () => {},
@@ -60,11 +121,13 @@ export async function injectMockApi(page: Page) {
       importGroupsFromCsv: async () => true,
       importContactsFile: async () => true,
       importServersFile: async () => true,
+      
       subscribeToData: (callback) => {
-        // Immediately callback with data
-        callback(data.mockData);
-        return () => {};
+        dataCallback = callback;
+        callback(JSON.parse(JSON.stringify(currentData)));
+        return () => { dataCallback = null; };
       },
+      
       onReloadStart: (callback) => {
         (globalThis as Record<string, unknown>).__triggerReloadStart = callback;
         return () => {};
@@ -80,25 +143,58 @@ export async function injectMockApi(page: Page) {
         return () => {};
       },
       reloadData: async () => {
-        // Simulate a reload cycle
         if ((globalThis as Record<string, unknown>).__triggerReloadStart) (globalThis as Record<string, unknown>).__triggerReloadStart();
         setTimeout(() => {
             if ((globalThis as Record<string, unknown>).__triggerReloadComplete) (globalThis as Record<string, unknown>).__triggerReloadComplete(true);
         }, 500);
       },
       onAuthRequested: () => () => {},
-      submitAuth: async (_nonce, _username, _password, _remember) => true,
+      submitAuth: async () => true,
       cancelAuth: () => {},
       useCachedAuth: async () => true,
+      
       subscribeToRadar: (callback) => {
-         callback(data.mockRadar);
-         return () => {};
+         radarCallback = callback;
+         callback(mockRadar);
+         return () => { radarCallback = null; };
       },
+      
       logBridge: () => {},
-      addContact: async () => true,
-      removeContact: async () => true,
-      addServer: async () => true,
-      removeServer: async () => true,
+      
+      addContact: async (contact) => {
+         const newContact = {
+             ...contact,
+             _searchString: ((contact.name || '') + ' ' + (contact.email || '')).toLowerCase(),
+             raw: {}
+         } as Contact;
+         currentData.contacts.push(newContact);
+         broadcast();
+         return true;
+      },
+      
+      removeContact: async (email) => {
+         currentData.contacts = currentData.contacts.filter(c => c.email !== email);
+         broadcast();
+         return true;
+      },
+      
+      addServer: async (server) => {
+         const newServer = {
+             ...server,
+             _searchString: ((server.name || '') + ' ' + (server.os || '')).toLowerCase(),
+             raw: {}
+         } as Server;
+         currentData.servers.push(newServer);
+         broadcast();
+         return true;
+      },
+      
+      removeServer: async (name) => {
+         currentData.servers = currentData.servers.filter(s => s.name !== name);
+         broadcast();
+         return true;
+      },
+      
       importContactsWithMapping: async () => true,
       changeDataFolder: async () => true,
       resetDataFolder: async () => true,
@@ -110,62 +206,65 @@ export async function injectMockApi(page: Page) {
       onMaximizeChange: () => {},
       removeMaximizeListener: () => {},
       generateDummyData: async () => true,
-      getIpLocation: async () => null,
+      getIpLocation: async () => ({
+          lat: 40.7128,
+          lon: -74.0060,
+          city: 'New York',
+          region: 'NY',
+          country: 'USA'
+      }),
       logToMain: () => {},
-      getWeather: async () => null,
-      searchLocation: async () => [],
-      getWeatherAlerts: async () => [],
+      
+      getWeather: async () => mockWeather,
+      getWeatherAlerts: async () => mockAlerts || [],
+      
+      searchLocation: async () => ({ results: [] }),
       updateOnCallTeam: async () => true,
       removeOnCallTeam: async () => true,
       renameOnCallTeam: async () => true,
       saveAllOnCall: async () => true,
-      // New Groups API
-      getGroups: async () => data.mockData.groups,
+      getGroups: async () => currentData.groups,
       saveGroup: async () => ({ id: 'new_group', name: 'New Group', contacts: [], createdAt: Date.now(), updatedAt: Date.now() }),
       updateGroup: async () => true,
       deleteGroup: async () => true,
-      // Bridge History API
       getBridgeHistory: async () => [],
       addBridgeHistory: async () => ({ id: 'history_1', timestamp: Date.now(), note: '', groups: [], contacts: [], recipientCount: 0 }),
       deleteBridgeHistory: async () => true,
       clearBridgeHistory: async () => true,
-      // Notes API
       getNotes: async () => ({ contacts: {}, servers: {} }),
       setContactNote: async () => true,
       setServerNote: async () => true,
-      // Saved Locations API
       getSavedLocations: async () => [],
       saveLocation: async () => ({ id: 'loc_1', name: 'Test Location', lat: 0, lon: 0, isDefault: false }),
       deleteLocation: async () => true,
       setDefaultLocation: async () => true,
       clearDefaultLocation: async () => true,
       updateLocation: async () => true,
-      // Data Manager API
       exportData: async () => true,
       importData: async () => ({ success: true, imported: 0, updated: 0, skipped: 0, errors: [] }),
       getDataStats: async () => ({ contacts: { count: 0, lastUpdated: 0 }, servers: { count: 0, lastUpdated: 0 }, oncall: { count: 0, lastUpdated: 0 }, groups: { count: 0, lastUpdated: 0 }, hasCsvFiles: false }),
-      migrateFromCsv: async () => ({ success: true, contacts: { migrated: 0, errors: [] }, servers: { migrated: 0, errors: [] }, oncall: { migrated: 0, errors: [] } }),
-      // Contact Records API
+      migrateFromCsv: async () => ({ success: true, contacts: { migrated: 0, errors: [] }, servers: { migrated: 0, errors: [] }, oncall: { migrated: 0, errors: [] }, groups: { migrated: 0, errors: [] } }),
       getContacts: async () => [],
       addContactRecord: async () => null,
       updateContactRecord: async () => true,
       deleteContactRecord: async () => true,
-      // Server Records API
       getServers: async () => [],
       addServerRecord: async () => null,
       updateServerRecord: async () => true,
       deleteServerRecord: async () => true,
-      // OnCall Records API
       getOnCall: async () => [],
       addOnCallRecord: async () => null,
       updateOnCallRecord: async () => true,
       deleteOnCallRecord: async () => true,
       deleteOnCallByTeam: async () => true,
-      // Clipboard API
       writeClipboard: async () => true
     };
 
-    // Expose it as window.api
     (globalThis as Record<string, unknown>).api = mockApi;
-  }, { mockData: MOCK_DATA, mockRadar: MOCK_RADAR });
+  }, { 
+    mockData: { ...MOCK_DATA, ...overrides.mockData }, 
+    mockRadar: { ...MOCK_RADAR, ...overrides.mockRadar },
+    mockWeather: overrides.mockWeather ?? null,
+    mockAlerts: overrides.mockAlerts ?? []
+  });
 }

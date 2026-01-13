@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useId } from 'react';
 import { Tooltip } from './Tooltip';
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
@@ -8,9 +8,11 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   containerStyle?: React.CSSProperties;
 };
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant: _variant = 'default', label, containerStyle, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant: _variant = 'default', label, containerStyle, id: providedId, ...props }, ref) => {
   const innerRef = useRef<HTMLInputElement>(null);
   const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
+  const generatedId = useId();
+  const id = providedId || generatedId;
 
   // Separate layout styles for wrapper vs visual styles for input
   const {
@@ -64,7 +66,6 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
         props.onChange(syntheticEvent);
       }
 
-      // Update local state immediately for uncontrolled usage
       setHasValue(false);
     }
     innerRef.current?.focus();
@@ -81,19 +82,23 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
       ...containerStyle
     }}>
       {label && (
-        <label className="text-truncate" style={{
-          display: 'block',
-          fontSize: '15px',
-          fontWeight: 650,
-          color: 'var(--color-text-secondary)',
-          marginBottom: '8px',
-          letterSpacing: '0.01em'
-        }}>
+        <label 
+          htmlFor={id}
+          className="text-truncate" 
+          style={{
+            display: 'block',
+            fontSize: '15px',
+            fontWeight: 650,
+            color: 'var(--color-text-secondary)',
+            marginBottom: '8px',
+            letterSpacing: '0.01em'
+          }}>
           {label}
         </label>
       )}
       <div style={{ position: 'relative', width: '100%' }}>
         <input
+          id={id}
           ref={innerRef}
           style={{
             width: '100%',
@@ -123,7 +128,6 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
           {...props}
           className={className}
           onChange={(e) => {
-            // Update local state for both controlled and uncontrolled
             setHasValue(!!e.target.value);
             props.onChange?.(e);
           }}
@@ -134,7 +138,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
             className="input-icon"
             style={{
               position: 'absolute',
-              left: '16px', // Increased padding for pill style
+              left: '16px',
               top: '50%',
               transform: 'translateY(-50%)',
               pointerEvents: 'none',
