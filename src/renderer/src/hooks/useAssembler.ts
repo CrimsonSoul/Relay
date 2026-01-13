@@ -1,22 +1,21 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { secureStorage } from '../utils/secureStorage';
-import { GroupMap, Contact } from "@shared/ipc";
-import { useGroupMaps } from "./useGroupMaps";
+import { BridgeGroup, Contact } from "@shared/ipc";
 import { useToast } from "../components/Toast";
 
 export interface SortConfig { key: string; direction: 'asc' | 'desc'; }
 
 interface AssemblerState {
-  groups: GroupMap;
+  groups: BridgeGroup[];
   contacts: Contact[];
-  selectedGroups: string[];
+  selectedGroupIds: string[];
   manualAdds: string[];
   manualRemoves: string[];
   onAddManual: (email: string) => void;
   onRemoveManual: (email: string) => void;
 }
 
-export function useAssembler({ groups, contacts, selectedGroups, manualAdds, manualRemoves, onAddManual, onRemoveManual }: AssemblerState) {
+export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, manualRemoves, onAddManual, onRemoveManual }: AssemblerState) {
   const { showToast } = useToast();
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" });
   const [isBridgeReminderOpen, setIsBridgeReminderOpen] = useState(false);
@@ -42,13 +41,49 @@ export function useAssembler({ groups, contacts, selectedGroups, manualAdds, man
     return map;
   }, [contacts]);
 
-  const { groupMap, groupStringMap } = useGroupMaps(groups);
+  // Create a map of email -> group names for display
+  const emailToGroupsMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    groups.forEach(group => {
+      group.contacts.forEach(email => {
+        const lowerEmail = email.toLowerCase();
+        if (!map.has(lowerEmail)) {
+          map.set(lowerEmail, []);
+        }
+        map.get(lowerEmail)!.push(group.name);
+      });
+    });
+    return map;
+  }, [groups]);
+
+  // Create a simple groupMap for display (email -> groups list as string)
+  const groupStringMap = useMemo(() => {
+    const map = new Map<string, string>();
+    emailToGroupsMap.forEach((groupNames, email) => {
+      map.set(email, groupNames.join(", "));
+    });
+    return map;
+  }, [emailToGroupsMap]);
+
+  // Create groupMap for VirtualRow (email -> array of group names)
+  const groupMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    emailToGroupsMap.forEach((groupNames, email) => {
+      map.set(email, groupNames);
+    });
+    return map;
+  }, [emailToGroupsMap]);
 
   const log = useMemo(() => {
-    const fromGroups = selectedGroups.flatMap((g) => groups[g] || []);
-    const union = new Set([...fromGroups, ...manualAdds]);
-    manualRemoves.forEach((r) => union.delete(r));
-    let result = Array.from(union).map((email) => ({ email, source: manualAdds.includes(email) ? "manual" : "group" }));
+    // Get all emails from selected groups
+    const fromGroups = selectedGroupIds.flatMap(id => {
+      const group = groups.find(g => g.id === id);
+      return group ? group.contacts : [];
+    });
+    // Create union without mutating in useMemo
+    const unionSet = new Set([...fromGroups, ...manualAdds]);
+    const filtered = Array.from(unionSet).filter(email => !manualRemoves.includes(email));
+    const result = filtered.map((email) => ({ email, source: manualAdds.includes(email) ? "manual" : "group" }));
 
     return result.sort((a, b) => {
       const contactA = contactMap.get(a.email.toLowerCase());
@@ -62,9 +97,16 @@ export function useAssembler({ groups, contacts, selectedGroups, manualAdds, man
       else if (sortConfig.key === "phone") { valA = (contactA?.phone || "").toLowerCase(); valB = (contactB?.phone || "").toLowerCase(); }
       return valA.localeCompare(valB) * dir;
     });
-  }, [groups, selectedGroups, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
+  }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
 
-  const handleCopy = () => { navigator.clipboard.writeText(log.map((m) => m.email).join("; ")); showToast("Copied to clipboard", "success"); };
+  const handleCopy = async () => {
+    const success = await window.api?.writeClipboard(log.map((m) => m.email).join("; "));
+    if (success) {
+      showToast("Copied to clipboard", "success");
+    } else {
+      showToast("Failed to copy to clipboard", "error");
+    }
+  };
   const executeDraftBridge = () => {
     const date = new Date();
     const params = new URLSearchParams({ subject: `${date.getMonth() + 1}/${date.getDate()} -`, attendees: log.map((m) => m.email).join(",") });
@@ -82,8 +124,22 @@ export function useAssembler({ groups, contacts, selectedGroups, manualAdds, man
   const itemData = useMemo(() => ({ log, contactMap, groupMap, onRemoveManual, onAddToContacts: handleAddToContacts, onContextMenu: handleCompositionContextMenu }), [log, contactMap, groupMap, onRemoveManual, handleAddToContacts, handleCompositionContextMenu]);
 
   const handleContactSaved = async (contact: Partial<Contact>) => {
-    const success = await window.api?.addContact(contact);
-    if (success) { if (contact.email) onAddManual(contact.email); showToast("Contact created successfully", "success"); } else { showToast("Failed to create contact", "error"); }
+    if (!window.api) {
+      showToast("API not available", "error");
+      return;
+    }
+    try {
+      const success = await window.api.addContact(contact);
+      if (success) {
+        if (contact.email) onAddManual(contact.email);
+        showToast("Contact created successfully", "success");
+      } else {
+        showToast("Failed to create contact", "error");
+      }
+    } catch (e) {
+      console.error("[useAssembler] Failed to save contact:", e);
+      showToast("Failed to create contact", "error");
+    }
   };
 
   return {

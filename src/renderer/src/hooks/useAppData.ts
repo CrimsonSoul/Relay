@@ -30,7 +30,7 @@ function formatDataError(error: DataError): string {
 
 export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
   const [data, setData] = useState<AppData>({
-    groups: {},
+    groups: [],
     contacts: [],
     servers: [],
     onCall: [],

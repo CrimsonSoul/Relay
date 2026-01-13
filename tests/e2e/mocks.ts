@@ -1,11 +1,25 @@
 import { Page } from '@playwright/test';
-import { AppData, BridgeAPI, RadarSnapshot } from '../../src/shared/ipc';
+import { AppData, BridgeAPI, RadarSnapshot, BridgeGroup } from '../../src/shared/ipc';
+
+export const MOCK_GROUPS: BridgeGroup[] = [
+  {
+    id: 'group_1',
+    name: 'Alpha Team',
+    contacts: ['alpha1@agency.net', 'alpha2@agency.net'],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  },
+  {
+    id: 'group_2',
+    name: 'Beta Squad',
+    contacts: ['beta1@agency.net'],
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }
+];
 
 export const MOCK_DATA: AppData = {
-  groups: {
-    'Alpha Team': ['alpha1@agency.net', 'alpha2@agency.net'],
-    'Beta Squad': ['beta1@agency.net']
-  },
+  groups: MOCK_GROUPS,
   contacts: [
     {
       name: 'John Doe',
@@ -39,12 +53,11 @@ export const MOCK_RADAR: RadarSnapshot = {
 export async function injectMockApi(page: Page) {
   await page.addInitScript((data) => {
     // Create the mock API object
-    const mockApi: BridgeAPI = {
+    const mockApi: Partial<BridgeAPI> = {
       openPath: async () => {},
       openExternal: async () => {},
-      openGroupsFile: async () => {},
       openContactsFile: async () => {},
-      importGroupsFile: async () => true,
+      importGroupsFromCsv: async () => true,
       importContactsFile: async () => true,
       importServersFile: async () => true,
       subscribeToData: (callback) => {
@@ -76,6 +89,7 @@ export async function injectMockApi(page: Page) {
       onAuthRequested: () => () => {},
       submitAuth: async (_nonce, _username, _password, _remember) => true,
       cancelAuth: () => {},
+      useCachedAuth: async () => true,
       subscribeToRadar: (callback) => {
          callback(data.mockRadar);
          return () => {};
@@ -85,18 +99,70 @@ export async function injectMockApi(page: Page) {
       removeContact: async () => true,
       addServer: async () => true,
       removeServer: async () => true,
-      addGroup: async () => true,
-      addContactToGroup: async () => true,
-      removeContactFromGroup: async () => true,
       importContactsWithMapping: async () => true,
       changeDataFolder: async () => true,
       resetDataFolder: async () => true,
       getDataPath: async () => '/mock/data/path',
-      removeGroup: async () => true,
-      renameGroup: async () => true,
       windowMinimize: () => {},
       windowMaximize: () => {},
-      windowClose: () => {}
+      windowClose: () => {},
+      isMaximized: async () => false,
+      onMaximizeChange: () => {},
+      removeMaximizeListener: () => {},
+      generateDummyData: async () => true,
+      getIpLocation: async () => null,
+      logToMain: () => {},
+      getWeather: async () => null,
+      searchLocation: async () => [],
+      getWeatherAlerts: async () => [],
+      updateOnCallTeam: async () => true,
+      removeOnCallTeam: async () => true,
+      renameOnCallTeam: async () => true,
+      saveAllOnCall: async () => true,
+      // New Groups API
+      getGroups: async () => data.mockData.groups,
+      saveGroup: async () => ({ id: 'new_group', name: 'New Group', contacts: [], createdAt: Date.now(), updatedAt: Date.now() }),
+      updateGroup: async () => true,
+      deleteGroup: async () => true,
+      // Bridge History API
+      getBridgeHistory: async () => [],
+      addBridgeHistory: async () => ({ id: 'history_1', timestamp: Date.now(), note: '', groups: [], contacts: [], recipientCount: 0 }),
+      deleteBridgeHistory: async () => true,
+      clearBridgeHistory: async () => true,
+      // Notes API
+      getNotes: async () => ({ contacts: {}, servers: {} }),
+      setContactNote: async () => true,
+      setServerNote: async () => true,
+      // Saved Locations API
+      getSavedLocations: async () => [],
+      saveLocation: async () => ({ id: 'loc_1', name: 'Test Location', lat: 0, lon: 0, isDefault: false }),
+      deleteLocation: async () => true,
+      setDefaultLocation: async () => true,
+      clearDefaultLocation: async () => true,
+      updateLocation: async () => true,
+      // Data Manager API
+      exportData: async () => true,
+      importData: async () => ({ success: true, imported: 0, updated: 0, skipped: 0, errors: [] }),
+      getDataStats: async () => ({ contacts: { count: 0, lastUpdated: 0 }, servers: { count: 0, lastUpdated: 0 }, oncall: { count: 0, lastUpdated: 0 }, groups: { count: 0, lastUpdated: 0 }, hasCsvFiles: false }),
+      migrateFromCsv: async () => ({ success: true, contacts: { migrated: 0, errors: [] }, servers: { migrated: 0, errors: [] }, oncall: { migrated: 0, errors: [] } }),
+      // Contact Records API
+      getContacts: async () => [],
+      addContactRecord: async () => null,
+      updateContactRecord: async () => true,
+      deleteContactRecord: async () => true,
+      // Server Records API
+      getServers: async () => [],
+      addServerRecord: async () => null,
+      updateServerRecord: async () => true,
+      deleteServerRecord: async () => true,
+      // OnCall Records API
+      getOnCall: async () => [],
+      addOnCallRecord: async () => null,
+      updateOnCallRecord: async () => true,
+      deleteOnCallRecord: async () => true,
+      deleteOnCallByTeam: async () => true,
+      // Clipboard API
+      writeClipboard: async () => true
     };
 
     // Expose it as window.api

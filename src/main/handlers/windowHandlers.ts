@@ -1,10 +1,20 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
 export function setupWindowHandlers(getMainWindow: () => BrowserWindow | null) {
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
     getMainWindow()?.minimize();
+  });
+
+  // Clipboard - use Electron's native clipboard API
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (_, text: string) => {
+    try {
+      clipboard.writeText(text);
+      return true;
+    } catch {
+      return false;
+    }
   });
   
   ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {

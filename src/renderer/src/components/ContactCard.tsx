@@ -1,14 +1,14 @@
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo } from 'react';
 import { getColorForString } from '../utils/colors';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { Tooltip } from './Tooltip';
-import { GroupPill, getInitials, Avatar } from './shared/AvatarUtils';
+import { GroupPill, Avatar } from './shared/AvatarUtils';
 
-type ContactRowProps = { name: string; email: string; title?: string; phone?: string; avatarColor?: string; action?: React.ReactNode; style?: React.CSSProperties; className?: string; sourceLabel?: string; groups?: string[]; selected?: boolean; onContextMenu?: (e: React.MouseEvent, contact: { name: string; email: string; title?: string; phone?: string; groups?: string[] }) => void; onRowClick?: () => void };
+type ContactRowProps = { name: string; email: string; title?: string; phone?: string; avatarColor?: string; action?: React.ReactNode; style?: React.CSSProperties; className?: string; sourceLabel?: string; groups?: string[]; selected?: boolean; onContextMenu?: (e: React.MouseEvent, contact: { name: string; email: string; title?: string; phone?: string; groups?: string[] }) => void; onRowClick?: () => void; hasNotes?: boolean; tags?: string[]; onNotesClick?: () => void };
 
 const isValidName = (name: string) => name && name.replace(/[.\s\-_]/g, '').length > 0;
 
-export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, sourceLabel, groups = [], selected, onContextMenu, onRowClick }: ContactRowProps) => {
+export const ContactCard = memo(({ name, email, title, phone, avatarColor, action, style, sourceLabel, groups = [], selected, onContextMenu, onRowClick, hasNotes, tags = [], onNotesClick }: ContactRowProps) => {
   const colorScheme = getColorForString(name || email);
   const color = avatarColor || colorScheme.text;
   const formattedPhone = formatPhoneNumber(phone || '');
@@ -31,6 +31,23 @@ export const ContactCard = memo(({ name, email, title, phone, avatarColor, actio
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', minWidth: 0, gap: '12px', justifyContent: 'flex-end' }}>
+          {/* Tags display */}
+          {tags.length > 0 && (
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {tags.slice(0, 3).map(tag => (
+                <span key={tag} style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(99, 179, 237, 1)', background: 'rgba(99, 179, 237, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>#{tag}</span>
+              ))}
+              {tags.length > 3 && <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 600 }}>+{tags.length - 3}</span>}
+            </div>
+          )}
+          {/* Notes indicator - clickable */}
+          {hasNotes && (
+            <Tooltip content="Click to view notes">
+              <button onClick={(e) => { e.stopPropagation(); onNotesClick?.(); }} style={{ display: 'flex', alignItems: 'center', color: 'rgba(251, 191, 36, 0.8)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              </button>
+            </Tooltip>
+          )}
           {formattedPhone && <Tooltip content={formattedPhone}><span className="text-truncate" style={{ fontSize: '20px', color: '#60A5FA', fontWeight: 700, letterSpacing: '0.05em', minWidth: '160px', flexShrink: 0, display: 'block', textAlign: 'right' }}>{formattedPhone}</span></Tooltip>}
           {groups.length > 0 && (
             <Tooltip content={groups.join(', ')}><div style={{ display: 'flex', gap: '6px', alignItems: 'center', cursor: 'help', flexWrap: 'wrap', overflow: 'hidden' }}>

@@ -6,6 +6,8 @@ import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupDataHandlers } from './handlers/dataHandlers';
 import { setupFileHandlers } from './handlers/fileHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
+import { setupFeatureHandlers } from './handlers/featureHandlers';
+import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -32,6 +34,12 @@ export function setupIpcHandlers(
 
   // Window Management
   setupWindowHandlers(getMainWindow);
+
+  // Feature Handlers (Presets, History, Notes, Saved Locations)
+  setupFeatureHandlers(getDataRoot);
+
+  // Data Record Handlers (JSON-based contacts, servers, on-call, data manager)
+  setupDataRecordHandlers(getDataRoot);
 
   // Listen for maximize/unmaximize events and notify renderer
   // Handled in main/index.ts after window creation

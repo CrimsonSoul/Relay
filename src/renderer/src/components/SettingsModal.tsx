@@ -11,6 +11,7 @@ type Props = {
     onImportGroups: () => Promise<boolean>;
     onImportContacts: () => Promise<boolean>;
     onImportServers: () => Promise<{ success: boolean; message?: string } | boolean>;
+    onOpenDataManager?: () => void;
 };
 
 const DataPathDisplay = () => {
@@ -28,7 +29,8 @@ export const SettingsModal: React.FC<Props> = ({
     onSync,
     onImportGroups,
     onImportContacts,
-    onImportServers
+    onImportServers,
+    onOpenDataManager
 }) => {
     // Force re-render of path when modal opens or folder changes
     const [pathKey, setPathKey] = useState(0);
@@ -138,6 +140,18 @@ export const SettingsModal: React.FC<Props> = ({
                         Data Management
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {onOpenDataManager && (
+                            <TactileButton
+                                onClick={() => {
+                                    onClose();
+                                    onOpenDataManager();
+                                }}
+                                variant="primary"
+                                style={{ justifyContent: 'center' }}
+                            >
+                                Open Data Manager...
+                            </TactileButton>
+                        )}
                         <TactileButton onClick={handleImportGroupsClick} style={{ justifyContent: 'center' }}>Import Groups...</TactileButton>
                         <TactileButton onClick={handleImportContactsClick} style={{ justifyContent: 'center' }}>Import Contacts...</TactileButton>
                         <TactileButton onClick={handleImportServersClick} style={{ justifyContent: 'center' }}>Import Servers...</TactileButton>

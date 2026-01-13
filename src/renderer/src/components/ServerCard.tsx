@@ -3,9 +3,9 @@ import { Server, Contact } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { getPlatformColor, PersonInfo } from './shared/PersonInfo';
 
-interface ServerCardProps { server: Server; contactLookup: Map<string, Contact>; onContextMenu: (e: React.MouseEvent, server: Server) => void; style?: React.CSSProperties }
+interface ServerCardProps { server: Server; contactLookup: Map<string, Contact>; onContextMenu: (e: React.MouseEvent, server: Server) => void; style?: React.CSSProperties; hasNotes?: boolean; tags?: string[]; onNotesClick?: () => void }
 
-export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }: ServerCardProps) => {
+export const ServerCard = memo(({ server, contactLookup, onContextMenu, style, hasNotes, tags = [], onNotesClick }: ServerCardProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isWide, setIsWide] = useState(false);
   useEffect(() => { if (!containerRef.current) return; const observer = new ResizeObserver((entries) => { for (const entry of entries) setIsWide(entry.contentRect.width > 900); }); observer.observe(containerRef.current); return () => observer.disconnect(); }, []);
@@ -32,6 +32,23 @@ export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }:
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: isWide ? '40px' : '24px', marginTop: isWide ? 0 : '6px', justifyContent: isWide ? 'flex-end' : 'flex-start' }}>
+            {/* Tags display */}
+            {tags.length > 0 && (
+              <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {tags.slice(0, 2).map(tag => (
+                  <span key={tag} style={{ fontSize: '11px', fontWeight: 600, color: 'rgba(99, 179, 237, 1)', background: 'rgba(99, 179, 237, 0.15)', padding: '2px 8px', borderRadius: '4px' }}>#{tag}</span>
+                ))}
+                {tags.length > 2 && <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 600 }}>+{tags.length - 2}</span>}
+              </div>
+            )}
+            {/* Notes indicator - clickable */}
+            {hasNotes && (
+              <Tooltip content="Click to view notes">
+                <button onClick={(e) => { e.stopPropagation(); onNotesClick?.(); }} style={{ display: 'flex', alignItems: 'center', color: 'rgba(251, 191, 36, 0.8)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                </button>
+              </Tooltip>
+            )}
             <PersonInfo label="OWNER" value={server.owner || ''} contactLookup={contactLookup} />
             {!isWide && <PersonInfo label="SUPPORT" value={server.contact || ''} contactLookup={contactLookup} />}
             {isWide && <><div style={{ width: '2px', height: '32px', background: 'rgba(255,255,255,0.05)', borderRadius: '1px' }} /><PersonInfo label="SUPPORT" value={server.contact || ''} contactLookup={contactLookup} /></>}
