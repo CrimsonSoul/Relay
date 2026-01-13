@@ -317,7 +317,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 width: "100%",
                 padding: "12px 12px 12px 44px",
                 fontSize: "16px",
-                background: "rgba(0, 0, 0, 0.2)",
+                background: "rgba(0, 0, 0, 0.5)",
                 border: "1px solid var(--color-border-subtle)",
                 borderRadius: "8px",
                 color: "var(--color-text-primary)",

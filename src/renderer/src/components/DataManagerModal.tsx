@@ -92,13 +92,14 @@ const CategorySelect: React.FC<{
     onChange={(e) => onChange(e.target.value as DataCategory)}
     style={{
       padding: "10px 14px",
-      background: "var(--color-bg-secondary)",
-      border: "1px solid var(--border-subtle)",
+      background: "var(--color-bg-surface-elevated)",
+      border: "var(--border-medium)",
       borderRadius: "8px",
       color: "var(--color-text-primary)",
       fontSize: "13px",
       flex: 1,
       cursor: "pointer",
+      colorScheme: "dark",
     }}
   >
     {!excludeAll && <option value="all">All Data</option>}
@@ -118,13 +119,14 @@ const FormatSelect: React.FC<{
     onChange={(e) => onChange(e.target.value as ExportFormat)}
     style={{
       padding: "10px 14px",
-      background: "var(--color-bg-secondary)",
-      border: "1px solid var(--border-subtle)",
+      background: "var(--color-bg-surface-elevated)",
+      border: "var(--border-medium)",
       borderRadius: "8px",
       color: "var(--color-text-primary)",
       fontSize: "13px",
       width: "100px",
       cursor: "pointer",
+      colorScheme: "dark",
     }}
   >
     <option value="json">JSON</option>

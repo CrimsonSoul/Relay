@@ -80,7 +80,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
           </h2>
           {history.length > 0 && (
             <TactileButton
-              variant="ghost"
+              variant="secondary"
               onClick={() => {
                 if (window.confirm("Clear all bridge history?")) {
                   onClear();
@@ -129,17 +129,17 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                   padding: "12px 16px",
                   borderRadius: "8px",
                   marginBottom: "8px",
-                  background: "var(--color-bg-surface)",
+                  background: "rgba(0, 0, 0, 0.3)",
                   border: "1px solid var(--color-border-subtle)",
                   cursor: "pointer",
                   transition: "all 0.15s ease",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--color-bg-surface-hover)";
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
                   e.currentTarget.style.borderColor = "var(--color-border-medium)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--color-bg-surface)";
+                  e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
                   e.currentTarget.style.borderColor = "var(--color-border-subtle)";
                 }}
               >

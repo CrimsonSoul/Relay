@@ -93,6 +93,7 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
       },
       clearWatch: () => {},
     };
+    // eslint-disable-next-line no-undef
     (navigator as any).geolocation = mockGeolocation;
   });
 
