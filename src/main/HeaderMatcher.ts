@@ -15,7 +15,7 @@ export class HeaderMatcher {
    * Find column index by checking multiple possible aliases (case-insensitive)
    * Checks aliases in priority order - returns first match
    */
-  findColumn(aliases: string[]): number {
+  findColumn(aliases: readonly string[]): number {
     for (const alias of aliases) {
       const idx = this.lowerHeaders.indexOf(alias);
       if (idx !== -1) return idx;
@@ -30,7 +30,7 @@ export class HeaderMatcher {
    * @param data - Optional data array to extend with empty values
    * @returns Column index
    */
-  ensureColumn(aliases: string[], defaultName: string, data?: string[][]): number {
+  ensureColumn(aliases: readonly string[], defaultName: string, data?: string[][]): number {
     let idx = this.findColumn(aliases);
 
     if (idx === -1) {
@@ -68,14 +68,14 @@ export class HeaderMatcher {
   /**
    * Check if a header exists
    */
-  hasColumn(aliases: string[]): boolean {
+  hasColumn(aliases: readonly string[]): boolean {
     return this.findColumn(aliases) !== -1;
   }
 
   /**
    * Get column index, throwing error if not found
    */
-  requireColumn(aliases: string[], errorMessage?: string): number {
+  requireColumn(aliases: readonly string[], errorMessage?: string): number {
     const idx = this.findColumn(aliases);
     if (idx === -1) {
       throw new Error(errorMessage ?? `Required column not found. Tried: ${aliases.join(', ')}`);

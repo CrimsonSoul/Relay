@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { FileManager } from './FileManager';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
-import { setupWindowHandlers, setupWindowListeners } from './handlers/windowHandlers';
+import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupDataHandlers } from './handlers/dataHandlers';
 import { setupFileHandlers } from './handlers/fileHandlers';

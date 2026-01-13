@@ -22,9 +22,9 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const [pendingEmail, setPendingEmail] = useState("");
   const [compositionContextMenu, setCompositionContextMenu] = useState<{ x: number; y: number; email: string; isUnknown: boolean } | null>(null);
-  const [isGroupSidebarCollapsed, setIsGroupSidebarCollapsed] = useState(() => {
+  const [isGroupSidebarCollapsed, setIsGroupSidebarCollapsed] = useState<boolean>(() => {
     try {
-      return secureStorage.getItemSync<boolean>('assembler_sidebar_collapsed', false);
+      return secureStorage.getItemSync<boolean>('assembler_sidebar_collapsed', false) ?? false;
     } catch {
       return false;
     }
@@ -110,7 +110,7 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
   const executeDraftBridge = () => {
     const date = new Date();
     const params = new URLSearchParams({ subject: `${date.getMonth() + 1}/${date.getDate()} -`, attendees: log.map((m) => m.email).join(",") });
-    window.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`);
+    void window.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`);
     showToast("Bridge drafted", "success");
   };
   const handleQuickAdd = useCallback((email: string) => { onAddManual(email); showToast(`Added ${email}`, "success"); }, [onAddManual, showToast]);

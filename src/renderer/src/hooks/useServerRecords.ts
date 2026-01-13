@@ -17,7 +17,7 @@ export function useServerRecords() {
   }, []);
 
   useEffect(() => {
-    loadServers();
+    void loadServers();
   }, [loadServers]);
 
   const addServer = useCallback(

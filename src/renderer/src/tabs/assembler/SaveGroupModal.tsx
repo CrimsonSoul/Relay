@@ -6,7 +6,7 @@ import { Input } from "../../components/Input";
 type SaveGroupModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (name: string) => void;
+  onSave: (name: string) => void | Promise<void>;
   existingNames: string[];
   title?: string;
   description?: string;
@@ -43,7 +43,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
       setError("A group with this name already exists");
       return;
     }
-    onSave(trimmedName);
+    void onSave(trimmedName);
     setName("");
     setError("");
     onClose();

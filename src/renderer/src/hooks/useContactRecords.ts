@@ -17,7 +17,7 @@ export function useContactRecords() {
   }, []);
 
   useEffect(() => {
-    loadContacts();
+    void loadContacts();
   }, [loadContacts]);
 
   const addContact = useCallback(

@@ -1,9 +1,8 @@
 /**
  * ServerParser - Parsing logic for servers.csv
  */
-import { join } from "path";
 import fs from "fs/promises";
-import type { Server, DataError } from "@shared/ipc";
+import type { Server } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { HeaderMatcher } from "../HeaderMatcher";
 import { validateServers } from "../csvValidation";

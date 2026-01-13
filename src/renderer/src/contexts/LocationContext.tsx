@@ -51,7 +51,7 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
     const tryIpFallback = async () => {
       loggers.location.info('Trying IP-based location fallback...');
       try {
-        const data = await globalThis.window.api.getIpLocation();
+        const data = await globalThis.window.api?.getIpLocation();
         
         if (data?.lat && data?.lon) {
           loggers.location.info('IP location found', { city: data.city, source: 'ip' });
@@ -70,8 +70,9 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
           throw new Error('IP location service returned invalid or null data');
         }
       } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         loggers.location.error('IP location fallback failed', { 
-          error: err.message, 
+          error: message, 
           category: ErrorCategory.NETWORK 
         });
         setState(prev => ({ 
@@ -95,12 +96,13 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
       const pos = await getGpsPosition();
       handleGpsSuccess(pos);
     } catch (err: unknown) {
-      if (err.code === 1) { // Permission Denied
+      const gpsError = err as GeolocationPositionError; // Safe cast for geolocation errors
+      if (gpsError.code === 1) { // Permission Denied
         loggers.location.warn('GPS Permission denied');
-      } else if (err.code === 3) { // Timeout
+      } else if (gpsError.code === 3) { // Timeout
         loggers.location.warn('GPS Timeout');
       } else {
-        loggers.location.warn('GPS Error', { error: err.message, code: err.code });
+        loggers.location.warn('GPS Error', { error: gpsError.message, code: gpsError.code });
       }
       // If GPS fails (including 403/network errors on Windows), try IP fallback
       await tryIpFallback();
@@ -108,7 +110,7 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
   };
 
   useEffect(() => {
-    fetchLocation();
+    void fetchLocation();
   }, []);
 
   const value = useMemo(() => ({ ...state, refresh: fetchLocation }), [state]);

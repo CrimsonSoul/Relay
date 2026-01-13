@@ -17,7 +17,7 @@ export function useSavedLocations() {
   }, []);
 
   useEffect(() => {
-    loadLocations();
+    void loadLocations();
   }, [loadLocations]);
 
   const saveLocation = useCallback(

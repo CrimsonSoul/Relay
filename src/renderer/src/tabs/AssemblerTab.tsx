@@ -51,7 +51,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Handle copy with history logging
   const handleCopyWithHistory = useCallback(() => {
-    asm.handleCopy();
+    void asm.handleCopy();
     // Store current composition for history note prompt
     setHistoryNotePrompt({
       emails: asm.log.map(l => l.email),
@@ -167,7 +167,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         <HistoryNotePrompt
           onSave={handleAddToHistory}
           onSkip={() => {
-            handleAddToHistory("");
+            void handleAddToHistory("");
           }}
           onCancel={() => setHistoryNotePrompt(null)}
         />
