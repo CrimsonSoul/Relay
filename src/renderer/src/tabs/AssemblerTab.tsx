@@ -13,7 +13,7 @@ import { useBridgeHistory } from "../hooks/useBridgeHistory";
 import { useToast } from "../components/Toast";
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
-  const { groups, selectedGroupIds, onToggleGroup, onRemoveManual, onResetManual, onUndoRemove, manualRemoves, setSelectedGroupIds } = props;
+  const { groups, selectedGroupIds, onToggleGroup, onRemoveManual, onResetManual, onUndoRemove, manualRemoves, setSelectedGroupIds, setManualAdds } = props;
   const asm = useAssembler(props);
   const { showToast } = useToast();
   const { saveGroup, updateGroup, deleteGroup, importFromCsv } = useGroups();
