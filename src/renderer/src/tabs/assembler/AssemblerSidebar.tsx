@@ -1,17 +1,14 @@
 import React, { useState, useCallback, useMemo } from "react";
-import { Contact, BridgeGroup } from "@shared/ipc";
+import { BridgeGroup } from "@shared/ipc";
 import { SidebarItem } from "../../components/SidebarItem";
 import { ContextMenu } from "../../components/ContextMenu";
-import { QuickAddInput } from "./QuickAddInput";
 import { SidebarToggleHandle } from "./SidebarToggleHandle";
 import { SaveGroupModal } from "./SaveGroupModal";
 
 type AssemblerSidebarProps = {
   groups: BridgeGroup[];
-  contacts: Contact[];
   selectedGroupIds: string[];
   onToggleGroup: (groupId: string) => void;
-  onQuickAdd: (email: string) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onSaveGroup: (group: Omit<BridgeGroup, "id" | "createdAt" | "updatedAt">) => Promise<BridgeGroup | null | undefined>;
@@ -24,10 +21,8 @@ type AssemblerSidebarProps = {
 
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   groups,
-  contacts,
   selectedGroupIds,
   onToggleGroup,
-  onQuickAdd,
   isCollapsed,
   onToggleCollapse,
   onSaveGroup,
@@ -118,8 +113,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
         <div style={{ display: "flex", height: "100%", width: "100%", overflow: "visible", justifyContent: "flex-end" }}>
           <div style={{ width: "216px", display: "flex", flexDirection: "column", overflow: "hidden", opacity: isCollapsed ? 0 : 1, visibility: isCollapsed ? "hidden" : "visible", transition: "opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.4s", flexShrink: 0 }}>
             <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "40px 20px 16px 20px", display: "flex", flexDirection: "column", alignItems: "center" }}>
-              <QuickAddInput contacts={contacts} onQuickAdd={onQuickAdd} />
-
+              
               {/* Groups Section */}
               <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1, marginTop: "16px", width: "100%" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", height: "24px", marginBottom: "12px", padding: "0" }}>

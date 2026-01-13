@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from "react";
-import { BridgeGroup, Contact, BridgeHistoryEntry } from "@shared/ipc";
+import { BridgeGroup, BridgeHistoryEntry } from "@shared/ipc";
 import { FixedSizeList as List } from "react-window";
 import AutoSizer from "react-virtualized-auto-sizer";
 import { AddContactModal } from "../components/AddContactModal";
@@ -13,7 +13,7 @@ import { useBridgeHistory } from "../hooks/useBridgeHistory";
 import { useToast } from "../components/Toast";
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
-  const { groups, contacts, selectedGroupIds, onToggleGroup, onRemoveManual, onResetManual, onUndoRemove, manualRemoves, manualAdds, setSelectedGroupIds, setManualAdds } = props;
+  const { groups, selectedGroupIds, onToggleGroup, onRemoveManual, onResetManual, onUndoRemove, manualRemoves, setSelectedGroupIds } = props;
   const asm = useAssembler(props);
   const { showToast } = useToast();
   const { saveGroup, updateGroup, deleteGroup, importFromCsv } = useGroups();
@@ -52,6 +52,16 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   // Handle copy with history logging
   const handleCopyWithHistory = useCallback(() => {
     void asm.handleCopy();
+    // Store current composition for history note prompt
+    setHistoryNotePrompt({
+      emails: asm.log.map(l => l.email),
+      groupNames: selectedGroupNames,
+    });
+  }, [asm, selectedGroupNames]);
+
+  // Handle draft bridge with history logging
+  const handleDraftBridgeWithHistory = useCallback(() => {
+    asm.executeDraftBridge();
     // Store current composition for history note prompt
     setHistoryNotePrompt({
       emails: asm.log.map(l => l.email),
@@ -107,10 +117,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     <div style={{ display: "grid", gridTemplateColumns: asm.isGroupSidebarCollapsed ? "24px 1fr" : "240px 1fr", gap: "0px", height: "100%", alignItems: "start", transition: "grid-template-columns 0.4s cubic-bezier(0.16, 1, 0.3, 1)", overflow: "visible" }}>
       <AssemblerSidebar
         groups={groups}
-        contacts={contacts}
         selectedGroupIds={selectedGroupIds}
         onToggleGroup={onToggleGroup}
-        onQuickAdd={asm.handleQuickAdd}
         isCollapsed={asm.isGroupSidebarCollapsed}
         onToggleCollapse={asm.handleToggleSidebarCollapse}
         onSaveGroup={saveGroup}
@@ -144,7 +152,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
       </div>
 
       <AddContactModal isOpen={asm.isAddContactModalOpen} onClose={() => asm.setIsAddContactModalOpen(false)} initialEmail={asm.pendingEmail} onSave={asm.handleContactSaved} />
-      <BridgeReminderModal isOpen={asm.isBridgeReminderOpen} onClose={() => asm.setIsBridgeReminderOpen(false)} onConfirm={asm.executeDraftBridge} />
+      <BridgeReminderModal isOpen={asm.isBridgeReminderOpen} onClose={() => asm.setIsBridgeReminderOpen(false)} onConfirm={handleDraftBridgeWithHistory} />
       <SaveGroupModal
         isOpen={isSaveGroupOpen}
         onClose={() => setIsSaveGroupOpen(false)}
