@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WeatherAlert } from "../../../shared/ipc";
+import { WeatherAlert, WeatherData } from "../../../shared/ipc";
 import { LocationState } from '../contexts/LocationContext';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers, ErrorCategory } from '../utils/logger';
@@ -7,30 +7,6 @@ import { loggers, ErrorCategory } from '../utils/logger';
 const WEATHER_POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const WEATHER_CACHE_KEY = 'cached_weather_data';
 const WEATHER_ALERTS_CACHE_KEY = 'cached_weather_alerts';
-
-interface WeatherData {
-  current_weather: {
-    temperature: number;
-    windspeed: number;
-    winddirection: number;
-    weathercode: number;
-    time: string;
-  };
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-    weathercode: number[];
-    precipitation_probability: number[];
-  };
-  daily: {
-    time: string[];
-    weathercode: number[];
-    temperature_2m_max: number[];
-    temperature_2m_min: number[];
-    wind_speed_10m_max: number[];
-    precipitation_probability_max: number[];
-  };
-}
 
 interface Location {
   latitude: number;
@@ -47,7 +23,7 @@ interface Location {
  */
 export function useAppWeather(deviceLocation: LocationState, showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
   const [weatherLocation, setWeatherLocation] = useState<Location | null>(null);
-  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [weatherData, setWeatherData] = useState<WeatherData>(null);
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
@@ -151,14 +127,14 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     if (!weatherLocation) return;
 
     // Immediate fetch if we don't have fresh data
-    fetchWeather(
+    void fetchWeather(
       weatherLocation.latitude,
       weatherLocation.longitude,
       !!weatherData
     );
 
     const interval = setInterval(() => {
-      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true);
+      void fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true);
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);

@@ -8,7 +8,14 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
   const autoLocateAttemptedRef = useRef(false);
 
   const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
-    try { const data = await window.api.searchLocation(`${lat},${lon}`); if (data.results?.[0]) { const { name, admin1, country_code } = data.results[0]; return `${name}, ${admin1 || ''} ${country_code}`.trim(); } } catch { /* Geocoding failure - return fallback */ }
+    try {
+      if (!window.api) return 'Current Location';
+      const data = await window.api.searchLocation(`${lat},${lon}`);
+      if (data.results?.[0]) {
+        const { name, admin1, country_code } = data.results[0];
+        return `${name}, ${admin1 || ''} ${country_code}`.trim();
+      }
+    } catch { /* Geocoding failure - return fallback */ }
     return 'Current Location';
   };
 
@@ -34,16 +41,27 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
     );
   }, [onLocationChange, onManualRefresh]);
 
-  useEffect(() => { if (!location && !loading && !autoLocateAttemptedRef.current) { autoLocateAttemptedRef.current = true; handleAutoLocate(); } }, [location, loading, handleAutoLocate]);
+  useEffect(() => { if (!location && !loading && !autoLocateAttemptedRef.current) { autoLocateAttemptedRef.current = true; void handleAutoLocate(); } }, [location, loading, handleAutoLocate]);
 
   const handleManualSearch = async () => {
-    if (!manualInput.trim()) return; setError(null);
+    if (!manualInput.trim()) return;
+    setError(null);
+    if (!window.api) {
+      setError('API not available');
+      return;
+    }
     try {
       const data = await window.api.searchLocation(manualInput);
       if (data.results?.[0]) {
-        const { latitude, longitude, name, admin1, country_code } = data.results[0]; const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
-        const newLoc: Location = { latitude: Number(latitude.toFixed(4)), longitude: Number(longitude.toFixed(4)), name: label }; onLocationChange(newLoc); onManualRefresh(newLoc.latitude, newLoc.longitude); setManualInput('');
-      } else { setError('Location not found. Try a different search term.'); }
+        const { lat, lon, name, admin1, country_code } = data.results[0];
+        const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
+        const newLoc: Location = { latitude: Number(lat.toFixed(4)), longitude: Number(lon.toFixed(4)), name: label };
+        onLocationChange(newLoc);
+        onManualRefresh(newLoc.latitude, newLoc.longitude);
+        setManualInput('');
+      } else {
+        setError('Location not found. Try a different search term.');
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message || 'Search failed');

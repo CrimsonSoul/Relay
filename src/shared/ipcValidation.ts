@@ -62,14 +62,14 @@ export type ValidatedOnCallRow = z.infer<typeof OnCallRowSchema>;
 export const GroupSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  emails: z.array(z.string().email()),
+  contacts: z.array(z.string().email()),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
 });
 
 export const GroupUpdateSchema = z.object({
   name: z.string().min(1).optional(),
-  emails: z.array(z.string().email()).optional(),
+  contacts: z.array(z.string().email()).optional(),
 });
 
 export type ValidatedGroup = z.infer<typeof GroupSchema>;

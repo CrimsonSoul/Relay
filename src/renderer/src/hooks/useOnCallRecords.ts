@@ -17,7 +17,7 @@ export function useOnCallRecords() {
   }, []);
 
   useEffect(() => {
-    loadOnCall();
+    void loadOnCall();
   }, [loadOnCall]);
 
   const addRecord = useCallback(

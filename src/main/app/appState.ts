@@ -20,25 +20,23 @@ export const getBundledDataPath = () => app.isPackaged ? join(process.resourcesP
 
 export async function getDataRootAsync(): Promise<string> {
   const config = await loadConfigAsync();
-  const bundledPath = getBundledDataPath();
   if (config.dataRoot) {
-    await ensureDataFilesAsync(config.dataRoot, bundledPath, app.isPackaged);
+    await ensureDataFilesAsync(config.dataRoot);
     return config.dataRoot;
   }
   const defaultDataPath = getDefaultDataPath();
-  await ensureDataFilesAsync(defaultDataPath, bundledPath, app.isPackaged);
+  await ensureDataFilesAsync(defaultDataPath);
   return defaultDataPath;
 }
 
 export function getDataRoot() {
   const config = loadConfig();
-  const bundledPath = getBundledDataPath();
   if (config.dataRoot) {
-    ensureDataFiles(config.dataRoot, bundledPath, app.isPackaged);
+    ensureDataFiles(config.dataRoot);
     return config.dataRoot;
   }
   const defaultDataPath = getDefaultDataPath();
-  ensureDataFiles(defaultDataPath, bundledPath, app.isPackaged);
+  ensureDataFiles(defaultDataPath);
   return defaultDataPath;
 }
 
@@ -46,8 +44,8 @@ export function handleDataPathChange(newPath: string) {
   if (!state.mainWindow) return;
   const validation = validateDataPath(newPath);
   if (!validation.success) throw new Error(validation.error || 'Invalid data path');
-  copyDataFiles(state.currentDataRoot, newPath, getBundledDataPath());
-  ensureDataFiles(newPath, getBundledDataPath(), app.isPackaged);
+  copyDataFiles(state.currentDataRoot, newPath);
+  ensureDataFiles(newPath);
   saveConfig({ dataRoot: newPath });
   state.currentDataRoot = newPath;
   if (state.fileManager) { state.fileManager.destroy(); state.fileManager = null; }

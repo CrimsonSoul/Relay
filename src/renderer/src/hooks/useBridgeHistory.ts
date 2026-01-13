@@ -17,7 +17,7 @@ export function useBridgeHistory() {
   }, []);
 
   useEffect(() => {
-    loadHistory();
+    void loadHistory();
   }, [loadHistory]);
 
   const addHistory = useCallback(

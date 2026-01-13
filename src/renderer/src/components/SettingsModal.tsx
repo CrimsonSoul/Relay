@@ -17,7 +17,7 @@ type Props = {
 const DataPathDisplay = () => {
     const [path, setPath] = useState('');
     useEffect(() => {
-        window.api?.getDataPath().then(setPath);
+        void window.api?.getDataPath().then(setPath);
     }, []);
     return <>{path || 'Loading...'}</>;
 };

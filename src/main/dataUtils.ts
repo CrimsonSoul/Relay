@@ -9,7 +9,7 @@ const DEFAULT_HEADERS: Record<string, string> = {
   'servers.csv': 'Server,IP,Port,Protocol,Owner,Comment', 'oncall.csv': 'Team,Primary,Backup,Label'
 };
 
-export async function ensureDataFilesAsync(targetRoot: string, _bundledDataPath: string, _isPackaged: boolean) {
+export async function ensureDataFilesAsync(targetRoot: string) {
   try { await fsPromises.mkdir(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create persistent data directory', { error: e }); }
   const files = ['groups.csv', 'contacts.csv'];
   for (const file of files) {
@@ -21,7 +21,7 @@ export async function ensureDataFilesAsync(targetRoot: string, _bundledDataPath:
   }
 }
 
-export function ensureDataFiles(targetRoot: string, _bundledDataPath: string, _isPackaged: boolean) {
+export function ensureDataFiles(targetRoot: string) {
   if (!fs.existsSync(targetRoot)) { try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create persistent data directory', { error: e }); } }
   const files = ['groups.csv', 'contacts.csv'];
   for (const file of files) {
@@ -33,7 +33,7 @@ export function ensureDataFiles(targetRoot: string, _bundledDataPath: string, _i
   }
 }
 
-export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string, _bundledDataPath: string): Promise<boolean> {
+export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string): Promise<boolean> {
   const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
   try { await fsPromises.mkdir(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create target directory', { error: e }); }
   const results = await Promise.all(essentialFiles.map(async (file) => {
@@ -65,7 +65,7 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string,
   return results.some(copied => copied);
 }
 
-export function copyDataFiles(sourceRoot: string, targetRoot: string, _bundledDataPath: string) {
+export function copyDataFiles(sourceRoot: string, targetRoot: string) {
   const essentialFiles = ['contacts.csv', 'groups.csv', 'oncall.csv', 'history.json'];
   let filesCopied = false;
   if (!fs.existsSync(targetRoot)) { try { fs.mkdirSync(targetRoot, { recursive: true }); } catch (e) { logger.error('DataUtils', 'Failed to create target dir', { error: e }); } }

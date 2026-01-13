@@ -80,12 +80,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   // Wrappers to clear active saved location on manual actions
   const handleManualSearch = () => {
     setActiveSavedLocation(null);
-    loc.handleManualSearch();
+    void loc.handleManualSearch();
   };
 
   const handleAutoLocate = () => {
     setActiveSavedLocation(null);
-    loc.handleAutoLocate();
+    void loc.handleAutoLocate();
   };
 
   if (!location && loading) return <TabFallback />;
@@ -236,7 +236,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                         {/* Set/Clear default button */}
                         {saved.isDefault ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); clearDefaultLocation(saved.id); }}
+                            onClick={(e) => { e.stopPropagation(); void clearDefaultLocation(saved.id); }}
                             title="Clear default"
                             style={{
                               background: "none",
@@ -253,7 +253,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                           </button>
                         ) : (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setDefaultLocation(saved.id); }}
+                            onClick={(e) => { e.stopPropagation(); void setDefaultLocation(saved.id); }}
                             title="Set as default"
                             style={{
                               background: "none",
@@ -271,7 +271,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                         )}
                         {/* Delete button */}
                         <button
-                          onClick={(e) => { e.stopPropagation(); deleteLocation(saved.id); }}
+                          onClick={(e) => { e.stopPropagation(); void deleteLocation(saved.id); }}
                           title="Delete"
                           style={{
                             background: "none",

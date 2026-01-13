@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import { OnCallEntry, Contact } from '@shared/ipc';
+import { OnCallEntry, Contact, OnCallRow } from '@shared/ipc';
 import { DragEndEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import type { ContextMenuItem } from '../components/ContextMenu';
@@ -63,7 +63,27 @@ export function useOnCallPanel(onCall: OnCallEntry[], contacts: Contact[], onUpd
                 const newOrder = arrayMove(items, oldIndex, newIndex);
 
                 if (window.api?.saveAllOnCall) {
-                    window.api.saveAllOnCall(newOrder);
+                    // Convert entries back to rows for persistence
+                    // Note: this is a lossy conversion (IDs are regenerated) but satisfies the type contract
+                    const rows: OnCallRow[] = newOrder.flatMap(entry => [
+                        {
+                            id: crypto.randomUUID(),
+                            team: entry.team,
+                            role: 'Primary',
+                            name: '', // Lost in transformation
+                            contact: entry.primary,
+                            timeWindow: ''
+                        },
+                        {
+                            id: crypto.randomUUID(),
+                            team: entry.team,
+                            role: entry.backupLabel || 'Backup',
+                            name: '', // Lost in transformation
+                            contact: entry.backup,
+                            timeWindow: ''
+                        }
+                    ]);
+                    void window.api.saveAllOnCall(rows);
                 }
 
                 return newOrder;

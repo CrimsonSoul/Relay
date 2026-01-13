@@ -2,7 +2,6 @@
  * DataExportOperations - Export data to JSON or CSV format
  */
 
-import { join } from "path";
 import fs from "fs/promises";
 import { dialog } from "electron";
 import type {
@@ -18,6 +17,14 @@ import { getServers } from "./ServerJsonOperations";
 import { getOnCall } from "./OnCallJsonOperations";
 import { getGroups } from "./PresetOperations";
 import { loggers } from "../logger";
+
+function removeMetadata<T>(record: T & { id?: unknown; createdAt?: unknown; updatedAt?: unknown }): Omit<T, 'id' | 'createdAt' | 'updatedAt'> {
+  const r = { ...record };
+  delete r.id;
+  delete r.createdAt;
+  delete r.updatedAt;
+  return r;
+}
 
 /**
  * Convert contacts to CSV format
@@ -157,10 +164,10 @@ export async function exportData(
         const allData = includeMetadata
           ? { contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }
           : {
-              contacts: contacts.map(({ id, createdAt, updatedAt, ...rest }) => rest),
-              servers: servers.map(({ id, createdAt, updatedAt, ...rest }) => rest),
-              onCall: onCall.map(({ id, createdAt, updatedAt, ...rest }) => rest),
-              groups: groups.map(({ id, createdAt, updatedAt, ...rest }) => rest),
+              contacts: contacts.map(removeMetadata),
+              servers: servers.map(removeMetadata),
+              onCall: onCall.map(removeMetadata),
+              groups: groups.map(removeMetadata),
               exportedAt: new Date().toISOString(),
             };
 
@@ -194,28 +201,28 @@ export async function exportData(
         case "contacts": {
           const contacts = await getContacts(rootDir);
           content = format === "json"
-            ? JSON.stringify(includeMetadata ? contacts : contacts.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+            ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
             : contactsToCsv(contacts, includeMetadata);
           break;
         }
         case "servers": {
           const servers = await getServers(rootDir);
           content = format === "json"
-            ? JSON.stringify(includeMetadata ? servers : servers.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+            ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
             : serversToCsv(servers, includeMetadata);
           break;
         }
         case "oncall": {
           const onCall = await getOnCall(rootDir);
           content = format === "json"
-            ? JSON.stringify(includeMetadata ? onCall : onCall.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+            ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
             : onCallToCsv(onCall, includeMetadata);
           break;
         }
         case "groups": {
           const groups = await getGroups(rootDir);
           content = format === "json"
-            ? JSON.stringify(includeMetadata ? groups : groups.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+            ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
             : groupsToCsv(groups, includeMetadata);
           break;
         }
@@ -255,28 +262,28 @@ export async function exportToPath(
       case "contacts": {
         const contacts = await getContacts(rootDir);
         content = format === "json"
-          ? JSON.stringify(includeMetadata ? contacts : contacts.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+          ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
           : contactsToCsv(contacts, includeMetadata);
         break;
       }
       case "servers": {
         const servers = await getServers(rootDir);
         content = format === "json"
-          ? JSON.stringify(includeMetadata ? servers : servers.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+          ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
           : serversToCsv(servers, includeMetadata);
         break;
       }
       case "oncall": {
         const onCall = await getOnCall(rootDir);
         content = format === "json"
-          ? JSON.stringify(includeMetadata ? onCall : onCall.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+          ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
           : onCallToCsv(onCall, includeMetadata);
         break;
       }
       case "groups": {
         const groups = await getGroups(rootDir);
         content = format === "json"
-          ? JSON.stringify(includeMetadata ? groups : groups.map(({ id, createdAt, updatedAt, ...rest }) => rest), null, 2)
+          ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
           : groupsToCsv(groups, includeMetadata);
         break;
       }

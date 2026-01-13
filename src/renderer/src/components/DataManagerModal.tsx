@@ -157,7 +157,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
-      loadStats();
+      void loadStats();
       // Show migrate tab if CSV files exist
       if (stats?.hasCsvFiles) {
         setActiveTab("migrate");
@@ -184,7 +184,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
         "success"
       );
     } else if (result?.errors.length) {
-      showToast(`Import completed with errors`, "warning");
+      showToast(`Import completed with errors`, "info");
     }
   };
 
@@ -196,7 +196,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
       showToast(`Migrated ${total} records to JSON`, "success");
       await loadStats();
     } else if (result) {
-      showToast("Migration completed with some errors", "warning");
+      showToast("Migration completed with some errors", "info");
     }
   };
 

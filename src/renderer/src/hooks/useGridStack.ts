@@ -34,7 +34,7 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
       const newFlatList: OnCallRow[] = [];
       newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
       setLocalOnCall(newFlatList);
-      window.api?.saveAllOnCall(newFlatList);
+      void window.api?.saveAllOnCall(newFlatList);
     });
 
     return () => { window.removeEventListener('resize', handleResize); if (gridInstanceRef.current) { gridInstanceRef.current.destroy(false); gridInstanceRef.current = null; isInitialized.current = false; } };

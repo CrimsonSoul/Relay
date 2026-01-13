@@ -17,7 +17,7 @@ export function useNotes() {
   }, []);
 
   useEffect(() => {
-    loadNotes();
+    void loadNotes();
   }, [loadNotes]);
 
   const setContactNote = useCallback(

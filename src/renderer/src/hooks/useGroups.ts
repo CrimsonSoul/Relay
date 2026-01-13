@@ -17,7 +17,7 @@ export function useGroups() {
   }, []);
 
   useEffect(() => {
-    loadGroups();
+    void loadGroups();
   }, [loadGroups]);
 
   const saveGroup = useCallback(

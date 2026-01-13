@@ -84,31 +84,38 @@ export type ImportProgress = {
 };
 
 // Weather and Location Types
-export type WeatherPeriod = {
-  name: string;
-  temperature: number;
-  temperatureUnit: string;
-  windSpeed: string;
-  windDirection: string;
-  shortForecast: string;
-  detailedForecast: string;
-  icon: string;
-  isDaytime: boolean;
-  startTime: string;
-};
-
 export type WeatherData = {
-  current: WeatherPeriod;
-  hourly: WeatherPeriod[];
-  daily: WeatherPeriod[];
+  current_weather: {
+    temperature: number;
+    windspeed: number;
+    winddirection: number;
+    weathercode: number;
+    time: string;
+  };
+  hourly: {
+    time: string[];
+    temperature_2m: number[];
+    weathercode: number[];
+    precipitation_probability: number[];
+  };
+  daily: {
+    time: string[];
+    weathercode: number[];
+    temperature_2m_max: number[];
+    temperature_2m_min: number[];
+    wind_speed_10m_max: number[];
+    precipitation_probability_max: number[];
+  };
 } | null;
 
 export type LocationSearchResult = {
-  name: string;
-  lat: number;
-  lon: number;
-  state?: string;
-  country: string;
+  results?: {
+    name: string;
+    lat: number;
+    lon: number;
+    admin1?: string;
+    country_code: string;
+  }[];
 };
 
 export type IpLocationResult = {
@@ -145,7 +152,7 @@ export type BridgeAPI = {
   subscribeToRadar: (callback: (data: RadarSnapshot) => void) => void;
   logBridge: (groups: string[]) => void;
   getWeather: (lat: number, lon: number) => Promise<WeatherData>;
-  searchLocation: (query: string) => Promise<LocationSearchResult[]>;
+  searchLocation: (query: string) => Promise<LocationSearchResult>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
   addContact: (contact: Partial<Contact>) => Promise<boolean>;
   removeContact: (email: string) => Promise<boolean>;
