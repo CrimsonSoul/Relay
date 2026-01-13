@@ -23,6 +23,7 @@ type CommandPaletteProps = {
   onAddContactToBridge: (email: string) => void;
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
+  onOpenAddContact: (email?: string) => void;
 };
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -34,6 +35,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onAddContactToBridge,
   onToggleGroup,
   onNavigateToTab,
+  onOpenAddContact,
 }) => {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -86,11 +88,47 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           icon: <ActionIcon type="weather" />,
           data: { action: "navigate", tab: "Weather" },
         },
+        {
+          id: "action-create-contact",
+          type: "action",
+          title: "Create New Contact",
+          subtitle: "Add a new person to the directory",
+          icon: <ActionIcon type="add-contact" />,
+          data: { action: "create-contact" },
+        },
       ];
     }
 
     const lower = query.toLowerCase();
     const results: SearchResult[] = [];
+    
+    // Check if query is email
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.trim());
+    const emailExists = contacts.some(c => c.email.toLowerCase() === lower);
+
+    // Add manual add option if valid email
+    if (isEmail) {
+      results.push({
+        id: "action-add-manual",
+        type: "action",
+        title: `Add "${query}" to Compose`,
+        subtitle: "Manually add to bridge recipients",
+        icon: <ActionIcon type="add" />,
+        data: { action: "add-manual", value: query },
+      });
+
+      // Add create contact option if email doesn't exist
+      if (!emailExists) {
+        results.push({
+          id: "action-create-contact-email",
+          type: "action",
+          title: `Create Contact: ${query}`,
+          subtitle: "Add new contact with this email",
+          icon: <ActionIcon type="add-contact" />,
+          data: { action: "create-contact", value: query },
+        });
+      }
+    }
 
     // Search groups first (most important for NOC workflow)
     groups.forEach((group) => {
@@ -196,16 +234,24 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           break;
         }
         case "action": {
-          const action = result.data as { action: string; tab?: string };
+          const action = result.data as { action: string; tab?: string; value?: string };
           if (action.action === "navigate" && action.tab) {
             onNavigateToTab(action.tab);
+          } else if (action.action === "create-contact") {
+            // If value is provided (from email search), pass it to the handler if possible, 
+            // but currently onOpenAddContact doesn't take args. 
+            // The user only asked for the trigger. The Modal will open empty or we can improve this later.
+            // Wait, I should update the prop to accept an optional email.
+            onOpenAddContact(action.value);
+          } else if (action.action === "add-manual" && action.value) {
+            onAddContactToBridge(action.value);
           }
           break;
         }
       }
       onClose();
     },
-    [onAddContactToBridge, onToggleGroup, onNavigateToTab, onClose]
+    [onAddContactToBridge, onToggleGroup, onNavigateToTab, onClose, onOpenAddContact]
   );
 
   if (!isOpen) return null;
@@ -503,6 +549,20 @@ const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     weather: (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+      </svg>
+    ),
+    add: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    ),
+    "add-contact": (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="8.5" cy="7" r="4"></circle>
+        <line x1="20" y1="8" x2="20" y2="14"></line>
+        <line x1="23" y1="11" x2="17" y2="11"></line>
       </svg>
     ),
   };

@@ -9,6 +9,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TabFallback } from "./components/TabFallback";
 import { CommandPalette } from "./components/CommandPalette";
 import { ShortcutsModal } from "./components/ShortcutsModal";
+import { AddContactModal } from "./components/AddContactModal";
+import { Contact } from "@shared/ipc";
 import "./styles.css";
 
 // Hooks
@@ -48,6 +50,27 @@ export function MainApp() {
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isDataManagerOpen, setIsDataManagerOpen] = useState(false);
+  const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
+  const [initialContactEmail, setInitialContactEmail] = useState("");
+
+  // Handler for saving contact
+  const handleContactSaved = async (contact: Partial<Contact>) => {
+    if (!window.api) {
+      showToast("API not available", "error");
+      return;
+    }
+    try {
+      const success = await window.api.addContact(contact);
+      if (success) {
+        showToast("Contact created successfully", "success");
+      } else {
+        showToast("Failed to create contact", "error");
+      }
+    } catch (e) {
+      console.error("[App] Failed to save contact:", e);
+      showToast("Failed to create contact", "error");
+    }
+  };
 
   // Handler for loading group from command palette
   const handleLoadGroupFromPalette = useCallback((groupId: string) => {
@@ -225,11 +248,22 @@ export function MainApp() {
         }}
         onToggleGroup={handleLoadGroupFromPalette}
         onNavigateToTab={setActiveTab}
+        onOpenAddContact={(email) => {
+          setInitialContactEmail(email || "");
+          setIsAddContactModalOpen(true);
+        }}
       />
 
       <ShortcutsModal
         isOpen={isShortcutsOpen}
         onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      <AddContactModal
+        isOpen={isAddContactModalOpen}
+        onClose={() => setIsAddContactModalOpen(false)}
+        onSave={handleContactSaved}
+        initialEmail={initialContactEmail}
       />
     </div>
   );
