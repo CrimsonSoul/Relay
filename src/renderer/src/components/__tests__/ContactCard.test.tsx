@@ -32,7 +32,7 @@ describe('ContactCard Component', () => {
       raw: {}
     };
 
-    const { container } = render(<ContactCard {...contactWithInvalidName} />);
+    render(<ContactCard {...contactWithInvalidName} />);
 
     // Email appears twice: once as display name (in name span with larger font)
     // and once in email details. We only need to find at least one instance.
@@ -59,7 +59,7 @@ describe('ContactCard Component', () => {
     };
 
     const groups = ['Engineering', 'Leads'];
-    const { container } = render(
+    render(
       <ContactCard {...contactWithGroups} groups={groups} />
     );
 

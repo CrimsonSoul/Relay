@@ -2,7 +2,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FileManager } from './FileManager';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { BrowserWindow } from 'electron';

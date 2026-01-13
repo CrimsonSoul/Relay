@@ -8,7 +8,6 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
-import { stringify } from "csv-stringify/sync";
 import type { Contact, DataError } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField, stringifyCsv } from "../csvUtils";
 import { cleanAndFormatPhoneNumber } from '../../shared/phoneUtils';

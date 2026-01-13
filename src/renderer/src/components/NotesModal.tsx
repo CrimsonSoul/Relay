@@ -16,7 +16,6 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   isOpen,
   onClose,
   entityType,
-  entityId,
   entityName,
   existingNote,
   onSave,

@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { OnCallRow } from "@shared/ipc";
-import { GridStack } from "gridstack";
 import { useToast } from '../components/Toast';
 
 const getWeekRange = () => {

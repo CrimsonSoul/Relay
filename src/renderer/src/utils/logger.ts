@@ -225,7 +225,7 @@ class RendererLogger {
             errorContext
           }
         });
-      } catch (err) {
+      } catch (_err) {
         // Silently fail if IPC isn't available
       }
     }

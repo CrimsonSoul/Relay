@@ -8,13 +8,9 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   containerStyle?: React.CSSProperties;
 };
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant = 'default', label, containerStyle, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant: _variant = 'default', label, containerStyle, ...props }, ref) => {
   const innerRef = useRef<HTMLInputElement>(null);
   const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
-
-  const isVivid = variant === 'vivid';
-  const focusColor = 'var(--color-accent-blue)';
-  const focusShadow = 'var(--color-accent-blue-dim)';
 
   // Separate layout styles for wrapper vs visual styles for input
   const {
