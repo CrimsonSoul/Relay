@@ -77,7 +77,7 @@ export async function parseServers(ctx: FileContext): Promise<Server[]> {
 
     if (needsRewrite) {
       loggers.fileManager.info("[ServerParser] servers.csv has old headers or is dirty. Rewriting...");
-      ctx.rewriteFileDetached(path, ctx.safeStringify(cleanDataForRewrite));
+      void ctx.rewriteFileDetached(path, ctx.safeStringify(cleanDataForRewrite));
     }
 
     return results;

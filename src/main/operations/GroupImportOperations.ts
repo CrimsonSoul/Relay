@@ -79,7 +79,7 @@ export async function importGroupsWithMapping(ctx: FileContext, sourcePath: stri
 
     const csvOutput = ctx.safeStringify(targetData);
     await ctx.writeAndEmit(targetPath, csvOutput);
-    ctx.performBackup("importGroups");
+    void ctx.performBackup("importGroups");
     return true;
   } catch (e) {
     loggers.fileManager.error("[GroupImportOperations] importGroupsWithMapping error:", { error: e });

@@ -347,7 +347,7 @@ class Logger {
 
     // Write to appropriate log file(s)
     const isError = level >= LogLevel.ERROR;
-    this.writeToFile(formatted, isError);
+    void this.writeToFile(formatted, isError);
   }
 
   /**

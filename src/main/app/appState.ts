@@ -52,7 +52,7 @@ export function handleDataPathChange(newPath: string) {
   state.currentDataRoot = newPath;
   if (state.fileManager) { state.fileManager.destroy(); state.fileManager = null; }
   state.fileManager = new FileManager(state.mainWindow, state.currentDataRoot, getBundledDataPath());
-  state.fileManager.readAndEmit();
+  void state.fileManager.readAndEmit();
 }
 
 export function setupIpc() {

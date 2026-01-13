@@ -56,7 +56,7 @@ export async function importServersWithMapping(ctx: FileContext, sourcePath: str
       else { const newRow = new Array(targetData[0].length).fill(""); newRow[t_nameIdx] = name; newRow[t_baIdx] = getValue(s_baIdx); newRow[t_lobIdx] = getValue(s_lobIdx); newRow[t_commentIdx] = getValue(s_commentIdx); newRow[t_ownerIdx] = getValue(s_ownerIdx); newRow[t_contactIdx] = getValue(s_contactIdx); newRow[t_osIdx] = getValue(s_osTypeIdx); targetData.push(newRow); nameToRowIdx.set(name.toLowerCase(), targetData.length - 1); }
     }
 
-    await ctx.writeAndEmit(targetPath, ctx.safeStringify(targetData)); ctx.performBackup("importServers");
+    await ctx.writeAndEmit(targetPath, ctx.safeStringify(targetData)); void ctx.performBackup("importServers");
     await cleanupServerContacts(ctx);
     return { success: true };
   } catch (e: unknown) {

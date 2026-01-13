@@ -54,7 +54,7 @@ export async function addServer(ctx: FileContext, server: Partial<Server>): Prom
 
     const csvOutput = ctx.safeStringify(workingData);
     await ctx.writeAndEmit(path, csvOutput);
-    ctx.performBackup("addServer");
+    void ctx.performBackup("addServer");
     return true;
   } catch (e) { loggers.fileManager.error("[ServerOperations] addServer error:", { error: e }); return false; }
 }
@@ -76,7 +76,7 @@ export async function removeServer(ctx: FileContext, name: string): Promise<bool
       if (workingData[i][nameIdx]?.trim().toLowerCase() === name.toLowerCase()) removed = true;
       else newData.push(workingData[i]);
     }
-    if (removed) { await ctx.writeAndEmit(path, ctx.safeStringify(newData)); ctx.performBackup("removeServer"); return true; }
+    if (removed) { await ctx.writeAndEmit(path, ctx.safeStringify(newData)); void ctx.performBackup("removeServer"); return true; }
     return false;
   } catch (e) { loggers.fileManager.error("[ServerOperations] removeServer error:", { error: e }); return false; }
 }
