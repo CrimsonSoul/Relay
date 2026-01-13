@@ -490,7 +490,8 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
             <span>
               Migrated: {lastMigrationResult.contacts.migrated} contacts,{" "}
               {lastMigrationResult.servers.migrated} servers,{" "}
-              {lastMigrationResult.oncall.migrated} on-call
+              {lastMigrationResult.oncall.migrated} on-call,{" "}
+              {lastMigrationResult.groups?.migrated ?? 0} groups
             </span>
             <button
               onClick={clearLastMigrationResult}

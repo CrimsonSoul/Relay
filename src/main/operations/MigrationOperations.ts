@@ -8,7 +8,7 @@
 import { join, basename } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
-import type { ContactRecord, ServerRecord, OnCallRecord, MigrationResult } from "@shared/ipc";
+import type { ContactRecord, ServerRecord, OnCallRecord, BridgeGroup, MigrationResult } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { HeaderMatcher } from "../HeaderMatcher";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
@@ -22,6 +22,8 @@ const ONCALL_CSV = "oncall.csv";
 const CONTACTS_JSON = "contacts.json";
 const SERVERS_JSON = "servers.json";
 const ONCALL_JSON = "oncall.json";
+const GROUPS_CSV = "groups.csv";
+const GROUPS_JSON = "bridgeGroups.json";
 
 function generateContactId(): string {
   return `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -35,6 +37,10 @@ function generateOnCallId(): string {
   return `oncall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+function generateGroupId(): string {
+  return `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 /**
  * Check if migration is needed (CSV files exist but JSON files don't or are empty)
  */
@@ -42,15 +48,18 @@ export async function needsMigration(rootDir: string): Promise<boolean> {
   const contactsCsvExists = existsSync(join(rootDir, CONTACTS_CSV));
   const serversCsvExists = existsSync(join(rootDir, SERVERS_CSV));
   const oncallCsvExists = existsSync(join(rootDir, ONCALL_CSV));
+  const groupsCsvExists = existsSync(join(rootDir, GROUPS_CSV));
 
   const contactsJsonExists = existsSync(join(rootDir, CONTACTS_JSON));
   const serversJsonExists = existsSync(join(rootDir, SERVERS_JSON));
   const oncallJsonExists = existsSync(join(rootDir, ONCALL_JSON));
+  const groupsJsonExists = existsSync(join(rootDir, GROUPS_JSON));
 
   // Need migration if any CSV exists without corresponding JSON
   if (contactsCsvExists && !contactsJsonExists) return true;
   if (serversCsvExists && !serversJsonExists) return true;
   if (oncallCsvExists && !oncallJsonExists) return true;
+  if (groupsCsvExists && !groupsJsonExists) return true;
 
   // Also check if JSON files are empty but CSV has data
   if (contactsCsvExists && contactsJsonExists) {
@@ -63,6 +72,20 @@ export async function needsMigration(rootDir: string): Promise<boolean> {
       }
     } catch {
       // JSON parse error means we need migration
+      return true;
+    }
+  }
+
+  // Check for groups.csv with data but empty groups JSON
+  if (groupsCsvExists && groupsJsonExists) {
+    try {
+      const json = await fs.readFile(join(rootDir, GROUPS_JSON), "utf-8");
+      const data = JSON.parse(json);
+      if (Array.isArray(data) && data.length === 0) {
+        const csv = await fs.readFile(join(rootDir, GROUPS_CSV), "utf-8");
+        if (csv.trim().split("\n").length > 1) return true;
+      }
+    } catch {
       return true;
     }
   }
@@ -366,11 +389,106 @@ export async function migrateOnCallCsv(
 }
 
 /**
+ * Migrate groups.csv to bridgeGroups.json
+ *
+ * The groups.csv has a COLUMN-BASED format where:
+ * - Headers are group names (e.g., "Engineering", "Sales", "Support")
+ * - Each column contains emails for that group
+ * - Rows are filled with emails (different groups may have different numbers)
+ *
+ * Example:
+ * Engineering,Sales,Support
+ * john@example.com,jane@example.com,help@example.com
+ * bob@example.com,sam@example.com,
+ * alice@example.com,,
+ */
+export async function migrateGroupsCsv(
+  rootDir: string
+): Promise<{ migrated: number; errors: string[] }> {
+  const result = { migrated: 0, errors: [] as string[] };
+  const csvPath = join(rootDir, GROUPS_CSV);
+  const jsonPath = join(rootDir, GROUPS_JSON);
+
+  if (!existsSync(csvPath)) {
+    loggers.fileManager.info("[MigrationOperations] No groups.csv to migrate");
+    return result;
+  }
+
+  try {
+    const contents = await fs.readFile(csvPath, "utf-8");
+    const data = await parseCsvAsync(contents);
+
+    if (data.length < 1) {
+      loggers.fileManager.info("[MigrationOperations] groups.csv is empty");
+      // Create empty JSON file
+      await fs.writeFile(jsonPath, "[]", "utf-8");
+      return result;
+    }
+
+    // First row contains group names as headers
+    const headers = data[0].map((h: unknown) => desanitizeField(String(h).trim()));
+    const rows = data.slice(1);
+
+    const now = Date.now();
+    const groups: BridgeGroup[] = [];
+
+    // Process each column (each column is a group)
+    for (let colIndex = 0; colIndex < headers.length; colIndex++) {
+      try {
+        const groupName = headers[colIndex];
+
+        // Skip empty group names
+        if (!groupName) continue;
+
+        // Collect all emails from this column
+        const contacts: string[] = [];
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const row = rows[rowIndex];
+          if (colIndex < row.length) {
+            const email = desanitizeField(String(row[colIndex] ?? "")).trim().toLowerCase();
+            // Only add non-empty, valid-looking emails (contains @)
+            if (email && email.includes("@") && !contacts.includes(email)) {
+              contacts.push(email);
+            }
+          }
+        }
+
+        // Only create a group if it has at least one contact
+        if (contacts.length > 0) {
+          groups.push({
+            id: generateGroupId(),
+            name: groupName,
+            contacts,
+            createdAt: now,
+            updatedAt: now,
+          });
+          result.migrated++;
+        }
+      } catch (e) {
+        result.errors.push(`Column ${colIndex + 1} (${headers[colIndex] || "unknown"}): ${e}`);
+      }
+    }
+
+    // Write JSON file atomically
+    const content = JSON.stringify(groups, null, 2);
+    await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
+    await fs.rename(`${jsonPath}.tmp`, jsonPath);
+
+    loggers.fileManager.info(`[MigrationOperations] Migrated ${result.migrated} groups to JSON`);
+  } catch (e) {
+    result.errors.push(`Failed to migrate groups: ${e}`);
+    loggers.fileManager.error("[MigrationOperations] migrateGroupsCsv error:", { error: e });
+  }
+
+  return result;
+}
+
+/**
  * Archive CSV files after migration by renaming them
  */
 async function archiveCsvFiles(rootDir: string): Promise<void> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const filesToArchive = [CONTACTS_CSV, SERVERS_CSV, ONCALL_CSV];
+  const filesToArchive = [CONTACTS_CSV, SERVERS_CSV, ONCALL_CSV, GROUPS_CSV];
 
   for (const file of filesToArchive) {
     const csvPath = join(rootDir, file);
@@ -396,6 +514,7 @@ export async function migrateAllCsvToJson(rootDir: string): Promise<MigrationRes
     contacts: { migrated: 0, errors: [] },
     servers: { migrated: 0, errors: [] },
     oncall: { migrated: 0, errors: [] },
+    groups: { migrated: 0, errors: [] },
   };
 
   try {
@@ -419,14 +538,15 @@ export async function migrateAllCsvToJson(rootDir: string): Promise<MigrationRes
     result.contacts = await migrateContactsCsv(rootDir);
     result.servers = await migrateServersCsv(rootDir);
     result.oncall = await migrateOnCallCsv(rootDir);
+    result.groups = await migrateGroupsCsv(rootDir);
 
     // Archive CSV files
     await archiveCsvFiles(rootDir);
 
     const totalMigrated =
-      result.contacts.migrated + result.servers.migrated + result.oncall.migrated;
+      result.contacts.migrated + result.servers.migrated + result.oncall.migrated + result.groups.migrated;
     const totalErrors =
-      result.contacts.errors.length + result.servers.errors.length + result.oncall.errors.length;
+      result.contacts.errors.length + result.servers.errors.length + result.oncall.errors.length + result.groups.errors.length;
 
     result.success = totalErrors === 0;
 
@@ -448,6 +568,7 @@ export async function hasCsvFiles(rootDir: string): Promise<boolean> {
   return (
     existsSync(join(rootDir, CONTACTS_CSV)) ||
     existsSync(join(rootDir, SERVERS_CSV)) ||
-    existsSync(join(rootDir, ONCALL_CSV))
+    existsSync(join(rootDir, ONCALL_CSV)) ||
+    existsSync(join(rootDir, GROUPS_CSV))
   );
 }

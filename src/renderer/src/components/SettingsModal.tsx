@@ -8,9 +8,6 @@ type Props = {
     onClose: () => void;
     isSyncing: boolean;
     onSync: () => void;
-    onImportGroups: () => Promise<boolean>;
-    onImportContacts: () => Promise<boolean>;
-    onImportServers: () => Promise<{ success: boolean; message?: string } | boolean>;
     onOpenDataManager?: () => void;
 };
 
@@ -27,9 +24,6 @@ export const SettingsModal: React.FC<Props> = ({
     onClose,
     isSyncing,
     onSync,
-    onImportGroups,
-    onImportContacts,
-    onImportServers,
     onOpenDataManager
 }) => {
     // Force re-render of path when modal opens or folder changes
@@ -40,37 +34,6 @@ export const SettingsModal: React.FC<Props> = ({
     }, [isOpen]);
 
     const { showToast } = useToast();
-
-    const handleImportGroupsClick = async () => {
-        const success = await onImportGroups();
-        if (success) {
-            showToast('Groups imported successfully', 'success');
-        } else {
-            // It might be cancelled, but generic error is safer than silence if it failed
-            // Ideally backend returns specific error, but generic for now.
-            // If purely cancelled, maybe silent is better?
-            // The user agreed to "generic ones are fine".
-            // If I return false on cancel, I shouldn't error.
-            // But I can't distinguish.
-            // I will skip error toast here to avoid "Error" on "Cancel".
-        }
-    };
-
-    const handleImportContactsClick = async () => {
-        const success = await onImportContacts();
-        if (success) {
-            showToast('Contacts imported successfully', 'success');
-        }
-    };
-
-    const handleImportServersClick = async () => {
-        const result = await onImportServers();
-        if (result === true) {
-            showToast('Servers imported successfully', 'success');
-        } else if (result && typeof result === 'object' && 'message' in result && result.message && result.message !== 'Cancelled') {
-            showToast(`Import failed: ${result.message}`, 'error');
-        }
-    };
 
     const handleChangeFolder = async () => {
         try {
@@ -135,28 +98,23 @@ export const SettingsModal: React.FC<Props> = ({
 
                 <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Data Management
-                    </div>
+                {onOpenDataManager && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {onOpenDataManager && (
-                            <TactileButton
-                                onClick={() => {
-                                    onClose();
-                                    onOpenDataManager();
-                                }}
-                                variant="primary"
-                                style={{ justifyContent: 'center' }}
-                            >
-                                Open Data Manager...
-                            </TactileButton>
-                        )}
-                        <TactileButton onClick={handleImportGroupsClick} style={{ justifyContent: 'center' }}>Import Groups...</TactileButton>
-                        <TactileButton onClick={handleImportContactsClick} style={{ justifyContent: 'center' }}>Import Contacts...</TactileButton>
-                        <TactileButton onClick={handleImportServersClick} style={{ justifyContent: 'center' }}>Import Servers...</TactileButton>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Data Management
+                        </div>
+                        <TactileButton
+                            onClick={() => {
+                                onClose();
+                                onOpenDataManager();
+                            }}
+                            variant="primary"
+                            style={{ justifyContent: 'center' }}
+                        >
+                            Open Data Manager...
+                        </TactileButton>
                     </div>
-                </div>
+                )}
 
                 <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
 
