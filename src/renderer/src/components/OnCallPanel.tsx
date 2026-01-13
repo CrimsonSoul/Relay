@@ -1,5 +1,5 @@
 import React from 'react';
-import { OnCallEntry, Contact, GroupMap } from '@shared/ipc';
+import { OnCallEntry, Contact } from '@shared/ipc';
 import { TactileButton } from './TactileButton';
 import { Modal } from './Modal';
 import { Input } from './Input';
@@ -27,7 +27,6 @@ import { useOnCallPanel } from '../hooks/useOnCallPanel';
 interface OnCallPanelProps {
     onCall: OnCallEntry[];
     contacts: Contact[];
-    groups: GroupMap;
     onUpdate: (entry: OnCallEntry) => void;
     onRemoveTeam: (team: string) => void;
     onRenameTeam: (oldName: string, newName: string) => void;

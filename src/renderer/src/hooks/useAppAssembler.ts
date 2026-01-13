@@ -12,7 +12,7 @@ export type Tab =
 
 export function useAppAssembler(isReloading: boolean) {
   const [activeTab, setActiveTab] = useState<Tab>("Compose");
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -33,7 +33,7 @@ export function useAppAssembler(isReloading: boolean) {
   }, []);
 
   const handleReset = useCallback(() => {
-    setSelectedGroups([]);
+    setSelectedGroupIds([]);
     setManualAdds([]);
     setManualRemoves([]);
   }, []);
@@ -46,12 +46,12 @@ export function useAppAssembler(isReloading: boolean) {
     setManualRemoves((p) => [...p, email]);
   }, []);
 
-  const handleToggleGroup = useCallback((group: string) => {
-    setSelectedGroups((prev) => {
-      if (prev.includes(group)) {
-        return prev.filter((g) => g !== group);
+  const handleToggleGroup = useCallback((groupId: string) => {
+    setSelectedGroupIds((prev) => {
+      if (prev.includes(groupId)) {
+        return prev.filter((id) => id !== groupId);
       }
-      return [...prev, group];
+      return [...prev, groupId];
     });
   }, []);
 
@@ -61,7 +61,7 @@ export function useAppAssembler(isReloading: boolean) {
   }, [isReloading]);
 
   const handleImportGroups = useCallback(
-    async () => await window.api?.importGroupsFile(),
+    async () => await window.api?.importGroupsFromCsv(),
     []
   );
   const handleImportContacts = useCallback(
@@ -76,8 +76,8 @@ export function useAppAssembler(isReloading: boolean) {
   return {
     activeTab,
     setActiveTab: handleTabChange,
-    selectedGroups,
-    setSelectedGroups,
+    selectedGroupIds,
+    setSelectedGroupIds,
     manualAdds,
     setManualAdds,
     manualRemoves,

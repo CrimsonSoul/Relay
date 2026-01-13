@@ -5,7 +5,7 @@
 import chokidar from "chokidar";
 import { join } from "path";
 import { BrowserWindow } from "electron";
-import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress } from "@shared/ipc";
+import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress, type ContactRecord, type ServerRecord, type OnCallRecord } from "@shared/ipc";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import { generateDummyDataAsync } from "./dataUtils";
@@ -13,7 +13,44 @@ import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseGroups, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, addGroup as addGroupOp, updateGroupMembership as updateGroupMembershipOp, removeGroup as removeGroupOp, renameGroup as renameGroupOp, importGroupsWithMapping as importGroupsWithMappingOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp } from "./operations";
+import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson } from "./operations";
+
+// Transform JSON records to legacy types for backward compatibility
+function contactRecordToContact(record: ContactRecord): Contact {
+  return {
+    name: record.name,
+    email: record.email,
+    phone: record.phone,
+    title: record.title,
+    _searchString: `${record.name} ${record.email} ${record.phone} ${record.title}`.toLowerCase(),
+    raw: { id: record.id, createdAt: record.createdAt, updatedAt: record.updatedAt }
+  };
+}
+
+function serverRecordToServer(record: ServerRecord): Server {
+  return {
+    name: record.name,
+    businessArea: record.businessArea,
+    lob: record.lob,
+    comment: record.comment,
+    owner: record.owner,
+    contact: record.contact,
+    os: record.os,
+    _searchString: `${record.name} ${record.businessArea} ${record.lob} ${record.comment} ${record.owner} ${record.contact} ${record.os}`.toLowerCase(),
+    raw: { id: record.id, createdAt: record.createdAt, updatedAt: record.updatedAt }
+  };
+}
+
+function onCallRecordToOnCallRow(record: OnCallRecord): OnCallRow {
+  return {
+    id: record.id,
+    team: record.team,
+    role: record.role,
+    name: record.name,
+    contact: record.contact,
+    timeWindow: record.timeWindow
+  };
+}
 
 export class FileManager implements FileContext {
   private watcher: chokidar.FSWatcher | null = null;
@@ -21,7 +58,7 @@ export class FileManager implements FileContext {
   public readonly bundledDataPath: string;
   private emitter: FileEmitter;
   private internalWriteCount = 0;
-  private cachedData: CachedData = { groups: {}, contacts: [], servers: [], onCall: [] };
+  private cachedData: CachedData = { groups: [], contacts: [], servers: [], onCall: [] };
 
   constructor(window: BrowserWindow, rootDir: string, bundledPath: string) {
     this.rootDir = rootDir;
@@ -44,11 +81,50 @@ export class FileManager implements FileContext {
     return null;
   }
 
+  // Check if JSON data files exist (migration completed)
+  private hasJsonData(): boolean {
+    return existsSync(join(this.rootDir, "contacts.json")) ||
+           existsSync(join(this.rootDir, "servers.json")) ||
+           existsSync(join(this.rootDir, "oncall.json"));
+  }
+
+  // Load contacts - prefer JSON if available, fallback to CSV
+  private async loadContacts(): Promise<Contact[]> {
+    if (existsSync(join(this.rootDir, "contacts.json"))) {
+      const records = await getContactsJson(this.rootDir);
+      return records.map(contactRecordToContact);
+    }
+    return parseContacts(this);
+  }
+
+  // Load servers - prefer JSON if available, fallback to CSV
+  private async loadServers(): Promise<Server[]> {
+    if (existsSync(join(this.rootDir, "servers.json"))) {
+      const records = await getServersJson(this.rootDir);
+      return records.map(serverRecordToServer);
+    }
+    return parseServers(this);
+  }
+
+  // Load on-call - prefer JSON if available, fallback to CSV
+  private async loadOnCall(): Promise<OnCallRow[]> {
+    if (existsSync(join(this.rootDir, "oncall.json"))) {
+      const records = await getOnCallJson(this.rootDir);
+      return records.map(onCallRecordToOnCallRow);
+    }
+    return parseOnCall(this);
+  }
+
   private async readAndEmitIncremental(filesToUpdate: Set<FileType>) {
     if (filesToUpdate.size === 0) { await this.readAndEmit(); return; }
     this.emitter.emitReloadStarted();
     try {
-      const [g, c, s, o] = await Promise.all([filesToUpdate.has("groups") ? parseGroups(this) : null, filesToUpdate.has("contacts") ? parseContacts(this) : null, filesToUpdate.has("servers") ? parseServers(this) : null, filesToUpdate.has("oncall") ? parseOnCall(this) : null]);
+      const [g, c, s, o] = await Promise.all([
+        filesToUpdate.has("groups") ? getGroups(this.rootDir) : null,
+        filesToUpdate.has("contacts") ? this.loadContacts() : null,
+        filesToUpdate.has("servers") ? this.loadServers() : null,
+        filesToUpdate.has("oncall") ? this.loadOnCall() : null
+      ]);
       if (g) this.cachedData.groups = g; if (c) this.cachedData.contacts = c; if (s) this.cachedData.servers = s; if (o) this.cachedData.onCall = o;
       this.emitter.sendPayload(this.cachedData); this.emitter.emitReloadCompleted(true);
     } catch (error) { loggers.fileManager.error("Error in incremental update", { error }); this.emitter.emitReloadCompleted(false); }
@@ -57,8 +133,15 @@ export class FileManager implements FileContext {
   public async readAndEmit() {
     this.emitter.emitReloadStarted();
     try {
-      const [groups, contacts, servers, onCall] = await Promise.all([parseGroups(this), parseContacts(this), parseServers(this), parseOnCall(this)]);
-      this.cachedData = { groups, contacts, servers, onCall }; this.emitter.sendPayload(this.cachedData); this.emitter.emitReloadCompleted(true);
+      const [groups, contacts, servers, onCall] = await Promise.all([
+        getGroups(this.rootDir),
+        this.loadContacts(),
+        this.loadServers(),
+        this.loadOnCall()
+      ]);
+      this.cachedData = { groups, contacts, servers, onCall };
+      this.emitter.sendPayload(this.cachedData);
+      this.emitter.emitReloadCompleted(true);
     } catch (error) { loggers.fileManager.error("Error reading files", { error }); this.emitter.emitReloadCompleted(false); }
   }
 
@@ -116,11 +199,6 @@ export class FileManager implements FileContext {
   // Delegated Operations
   public async removeContact(email: string) { return removeContactOp(this, email); }
   public async addContact(contact: Partial<Contact>) { return addContactOp(this, contact); }
-  public async addGroup(name: string) { return addGroupOp(this, name); }
-  public async updateGroupMembership(name: string, email: string, remove: boolean) { return updateGroupMembershipOp(this, name, email, remove); }
-  public async removeGroup(name: string) { return removeGroupOp(this, name); }
-  public async renameGroup(oldName: string, newName: string) { return renameGroupOp(this, oldName, newName); }
-  public async importGroupsWithMapping(path: string) { return importGroupsWithMappingOp(this, path); }
   public async importContactsWithMapping(path: string) { return importContactsWithMappingOp(this, path); }
   public async addServer(server: Partial<Server>) { return addServerOp(this, server); }
   public async removeServer(name: string) { return removeServerOp(this, name); }

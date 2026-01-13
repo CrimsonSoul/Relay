@@ -337,70 +337,10 @@ describe('FileManager', () => {
     });
   });
 
-  describe('Group Management', () => {
-    it('creates a new group', async () => {
-      const success = await fileManager.addGroup('TestGroup');
-      expect(success).toBe(true);
-
-      const groupFile = path.join(tmpDir, 'groups.csv');
-      expect(existsSync(groupFile)).toBe(true);
-
-      const content = await fs.readFile(groupFile, 'utf-8');
-      expect(content).toContain('TestGroup');
-    });
-
-    it('adds members to a group', async () => {
-      // Create group first
-      await fileManager.addGroup('Team1');
-
-      // Add member
-      const success = await fileManager.updateGroupMembership('Team1', 'user@a.com', false);
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).toContain('user@a.com');
-    });
-
-    it('removes members from a group', async () => {
-      // Create group with members using columnar format
-      // Column format: each column is a group, rows are members
-      const csv = 'Team1,Team2\nuser1@a.com,user3@a.com\nuser2@a.com,user4@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.updateGroupMembership('Team1', 'user1@a.com', true);
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('user1@a.com');
-      expect(content).toContain('user2@a.com');
-    });
-
-    it('renames a group', async () => {
-      // Columnar format
-      const csv = 'OldName,Team2\nuser@a.com,user2@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.renameGroup('OldName', 'NewName');
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('OldName');
-      expect(content).toContain('NewName');
-    });
-
-    it('removes a group', async () => {
-      // Columnar format
-      const csv = 'Group1,Group2\nuser1@a.com,user2@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.removeGroup('Group1');
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('Group1');
-      expect(content).toContain('Group2');
-    });
-  });
+  // Note: Group management tests removed - CSV-based groups.csv system was replaced
+  // by JSON-based bridgeGroups.json system. See PresetOperations.ts for the new
+  // group CRUD operations (getGroups, saveGroup, updateGroup, deleteGroup).
+  // New group operations are tested via integration/e2e tests.
   describe('Daily Backups', () => {
     it('creates a backup of current data', async () => {
       // Setup initial data

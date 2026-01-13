@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { Contact } from "@shared/ipc";
 import { useDebounce } from "../../hooks/useDebounce";
 import { SearchInput } from "../../components/SearchInput";
+import { getColorForString } from "../../utils/colors";
 
 type QuickAddInputProps = {
   contacts: Contact[];
@@ -13,15 +14,21 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
   onQuickAdd,
 }) => {
   const [adhocInput, setAdhocInput] = useState("");
-  const debouncedAdhocInput = useDebounce(adhocInput, 300);
+  const debouncedAdhocInput = useDebounce(adhocInput, 150); // Faster response
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
   const suggestionWrapperRef = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(() => {
     if (!debouncedAdhocInput || !showSuggestions) return [];
     const lower = debouncedAdhocInput.toLowerCase();
-    return contacts.filter((c) => c._searchString.includes(lower)).slice(0, 5);
+    return contacts.filter((c) => c._searchString.includes(lower)).slice(0, 8); // Show more results
   }, [debouncedAdhocInput, showSuggestions, contacts]);
+
+  // Reset selected index when suggestions change
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [suggestions]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -84,8 +91,21 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
         }}
         onFocus={() => setShowSuggestions(true)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            handleQuickAdd();
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSelectedIndex((prev) => Math.min(prev + 1, suggestions.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSelectedIndex((prev) => Math.max(prev - 1, 0));
+          } else if (e.key === "Enter") {
+            if (suggestions.length > 0 && selectedIndex < suggestions.length) {
+              handleQuickAdd(suggestions[selectedIndex].email);
+            } else {
+              handleQuickAdd();
+            }
+            e.currentTarget.blur();
+          } else if (e.key === "Escape") {
+            setShowSuggestions(false);
             e.currentTarget.blur();
           }
         }}
@@ -101,72 +121,64 @@ export const QuickAddInput: React.FC<QuickAddInputProps> = ({
             marginTop: "4px",
             background: "var(--color-bg-surface)",
             border: "var(--border-subtle)",
-            borderRadius: "6px",
+            borderRadius: "8px",
             zIndex: 100,
             boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
             overflow: "hidden",
+            maxHeight: "320px",
+            overflowY: "auto",
           }}
         >
-          {suggestions.map((c) => (
-            <div
-              key={c.email}
-              onClick={() => handleQuickAdd(c.email)}
-              style={{
-                padding: "12px 16px",
-                cursor: "pointer",
-                fontSize: "15px",
-                color: "var(--color-text-primary)",
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-              }}
-              onMouseEnter={(e) =>
-                (e.currentTarget.style.background = "rgba(255,255,255,0.05)")
-              }
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = "transparent")
-              }
-            >
+          {suggestions.map((c, index) => {
+            const color = getColorForString(c.name || c.email);
+            const isSelected = index === selectedIndex;
+            return (
               <div
+                key={c.email}
+                onClick={() => handleQuickAdd(c.email)}
+                onMouseEnter={() => setSelectedIndex(index)}
                 style={{
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "8px",
-                  background: "rgba(59, 130, 246, 0.2)",
-                  color: "#3B82F6",
-                  fontSize: "13px",
-                  fontWeight: 800,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  color: "var(--color-text-primary)",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
+                  gap: "10px",
+                  background: isSelected ? "rgba(255,255,255,0.08)" : "transparent",
+                  transition: "background 0.1s ease",
                 }}
               >
-                {c.name ? c.name[0].toUpperCase() : c.email[0].toUpperCase()}
+                <div
+                  style={{
+                    width: "28px",
+                    height: "28px",
+                    borderRadius: "6px",
+                    background: color.bg,
+                    color: color.text,
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                  }}
+                >
+                  {c.name ? c.name[0].toUpperCase() : c.email[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {c.name || c.email}
+                  </div>
+                  {c.name && (
+                    <div style={{ color: "var(--color-text-tertiary)", fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.email}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div
-                 style={{
-                   flex: 1,
-                   overflow: "hidden",
-                   overflowWrap: "break-word",
-                   wordBreak: "keep-all",
-                   whiteSpace: "normal",
-                 }}
-               >
-                 {c.name || c.email}
-                 {c.name && (
-                   <span
-                     style={{
-                       color: "var(--color-text-tertiary)",
-                       marginLeft: "6px",
-                       fontSize: "12px",
-                     }}
-                   >
-                     {c.email}
-                   </span>
-                 )}
-               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

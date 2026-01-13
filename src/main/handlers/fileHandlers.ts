@@ -4,14 +4,9 @@ import { existsSync } from 'fs';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
+import { importGroupsFromCsv } from '../operations';
 
 export function setupFileHandlers(getDataRoot: () => string) {
-  const getGroupsFilePath = () => {
-    const root = getDataRoot();
-    const fullPath = join(root, 'groups.csv');
-    return existsSync(fullPath) ? fullPath : fullPath;
-  };
-
   const getContactsFilePath = () => {
     const root = getDataRoot();
     const fullPath = join(root, 'contacts.csv');
@@ -24,10 +19,6 @@ export function setupFileHandlers(getDataRoot: () => string) {
       return;
     }
     await shell.openPath(path);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.OPEN_GROUPS_FILE, async () => {
-    await shell.openPath(getGroupsFilePath());
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
@@ -45,5 +36,9 @@ export function setupFileHandlers(getDataRoot: () => string) {
     } catch {
       loggers.security.error(`Invalid URL provided to openExternal: ${url}`);
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV, async () => {
+    return importGroupsFromCsv(getDataRoot());
   });
 }

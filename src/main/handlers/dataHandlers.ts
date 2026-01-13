@@ -16,7 +16,7 @@ export function setupDataHandlers(
     return result.allowed;
   };
 
-  const handleMergeImport = async (type: 'groups' | 'contacts', title: string) => {
+  const handleContactsImport = async (title: string) => {
     const rateLimitResult = rateLimiters.fileImport.tryConsume();
     if (!rateLimitResult.allowed) {
       loggers.ipc.warn(`Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
@@ -34,14 +34,10 @@ export function setupDataHandlers(
     });
 
     if (canceled || filePaths.length === 0) return false;
-
-    if (type === 'contacts') {
-      return fileManager?.importContactsWithMapping(filePaths[0]) ?? false;
-    } else {
-      return fileManager?.importGroupsWithMapping(filePaths[0]) ?? false;
-    }
+    return fileManager?.importContactsWithMapping(filePaths[0]) ?? false;
   };
 
+  // Contact operations
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_, contact) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.addContact(contact) ?? false;
@@ -52,31 +48,10 @@ export function setupDataHandlers(
     return getFileManager()?.removeContact(email) ?? false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.ADD_GROUP, async (_, groupName) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.addGroup(groupName) ?? false;
-  });
+  // Note: Group operations are now handled in featureHandlers.ts
+  // using JSON-based storage (GET_GROUPS, SAVE_GROUP, UPDATE_GROUP, DELETE_GROUP, IMPORT_GROUPS_FROM_CSV)
 
-  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT_TO_GROUP, async (_, groupName, email) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.updateGroupMembership(groupName, email, false) ?? false;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REMOVE_CONTACT_FROM_GROUP, async (_, groupName, email) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.updateGroupMembership(groupName, email, true) ?? false;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.REMOVE_GROUP, async (_, groupName) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.removeGroup(groupName) ?? false;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.RENAME_GROUP, async (_, oldName, newName) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    return getFileManager()?.renameGroup(oldName, newName) ?? false;
-  });
-
+  // On-Call operations
   ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_, team, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.updateOnCallTeam(team, rows) ?? false;
@@ -97,18 +72,16 @@ export function setupDataHandlers(
     return getFileManager()?.saveAllOnCall(rows) ?? false;
   });
 
+  // Contact import operations
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
-    return handleMergeImport('contacts', 'Merge Contacts CSV');
+    return handleContactsImport('Merge Contacts CSV');
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_FILE, async () => {
-    return handleMergeImport('contacts', 'Merge Contacts CSV');
+    return handleContactsImport('Merge Contacts CSV');
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FILE, async () => {
-    return handleMergeImport('groups', 'Merge Groups CSV');
-  });
-
+  // Development only
   if (process.env.NODE_ENV === 'development') {
     ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
       if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
@@ -116,6 +89,7 @@ export function setupDataHandlers(
     });
   }
 
+  // Server operations
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_, server) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     return getFileManager()?.addServer(server) ?? false;
@@ -144,6 +118,7 @@ export function setupDataHandlers(
     return fileManager?.importServersWithMapping(filePaths[0]) ?? { success: false, message: 'File Manager not initialized' };
   });
 
+  // Data reload
   ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) return { success: false, rateLimited: true };

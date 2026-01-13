@@ -50,7 +50,22 @@ export interface FileContext {
 }
 
 // File name constants - shared across all operations
+// CSV files (legacy, for backward compatibility)
 export const GROUP_FILES = ["groups.csv"];
 export const CONTACT_FILES = ["contacts.csv"];
 export const SERVER_FILES = ["servers.csv"];
 export const ONCALL_FILES = ["oncall.csv"];
+
+// JSON files (new format)
+export const CONTACTS_JSON_FILE = "contacts.json";
+export const SERVERS_JSON_FILE = "servers.json";
+export const ONCALL_JSON_FILE = "oncall.json";
+export const GROUPS_JSON_FILE = "bridgeGroups.json";
+
+// All JSON data files to watch
+export const JSON_DATA_FILES = [
+  CONTACTS_JSON_FILE,
+  SERVERS_JSON_FILE,
+  ONCALL_JSON_FILE,
+  GROUPS_JSON_FILE,
+];
