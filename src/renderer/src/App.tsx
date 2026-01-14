@@ -46,6 +46,18 @@ export function MainApp() {
     handleAddManual, handleRemoveManual, handleToggleGroup,
   } = useAppAssembler(isReloading);
 
+  // Track which tabs have been mounted at least once
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
+
+  useEffect(() => {
+    setMountedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
+
   // Command Palette and Shortcuts modal state
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
@@ -156,8 +168,8 @@ export function MainApp() {
         </header>
 
         <div className="content-view">
-          {activeTab === "Compose" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("Compose") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Compose" ? "block" : "none" }}>
               <AssemblerTab
                 groups={data.groups} contacts={data.contacts} onCall={data.onCall}
                 selectedGroupIds={selectedGroupIds} manualAdds={manualAdds} manualRemoves={manualRemoves}
@@ -167,22 +179,22 @@ export function MainApp() {
               />
             </div>
           )}
-          {activeTab === "Personnel" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("Personnel") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Personnel" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
               </Suspense>
             </div>
           )}
-          {activeTab === "People" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("People") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "People" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <DirectoryTab contacts={data.contacts} groups={data.groups} onAddToAssembler={handleAddToAssembler} />
               </Suspense>
             </div>
           )}
-          {activeTab === "Weather" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("Weather") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Weather" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <WeatherTab
                   weather={weatherData} alerts={weatherAlerts} location={weatherLocation}
@@ -192,22 +204,22 @@ export function MainApp() {
               </Suspense>
             </div>
           )}
-          {activeTab === "Servers" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("Servers") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Servers" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <ServersTab servers={data.servers} contacts={data.contacts} />
               </Suspense>
             </div>
           )}
-          {activeTab === "Radar" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("Radar") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Radar" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <RadarTab />
               </Suspense>
             </div>
           )}
-          {activeTab === "AI" && (
-            <div className="animate-fade-in" style={{ height: "100%" }}>
+          {mountedTabs.has("AI") && (
+            <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "AI" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
                 <AIChatTab />
               </Suspense>

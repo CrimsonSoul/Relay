@@ -49,13 +49,59 @@ export function setupWeatherHandlers() {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.SEARCH_LOCATION, async (_event, query) => {
+  ipcMain.handle(IPC_CHANNELS.SEARCH_LOCATION, async (_event, query: string) => {
     try {
-      const res = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=en&format=json`
-      );
-      if (!res.ok) throw new Error('Geocoding failed');
-      return await res.json();
+      const trimmedQuery = query.trim();
+      
+      // Handle Zip Code (US 5-digit)
+      if (/^\d{5}$/.test(trimmedQuery)) {
+        try {
+          const zipRes = await fetch(`https://api.zippopotam.us/us/${trimmedQuery}`);
+          if (zipRes.ok) {
+            const zipData = await zipRes.json() as {
+              'post code': string;
+              country: string;
+              places: Array<{ 'place name': string; longitude: string; state: string; 'state abbreviation': string; latitude: string }>;
+            };
+            if (zipData.places?.[0]) {
+              const place = zipData.places[0];
+              return {
+                results: [{
+                  name: place['place name'],
+                  lat: parseFloat(place.latitude),
+                  lon: parseFloat(place.longitude),
+                  admin1: place.state,
+                  country_code: 'US'
+                }]
+              };
+            }
+          }
+        } catch (err) {
+          loggers.weather.warn('Zip code search failed, falling back to general search', { query: trimmedQuery });
+        }
+      }
+
+      // General Search
+      const fetchResults = async (q: string) => {
+        const res = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`
+        );
+        if (!res.ok) throw new Error('Geocoding failed');
+        return await res.json();
+      };
+
+      let data = await fetchResults(trimmedQuery);
+
+      // Fallback for "City, State" format if no results
+      if ((!data.results || data.results.length === 0) && trimmedQuery.includes(',')) {
+        const cityPart = trimmedQuery.split(',')[0].trim();
+        if (cityPart) {
+          loggers.weather.info('Retrying search with city part only', { original: trimmedQuery, cityPart });
+          data = await fetchResults(cityPart);
+        }
+      }
+
+      return data;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       loggers.weather.error('Location search failed', {

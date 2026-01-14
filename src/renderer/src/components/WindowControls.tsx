@@ -44,7 +44,8 @@ export const WindowControls = () => {
             height: '48px',
             WebkitAppRegion: 'no-drag',
             zIndex: 10000,
-            position: 'relative' // Ensure z-index works
+            position: 'relative', // Ensure z-index works
+            pointerEvents: 'auto'
         } as React.CSSProperties}>
             <style>{`
             .window-control-btn {

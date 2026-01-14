@@ -268,7 +268,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         display: "flex",
         justifyContent: "center",
         paddingTop: "15vh",
-        zIndex: 9999,
+        zIndex: 10002,
       }}
       onClick={onClose}
     >
