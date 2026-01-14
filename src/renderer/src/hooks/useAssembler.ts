@@ -33,6 +33,24 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
 
   useEffect(() => { secureStorage.setItemSync('assembler_sidebar_collapsed', isGroupSidebarCollapsed); }, [isGroupSidebarCollapsed]);
 
+  // Sync state across multiple instances
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'relay_assembler_sidebar_collapsed' && e.newValue !== null) {
+        try {
+          const newValue = JSON.parse(decodeURIComponent(atob(e.newValue)));
+          if (typeof newValue === 'boolean') {
+            setIsGroupSidebarCollapsed(newValue);
+          }
+        } catch (err) {
+          // Ignore parse errors from other instances
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   const handleToggleSidebarCollapse = useCallback(() => setIsGroupSidebarCollapsed((prev: boolean) => !prev), []);
 
   const contactMap = useMemo(() => {
