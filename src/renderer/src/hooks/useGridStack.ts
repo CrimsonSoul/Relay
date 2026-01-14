@@ -8,9 +8,32 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
   const isInitialized = useRef(false);
 
   const localOnCallRef = useRef(localOnCall);
+  const isDraggingRef = useRef(false);
   
   useEffect(() => {
     localOnCallRef.current = localOnCall;
+
+    // If data changed externally (not during a local drag), sync the grid visual order
+    if (isInitialized.current && gridInstanceRef.current && !isDraggingRef.current) {
+      const currentOrder = gridInstanceRef.current.getGridItems()
+        .map(item => item.getAttribute('gs-id'))
+        .filter(Boolean) as string[];
+      
+      const newOrder = Array.from(new Set(localOnCall.map(r => r.team)));
+      
+      // If the team order is different, we need to refresh the layout
+      if (JSON.stringify(currentOrder) !== JSON.stringify(newOrder)) {
+        gridInstanceRef.current.removeAll(false);
+        // GridStack will re-pickup the elements from the DOM if we don't destroy them
+        // In this React setup, we wait for the next tick to let React render the new order
+        setTimeout(() => {
+          if (gridInstanceRef.current) {
+            gridInstanceRef.current.makeWidgets('.grid-stack-item');
+            gridInstanceRef.current.compact();
+          }
+        }, 50);
+      }
+    }
   }, [localOnCall]);
 
   useEffect(() => {
@@ -23,7 +46,12 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
     const handleResize = () => { if (gridInstanceRef.current && gridRef.current) gridInstanceRef.current.column(getColumnCount(), 'moveScale'); };
     window.addEventListener('resize', handleResize);
 
+    gridInstanceRef.current.on('dragstart', () => {
+      isDraggingRef.current = true;
+    });
+
     gridInstanceRef.current.on('dragstop', () => {
+      isDraggingRef.current = false;
       if (!gridInstanceRef.current) return;
       const newOrder = gridInstanceRef.current.getGridItems().sort((a, b) => {
         const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');
