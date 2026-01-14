@@ -13,7 +13,10 @@ import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson } from "./operations";
+import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
+import { parseCsvAsync, desanitizeField } from "./csvUtils";
+import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
+import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
 
 // File write coordination constants
 const WRITE_GUARD_DELAY_MS = 500; // Delay after write before allowing file watcher to react
@@ -210,17 +213,228 @@ export class FileManager implements FileContext {
   public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }
 
   // Delegated Operations
-  public async removeContact(email: string) { return removeContactOp(this, email); }
-  public async addContact(contact: Partial<Contact>) { return addContactOp(this, contact); }
-  public async importContactsWithMapping(path: string) { return importContactsWithMappingOp(this, path); }
-  public async addServer(server: Partial<Server>) { return addServerOp(this, server); }
-  public async removeServer(name: string) { return removeServerOp(this, name); }
-  public async importServersWithMapping(path: string) { return importServersWithMappingOp(this, path); }
-  public async cleanupServerContacts() { return cleanupServerContactsOp(this); }
-  public async updateOnCallTeam(team: string, rows: OnCallRow[]) { return updateOnCallTeamOp(this, team, rows); }
-  public async removeOnCallTeam(team: string) { return removeOnCallTeamOp(this, team); }
-  public async renameOnCallTeam(oldName: string, newName: string) { return renameOnCallTeamOp(this, oldName, newName); }
-  public async saveAllOnCall(rows: OnCallRow[]) { return saveAllOnCallOp(this, rows); }
+  public async removeContact(email: string) {
+    if (this.hasJsonData()) {
+      const contact = await findContactByEmail(this.rootDir, email);
+      if (contact) {
+        const success = await deleteContactRecord(this.rootDir, contact.id);
+        if (success) await this.readAndEmit();
+        return success;
+      }
+      return false;
+    }
+    return removeContactOp(this, email);
+  }
+
+  public async addContact(contact: Partial<Contact>) {
+    if (this.hasJsonData()) {
+      const record = {
+        name: contact.name || "",
+        email: contact.email || "",
+        phone: contact.phone || "",
+        title: contact.title || "",
+      };
+      const result = await addContactRecord(this.rootDir, record);
+      if (result) await this.readAndEmit();
+      return !!result;
+    }
+    return addContactOp(this, contact);
+  }
+  public async importContactsWithMapping(path: string) {
+    if (this.hasJsonData()) {
+      try {
+        const content = await fs.readFile(path, "utf-8");
+        const data = await parseCsvAsync(content);
+        if (data.length < 2) return false;
+
+        const header = data[0].map((h: unknown) => String(h).toLowerCase().trim());
+        const rows = data.slice(1);
+
+        const mapHeader = (candidates: string[]) => {
+          for (const candidate of candidates) {
+            const idx = header.indexOf(candidate.toLowerCase());
+            if (idx !== -1) return idx;
+          }
+          return -1;
+        };
+
+        const nameIdx = mapHeader(CONTACT_COLUMN_ALIASES.name);
+        const emailIdx = mapHeader(CONTACT_COLUMN_ALIASES.email);
+        const phoneIdx = mapHeader(CONTACT_COLUMN_ALIASES.phone);
+        const titleIdx = mapHeader(CONTACT_COLUMN_ALIASES.title);
+
+        if (emailIdx === -1) return false;
+
+        const recordsToUpsert = rows.map((row) => {
+          let phone = phoneIdx !== -1 ? row[phoneIdx] : "";
+          if (phone) phone = cleanAndFormatPhoneNumber(String(phone));
+
+          return {
+            name: nameIdx !== -1 ? row[nameIdx] : "",
+            email: row[emailIdx],
+            phone: phone,
+            title: titleIdx !== -1 ? row[titleIdx] : "",
+          };
+        }).filter(r => r.email);
+
+        const result = await bulkUpsertContacts(this.rootDir, recordsToUpsert);
+        await this.readAndEmit();
+        return result.errors.length === 0;
+      } catch (e) {
+        loggers.fileManager.error("[FileManager] importContactsWithMapping JSON error:", { error: e });
+        return false;
+      }
+    }
+    return importContactsWithMappingOp(this, path);
+  }
+  public async addServer(server: Partial<Server>) {
+    if (this.hasJsonData()) {
+      const record = {
+        name: server.name || "",
+        businessArea: server.businessArea || "",
+        lob: server.lob || "",
+        comment: server.comment || "",
+        owner: server.owner || "",
+        contact: server.contact || "",
+        os: server.os || "",
+      };
+      const result = await addServerRecord(this.rootDir, record);
+      if (result) await this.readAndEmit();
+      return !!result;
+    }
+    return addServerOp(this, server);
+  }
+
+  public async removeServer(name: string) {
+    if (this.hasJsonData()) {
+      const server = await findServerByName(this.rootDir, name);
+      if (server) {
+        const success = await deleteServerRecord(this.rootDir, server.id);
+        if (success) await this.readAndEmit();
+        return success;
+      }
+      return false;
+    }
+    return removeServerOp(this, name);
+  }
+  public async importServersWithMapping(path: string) {
+    if (this.hasJsonData()) {
+      try {
+        const content = await fs.readFile(path, "utf-8");
+        const lines = content.split(/\r?\n/);
+        if (lines.length === 0) return { success: false, message: "Empty source file" };
+
+        let headerLineIndex = -1;
+        for (let i = 0; i < Math.min(lines.length, 20); i++) {
+          const lowerLine = lines[i].toLowerCase();
+          if (lowerLine.includes("vm-m") || lowerLine.includes("server name") || lowerLine.includes("name")) {
+            headerLineIndex = i;
+            break;
+          }
+        }
+        if (headerLineIndex === -1) return { success: false, message: "Could not find header" };
+
+        const cleanContents = lines.slice(headerLineIndex).join("\n");
+        const data = await parseCsvAsync(cleanContents);
+        if (data.length < 2) return { success: false, message: "File appears empty" };
+
+        const header = data[0].map((h: unknown) => String(h).toLowerCase().trim());
+        const rows = data.slice(1);
+
+        const mapHeader = (candidates: readonly string[]) => {
+          for (const c of candidates) {
+            const idx = header.indexOf(c.toLowerCase());
+            if (idx !== -1) return idx;
+          }
+          return -1;
+        };
+
+        const s_nameIdx = mapHeader(SERVER_COLUMN_ALIASES.name);
+        const s_baIdx = mapHeader(SERVER_COLUMN_ALIASES.businessArea);
+        const s_lobIdx = mapHeader(SERVER_COLUMN_ALIASES.lob);
+        const s_commentIdx = mapHeader(SERVER_COLUMN_ALIASES.comment);
+        const s_ownerIdx = mapHeader(SERVER_COLUMN_ALIASES.owner);
+        const s_contactIdx = mapHeader(SERVER_COLUMN_ALIASES.contact);
+        const s_osTypeIdx = mapHeader(SERVER_COLUMN_ALIASES.os);
+
+        if (s_nameIdx === -1) return { success: false, message: "No Name column found" };
+
+        const recordsToUpsert = rows.map((row) => {
+          const getValue = (idx: number) => (idx !== -1 && row[idx] ? row[idx].trim() : "");
+          return {
+            name: row[s_nameIdx].trim(),
+            businessArea: getValue(s_baIdx),
+            lob: getValue(s_lobIdx),
+            comment: getValue(s_commentIdx),
+            owner: getValue(s_ownerIdx),
+            contact: getValue(s_contactIdx),
+            os: getValue(s_osTypeIdx),
+          };
+        }).filter(r => r.name);
+
+        const result = await bulkUpsertServers(this.rootDir, recordsToUpsert);
+        await this.readAndEmit();
+        return { success: result.errors.length === 0 };
+      } catch (e) {
+        loggers.fileManager.error("[FileManager] importServersWithMapping JSON error:", { error: e });
+        return { success: false, message: String(e) };
+      }
+    }
+    return importServersWithMappingOp(this, path);
+  }
+  public async cleanupServerContacts() {
+    if (this.hasJsonData()) return; // Skip in JSON mode
+    return cleanupServerContactsOp(this);
+  }
+  public async updateOnCallTeam(team: string, rows: OnCallRow[]) {
+    if (this.hasJsonData()) {
+      const records = rows.map((r) => ({
+        team: r.team,
+        role: r.role,
+        name: r.name,
+        contact: r.contact,
+        timeWindow: r.timeWindow,
+      }));
+      const success = await updateOnCallTeamJson(this.rootDir, team, records);
+      if (success) await this.readAndEmit();
+      return success;
+    }
+    return updateOnCallTeamOp(this, team, rows);
+  }
+
+  public async removeOnCallTeam(team: string) {
+    if (this.hasJsonData()) {
+      const success = await deleteOnCallByTeam(this.rootDir, team);
+      if (success) await this.readAndEmit();
+      return success;
+    }
+    return removeOnCallTeamOp(this, team);
+  }
+
+  public async renameOnCallTeam(oldName: string, newName: string) {
+    if (this.hasJsonData()) {
+      const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
+      if (success) await this.readAndEmit();
+      return success;
+    }
+    return renameOnCallTeamOp(this, oldName, newName);
+  }
+
+  public async saveAllOnCall(rows: OnCallRow[]) {
+    if (this.hasJsonData()) {
+      const records = rows.map((r) => ({
+        team: r.team,
+        role: r.role,
+        name: r.name,
+        contact: r.contact,
+        timeWindow: r.timeWindow,
+      }));
+      const success = await saveAllOnCallJson(this.rootDir, records);
+      if (success) await this.readAndEmit();
+      return success;
+    }
+    return saveAllOnCallOp(this, rows);
+  }
   public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) { await this.readAndEmit(); } return success; }
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }
   public destroy() { if (this.watcher) { void this.watcher.close(); this.watcher = null; } }
