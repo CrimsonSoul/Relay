@@ -1,20 +1,22 @@
-import React, { memo, useState, useRef, useEffect } from 'react';
+import React, { memo } from 'react';
 import { Server, Contact } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { getPlatformColor, PersonInfo } from './shared/PersonInfo';
 
-interface ServerCardProps { server: Server; contactLookup: Map<string, Contact>; onContextMenu: (e: React.MouseEvent, server: Server) => void; style?: React.CSSProperties }
+interface ServerCardProps {
+  server: Server;
+  contactLookup: Map<string, Contact>;
+  onContextMenu: (e: React.MouseEvent, server: Server) => void;
+  style?: React.CSSProperties;
+  isWide?: boolean;
+}
 
-export const ServerCard = memo(({ server, contactLookup, onContextMenu, style }: ServerCardProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [isWide, setIsWide] = useState(false);
-  useEffect(() => { if (!containerRef.current) return; const observer = new ResizeObserver((entries) => { for (const entry of entries) setIsWide(entry.contentRect.width > 900); }); observer.observe(containerRef.current); return () => observer.disconnect(); }, []);
-
+export const ServerCard = memo(({ server, contactLookup, onContextMenu, style, isWide = false }: ServerCardProps) => {
   const osInfo = getPlatformColor(server.os);
   const cardPadding = isWide ? 24 : 12;
 
   return (
-    <div ref={containerRef} onContextMenu={(e) => onContextMenu(e, server)} style={{ width: '100%', height: '100%', ...style, display: 'flex', alignItems: 'center' }}>
+    <div onContextMenu={(e) => onContextMenu(e, server)} style={{ width: '100%', height: '100%', ...style, display: 'flex', alignItems: 'center' }}>
       <div style={{ width: '100%', height: 'calc(100% - 8px)', display: 'flex', alignItems: 'center', paddingLeft: `${cardPadding + 4}px`, paddingRight: `${cardPadding}px`, background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255, 255, 255, 0.05)', borderRadius: '12px', gap: `${cardPadding}px`, transition: 'all 0.2s ease', cursor: 'default', position: 'relative', overflow: 'hidden' }} className="server-card-hover">
         <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: osInfo.text, opacity: 0.8 }} />
         <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: osInfo.bg, border: `1px solid ${osInfo.border}`, color: osInfo.text, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

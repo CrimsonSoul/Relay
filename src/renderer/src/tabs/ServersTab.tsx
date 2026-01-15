@@ -12,10 +12,10 @@ import { useServers } from '../hooks/useServers';
 
 interface ServersTabProps { servers: Server[]; contacts: Contact[] }
 
-const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{ servers: Server[]; contactLookup: Map<string, Contact>; onContextMenu: (e: React.MouseEvent, server: Server) => void }>) => {
-  const { servers, contactLookup, onContextMenu } = data;
+const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<{ servers: Server[]; contactLookup: Map<string, Contact>; onContextMenu: (e: React.MouseEvent, server: Server) => void; isWide: boolean }>) => {
+  const { servers, contactLookup, onContextMenu, isWide } = data;
   if (index >= servers.length) return null;
-  return <ServerCard style={style} server={servers[index]} contactLookup={contactLookup} onContextMenu={onContextMenu} />;
+  return <ServerCard style={style} server={servers[index]} contactLookup={contactLookup} onContextMenu={onContextMenu} isWide={isWide} />;
 });
 
 export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => {
@@ -33,7 +33,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
 
       <div style={{ flex: 1 }}>
         <AutoSizer>
-          {({ height, width }) => <List height={height} width={width} itemCount={h.filteredServers.length} itemSize={104} itemData={itemData} onScroll={({ scrollOffset }) => h.setIsHeaderCollapsed(scrollOffset > 30)}>{VirtualRow}</List>}
+          {({ height, width }) => <List height={height} width={width} itemCount={h.filteredServers.length} itemSize={104} itemData={{ ...itemData, isWide: width > 900 }} onScroll={({ scrollOffset }) => h.setIsHeaderCollapsed(scrollOffset > 30)}>{VirtualRow}</List>}
         </AutoSizer>
         {h.filteredServers.length === 0 && <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-text-tertiary)', fontStyle: 'italic', flexDirection: 'column', gap: '8px' }}><div style={{ fontSize: '24px', opacity: 0.3 }}>∅</div><div>No infrastructure found</div></div>}
       </div>

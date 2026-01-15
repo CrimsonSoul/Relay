@@ -19,6 +19,7 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
   return (
     <Tooltip content={label} position="right">
       <button
+        aria-label={label}
         onClick={onClick}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
