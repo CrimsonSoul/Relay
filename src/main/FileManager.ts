@@ -13,7 +13,7 @@ import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseGroups, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, addGroup as addGroupOp, updateGroupMembership as updateGroupMembershipOp, removeGroup as removeGroupOp, renameGroup as renameGroupOp, importGroupsWithMapping as importGroupsWithMappingOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp } from "./operations";
+import { FileContext, parseGroups, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, addGroup as addGroupOp, updateGroupMembership as updateGroupMembershipOp, removeGroup as removeGroupOp, renameGroup as renameGroupOp, importGroupsWithMapping as importGroupsWithMappingOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, GROUP_FILES, CONTACT_FILES, SERVER_FILES, ONCALL_FILES } from "./operations";
 
 export class FileManager implements FileContext {
   private watcher: chokidar.FSWatcher | null = null;
@@ -80,7 +80,20 @@ export class FileManager implements FileContext {
         
         await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
         await fs.rename(`${path}.tmp`, path);
-        await this.readAndEmit();
+
+        const fileName = path.split(/[/\\]/).pop() || "";
+        const filesToUpdate = new Set<FileType>();
+
+        if (GROUP_FILES.includes(fileName)) filesToUpdate.add("groups");
+        else if (CONTACT_FILES.includes(fileName)) filesToUpdate.add("contacts");
+        else if (SERVER_FILES.includes(fileName)) filesToUpdate.add("servers");
+        else if (ONCALL_FILES.includes(fileName)) filesToUpdate.add("oncall");
+
+        if (filesToUpdate.size > 0) {
+          await this.readAndEmitIncremental(filesToUpdate);
+        } else {
+          await this.readAndEmit();
+        }
       } finally {
         setTimeout(() => {
           this.internalWriteCount--;
