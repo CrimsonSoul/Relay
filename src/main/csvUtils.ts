@@ -99,16 +99,17 @@ export function validateEncoding(content: string): boolean {
  * Sanitize entire CSV content before parsing
  */
 export function sanitizeCsvContent(content: string): string {
-    // Strip BOM if present
-    let cleaned = content.replace(/^\uFEFF/, '');
-
-    // Normalize line endings
-    cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-    // Remove null bytes
-    cleaned = cleaned.replace(/\x00/g, '');
-
-    return cleaned;
+    // Combine all replacements into a single pass for performance
+    // 1. Strip BOM (^\uFEFF) -> ''
+    // 2. Normalize CRLF (\r\n) -> \n
+    // 3. Normalize CR (\r) -> \n
+    // 4. Remove null bytes (\x00) -> ''
+    return content.replace(/^\uFEFF|\r\n|\r|\x00/g, (match) => {
+        if (match === '\r\n' || match === '\r') {
+            return '\n';
+        }
+        return '';
+    });
 }
 
 /**
