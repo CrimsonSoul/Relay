@@ -64,10 +64,12 @@ export async function generateDummyDataAsync(targetRoot: string): Promise<boolea
       'Data,Primary,Evan Wright,555-0104,8am - 4pm'
     ].join('\n');
 
-    await fsPromises.writeFile(join(targetRoot, 'contacts.csv'), contactsCsv, 'utf-8');
-    await fsPromises.writeFile(join(targetRoot, 'groups.csv'), groupsCsv, 'utf-8');
-    await fsPromises.writeFile(join(targetRoot, 'servers.csv'), serversCsv, 'utf-8');
-    await fsPromises.writeFile(join(targetRoot, 'oncall.csv'), onCallCsv, 'utf-8');
+    await Promise.all([
+      fsPromises.writeFile(join(targetRoot, 'contacts.csv'), contactsCsv, 'utf-8'),
+      fsPromises.writeFile(join(targetRoot, 'groups.csv'), groupsCsv, 'utf-8'),
+      fsPromises.writeFile(join(targetRoot, 'servers.csv'), serversCsv, 'utf-8'),
+      fsPromises.writeFile(join(targetRoot, 'oncall.csv'), onCallCsv, 'utf-8')
+    ]);
 
     return true;
   } catch (e) {
