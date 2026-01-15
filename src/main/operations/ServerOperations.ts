@@ -25,13 +25,15 @@ export async function addServer(ctx: FileContext, server: Partial<Server>): Prom
     const workingHeader = workingData[0];
     const matcher = new HeaderMatcher(workingHeader);
 
-    const nameIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.name, STD_SERVER_HEADERS[0], workingData);
-    const baIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.businessArea, STD_SERVER_HEADERS[1], workingData);
-    const lobIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.lob, STD_SERVER_HEADERS[2], workingData);
-    const comIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.comment, STD_SERVER_HEADERS[3], workingData);
-    const ownerIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.owner, STD_SERVER_HEADERS[4], workingData);
-    const conIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.contact, STD_SERVER_HEADERS[5], workingData);
-    const osIdx = matcher.ensureColumn(SERVER_COLUMN_ALIASES.os, STD_SERVER_HEADERS[6], workingData);
+    const [nameIdx, baIdx, lobIdx, comIdx, ownerIdx, conIdx, osIdx] = matcher.ensureColumns([
+      { aliases: SERVER_COLUMN_ALIASES.name, defaultName: STD_SERVER_HEADERS[0] },
+      { aliases: SERVER_COLUMN_ALIASES.businessArea, defaultName: STD_SERVER_HEADERS[1] },
+      { aliases: SERVER_COLUMN_ALIASES.lob, defaultName: STD_SERVER_HEADERS[2] },
+      { aliases: SERVER_COLUMN_ALIASES.comment, defaultName: STD_SERVER_HEADERS[3] },
+      { aliases: SERVER_COLUMN_ALIASES.owner, defaultName: STD_SERVER_HEADERS[4] },
+      { aliases: SERVER_COLUMN_ALIASES.contact, defaultName: STD_SERVER_HEADERS[5] },
+      { aliases: SERVER_COLUMN_ALIASES.os, defaultName: STD_SERVER_HEADERS[6] }
+    ], workingData);
 
     let rowIndex = -1;
     if (server.name) {

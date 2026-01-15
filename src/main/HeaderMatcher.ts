@@ -52,6 +52,56 @@ export class HeaderMatcher {
   }
 
   /**
+   * Ensure multiple columns exist, creating them if necessary
+   * Optimized to iterate over data only once
+   * @param columns - Array of column definitions { aliases: string[], defaultName: string }
+   * @param data - Optional data array to extend with empty values
+   * @returns Array of column indices corresponding to the input columns
+   */
+  ensureColumns(columns: { aliases: string[], defaultName: string }[], data?: any[][]): number[] {
+    const indices: number[] = new Array(columns.length).fill(-1);
+    const columnsToAdd: { defaultName: string, indexInInput: number }[] = [];
+
+    // First pass: identify existing columns and which ones need to be added
+    for (let i = 0; i < columns.length; i++) {
+      const idx = this.findColumn(columns[i].aliases);
+      if (idx !== -1) {
+        indices[i] = idx;
+      } else {
+        columnsToAdd.push({ defaultName: columns[i].defaultName, indexInInput: i });
+      }
+    }
+
+    if (columnsToAdd.length > 0) {
+      const newColsCount = columnsToAdd.length;
+
+      // Add headers
+      for (const col of columnsToAdd) {
+        this.headers.push(col.defaultName);
+        this.lowerHeaders.push(col.defaultName.toLowerCase());
+      }
+
+      const firstNewIndex = this.headers.length - newColsCount;
+
+      // Extend data rows with empty values if data provided
+      if (data) {
+        for (let i = 1; i < data.length; i++) {
+          for (let j = 0; j < newColsCount; j++) {
+            data[i].push('');
+          }
+        }
+      }
+
+      // Update indices for added columns
+      for (let i = 0; i < newColsCount; i++) {
+        indices[columnsToAdd[i].indexInInput] = firstNewIndex + i;
+      }
+    }
+
+    return indices;
+  }
+
+  /**
    * Get the actual header name at an index
    */
   getHeader(index: number): string | undefined {
