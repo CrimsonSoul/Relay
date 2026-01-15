@@ -73,7 +73,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   includeMemoryUsage: true
 };
 
-class Logger {
+export class Logger {
   private readonly config: LoggerConfig;
   private logPath!: string;
   private currentLogFile!: string;
@@ -277,9 +277,14 @@ class Logger {
 
   private async rotateIfNeeded(filePath: string): Promise<void> {
     try {
-      if (!fs.existsSync(filePath)) return;
+      let stats;
+      try {
+        stats = await fs.promises.stat(filePath);
+      } catch (error: any) {
+        if (error.code === 'ENOENT') return;
+        throw error;
+      }
 
-      const stats = fs.statSync(filePath);
       if (stats.size < this.config.maxFileSize) return;
 
       const baseName = path.basename(filePath, '.log');
@@ -288,16 +293,20 @@ class Logger {
       for (let i = this.config.maxFiles; i >= 1; i--) {
         const oldFile = path.join(dirName, `${baseName}.${i}.log`);
         const newFile = path.join(dirName, `${baseName}.${i + 1}.log`);
-        if (fs.existsSync(oldFile)) {
+
+        try {
+          await fs.promises.stat(oldFile);
           if (i === this.config.maxFiles) {
-            fs.unlinkSync(oldFile);
+            await fs.promises.unlink(oldFile);
           } else {
-            fs.renameSync(oldFile, newFile);
+            await fs.promises.rename(oldFile, newFile);
           }
+        } catch (error: any) {
+          if (error.code !== 'ENOENT') throw error;
         }
       }
 
-      fs.renameSync(filePath, path.join(dirName, `${baseName}.1.log`));
+      await fs.promises.rename(filePath, path.join(dirName, `${baseName}.1.log`));
     } catch (e) {
       console.error('[Logger] Failed to rotate logs:', e);
     }
