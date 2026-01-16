@@ -15,24 +15,22 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
 
     // If data changed externally (not during a local drag), sync the grid visual order
     if (isInitialized.current && gridInstanceRef.current && !isDraggingRef.current) {
-      const currentOrder = gridInstanceRef.current.getGridItems()
-        .map(item => item.getAttribute('gs-id'))
-        .filter(Boolean) as string[];
-      
-      const newOrder = Array.from(new Set(localOnCall.map(r => r.team)));
-      
-      // If the team order is different, we need to refresh the layout
-      if (JSON.stringify(currentOrder) !== JSON.stringify(newOrder)) {
-        gridInstanceRef.current.removeAll(false);
-        // GridStack will re-pickup the elements from the DOM if we don't destroy them
-        // In this React setup, we wait for the next tick to let React render the new order
-        setTimeout(() => {
-          if (gridInstanceRef.current) {
-            gridInstanceRef.current.makeWidgets('.grid-stack-item');
-            gridInstanceRef.current.compact();
-          }
-        }, 50);
-      }
+      // Always refresh layout to catch height changes (content updates) or order changes
+      gridInstanceRef.current.removeAll(false);
+
+      // GridStack will re-pickup the elements from the DOM if we don't destroy them
+      // In this React setup, we wait for the next tick to let React render the new order
+      setTimeout(() => {
+        if (gridInstanceRef.current && gridRef.current) {
+          gridInstanceRef.current.makeWidgets('.grid-stack-item');
+          gridInstanceRef.current.compact();
+
+          // Enforce column count again to prevent reset to default/1-column during refresh
+          const w = gridRef.current.offsetWidth || window.innerWidth;
+          const count = w < 900 ? 1 : 2;
+          gridInstanceRef.current.column(count);
+        }
+      }, 50);
     }
   }, [localOnCall]);
 
