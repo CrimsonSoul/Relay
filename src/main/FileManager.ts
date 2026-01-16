@@ -13,7 +13,7 @@ import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
+import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, reorderOnCallTeams as reorderOnCallTeamsOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
 import { parseCsvAsync, desanitizeField } from "./csvUtils";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
@@ -418,6 +418,15 @@ export class FileManager implements FileContext {
       return success;
     }
     return renameOnCallTeamOp(this, oldName, newName);
+  }
+
+  public async reorderOnCallTeams(teamOrder: string[]) {
+    if (this.hasJsonData()) {
+      const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
+      if (success) await this.readAndEmit();
+      return success;
+    }
+    return reorderOnCallTeamsOp(this, teamOrder);
   }
 
   public async saveAllOnCall(rows: OnCallRow[]) {

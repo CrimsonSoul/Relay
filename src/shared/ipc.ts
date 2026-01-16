@@ -165,6 +165,7 @@ export type BridgeAPI = {
   updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<boolean>;
   removeOnCallTeam: (team: string) => Promise<boolean>;
   renameOnCallTeam: (oldName: string, newName: string) => Promise<boolean>;
+  reorderOnCallTeams: (teamOrder: string[]) => Promise<boolean>;
   saveAllOnCall: (rows: OnCallRow[]) => Promise<boolean>;
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -245,6 +246,7 @@ export const IPC_CHANNELS = {
   UPDATE_ONCALL_TEAM: "data:updateOnCallTeam",
   REMOVE_ONCALL_TEAM: "data:removeOnCallTeam",
   RENAME_ONCALL_TEAM: "data:renameOnCallTeam",
+  REORDER_ONCALL_TEAMS: "data:reorderOnCallTeams",
   SAVE_ALL_ONCALL: "data:saveAllOnCall",
   IMPORT_CONTACTS_WITH_MAPPING: "data:importContactsWithMapping",
   GENERATE_DUMMY_DATA: "data:generateDummyData",

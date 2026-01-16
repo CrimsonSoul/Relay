@@ -43,8 +43,24 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
     gridInstanceRef.current = GridStack.init({ column: getColumnCount(), cellHeight: 70, margin: 8, float: false, animate: true, draggable: { handle: '.grid-stack-item-content' }, resizable: { handles: '' } }, gridRef.current);
     isInitialized.current = true;
 
-    const handleResize = () => { if (gridInstanceRef.current && gridRef.current) gridInstanceRef.current.column(getColumnCount(), 'moveScale'); };
-    window.addEventListener('resize', handleResize);
+    const handleResize = (width?: number) => {
+      if (gridInstanceRef.current && gridRef.current) {
+        const w = width || gridRef.current.offsetWidth || window.innerWidth;
+        const count = w < 900 ? 1 : 2;
+        gridInstanceRef.current.column(count, 'moveScale');
+      }
+    };
+
+    // Use ResizeObserver to detect size changes and visibility (width > 0)
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          handleResize(entry.contentRect.width);
+        }
+      }
+    });
+
+    if (gridRef.current) observer.observe(gridRef.current);
 
     gridInstanceRef.current.on('dragstart', () => {
       isDraggingRef.current = true;
@@ -62,10 +78,15 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
       const newFlatList: OnCallRow[] = [];
       newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
       setLocalOnCall(newFlatList);
-      void window.api?.saveAllOnCall(newFlatList);
+
+      // Use reorder API to avoid overwriting concurrent content edits
+      void window.api?.reorderOnCallTeams(newOrder);
     });
 
-    return () => { window.removeEventListener('resize', handleResize); if (gridInstanceRef.current) { gridInstanceRef.current.destroy(false); gridInstanceRef.current = null; isInitialized.current = false; } };
+    return () => {
+      observer.disconnect();
+      if (gridInstanceRef.current) { gridInstanceRef.current.destroy(false); gridInstanceRef.current = null; isInitialized.current = false; }
+    };
   }, [setLocalOnCall]);
 
   useEffect(() => { if (gridInstanceRef.current) { const timeout = setTimeout(() => gridInstanceRef.current?.compact(), 100); return () => clearTimeout(timeout); } }, []);
