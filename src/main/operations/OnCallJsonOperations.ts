@@ -215,6 +215,51 @@ export async function renameOnCallTeamJson(
 }
 
 /**
+ * Reorder on-call teams
+ */
+export async function reorderOnCallTeamsJson(
+  rootDir: string,
+  teamOrder: string[]
+): Promise<boolean> {
+  try {
+    const records = await getOnCall(rootDir);
+
+    // Group records by team
+    const teamMap = new Map<string, OnCallRecord[]>();
+    records.forEach(r => {
+      const list = teamMap.get(r.team) || [];
+      list.push(r);
+      teamMap.set(r.team, list);
+    });
+
+    // Reconstruct list based on order
+    const orderedRecords: OnCallRecord[] = [];
+    const processedTeams = new Set<string>();
+
+    for (const team of teamOrder) {
+      if (teamMap.has(team)) {
+        orderedRecords.push(...teamMap.get(team)!);
+        processedTeams.add(team);
+      }
+    }
+
+    // Append any teams not in the order (safety)
+    for (const [team, teamRecords] of teamMap.entries()) {
+      if (!processedTeams.has(team)) {
+        orderedRecords.push(...teamRecords);
+      }
+    }
+
+    await writeOnCall(rootDir, orderedRecords);
+    loggers.fileManager.info(`[OnCallJsonOperations] Reordered teams: ${teamOrder.join(", ")}`);
+    return true;
+  } catch (e) {
+    loggers.fileManager.error("[OnCallJsonOperations] reorderOnCallTeamsJson error:", { error: e });
+    return false;
+  }
+}
+
+/**
  * Save all on-call records (replace entire dataset)
  */
 export async function saveAllOnCallJson(

@@ -99,6 +99,15 @@ export function setupDataHandlers(
     return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
   });
 
+  ipcMain.handle(IPC_CHANNELS.REORDER_ONCALL_TEAMS, async (_, teamOrder) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (!Array.isArray(teamOrder) || !teamOrder.every(t => typeof t === 'string')) {
+      loggers.ipc.error('Invalid team order parameter');
+      return { success: false, error: 'Invalid team order' };
+    }
+    return getFileManager()?.reorderOnCallTeams(teamOrder) ?? false;
+  });
+
   ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'SAVE_ALL_ONCALL');
