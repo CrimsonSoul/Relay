@@ -1,6 +1,7 @@
 /**
  * GroupOperations - Bridge group CRUD operations
  * Groups are stored as JSON for flexibility with nested data
+ * Uses cross-process file locking for multi-instance synchronization.
  */
 
 import { join } from "path";
@@ -10,31 +11,27 @@ import { dialog } from "electron";
 import type { BridgeGroup } from "@shared/ipc";
 import { loggers } from "../logger";
 import { parseCsvAsync } from "../csvUtils";
+import { modifyJsonWithLock } from "../fileLock";
 
 const GROUPS_FILE = "bridgeGroups.json";
+const GROUPS_FILE_PATH = (rootDir: string) => join(rootDir, GROUPS_FILE);
 
 function generateId(): string {
   return `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
 export async function getGroups(rootDir: string): Promise<BridgeGroup[]> {
-  const path = join(rootDir, GROUPS_FILE);
+  const path = GROUPS_FILE_PATH(rootDir);
   try {
     if (!existsSync(path)) return [];
     const contents = await fs.readFile(path, "utf-8");
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
+    if ((e as any)?.code === "ENOENT") return [];
     loggers.fileManager.error("[GroupOperations] getGroups error:", { error: e });
-    return [];
+    throw e;
   }
-}
-
-async function writeGroups(rootDir: string, groups: BridgeGroup[]): Promise<void> {
-  const path = join(rootDir, GROUPS_FILE);
-  const content = JSON.stringify(groups, null, 2);
-  await fs.writeFile(`${path}.tmp`, content, "utf-8");
-  await fs.rename(`${path}.tmp`, path);
 }
 
 export async function saveGroup(
@@ -42,19 +39,25 @@ export async function saveGroup(
   group: Omit<BridgeGroup, "id" | "createdAt" | "updatedAt">
 ): Promise<BridgeGroup | null> {
   try {
-    const groups = await getGroups(rootDir);
-    const now = Date.now();
-    const newGroup: BridgeGroup = {
-      id: generateId(),
-      name: group.name,
-      contacts: group.contacts,
-      createdAt: now,
-      updatedAt: now,
-    };
-    groups.push(newGroup);
-    await writeGroups(rootDir, groups);
-    loggers.fileManager.info(`[GroupOperations] Saved group: ${newGroup.name}`);
-    return newGroup;
+    let result: BridgeGroup | null = null;
+    const path = GROUPS_FILE_PATH(rootDir);
+
+    await modifyJsonWithLock<BridgeGroup[]>(path, (groups) => {
+      const now = Date.now();
+      const newGroup: BridgeGroup = {
+        id: generateId(),
+        name: group.name,
+        contacts: group.contacts,
+        createdAt: now,
+        updatedAt: now,
+      };
+      groups.push(newGroup);
+      result = newGroup;
+      loggers.fileManager.info(`[GroupOperations] Saved group: ${newGroup.name}`);
+      return groups;
+    }, []);
+
+    return result;
   } catch (e) {
     loggers.fileManager.error("[GroupOperations] saveGroup error:", { error: e });
     return null;
@@ -67,18 +70,24 @@ export async function updateGroup(
   updates: Partial<Omit<BridgeGroup, "id" | "createdAt">>
 ): Promise<boolean> {
   try {
-    const groups = await getGroups(rootDir);
-    const index = groups.findIndex((g) => g.id === id);
-    if (index === -1) return false;
+    let found = false;
+    const path = GROUPS_FILE_PATH(rootDir);
 
-    groups[index] = {
-      ...groups[index],
-      ...updates,
-      updatedAt: Date.now(),
-    };
-    await writeGroups(rootDir, groups);
-    loggers.fileManager.info(`[GroupOperations] Updated group: ${groups[index].name}`);
-    return true;
+    await modifyJsonWithLock<BridgeGroup[]>(path, (groups) => {
+      const index = groups.findIndex((g) => g.id === id);
+      if (index === -1) return groups;
+
+      groups[index] = {
+        ...groups[index],
+        ...updates,
+        updatedAt: Date.now(),
+      };
+      found = true;
+      loggers.fileManager.info(`[GroupOperations] Updated group: ${groups[index].name}`);
+      return groups;
+    }, []);
+
+    return found;
   } catch (e) {
     loggers.fileManager.error("[GroupOperations] updateGroup error:", { error: e });
     return false;
@@ -87,12 +96,20 @@ export async function updateGroup(
 
 export async function deleteGroup(rootDir: string, id: string): Promise<boolean> {
   try {
-    const groups = await getGroups(rootDir);
-    const filtered = groups.filter((g) => g.id !== id);
-    if (filtered.length === groups.length) return false;
-    await writeGroups(rootDir, filtered);
-    loggers.fileManager.info(`[GroupOperations] Deleted group: ${id}`);
-    return true;
+    let deleted = false;
+    const path = GROUPS_FILE_PATH(rootDir);
+
+    await modifyJsonWithLock<BridgeGroup[]>(path, (groups) => {
+      const initialLength = groups.length;
+      const filtered = groups.filter((g) => g.id !== id);
+      if (filtered.length === initialLength) return groups;
+
+      deleted = true;
+      loggers.fileManager.info(`[GroupOperations] Deleted group: ${id}`);
+      return filtered;
+    }, []);
+
+    return deleted;
   } catch (e) {
     loggers.fileManager.error("[GroupOperations] deleteGroup error:", { error: e });
     return false;
@@ -155,35 +172,32 @@ export async function importGroupsFromCsv(rootDir: string): Promise<boolean> {
       }
     }
 
-    // Load existing groups
-    const existingGroups = await getGroups(rootDir);
-    const existingNames = new Set(existingGroups.map((g) => g.name.toLowerCase()));
-
-    // Create new groups for each entry
-    const now = Date.now();
-    const newGroups: BridgeGroup[] = [];
+    const jsonPath = GROUPS_FILE_PATH(rootDir);
     let importedCount = 0;
     let skippedCount = 0;
 
-    for (const [name, contacts] of groupMap) {
-      if (existingNames.has(name.toLowerCase())) {
-        // Skip existing groups with same name
-        skippedCount++;
-        continue;
-      }
-      newGroups.push({
-        id: generateId(),
-        name,
-        contacts,
-        createdAt: now,
-        updatedAt: now,
-      });
-      importedCount++;
-    }
+    await modifyJsonWithLock<BridgeGroup[]>(jsonPath, (existingGroups) => {
+      const existingNames = new Set(existingGroups.map((g) => g.name.toLowerCase()));
+      const now = Date.now();
+      const newGroups: BridgeGroup[] = [];
 
-    // Append new groups
-    const allGroups = [...existingGroups, ...newGroups];
-    await writeGroups(rootDir, allGroups);
+      for (const [name, contacts] of groupMap) {
+        if (existingNames.has(name.toLowerCase())) {
+          skippedCount++;
+          continue;
+        }
+        newGroups.push({
+          id: generateId(),
+          name,
+          contacts,
+          createdAt: now,
+          updatedAt: now,
+        });
+        importedCount++;
+      }
+
+      return [...existingGroups, ...newGroups];
+    }, []);
 
     loggers.fileManager.info(
       `[GroupOperations] Imported ${importedCount} groups from CSV (${skippedCount} skipped as duplicates)`
@@ -194,3 +208,4 @@ export async function importGroupsFromCsv(rootDir: string): Promise<boolean> {
     return false;
   }
 }
+

@@ -1,6 +1,7 @@
 /**
  * NotesOperations - Notes and tags overlay for contacts and servers
  * Stored as JSON to allow flexible nested data
+ * Uses cross-process file locking for multi-instance synchronization.
  */
 
 import { join } from "path";
@@ -8,19 +9,18 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { NotesData } from "@shared/ipc";
 import { loggers } from "../logger";
+import { modifyJsonWithLock } from "../fileLock";
 
 const NOTES_FILE = "notes.json";
+const NOTES_FILE_PATH = (rootDir: string) => join(rootDir, NOTES_FILE);
 
 const emptyNotes: NotesData = {
   contacts: {},
   servers: {},
 };
 
-// Simple mutex to prevent concurrent writes to notes file
-let writeInProgress: Promise<void> | null = null;
-
 export async function getNotes(rootDir: string): Promise<NotesData> {
-  const path = join(rootDir, NOTES_FILE);
+  const path = NOTES_FILE_PATH(rootDir);
   try {
     if (!existsSync(path)) return emptyNotes;
     const contents = await fs.readFile(path, "utf-8");
@@ -30,42 +30,9 @@ export async function getNotes(rootDir: string): Promise<NotesData> {
       servers: data.servers || {},
     };
   } catch (e) {
+    if ((e as any)?.code === "ENOENT") return emptyNotes;
     loggers.fileManager.error("[NotesOperations] getNotes error:", { error: e });
-    return emptyNotes;
-  }
-}
-
-async function writeNotes(rootDir: string, notes: NotesData): Promise<void> {
-  const path = join(rootDir, NOTES_FILE);
-  const content = JSON.stringify(notes, null, 2);
-  await fs.writeFile(`${path}.tmp`, content, "utf-8");
-  await fs.rename(`${path}.tmp`, path);
-}
-
-/**
- * Execute a notes update with mutex protection to prevent race conditions.
- * Waits for any in-progress write to complete before reading and writing.
- */
-async function withNotesMutex<T>(
-  rootDir: string,
-  operation: (notes: NotesData) => NotesData | Promise<NotesData>
-): Promise<T extends void ? boolean : T> {
-  // Wait for any in-progress write to complete
-  if (writeInProgress) {
-    await writeInProgress;
-  }
-
-  let resolve: () => void;
-  writeInProgress = new Promise<void>((r) => { resolve = r; });
-
-  try {
-    const notes = await getNotes(rootDir);
-    const updatedNotes = await operation(notes);
-    await writeNotes(rootDir, updatedNotes);
-    return true as T extends void ? boolean : T;
-  } finally {
-    resolve!();
-    writeInProgress = null;
+    throw e;
   }
 }
 
@@ -77,8 +44,13 @@ export async function setContactNote(
 ): Promise<boolean> {
   try {
     const key = email.toLowerCase();
+    const path = NOTES_FILE_PATH(rootDir);
 
-    await withNotesMutex(rootDir, (notes) => {
+    await modifyJsonWithLock<NotesData>(path, (notes) => {
+      // Ensure structure is correct
+      if (!notes.contacts) notes.contacts = {};
+      if (!notes.servers) notes.servers = {};
+
       if (!note && tags.length === 0) {
         // Remove the entry if both note and tags are empty
         delete notes.contacts[key];
@@ -90,7 +62,7 @@ export async function setContactNote(
         };
       }
       return notes;
-    });
+    }, emptyNotes);
 
     loggers.fileManager.info(`[NotesOperations] Set contact note for: ${email}`);
     return true;
@@ -108,8 +80,13 @@ export async function setServerNote(
 ): Promise<boolean> {
   try {
     const key = name.toLowerCase();
+    const path = NOTES_FILE_PATH(rootDir);
 
-    await withNotesMutex(rootDir, (notes) => {
+    await modifyJsonWithLock<NotesData>(path, (notes) => {
+      // Ensure structure is correct
+      if (!notes.contacts) notes.contacts = {};
+      if (!notes.servers) notes.servers = {};
+
       if (!note && tags.length === 0) {
         // Remove the entry if both note and tags are empty
         delete notes.servers[key];
@@ -121,7 +98,7 @@ export async function setServerNote(
         };
       }
       return notes;
-    });
+    }, emptyNotes);
 
     loggers.fileManager.info(`[NotesOperations] Set server note for: ${name}`);
     return true;
@@ -130,3 +107,4 @@ export async function setServerNote(
     return false;
   }
 }
+

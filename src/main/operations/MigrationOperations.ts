@@ -3,6 +3,7 @@
  *
  * This handles one-time migration from CSV storage to JSON storage,
  * preserving all data while adding IDs and timestamps.
+ * Uses cross-process file locking for multi-instance synchronization.
  */
 
 import { join, basename } from "path";
@@ -14,6 +15,7 @@ import { HeaderMatcher } from "../HeaderMatcher";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { loggers } from "../logger";
 import { performBackup } from "./BackupOperations";
+import { withFileLock } from "../fileLock";
 
 // File names
 const CONTACTS_CSV = "contacts.csv";
@@ -154,10 +156,12 @@ export async function migrateContactsCsv(
       }
     }
 
-    // Write JSON file atomically
-    const content = JSON.stringify(contacts, null, 2);
-    await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
-    await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    // Write JSON file atomically with cross-process lock
+    await withFileLock(jsonPath, async () => {
+      const content = JSON.stringify(contacts, null, 2);
+      await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
+      await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    });
 
     loggers.fileManager.info(`[MigrationOperations] Migrated ${result.migrated} contacts to JSON`);
   } catch (e) {
@@ -248,10 +252,12 @@ export async function migrateServersCsv(
       }
     }
 
-    // Write JSON file atomically
-    const content = JSON.stringify(servers, null, 2);
-    await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
-    await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    // Write JSON file atomically with cross-process lock
+    await withFileLock(jsonPath, async () => {
+      const content = JSON.stringify(servers, null, 2);
+      await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
+      await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    });
 
     loggers.fileManager.info(`[MigrationOperations] Migrated ${result.migrated} servers to JSON`);
   } catch (e) {
@@ -374,10 +380,12 @@ export async function migrateOnCallCsv(
       }
     }
 
-    // Write JSON file atomically
-    const content = JSON.stringify(records, null, 2);
-    await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
-    await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    // Write JSON file atomically with cross-process lock
+    await withFileLock(jsonPath, async () => {
+      const content = JSON.stringify(records, null, 2);
+      await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
+      await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    });
 
     loggers.fileManager.info(`[MigrationOperations] Migrated ${result.migrated} on-call records to JSON`);
   } catch (e) {
@@ -469,10 +477,12 @@ export async function migrateGroupsCsv(
       }
     }
 
-    // Write JSON file atomically
-    const content = JSON.stringify(groups, null, 2);
-    await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
-    await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    // Write JSON file atomically with cross-process lock
+    await withFileLock(jsonPath, async () => {
+      const content = JSON.stringify(groups, null, 2);
+      await fs.writeFile(`${jsonPath}.tmp`, content, "utf-8");
+      await fs.rename(`${jsonPath}.tmp`, jsonPath);
+    });
 
     loggers.fileManager.info(`[MigrationOperations] Migrated ${result.migrated} groups to JSON`);
   } catch (e) {
