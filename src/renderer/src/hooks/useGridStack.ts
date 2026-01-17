@@ -46,29 +46,49 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
     gridInstanceRef.current = GridStack.init({ column: getColumnCount(), cellHeight: 75, margin: 12, float: false, animate: true, staticGrid: false, draggable: { handle: '.grid-stack-item-content' }, resizable: { handles: '' } }, gridRef.current);
     isInitialized.current = true;
 
+    const handleResize = (width?: number) => {
+      if (gridInstanceRef.current && gridRef.current) {
+        const w = width || gridRef.current.offsetWidth || window.innerWidth;
+        const count = w < 900 ? 1 : 2;
+        
+        if (gridInstanceRef.current.getColumn() !== count) {
+          if (count === 2) {
+            // Switching to 2 columns: Manual reflow to grid
+            gridInstanceRef.current.column(2, 'none'); // Don't scale widths automatically
+            
+            gridInstanceRef.current.batchUpdate();
+            const items = gridInstanceRef.current.getGridItems().sort((a, b) => {
+              const aY = parseInt(a.getAttribute('gs-y') || '0');
+              const bY = parseInt(b.getAttribute('gs-y') || '0');
+              return aY - bY;
+            });
+            
+            items.forEach((item, i) => {
+              gridInstanceRef.current?.update(item, {
+                x: i % 2,
+                y: Math.floor(i / 2),
+                w: 1 // Force half width (1 unit in 2-col grid)
+              });
+            });
+            gridInstanceRef.current.commit();
+          } else {
+            // Switching to 1 column: Let GridStack handle it (scales to full width)
+            gridInstanceRef.current.column(1, 'moveScale');
+          }
+        }
+      }
+    };
+
     // Reliability: Re-check size immediately after init in case offsetWidth was 0
     const checkSize = () => {
       if (gridRef.current && gridInstanceRef.current) {
         const width = gridRef.current.offsetWidth;
         if (width > 0) {
-          const count = width < 900 ? 1 : 2;
-          if (gridInstanceRef.current.getColumn() !== count) {
-            gridInstanceRef.current.column(count, 'moveScale');
-            gridInstanceRef.current.compact();
-          }
+          handleResize(width);
         }
       }
     };
     const checkSizeTimeout = setTimeout(checkSize, 100);
-
-    const handleResize = (width?: number) => {
-      if (gridInstanceRef.current && gridRef.current) {
-        const w = width || gridRef.current.offsetWidth || window.innerWidth;
-        const count = w < 900 ? 1 : 2;
-        gridInstanceRef.current.column(count, 'moveScale');
-      }
-    };
-
 
     // Use ResizeObserver to detect size changes and visibility (width > 0)
     const observer = new ResizeObserver((entries) => {

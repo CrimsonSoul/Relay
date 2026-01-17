@@ -28,7 +28,8 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
   const watcher = chokidar.watch(rootDir, {
     ignoreInitial: true,
     depth: 0,
-    awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 100 },
+    // awaitWriteFinish removed to better support atomic writes (renames)
+    // which are instantaneous and don't need stability checks
   });
 
   const pendingUpdates = new Set<FileType>();
