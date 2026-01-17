@@ -26,22 +26,40 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
         gridInstanceRef.current.removeAll(false);
         // GridStack will re-pickup the elements from the DOM if we don't destroy them
         // In this React setup, we wait for the next tick to let React render the new order
-        setTimeout(() => {
+        const timeout = setTimeout(() => {
           if (gridInstanceRef.current) {
             gridInstanceRef.current.makeWidgets('.grid-stack-item');
             gridInstanceRef.current.compact();
           }
         }, 50);
+        return () => clearTimeout(timeout);
       }
     }
+    return undefined;
   }, [localOnCall]);
+
 
   useEffect(() => {
     if (!gridRef.current || isInitialized.current) return;
     const getColumnCount = () => (gridRef.current?.offsetWidth || window.innerWidth) < 900 ? 1 : 2;
 
-    gridInstanceRef.current = GridStack.init({ column: getColumnCount(), cellHeight: 70, margin: 8, float: false, animate: true, draggable: { handle: '.grid-stack-item-content' }, resizable: { handles: '' } }, gridRef.current);
+    gridInstanceRef.current = GridStack.init({ column: getColumnCount(), cellHeight: 75, margin: 12, float: false, animate: true, staticGrid: false, draggable: { handle: '.grid-stack-item-content' }, resizable: { handles: '' } }, gridRef.current);
     isInitialized.current = true;
+
+    // Reliability: Re-check size immediately after init in case offsetWidth was 0
+    const checkSize = () => {
+      if (gridRef.current && gridInstanceRef.current) {
+        const width = gridRef.current.offsetWidth;
+        if (width > 0) {
+          const count = width < 900 ? 1 : 2;
+          if (gridInstanceRef.current.getColumn() !== count) {
+            gridInstanceRef.current.column(count, 'moveScale');
+            gridInstanceRef.current.compact();
+          }
+        }
+      }
+    };
+    const checkSizeTimeout = setTimeout(checkSize, 100);
 
     const handleResize = (width?: number) => {
       if (gridInstanceRef.current && gridRef.current) {
@@ -50,6 +68,7 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
         gridInstanceRef.current.column(count, 'moveScale');
       }
     };
+
 
     // Use ResizeObserver to detect size changes and visibility (width > 0)
     const observer = new ResizeObserver((entries) => {
@@ -85,8 +104,10 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
 
     return () => {
       observer.disconnect();
+      clearTimeout(checkSizeTimeout);
       if (gridInstanceRef.current) { gridInstanceRef.current.destroy(false); gridInstanceRef.current = null; isInitialized.current = false; }
     };
+
   }, [setLocalOnCall]);
 
   useEffect(() => { if (gridInstanceRef.current) { const timeout = setTimeout(() => gridInstanceRef.current?.compact(), 100); return () => clearTimeout(timeout); } }, []);

@@ -1,6 +1,7 @@
 /**
  * OnCallJsonOperations - OnCall CRUD operations using JSON storage
  * Follows the pattern established in PresetOperations.ts
+ * Uses cross-process file locking for multi-instance synchronization.
  */
 
 import { join } from "path";
@@ -8,8 +9,10 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { OnCallRecord } from "@shared/ipc";
 import { loggers } from "../logger";
+import { modifyJsonWithLock } from "../fileLock";
 
 const ONCALL_FILE = "oncall.json";
+const ONCALL_FILE_PATH = (rootDir: string) => join(rootDir, ONCALL_FILE);
 
 function generateId(): string {
   return `oncall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -19,26 +22,17 @@ function generateId(): string {
  * Read all on-call records from oncall.json
  */
 export async function getOnCall(rootDir: string): Promise<OnCallRecord[]> {
-  const path = join(rootDir, ONCALL_FILE);
+  const path = ONCALL_FILE_PATH(rootDir);
   try {
     if (!existsSync(path)) return [];
     const contents = await fs.readFile(path, "utf-8");
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
+    if ((e as any)?.code === "ENOENT") return [];
     loggers.fileManager.error("[OnCallJsonOperations] getOnCall error:", { error: e });
-    return [];
+    throw e;
   }
-}
-
-/**
- * Write on-call records to oncall.json using atomic write
- */
-async function writeOnCall(rootDir: string, records: OnCallRecord[]): Promise<void> {
-  const path = join(rootDir, ONCALL_FILE);
-  const content = JSON.stringify(records, null, 2);
-  await fs.writeFile(`${path}.tmp`, content, "utf-8");
-  await fs.rename(`${path}.tmp`, path);
 }
 
 /**
@@ -49,23 +43,28 @@ export async function addOnCallRecord(
   record: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">
 ): Promise<OnCallRecord | null> {
   try {
-    const records = await getOnCall(rootDir);
+    let result: OnCallRecord | null = null;
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    const now = Date.now();
-    const newRecord: OnCallRecord = {
-      id: generateId(),
-      team: record.team,
-      role: record.role,
-      name: record.name,
-      contact: record.contact,
-      timeWindow: record.timeWindow,
-      createdAt: now,
-      updatedAt: now,
-    };
-    records.push(newRecord);
-    await writeOnCall(rootDir, records);
-    loggers.fileManager.info(`[OnCallJsonOperations] Added on-call record: ${newRecord.team}/${newRecord.role}`);
-    return newRecord;
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const now = Date.now();
+      const newRecord: OnCallRecord = {
+        id: generateId(),
+        team: record.team,
+        role: record.role,
+        name: record.name,
+        contact: record.contact,
+        timeWindow: record.timeWindow,
+        createdAt: now,
+        updatedAt: now,
+      };
+      records.push(newRecord);
+      result = newRecord;
+      loggers.fileManager.info(`[OnCallJsonOperations] Added on-call record: ${newRecord.team}/${newRecord.role}`);
+      return records;
+    }, []);
+
+    return result;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] addOnCallRecord error:", { error: e });
     return null;
@@ -81,18 +80,24 @@ export async function updateOnCallRecord(
   updates: Partial<Omit<OnCallRecord, "id" | "createdAt">>
 ): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
-    const index = records.findIndex((r) => r.id === id);
-    if (index === -1) return false;
+    let found = false;
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    records[index] = {
-      ...records[index],
-      ...updates,
-      updatedAt: Date.now(),
-    };
-    await writeOnCall(rootDir, records);
-    loggers.fileManager.info(`[OnCallJsonOperations] Updated on-call record: ${id}`);
-    return true;
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const index = records.findIndex((r) => r.id === id);
+      if (index === -1) return records;
+
+      records[index] = {
+        ...records[index],
+        ...updates,
+        updatedAt: Date.now(),
+      };
+      found = true;
+      loggers.fileManager.info(`[OnCallJsonOperations] Updated on-call record: ${id}`);
+      return records;
+    }, []);
+
+    return found;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] updateOnCallRecord error:", { error: e });
     return false;
@@ -104,28 +109,23 @@ export async function updateOnCallRecord(
  */
 export async function deleteOnCallRecord(rootDir: string, id: string): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
-    const filtered = records.filter((r) => r.id !== id);
-    if (filtered.length === records.length) return false;
-    await writeOnCall(rootDir, filtered);
-    loggers.fileManager.info(`[OnCallJsonOperations] Deleted on-call record: ${id}`);
-    return true;
+    let deleted = false;
+    const path = ONCALL_FILE_PATH(rootDir);
+
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const initialLength = records.length;
+      const filtered = records.filter((r) => r.id !== id);
+      if (filtered.length === initialLength) return records;
+
+      deleted = true;
+      loggers.fileManager.info(`[OnCallJsonOperations] Deleted on-call record: ${id}`);
+      return filtered;
+    }, []);
+
+    return deleted;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] deleteOnCallRecord error:", { error: e });
     return false;
-  }
-}
-
-/**
- * Get all on-call records for a specific team
- */
-export async function getOnCallByTeam(rootDir: string, team: string): Promise<OnCallRecord[]> {
-  try {
-    const records = await getOnCall(rootDir);
-    return records.filter((r) => r.team === team);
-  } catch (e) {
-    loggers.fileManager.error("[OnCallJsonOperations] getOnCallByTeam error:", { error: e });
-    return [];
   }
 }
 
@@ -134,12 +134,20 @@ export async function getOnCallByTeam(rootDir: string, team: string): Promise<On
  */
 export async function deleteOnCallByTeam(rootDir: string, team: string): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
-    const filtered = records.filter((r) => r.team !== team);
-    if (filtered.length === records.length) return false;
-    await writeOnCall(rootDir, filtered);
-    loggers.fileManager.info(`[OnCallJsonOperations] Deleted on-call records for team: ${team}`);
-    return true;
+    let deleted = false;
+    const path = ONCALL_FILE_PATH(rootDir);
+
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const initialLength = records.length;
+      const filtered = records.filter((r) => r.team !== team);
+      if (filtered.length === initialLength) return records;
+
+      deleted = true;
+      loggers.fileManager.info(`[OnCallJsonOperations] Deleted on-call records for team: ${team}`);
+      return filtered;
+    }, []);
+
+    return deleted;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] deleteOnCallByTeam error:", { error: e });
     return false;
@@ -155,26 +163,30 @@ export async function updateOnCallTeamJson(
   newRecords: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">[]
 ): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
-    const now = Date.now();
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    // Remove existing records for this team
-    const filtered = records.filter((r) => r.team !== team);
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const now = Date.now();
 
-    // Add new records for this team
-    const recordsWithIds: OnCallRecord[] = newRecords.map((r) => ({
-      id: generateId(),
-      team: r.team,
-      role: r.role,
-      name: r.name,
-      contact: r.contact,
-      timeWindow: r.timeWindow,
-      createdAt: now,
-      updatedAt: now,
-    }));
+      // Remove existing records for this team
+      const filtered = records.filter((r) => r.team !== team);
 
-    await writeOnCall(rootDir, [...filtered, ...recordsWithIds]);
-    loggers.fileManager.info(`[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records`);
+      // Add new records for this team
+      const recordsWithIds: OnCallRecord[] = newRecords.map((r) => ({
+        id: generateId(),
+        team: r.team,
+        role: r.role,
+        name: r.name,
+        contact: r.contact,
+        timeWindow: r.timeWindow,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      loggers.fileManager.info(`[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records`);
+      return [...filtered, ...recordsWithIds];
+    }, []);
+
     return true;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] updateOnCallTeam error:", { error: e });
@@ -191,23 +203,26 @@ export async function renameOnCallTeamJson(
   newName: string
 ): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
-    const now = Date.now();
     let renamed = false;
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    const updated = records.map((r) => {
-      if (r.team === oldName) {
-        renamed = true;
-        return { ...r, team: newName, updatedAt: now };
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const now = Date.now();
+      const updated = records.map((r) => {
+        if (r.team === oldName) {
+          renamed = true;
+          return { ...r, team: newName, updatedAt: now };
+        }
+        return r;
+      });
+
+      if (renamed) {
+        loggers.fileManager.info(`[OnCallJsonOperations] Renamed team: ${oldName} -> ${newName}`);
       }
-      return r;
-    });
+      return updated;
+    }, []);
 
-    if (!renamed) return false;
-
-    await writeOnCall(rootDir, updated);
-    loggers.fileManager.info(`[OnCallJsonOperations] Renamed team: ${oldName} -> ${newName}`);
-    return true;
+    return renamed;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] renameOnCallTeam error:", { error: e });
     return false;
@@ -222,36 +237,39 @@ export async function reorderOnCallTeamsJson(
   teamOrder: string[]
 ): Promise<boolean> {
   try {
-    const records = await getOnCall(rootDir);
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    // Group records by team
-    const teamMap = new Map<string, OnCallRecord[]>();
-    records.forEach(r => {
-      const list = teamMap.get(r.team) || [];
-      list.push(r);
-      teamMap.set(r.team, list);
-    });
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      // Group records by team
+      const teamMap = new Map<string, OnCallRecord[]>();
+      records.forEach(r => {
+        const list = teamMap.get(r.team) || [];
+        list.push(r);
+        teamMap.set(r.team, list);
+      });
 
-    // Reconstruct list based on order
-    const orderedRecords: OnCallRecord[] = [];
-    const processedTeams = new Set<string>();
+      // Reconstruct list based on order
+      const orderedRecords: OnCallRecord[] = [];
+      const processedTeams = new Set<string>();
 
-    for (const team of teamOrder) {
-      if (teamMap.has(team)) {
-        orderedRecords.push(...teamMap.get(team)!);
-        processedTeams.add(team);
+      for (const team of teamOrder) {
+        if (teamMap.has(team)) {
+          orderedRecords.push(...teamMap.get(team)!);
+          processedTeams.add(team);
+        }
       }
-    }
 
-    // Append any teams not in the order (safety)
-    for (const [team, teamRecords] of teamMap.entries()) {
-      if (!processedTeams.has(team)) {
-        orderedRecords.push(...teamRecords);
+      // Append any teams not in the order (safety)
+      for (const [team, teamRecords] of teamMap.entries()) {
+        if (!processedTeams.has(team)) {
+          orderedRecords.push(...teamRecords);
+        }
       }
-    }
 
-    await writeOnCall(rootDir, orderedRecords);
-    loggers.fileManager.info(`[OnCallJsonOperations] Reordered teams: ${teamOrder.join(", ")}`);
+      loggers.fileManager.info(`[OnCallJsonOperations] Reordered teams: ${teamOrder.join(", ")}`);
+      return orderedRecords;
+    }, []);
+
     return true;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] reorderOnCallTeamsJson error:", { error: e });
@@ -267,20 +285,25 @@ export async function saveAllOnCallJson(
   records: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">[]
 ): Promise<boolean> {
   try {
-    const now = Date.now();
-    const recordsWithIds: OnCallRecord[] = records.map((r) => ({
-      id: generateId(),
-      team: r.team,
-      role: r.role,
-      name: r.name,
-      contact: r.contact,
-      timeWindow: r.timeWindow,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    const path = ONCALL_FILE_PATH(rootDir);
 
-    await writeOnCall(rootDir, recordsWithIds);
-    loggers.fileManager.info(`[OnCallJsonOperations] Saved all on-call: ${recordsWithIds.length} records`);
+    await modifyJsonWithLock<OnCallRecord[]>(path, () => {
+      const now = Date.now();
+      const recordsWithIds: OnCallRecord[] = records.map((r) => ({
+        id: generateId(),
+        team: r.team,
+        role: r.role,
+        name: r.name,
+        contact: r.contact,
+        timeWindow: r.timeWindow,
+        createdAt: now,
+        updatedAt: now,
+      }));
+
+      loggers.fileManager.info(`[OnCallJsonOperations] Saved all on-call: ${recordsWithIds.length} records`);
+      return recordsWithIds;
+    }, []);
+
     return true;
   } catch (e) {
     loggers.fileManager.error("[OnCallJsonOperations] saveAllOnCall error:", { error: e });
@@ -296,55 +319,57 @@ export async function bulkUpsertOnCall(
   newRecords: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">[]
 ): Promise<{ imported: number; updated: number; errors: string[] }> {
   const result = { imported: 0, updated: 0, errors: [] as string[] };
+  const path = ONCALL_FILE_PATH(rootDir);
 
   try {
-    const records = await getOnCall(rootDir);
-    const now = Date.now();
+    await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
+      const now = Date.now();
 
-    // Create a key based on team+role+name for matching
-    const keyFor = (r: { team: string; role: string; name: string }) =>
-      `${r.team}|${r.role}|${r.name}`.toLowerCase();
+      // Create a key based on team+role+name for matching
+      const keyFor = (r: { team: string; role: string; name: string }) =>
+        `${r.team}|${r.role}|${r.name}`.toLowerCase();
 
-    const recordMap = new Map(records.map((r) => [keyFor(r), r]));
+      const recordMap = new Map(records.map((r) => [keyFor(r), r]));
 
-    for (const newRecord of newRecords) {
-      try {
-        const key = keyFor(newRecord);
-        const existing = recordMap.get(key);
+      for (const newRecord of newRecords) {
+        try {
+          const key = keyFor(newRecord);
+          const existing = recordMap.get(key);
 
-        if (existing) {
-          // Update existing
-          const updated: OnCallRecord = {
-            ...existing,
-            ...newRecord,
-            updatedAt: now,
-          };
-          recordMap.set(key, updated);
-          result.updated++;
-        } else {
-          // Add new
-          const record: OnCallRecord = {
-            id: generateId(),
-            team: newRecord.team,
-            role: newRecord.role,
-            name: newRecord.name,
-            contact: newRecord.contact,
-            timeWindow: newRecord.timeWindow,
-            createdAt: now,
-            updatedAt: now,
-          };
-          recordMap.set(key, record);
-          result.imported++;
+          if (existing) {
+            // Update existing
+            const updated: OnCallRecord = {
+              ...existing,
+              ...newRecord,
+              updatedAt: now,
+            };
+            recordMap.set(key, updated);
+            result.updated++;
+          } else {
+            // Add new
+            const record: OnCallRecord = {
+              id: generateId(),
+              team: newRecord.team,
+              role: newRecord.role,
+              name: newRecord.name,
+              contact: newRecord.contact,
+              timeWindow: newRecord.timeWindow,
+              createdAt: now,
+              updatedAt: now,
+            };
+            recordMap.set(key, record);
+            result.imported++;
+          }
+        } catch (e) {
+          result.errors.push(`Failed to process on-call ${newRecord.team}/${newRecord.role}: ${e}`);
         }
-      } catch (e) {
-        result.errors.push(`Failed to process on-call ${newRecord.team}/${newRecord.role}: ${e}`);
       }
-    }
 
-    await writeOnCall(rootDir, Array.from(recordMap.values()));
-    loggers.fileManager.info(
-      `[OnCallJsonOperations] Bulk upsert: ${result.imported} imported, ${result.updated} updated`
-    );
+      loggers.fileManager.info(
+        `[OnCallJsonOperations] Bulk upsert: ${result.imported} imported, ${result.updated} updated`
+      );
+      return Array.from(recordMap.values());
+    }, []);
   } catch (e) {
     result.errors.push(`Bulk upsert failed: ${e}`);
     loggers.fileManager.error("[OnCallJsonOperations] bulkUpsertOnCall error:", { error: e });
@@ -352,3 +377,4 @@ export async function bulkUpsertOnCall(
 
   return result;
 }
+

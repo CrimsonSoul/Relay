@@ -11,6 +11,8 @@ import { existsSync } from "fs";
 import { generateDummyDataAsync } from "./dataUtils";
 import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
+import { withFileLock, atomicWriteWithLock } from "./fileLock";
+
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
 import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, reorderOnCallTeams as reorderOnCallTeamsOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
@@ -168,17 +170,15 @@ export class FileManager implements FileContext {
   private fileLocks: Map<string, Promise<void>> = new Map();
 
   public async writeAndEmit(path: string, content: string) {
-    // Basic Mutex: Ensure one write per file at a time
+    // In-process mutex: Ensure one write per file at a time within this instance
     const existingLock = this.fileLocks.get(path) || Promise.resolve();
     
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
-        // Add UTF-8 BOM for Excel compatibility
+        // Cross-process lock: Ensure only one process writes at a time
         const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-        
-        await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
-        await fs.rename(`${path}.tmp`, path);
+        await atomicWriteWithLock(path, contentWithBom);
         await this.readAndEmit();
       } finally {
         setTimeout(() => {
@@ -197,9 +197,9 @@ export class FileManager implements FileContext {
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
+        // Cross-process lock for detached writes
         const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-        await fs.writeFile(`${path}.tmp`, contentWithBom, "utf-8");
-        await fs.rename(`${path}.tmp`, path);
+        await atomicWriteWithLock(path, contentWithBom);
       } finally {
         setTimeout(() => this.internalWriteCount--, DETACHED_WRITE_GUARD_DELAY_MS);
       }
@@ -208,7 +208,13 @@ export class FileManager implements FileContext {
     this.fileLocks.set(path, newLock);
     return newLock;
   }
-  public safeStringify(data: string[][]): string { return stringifyCsv(data); }
+  public safeStringify(data: any): string {
+    // Auto-detect: if data is not a 2D array (CSV format), use JSON
+    if (typeof data === 'object' && !Array.isArray(data?.[0])) {
+      return JSON.stringify(data, null, 2);
+    }
+    return stringifyCsv(data);
+  }
   public emitError(error: DataError) { this.emitter.emitError(error); }
   public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }
 

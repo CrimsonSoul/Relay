@@ -1,4 +1,3 @@
-import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { LogData } from '@shared/types';
@@ -95,41 +94,48 @@ class Logger {
 
   /**
    * Activates the logger by determining the appropriate log paths.
-   * This is separated from the constructor to avoid running asynchronous operations
-   * during object instantiation.
    */
   public activate(): void {
     if (this.initialized) return;
 
-    // Lazy initialization to handle environments where app isn't ready
-    if (app && typeof app.isReady === 'function' && app.isReady()) {
-      this.initialize();
-    } else if (app && typeof app.whenReady === 'function') {
-      // Wait for app to be ready
-      app.whenReady()
-        .then(() => this.initialize())
-        .catch(() => this.setupFallback());
+    // Check if we're in Electron
+    const isElectron = !!process.versions.electron;
+
+    if (isElectron) {
+      // Dynamic import to avoid breaking pure Node environments
+      import('electron').then(({ app }) => {
+        if (app.isReady()) {
+          this.initializeWithApp(app);
+        } else {
+          app.whenReady().then(() => this.initializeWithApp(app)).catch(() => this.setupFallback());
+        }
+      }).catch(() => this.setupFallback());
     } else {
       this.setupFallback();
     }
   }
 
   private setupFallback(): void {
-    this.logPath = '/tmp/relay-logs';
+    const tempDir = process.platform === 'win32' ? process.env.TEMP || 'C:\\Windows\\Temp' : '/tmp';
+    this.logPath = path.join(tempDir, 'relay-logs');
     this.currentLogFile = path.join(this.logPath, 'relay.log');
     this.errorLogFile = path.join(this.logPath, 'errors.log');
     this.initialized = true;
     this.ensureLogDirectory();
   }
 
-  private initialize(): void {
+  private initializeWithApp(app: any): void {
     if (this.initialized) return;
 
-    this.logPath = path.join(app.getPath('userData'), 'logs');
-    this.currentLogFile = path.join(this.logPath, 'relay.log');
-    this.errorLogFile = path.join(this.logPath, 'errors.log');
-    this.initialized = true;
-    this.ensureLogDirectory();
+    try {
+      this.logPath = path.join(app.getPath('userData'), 'logs');
+      this.currentLogFile = path.join(this.logPath, 'relay.log');
+      this.errorLogFile = path.join(this.logPath, 'errors.log');
+      this.initialized = true;
+      this.ensureLogDirectory();
+    } catch (e) {
+      this.setupFallback();
+    }
   }
 
   private ensureLogDirectory(): void {
@@ -138,9 +144,10 @@ class Logger {
         fs.mkdirSync(this.logPath, { recursive: true });
       }
       // Write session start marker
-      const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
+      const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
       fs.appendFileSync(this.currentLogFile, sessionMarker);
     } catch (e) {
+      // Don't use logger.error here or we might recurse
       console.error('[Logger] Failed to create log directory:', e);
     }
   }
@@ -336,10 +343,12 @@ class Logger {
           console.info(formatted);
           break;
         case LogLevel.WARN:
+          // eslint-disable-next-line no-console
           console.warn(formatted);
           break;
         case LogLevel.ERROR:
         case LogLevel.FATAL:
+          // eslint-disable-next-line no-console
           console.error(formatted);
           break;
       }

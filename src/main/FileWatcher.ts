@@ -1,5 +1,4 @@
 import chokidar from "chokidar";
-import { join } from "path";
 import {
   GROUP_FILES,
   CONTACT_FILES,
@@ -25,15 +24,10 @@ const ALL_ONCALL_FILES = [...ONCALL_FILES, ONCALL_JSON_FILE];
 const ALL_GROUP_FILES = [...GROUP_FILES, GROUPS_JSON_FILE];
 
 export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks): chokidar.FSWatcher {
-  const pathsToWatch = [
-    ...ALL_GROUP_FILES,
-    ...ALL_CONTACT_FILES,
-    ...ALL_SERVER_FILES,
-    ...ALL_ONCALL_FILES,
-  ].map((file) => join(rootDir, file));
-
-  const watcher = chokidar.watch(pathsToWatch, {
+  // Watch the root directory instead of specific files to handle atomic renames/overwrites better
+  const watcher = chokidar.watch(rootDir, {
     ignoreInitial: true,
+    depth: 0,
     awaitWriteFinish: { stabilityThreshold: 100, pollInterval: 100 },
   });
 
@@ -43,11 +37,17 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
   watcher.on("all", (_event, changedPath) => {
     if (callbacks.shouldIgnore()) return;
 
-    const fileName = changedPath.split(/[/\\]/).pop();
-    if (fileName && ALL_GROUP_FILES.includes(fileName)) pendingUpdates.add("groups");
-    else if (fileName && ALL_CONTACT_FILES.includes(fileName)) pendingUpdates.add("contacts");
-    else if (fileName && ALL_SERVER_FILES.includes(fileName)) pendingUpdates.add("servers");
-    else if (fileName && ALL_ONCALL_FILES.includes(fileName)) pendingUpdates.add("oncall");
+    const fileName = changedPath.split(/[/\\]/).pop() || "";
+    
+    // Explicitly ignore common noise like lock files or temp files
+    if (fileName.endsWith('.lock') || fileName.endsWith('.tmp')) return;
+
+    if (ALL_GROUP_FILES.includes(fileName)) pendingUpdates.add("groups");
+    else if (ALL_CONTACT_FILES.includes(fileName)) pendingUpdates.add("contacts");
+    else if (ALL_SERVER_FILES.includes(fileName)) pendingUpdates.add("servers");
+    else if (ALL_ONCALL_FILES.includes(fileName)) pendingUpdates.add("oncall");
+
+    if (pendingUpdates.size === 0) return;
 
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
