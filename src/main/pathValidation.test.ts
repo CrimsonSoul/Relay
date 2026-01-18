@@ -4,6 +4,21 @@ import fs from 'fs';
 import { join } from 'path';
 import os from 'os';
 
+// Mock logger
+vi.mock('./logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./logger')>();
+  return {
+    ...actual,
+    loggers: {
+      fileManager: {
+        error: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn()
+      }
+    }
+  };
+});
+
 describe('validateDataPath', () => {
     const tmpDir = os.tmpdir();
     const testDir = join(tmpDir, 'relay-test-data');

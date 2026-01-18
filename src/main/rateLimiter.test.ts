@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RateLimiter, rateLimiters, withRateLimit } from '../main/rateLimiter';
 
+// Mock logger to prevent console noise during tests
+vi.mock('./logger', () => ({
+  loggers: {
+    ipc: {
+      warn: vi.fn(),
+      error: vi.fn()
+    }
+  }
+}));
+
 describe('RateLimiter', () => {
   beforeEach(() => {
     vi.useFakeTimers();

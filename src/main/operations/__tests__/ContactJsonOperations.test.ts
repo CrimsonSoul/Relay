@@ -6,7 +6,7 @@ import { join } from 'path';
 
 vi.mock('fs/promises');
 vi.mock('fs');
-vi.mock('../logger', () => ({
+vi.mock('../../logger', () => ({
   loggers: {
     fileManager: {
       error: vi.fn(),

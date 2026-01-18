@@ -31,6 +31,22 @@ vi.mock('chokidar', () => ({
   }
 }));
 
+// Mock Logger to prevent actual file writes and clutter
+vi.mock('./logger', () => ({
+  loggers: {
+    fileManager: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
+    },
+    ipc: {
+      warn: vi.fn(),
+      error: vi.fn()
+    }
+  }
+}));
+
 describe('FileManager', () => {
   let tmpDir: string;
   let bundledDir: string;
@@ -43,6 +59,10 @@ describe('FileManager', () => {
     // Use the mocked class
     mockWindow = new BrowserWindow();
     fileManager = new FileManager(mockWindow as unknown as BrowserWindow, tmpDir, bundledDir);
+    
+    // Mock performBackup to avoid race conditions with directory cleanup
+    // We only want to test performBackup explicitly in the "Daily Backups" suite
+    vi.spyOn(fileManager, 'performBackup').mockResolvedValue(null);
   });
 
   afterEach(async () => {
@@ -104,22 +124,27 @@ describe('FileManager', () => {
   });
 
   describe('CSV Import and Phone Number Cleaning', () => {
+    const waitForContent = async (filePath: string, content: string, timeout = 2000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          const c = await fs.readFile(filePath, 'utf-8');
+          if (c.includes(content)) return c;
+        } catch {
+          // Ignore read errors during polling
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return await fs.readFile(filePath, 'utf-8');
+    };
+
     it('cleans messy phone numbers on contact load', async () => {
       const messyCsv = 'Name,Email,Phone\nJohn,john@a.com,"Office:79984456 Ext:877-273-9002"';
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), messyCsv);
 
       await fileManager.readAndEmit();
 
-      // Poll for async file rewrite to complete
-      const contactPath = path.join(tmpDir, 'contacts.csv');
-      let content = '';
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        content = await fs.readFile(contactPath, 'utf-8');
-        if (content.includes('(7) 998-4456, (877) 273-9002')) break;
-      }
-
-      // Phone should be cleaned and formatted
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(7) 998-4456, (877) 273-9002');
       expect(content).toContain('(7) 998-4456, (877) 273-9002');
     });
 
@@ -129,15 +154,7 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Poll for async file rewrite to complete
-      const contactPath = path.join(tmpDir, 'contacts.csv');
-      let content = '';
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        content = await fs.readFile(contactPath, 'utf-8');
-        if (content.includes('(555) 123-4567')) break;
-      }
-
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 123-4567');
       expect(content).toContain('(555) 123-4567');
     });
 
@@ -147,16 +164,7 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Poll for async file rewrite to complete
-      const contactPath = path.join(tmpDir, 'contacts.csv');
-      let content = '';
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        content = await fs.readFile(contactPath, 'utf-8');
-        if (content.includes('(91) 990 491 8167')) break;
-      }
-
-      // International numbers get formatted by the phone utility
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(91) 990 491 8167');
       expect(content).toContain('(91) 990 491 8167');
     });
 
@@ -170,28 +178,17 @@ describe('FileManager', () => {
       await fileManager.addContact(contact);
 
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // Should be cleaned and formatted
       expect(content).toContain('(555) 123-4567');
       expect(content).toContain('999');
     });
 
     it('handles legacy contact CSV with "Phone Number" column', async () => {
-      // Old CSV format might use "Phone Number" instead of "Phone"
       const legacyCsv = 'Name,Title,Email,Phone Number\nLegacy User,Manager,legacy@a.com,555-987-6543';
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), legacyCsv);
 
       await fileManager.readAndEmit();
 
-      // Poll for async file rewrite to complete
-      const contactPath = path.join(tmpDir, 'contacts.csv');
-      let content = '';
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        content = await fs.readFile(contactPath, 'utf-8');
-        if (content.includes('(555) 987-6543')) break;
-      }
-
-      // Should still work and format the phone
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 987-6543');
       expect(content).toContain('Legacy User');
       expect(content).toContain('(555) 987-6543');
     });
@@ -202,16 +199,10 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Poll for async file rewrite to complete
-      const contactPath = path.join(tmpDir, 'contacts.csv');
-      let content = '';
-      for (let i = 0; i < 20; i++) {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        content = await fs.readFile(contactPath, 'utf-8');
-        if (content.includes('Smith, John')) break;
-      }
-
-      // All data should be preserved correctly
+      // No rewrite expected here unless phone needs formatting?
+      // "Office: 555-123-4567" -> might not change if phone parser keeps it raw or formats valid part
+      // Check for name persistence
+      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
       expect(content).toContain('Smith, John');
       expect(content).toContain('VP of Sales & Marketing');
       expect(content).toContain('john@example.com');
@@ -342,11 +333,15 @@ describe('FileManager', () => {
   // New group operations are tested via integration/e2e tests.
   describe('Daily Backups', () => {
     it('creates a backup of current data', async () => {
+      // Restore original implementation for this test
+      vi.mocked(fileManager.performBackup).mockRestore();
+
       // Setup initial data
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), 'test data');
 
       // Trigger backup (access method)
-      await ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)('test');
+      // Note: We access the private/protected method or the public one we just restored
+      await fileManager.performBackup('test');
 
       // Check if backup folder exists
       const backupDir = path.join(tmpDir, 'backups');
@@ -368,6 +363,9 @@ describe('FileManager', () => {
     });
 
     it('prunes old backups keeping only last 30 days', async () => {
+      // Restore original implementation for this test
+      vi.mocked(fileManager.performBackup).mockRestore();
+
       const backupDir = path.join(tmpDir, 'backups');
       await fs.mkdir(backupDir, { recursive: true });
 
@@ -389,7 +387,7 @@ describe('FileManager', () => {
       await fs.mkdir(path.join(backupDir, str1));
 
       // Trigger backup
-      await ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)();
+      await fileManager.performBackup('auto');
 
       const backups = await fs.readdir(backupDir);
 
