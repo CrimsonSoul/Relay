@@ -66,11 +66,12 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
             items.forEach((item, i) => {
               gridInstanceRef.current?.update(item, {
                 x: i % 2,
-                y: Math.floor(i / 2),
                 w: 1 // Force half width (1 unit in 2-col grid)
+                // Do not manually set y, let compact() handle vertical flow
               });
             });
             gridInstanceRef.current.commit();
+            gridInstanceRef.current.compact();
           } else {
             // Switching to 1 column: Let GridStack handle it (scales to full width)
             gridInstanceRef.current.column(1, 'moveScale');
