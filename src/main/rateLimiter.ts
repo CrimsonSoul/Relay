@@ -8,8 +8,8 @@ import { loggers } from './logger';
 // Rate limiter configuration constants
 const FILE_IMPORT_MAX_TOKENS = 5;
 const FILE_IMPORT_REFILL_RATE = 0.1; // 1 token per 10 seconds
-const DATA_MUTATION_MAX_TOKENS = 30;
-const DATA_MUTATION_REFILL_RATE = 5; // 5 tokens per second
+const DATA_MUTATION_MAX_TOKENS = 100;
+const DATA_MUTATION_REFILL_RATE = 10; // 10 tokens per second
 const DATA_RELOAD_MAX_TOKENS = 3;
 const DATA_RELOAD_REFILL_RATE = 0.5; // 1 token per 2 seconds
 const FS_OPERATIONS_MAX_TOKENS = 10;

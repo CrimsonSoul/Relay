@@ -4,7 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { WorldClock } from "./components/WorldClock";
 import { AssemblerTab } from "./tabs/AssemblerTab";
 import { WindowControls } from "./components/WindowControls";
-import { ToastProvider, useToast } from "./components/Toast";
+import { ToastProvider, NoopToastProvider, useToast } from "./components/Toast";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { TabFallback } from "./components/TabFallback";
 import { CommandPalette } from "./components/CommandPalette";
@@ -27,6 +27,7 @@ const PersonnelTab = lazy(() => import("./tabs/PersonnelTab").then((m) => ({ def
 const SettingsModal = lazy(() => import("./components/SettingsModal").then((m) => ({ default: m.SettingsModal })));
 const DataManagerModal = lazy(() => import("./components/DataManagerModal").then((m) => ({ default: m.DataManagerModal })));
 const AIChatTab = lazy(() => import("./tabs/AIChatTab").then((m) => ({ default: m.AIChatTab })));
+const PopoutBoard = lazy(() => import("./components/PopoutBoard").then((m) => ({ default: m.PopoutBoard })));
 
 export function MainApp() {
   const { showToast } = useToast();
@@ -177,7 +178,11 @@ export function MainApp() {
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {popoutRoute?.includes('board') && (
             <Suspense fallback={<TabFallback />}>
-              <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
+              <PopoutBoard 
+                onCall={data.onCall} 
+                contacts={data.contacts}
+                teamLayout={data.teamLayout} 
+              />
             </Suspense>
           )}
         </div>
@@ -318,15 +323,18 @@ export function MainApp() {
 }
 
 export default function App() {
+  const isPopout = new URLSearchParams(window.location.search).has('popout');
+  const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
+
   return (
     <ErrorBoundary>
-      <ToastProvider>
+      <ToastWrapper>
         <LocationProvider>
           <NotesProvider>
             <MainApp />
           </NotesProvider>
         </LocationProvider>
-      </ToastProvider>
+      </ToastWrapper>
     </ErrorBoundary>
   );
 }

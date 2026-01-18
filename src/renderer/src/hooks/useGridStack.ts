@@ -1,74 +1,111 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import { GridStack } from 'gridstack';
-import { OnCallRow } from '@shared/ipc';
+import { OnCallRow, TeamLayout } from '@shared/ipc';
 
-export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: OnCallRow[]) => void) {
+export function useGridStack(
+  localOnCall: OnCallRow[], 
+  setLocalOnCall: (rows: OnCallRow[]) => void,
+  getItemHeight: (team: string) => number
+) {
   const gridRef = useRef<HTMLDivElement>(null);
   const gridInstanceRef = useRef<GridStack | null>(null);
-  const isInitialized = useRef(false);
-
+  
   const localOnCallRef = useRef(localOnCall);
   const isDraggingRef = useRef(false);
-  
-  useEffect(() => {
-    localOnCallRef.current = localOnCall;
+  const isExternalUpdateRef = useRef(false); // Guard against feedback loop from grid.load()
+  const prevOrderRef = useRef<string[]>(Array.from(new Set(localOnCall.map(r => r.team))));
 
-    // If data changed externally (not during a local drag), sync the grid visual state
-    if (isInitialized.current && gridInstanceRef.current && !isDraggingRef.current) {
-      const items = gridInstanceRef.current.getGridItems();
-      
-      const currentOrder = items
-        .map(item => item.getAttribute('gs-id'))
-        .filter(Boolean) as string[];
-      
-      const newOrder = Array.from(new Set(localOnCall.map(r => r.team)));
-      
-      // Check if order OR heights changed
-      let needsRefresh = JSON.stringify(currentOrder) !== JSON.stringify(newOrder);
-      
-      if (!needsRefresh) {
-        // Order same, check if any heights need updating in GridStack
-        for (const item of items) {
-          const team = item.getAttribute('gs-id');
-          if (!team) continue;
-          
-          const node = item.gridstackNode;
-          // Read the attribute that React potentially updated
-          const attrH = parseInt(item.getAttribute('gs-h') || '0');
-          
-          if (node && attrH !== node.h) {
-            needsRefresh = true;
-            break;
-          }
-        }
-      }
-      
-      if (needsRefresh) {
-        gridInstanceRef.current.batchUpdate();
-        gridInstanceRef.current.removeAll(false);
-        
-        // Wait for React to update DOM attributes
-        const timeout = setTimeout(() => {
-          if (gridInstanceRef.current) {
-            gridInstanceRef.current.makeWidgets('.grid-stack-item');
-            gridInstanceRef.current.compact();
-            gridInstanceRef.current.batchUpdate(false);
-          }
-        }, 50);
-        return () => clearTimeout(timeout);
-      }
-    }
-    return undefined;
-  }, [localOnCall]);
-
-
-  useEffect(() => {
-    if (!gridRef.current || isInitialized.current) return;
+  const initGrid = useCallback(() => {
+    if (!gridRef.current) return;
+    
     const getColumnCount = () => (gridRef.current?.offsetWidth || window.innerWidth) < 900 ? 1 : 2;
 
-    gridInstanceRef.current = GridStack.init({ column: getColumnCount(), cellHeight: 75, margin: 12, float: false, animate: true, staticGrid: false, draggable: { handle: '.grid-stack-item-content' }, resizable: { handles: '' } }, gridRef.current);
-    isInitialized.current = true;
+    const grid = GridStack.init({ 
+      column: getColumnCount(), 
+      cellHeight: 75, 
+      margin: 12, 
+      float: false, 
+      animate: true, 
+      staticGrid: false, 
+      draggable: { handle: '.grid-stack-item-content' }, 
+      resizable: { handles: '' } 
+    }, gridRef.current);
+    
+    gridInstanceRef.current = grid;
 
+    grid.on('dragstart', () => {
+      isDraggingRef.current = true;
+    });
+
+    grid.on('dragstop', () => {
+      isDraggingRef.current = false;
+    });
+
+    grid.on('change', () => {
+      if (!gridInstanceRef.current) return;
+      if (isExternalUpdateRef.current) return; // Ignore changes triggered by our own grid.load()
+      
+      const grid = gridInstanceRef.current;
+      
+      // IMPORTANT: Spread to avoid mutating GridStack's internal array
+      const items = [...grid.getGridItems()];
+      
+      // DIAGNOSTIC: Log raw positions before sorting
+      console.log('[GridStack] change event fired. Raw items:', items.map(el => ({
+        id: el.getAttribute('gs-id'),
+        x: el.getAttribute('gs-x'),
+        y: el.getAttribute('gs-y')
+      })));
+      
+      // Capture actual layout positions
+      const layout: TeamLayout = {};
+      items.forEach(el => {
+        const id = el.getAttribute('gs-id');
+        if (id) {
+          layout[id] = {
+            x: parseInt(el.getAttribute('gs-x') || '0'),
+            y: parseInt(el.getAttribute('gs-y') || '0')
+          };
+        }
+      });
+      
+      const newOrder = items.sort((a, b) => {
+        const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');
+        if (aY !== bY) return aY - bY;
+        return parseInt(a.getAttribute('gs-x') || '0') - parseInt(b.getAttribute('gs-x') || '0');
+      }).map(item => item.getAttribute('gs-id')).filter(Boolean) as string[];
+
+      // Only act if the canonical order has changed OR if layout positions changed
+      // (For simplicity, we persist on every change event to capture position tweaks)
+      // Actually, let's keep the order change check but also check layout changes?
+      // Since 'change' fires on any move, we can just persist.
+      // But let's check order to decide if we update local list order.
+      
+      const orderChanged = JSON.stringify(prevOrderRef.current) !== JSON.stringify(newOrder);
+      
+      console.log('[GridStack] prevOrder:', prevOrderRef.current, 'newOrder:', newOrder, 'changed:', orderChanged);
+      
+      // Always persist layout changes, even if order is same (e.g. asymmetric move)
+      console.log('[GridStack] Layout changed. New Order:', newOrder, 'Layout:', layout);
+
+      const newFlatList: OnCallRow[] = [];
+      newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
+      
+      // Update refs first to prevent sync effect from firing
+      prevOrderRef.current = newOrder;
+      
+      // Update local state immediately if order changed
+      if (orderChanged) {
+        setLocalOnCall(newFlatList);
+      }
+      
+      // Persist to main process (both order and layout)
+      void window.api?.reorderOnCallTeams(newOrder, layout).then(success => {
+        if (!success) console.error('[GridStack] Failed to persist new order');
+      });
+    });
+
+    // Cleanup for resize observer logic
     const handleResize = (width?: number) => {
       if (gridInstanceRef.current && gridRef.current) {
         const w = width || gridRef.current.offsetWidth || window.innerWidth;
@@ -76,45 +113,26 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
         
         if (gridInstanceRef.current.getColumn() !== count) {
           if (count === 2) {
-            // Switching to 2 columns: Manual reflow to grid
-            gridInstanceRef.current.column(2, 'none'); // Don't scale widths automatically
-            
+            gridInstanceRef.current.column(2, 'none');
             gridInstanceRef.current.batchUpdate();
-            const items = gridInstanceRef.current.getGridItems().sort((a, b) => {
+            // IMPORTANT: Spread to avoid mutating GridStack's internal array
+            const items = [...gridInstanceRef.current.getGridItems()].sort((a, b) => {
               const aY = parseInt(a.getAttribute('gs-y') || '0');
               const bY = parseInt(b.getAttribute('gs-y') || '0');
               return aY - bY;
             });
-            
             items.forEach((item, i) => {
-              gridInstanceRef.current?.update(item, {
-                x: i % 2,
-                w: 1 // Force half width (1 unit in 2-col grid)
-                // Do not manually set y, let compact() handle vertical flow
-              });
+              gridInstanceRef.current?.update(item, { x: i % 2, w: 1 });
             });
             gridInstanceRef.current.compact();
             gridInstanceRef.current.batchUpdate(false);
           } else {
-            // Switching to 1 column: Let GridStack handle it (scales to full width)
             gridInstanceRef.current.column(1, 'moveScale');
           }
         }
       }
     };
 
-    // Reliability: Re-check size immediately after init in case offsetWidth was 0
-    const checkSize = () => {
-      if (gridRef.current && gridInstanceRef.current) {
-        const width = gridRef.current.offsetWidth;
-        if (width > 0) {
-          handleResize(width);
-        }
-      }
-    };
-    const checkSizeTimeout = setTimeout(checkSize, 100);
-
-    // Use ResizeObserver to detect size changes and visibility (width > 0)
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         if (entry.contentRect.width > 0) {
@@ -123,38 +141,71 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
       }
     });
 
-    if (gridRef.current) observer.observe(gridRef.current);
-
-    gridInstanceRef.current.on('dragstart', () => {
-      isDraggingRef.current = true;
-    });
-
-    gridInstanceRef.current.on('dragstop', () => {
-      isDraggingRef.current = false;
-      if (!gridInstanceRef.current) return;
-      const newOrder = gridInstanceRef.current.getGridItems().sort((a, b) => {
-        const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');
-        if (aY !== bY) return aY - bY;
-        return parseInt(a.getAttribute('gs-x') || '0') - parseInt(b.getAttribute('gs-x') || '0');
-      }).map(item => item.getAttribute('gs-id')).filter(Boolean) as string[];
-
-      const newFlatList: OnCallRow[] = [];
-      newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
-      setLocalOnCall(newFlatList);
-
-      // Use reorder API to avoid overwriting concurrent content edits
-      void window.api?.reorderOnCallTeams(newOrder);
-    });
-
+    observer.observe(gridRef.current);
+    
     return () => {
-      observer.disconnect();
-      clearTimeout(checkSizeTimeout);
-      if (gridInstanceRef.current) { gridInstanceRef.current.destroy(false); gridInstanceRef.current = null; isInitialized.current = false; }
+        observer.disconnect();
     };
-
   }, [setLocalOnCall]);
 
-  useEffect(() => { if (gridInstanceRef.current) { const timeout = setTimeout(() => gridInstanceRef.current?.compact(), 100); return () => clearTimeout(timeout); } }, []);
+  // Handle data updates from props/state (e.g. from other window)
+  useEffect(() => {
+    localOnCallRef.current = localOnCall;
+    const newOrder = Array.from(new Set(localOnCall.map(r => r.team)));
+    
+    // Guard: empty grid has nothing to sync
+    if (newOrder.length === 0) {
+      prevOrderRef.current = newOrder;
+      return undefined;
+    }
+    
+    const orderChanged = JSON.stringify(prevOrderRef.current) !== JSON.stringify(newOrder);
+    
+    const currentItemCount = gridInstanceRef.current?.getGridItems().length || 0;
+    const countChanged = currentItemCount !== newOrder.length;
+
+    if ((orderChanged || countChanged) && !isDraggingRef.current && gridInstanceRef.current) {
+      // Debounce: wait for rapid state updates to settle (optimistic + broadcast)
+      const timeoutId = setTimeout(() => {
+        const grid = gridInstanceRef.current;
+        if (!grid) return;
+        
+        // Use receiver's column count for responsive layout
+        const columnCount = grid.getColumn();
+        
+        console.log('[GridStack] Syncing layout:', newOrder, 'columns:', columnCount);
+        
+        const newLayout = newOrder.map((team, i) => ({
+          id: team,
+          x: columnCount === 1 ? 0 : i % columnCount,
+          y: columnCount === 1 ? i : Math.floor(i / columnCount),
+          w: 1,
+          h: getItemHeight(team)
+        }));
+        
+        // Guard: prevent change handler from firing during our load()
+        isExternalUpdateRef.current = true;
+        grid.load(newLayout);
+        isExternalUpdateRef.current = false;
+      }, 50);
+      
+      prevOrderRef.current = newOrder;
+      return () => clearTimeout(timeoutId);
+    }
+    
+    prevOrderRef.current = newOrder;
+    return undefined;
+  }, [localOnCall, getItemHeight]);
+
+  // Initial initialization
+  useEffect(() => {
+    const cleanup = initGrid();
+    return () => {
+      cleanup?.();
+      gridInstanceRef.current?.destroy(false);
+      gridInstanceRef.current = null;
+    };
+  }, [initGrid]);
 
   return { gridRef };
 }

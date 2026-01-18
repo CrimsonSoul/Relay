@@ -107,14 +107,14 @@ async function retryOperation<T>(
   retries = 10,
   baseDelay = 100
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let i = 0; i < retries; i++) {
     try {
       return await operation();
-    } catch (e: any) {
+    } catch (e) {
       lastError = e;
-      const isLockError = e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'ENOENT';
+      const isLockError = e instanceof Error && ['EACCES', 'EPERM', 'EBUSY', 'ENOENT'].includes((e as NodeJS.ErrnoException).code || '');
       
       if (!isLockError) throw e;
       
@@ -142,13 +142,13 @@ export async function atomicWriteWithLock(
     // Atomic rename with robust retry
     try {
       await retryOperation(async () => await fs.rename(tempPath, filePath));
-    } catch (e: any) {
+    } catch (_e) {
       // Last resort fallback
       try {
         await fs.copyFile(tempPath, filePath);
         await fs.unlink(tempPath);
-      } catch (fallbackError: any) {
-         if (fallbackError.code !== 'ENOENT') {
+      } catch (fallbackError) {
+         if (!(fallbackError instanceof Error) || (fallbackError as NodeJS.ErrnoException).code !== 'ENOENT') {
            loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
            throw fallbackError;
          }
@@ -185,7 +185,7 @@ export async function modifyWithLock(
     if (existsSync(filePath)) {
       try {
         content = await retryOperation(async () => await fs.readFile(filePath, "utf-8"));
-      } catch (err: any) {
+      } catch (err) {
         loggers.fileManager.error(`[FileLock] Read failed after retries: ${filePath}`, { error: err });
         throw err;
       }
@@ -200,13 +200,13 @@ export async function modifyWithLock(
     // Atomic rename with robust retry
     try {
       await retryOperation(async () => await fs.rename(tempPath, filePath));
-    } catch (e: any) {
+    } catch (_e) {
       // Last resort fallback
       try {
         await fs.copyFile(tempPath, filePath);
         await fs.unlink(tempPath);
-      } catch (fallbackError: any) {
-         if (fallbackError.code !== 'ENOENT') {
+      } catch (fallbackError) {
+         if (!(fallbackError instanceof Error) || (fallbackError as NodeJS.ErrnoException).code !== 'ENOENT') {
            loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
            throw fallbackError;
          }
@@ -231,7 +231,7 @@ export async function modifyJsonWithLock<T>(
       try {
         const content = await retryOperation(async () => await fs.readFile(filePath, "utf-8"));
         data = JSON.parse(content);
-      } catch (err: any) {
+      } catch (err) {
         if (err instanceof SyntaxError) {
            loggers.fileManager.error(`[FileLock] JSON syntax error, starting fresh`, { error: err });
            data = defaultValue; 
@@ -250,13 +250,13 @@ export async function modifyJsonWithLock<T>(
     // Atomic rename with robust retry
     try {
       await retryOperation(async () => await fs.rename(tempPath, filePath));
-    } catch (e: any) {
+    } catch (_e) {
       // Last resort fallback
       try {
         await fs.copyFile(tempPath, filePath);
         await fs.unlink(tempPath);
-      } catch (fallbackError: any) {
-         if (fallbackError.code !== 'ENOENT') {
+      } catch (fallbackError) {
+         if (!(fallbackError instanceof Error) || (fallbackError as NodeJS.ErrnoException).code !== 'ENOENT') {
            loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
            throw fallbackError;
          }

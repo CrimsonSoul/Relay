@@ -37,11 +37,16 @@ export type OnCallEntry = {
   backupLabel?: string;
 };
 
+export type TeamLayout = {
+  [teamName: string]: { x: number; y: number };
+};
+
 export type AppData = {
   groups: BridgeGroup[];
   contacts: Contact[];
   servers: Server[];
   onCall: OnCallData;
+  teamLayout?: TeamLayout;
   lastUpdated: number;
 };
 
@@ -139,6 +144,7 @@ export type BridgeAPI = {
   onReloadComplete: (callback: (success: boolean) => void) => () => void;
   onDataError: (callback: (error: DataError) => void) => () => void;
   onImportProgress: (callback: (progress: ImportProgress) => void) => () => void;
+  getInitialData: () => Promise<AppData>;
   reloadData: () => Promise<void>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => void;
   submitAuth: (
@@ -165,7 +171,7 @@ export type BridgeAPI = {
   updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<boolean>;
   removeOnCallTeam: (team: string) => Promise<boolean>;
   renameOnCallTeam: (oldName: string, newName: string) => Promise<boolean>;
-  reorderOnCallTeams: (teamOrder: string[]) => Promise<boolean>;
+  reorderOnCallTeams: (teamOrder: string[], layout?: TeamLayout) => Promise<boolean>;
   saveAllOnCall: (rows: OnCallRow[]) => Promise<boolean>;
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -252,6 +258,7 @@ export const IPC_CHANNELS = {
   SAVE_ALL_ONCALL: "data:saveAllOnCall",
   IMPORT_CONTACTS_WITH_MAPPING: "data:importContactsWithMapping",
   GENERATE_DUMMY_DATA: "data:generateDummyData",
+  DATA_GET_INITIAL: "data:getInitial",
   DATA_UPDATED: "data:updated",
   DATA_RELOAD: "data:reload",
   DATA_RELOAD_STARTED: "data:reload-started",

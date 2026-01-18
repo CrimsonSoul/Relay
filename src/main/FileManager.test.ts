@@ -238,11 +238,9 @@ describe('FileManager', () => {
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), complexCsv);
 
       await fileManager.readAndEmit();
-
-      // No rewrite expected here unless phone needs formatting?
-      // "Office: 555-123-4567" -> might not change if phone parser keeps it raw or formats valid part
-      // Check for name persistence
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
+      
+      // Wait for content as it might be rewritten for cleaning/normalization
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), 'Smith, John');
       expect(content).toContain('Smith, John');
       expect(content).toContain('VP of Sales & Marketing');
       expect(content).toContain('john@example.com');

@@ -76,7 +76,7 @@ export function setupWeatherHandlers() {
               };
             }
           }
-        } catch (err) {
+        } catch (_err) {
           loggers.weather.warn('Zip code search failed, falling back to general search', { query: trimmedQuery });
         }
       }
