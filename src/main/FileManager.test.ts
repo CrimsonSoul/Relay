@@ -8,13 +8,21 @@ import { BrowserWindow } from 'electron';
 
 // Mock Electron
 vi.mock('electron', () => {
+  const mockWin = {
+    isDestroyed: vi.fn(() => false),
+    webContents: {
+      send: vi.fn()
+    }
+  };
+  
+  class MockBrowserWindow {
+    static getAllWindows = vi.fn(() => [mockWin]);
+    isDestroyed = mockWin.isDestroyed;
+    webContents = mockWin.webContents;
+  }
+
   return {
-    BrowserWindow: class {
-      isDestroyed = () => false;
-      webContents = {
-        send: vi.fn()
-      };
-    },
+    BrowserWindow: MockBrowserWindow,
     app: {
       getPath: () => '/tmp'
     }
