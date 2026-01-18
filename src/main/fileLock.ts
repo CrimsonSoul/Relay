@@ -246,13 +246,33 @@ export async function modifyJsonWithLock<T>(
 ): Promise<void> {
   await withFileLock(filePath, async () => {
     let data: T = defaultValue;
+    let fileExisted = existsSync(filePath);
     
-    if (existsSync(filePath)) {
+    if (fileExisted) {
       try {
         const content = await fs.readFile(filePath, "utf-8");
         data = JSON.parse(content);
-      } catch {
-        data = defaultValue;
+      } catch (err: any) {
+        // If file exists but we can't read it (e.g. locked/EACCES), 
+        // we MUST retry or fail, NOT default to empty.
+        // Falling back to defaultValue would wipe existing data.
+        if (err.code === 'EACCES' || err.code === 'EPERM') {
+           // Basic retry once
+           await new Promise(resolve => setTimeout(resolve, 50));
+           try {
+             const contentRetry = await fs.readFile(filePath, "utf-8");
+             data = JSON.parse(contentRetry);
+           } catch (retryErr) {
+             loggers.fileManager.error(`[FileLock] Failed to read existing JSON for modification:`, { error: retryErr });
+             throw retryErr; // Abort modification to prevent data loss
+           }
+        } else if (err instanceof SyntaxError) {
+           loggers.fileManager.error(`[FileLock] JSON syntax error, starting fresh`, { error: err });
+           data = defaultValue; 
+        } else {
+           // Other errors (like ENOENT if it vanished) -> use default
+           data = defaultValue;
+        }
       }
     }
     
