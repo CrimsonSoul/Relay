@@ -193,7 +193,6 @@ export class FileManager implements FileContext {
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
-        // Cross-process lock: Ensure only one process writes at a time
         const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
         await atomicWriteWithLock(path, contentWithBom);
         await this.readAndEmit();
@@ -214,7 +213,6 @@ export class FileManager implements FileContext {
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
-        // Cross-process lock for detached writes
         const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
         await atomicWriteWithLock(path, contentWithBom);
       } finally {
