@@ -1,16 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getContacts } from '../ContactJsonOperations';
-import fs from 'fs/promises';
-import { existsSync } from 'fs';
 
 // Mock everything needed for fileLock
-vi.mock('proper-lockfile', () => ({
-  default: {
-    lock: vi.fn().mockResolvedValue(vi.fn()),
-    check: vi.fn().mockResolvedValue(false)
-  }
-}));
-
 vi.mock('../../fileLock', () => {
   // Use a factory function to allow individual tests to override
   return {
