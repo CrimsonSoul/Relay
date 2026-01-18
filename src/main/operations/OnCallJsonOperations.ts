@@ -9,7 +9,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { OnCallRecord } from "@shared/ipc";
 import { loggers } from "../logger";
-import { modifyJsonWithLock } from "../fileLock";
+import { modifyJsonWithLock, readWithLock } from "../fileLock";
 
 const ONCALL_FILE = "oncall.json";
 const ONCALL_FILE_PATH = (rootDir: string) => join(rootDir, ONCALL_FILE);
@@ -21,11 +21,16 @@ function generateId(): string {
 /**
  * Read all on-call records from oncall.json
  */
+import { readWithLock } from "../fileLock";
+
+// ...
+
 export async function getOnCall(rootDir: string): Promise<OnCallRecord[]> {
   const path = ONCALL_FILE_PATH(rootDir);
   try {
-    if (!existsSync(path)) return [];
-    const contents = await fs.readFile(path, "utf-8");
+    const contents = await readWithLock(path);
+    if (!contents) return [];
+    
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {

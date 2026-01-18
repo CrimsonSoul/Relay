@@ -9,7 +9,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { ServerRecord } from "@shared/ipc";
 import { loggers } from "../logger";
-import { modifyJsonWithLock } from "../fileLock";
+import { modifyJsonWithLock, readWithLock } from "../fileLock";
 
 const SERVERS_FILE = "servers.json";
 const SERVERS_FILE_PATH = (rootDir: string) => join(rootDir, SERVERS_FILE);
@@ -21,11 +21,16 @@ function generateId(): string {
 /**
  * Read all servers from servers.json
  */
+import { readWithLock } from "../fileLock";
+
+// ...
+
 export async function getServers(rootDir: string): Promise<ServerRecord[]> {
   const path = SERVERS_FILE_PATH(rootDir);
   try {
-    if (!existsSync(path)) return [];
-    const contents = await fs.readFile(path, "utf-8");
+    const contents = await readWithLock(path);
+    if (!contents) return [];
+    
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
