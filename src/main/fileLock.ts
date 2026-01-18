@@ -153,7 +153,14 @@ export async function readWithLock(filePath: string): Promise<string | null> {
   }
 
   return withFileLock(filePath, async () => {
-    return fs.readFile(filePath, "utf-8");
+    return fs.readFile(filePath, "utf-8").catch(async (err: any) => {
+      // Retry read on EPERM/EACCES (common on Windows during rapid writes)
+      if (err.code === 'EPERM' || err.code === 'EACCES') {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return fs.readFile(filePath, "utf-8");
+      }
+      throw err;
+    });
   });
 }
 
@@ -181,7 +188,24 @@ export async function modifyWithLock(
     const tempPath = `${filePath}.tmp`;
     
     await fs.writeFile(tempPath, newContent, "utf-8");
-    await fs.rename(tempPath, filePath);
+    
+    // Atomic rename with retry
+    try {
+      await fs.rename(tempPath, filePath);
+    } catch (e: any) {
+      if (e.code === 'EPERM' || e.code === 'EACCES') {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          await fs.rename(tempPath, filePath);
+          return;
+        } catch (retryError) {
+          await fs.copyFile(tempPath, filePath);
+          await fs.unlink(tempPath);
+          return;
+        }
+      }
+      throw e;
+    }
   });
 }
 
@@ -213,6 +237,23 @@ export async function modifyJsonWithLock<T>(
     const tempPath = `${filePath}.tmp`;
     
     await fs.writeFile(tempPath, JSON.stringify(newData, null, 2), "utf-8");
-    await fs.rename(tempPath, filePath);
+    
+    // Atomic rename with retry
+    try {
+      await fs.rename(tempPath, filePath);
+    } catch (e: any) {
+      if (e.code === 'EPERM' || e.code === 'EACCES') {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          await fs.rename(tempPath, filePath);
+          return;
+        } catch (retryError) {
+          await fs.copyFile(tempPath, filePath);
+          await fs.unlink(tempPath);
+          return;
+        }
+      }
+      throw e;
+    }
   });
 }
