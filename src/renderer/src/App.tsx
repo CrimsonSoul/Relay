@@ -32,6 +32,12 @@ export function MainApp() {
   const { showToast } = useToast();
   const deviceLocation = useLocation();
 
+  const searchParams = new URLSearchParams(window.location.search);
+  const isPopout = searchParams.has('popout');
+  const popoutRoute = searchParams.get('popout');
+
+  console.log('[App] Search:', window.location.search, 'isPopout:', isPopout, 'popoutRoute:', popoutRoute);
+
   const { data, isReloading, handleSync } = useAppData(showToast);
   
   const {
@@ -99,7 +105,10 @@ export function MainApp() {
   useEffect(() => {
     const platform = window.api?.platform || (navigator.platform.toLowerCase().includes("mac") ? "darwin" : "win32");
     document.body.classList.add(`platform-${platform}`);
-  }, []);
+    if (isPopout) {
+      document.body.classList.add('is-popout');
+    }
+  }, [isPopout]);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -148,6 +157,35 @@ export function MainApp() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [setActiveTab, setSettingsOpen, setIsCommandPaletteOpen, setIsShortcutsOpen]);
+
+  if (isPopout) {
+    return (
+      <div className="popout-container" style={{ height: '100vh', width: '100vw', background: 'var(--color-bg-app)', overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ 
+          height: '48px', 
+          width: '100%', 
+          WebkitAppRegion: 'drag', 
+          flexShrink: 0, 
+          display: 'flex', 
+          alignItems: 'center', 
+          paddingLeft: '24px',
+          background: 'transparent'
+        } as React.CSSProperties}>
+             <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 800, opacity: 0.4, userSelect: 'none', letterSpacing: '0.1em' }}>RELAY ON-CALL BOARD</span>
+        </div>
+        <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 9999, WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <WindowControls />
+        </div>
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          {popoutRoute?.includes('board') && (
+            <Suspense fallback={<TabFallback />}>
+              <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
+            </Suspense>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-container">

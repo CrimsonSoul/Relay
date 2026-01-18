@@ -17,7 +17,8 @@ export function setupIpcHandlers(
   getFileManager: () => FileManager | null,
   getDataRoot: () => string,
   onDataPathChange: (newPath: string) => void,
-  getDefaultDataPath: () => string
+  getDefaultDataPath: () => string,
+  createAuxWindow?: (route: string) => void
 ) {
   // Config & App State
   setupConfigHandlers(getMainWindow, getDataRoot, onDataPathChange, getDefaultDataPath);
@@ -33,7 +34,7 @@ export function setupIpcHandlers(
   setupWeatherHandlers();
 
   // Window Management
-  setupWindowHandlers(getMainWindow);
+  setupWindowHandlers(getMainWindow, createAuxWindow);
 
   // Feature Handlers (Presets, History, Notes, Saved Locations)
   setupFeatureHandlers(getDataRoot);

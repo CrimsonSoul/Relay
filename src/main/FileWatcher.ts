@@ -33,9 +33,7 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
   const watcher = chokidar.watch(rootDir, {
     ignoreInitial: true,
     depth: 0,
-    usePolling: true,
-    interval: 2000, // Poll every 2 seconds
-    binaryInterval: 2000
+    usePolling: false
   });
 
   const pendingUpdates = new Set<FileType>();

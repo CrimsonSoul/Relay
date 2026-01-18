@@ -38,6 +38,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
   const { gridRef } = useGridStack(localOnCall, setLocalOnCall);
   const { showToast } = useToast();
 
+  const isPopout = window.location.hash.includes('popout');
+
   // Copy handlers - use Electron's native clipboard API
   const handleCopyTeamInfo = useCallback(async (team: string, rows: OnCallRow[]) => {
     const text = formatTeamOnCall(team, rows);
@@ -75,6 +77,17 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
           style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
           icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>}
         >COPY ALL</TactileButton>
+        {!isPopout && (
+          <TactileButton
+            onClick={() => {
+              console.log('[PersonnelTab] Opening aux window with: popout/board');
+              window.api?.openAuxWindow('popout/board');
+            }}
+            title="Pop Out Board"
+            style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>}
+          >POP OUT</TactileButton>
+        )}
         <TactileButton variant="primary" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD TEAM</TactileButton>
       </CollapsibleHeader>
 

@@ -49,12 +49,12 @@ export function handleDataPathChange(newPath: string) {
   saveConfig({ dataRoot: newPath });
   state.currentDataRoot = newPath;
   if (state.fileManager) { state.fileManager.destroy(); state.fileManager = null; }
-  state.fileManager = new FileManager(state.mainWindow, state.currentDataRoot, getBundledDataPath());
+  state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
   void state.fileManager.readAndEmit();
 }
 
-export function setupIpc() {
-  setupIpcHandlers(() => state.mainWindow, () => state.fileManager, () => state.currentDataRoot, handleDataPathChange, getDefaultDataPath);
+export function setupIpc(createAuxWindow?: (route: string) => void) {
+  setupIpcHandlers(() => state.mainWindow, () => state.fileManager, () => state.currentDataRoot, handleDataPathChange, getDefaultDataPath, createAuxWindow);
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);
   setupLoggerHandlers();

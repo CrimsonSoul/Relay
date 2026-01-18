@@ -69,10 +69,10 @@ export class FileManager implements FileContext {
   private internalWriteCount = 0;
   private cachedData: CachedData = { groups: [], contacts: [], servers: [], onCall: [] };
 
-  constructor(window: BrowserWindow, rootDir: string, bundledPath: string) {
+  constructor(rootDir: string, bundledPath: string) {
     this.rootDir = rootDir;
     this.bundledDataPath = bundledPath;
-    this.emitter = new FileEmitter(window);
+    this.emitter = new FileEmitter();
     loggers.fileManager.info(`Initialized. Root: ${this.rootDir}`);
   }
 
