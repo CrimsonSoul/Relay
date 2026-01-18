@@ -16,15 +16,14 @@ vi.mock('electron', () => {
   };
   
   class MockBrowserWindow {
+    constructor() { return mockWin; }
     static getAllWindows = vi.fn(() => [mockWin]);
-    isDestroyed = mockWin.isDestroyed;
-    webContents = mockWin.webContents;
   }
 
   return {
     BrowserWindow: MockBrowserWindow,
     app: {
-      getPath: () => '/tmp'
+      getPath: vi.fn(() => '/tmp')
     }
   };
 });
