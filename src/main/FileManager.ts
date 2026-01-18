@@ -395,6 +395,7 @@ export class FileManager implements FileContext {
   public async updateOnCallTeam(team: string, rows: OnCallRow[]) {
     if (this.hasJsonData()) {
       const records = rows.map((r) => ({
+        id: r.id, // Pass the ID
         team: r.team,
         role: r.role,
         name: r.name,
@@ -438,6 +439,7 @@ export class FileManager implements FileContext {
   public async saveAllOnCall(rows: OnCallRow[]) {
     if (this.hasJsonData()) {
       const records = rows.map((r) => ({
+        id: r.id, // Pass ID
         team: r.team,
         role: r.role,
         name: r.name,

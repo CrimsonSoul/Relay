@@ -165,30 +165,31 @@ export async function deleteOnCallByTeam(rootDir: string, team: string): Promise
 export async function updateOnCallTeamJson(
   rootDir: string,
   team: string,
-  newRecords: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">[]
+  newRecords: Partial<OnCallRecord>[]
 ): Promise<boolean> {
   try {
     const path = ONCALL_FILE_PATH(rootDir);
+    const normalizedTeam = team.trim().toLowerCase();
 
     await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
       const now = Date.now();
 
-      // Remove existing records for this team
-      const filtered = records.filter((r) => r.team !== team);
+      // Remove existing records for this team (case-insensitive check for robustness)
+      const filtered = records.filter((r) => r.team.trim().toLowerCase() !== normalizedTeam);
 
       // Add new records for this team
       const recordsWithIds: OnCallRecord[] = newRecords.map((r) => ({
-        id: generateId(),
-        team: r.team,
-        role: r.role,
-        name: r.name,
-        contact: r.contact,
-        timeWindow: r.timeWindow,
-        createdAt: now,
+        id: r.id || generateId(), // Preserve ID if provided, else generate
+        team: r.team || team, // Use provided team or fallback to argument
+        role: r.role || "Member",
+        name: r.name || "",
+        contact: r.contact || "",
+        timeWindow: r.timeWindow || "",
+        createdAt: r.createdAt || now,
         updatedAt: now,
       }));
 
-      loggers.fileManager.info(`[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records`);
+      loggers.fileManager.info(`[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records (IDs preserved)`);
       return [...filtered, ...recordsWithIds];
     }, []);
 
@@ -287,7 +288,7 @@ export async function reorderOnCallTeamsJson(
  */
 export async function saveAllOnCallJson(
   rootDir: string,
-  records: Omit<OnCallRecord, "id" | "createdAt" | "updatedAt">[]
+  records: Partial<OnCallRecord>[]
 ): Promise<boolean> {
   try {
     const path = ONCALL_FILE_PATH(rootDir);
@@ -295,17 +296,17 @@ export async function saveAllOnCallJson(
     await modifyJsonWithLock<OnCallRecord[]>(path, () => {
       const now = Date.now();
       const recordsWithIds: OnCallRecord[] = records.map((r) => ({
-        id: generateId(),
-        team: r.team,
-        role: r.role,
-        name: r.name,
-        contact: r.contact,
-        timeWindow: r.timeWindow,
-        createdAt: now,
+        id: r.id || generateId(),
+        team: r.team || "Unknown",
+        role: r.role || "Member",
+        name: r.name || "",
+        contact: r.contact || "",
+        timeWindow: r.timeWindow || "",
+        createdAt: r.createdAt || now,
         updatedAt: now,
       }));
 
-      loggers.fileManager.info(`[OnCallJsonOperations] Saved all on-call: ${recordsWithIds.length} records`);
+      loggers.fileManager.info(`[OnCallJsonOperations] Saved all on-call: ${recordsWithIds.length} records (IDs preserved)`);
       return recordsWithIds;
     }, []);
 
