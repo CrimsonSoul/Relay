@@ -71,7 +71,7 @@ vi.mock('./fileLock', () => {
     modifyWithLock: vi.fn(async (path, modifier) => {
         const fs = await import('fs/promises');
         let content = '';
-        try { content = await fs.readFile(path, 'utf-8'); } catch {}
+        try { content = await fs.readFile(path, 'utf-8'); } catch (_e) { /* ignore */ }
         const newContent = await modifier(content);
         await fs.writeFile(path, newContent, 'utf-8');
     }),
@@ -81,7 +81,7 @@ vi.mock('./fileLock', () => {
         try {
             const content = await fs.readFile(path, 'utf-8');
             data = JSON.parse(content);
-        } catch {}
+        } catch (_e) { /* ignore */ }
         const newData = await modifier(data);
         await fs.writeFile(path, JSON.stringify(newData, null, 2), 'utf-8');
     })
@@ -92,13 +92,12 @@ describe('FileManager', () => {
   let tmpDir: string;
   let bundledDir: string;
   let fileManager: FileManager;
-  let mockWindow: BrowserWindow;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-test-'));
     bundledDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-bundled-'));
     // Use the mocked class
-    mockWindow = new BrowserWindow();
+    new BrowserWindow();
     fileManager = new FileManager(tmpDir, bundledDir);
     
     // Mock performBackup to avoid race conditions with directory cleanup

@@ -4,19 +4,18 @@
  */
 import chokidar from "chokidar";
 import { join } from "path";
-import { BrowserWindow } from "electron";
 import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress, type ContactRecord, type ServerRecord, type OnCallRecord } from "@shared/ipc";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import { generateDummyDataAsync } from "./dataUtils";
 import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
-import { withFileLock, atomicWriteWithLock } from "./fileLock";
+import { atomicWriteWithLock } from "./fileLock";
 
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
 import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, reorderOnCallTeams as reorderOnCallTeamsOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
-import { parseCsvAsync, desanitizeField } from "./csvUtils";
+import { parseCsvAsync } from "./csvUtils";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
 

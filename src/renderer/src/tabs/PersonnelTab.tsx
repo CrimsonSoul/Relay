@@ -80,7 +80,6 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
         {!isPopout && (
           <TactileButton
             onClick={() => {
-              console.log('[PersonnelTab] Opening aux window with: popout/board');
               window.api?.openAuxWindow('popout/board');
             }}
             title="Pop Out Board"

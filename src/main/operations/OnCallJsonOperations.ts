@@ -21,7 +21,6 @@ function generateId(): string {
 /**
  * Read all on-call records from oncall.json
  */
-import { readWithLock } from "../fileLock";
 
 // ...
 

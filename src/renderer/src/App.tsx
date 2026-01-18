@@ -36,8 +36,6 @@ export function MainApp() {
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
 
-  console.log('[App] Search:', window.location.search, 'isPopout:', isPopout, 'popoutRoute:', popoutRoute);
-
   const { data, isReloading, handleSync } = useAppData(showToast);
   
   const {

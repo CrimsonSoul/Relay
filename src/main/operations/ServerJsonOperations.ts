@@ -21,7 +21,6 @@ function generateId(): string {
 /**
  * Read all servers from servers.json
  */
-import { readWithLock } from "../fileLock";
 
 // ...
 
