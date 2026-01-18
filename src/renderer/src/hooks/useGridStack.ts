@@ -13,23 +13,46 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
   useEffect(() => {
     localOnCallRef.current = localOnCall;
 
-    // If data changed externally (not during a local drag), sync the grid visual order
+    // If data changed externally (not during a local drag), sync the grid visual state
     if (isInitialized.current && gridInstanceRef.current && !isDraggingRef.current) {
-      const currentOrder = gridInstanceRef.current.getGridItems()
+      const items = gridInstanceRef.current.getGridItems();
+      
+      const currentOrder = items
         .map(item => item.getAttribute('gs-id'))
         .filter(Boolean) as string[];
       
       const newOrder = Array.from(new Set(localOnCall.map(r => r.team)));
       
-      // If the team order is different, we need to refresh the layout
-      if (JSON.stringify(currentOrder) !== JSON.stringify(newOrder)) {
+      // Check if order OR heights changed
+      let needsRefresh = JSON.stringify(currentOrder) !== JSON.stringify(newOrder);
+      
+      if (!needsRefresh) {
+        // Order same, check if any heights need updating in GridStack
+        for (const item of items) {
+          const team = item.getAttribute('gs-id');
+          if (!team) continue;
+          
+          const node = item.gridstackNode;
+          // Read the attribute that React potentially updated
+          const attrH = parseInt(item.getAttribute('gs-h') || '0');
+          
+          if (node && attrH !== node.h) {
+            needsRefresh = true;
+            break;
+          }
+        }
+      }
+      
+      if (needsRefresh) {
+        gridInstanceRef.current.batchUpdate();
         gridInstanceRef.current.removeAll(false);
-        // GridStack will re-pickup the elements from the DOM if we don't destroy them
-        // In this React setup, we wait for the next tick to let React render the new order
+        
+        // Wait for React to update DOM attributes
         const timeout = setTimeout(() => {
           if (gridInstanceRef.current) {
             gridInstanceRef.current.makeWidgets('.grid-stack-item');
             gridInstanceRef.current.compact();
+            gridInstanceRef.current.batchUpdate(false);
           }
         }, 50);
         return () => clearTimeout(timeout);
@@ -70,8 +93,8 @@ export function useGridStack(localOnCall: OnCallRow[], setLocalOnCall: (rows: On
                 // Do not manually set y, let compact() handle vertical flow
               });
             });
-            gridInstanceRef.current.commit();
             gridInstanceRef.current.compact();
+            gridInstanceRef.current.batchUpdate(false);
           } else {
             // Switching to 1 column: Let GridStack handle it (scales to full width)
             gridInstanceRef.current.column(1, 'moveScale');
