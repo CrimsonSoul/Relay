@@ -119,7 +119,25 @@ export async function atomicWriteWithLock(
     await fs.writeFile(tempPath, content, "utf-8");
     
     // Atomic rename
-    await fs.rename(tempPath, filePath);
+    try {
+      await fs.rename(tempPath, filePath);
+    } catch (e: any) {
+      if (e.code === 'EPERM' || e.code === 'EACCES') {
+        // Retry logic for Windows file system locking issues
+        // Sometimes AV software or the OS itself holds the file handle briefly
+        await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+          await fs.rename(tempPath, filePath);
+          return;
+        } catch (retryError) {
+          // Fallback: Try copy and delete if rename fails repeatedly
+          await fs.copyFile(tempPath, filePath);
+          await fs.unlink(tempPath);
+          return;
+        }
+      }
+      throw e;
+    }
   });
 }
 
