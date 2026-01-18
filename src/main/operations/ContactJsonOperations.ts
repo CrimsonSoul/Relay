@@ -21,7 +21,6 @@ function generateId(): string {
 /**
  * Read all contacts from contacts.json
  */
-import { readWithLock } from "../fileLock";
 
 // ...
 

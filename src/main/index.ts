@@ -94,7 +94,7 @@ if (!gotLock) {
       await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
       const indexPath = join(__dirname, '../renderer/index.html');
-      await state.mainWindow.loadFile(indexPath).catch(err => {
+      void state.mainWindow.loadFile(indexPath).catch(err => {
         loggers.main.error('Failed to load local index.html', { path: indexPath, error: err.message });
         throw err;
       });
@@ -170,7 +170,7 @@ if (!gotLock) {
 
     // Emit current data to the new window
     if (state.fileManager) {
-      state.fileManager.readAndEmit();
+      void state.fileManager.readAndEmit();
     }
   }
 
