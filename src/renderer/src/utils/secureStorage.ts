@@ -1,11 +1,26 @@
 /**
  * Secure Storage Wrapper for localStorage
- * 
+ *
  * Provides encryption for stored data using Web Crypto API when available,
  * with fallback to base64 obfuscation for older environments.
- * 
- * Note: This is obfuscation/encryption against casual inspection.
- * For truly sensitive data, use the main process credential manager.
+ *
+ * SECURITY NOTICE - ENCRYPTION LIMITATIONS:
+ * ==========================================
+ * This module provides OBFUSCATION, not cryptographically secure encryption.
+ *
+ * Key derivation uses navigator.userAgent (lines 57-59), which means:
+ * - The encryption key is predictable and identical for all users with the same browser
+ * - An attacker with access to localStorage can decrypt all data
+ * - This is intentional: we're protecting against casual inspection, not determined attackers
+ *
+ * USE CASES:
+ * - UI preferences and non-sensitive cached data: SAFE ✓
+ * - Passwords, API keys, or sensitive credentials: UNSAFE ✗
+ *
+ * For truly sensitive data (passwords, tokens, keys), use Electron's safeStorage API
+ * via the main process credential manager instead.
+ *
+ * This design is by choice for performance and user experience with non-sensitive data.
  */
 
 import { loggers, ErrorCategory } from './logger';
@@ -47,13 +62,17 @@ class SecureStorage {
 
   /**
    * Initialize encryption key (Web Crypto API)
+   *
+   * WARNING: This uses navigator.userAgent for key derivation, which is NOT secure.
+   * All users with the same browser version will have the same encryption key.
+   * This is intentional obfuscation for UI preferences, not security-critical data.
    */
   private async initializeEncryption(): Promise<void> {
     if (!CRYPTO_AVAILABLE) return;
 
     try {
-      // Generate a stable key based on user agent (simple approach)
-      // In production, you might derive this from a user-specific value
+      // SECURITY: Key derived from user agent - predictable and not unique per user
+      // This is obfuscation only. Do NOT store sensitive data here.
       const keyMaterial = await crypto.subtle.importKey(
         'raw',
         new TextEncoder().encode(navigator.userAgent.substring(0, 32).padEnd(32, '0')),
@@ -66,7 +85,7 @@ class SecureStorage {
         {
           name: 'PBKDF2',
           salt: new TextEncoder().encode('relay-salt-2026'),
-          iterations: 100000,
+          iterations: 10000, // Reduced: this is obfuscation, not security-critical encryption
           hash: 'SHA-256'
         },
         keyMaterial,
@@ -74,7 +93,7 @@ class SecureStorage {
         false,
         ['encrypt', 'decrypt']
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Encryption initialization failed', {
         error: error.message,
         category: ErrorCategory.RENDERER
@@ -107,7 +126,7 @@ class SecureStorage {
 
       // Convert to base64
       return btoa(String.fromCharCode(...combined));
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.warn('Encryption failed, using obfuscation', {
         error: error.message,
         category: ErrorCategory.RENDERER
@@ -139,7 +158,7 @@ class SecureStorage {
       );
 
       return new TextDecoder().decode(decryptedData);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Fallback to simple deobfuscation if decryption fails
       loggers.storage.warn('Decryption failed, trying deobfuscation', {
         error: error.message,
@@ -157,7 +176,7 @@ class SecureStorage {
       const serialized = JSON.stringify(value);
       const encrypted = await this.encrypt(serialized);
       localStorage.setItem(STORAGE_PREFIX + key, encrypted);
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to store item', {
         key,
         error: error.message,
@@ -177,7 +196,7 @@ class SecureStorage {
 
       const decrypted = await this.decrypt(stored);
       return JSON.parse(decrypted) as T;
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to retrieve item', {
         key,
         error: error.message,
@@ -193,15 +212,18 @@ class SecureStorage {
   setItemSync<T>(key: string, value: T): void {
     try {
       const serialized = JSON.stringify(value);
+      // JSON.stringify can return undefined for functions/undefined symbols
+      if (typeof serialized !== 'string') return;
+
       const obfuscated = simpleObfuscate(serialized);
       localStorage.setItem(STORAGE_PREFIX + key, obfuscated);
-    } catch (error: any) {
+    } catch (error: unknown) {
       loggers.storage.error('Failed to store item (sync)', {
         key,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
-      throw error;
+      // Do not throw, just log. Throwing breaks the app loop.
     }
   }
 
@@ -209,18 +231,30 @@ class SecureStorage {
    * Retrieve deobfuscated data (synchronous)
    */
   getItemSync<T>(key: string, defaultValue?: T): T | undefined {
+    const storageKey = STORAGE_PREFIX + key;
     try {
-      const stored = localStorage.getItem(STORAGE_PREFIX + key);
+      const stored = localStorage.getItem(storageKey);
       if (!stored) return defaultValue;
 
+      // Robustness check: If the string contains non-printable characters or looks like binary,
+      // it was likely stored via the async 'encrypt' method and can't be read synchronously.
+      // We catch this here to prevent JSON.parse from exploding.
       const deobfuscated = simpleDeobfuscate(stored);
+
+      // Basic JSON structure validation before parsing
+      if (!deobfuscated || (!deobfuscated.startsWith('{') && !deobfuscated.startsWith('['))) {
+        throw new Error('Stored data does not appear to be valid JSON after deobfuscation');
+      }
+
       return JSON.parse(deobfuscated) as T;
-    } catch (error: any) {
-      loggers.storage.warn('Failed to retrieve item (sync), returning default', {
+    } catch (error: unknown) {
+      loggers.storage.warn('Failed to retrieve item (sync), clearing corrupted data', {
         key,
         error: error.message,
         category: ErrorCategory.RENDERER
       });
+      // Clear the corrupted key so we don't spam errors every frame/mount
+      localStorage.removeItem(storageKey);
       return defaultValue;
     }
   }

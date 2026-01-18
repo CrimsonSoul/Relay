@@ -10,7 +10,20 @@
     "allowpopups",
     "Csvg",
     "Crect",
-    "unmaximize"
+    "unmaximize",
+    "softprops",
+    "windspeed",
+    "winddirection",
+    "backgrounding",
+    "nosniff",
+    "gridstack",
+    "asar",
+    "fsevents",
+    "NSIS",
+    "vitest",
+    "maplibregl",
+    "NOSONAR",
+    "servernum"
   ],
   "ignorePaths": [
     "node_modules",

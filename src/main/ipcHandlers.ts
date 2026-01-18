@@ -1,11 +1,13 @@
 import { BrowserWindow } from 'electron';
 import { FileManager } from './FileManager';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
-import { setupWindowHandlers, setupWindowListeners } from './handlers/windowHandlers';
+import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupDataHandlers } from './handlers/dataHandlers';
 import { setupFileHandlers } from './handlers/fileHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
+import { setupFeatureHandlers } from './handlers/featureHandlers';
+import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -15,7 +17,8 @@ export function setupIpcHandlers(
   getFileManager: () => FileManager | null,
   getDataRoot: () => string,
   onDataPathChange: (newPath: string) => void,
-  getDefaultDataPath: () => string
+  getDefaultDataPath: () => string,
+  createAuxWindow?: (route: string) => void
 ) {
   // Config & App State
   setupConfigHandlers(getMainWindow, getDataRoot, onDataPathChange, getDefaultDataPath);
@@ -31,11 +34,15 @@ export function setupIpcHandlers(
   setupWeatherHandlers();
 
   // Window Management
-  setupWindowHandlers(getMainWindow);
+  setupWindowHandlers(getMainWindow, createAuxWindow);
+
+  // Feature Handlers (Presets, History, Notes, Saved Locations)
+  setupFeatureHandlers(getDataRoot);
+
+  // Data Record Handlers (JSON-based contacts, servers, on-call, data manager)
+  setupDataRecordHandlers(getDataRoot);
 
   // Listen for maximize/unmaximize events and notify renderer
-  const mw = getMainWindow();
-  if (mw) {
-    setupWindowListeners(mw);
-  }
+  // Handled in main/index.ts after window creation
+
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useId } from 'react';
 import { Tooltip } from './Tooltip';
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
@@ -8,13 +8,11 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   containerStyle?: React.CSSProperties;
 };
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant = 'default', label, containerStyle, ...props }, ref) => {
+export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant: _variant = 'default', label, containerStyle, id: providedId, ...props }, ref) => {
   const innerRef = useRef<HTMLInputElement>(null);
   const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
-
-  const isVivid = variant === 'vivid';
-  const focusColor = 'var(--color-accent-blue)';
-  const focusShadow = 'var(--color-accent-blue-dim)';
+  const generatedId = useId();
+  const id = providedId || generatedId;
 
   // Separate layout styles for wrapper vs visual styles for input
   const {
@@ -68,7 +66,6 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
         props.onChange(syntheticEvent);
       }
 
-      // Update local state immediately for uncontrolled usage
       setHasValue(false);
     }
     innerRef.current?.focus();
@@ -85,73 +82,76 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
       ...containerStyle
     }}>
       {label && (
-        <label style={{
-          display: 'block',
-          fontSize: '15px',
-          fontWeight: 650,
-          color: 'var(--color-text-secondary)',
-          marginBottom: '8px',
-          letterSpacing: '0.01em'
-        }}>
+        <label 
+          htmlFor={id}
+          className="text-truncate" 
+          style={{
+            display: 'block',
+            fontSize: '15px',
+            fontWeight: 650,
+            color: 'var(--color-text-secondary)',
+            marginBottom: '8px',
+            letterSpacing: '0.01em'
+          }}>
           {label}
         </label>
       )}
       <div style={{ position: 'relative', width: '100%' }}>
-      <input
-        ref={innerRef}
-        style={{
-          width: '100%',
-          background: 'var(--color-bg-surface)',
-          border: 'var(--border-medium)',
-          borderRadius: 'var(--radius-md)',
-          padding: '8px 14px',
-          paddingLeft: icon ? '36px' : '14px',
-          paddingRight: hasValue ? '36px' : '14px',
-          fontSize: '15px',
-          color: 'var(--color-text-primary)',
-          outline: 'none',
-          fontFamily: 'var(--font-family-base)',
-          transition: 'all var(--transition-base)',
-          boxShadow: 'var(--shadow-xs)',
-          letterSpacing: '-0.01em',
-          ...inputStyle
-        }}
-        onFocus={(e) => {
-          setHasValue(!!e.target.value);
-          props.onFocus?.(e);
-        }}
-        onBlur={(e) => {
-          setHasValue(!!e.target.value);
-          props.onBlur?.(e);
-        }}
-        {...props}
-        className={className}
-        onChange={(e) => {
-          // Update local state for both controlled and uncontrolled
-          setHasValue(!!e.target.value);
-          props.onChange?.(e);
-        }}
-      />
-
-      {icon && (
-        <div 
-          className="input-icon"
+        <input
+          id={id}
+          ref={innerRef}
           style={{
-            position: 'absolute',
-            left: '16px', // Increased padding for pill style
-            top: '50%',
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            zIndex: 10
+            width: '100%',
+            background: 'var(--color-bg-surface)',
+            border: 'var(--border-medium)',
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 14px',
+            paddingLeft: icon ? '36px' : '14px',
+            paddingRight: hasValue ? '36px' : '14px',
+            fontSize: '15px',
+            color: 'var(--color-text-primary)',
+            outline: 'none',
+            fontFamily: 'var(--font-family-base)',
+            transition: 'all var(--transition-base)',
+            boxShadow: 'var(--shadow-xs)',
+            letterSpacing: '-0.01em',
+            ...inputStyle
           }}
-        >
-          {icon}
-        </div>
-      )}
+          onFocus={(e) => {
+            setHasValue(!!e.target.value);
+            props.onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setHasValue(!!e.target.value);
+            props.onBlur?.(e);
+          }}
+          {...props}
+          className={className}
+          onChange={(e) => {
+            setHasValue(!!e.target.value);
+            props.onChange?.(e);
+          }}
+        />
 
-      {hasValue && !props.readOnly && !props.disabled && (
+        {icon && (
+          <div
+            className="input-icon"
+            style={{
+              position: 'absolute',
+              left: '16px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              pointerEvents: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              zIndex: 10
+            }}
+          >
+            {icon}
+          </div>
+        )}
+
+        {hasValue && !props.readOnly && !props.disabled && (
           <Tooltip content="Clear" position="top">
             <div
               onClick={handleClear}
@@ -193,7 +193,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
               </svg>
             </div>
           </Tooltip>
-      )}
+        )}
       </div>
     </div>
   );

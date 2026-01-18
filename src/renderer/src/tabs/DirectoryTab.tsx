@@ -1,7 +1,7 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import { Contact, GroupMap } from '@shared/ipc';
+import { Contact, BridgeGroup } from '@shared/ipc';
 
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
@@ -12,10 +12,12 @@ import { GroupSelector } from '../components/directory/GroupSelector';
 import { VirtualRow } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
+import { NotesModal } from '../components/NotesModal';
 import { useDirectory } from '../hooks/useDirectory';
 import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
+import { useNotesContext } from '../contexts';
 
-type Props = { contacts: Contact[]; groups: GroupMap; onAddToAssembler: (contact: Contact) => void };
+type Props = { contacts: Contact[]; groups: BridgeGroup[]; onAddToAssembler: (contact: Contact) => void };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
 const ROW_HEIGHT = 104;
@@ -33,6 +35,8 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const dir = useDirectory(contacts, groups, onAddToAssembler);
   const listRef = useRef<List>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
+  const { getContactNote, setContactNote } = useNotesContext();
+  const [notesContact, setNotesContact] = useState<Contact | null>(null);
 
   const { handleListKeyDown } = useDirectoryKeyboard({
     listRef, filtered: dir.filtered, focusedIndex: dir.focusedIndex, setFocusedIndex: dir.setFocusedIndex,
@@ -47,12 +51,15 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     }
   }, [dir.contextMenu, dir.setContextMenu]);
 
+  const handleNotesClick = useCallback((contact: Contact) => setNotesContact(contact), []);
   const itemData = useMemo(() => ({
     filtered: dir.filtered, recentlyAdded: dir.recentlyAdded, onAdd: dir.handleAddWrapper, groups, groupMap: dir.groupMap,
     onContextMenu: (e: React.MouseEvent, contact: Contact) => { e.preventDefault(); dir.setContextMenu({ x: e.clientX, y: e.clientY, contact }); },
     focusedIndex: dir.focusedIndex,
-    onRowClick: (i: number) => dir.setFocusedIndex(i)
-  }), [dir.filtered, dir.recentlyAdded, dir.handleAddWrapper, groups, dir.groupMap, dir.focusedIndex, dir.setFocusedIndex, dir.setContextMenu]);
+    onRowClick: (i: number) => dir.setFocusedIndex(i),
+    getContactNote,
+    onNotesClick: handleNotesClick
+  }), [dir.filtered, dir.recentlyAdded, dir.handleAddWrapper, groups, dir.groupMap, dir.focusedIndex, dir.setFocusedIndex, dir.setContextMenu, getContactNote, handleNotesClick]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px 24px 24px 24px', background: 'var(--color-bg-app)', overflow: 'hidden' }}>
@@ -96,8 +103,20 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       <DeleteConfirmationModal contact={dir.deleteConfirmation} onClose={() => dir.setDeleteConfirmation(null)} onConfirm={dir.handleDeleteContact} />
       {dir.contextMenu && <DirectoryContextMenu x={dir.contextMenu.x} y={dir.contextMenu.y} contact={dir.contextMenu.contact} recentlyAdded={dir.recentlyAdded} onClose={() => dir.setContextMenu(null)}
         onAddToComposer={() => { dir.handleAddWrapper(dir.contextMenu!.contact); dir.setContextMenu(null); }} onManageGroups={() => { dir.setGroupSelectorContact(dir.contextMenu!.contact); dir.setContextMenu(null); }}
-        onEditContact={() => dir.setEditingContact(dir.contextMenu!.contact)} onDeleteContact={() => dir.setDeleteConfirmation(dir.contextMenu!.contact)} />}
+        onEditContact={() => dir.setEditingContact(dir.contextMenu!.contact)} onDeleteContact={() => dir.setDeleteConfirmation(dir.contextMenu!.contact)}
+        onEditNotes={() => { setNotesContact(dir.contextMenu!.contact); dir.setContextMenu(null); }}
+        hasNotes={!!getContactNote(dir.contextMenu.contact.email)} />}
       {dir.groupSelectorContact && <Modal isOpen={true} onClose={() => dir.setGroupSelectorContact(null)} title="Manage Groups" width="400px"><GroupSelector contact={dir.groupSelectorContact} groups={groups} onClose={() => dir.setGroupSelectorContact(null)} /></Modal>}
+
+      <NotesModal
+        isOpen={!!notesContact}
+        onClose={() => setNotesContact(null)}
+        entityType="contact"
+        entityId={notesContact?.email || ''}
+        entityName={notesContact?.name || notesContact?.email || ''}
+        existingNote={notesContact ? getContactNote(notesContact.email) : undefined}
+        onSave={(note, tags) => setContactNote(notesContact!.email, note, tags)}
+      />
     </div>
   );
 };

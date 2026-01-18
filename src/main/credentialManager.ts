@@ -7,9 +7,11 @@ import { safeStorage } from 'electron';
 import * as crypto from 'crypto';
 import { loggers, ErrorCategory } from './logger';
 
+type AuthCallback = (_authParams: [username: string, password: string]) => void;
+
 // In-memory store for pending auth requests (nonce -> callback)
 const pendingAuthRequests = new Map<string, {
-  callback: (username: string, password: string) => void;
+  callback: AuthCallback;
   host: string;
   timestamp: number;
 }>();
@@ -33,7 +35,7 @@ export function generateAuthNonce(): string {
 export function registerAuthRequest(
   nonce: string,
   host: string,
-  callback: (username: string, password: string) => void
+  callback: AuthCallback
 ): void {
   // Clean up expired nonces first
   cleanupExpiredNonces();
@@ -62,7 +64,7 @@ function cleanupExpiredNonces(): void {
  * Returns null if nonce is invalid or expired
  */
 export function consumeAuthRequest(nonce: string): {
-  callback: (username: string, password: string) => void;
+  callback: AuthCallback;
   host: string;
 } | null {
   const request = pendingAuthRequests.get(nonce);
@@ -116,10 +118,11 @@ export function cacheCredentials(host: string, username: string, password: strin
     const encryptedPassword = safeStorage.encryptString(password);
     credentialCache.set(host, { username, encryptedPassword });
     return true;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to cache credentials', {
-      error: error.message,
-      stack: error.stack,
+      error: err.message,
+      stack: err.stack,
       category: ErrorCategory.AUTH,
       host
     });
@@ -139,10 +142,11 @@ export function getCachedCredentials(host: string): { username: string; password
   try {
     const password = safeStorage.decryptString(cached.encryptedPassword);
     return { username: cached.username, password };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to decrypt cached credentials', {
-      error: error.message,
-      stack: error.stack,
+      error: err.message,
+      stack: err.stack,
       category: ErrorCategory.AUTH,
       host
     });

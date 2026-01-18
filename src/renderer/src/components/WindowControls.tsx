@@ -15,7 +15,7 @@ export const WindowControls = () => {
         });
 
         // Listen for maximize/unmaximize events from main process
-        const handleMaximizeChange = (_event: any, maximized: boolean) => {
+        const handleMaximizeChange = (_event: unknown, maximized: boolean) => {
             setIsMaximized(maximized);
         };
 
@@ -36,7 +36,7 @@ export const WindowControls = () => {
     const handleClose = () => globalThis.window.api?.windowClose();
 
     const btnClass = "window-control-btn";
-    if (globalThis.window.api?.platform === 'darwin') return null;
+    if (globalThis.window.api && 'platform' in globalThis.window.api && globalThis.window.api.platform === 'darwin') return null;
 
     return (
         <div style={{
@@ -44,7 +44,8 @@ export const WindowControls = () => {
             height: '48px',
             WebkitAppRegion: 'no-drag',
             zIndex: 10000,
-            position: 'relative' // Ensure z-index works
+            position: 'relative', // Ensure z-index works
+            pointerEvents: 'auto'
         } as React.CSSProperties}>
             <style>{`
             .window-control-btn {

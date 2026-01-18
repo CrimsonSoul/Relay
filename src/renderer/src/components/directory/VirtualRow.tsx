@@ -1,21 +1,23 @@
 import React, { memo } from 'react';
 import { ListChildComponentProps } from 'react-window';
-import { Contact, GroupMap } from '@shared/ipc';
+import { Contact, BridgeGroup, NoteEntry } from '@shared/ipc';
 import { ContactCard } from '../ContactCard';
 
 interface VirtualRowData {
   filtered: Contact[];
   recentlyAdded: Set<string>;
   onAdd: (contact: Contact) => void;
-  groups: GroupMap;
+  groups: BridgeGroup[];
   groupMap: Map<string, string[]>;
   onContextMenu: (e: React.MouseEvent, contact: Contact) => void;
   focusedIndex: number;
   onRowClick: (index: number) => void;
+  getContactNote?: (email: string) => NoteEntry | undefined;
+  onNotesClick?: (contact: Contact) => void;
 }
 
 export const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<VirtualRowData>) => {
-  const { filtered, recentlyAdded, onAdd, groups, groupMap, onContextMenu, focusedIndex, onRowClick } = data;
+  const { filtered, recentlyAdded, groupMap, onContextMenu, focusedIndex, onRowClick, getContactNote, onNotesClick } = data;
 
   if (index >= filtered.length) return <div style={style} />;
 
@@ -23,6 +25,7 @@ export const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<
   const membership = groupMap.get(contact.email.toLowerCase()) || [];
   const isFocused = index === focusedIndex;
   const isRecentlyAdded = recentlyAdded.has(contact.email);
+  const noteEntry = getContactNote?.(contact.email);
 
   return (
     <ContactCard
@@ -40,6 +43,9 @@ export const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<
       selected={isFocused}
       onContextMenu={(e) => onContextMenu(e, contact)}
       onRowClick={() => onRowClick(index)}
+      hasNotes={!!noteEntry?.note}
+      tags={noteEntry?.tags}
+      onNotesClick={() => onNotesClick?.(contact)}
     />
   );
 });

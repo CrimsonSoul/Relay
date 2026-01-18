@@ -1,9 +1,8 @@
 /**
  * ServerParser - Parsing logic for servers.csv
  */
-import { join } from "path";
 import fs from "fs/promises";
-import type { Server, DataError } from "@shared/ipc";
+import type { Server } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { HeaderMatcher } from "../HeaderMatcher";
 import { validateServers } from "../csvValidation";
@@ -29,7 +28,7 @@ export async function parseServers(ctx: FileContext): Promise<Server[]> {
     const data = await parseCsvAsync(cleanContents);
     if (data.length < 2) return [];
 
-    const header = data[0].map((h: any) => desanitizeField(String(h).trim().toLowerCase()));
+    const header = data[0].map((h: unknown) => desanitizeField(String(h).trim().toLowerCase()));
     const rows = data.slice(1);
     const matcher = new HeaderMatcher(header);
 
@@ -77,7 +76,7 @@ export async function parseServers(ctx: FileContext): Promise<Server[]> {
 
     if (needsRewrite) {
       loggers.fileManager.info("[ServerParser] servers.csv has old headers or is dirty. Rewriting...");
-      ctx.rewriteFileDetached(path, ctx.safeStringify(cleanDataForRewrite));
+      void ctx.rewriteFileDetached(path, ctx.safeStringify(cleanDataForRewrite));
     }
 
     return results;

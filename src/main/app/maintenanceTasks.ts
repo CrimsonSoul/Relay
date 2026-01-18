@@ -1,11 +1,15 @@
 import { loggers } from '../logger';
 import { FileManager } from '../FileManager';
 
+interface GlobalWithGC {
+  gc?: () => void;
+}
+
 export function setupMaintenanceTasks(getFileManager: () => FileManager | null) {
   // Periodic maintenance task (runs every 24 hours)
   setInterval(() => {
     loggers.main.info('Running periodic maintenance...');
-    
+
     const memory = process.memoryUsage();
     loggers.main.info('Memory Stats:', {
       rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
@@ -14,9 +18,9 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
       external: `${Math.round(memory.external / 1024 / 1024)}MB`
     });
 
-    if ((global as any).gc) {
+    if ((global as GlobalWithGC).gc) {
       try {
-        (global as any).gc();
+        (global as GlobalWithGC).gc();
         loggers.main.info('Triggered manual garbage collection');
       } catch (e) {
         loggers.main.warn('Failed to trigger manual GC', { error: e });
@@ -25,7 +29,7 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
 
     const fileManager = getFileManager();
     if (fileManager) {
-      fileManager.performBackup('periodic maintenance');
+      ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)();
     }
   }, 24 * 60 * 60 * 1000);
 

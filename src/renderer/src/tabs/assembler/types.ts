@@ -1,4 +1,4 @@
-import { GroupMap, Contact, OnCallEntry } from "@shared/ipc";
+import { BridgeGroup, Contact, OnCallEntry } from "@shared/ipc";
 
 export type SortConfig = {
   key: "name" | "title" | "email" | "phone" | "groups";
@@ -6,17 +6,20 @@ export type SortConfig = {
 };
 
 export type AssemblerTabProps = {
-  groups: GroupMap;
+  groups: BridgeGroup[];
   contacts: Contact[];
   onCall: OnCallEntry[];
-  selectedGroups: string[];
+  selectedGroupIds: string[];
   manualAdds: string[];
   manualRemoves: string[];
-  onToggleGroup: (group: string) => void;
+  onToggleGroup: (groupId: string) => void;
   onAddManual: (email: string) => void;
   onRemoveManual: (email: string) => void;
   onUndoRemove: () => void;
   onResetManual: () => void;
+  // Optional setters for history loading
+  setSelectedGroupIds?: (ids: string[]) => void;
+  setManualAdds?: (emails: string[]) => void;
 };
 
 export type VirtualRowData = {

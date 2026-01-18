@@ -8,12 +8,17 @@ files:
   - package.json
   - resources/**
   - "!node_modules/fsevents/**"
-  - "!**/*.{md,ts,map}"
+  - "!**/*.{md,ts,map,log}"
   - "!**/LICENSE"
-  - "!**/.{git,github,vscode}"
+  - "!**/.{git,github,vscode,idea}"
   - "!**/tsconfig*.json"
   - "!**/.eslintrc*"
   - "!**/.prettierrc*"
+  - "!**/*.{test,spec}.{js,jsx,ts,tsx}"
+  - "!**/tests/**"
+  - "!**/test-results/**"
+  - "!**/playwright*"
+  - "!**/vitest*"
 directories:
   output: release
   buildResources: resources
@@ -22,13 +27,11 @@ removePackageScripts: true
 extraResources:
   - from: data
     to: data
-extraFiles:
-  - from: "node_modules/electron/dist/ffmpeg.dll"
-    to: "."
 win:
   target:
     - target: portable
-      arch: x64
+      arch:
+        - x64
   artifactName: "Relay.exe"
   icon: build/icon.ico
   # Windows-specific optimizations for faster startup

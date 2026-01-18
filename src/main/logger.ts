@@ -1,6 +1,6 @@
-import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { LogData } from '@shared/types';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
@@ -33,7 +33,7 @@ interface ErrorContext {
   errorCode?: string;
   stack?: string;
   userAction?: string;
-  appState?: any;
+  appState?: Record<string, unknown>;
   performance?: PerformanceMetrics;
   memoryUsage?: NodeJS.MemoryUsage;
   correlationId?: string;
@@ -49,7 +49,7 @@ interface LogEntry {
   level: string;
   module: string;
   message: string;
-  data?: any;
+  data?: LogData;
   errorContext?: ErrorContext;
 }
 
@@ -90,46 +90,52 @@ class Logger {
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.sessionStartTime = Date.now();
-    this.setupGlobalErrorHandlers();
   }
 
   /**
    * Activates the logger by determining the appropriate log paths.
-   * This is separated from the constructor to avoid running asynchronous operations
-   * during object instantiation.
    */
   public activate(): void {
     if (this.initialized) return;
 
-    // Lazy initialization to handle environments where app isn't ready
-    if (app && typeof app.isReady === 'function' && app.isReady()) {
-      this.initialize();
-    } else if (app && typeof app.whenReady === 'function') {
-      // Wait for app to be ready
-      app.whenReady()
-        .then(() => this.initialize())
-        .catch(() => this.setupFallback());
+    // Check if we're in Electron
+    const isElectron = !!process.versions.electron;
+
+    if (isElectron) {
+      // Dynamic import to avoid breaking pure Node environments
+      import('electron').then(({ app }) => {
+        if (app.isReady()) {
+          this.initializeWithApp(app);
+        } else {
+          app.whenReady().then(() => this.initializeWithApp(app)).catch(() => this.setupFallback());
+        }
+      }).catch(() => this.setupFallback());
     } else {
       this.setupFallback();
     }
   }
 
   private setupFallback(): void {
-    this.logPath = '/tmp/relay-logs';
+    const tempDir = process.platform === 'win32' ? process.env.TEMP || 'C:\\Windows\\Temp' : '/tmp';
+    this.logPath = path.join(tempDir, 'relay-logs');
     this.currentLogFile = path.join(this.logPath, 'relay.log');
     this.errorLogFile = path.join(this.logPath, 'errors.log');
     this.initialized = true;
     this.ensureLogDirectory();
   }
 
-  private initialize(): void {
+  private initializeWithApp(app: any): void {
     if (this.initialized) return;
-    
-    this.logPath = path.join(app.getPath('userData'), 'logs');
-    this.currentLogFile = path.join(this.logPath, 'relay.log');
-    this.errorLogFile = path.join(this.logPath, 'errors.log');
-    this.initialized = true;
-    this.ensureLogDirectory();
+
+    try {
+      this.logPath = path.join(app.getPath('userData'), 'logs');
+      this.currentLogFile = path.join(this.logPath, 'relay.log');
+      this.errorLogFile = path.join(this.logPath, 'errors.log');
+      this.initialized = true;
+      this.ensureLogDirectory();
+    } catch (e) {
+      this.setupFallback();
+    }
   }
 
   private ensureLogDirectory(): void {
@@ -138,65 +144,35 @@ class Logger {
         fs.mkdirSync(this.logPath, { recursive: true });
       }
       // Write session start marker
-      const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
+      const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
       fs.appendFileSync(this.currentLogFile, sessionMarker);
     } catch (e) {
+      // Don't use logger.error here or we might recurse
       console.error('[Logger] Failed to create log directory:', e);
     }
-  }
-
-  private setupGlobalErrorHandlers(): void {
-    // Catch uncaught exceptions
-    process.on('uncaughtException', (error: Error) => {
-      this.fatal('Process', 'Uncaught Exception', {
-        error: error.message,
-        stack: error.stack,
-        category: ErrorCategory.UNKNOWN
-      });
-      // Don't exit immediately - let the log flush
-      setTimeout(() => process.exit(1), 1000);
-    });
-
-    // Catch unhandled promise rejections
-    process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-      this.error('Process', 'Unhandled Promise Rejection', {
-        reason: reason?.message || reason,
-        stack: reason?.stack,
-        category: ErrorCategory.UNKNOWN
-      });
-    });
-
-    // Log warnings
-    process.on('warning', (warning: Error) => {
-      this.warn('Process', 'Process Warning', {
-        name: warning.name,
-        message: warning.message,
-        stack: warning.stack
-      });
-    });
   }
 
   private formatTimestamp(): string {
     return new Date().toISOString();
   }
 
-  private extractErrorContext(data: any): ErrorContext {
+  private extractErrorContext(data: LogData): ErrorContext {
     const context: ErrorContext = {};
-    
+
     if (data?.category) context.category = data.category;
     if (data?.errorCode) context.errorCode = data.errorCode;
     if (data?.stack) context.stack = data.stack;
     if (data?.userAction) context.userAction = data.userAction;
     if (data?.appState) context.appState = data.appState;
     if (data?.correlationId) context.correlationId = data.correlationId;
-    
+
     // Extract stack trace from Error objects or objects with a stack property
     if (data?.error?.stack) {
       context.stack = data.error.stack;
     } else if (data?.stack) {
       context.stack = data.stack;
     }
-    
+
     // Add performance metrics if enabled
     if (this.config.includePerformanceMetrics) {
       context.performance = {
@@ -204,7 +180,7 @@ class Logger {
         duration: data?.duration
       };
     }
-    
+
     // Add memory usage if enabled (sampled to reduce overhead)
     if (this.config.includeMemoryUsage) {
       const now = Date.now();
@@ -213,7 +189,7 @@ class Logger {
         this.lastMemorySample = now;
       }
     }
-    
+
     return context;
   }
 
@@ -237,13 +213,13 @@ class Logger {
     return output;
   }
 
-  private appendDataToParts(parts: string[], data?: any): void {
+  private appendDataToParts(parts: string[], data?: LogData): void {
     if (!data) return;
 
     const sanitizedData = { ...data };
     const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
     sensitiveFields.forEach(field => delete sanitizedData[field]);
-    
+
     if (Object.keys(sanitizedData).length > 0) {
       parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);
     }
@@ -257,7 +233,7 @@ class Logger {
     if (context.correlationId) parts.push(`| CID: ${context.correlationId}`);
     if (context.userAction) parts.push(`| Action: ${context.userAction}`);
     if (context.performance?.duration) parts.push(`| Duration: ${context.performance.duration}ms`);
-    
+
     if (context.memoryUsage) {
       const mem = context.memoryUsage;
       parts.push(`| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`);
@@ -335,7 +311,7 @@ class Logger {
     }
   }
 
-  private log(level: LogLevel, module: string, message: string, data?: any): void {
+  private log(level: LogLevel, module: string, message: string, data?: LogData): void {
     if (!this.shouldLog(level)) return;
 
     // Track error/warn counts
@@ -344,7 +320,7 @@ class Logger {
 
     const levelName = LogLevel[level];
     const errorContext = (level >= LogLevel.WARN) ? this.extractErrorContext(data) : undefined;
-    
+
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
       level: levelName,
@@ -359,16 +335,20 @@ class Logger {
     if (this.config.console) {
       switch (level) {
         case LogLevel.DEBUG:
+          // eslint-disable-next-line no-console
           console.debug(formatted);
           break;
         case LogLevel.INFO:
+          // eslint-disable-next-line no-console
           console.info(formatted);
           break;
         case LogLevel.WARN:
+          // eslint-disable-next-line no-console
           console.warn(formatted);
           break;
         case LogLevel.ERROR:
         case LogLevel.FATAL:
+          // eslint-disable-next-line no-console
           console.error(formatted);
           break;
       }
@@ -376,7 +356,7 @@ class Logger {
 
     // Write to appropriate log file(s)
     const isError = level >= LogLevel.ERROR;
-    this.writeToFile(formatted, isError);
+    void this.writeToFile(formatted, isError);
   }
 
   /**
@@ -386,23 +366,23 @@ class Logger {
     return new ModuleLogger(this, module);
   }
 
-  debug(module: string, message: string, data?: any): void {
+  debug(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.DEBUG, module, message, data);
   }
 
-  info(module: string, message: string, data?: any): void {
+  info(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.INFO, module, message, data);
   }
 
-  warn(module: string, message: string, data?: any): void {
+  warn(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.WARN, module, message, data);
   }
 
-  error(module: string, message: string, data?: any): void {
+  error(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.ERROR, module, message, data);
   }
 
-  fatal(module: string, message: string, data?: any): void {
+  fatal(module: string, message: string, data?: LogData): void {
     this.log(LogLevel.FATAL, module, message, data);
   }
 
@@ -446,23 +426,23 @@ class ModuleLogger {
     this.module = module;
   }
 
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: LogData): void {
     this.parent.debug(this.module, message, data);
   }
 
-  info(message: string, data?: any): void {
+  info(message: string, data?: LogData): void {
     this.parent.info(this.module, message, data);
   }
 
-  warn(message: string, data?: any): void {
+  warn(message: string, data?: LogData): void {
     this.parent.warn(this.module, message, data);
   }
 
-  error(message: string, data?: any): void {
+  error(message: string, data?: LogData): void {
     this.parent.error(this.module, message, data);
   }
 
-  fatal(message: string, data?: any): void {
+  fatal(message: string, data?: LogData): void {
     this.parent.fatal(this.module, message, data);
   }
 
@@ -476,7 +456,7 @@ class ModuleLogger {
   /**
    * Log with error category
    */
-  errorWithCategory(message: string, category: ErrorCategory, data?: any): void {
+  errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
     this.parent.error(this.module, message, { ...data, category });
   }
 }

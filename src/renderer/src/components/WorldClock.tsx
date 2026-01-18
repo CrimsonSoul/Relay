@@ -17,7 +17,7 @@ const getFormatter = (timeZone: string, options: Intl.DateTimeFormatOptions) => 
   if (!formatter) {
     try {
       formatter = new Intl.DateTimeFormat('en-US', { timeZone, ...options });
-    } catch (e) {
+    } catch (_e) {
       // Fallback for invalid timezones
       formatter = new Intl.DateTimeFormat('en-US', { ...options });
     }

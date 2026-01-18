@@ -1,18 +1,45 @@
-export const getRadarUrl = (lat: number, lon: number): string =>
-  `https://www.rainviewer.com/map.html?loc=${lat},${lon},6&theme=dark&color=1&opacity=0.7`;
+export const getRadarUrl = (lat: number, lon: number): string => {
+  const nLat = Number(lat);
+  const nLon = Number(lon);
+  if (Number.isNaN(nLat) || Number.isNaN(nLon)) return "";
+  return `https://www.rainviewer.com/map.html?loc=${nLat.toFixed(4)},${nLon.toFixed(4)},6&theme=dark&color=1&opacity=0.7`;
+};
 
 export { getWeatherIcon } from "./WeatherIcons";
 
+const WMO_CODES: Record<number, string> = {
+  0: "Clear Sky",
+  1: "Mainly Clear",
+  2: "Partly Cloudy",
+  3: "Overcast",
+  45: "Foggy",
+  48: "Foggy",
+  51: "Drizzle",
+  53: "Drizzle",
+  55: "Drizzle",
+  61: "Rainy",
+  63: "Rainy",
+  65: "Rainy",
+  66: "Freezing Rain",
+  67: "Freezing Rain",
+  71: "Snowy",
+  73: "Snowy",
+  75: "Snowy",
+  77: "Snow Grains",
+  80: "Rain Showers",
+  81: "Rain Showers",
+  82: "Rain Showers",
+  85: "Snow Showers",
+  86: "Snow Showers",
+  95: "Thunderstorm"
+};
+
 export const getWeatherDescription = (code: number): string => {
-  if (code === 0) return "Clear Sky"; if (code === 1) return "Mainly Clear"; if (code === 2) return "Partly Cloudy"; if (code === 3) return "Overcast";
-  if (code === 45 || code === 48) return "Foggy"; if (code >= 51 && code <= 55) return "Drizzle"; if (code >= 61 && code <= 65) return "Rainy";
-  if (code >= 66 && code <= 67) return "Freezing Rain"; if (code >= 71 && code <= 75) return "Snowy"; if (code === 77) return "Snow Grains";
-  if (code >= 80 && code <= 82) return "Rain Showers"; if (code >= 85 && code <= 86) return "Snow Showers"; if (code >= 95) return "Thunderstorm";
-  return "Cloudy";
+  return WMO_CODES[code] || "Cloudy";
 };
 
 export const RADAR_INJECT_CSS = `
-  .map-buttons-play { background: rgba(0, 0, 0, 0.6) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; padding: 6px 16px !important; border-radius: 30px !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; top: 8px !important; left: 8px !important; display: flex !important; align-items: center !important; gap: 12px !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important; }
+  .map-buttons-play { background: rgba(0, 0, 0, 0.6) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; padding: 6px 16px !important; border-radius: 30px !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; top: 12px !important; left: 12px !important; display: flex !important; align-items: center !important; gap: 12px !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important; width: max-content !important; max-width: 90% !important; }
   .forecast-period { color: #ffffff !important; font-weight: 600 !important; font-size: 14px !important; margin-right: 4px !important; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important; }
   .map-buttons-play svg { fill: #ffffff !important; width: 20px !important; height: 20px !important; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) !important; }
   .map-buttons-zoom-in-out { background: rgba(0, 0, 0, 0.6) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; padding: 4px !important; border-radius: 30px !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; right: 8px !important; bottom: 40px !important; display: flex !important; flex-direction: column !important; gap: 4px !important; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3) !important; }

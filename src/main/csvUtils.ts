@@ -2,11 +2,12 @@
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify/sync';
 import type { CsvRow, CsvData } from '@shared/csvTypes';
+import { loggers } from './logger';
 
 /**
  * Control characters that could be used for CSV injection or data corruption
  */
-const CONTROL_CHARS_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+const CONTROL_CHARS_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g; // eslint-disable-line no-control-regex
 
 /**
  * Characters that trigger formula injection in spreadsheet applications
@@ -106,7 +107,7 @@ export function sanitizeCsvContent(content: string): string {
     cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     // Remove null bytes
-    cleaned = cleaned.replace(/\x00/g, '');
+    cleaned = cleaned.replace(/\x00/g, ''); // eslint-disable-line no-control-regex
 
     return cleaned;
 }

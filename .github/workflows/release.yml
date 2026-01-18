@@ -9,20 +9,48 @@ on:
 jobs:
   release:
     if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create Release
-        uses: actions/create-release@v1
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Tests
+        run: npm run test:all
+
+      - name: Build and Release
+
+        run: npm run build:release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare Release Body
+        shell: bash
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+        run: |
+          echo "Automatically generated release from PR #$PR_NUMBER" > release_body.txt
+          echo "Merged branch: $BRANCH_NAME" >> release_body.txt
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ github.run_number }}
-          release_name: Release v${{ github.run_number }}
-          body: |
-            Automatically generated release from PR #${{ github.event.pull_request.number }}
-            Merged branch: ${{ github.event.pull_request.head.ref }}
+          name: Release v${{ github.run_number }}
+          body_path: release_body.txt
+          files: release/Relay.exe
           draft: false
           prerelease: false

@@ -21,10 +21,10 @@ export async function importGroupsWithMapping(ctx: FileContext, sourcePath: stri
       try { await fs.unlink(targetPath); } catch (e) { loggers.fileManager.error("[GroupImport] Failed to delete dummy groups file:", { error: e }); }
     }
 
-    const sourceHeader = sourceData[0].map((h: any) => String(h).trim());
+    const sourceHeader = sourceData[0].map((h: unknown) => String(h).trim());
     const sourceRows = sourceData.slice(1);
 
-    let targetData: any[][] = [];
+    let targetData: string[][] = [];
     if (existsSync(targetPath)) {
       const existingContent = await fs.readFile(targetPath, "utf-8");
       const rawTarget = await parseCsvAsync(existingContent);
@@ -79,7 +79,7 @@ export async function importGroupsWithMapping(ctx: FileContext, sourcePath: stri
 
     const csvOutput = ctx.safeStringify(targetData);
     await ctx.writeAndEmit(targetPath, csvOutput);
-    ctx.performBackup("importGroups");
+    void ctx.performBackup("importGroups");
     return true;
   } catch (e) {
     loggers.fileManager.error("[GroupImportOperations] importGroupsWithMapping error:", { error: e });

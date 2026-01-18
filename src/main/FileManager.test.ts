@@ -2,22 +2,28 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FileManager } from './FileManager';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { BrowserWindow } from 'electron';
 
 // Mock Electron
 vi.mock('electron', () => {
+  const mockWin = {
+    isDestroyed: vi.fn(() => false),
+    webContents: {
+      send: vi.fn()
+    }
+  };
+  
+  class MockBrowserWindow {
+    constructor() { return mockWin; }
+    static getAllWindows = vi.fn(() => [mockWin]);
+  }
+
   return {
-    BrowserWindow: class {
-      isDestroyed = () => false;
-      webContents = {
-        send: vi.fn()
-      };
-    },
+    BrowserWindow: MockBrowserWindow,
     app: {
-      getPath: () => '/tmp'
+      getPath: vi.fn(() => '/tmp')
     }
   };
 });
@@ -32,27 +38,80 @@ vi.mock('chokidar', () => ({
   }
 }));
 
+// Mock logger to prevent console noise during tests
+vi.mock('./logger', () => ({
+  loggers: {
+    fileManager: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
+    },
+    ipc: {
+      warn: vi.fn(),
+      error: vi.fn()
+    }
+  }
+}));
+
+// Mock fileLock
+vi.mock('./fileLock', () => {
+  return {
+    withFileLock: vi.fn(async (_path, cb) => cb()),
+    isFileLocked: vi.fn(async () => false),
+    atomicWriteWithLock: vi.fn(async (path, content) => {
+        // Just write directly in mock
+        const fs = await import('fs/promises');
+        await fs.writeFile(path, content, 'utf-8');
+    }),
+    readWithLock: vi.fn(async (path) => {
+        const fs = await import('fs/promises');
+        return fs.readFile(path, 'utf-8');
+    }),
+    modifyWithLock: vi.fn(async (path, modifier) => {
+        const fs = await import('fs/promises');
+        let content = '';
+        try { content = await fs.readFile(path, 'utf-8'); } catch (_e) { /* ignore */ }
+        const newContent = await modifier(content);
+        await fs.writeFile(path, newContent, 'utf-8');
+    }),
+    modifyJsonWithLock: vi.fn(async (path, modifier, defaultValue) => {
+        const fs = await import('fs/promises');
+        let data = defaultValue;
+        try {
+            const content = await fs.readFile(path, 'utf-8');
+            data = JSON.parse(content);
+        } catch (_e) { /* ignore */ }
+        const newData = await modifier(data);
+        await fs.writeFile(path, JSON.stringify(newData, null, 2), 'utf-8');
+    })
+  };
+});
+
 describe('FileManager', () => {
   let tmpDir: string;
   let bundledDir: string;
   let fileManager: FileManager;
-  let mockWindow: any;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-test-'));
     bundledDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-bundled-'));
     // Use the mocked class
-    mockWindow = new BrowserWindow();
-    fileManager = new FileManager(mockWindow as unknown as BrowserWindow, tmpDir, bundledDir);
+    new BrowserWindow();
+    fileManager = new FileManager(tmpDir, bundledDir);
+    
+    // Mock performBackup to avoid race conditions with directory cleanup
+    // We only want to test performBackup explicitly in the "Daily Backups" suite
+    vi.spyOn(fileManager, 'performBackup').mockResolvedValue(null);
   });
 
   afterEach(async () => {
-    if (fileManager) fileManager.destroy();
+    fileManager.destroy();
     // Wait a bit to ensure file locks are released
     try {
       await fs.rm(tmpDir, { recursive: true, force: true });
       await fs.rm(bundledDir, { recursive: true, force: true });
-    } catch (e) {
+    } catch {
       // Ignore cleanup errors
     }
   });
@@ -105,17 +164,27 @@ describe('FileManager', () => {
   });
 
   describe('CSV Import and Phone Number Cleaning', () => {
+    const waitForContent = async (filePath: string, content: string, timeout = 2000) => {
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        try {
+          const c = await fs.readFile(filePath, 'utf-8');
+          if (c.includes(content)) return c;
+        } catch {
+          // Ignore read errors during polling
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return await fs.readFile(filePath, 'utf-8');
+    };
+
     it('cleans messy phone numbers on contact load', async () => {
       const messyCsv = 'Name,Email,Phone\nJohn,john@a.com,"Office:79984456 Ext:877-273-9002"';
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), messyCsv);
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // Phone should be cleaned and formatted
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(7) 998-4456, (877) 273-9002');
       expect(content).toContain('(7) 998-4456, (877) 273-9002');
     });
 
@@ -125,10 +194,7 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 123-4567');
       expect(content).toContain('(555) 123-4567');
     });
 
@@ -138,11 +204,7 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // International numbers get formatted by the phone utility
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(91) 990 491 8167');
       expect(content).toContain('(91) 990 491 8167');
     });
 
@@ -156,23 +218,17 @@ describe('FileManager', () => {
       await fileManager.addContact(contact);
 
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // Should be cleaned and formatted
       expect(content).toContain('(555) 123-4567');
       expect(content).toContain('999');
     });
 
     it('handles legacy contact CSV with "Phone Number" column', async () => {
-      // Old CSV format might use "Phone Number" instead of "Phone"
       const legacyCsv = 'Name,Title,Email,Phone Number\nLegacy User,Manager,legacy@a.com,555-987-6543';
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), legacyCsv);
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // Should still work and format the phone
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 987-6543');
       expect(content).toContain('Legacy User');
       expect(content).toContain('(555) 987-6543');
     });
@@ -183,11 +239,10 @@ describe('FileManager', () => {
 
       await fileManager.readAndEmit();
 
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
+      // No rewrite expected here unless phone needs formatting?
+      // "Office: 555-123-4567" -> might not change if phone parser keeps it raw or formats valid part
+      // Check for name persistence
       const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      // All data should be preserved correctly
       expect(content).toContain('Smith, John');
       expect(content).toContain('VP of Sales & Marketing');
       expect(content).toContain('john@example.com');
@@ -195,22 +250,6 @@ describe('FileManager', () => {
   });
 
   describe('Server CSV Header Migration', () => {
-    it.skip('migrates legacy server headers to new format', async () => {
-      // Legacy format with old column names
-      const legacyCsv = 'VM-M,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer1,Finance,Accounting,Test server,owner@a.com,tech@a.com,Windows';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), legacyCsv);
-
-      await fileManager.readAndEmit();
-
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should have new standardized headers
-      expect(content).toContain('Name,Business Area,LOB,Comment,Owner,IT Contact,OS');
-      expect(content).toContain('Server1');
-    });
-
     it('keeps modern server headers unchanged', async () => {
       const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
       await fs.writeFile(path.join(tmpDir, 'servers.csv'), modernCsv);
@@ -222,23 +261,6 @@ describe('FileManager', () => {
       expect(content).toContain('Server2');
       expect(content).toContain('Name,Business Area,LOB');
     });
-
-    it.skip('handles very old legacy headers (Server Name instead of VM-M)', async () => {
-      const veryOldCsv = 'Server Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nOldServer,Sales,CRM,Legacy,old@a.com,oldtech@a.com,Unix';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), veryOldCsv);
-
-      await fileManager.readAndEmit();
-
-      // Wait for async file rewrite to complete
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should be migrated to standard Name header
-      expect(content).toContain('Name,Business Area,LOB');
-      expect(content).toContain('OldServer');
-    });
-
-
   });
 
   describe('Dummy Data Detection and Import', () => {
@@ -345,77 +367,21 @@ describe('FileManager', () => {
     });
   });
 
-  describe('Group Management', () => {
-    it('creates a new group', async () => {
-      const success = await fileManager.addGroup('TestGroup');
-      expect(success).toBe(true);
-
-      const groupFile = path.join(tmpDir, 'groups.csv');
-      expect(existsSync(groupFile)).toBe(true);
-
-      const content = await fs.readFile(groupFile, 'utf-8');
-      expect(content).toContain('TestGroup');
-    });
-
-    it('adds members to a group', async () => {
-      // Create group first
-      await fileManager.addGroup('Team1');
-
-      // Add member
-      const success = await fileManager.updateGroupMembership('Team1', 'user@a.com', false);
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).toContain('user@a.com');
-    });
-
-    it('removes members from a group', async () => {
-      // Create group with members using columnar format
-      // Column format: each column is a group, rows are members
-      const csv = 'Team1,Team2\nuser1@a.com,user3@a.com\nuser2@a.com,user4@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.updateGroupMembership('Team1', 'user1@a.com', true);
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('user1@a.com');
-      expect(content).toContain('user2@a.com');
-    });
-
-    it('renames a group', async () => {
-      // Columnar format
-      const csv = 'OldName,Team2\nuser@a.com,user2@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.renameGroup('OldName', 'NewName');
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('OldName');
-      expect(content).toContain('NewName');
-    });
-
-    it('removes a group', async () => {
-      // Columnar format
-      const csv = 'Group1,Group2\nuser1@a.com,user2@a.com';
-      await fs.writeFile(path.join(tmpDir, 'groups.csv'), csv);
-
-      const success = await fileManager.removeGroup('Group1');
-      expect(success).toBe(true);
-
-      const content = await fs.readFile(path.join(tmpDir, 'groups.csv'), 'utf-8');
-      expect(content).not.toContain('Group1');
-      expect(content).toContain('Group2');
-    });
-  });
+  // Note: Group management tests removed - CSV-based groups.csv system was replaced
+  // by JSON-based bridgeGroups.json system. See PresetOperations.ts for the new
+  // group CRUD operations (getGroups, saveGroup, updateGroup, deleteGroup).
+  // New group operations are tested via integration/e2e tests.
   describe('Daily Backups', () => {
     it('creates a backup of current data', async () => {
+      // Restore original implementation for this test
+      vi.mocked(fileManager.performBackup).mockRestore();
+
       // Setup initial data
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), 'test data');
 
       // Trigger backup (access method)
-      await (fileManager as any).performBackup('test');
+      // Note: We access the private/protected method or the public one we just restored
+      await fileManager.performBackup('test');
 
       // Check if backup folder exists
       const backupDir = path.join(tmpDir, 'backups');
@@ -432,13 +398,14 @@ describe('FileManager', () => {
       expect(backupFolder).toBeDefined();
 
       // Check file content
-      if (backupFolder) {
-        const backupContent = await fs.readFile(path.join(backupDir, backupFolder, 'contacts.csv'), 'utf-8');
-        expect(backupContent).toBe('test data');
-      }
+      const backupContent = await fs.readFile(path.join(backupDir, backupFolder!, 'contacts.csv'), 'utf-8');
+      expect(backupContent).toBe('test data');
     });
 
     it('prunes old backups keeping only last 30 days', async () => {
+      // Restore original implementation for this test
+      vi.mocked(fileManager.performBackup).mockRestore();
+
       const backupDir = path.join(tmpDir, 'backups');
       await fs.mkdir(backupDir, { recursive: true });
 
@@ -460,7 +427,7 @@ describe('FileManager', () => {
       await fs.mkdir(path.join(backupDir, str1));
 
       // Trigger backup
-      await (fileManager as any).performBackup();
+      await fileManager.performBackup('auto');
 
       const backups = await fs.readdir(backupDir);
 

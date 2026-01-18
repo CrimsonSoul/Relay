@@ -40,7 +40,7 @@ export async function importContactsWithMapping(
       }
     }
 
-    const sourceHeader = sourceData[0].map((h: any) =>
+    const sourceHeader = sourceData[0].map((h: unknown) =>
       String(h).toLowerCase().trim()
     );
     const sourceRows = sourceData.slice(1);
@@ -65,7 +65,7 @@ export async function importContactsWithMapping(
       return false;
     }
 
-    let targetData: any[][] = [];
+    let targetData: string[][] = [];
     if (existsSync(targetPath)) {
       const existingContent = await fs.readFile(targetPath, "utf-8");
       const rawTarget = await parseCsvAsync(existingContent);
@@ -76,7 +76,7 @@ export async function importContactsWithMapping(
       targetData.push(["Name", "Email", "Phone", "Title"]);
     }
 
-    const targetHeader = targetData[0].map((h: any) => String(h).toLowerCase());
+    const targetHeader = targetData[0].map((h: unknown) => String(h).toLowerCase());
 
     const getTargetIdx = (name: string) => {
       let idx = targetHeader.findIndex((h: string) => h === name.toLowerCase());
@@ -131,7 +131,7 @@ export async function importContactsWithMapping(
 
     const csvOutput = ctx.safeStringify(targetData);
     await ctx.writeAndEmit(targetPath, csvOutput);
-    ctx.performBackup("importContacts");
+    void ctx.performBackup("importContacts");
     return true;
   } catch (e) {
     loggers.fileManager.error("[ContactImportOperations] importContactsWithMapping error:", { error: e });

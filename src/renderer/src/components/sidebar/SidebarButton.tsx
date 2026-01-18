@@ -16,9 +16,17 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
+  const background = isActive || isHovered ? "var(--color-accent-blue)" : "rgba(255, 255, 255, 0.03)";
+  const getTransform = () => {
+    if (!isHovered) return "scale(1)";
+    return isActive ? "scale(1.05)" : "translateY(-1px) scale(1.05)";
+  };
+
   return (
     <Tooltip content={label} position="right">
       <button
+        data-testid={`sidebar-${label.toLowerCase().replaceAll(/\s+/g, '-')}`}
+        data-active={isActive}
         onClick={onClick}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -28,11 +36,7 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
           justifyContent: "center",
           width: "40px",
           height: "40px",
-          background: isActive
-            ? "var(--color-accent-blue)"
-            : isHovered
-              ? "var(--color-accent-blue)"
-              : "rgba(255, 255, 255, 0.03)",
+          background,
           border: "none",
           cursor: "pointer",
           position: "relative",
@@ -40,11 +44,7 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
           transition: "all var(--transition-smooth)",
           borderRadius: "20px",
           outline: "none",
-          transform: isHovered
-            ? isActive
-              ? "scale(1.05)"
-              : "translateY(-1px) scale(1.05)"
-            : "scale(1)",
+          transform: getTransform(),
           boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
         }}
       >

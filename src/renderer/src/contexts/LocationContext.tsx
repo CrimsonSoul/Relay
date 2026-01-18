@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
 import { loggers, ErrorCategory } from '../utils/logger';
 
 export interface LocationState {
@@ -16,7 +16,7 @@ export interface LocationState {
 
 const LocationContext = createContext<LocationState | undefined>(undefined);
 
-export function LocationProvider({ children }: { children: ReactNode }) {
+export function LocationProvider({ children }: { readonly children: ReactNode }) {
   const [state, setState] = useState<Omit<LocationState, 'refresh'>>({
     lat: null,
     lon: null,
@@ -35,8 +35,8 @@ export function LocationProvider({ children }: { children: ReactNode }) {
     // Helper to normalize GeolocationPosition
     const handleGpsSuccess = (pos: GeolocationPosition) => {
       setState({
-        lat: pos.coords.latitude,
-        lon: pos.coords.longitude,
+        lat: Number(pos.coords.latitude.toFixed(4)),
+        lon: Number(pos.coords.longitude.toFixed(4)),
         city: null, 
         region: null,
         country: null,
@@ -49,13 +49,15 @@ export function LocationProvider({ children }: { children: ReactNode }) {
 
     // Helper to handle IP location fallback
     const tryIpFallback = async () => {
+      loggers.location.info('Trying IP-based location fallback...');
       try {
-        const data = await window.api.getIpLocation();
+        const data = await globalThis.window.api?.getIpLocation();
         
-        if (data) {
+        if (data?.lat && data?.lon) {
+          loggers.location.info('IP location found', { city: data.city, source: 'ip' });
           setState({
-            lat: data.lat,
-            lon: data.lon,
+            lat: Number(data.lat),
+            lon: Number(data.lon),
             city: data.city,
             region: data.region,
             country: data.country,
@@ -65,53 +67,56 @@ export function LocationProvider({ children }: { children: ReactNode }) {
             source: 'ip'
           });
         } else {
-          throw new Error('IP location service returned null');
+          throw new Error('IP location service returned invalid or null data');
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         loggers.location.error('IP location fallback failed', { 
-          error: err.message, 
+          error: message, 
           category: ErrorCategory.NETWORK 
         });
         setState(prev => ({ 
           ...prev, 
           loading: false, 
-          error: 'Unable to determine location via GPS or IP.' 
+          error: 'Unable to determine location via GPS or IP. Please search for your city manually.' 
         }));
       }
     };
 
     // 1. Try HTML5 Geolocation with tight timeout
-    // We use a Promise wrapper to handle the timeout cleanly
     const getGpsPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: false, // Fast/Low power
-        timeout: 4000,
-        maximumAge: 10 * 60 * 1000 // Accept 10 minute old cached position
+        enableHighAccuracy: false, 
+        timeout: 6000, // Slightly longer timeout for slower networks
+        maximumAge: 5 * 60 * 1000 
       });
     });
 
     try {
       const pos = await getGpsPosition();
       handleGpsSuccess(pos);
-    } catch (err: any) {
-      if (err.code === err.PERMISSION_DENIED) {
+    } catch (err: unknown) {
+      const gpsError = err as GeolocationPositionError; // Safe cast for geolocation errors
+      if (gpsError.code === 1) { // Permission Denied
         loggers.location.warn('GPS Permission denied');
-      } else if (err.code === err.TIMEOUT) {
+      } else if (gpsError.code === 3) { // Timeout
         loggers.location.warn('GPS Timeout');
       } else {
-        loggers.location.warn('GPS Error', { error: err.message });
+        loggers.location.warn('GPS Error', { error: gpsError.message, code: gpsError.code });
       }
-      // If GPS fails for any reason, try IP fallback
+      // If GPS fails (including 403/network errors on Windows), try IP fallback
       await tryIpFallback();
     }
   };
 
   useEffect(() => {
-    fetchLocation();
+    void fetchLocation();
   }, []);
 
+  const value = useMemo(() => ({ ...state, refresh: fetchLocation }), [state]);
+
   return (
-    <LocationContext.Provider value={{ ...state, refresh: fetchLocation }}>
+    <LocationContext.Provider value={value}>
       {children}
     </LocationContext.Provider>
   );

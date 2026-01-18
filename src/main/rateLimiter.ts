@@ -5,6 +5,16 @@
 
 import { loggers } from './logger';
 
+// Rate limiter configuration constants
+const FILE_IMPORT_MAX_TOKENS = 5;
+const FILE_IMPORT_REFILL_RATE = 0.1; // 1 token per 10 seconds
+const DATA_MUTATION_MAX_TOKENS = 30;
+const DATA_MUTATION_REFILL_RATE = 5; // 5 tokens per second
+const DATA_RELOAD_MAX_TOKENS = 3;
+const DATA_RELOAD_REFILL_RATE = 0.5; // 1 token per 2 seconds
+const FS_OPERATIONS_MAX_TOKENS = 10;
+const FS_OPERATIONS_REFILL_RATE = 2; // 2 tokens per second
+
 interface RateLimiterConfig {
   maxTokens: number;      // Maximum number of tokens (burst capacity)
   refillRate: number;     // Tokens added per second
@@ -73,34 +83,31 @@ export class RateLimiter {
 
 // Pre-configured rate limiters for different operation types
 export const rateLimiters = {
-  // File imports: Allow 5 imports with burst, refill 1 per 10 seconds
-  // Prevents rapid-fire import operations
+  // File imports: Prevents rapid-fire import operations
   fileImport: new RateLimiter({
-    maxTokens: 5,
-    refillRate: 0.1, // 1 token per 10 seconds
+    maxTokens: FILE_IMPORT_MAX_TOKENS,
+    refillRate: FILE_IMPORT_REFILL_RATE,
     name: 'FileImport'
   }),
 
-  // Data mutations (add/remove contact/server): Allow 30 with burst, refill 5/second
-  // More generous for normal CRUD operations
+  // Data mutations (add/remove contact/server): More generous for normal CRUD operations
   dataMutation: new RateLimiter({
-    maxTokens: 30,
-    refillRate: 5,
+    maxTokens: DATA_MUTATION_MAX_TOKENS,
+    refillRate: DATA_MUTATION_REFILL_RATE,
     name: 'DataMutation'
   }),
 
-  // Data reload: Allow 3 with burst, refill 1 per 2 seconds
-  // Prevents excessive reload requests
+  // Data reload: Prevents excessive reload requests
   dataReload: new RateLimiter({
-    maxTokens: 3,
-    refillRate: 0.5, // 1 token per 2 seconds
+    maxTokens: DATA_RELOAD_MAX_TOKENS,
+    refillRate: DATA_RELOAD_REFILL_RATE,
     name: 'DataReload'
   }),
 
-  // File system operations (open path, open external): Allow 10 with burst
+  // File system operations (open path, open external)
   fsOperations: new RateLimiter({
-    maxTokens: 10,
-    refillRate: 2,
+    maxTokens: FS_OPERATIONS_MAX_TOKENS,
+    refillRate: FS_OPERATIONS_REFILL_RATE,
     name: 'FSOperations'
   })
 };

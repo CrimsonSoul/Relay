@@ -118,7 +118,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
                 {item.icon}
               </span>
             )}
-            <span style={{ flex: 1 }}>{item.label}</span>
+            <span className="text-truncate" style={{ flex: 1 }}>{item.label}</span>
           </div>
         ))}
       </div>
