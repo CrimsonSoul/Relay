@@ -206,14 +206,24 @@ export async function modifyWithLock(
     try {
       await fs.rename(tempPath, filePath);
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES') {
+      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
+        // Retry logic for Windows file system locking issues
+        if (e.code === 'ENOENT' && !existsSync(tempPath)) return;
+
         await new Promise(resolve => setTimeout(resolve, 100));
         try {
           await fs.rename(tempPath, filePath);
           return;
         } catch (retryError) {
-          await fs.copyFile(tempPath, filePath);
-          await fs.unlink(tempPath);
+          try {
+            await fs.copyFile(tempPath, filePath);
+            await fs.unlink(tempPath);
+          } catch (fallbackError: any) {
+             if (fallbackError.code !== 'ENOENT') {
+               loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+               throw fallbackError;
+             }
+          }
           return;
         }
       }
@@ -255,14 +265,24 @@ export async function modifyJsonWithLock<T>(
     try {
       await fs.rename(tempPath, filePath);
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES') {
+      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
+        // Retry logic for Windows file system locking issues
+        if (e.code === 'ENOENT' && !existsSync(tempPath)) return;
+
         await new Promise(resolve => setTimeout(resolve, 100));
         try {
           await fs.rename(tempPath, filePath);
           return;
         } catch (retryError) {
-          await fs.copyFile(tempPath, filePath);
-          await fs.unlink(tempPath);
+          try {
+            await fs.copyFile(tempPath, filePath);
+            await fs.unlink(tempPath);
+          } catch (fallbackError: any) {
+             if (fallbackError.code !== 'ENOENT') {
+               loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+               throw fallbackError;
+             }
+          }
           return;
         }
       }
