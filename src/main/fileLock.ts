@@ -127,6 +127,37 @@ async function retryOperation<T>(
 }
 
 /**
+ * Atomic write with cross-process locking
+ */
+export async function atomicWriteWithLock(
+  filePath: string,
+  content: string
+): Promise<void> {
+  await withFileLock(filePath, async () => {
+    const tempPath = `${filePath}.tmp`;
+    
+    // Write temp file
+    await retryOperation(async () => await fs.writeFile(tempPath, content, "utf-8"));
+    
+    // Atomic rename with robust retry
+    try {
+      await retryOperation(async () => await fs.rename(tempPath, filePath));
+    } catch (e: any) {
+      // Last resort fallback
+      try {
+        await fs.copyFile(tempPath, filePath);
+        await fs.unlink(tempPath);
+      } catch (fallbackError: any) {
+         if (fallbackError.code !== 'ENOENT') {
+           loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+           throw fallbackError;
+         }
+      }
+    }
+  });
+}
+
+/**
  * Read file with lock to ensure consistent reads during concurrent writes
  */
 export async function readWithLock(filePath: string): Promise<string | null> {
