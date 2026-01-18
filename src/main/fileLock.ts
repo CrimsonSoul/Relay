@@ -122,9 +122,14 @@ export async function atomicWriteWithLock(
     try {
       await fs.rename(tempPath, filePath);
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES') {
+      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
         // Retry logic for Windows file system locking issues
-        // Sometimes AV software or the OS itself holds the file handle briefly
+        // ENOENT might happen if the file was deleted externally while we were writing
+        if (e.code === 'ENOENT' && !existsSync(tempPath)) {
+           // If temp path is gone, nothing we can do, abort
+           return;
+        }
+
         await new Promise(resolve => setTimeout(resolve, 100));
         try {
           await fs.rename(tempPath, filePath);
