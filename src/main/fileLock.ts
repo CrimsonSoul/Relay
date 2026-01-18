@@ -131,8 +131,15 @@ export async function atomicWriteWithLock(
           return;
         } catch (retryError) {
           // Fallback: Try copy and delete if rename fails repeatedly
-          await fs.copyFile(tempPath, filePath);
-          await fs.unlink(tempPath);
+          try {
+            await fs.copyFile(tempPath, filePath);
+            await fs.unlink(tempPath);
+          } catch (fallbackError: any) {
+            // Ignore if files are gone (e.g. during app shutdown or test cleanup)
+            if (fallbackError.code !== 'ENOENT') {
+              loggers.fileManager.warn(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+            }
+          }
           return;
         }
       }
