@@ -34,10 +34,14 @@ export async function withFileLock<T>(
   filePath: string,
   callback: () => Promise<T>
 ): Promise<T> {
-  // Ensure file exists before locking (proper-lockfile requires this)
-  if (!existsSync(filePath)) {
+  // Use a separate lock file to avoid EPERM on Windows when renaming the data file
+  // This decouples the lock from the actual file being written/renamed
+  const lockTarget = `${filePath}.lock`;
+
+  // Ensure lock target exists before locking (proper-lockfile requires this)
+  if (!existsSync(lockTarget)) {
     try {
-      await fs.writeFile(filePath, "", "utf-8");
+      await fs.writeFile(lockTarget, "", "utf-8");
     } catch {
       // File may have been created by another process, continue
     }
@@ -46,9 +50,9 @@ export async function withFileLock<T>(
   let release: (() => Promise<void>) | null = null;
 
   try {
-    // Acquire lock
-    release = await lockfile.lock(filePath, LOCK_OPTIONS);
-    loggers.fileManager.debug(`[FileLock] Acquired lock: ${filePath}`);
+    // Acquire lock on the sidecar file
+    release = await lockfile.lock(lockTarget, LOCK_OPTIONS);
+    loggers.fileManager.debug(`[FileLock] Acquired lock: ${lockTarget} for ${filePath}`);
 
     // Execute callback
     const result = await callback();
@@ -57,7 +61,7 @@ export async function withFileLock<T>(
   } catch (error) {
     // Check if it's a lock contention error
     if (error instanceof Error && error.message.includes("ELOCKED")) {
-      loggers.fileManager.warn(`[FileLock] Lock contention on ${filePath}, retrying...`);
+      loggers.fileManager.warn(`[FileLock] Lock contention on ${lockTarget}, retrying...`);
     } else {
       loggers.fileManager.error(`[FileLock] Error during locked operation:`, { error, filePath });
     }
@@ -67,7 +71,7 @@ export async function withFileLock<T>(
     if (release) {
       try {
         await release();
-        loggers.fileManager.debug(`[FileLock] Released lock: ${filePath}`);
+        loggers.fileManager.debug(`[FileLock] Released lock: ${lockTarget}`);
       } catch (releaseError) {
         loggers.fileManager.error(`[FileLock] Error releasing lock:`, { error: releaseError, filePath });
       }
@@ -82,12 +86,13 @@ export async function withFileLock<T>(
  * @returns true if locked, false otherwise
  */
 export async function isFileLocked(filePath: string): Promise<boolean> {
-  if (!existsSync(filePath)) {
+  const lockTarget = `${filePath}.lock`;
+  if (!existsSync(lockTarget)) {
     return false;
   }
 
   try {
-    const locked = await lockfile.check(filePath, { realpath: false });
+    const locked = await lockfile.check(lockTarget, { realpath: false });
     return locked;
   } catch {
     return false;
