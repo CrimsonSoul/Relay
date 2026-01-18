@@ -52,14 +52,6 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     setPhone(formatPhoneNumber(phone));
   };
 
-  const labelStyle: React.CSSProperties = {
-    display: 'block',
-    fontSize: '15px',
-    fontWeight: 600,
-    color: 'var(--color-text-secondary)',
-    marginBottom: '8px'
-  };
-
   const fieldStyle: React.CSSProperties = {
     marginBottom: '20px'
   }

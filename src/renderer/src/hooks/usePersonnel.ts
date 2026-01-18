@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { OnCallRow } from "@shared/ipc";
-import { GridStack } from "gridstack";
 import { useToast } from '../components/Toast';
 
 const getWeekRange = () => {
@@ -146,9 +145,10 @@ export function usePersonnel(onCall: OnCallRow[]) {
   const getItemHeight = useCallback(
     (teamName: string) => {
       const rows = localOnCall.filter((r) => r.team === teamName);
-      const baseHeight = 2;
-      const rowHeight = Math.ceil((rows.length * 45 + 100) / 70);
-      return Math.max(baseHeight, rowHeight);
+      // Formula tuned for cellHeight: 75 and margin: 12
+      // Header (~60px) + rows (~40px each)
+      const rowHeight = Math.ceil((rows.length * 40 + 65) / 75);
+      return Math.max(2, rowHeight);
     },
     [localOnCall]
   );

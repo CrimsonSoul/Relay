@@ -1,39 +1,62 @@
-import React, { useState, useEffect } from 'react';
-import { Contact, GroupMap } from '@shared/ipc';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Contact, BridgeGroup } from '@shared/ipc';
 
 interface GroupSelectorProps {
   contact: Contact;
-  groups: GroupMap;
+  groups: BridgeGroup[];
   onClose: () => void;
+  onError?: (message: string) => void;
 }
 
-export const GroupSelector = ({ contact, groups, onClose }: GroupSelectorProps) => {
+export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelectorProps) => {
   const [membership, setMembership] = useState<Record<string, boolean>>({});
+  const [updating, setUpdating] = useState<string | null>(null);
 
   useEffect(() => {
     const mem: Record<string, boolean> = {};
     const contactEmail = contact.email.toLowerCase();
-    Object.entries(groups).forEach(([gName, emails]) => {
-      mem[gName] = (emails as string[]).some((e: string) => e.toLowerCase() === contactEmail);
+    groups.forEach(group => {
+      mem[group.id] = group.contacts.some(e => e.toLowerCase() === contactEmail);
     });
     setMembership(mem);
   }, [contact, groups]);
 
-  const toggleGroup = async (group: string, current: boolean) => {
-    const previousState = membership[group];
-    setMembership(prev => ({ ...prev, [group]: !current }));
+  const toggleGroup = useCallback(async (group: BridgeGroup, isMember: boolean) => {
+    if (updating) return; // Prevent concurrent updates
+    const previousState = membership[group.id];
+    setMembership(prev => ({ ...prev, [group.id]: !isMember }));
+    setUpdating(group.id);
+
     try {
-      if (current) {
-        await window.api?.removeContactFromGroup(group, contact.email);
+      if (!window.api) {
+        throw new Error("API not available");
+      }
+
+      const contactEmail = contact.email.toLowerCase();
+      let newContacts: string[];
+
+      if (isMember) {
+        // Remove contact from group
+        newContacts = group.contacts.filter(e => e.toLowerCase() !== contactEmail);
       } else {
-        await window.api?.addContactToGroup(group, contact.email);
+        // Add contact to group
+        newContacts = [...group.contacts, contact.email];
+      }
+
+      const success = await window.api.updateGroup(group.id, { contacts: newContacts });
+      if (!success) {
+        throw new Error("Failed to update group");
       }
     } catch (error) {
       // Rollback on failure
-      setMembership(prev => ({ ...prev, [group]: previousState }));
+      setMembership(prev => ({ ...prev, [group.id]: previousState }));
+      const message = isMember ? `Failed to remove from ${group.name}` : `Failed to add to ${group.name}`;
       console.error('[GroupSelector] Failed to toggle group membership:', error);
+      onError?.(message);
+    } finally {
+      setUpdating(null);
     }
-  };
+  }, [contact, membership, onError, updating]);
 
   return (
     <div style={{
@@ -53,38 +76,42 @@ export const GroupSelector = ({ contact, groups, onClose }: GroupSelectorProps) 
         ADD TO GROUP
       </div>
       <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-        {Object.keys(groups).map(g => (
-          <div key={g}
-            onClick={() => toggleGroup(g, membership[g])}
+        {groups.map(group => {
+          const isUpdating = updating === group.id;
+          return (
+          <div key={group.id}
+            onClick={() => !isUpdating && toggleGroup(group, membership[group.id])}
             style={{
               padding: '6px 8px',
               fontSize: '14px',
               color: 'var(--color-text-primary)',
               borderRadius: '4px',
-              cursor: 'pointer',
+              cursor: isUpdating ? 'wait' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px'
+              gap: '8px',
+              opacity: isUpdating ? 0.6 : 1
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+            onMouseEnter={e => !isUpdating && (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
           >
             <div style={{
               width: '14px',
               height: '14px',
               borderRadius: '3px',
-              border: membership[g] ? 'none' : '1px solid var(--color-text-tertiary)',
-              background: membership[g] ? 'var(--color-accent-blue)' : 'transparent',
+              border: membership[group.id] ? 'none' : '1px solid var(--color-text-tertiary)',
+              background: membership[group.id] ? 'var(--color-accent-blue)' : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              {membership[g] && <span style={{ fontSize: '10px', color: '#FFF' }}>✓</span>}
+              {membership[group.id] && <span style={{ fontSize: '10px', color: '#FFF' }}>✓</span>}
             </div>
-            {g}
+            {group.name}
           </div>
-        ))}
-        {Object.keys(groups).length === 0 && (
+        );
+        })}
+        {groups.length === 0 && (
           <div style={{ padding: '8px', fontSize: '12px', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>
             No groups available
           </div>

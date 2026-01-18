@@ -93,7 +93,9 @@ export const Tooltip: React.FC<TooltipProps> = ({
                     zIndex: 10000,
                     pointerEvents: 'none',
                     width,
-                    whiteSpace: 'nowrap'
+                    maxWidth: '320px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
                 }}>
                     {content}
                 </div>,

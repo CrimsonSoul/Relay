@@ -21,13 +21,13 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({ onOpenGroups, onOpen
 
   React.useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsOpen(false); };
-    if (isOpen) { document.addEventListener('mousedown', handleClickOutside); window.api?.getDataPath().then(setDataPath); }
+    if (isOpen) { document.addEventListener('mousedown', handleClickOutside); void window.api?.getDataPath().then(setDataPath); }
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
   const handleAction = (action: () => void) => { action(); setIsOpen(false); };
-  const handleChangeFolder = async () => { await window.api?.changeDataFolder(); window.api?.getDataPath().then(setDataPath); };
-  const handleReset = async () => { await window.api?.resetDataFolder(); window.api?.getDataPath().then(setDataPath); };
+  const handleChangeFolder = async () => { await window.api?.changeDataFolder(); void window.api?.getDataPath().then(setDataPath); };
+  const handleReset = async () => { await window.api?.resetDataFolder(); void window.api?.getDataPath().then(setDataPath); };
   
   const handleGenerateDummyData = async () => { 
     setShowDummyConfirm(true);

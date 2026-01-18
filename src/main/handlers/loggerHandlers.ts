@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { loggers, LogLevel } from '../logger';
+import { loggers } from '../logger';
 
 /**
  * Setup IPC handler for renderer-to-main logging
@@ -10,11 +10,11 @@ export function setupLoggerHandlers(): void {
     level: string;
     module: string;
     message: string;
-    data?: any;
+    data?: unknown;
   }) => {
     try {
       const { level, module, message, data } = entry;
-      
+
       // Map level string to logger method
       switch (level.toUpperCase()) {
         case 'DEBUG':

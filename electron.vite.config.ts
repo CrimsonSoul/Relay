@@ -16,7 +16,7 @@ export default defineConfig({
     build: {
       outDir: 'dist/main',
       minify: 'esbuild', // Faster minification
-      sourcemap: false, // No sourcemaps for faster startup
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts')
@@ -39,7 +39,7 @@ export default defineConfig({
     build: {
       outDir: 'dist/preload',
       minify: 'esbuild', // Minify for smaller size and faster load
-      sourcemap: false, // No sourcemaps for faster startup
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
       rollupOptions: {
         output: {
           format: 'cjs',
@@ -60,7 +60,16 @@ export default defineConfig({
         '@shared': resolve(__dirname, 'src/shared')
       }
     },
-    plugins: [react()],
+    plugins: [react({
+      babel: {
+        plugins: []
+      }
+    })],
+    server: {
+      hmr: {
+        overlay: false
+      }
+    },
     build: {
       outDir: 'dist/renderer',
       // Windows-specific optimizations for faster load times
@@ -85,7 +94,7 @@ export default defineConfig({
       target: 'esnext',
       // Optimize for production startup
       reportCompressedSize: false, // Faster builds
-      sourcemap: false // No sourcemaps in production for faster loads
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden' // Hidden in production for security
     }
   }
 });

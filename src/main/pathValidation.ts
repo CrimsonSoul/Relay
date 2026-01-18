@@ -25,18 +25,26 @@ export function validateDataPath(path: string): ValidationResult {
         fs.unlinkSync(testFile);
 
         return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
+        // Type guard for Node.js error with code property
+        const isNodeError = (err: unknown): err is NodeJS.ErrnoException => {
+            return typeof err === 'object' && err !== null && 'code' in err;
+        };
+
+        const errorCode = isNodeError(error) ? error.code : undefined;
+        const message = error instanceof Error ? error.message : String(error);
+
         loggers.fileManager.error('Path validation failed', {
-            errorCode: error.code,
+            errorCode,
             category: ErrorCategory.FILE_SYSTEM,
-            // Don't log full path in production for security
         });
-        if (error.code === 'EACCES' || error.code === 'EPERM') {
+
+        if (errorCode === 'EACCES' || errorCode === 'EPERM') {
             return { success: false, error: 'Write permission denied. Please choose a different folder.' };
         }
-        if (error.code === 'EROFS') {
+        if (errorCode === 'EROFS') {
             return { success: false, error: 'The selected folder is on a read-only file system.' };
         }
-        return { success: false, error: `Invalid folder: ${error.message}` };
+        return { success: false, error: `Invalid folder: ${message}` };
     }
 }

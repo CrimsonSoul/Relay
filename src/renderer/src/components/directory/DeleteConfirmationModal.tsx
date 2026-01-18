@@ -1,5 +1,5 @@
 import React from 'react';
-import { Contact, GroupMap } from '@shared/ipc';
+import { Contact } from '@shared/ipc';
 import { Modal } from '../Modal';
 import { TactileButton } from '../TactileButton';
 

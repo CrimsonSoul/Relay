@@ -8,15 +8,13 @@ type Props = {
     onClose: () => void;
     isSyncing: boolean;
     onSync: () => void;
-    onImportGroups: () => Promise<boolean>;
-    onImportContacts: () => Promise<boolean>;
-    onImportServers: () => Promise<any>;
+    onOpenDataManager?: () => void;
 };
 
 const DataPathDisplay = () => {
     const [path, setPath] = useState('');
     useEffect(() => {
-        window.api?.getDataPath().then(setPath);
+        void window.api?.getDataPath().then(setPath);
     }, []);
     return <>{path || 'Loading...'}</>;
 };
@@ -26,9 +24,7 @@ export const SettingsModal: React.FC<Props> = ({
     onClose,
     isSyncing,
     onSync,
-    onImportGroups,
-    onImportContacts,
-    onImportServers
+    onOpenDataManager
 }) => {
     // Force re-render of path when modal opens or folder changes
     const [pathKey, setPathKey] = useState(0);
@@ -39,49 +35,20 @@ export const SettingsModal: React.FC<Props> = ({
 
     const { showToast } = useToast();
 
-    const handleImportGroupsClick = async () => {
-        const success = await onImportGroups();
-        if (success) {
-            showToast('Groups imported successfully', 'success');
-        } else {
-            // It might be cancelled, but generic error is safer than silence if it failed
-            // Ideally backend returns specific error, but generic for now.
-            // If purely cancelled, maybe silent is better?
-            // The user agreed to "generic ones are fine".
-            // If I return false on cancel, I shouldn't error.
-            // But I can't distinguish.
-            // I will skip error toast here to avoid "Error" on "Cancel".
-        }
-    };
-
-    const handleImportContactsClick = async () => {
-        const success = await onImportContacts();
-        if (success) {
-            showToast('Contacts imported successfully', 'success');
-        }
-    };
-
-    const handleImportServersClick = async () => {
-        const result = await onImportServers();
-        if (result && result.success) {
-            showToast('Servers imported successfully', 'success');
-        } else if (result && result.message && result.message !== 'Cancelled') {
-            showToast(`Import failed: ${result.message}`, 'error');
-        }
-    };
-
     const handleChangeFolder = async () => {
         try {
             const result = await window.api?.changeDataFolder();
-            if (result && typeof result === 'object') {
-                if (result.success) {
-                    showToast('Data folder updated successfully', 'success');
-                } else if (result.error !== 'Cancelled') {
-                    showToast(`Failed to update data folder: ${result.error}`, 'error');
-                }
+            if (!result || typeof result !== 'object') return;
+
+            const resultObj = result as { success?: boolean; error?: string };
+            if (resultObj.success) {
+                showToast('Data folder updated successfully', 'success');
+            } else if (resultObj.error && resultObj.error !== 'Cancelled') {
+                showToast(`Failed to update data folder: ${resultObj.error}`, 'error');
             }
-        } catch (e: any) {
-            showToast(`Error: ${e.message}`, 'error');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            showToast(`Error: ${message}`, 'error');
         }
         setPathKey(p => p + 1);
     };
@@ -89,13 +56,17 @@ export const SettingsModal: React.FC<Props> = ({
     const handleResetFolder = async () => {
         try {
             const result = await window.api?.resetDataFolder();
-            if (result && result.success) {
+            if (result === true) {
                 showToast('Data folder reset to default', 'success');
-            } else if (result && result.error) {
-                showToast(result.error, 'error');
+            } else if (result && typeof result === 'object') {
+                const resultObj = result as { error?: string };
+                if (resultObj.error) {
+                    showToast(String(resultObj.error), 'error');
+                }
             }
-        } catch (e: any) {
-            showToast(e.message, 'error');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            showToast(message, 'error');
         }
         setPathKey(p => p + 1);
     };
@@ -127,16 +98,23 @@ export const SettingsModal: React.FC<Props> = ({
 
                 <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                        Data Management
-                    </div>
+                {onOpenDataManager && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <TactileButton onClick={handleImportGroupsClick} style={{ justifyContent: 'center' }}>Import Groups...</TactileButton>
-                        <TactileButton onClick={handleImportContactsClick} style={{ justifyContent: 'center' }}>Import Contacts...</TactileButton>
-                        <TactileButton onClick={handleImportServersClick} style={{ justifyContent: 'center' }}>Import Servers...</TactileButton>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Data Management
+                        </div>
+                        <TactileButton
+                            onClick={() => {
+                                onClose();
+                                onOpenDataManager();
+                            }}
+                            variant="primary"
+                            style={{ justifyContent: 'center' }}
+                        >
+                            Open Data Manager...
+                        </TactileButton>
                     </div>
-                </div>
+                )}
 
                 <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
 
@@ -148,8 +126,8 @@ export const SettingsModal: React.FC<Props> = ({
                         fontSize: '12px',
                         color: 'var(--color-text-secondary)',
                         padding: '10px 14px',
-                        background: 'rgba(0,0,0,0.2)',
-                        border: '1px solid var(--border-subtle)',
+                        background: 'rgba(0,0,0,0.5)',
+                        border: '1px solid var(--border-strong)',
                         borderRadius: '8px',
                         wordBreak: 'break-word',
                         overflowWrap: 'anywhere',
@@ -163,6 +141,30 @@ export const SettingsModal: React.FC<Props> = ({
                         <TactileButton onClick={handleResetFolder} style={{ flex: 1, justifyContent: 'center' }}>Reset to Default</TactileButton>
                     </div>
                 </div>
+
+                <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+
+                {import.meta.env.DEV && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            Diagnostics & Demo
+                        </div>
+                        <TactileButton
+                            onClick={async () => {
+                                const result = await window.api?.generateDummyData();
+                                if (result) {
+                                    showToast('Dummy data loaded successfully', 'success');
+                                    onClose();
+                                } else {
+                                    showToast('Failed to load dummy data', 'error');
+                                }
+                            }}
+                            style={{ justifyContent: 'center' }}
+                        >
+                            Load Dummy Data
+                        </TactileButton>
+                    </div>
+                )}
             </div>
             <style>{`
             .spin { animation: spin 1s linear infinite; }

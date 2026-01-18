@@ -1,11 +1,10 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
-import { Tooltip } from '../components/Tooltip';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
 export const RadarTab: React.FC = () => {
-  const [url, setUrl] = useState('https://your-intranet/dashboard');
+  const [url] = useState('https://your-intranet/dashboard');
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -17,6 +16,16 @@ export const RadarTab: React.FC = () => {
   const handleLoadStop = () => {
     setIsLoading(false);
   };
+
+  React.useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    webview.addEventListener('did-stop-loading', handleLoadStop);
+    return () => {
+      webview.removeEventListener('did-stop-loading', handleLoadStop);
+    };
+  }, []);
 
   return (
     <div style={{
@@ -86,7 +95,7 @@ export const RadarTab: React.FC = () => {
         <webview
           ref={webviewRef}
           src={url}
-          onDidStopLoading={handleLoadStop}
+          partition="persist:dispatcher-radar"
           style={{
             width: '100%',
             height: '100%',

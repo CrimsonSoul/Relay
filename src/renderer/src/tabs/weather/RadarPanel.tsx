@@ -18,27 +18,55 @@ const ExternalViewButton: React.FC<{ location: Location }> = ({ location }) => (
   </Tooltip>
 );
 
-const containerStyle: React.CSSProperties = { flex: 1, background: "black", borderRadius: "12px", overflow: "hidden", position: "relative", border: "var(--border-subtle)", minHeight: "300px", WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`, transform: 'translateZ(0)' };
+const containerStyle: React.CSSProperties = { 
+  flex: 1, 
+  background: "#0F1117", // Slightly lighter than black to differentiate from 'dead' webview
+  borderRadius: "12px", 
+  overflow: "hidden", 
+  position: "relative", 
+  border: "var(--border-subtle)", 
+  minHeight: "350px", 
+  transform: 'translateZ(0)' 
+};
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { webviewRef } = useRadar(location);
+  const { webviewRef, reload } = useRadar(location);
+  const isValidLocation = location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0, minHeight: 0 }}>
       <div style={containerStyle}>
         <div style={{ position: 'absolute', inset: 0, borderRadius: '12px', border: '1.5px solid var(--color-bg-app)', boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', pointerEvents: 'none', zIndex: 50 }} />
-        {location ? (
+        {isValidLocation ? (
           <>
-            {/* eslint-disable-next-line react/no-unknown-property */}
+            { }
             <webview 
-              ref={webviewRef as any} 
+              ref={webviewRef as React.RefObject<Electron.WebviewTag>} 
+              key={`${location.latitude.toFixed(2)}-${location.longitude.toFixed(2)}`} 
               src={getRadarUrl(location.latitude, location.longitude)} 
-              style={{ width: "100%", height: "100%", border: "none" }} 
+              useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+              style={{ width: "100%", height: "100%", background: "transparent" }} 
               partition="persist:weather" 
+              allowpopups="true"
             />
+            { }
             <ExternalViewButton location={location} />
+            <button 
+              onClick={reload}
+              style={{ position: "absolute", top: "12px", right: "12px", background: "rgba(0, 0, 0, 0.6)", width: "32px", height: "32px", borderRadius: "16px", border: "1px solid rgba(255, 255, 255, 0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", cursor: "pointer", zIndex: 30, backdropFilter: "blur(12px)", transition: "all 0.2s ease" }}
+              title="Refresh Radar Map"
+              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.8)"}
+              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>
+            </button>
           </>
-        ) : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)" }}>Search for a location to view radar</div>}
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--color-text-tertiary)", gap: "12px", padding: "24px", textAlign: "center" }}>
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ opacity: 0.5 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>
+            <div style={{ fontSize: "14px", maxWidth: "200px" }}>Search for a city or enable location access to view radar</div>
+          </div>
+        )}
       </div>
     </div>
   );

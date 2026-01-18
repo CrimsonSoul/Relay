@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { FixedSizeList as List } from 'react-window';
 import { Contact } from '@shared/ipc';
 
@@ -65,7 +65,7 @@ export function useDirectoryKeyboard({
           const listContainer = listContainerRef.current;
           if (listContainer) {
             const rect = listContainer.getBoundingClientRect();
-            const rowTop = focusedIndex * 40 - (listRef.current as any)?._outerRef?.scrollTop || 0;
+            const rowTop = focusedIndex * 40 - (listRef.current as { _outerRef?: { scrollTop?: number } })?._outerRef?.scrollTop || 0;
             setContextMenu({ x: rect.left + 100, y: rect.top + rowTop + 20, contact });
           }
         }

@@ -22,7 +22,7 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
         precip: weather.hourly.precipitation_probability[i],
         index: i,
       }))
-      .filter((item, i) => {
+      .filter((item) => {
         const date = new Date(item.time);
         // Show current hour and future hours, up to 12 items
         return (

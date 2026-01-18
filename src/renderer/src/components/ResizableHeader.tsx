@@ -1,10 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-type SortConfig = {
-    key: string;
-    direction: 'asc' | 'desc';
-};
-
 export const ResizableHeader = ({
     children,
     width,
@@ -49,7 +44,7 @@ export const ResizableHeader = ({
     }, [isResizing, minWidth, onResize]);
 
     const isSorted = !!sortDirection;
-    
+
     // Create accessible label
     const columnName = typeof children === 'string' ? children : 'column';
     let sortLabel = `Sort by ${columnName}`;
@@ -82,12 +77,7 @@ export const ResizableHeader = ({
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
-            <span style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1
-            }}>
+            <span className="text-truncate" style={{ flex: 1 }}>
                 {children}
             </span>
 
@@ -103,7 +93,6 @@ export const ResizableHeader = ({
             )}
 
             {/* Resize Handle Area - Mouse-only interaction (standard for column resizing) */}
-            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div
                 data-resize-handle="true"
                 style={{

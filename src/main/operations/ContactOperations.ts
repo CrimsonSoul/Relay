@@ -8,7 +8,6 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
-import { stringify } from "csv-stringify/sync";
 import type { Contact, DataError } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField, stringifyCsv } from "../csvUtils";
 import { cleanAndFormatPhoneNumber } from '../../shared/phoneUtils';
@@ -31,7 +30,7 @@ export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
 
     if (data.length < 2) return [];
 
-    const header = data[0].map((h: any) =>
+    const header = data[0].map((h: unknown) =>
       desanitizeField(String(h).trim().toLowerCase())
     );
     const rows = data.slice(1);
@@ -57,10 +56,10 @@ export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
     if (needsWrite) {
       loggers.fileManager.info("[ContactOperations] Cleaning phone numbers and rewriting contacts.csv...");
       const csvOutput = stringifyCsv(data);
-      ctx.rewriteFileDetached(path, csvOutput);
+      void ctx.rewriteFileDetached(path, csvOutput);
     }
 
-    const results = rows.map((rowValues: any[]) => {
+    const results = rows.map((rowValues: string[]) => {
       const row: { [key: string]: string } = {};
       header.forEach((h: string, i: number) => {
         row[h] = desanitizeField(rowValues[i]);
@@ -125,7 +124,7 @@ export async function removeContact(ctx: FileContext, email: string): Promise<bo
 
     if (data.length < 2) return false;
 
-    const header = data[0].map((h: any) => desanitizeField(String(h).toLowerCase()));
+    const header = data[0].map((h: unknown) => desanitizeField(String(h).toLowerCase()));
     const emailIdx = header.findIndex((h: string) => ["email", "e-mail"].includes(h));
 
     if (emailIdx === -1) return false;
@@ -145,7 +144,7 @@ export async function removeContact(ctx: FileContext, email: string): Promise<bo
     if (removed) {
       const csvOutput = ctx.safeStringify(newData);
       await ctx.writeAndEmit(path, csvOutput);
-      ctx.performBackup("removeContact");
+      void ctx.performBackup("removeContact");
       return true;
     }
     return false;
@@ -229,7 +228,7 @@ export async function addContact(ctx: FileContext, contact: Partial<Contact>): P
 
     const csvOutput = ctx.safeStringify(workingData);
     await ctx.writeAndEmit(path, csvOutput);
-    ctx.performBackup("addContact");
+    void ctx.performBackup("addContact");
     return true;
   } catch (e) {
     loggers.fileManager.error("[ContactOperations] addContact error:", { error: e });

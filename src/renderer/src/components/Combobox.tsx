@@ -28,7 +28,6 @@ export const Combobox: React.FC<ComboboxProps> = ({
     onOpenChange
 }) => {
     const [isOpen, setIsOpen] = useState(false);
-    const [hasFocus, setHasFocus] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -73,12 +72,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     if (!isOpen) setIsOpen(true);
                 }}
                 onFocus={() => {
-                    setHasFocus(true);
                     setIsOpen(true);
                 }}
                 onBlur={() => {
-                    // Slight delay to allow click on option
-                    setTimeout(() => setHasFocus(false), 200);
                 }}
                 placeholder={placeholder}
                 autoFocus={autoFocus}
@@ -126,9 +122,9 @@ export const Combobox: React.FC<ComboboxProps> = ({
                                     e.currentTarget.style.background = 'transparent';
                                 }}
                             >
-                                <span>{opt.label}</span>
+                                <span className="text-truncate">{opt.label}</span>
                                 {opt.subLabel && (
-                                    <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                                    <span className="text-truncate" style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
                                         {opt.subLabel}
                                     </span>
                                 )}
