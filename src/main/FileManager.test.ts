@@ -31,7 +31,7 @@ vi.mock('chokidar', () => ({
   }
 }));
 
-// Mock Logger to prevent actual file writes and clutter
+// Mock logger to prevent console noise during tests
 vi.mock('./logger', () => ({
   loggers: {
     fileManager: {
@@ -46,6 +46,40 @@ vi.mock('./logger', () => ({
     }
   }
 }));
+
+// Mock fileLock
+vi.mock('./fileLock', () => {
+  return {
+    withFileLock: vi.fn(async (_path, cb) => cb()),
+    isFileLocked: vi.fn(async () => false),
+    atomicWriteWithLock: vi.fn(async (path, content) => {
+        // Just write directly in mock
+        const fs = await import('fs/promises');
+        await fs.writeFile(path, content, 'utf-8');
+    }),
+    readWithLock: vi.fn(async (path) => {
+        const fs = await import('fs/promises');
+        return fs.readFile(path, 'utf-8');
+    }),
+    modifyWithLock: vi.fn(async (path, modifier) => {
+        const fs = await import('fs/promises');
+        let content = '';
+        try { content = await fs.readFile(path, 'utf-8'); } catch {}
+        const newContent = await modifier(content);
+        await fs.writeFile(path, newContent, 'utf-8');
+    }),
+    modifyJsonWithLock: vi.fn(async (path, modifier, defaultValue) => {
+        const fs = await import('fs/promises');
+        let data = defaultValue;
+        try {
+            const content = await fs.readFile(path, 'utf-8');
+            data = JSON.parse(content);
+        } catch {}
+        const newData = await modifier(data);
+        await fs.writeFile(path, JSON.stringify(newData, null, 2), 'utf-8');
+    })
+  };
+});
 
 describe('FileManager', () => {
   let tmpDir: string;

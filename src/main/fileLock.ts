@@ -100,65 +100,34 @@ export async function isFileLocked(filePath: string): Promise<boolean> {
 }
 
 /**
- * Atomic write with cross-process locking
- * 
- * This is the primary function for writing data files safely.
- * It acquires a lock, writes to a temp file, then renames atomically.
- * 
- * @param filePath - Path to the file to write
- * @param content - Content to write
+ * Helper to retry an async operation with backoff for OneDrive/Network latency
  */
-export async function atomicWriteWithLock(
-  filePath: string,
-  content: string
-): Promise<void> {
-  await withFileLock(filePath, async () => {
-    const tempPath = `${filePath}.tmp`;
-    
-    // Write to temp file
-    await fs.writeFile(tempPath, content, "utf-8");
-    
-    // Atomic rename
+async function retryOperation<T>(
+  operation: () => Promise<T>,
+  retries = 10,
+  baseDelay = 100
+): Promise<T> {
+  let lastError: any;
+  
+  for (let i = 0; i < retries; i++) {
     try {
-      await fs.rename(tempPath, filePath);
+      return await operation();
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
-        // Retry logic for Windows file system locking issues
-        // ENOENT might happen if the file was deleted externally while we were writing
-        if (e.code === 'ENOENT' && !existsSync(tempPath)) {
-           // If temp path is gone, nothing we can do, abort
-           return;
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-        try {
-          await fs.rename(tempPath, filePath);
-          return;
-        } catch (retryError) {
-          // Fallback: Try copy and delete if rename fails repeatedly
-          try {
-            await fs.copyFile(tempPath, filePath);
-            await fs.unlink(tempPath);
-          } catch (fallbackError: any) {
-            // Ignore if files are gone (e.g. during app shutdown or test cleanup)
-            if (fallbackError.code !== 'ENOENT') {
-              loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
-              throw fallbackError;
-            }
-          }
-          return;
-        }
-      }
-      throw e;
+      lastError = e;
+      const isLockError = e.code === 'EACCES' || e.code === 'EPERM' || e.code === 'EBUSY' || e.code === 'ENOENT';
+      
+      if (!isLockError) throw e;
+      
+      // Exponential backoff with jitter
+      const delay = baseDelay * Math.pow(1.5, i) + Math.random() * 50;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  });
+  }
+  throw lastError;
 }
 
 /**
  * Read file with lock to ensure consistent reads during concurrent writes
- * 
- * @param filePath - Path to read
- * @returns File contents, or null if file doesn't exist
  */
 export async function readWithLock(filePath: string): Promise<string | null> {
   if (!existsSync(filePath)) {
@@ -166,78 +135,57 @@ export async function readWithLock(filePath: string): Promise<string | null> {
   }
 
   return withFileLock(filePath, async () => {
-    return fs.readFile(filePath, "utf-8").catch(async (err: any) => {
-      // Retry read on EPERM/EACCES (common on Windows during rapid writes)
-      if (err.code === 'EPERM' || err.code === 'EACCES') {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        return fs.readFile(filePath, "utf-8");
-      }
-      throw err;
+    return retryOperation(async () => {
+      return await fs.readFile(filePath, "utf-8");
     });
   });
 }
 
 /**
  * Read-modify-write pattern with locking
- * 
- * Safely reads a file, applies a transformation, and writes back.
- * The entire operation is atomic with respect to other processes.
- * 
- * @param filePath - Path to the file
- * @param modifier - Function that transforms the content
  */
 export async function modifyWithLock(
   filePath: string,
   modifier: (content: string) => Promise<string> | string
 ): Promise<void> {
   await withFileLock(filePath, async () => {
+    // Robust read with retry
     let content = "";
-    
     if (existsSync(filePath)) {
-      content = await fs.readFile(filePath, "utf-8");
+      try {
+        content = await retryOperation(async () => await fs.readFile(filePath, "utf-8"));
+      } catch (err: any) {
+        loggers.fileManager.error(`[FileLock] Read failed after retries: ${filePath}`, { error: err });
+        throw err;
+      }
     }
     
     const newContent = await modifier(content);
     const tempPath = `${filePath}.tmp`;
     
-    await fs.writeFile(tempPath, newContent, "utf-8");
+    // Write temp file (usually safe, but good to retry)
+    await retryOperation(async () => await fs.writeFile(tempPath, newContent, "utf-8"));
     
-    // Atomic rename with retry
+    // Atomic rename with robust retry
     try {
-      await fs.rename(tempPath, filePath);
+      await retryOperation(async () => await fs.rename(tempPath, filePath));
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
-        // Retry logic for Windows file system locking issues
-        if (e.code === 'ENOENT' && !existsSync(tempPath)) return;
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-        try {
-          await fs.rename(tempPath, filePath);
-          return;
-        } catch (retryError) {
-          try {
-            await fs.copyFile(tempPath, filePath);
-            await fs.unlink(tempPath);
-          } catch (fallbackError: any) {
-             if (fallbackError.code !== 'ENOENT') {
-               loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
-               throw fallbackError;
-             }
-          }
-          return;
-        }
+      // Last resort fallback
+      try {
+        await fs.copyFile(tempPath, filePath);
+        await fs.unlink(tempPath);
+      } catch (fallbackError: any) {
+         if (fallbackError.code !== 'ENOENT') {
+           loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+           throw fallbackError;
+         }
       }
-      throw e;
     }
   });
 }
 
 /**
  * JSON-specific read-modify-write with locking
- * 
- * @param filePath - Path to the JSON file
- * @param modifier - Function that transforms the parsed JSON
- * @param defaultValue - Default value if file doesn't exist
  */
 export async function modifyJsonWithLock<T>(
   filePath: string,
@@ -250,28 +198,15 @@ export async function modifyJsonWithLock<T>(
     
     if (fileExisted) {
       try {
-        const content = await fs.readFile(filePath, "utf-8");
+        const content = await retryOperation(async () => await fs.readFile(filePath, "utf-8"));
         data = JSON.parse(content);
       } catch (err: any) {
-        // If file exists but we can't read it (e.g. locked/EACCES), 
-        // we MUST retry or fail, NOT default to empty.
-        // Falling back to defaultValue would wipe existing data.
-        if (err.code === 'EACCES' || err.code === 'EPERM') {
-           // Basic retry once
-           await new Promise(resolve => setTimeout(resolve, 50));
-           try {
-             const contentRetry = await fs.readFile(filePath, "utf-8");
-             data = JSON.parse(contentRetry);
-           } catch (retryErr) {
-             loggers.fileManager.error(`[FileLock] Failed to read existing JSON for modification:`, { error: retryErr });
-             throw retryErr; // Abort modification to prevent data loss
-           }
-        } else if (err instanceof SyntaxError) {
+        if (err instanceof SyntaxError) {
            loggers.fileManager.error(`[FileLock] JSON syntax error, starting fresh`, { error: err });
            data = defaultValue; 
         } else {
-           // Other errors (like ENOENT if it vanished) -> use default
-           data = defaultValue;
+           loggers.fileManager.error(`[FileLock] Failed to read existing JSON after retries:`, { error: err });
+           throw err; // Abort
         }
       }
     }
@@ -279,34 +214,22 @@ export async function modifyJsonWithLock<T>(
     const newData = await modifier(data);
     const tempPath = `${filePath}.tmp`;
     
-    await fs.writeFile(tempPath, JSON.stringify(newData, null, 2), "utf-8");
+    await retryOperation(async () => await fs.writeFile(tempPath, JSON.stringify(newData, null, 2), "utf-8"));
     
-    // Atomic rename with retry
+    // Atomic rename with robust retry
     try {
-      await fs.rename(tempPath, filePath);
+      await retryOperation(async () => await fs.rename(tempPath, filePath));
     } catch (e: any) {
-      if (e.code === 'EPERM' || e.code === 'EACCES' || e.code === 'ENOENT') {
-        // Retry logic for Windows file system locking issues
-        if (e.code === 'ENOENT' && !existsSync(tempPath)) return;
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-        try {
-          await fs.rename(tempPath, filePath);
-          return;
-        } catch (retryError) {
-          try {
-            await fs.copyFile(tempPath, filePath);
-            await fs.unlink(tempPath);
-          } catch (fallbackError: any) {
-             if (fallbackError.code !== 'ENOENT') {
-               loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
-               throw fallbackError;
-             }
-          }
-          return;
-        }
+      // Last resort fallback
+      try {
+        await fs.copyFile(tempPath, filePath);
+        await fs.unlink(tempPath);
+      } catch (fallbackError: any) {
+         if (fallbackError.code !== 'ENOENT') {
+           loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+           throw fallbackError;
+         }
       }
-      throw e;
     }
   });
 }
