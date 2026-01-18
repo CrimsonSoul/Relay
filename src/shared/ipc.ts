@@ -175,6 +175,7 @@ export type BridgeAPI = {
     callback: (event: unknown, maximized: boolean) => void
   ) => void;
   removeMaximizeListener: () => void;
+  openAuxWindow: (route: string) => void;
   generateDummyData: () => Promise<boolean>;
   getIpLocation: () => Promise<IpLocationResult>;
   logToMain: (entry: LogEntry) => void;
@@ -230,6 +231,7 @@ export const IPC_CHANNELS = {
   WINDOW_CLOSE: "window:close",
   WINDOW_IS_MAXIMIZED: "window:isMaximized",
   WINDOW_MAXIMIZE_CHANGE: "window:maximizeChange",
+  WINDOW_OPEN_AUX: "window:openAux",
   CHANGE_DATA_FOLDER: "config:changeDataFolder",
   RESET_DATA_FOLDER: "config:resetDataFolder",
   GET_DATA_PATH: "config:getDataPath",

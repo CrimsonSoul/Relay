@@ -92,7 +92,7 @@ describe('FileManager', () => {
     bundledDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-bundled-'));
     // Use the mocked class
     mockWindow = new BrowserWindow();
-    fileManager = new FileManager(mockWindow as unknown as BrowserWindow, tmpDir, bundledDir);
+    fileManager = new FileManager(tmpDir, bundledDir);
     
     // Mock performBackup to avoid race conditions with directory cleanup
     // We only want to test performBackup explicitly in the "Daily Backups" suite

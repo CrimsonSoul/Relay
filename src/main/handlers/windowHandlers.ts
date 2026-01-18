@@ -1,10 +1,18 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
-export function setupWindowHandlers(getMainWindow: () => BrowserWindow | null) {
+export function setupWindowHandlers(
+  getMainWindow: () => BrowserWindow | null,
+  createAuxWindow?: (route: string) => void
+) {
   // Window Controls
-  ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
-    getMainWindow()?.minimize();
+  ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.minimize();
+  });
+
+  ipcMain.on(IPC_CHANNELS.WINDOW_OPEN_AUX, (_, route: string) => {
+    createAuxWindow?.(route);
   });
 
   // Clipboard - use Electron's native clipboard API
@@ -17,22 +25,24 @@ export function setupWindowHandlers(getMainWindow: () => BrowserWindow | null) {
     }
   });
   
-  ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
-    const mw = getMainWindow();
-    if (mw?.isMaximized()) {
-      mw.unmaximize();
+  ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win?.isMaximized()) {
+      win.unmaximize();
     } else {
-      mw?.maximize();
+      win?.maximize();
     }
   });
 
-  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
-    getMainWindow()?.close();
+  ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.close();
   });
 
   // Maximize state query
-  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, () => {
-    return getMainWindow()?.isMaximized() ?? false;
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win?.isMaximized() ?? false;
   });
 
   // Listen for maximize/unmaximize events and notify renderer

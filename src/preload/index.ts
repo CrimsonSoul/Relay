@@ -149,6 +149,7 @@ const api: BridgeAPI = {
   removeMaximizeListener: () => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE);
   },
+  openAuxWindow: (route) => ipcRenderer.send(IPC_CHANNELS.WINDOW_OPEN_AUX, route),
   platform: process.platform
 };
 
