@@ -9,7 +9,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { ContactRecord } from "@shared/ipc";
 import { loggers } from "../logger";
-import { modifyJsonWithLock } from "../fileLock";
+import { modifyJsonWithLock, readWithLock } from "../fileLock";
 
 const CONTACTS_FILE = "contacts.json";
 const CONTACTS_FILE_PATH = (rootDir: string) => join(rootDir, CONTACTS_FILE);
@@ -21,17 +21,22 @@ function generateId(): string {
 /**
  * Read all contacts from contacts.json
  */
+import { readWithLock } from "../fileLock";
+
+// ...
+
 export async function getContacts(rootDir: string): Promise<ContactRecord[]> {
   const path = CONTACTS_FILE_PATH(rootDir);
   try {
-    if (!existsSync(path)) return [];
-    const contents = await fs.readFile(path, "utf-8");
+    const contents = await readWithLock(path);
+    if (!contents) return [];
+    
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
     if ((e as any)?.code === "ENOENT") return [];
     loggers.fileManager.error("[ContactJsonOperations] getContacts error:", { error: e });
-    throw e; // Throw to prevent data wipe on transient failures
+    throw e;
   }
 }
 

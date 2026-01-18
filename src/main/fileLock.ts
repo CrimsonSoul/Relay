@@ -137,7 +137,8 @@ export async function atomicWriteWithLock(
           } catch (fallbackError: any) {
             // Ignore if files are gone (e.g. during app shutdown or test cleanup)
             if (fallbackError.code !== 'ENOENT') {
-              loggers.fileManager.warn(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+              loggers.fileManager.error(`[FileLock] Atomic write fallback failed:`, { error: fallbackError });
+              throw fallbackError;
             }
           }
           return;
