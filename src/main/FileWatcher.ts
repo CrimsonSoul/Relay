@@ -41,7 +41,11 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
     const fileName = changedPath.split(/[/\\]/).pop() || "";
     
     // Explicitly ignore common noise like lock files or temp files
-    if (fileName.endsWith('.lock') || fileName.endsWith('.tmp')) return;
+    // Also ignore OneDrive temp files (usually start with ~ or ~$)
+    if (fileName.endsWith('.lock') || 
+        fileName.endsWith('.tmp') || 
+        fileName.startsWith('~') || 
+        fileName.startsWith('.~')) return;
 
     if (ALL_GROUP_FILES.includes(fileName)) pendingUpdates.add("groups");
     else if (ALL_CONTACT_FILES.includes(fileName)) pendingUpdates.add("contacts");
