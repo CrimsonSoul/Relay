@@ -71,7 +71,8 @@ export function usePersonnel(onCall: OnCallRow[]) {
       if (!map.has(row.team)) map.set(row.team, []);
       map.get(row.team)?.push(row);
     });
-    return Array.from(map.keys());
+    const result = Array.from(map.keys());
+    return result;
   }, [localOnCall]);
 
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {

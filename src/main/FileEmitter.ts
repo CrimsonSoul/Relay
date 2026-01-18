@@ -1,8 +1,8 @@
 import { BrowserWindow } from "electron";
-import { IPC_CHANNELS, type AppData, type DataError, type ImportProgress, type Contact, type BridgeGroup, type Server, type OnCallRow } from "@shared/ipc";
+import { IPC_CHANNELS, type AppData, type DataError, type ImportProgress, type Contact, type BridgeGroup, type Server, type OnCallRow, type TeamLayout } from "@shared/ipc";
 import { loggers } from "./logger";
 
-export interface CachedData { groups: BridgeGroup[]; contacts: Contact[]; servers: Server[]; onCall: OnCallRow[] }
+export interface CachedData { groups: BridgeGroup[]; contacts: Contact[]; servers: Server[]; onCall: OnCallRow[]; teamLayout?: TeamLayout }
 
 export class FileEmitter {
   constructor() { }

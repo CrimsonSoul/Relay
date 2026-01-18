@@ -46,6 +46,7 @@ const api: BridgeAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.IMPORT_PROGRESS, handler);
   },
 
+  getInitialData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_GET_INITIAL),
   reloadData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_RELOAD),
 
   onAuthRequested: (callback) => {
@@ -89,7 +90,7 @@ const api: BridgeAPI = {
   updateOnCallTeam: (team, rows) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_TEAM, team, rows),
   removeOnCallTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_ONCALL_TEAM, team),
   renameOnCallTeam: (oldName, newName) => ipcRenderer.invoke(IPC_CHANNELS.RENAME_ONCALL_TEAM, oldName, newName),
-  reorderOnCallTeams: (teamOrder) => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder),
+  reorderOnCallTeams: (teamOrder, layout) => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder, layout),
   saveAllOnCall: (rows) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALL_ONCALL, rows),
   generateDummyData: () => ipcRenderer.invoke(IPC_CHANNELS.GENERATE_DUMMY_DATA),
   getIpLocation: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IP_LOCATION),

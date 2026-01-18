@@ -48,3 +48,12 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     </ToastContext.Provider>
   );
 };
+
+export const NoopToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const showToast = useCallback(() => {}, []);
+  return (
+    <ToastContext.Provider value={{ showToast }}>
+      {children}
+    </ToastContext.Provider>
+  );
+};

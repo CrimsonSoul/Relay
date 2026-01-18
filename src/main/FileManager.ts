@@ -4,7 +4,7 @@
  */
 import chokidar from "chokidar";
 import { join } from "path";
-import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress, type ContactRecord, type ServerRecord, type OnCallRecord } from "@shared/ipc";
+import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress, type ContactRecord, type ServerRecord, type OnCallRecord, type TeamLayout } from "@shared/ipc";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import { generateDummyDataAsync } from "./dataUtils";
@@ -66,7 +66,7 @@ export class FileManager implements FileContext {
   public readonly bundledDataPath: string;
   private emitter: FileEmitter;
   private internalWriteCount = 0;
-  private cachedData: CachedData = { groups: [], contacts: [], servers: [], onCall: [] };
+  private cachedData: CachedData = { groups: [], contacts: [], servers: [], onCall: [], teamLayout: {} };
 
   constructor(rootDir: string, bundledPath: string) {
     this.rootDir = rootDir;
@@ -91,6 +91,10 @@ export class FileManager implements FileContext {
       onFileChange: (types) => this.readAndEmitIncremental(types),
       shouldIgnore: () => this.internalWriteCount > 0
     });
+  }
+
+  public getCachedData(): CachedData {
+    return this.cachedData;
   }
 
   public resolveExistingFile(fileNames: string[]): string | null {
@@ -132,6 +136,19 @@ export class FileManager implements FileContext {
     return parseOnCall(this);
   }
 
+  private async loadLayout(): Promise<TeamLayout> {
+    try {
+      const path = join(this.rootDir, "oncall_layout.json");
+      if (existsSync(path)) {
+        const content = await fs.readFile(path, "utf-8");
+        return JSON.parse(content);
+      }
+    } catch (e) {
+      loggers.fileManager.error("Failed to load layout", { error: e });
+    }
+    return {};
+  }
+
   private async readAndEmitIncremental(filesToUpdate: Set<FileType>) {
     if (filesToUpdate.size === 0) { await this.readAndEmit(); return; }
     this.emitter.emitReloadStarted();
@@ -150,13 +167,14 @@ export class FileManager implements FileContext {
   public async readAndEmit() {
     this.emitter.emitReloadStarted();
     try {
-      const [groups, contacts, servers, onCall] = await Promise.all([
+      const [groups, contacts, servers, onCall, teamLayout] = await Promise.all([
         getGroups(this.rootDir),
         this.loadContacts(),
         this.loadServers(),
-        this.loadOnCall()
+        this.loadOnCall(),
+        this.loadLayout()
       ]);
-      this.cachedData = { groups, contacts, servers, onCall };
+      this.cachedData = { groups, contacts, servers, onCall, teamLayout };
       this.emitter.sendPayload(this.cachedData);
       this.emitter.emitReloadCompleted(true);
     } catch (error) { loggers.fileManager.error("Error reading files", { error }); this.emitter.emitReloadCompleted(false); }
@@ -420,10 +438,11 @@ export class FileManager implements FileContext {
         timeWindow: r.timeWindow,
       }));
       const success = await updateOnCallTeamJson(this.rootDir, team, records);
-      if (success) await this.readAndEmit();
+      // Skip readAndEmit() on success since we already updated cache optimistically
       return success;
     }
-    return updateOnCallTeamOp(this, team, rows);
+    const result = await updateOnCallTeamOp(this, team, rows);
+    return result;
   }
 
   public async removeOnCallTeam(team: string) {
@@ -433,10 +452,10 @@ export class FileManager implements FileContext {
 
     if (this.hasJsonData()) {
       const success = await deleteOnCallByTeam(this.rootDir, team);
-      if (success) await this.readAndEmit();
       return success;
     }
-    return removeOnCallTeamOp(this, team);
+    const result = await removeOnCallTeamOp(this, team);
+    return result;
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
@@ -448,13 +467,13 @@ export class FileManager implements FileContext {
 
     if (this.hasJsonData()) {
       const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
-      if (success) await this.readAndEmit();
       return success;
     }
-    return renameOnCallTeamOp(this, oldName, newName);
+    const result = await renameOnCallTeamOp(this, oldName, newName);
+    return result;
   }
 
-  public async reorderOnCallTeams(teamOrder: string[]) {
+  public async reorderOnCallTeams(teamOrder: string[], layout?: TeamLayout) {
     // OPTIMISTIC UPDATE: Update memory cache and broadcast to all windows immediately
     const teamMap = new Map<string, OnCallRow[]>();
     this.cachedData.onCall.forEach(r => {
@@ -476,16 +495,36 @@ export class FileManager implements FileContext {
     }
 
     this.cachedData.onCall = orderedRows;
+    if (layout) {
+      this.cachedData.teamLayout = layout;
+    }
     this.emitter.sendPayload(this.cachedData);
 
+    loggers.fileManager.info(`[FileManager] Reordered On-Call teams. Broadcasted new state.`);
+
     // BACKGROUND PERSISTENCE
-    if (this.hasJsonData()) {
-      const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
-      // Final sync to ensure disk and memory are perfectly aligned
-      if (success) await this.readAndEmit();
+    this.internalWriteCount++;
+    try {
+      if (layout) {
+        // Save layout separately
+        const layoutPath = join(this.rootDir, "oncall_layout.json");
+        await atomicWriteWithLock(layoutPath, JSON.stringify(layout, null, 2));
+      }
+
+      if (this.hasJsonData()) {
+        const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
+        // Skip readAndEmit() on success since we already updated cache optimistically
+        if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON)`);
+        return success;
+      }
+      const success = await reorderOnCallTeamsOp(this, teamOrder);
+      if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (CSV)`);
       return success;
+    } finally {
+      setTimeout(() => {
+        this.internalWriteCount--;
+      }, WRITE_GUARD_DELAY_MS);
     }
-    return reorderOnCallTeamsOp(this, teamOrder);
   }
 
   public async saveAllOnCall(rows: OnCallRow[]) {
@@ -506,7 +545,9 @@ export class FileManager implements FileContext {
       if (success) await this.readAndEmit();
       return success;
     }
-    return saveAllOnCallOp(this, rows);
+    const result = await saveAllOnCallOp(this, rows);
+    if (result) await this.readAndEmit();
+    return result;
   }
   public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) { await this.readAndEmit(); } return success; }
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }

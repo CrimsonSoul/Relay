@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef, useLayoutEffect } from "react";
 import { OnCallRow, Contact } from "@shared/ipc";
 import "gridstack/dist/gridstack.min.css";
 import { TactileButton } from "../components/TactileButton";
@@ -28,6 +28,46 @@ function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
   return `${team}: ${members.join(' | ')}`;
 }
 
+/**
+ * Robust wrapper for GridStack items.
+ * Forcefully syncs gs-x and gs-y attributes to the DOM when props change.
+ * This ensures that when GridStack re-initializes, it sees the correct positions
+ * even if React's reconciliation just moved the DOM node.
+ */
+const GridStackItem: React.FC<{
+  team: string;
+  x: number;
+  y: number;
+  h: number;
+  children: React.ReactNode;
+}> = ({ team, x, y, h, children }) => {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Imperatively sync attributes whenever x or y changes
+  // Use useLayoutEffect to ensure attributes are set before GridStack reads them
+  useLayoutEffect(() => {
+    if (ref.current) {
+      ref.current.setAttribute("gs-x", String(x));
+      ref.current.setAttribute("gs-y", String(y));
+      ref.current.setAttribute("gs-h", String(h));
+    }
+  }, [x, y, h]);
+
+  return (
+    <div
+      ref={ref}
+      className="grid-stack-item"
+      gs-id={team}
+      gs-w="1"
+      gs-h={h}
+      gs-x={x}
+      gs-y={y}
+    >
+      {children}
+    </div>
+  );
+};
+
 export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }> = ({ onCall, contacts }) => {
   const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, getItemHeight, setLocalOnCall } = usePersonnel(onCall);
   const [isAddingTeam, setIsAddingTeam] = useState(false); const [newTeamName, setNewTeamName] = useState("");
@@ -35,7 +75,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ team: string; onConfirm: () => void } | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
-  const { gridRef } = useGridStack(localOnCall, setLocalOnCall);
+  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight);
   const { showToast } = useToast();
 
   const isPopout = window.location.hash.includes('popout');
@@ -91,7 +131,27 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
       </CollapsibleHeader>
 
       <div ref={gridRef} className="grid-stack" style={{ paddingBottom: "40px" }}>
-        {teams.map((team, i) => <div key={team} className="grid-stack-item" gs-id={team} gs-w="1" gs-h={getItemHeight(team)} gs-x={i % 2} gs-y={Math.floor(i / 2)}><TeamCard team={team} rows={localOnCall.filter(r => r.team === team)} contacts={contacts} onUpdateRows={handleUpdateRows} onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })} onRemoveTeam={handleRemoveTeam} setConfirm={setConfirmDelete} setMenu={setMenu} onCopyTeamInfo={handleCopyTeamInfo} /></div>)}
+        {teams.map((team, i) => (
+          <GridStackItem
+            key={team}
+            team={team}
+            x={i % 2}
+            y={Math.floor(i / 2)}
+            h={getItemHeight(team)}
+          >
+            <TeamCard
+              team={team}
+              rows={localOnCall.filter((r) => r.team === team)}
+              contacts={contacts}
+              onUpdateRows={handleUpdateRows}
+              onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
+              onRemoveTeam={handleRemoveTeam}
+              setConfirm={setConfirmDelete}
+              setMenu={setMenu}
+              onCopyTeamInfo={handleCopyTeamInfo}
+            />
+          </GridStackItem>
+        ))}
       </div>
 
       <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => renamingTeam && void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null))}>Rename</TactileButton></div></div></Modal>

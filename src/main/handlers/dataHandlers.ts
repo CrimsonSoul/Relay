@@ -99,13 +99,14 @@ export function setupDataHandlers(
     return getFileManager()?.renameOnCallTeam(oldName, newName) ?? false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.REORDER_ONCALL_TEAMS, async (_, teamOrder) => {
+  ipcMain.handle(IPC_CHANNELS.REORDER_ONCALL_TEAMS, async (_, teamOrder, layout) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (!Array.isArray(teamOrder) || !teamOrder.every(t => typeof t === 'string')) {
       loggers.ipc.error('Invalid team order parameter');
       return { success: false, error: 'Invalid team order' };
     }
-    return getFileManager()?.reorderOnCallTeams(teamOrder) ?? false;
+    // Optional layout validation could go here
+    return getFileManager()?.reorderOnCallTeams(teamOrder, layout) ?? false;
   });
 
   ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows) => {
@@ -178,5 +179,12 @@ export function setupDataHandlers(
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) return { success: false, rateLimited: true };
     void getFileManager()?.readAndEmit();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DATA_GET_INITIAL, async () => {
+    const fileManager = getFileManager();
+    if (!fileManager) return null;
+    const data = fileManager.getCachedData();
+    return { ...data, lastUpdated: Date.now() };
   });
 }
