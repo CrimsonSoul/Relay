@@ -393,6 +393,24 @@ export class FileManager implements FileContext {
     return cleanupServerContactsOp(this);
   }
   public async updateOnCallTeam(team: string, rows: OnCallRow[]) {
+    // OPTIMISTIC UPDATE
+    const normalizedTeam = team.trim().toLowerCase();
+    // Maintain existing team order if possible
+    const currentOrder = Array.from(new Set(this.cachedData.onCall.map(r => r.team)));
+    const newFlatList: OnCallRow[] = [];
+    
+    if (currentOrder.some(t => t.toLowerCase() === normalizedTeam)) {
+      currentOrder.forEach(t => {
+        if (t.toLowerCase() === normalizedTeam) newFlatList.push(...rows);
+        else newFlatList.push(...this.cachedData.onCall.filter(r => r.team === t));
+      });
+    } else {
+      newFlatList.push(...this.cachedData.onCall, ...rows);
+    }
+    
+    this.cachedData.onCall = newFlatList;
+    this.emitter.sendPayload(this.cachedData);
+
     if (this.hasJsonData()) {
       const records = rows.map((r) => ({
         id: r.id, // Pass the ID
@@ -410,6 +428,10 @@ export class FileManager implements FileContext {
   }
 
   public async removeOnCallTeam(team: string) {
+    // OPTIMISTIC UPDATE
+    this.cachedData.onCall = this.cachedData.onCall.filter(r => r.team !== team);
+    this.emitter.sendPayload(this.cachedData);
+
     if (this.hasJsonData()) {
       const success = await deleteOnCallByTeam(this.rootDir, team);
       if (success) await this.readAndEmit();
@@ -419,6 +441,12 @@ export class FileManager implements FileContext {
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
+    // OPTIMISTIC UPDATE
+    this.cachedData.onCall = this.cachedData.onCall.map(r => 
+      r.team === oldName ? { ...r, team: newName } : r
+    );
+    this.emitter.sendPayload(this.cachedData);
+
     if (this.hasJsonData()) {
       const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
       if (success) await this.readAndEmit();
@@ -428,8 +456,33 @@ export class FileManager implements FileContext {
   }
 
   public async reorderOnCallTeams(teamOrder: string[]) {
+    // OPTIMISTIC UPDATE: Update memory cache and broadcast to all windows immediately
+    const teamMap = new Map<string, OnCallRow[]>();
+    this.cachedData.onCall.forEach(r => {
+      const list = teamMap.get(r.team) || [];
+      list.push(r);
+      teamMap.set(r.team, list);
+    });
+
+    const orderedRows: OnCallRow[] = [];
+    const processedTeams = new Set<string>();
+    for (const team of teamOrder) {
+      if (teamMap.has(team)) {
+        orderedRows.push(...teamMap.get(team)!);
+        processedTeams.add(team);
+      }
+    }
+    for (const [team, rows] of teamMap.entries()) {
+      if (!processedTeams.has(team)) orderedRows.push(...rows);
+    }
+
+    this.cachedData.onCall = orderedRows;
+    this.emitter.sendPayload(this.cachedData);
+
+    // BACKGROUND PERSISTENCE
     if (this.hasJsonData()) {
       const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
+      // Final sync to ensure disk and memory are perfectly aligned
       if (success) await this.readAndEmit();
       return success;
     }
@@ -437,6 +490,10 @@ export class FileManager implements FileContext {
   }
 
   public async saveAllOnCall(rows: OnCallRow[]) {
+    // OPTIMISTIC UPDATE
+    this.cachedData.onCall = rows;
+    this.emitter.sendPayload(this.cachedData);
+
     if (this.hasJsonData()) {
       const records = rows.map((r) => ({
         id: r.id, // Pass ID
