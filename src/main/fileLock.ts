@@ -12,12 +12,12 @@ import { loggers } from "./logger";
 
 // Lock options for production use
 const LOCK_OPTIONS = {
-  stale: 10000,      // Consider lock stale after 10 seconds
+  stale: 30000,      // Consider lock stale after 30 seconds
   retries: {
-    retries: 5,      // Retry up to 5 times
+    retries: 20,     // Retry up to 20 times for high contention/CI environments
     minTimeout: 100, // Start with 100ms delay
-    maxTimeout: 2000, // Max 2 seconds between retries
-    factor: 1.2,     // Gentler exponential backoff
+    maxTimeout: 3000, // Max 3 seconds between retries
+    factor: 1.1,     // Gentler exponential backoff
   },
   realpath: false,   // Don't resolve symlinks (faster)
 };
