@@ -58,7 +58,7 @@ export class HeaderMatcher {
    * @param data - Optional data array to extend with empty values
    * @returns Array of column indices corresponding to the input columns
    */
-  ensureColumns(columns: { aliases: string[], defaultName: string }[], data?: any[][]): number[] {
+  ensureColumns(columns: { aliases: string[], defaultName: string }[], data?: string[][]): number[] {
     const indices: number[] = new Array(columns.length).fill(-1);
     const columnsToAdd: { defaultName: string, indexInInput: number }[] = [];
 

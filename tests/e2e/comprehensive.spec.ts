@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { injectMockApi, MOCK_DATA } from './mocks';
+import { injectMockApi, MOCK_DATA as _MOCK_DATA } from './mocks';
 import { WeatherData, WeatherAlert } from '../../src/shared/ipc';
 
 const MOCK_WEATHER: WeatherData = {

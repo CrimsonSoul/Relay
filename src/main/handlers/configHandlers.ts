@@ -1,5 +1,5 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 
 export function setupConfigHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -11,7 +11,7 @@ export function setupConfigHandlers(
     return getDataRoot();
   });
 
-  ipcMain.handle(IPC_CHANNELS.CHANGE_DATA_FOLDER, async () => {
+  ipcMain.handle(IPC_CHANNELS.CHANGE_DATA_FOLDER, async (): Promise<IpcResult> => {
     const mainWindow = getMainWindow();
     if (!mainWindow) return { success: false, error: 'Main window not available' };
 
@@ -31,7 +31,7 @@ export function setupConfigHandlers(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.RESET_DATA_FOLDER, async () => {
+  ipcMain.handle(IPC_CHANNELS.RESET_DATA_FOLDER, async (): Promise<IpcResult> => {
     const defaultPath = getDefaultDataPath();
     try {
       onDataPathChange(defaultPath);

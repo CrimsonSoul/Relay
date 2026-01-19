@@ -28,21 +28,23 @@ export function useServerRecords() {
           return null;
         }
         const result = await window.api.addServerRecord(server);
-        if (result) {
+        if (result.success && result.data) {
+          const record = result.data;
           setServers((prev) => {
             // Check if this was an update (same name)
             const existingIndex = prev.findIndex(
-              (s) => s.name.toLowerCase() === result.name.toLowerCase()
+              (s) => s.name.toLowerCase() === record.name.toLowerCase()
             );
             if (existingIndex !== -1) {
               const updated = [...prev];
-              updated[existingIndex] = result;
+              updated[existingIndex] = record;
               return updated;
             }
-            return [...prev, result];
+            return [...prev, record];
           });
+          return record;
         }
-        return result;
+        return null;
       } catch (e) {
         console.error("[useServerRecords] Failed to add server:", e);
         return null;
@@ -61,15 +63,15 @@ export function useServerRecords() {
           console.error("[useServerRecords] API not available");
           return false;
         }
-        const success = await window.api.updateServerRecord(id, updates);
-        if (success) {
+        const result = await window.api.updateServerRecord(id, updates);
+        if (result.success) {
           setServers((prev) =>
             prev.map((s) =>
               s.id === id ? { ...s, ...updates, updatedAt: Date.now() } : s
             )
           );
         }
-        return success ?? false;
+        return result.success;
       } catch (e) {
         console.error("[useServerRecords] Failed to update server:", e);
         return false;
@@ -84,11 +86,11 @@ export function useServerRecords() {
         console.error("[useServerRecords] API not available");
         return false;
       }
-      const success = await window.api.deleteServerRecord(id);
-      if (success) {
+      const result = await window.api.deleteServerRecord(id);
+      if (result.success) {
         setServers((prev) => prev.filter((s) => s.id !== id));
       }
-      return success ?? false;
+      return result.success;
     } catch (e) {
       console.error("[useServerRecords] Failed to delete server:", e);
       return false;

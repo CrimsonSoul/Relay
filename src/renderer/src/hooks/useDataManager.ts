@@ -31,8 +31,8 @@ export function useDataManager() {
   const exportData = useCallback(async (options: ExportOptions) => {
     setExporting(true);
     try {
-      const success = await window.api?.exportData(options);
-      return success || false;
+      const result = await window.api?.exportData(options);
+      return result?.success || false;
     } catch (e) {
       console.error("Export failed:", e);
       return false;
@@ -45,12 +45,13 @@ export function useDataManager() {
     setImporting(true);
     try {
       const result = await window.api?.importData(category);
-      if (result) {
-        setLastImportResult(result);
+      if (result?.success && result.data) {
+        setLastImportResult(result.data);
         // Refresh stats after import
         await loadStats();
+        return result.data;
       }
-      return result;
+      return null;
     } catch (e) {
       console.error("Import failed:", e);
       return null;
@@ -63,12 +64,13 @@ export function useDataManager() {
     setMigrating(true);
     try {
       const result = await window.api?.migrateFromCsv();
-      if (result) {
-        setLastMigrationResult(result);
+      if (result?.success && result.data) {
+        setLastMigrationResult(result.data);
         // Refresh stats after migration
         await loadStats();
+        return result.data;
       }
-      return result;
+      return null;
     } catch (e) {
       console.error("Migration failed:", e);
       return null;

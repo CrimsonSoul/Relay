@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { GridStack } from 'gridstack';
 import { OnCallRow, TeamLayout } from '@shared/ipc';
+import { logger } from '../utils/logger';
 
 export function useGridStack(
   localOnCall: OnCallRow[], 
@@ -52,7 +53,7 @@ export function useGridStack(
       const items = [...grid.getGridItems()];
       
       // DIAGNOSTIC: Log raw positions before sorting
-      console.log('[GridStack] change event fired. Raw items:', items.map(el => ({
+      logger.debug('[GridStack] change event fired. Raw items:', items.map(el => ({
         id: el.getAttribute('gs-id'),
         x: el.getAttribute('gs-x'),
         y: el.getAttribute('gs-y')

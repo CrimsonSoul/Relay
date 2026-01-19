@@ -8,6 +8,7 @@ import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { BridgeHistoryEntry } from "@shared/ipc";
+import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
 import { modifyJsonWithLock } from "../fileLock";
 
@@ -37,7 +38,7 @@ export async function getBridgeHistory(rootDir: string): Promise<BridgeHistoryEn
 
     return filtered;
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (isNodeError(e) && e.code === "ENOENT") return [];
     loggers.fileManager.error("[BridgeHistoryOperations] getBridgeHistory error:", { error: e });
     throw e;
   }

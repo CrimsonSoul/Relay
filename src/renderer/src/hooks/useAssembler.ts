@@ -42,7 +42,7 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
           if (typeof newValue === 'boolean') {
             setIsGroupSidebarCollapsed(newValue);
           }
-        } catch (err) {
+        } catch (_err) {
           // Ignore parse errors from other instances
         }
       }

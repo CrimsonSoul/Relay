@@ -2,6 +2,21 @@
  * Simplified file operations without cross-process locking.
  * Replaces the complex locking mechanism to avoid save/revert issues.
  * 
+ * File Locking Strategy (as of v1.0.0):
+ * This module intentionally omits cross-process file locking. The rationale:
+ * 
+ * 1. Single Instance Lock: The app uses app.requestSingleInstanceLock() in index.ts,
+ *    ensuring only one instance can run per machine.
+ * 
+ * 2. Network Storage: For OneDrive/shared drives, we use atomic write-to-temp-and-rename
+ *    with retry logic, which provides sufficient data integrity for standard operations.
+ * 
+ * 3. Complexity vs. Benefit: The previous proper-lockfile dependency caused issues
+ *    with Windows/OneDrive environments and added significant complexity.
+ * 
+ * If multi-instance support is needed in the future, consider implementing an
+ * advisory lock file mechanism (.lock file creation/deletion).
+ * 
  * Provides atomic file operations (write-to-temp-and-rename) to ensure data integrity,
  * but removes the 'proper-lockfile' dependency which was causing issues with some
  * environments and legacy file handling.
@@ -67,7 +82,7 @@ export async function atomicWriteWithLock(
   } catch (error) {
     loggers.fileManager.error(`[FileLock] Atomic write failed:`, { error, filePath });
     // Try to clean up temp file if rename failed
-    try { if (existsSync(tempPath)) await fs.unlink(tempPath); } catch (e) {
+    try { if (existsSync(tempPath)) await fs.unlink(tempPath); } catch (_e) {
       loggers.fileManager.debug(`[FileLock] Temp file cleanup failed (likely already gone): ${tempPath}`);
     }
     throw error;
