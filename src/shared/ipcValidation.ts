@@ -87,6 +87,41 @@ export const BridgeHistoryEntrySchema = z.object({
 
 export type ValidatedBridgeHistoryEntry = z.infer<typeof BridgeHistoryEntrySchema>;
 
+// ==================== Data Record Input Schemas ====================
+
+export const ContactRecordInputSchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+  phone: z.string(),
+  title: z.string(),
+});
+
+export const ServerRecordInputSchema = z.object({
+  name: z.string().min(1),
+  businessArea: z.string(),
+  lob: z.string(),
+  comment: z.string(),
+  owner: z.string(),
+  contact: z.string(),
+  os: z.string(),
+});
+
+export const OnCallRecordInputSchema = z.object({
+  team: z.string().min(1),
+  role: z.string(),
+  name: z.string(),
+  contact: z.string(),
+  timeWindow: z.string().optional(),
+});
+
+export const ExportOptionsSchema = z.object({
+  format: z.enum(['json', 'csv']),
+  category: z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']),
+  includeMetadata: z.boolean().optional(),
+});
+
+export const DataCategorySchema = z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']);
+
 // ==================== Note Schemas ====================
 export const NoteSchema = z.object({
   targetType: z.enum(['contact', 'server']),

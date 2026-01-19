@@ -181,7 +181,16 @@ export class FileManager implements FileContext {
   }
 
   public async isDummyData(fileName: string): Promise<boolean> {
-    try { const [current, bundled] = await Promise.all([fs.readFile(join(this.rootDir, fileName), "utf-8"), fs.readFile(join(this.bundledDataPath, fileName), "utf-8")]); return current.replace(/\r\n/g, "\n").trim() === bundled.replace(/\r\n/g, "\n").trim(); } catch { return false; }
+    try {
+      const [current, bundled] = await Promise.all([
+        fs.readFile(join(this.rootDir, fileName), "utf-8"),
+        fs.readFile(join(this.bundledDataPath, fileName), "utf-8")
+      ]);
+      return current.replace(/\r\n/g, "\n").trim() === bundled.replace(/\r\n/g, "\n").trim();
+    } catch (e) {
+      loggers.fileManager.debug('isDummyData check failed', { fileName, error: e });
+      return false;
+    }
   }
 
   private fileLocks: Map<string, Promise<void>> = new Map();
@@ -223,12 +232,12 @@ export class FileManager implements FileContext {
     this.fileLocks.set(path, newLock);
     return newLock;
   }
-  public safeStringify(data: any): string {
+  public safeStringify(data: unknown): string {
     // Auto-detect: if data is not a 2D array (CSV format), use JSON
-    if (typeof data === 'object' && !Array.isArray(data?.[0])) {
+    if (typeof data === 'object' && data !== null && !Array.isArray((data as Record<string, unknown>)[0])) {
       return JSON.stringify(data, null, 2);
     }
-    return stringifyCsv(data);
+    return stringifyCsv(data as string[][]);
   }
   public emitError(error: DataError) { this.emitter.emitError(error); }
   public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }

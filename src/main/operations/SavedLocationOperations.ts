@@ -7,6 +7,7 @@ import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { SavedLocation } from "@shared/ipc";
+import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
 import { modifyJsonWithLock } from "../fileLock";
 
@@ -25,7 +26,7 @@ export async function getSavedLocations(rootDir: string): Promise<SavedLocation[
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (isNodeError(e) && e.code === "ENOENT") return [];
     loggers.fileManager.error("[SavedLocationOperations] getSavedLocations error:", { error: e });
     throw e;
   }

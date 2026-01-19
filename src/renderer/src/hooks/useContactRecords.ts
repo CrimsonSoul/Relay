@@ -28,21 +28,23 @@ export function useContactRecords() {
           return null;
         }
         const result = await window.api.addContactRecord(contact);
-        if (result) {
+        if (result.success && result.data) {
+          const record = result.data;
           setContacts((prev) => {
             // Check if this was an update (same email)
             const existingIndex = prev.findIndex(
-              (c) => c.email.toLowerCase() === result.email.toLowerCase()
+              (c) => c.email.toLowerCase() === record.email.toLowerCase()
             );
             if (existingIndex !== -1) {
               const updated = [...prev];
-              updated[existingIndex] = result;
+              updated[existingIndex] = record;
               return updated;
             }
-            return [...prev, result];
+            return [...prev, record];
           });
+          return record;
         }
-        return result;
+        return null;
       } catch (e) {
         console.error("[useContactRecords] Failed to add contact:", e);
         return null;
@@ -61,15 +63,15 @@ export function useContactRecords() {
           console.error("[useContactRecords] API not available");
           return false;
         }
-        const success = await window.api.updateContactRecord(id, updates);
-        if (success) {
+        const result = await window.api.updateContactRecord(id, updates);
+        if (result.success) {
           setContacts((prev) =>
             prev.map((c) =>
               c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c
             )
           );
         }
-        return success ?? false;
+        return result.success;
       } catch (e) {
         console.error("[useContactRecords] Failed to update contact:", e);
         return false;
@@ -84,11 +86,11 @@ export function useContactRecords() {
         console.error("[useContactRecords] API not available");
         return false;
       }
-      const success = await window.api.deleteContactRecord(id);
-      if (success) {
+      const result = await window.api.deleteContactRecord(id);
+      if (result.success) {
         setContacts((prev) => prev.filter((c) => c.id !== id));
       }
-      return success ?? false;
+      return result.success;
     } catch (e) {
       console.error("[useContactRecords] Failed to delete contact:", e);
       return false;

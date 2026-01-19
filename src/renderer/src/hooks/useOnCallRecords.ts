@@ -28,10 +28,11 @@ export function useOnCallRecords() {
           return null;
         }
         const result = await window.api.addOnCallRecord(record);
-        if (result) {
-          setOnCall((prev) => [...prev, result]);
+        if (result.success && result.data) {
+          setOnCall((prev) => [...prev, result.data!]);
+          return result.data;
         }
-        return result;
+        return null;
       } catch (e) {
         console.error("[useOnCallRecords] Failed to add record:", e);
         return null;
@@ -50,15 +51,15 @@ export function useOnCallRecords() {
           console.error("[useOnCallRecords] API not available");
           return false;
         }
-        const success = await window.api.updateOnCallRecord(id, updates);
-        if (success) {
+        const result = await window.api.updateOnCallRecord(id, updates);
+        if (result.success) {
           setOnCall((prev) =>
             prev.map((r) =>
               r.id === id ? { ...r, ...updates, updatedAt: Date.now() } : r
             )
           );
         }
-        return success ?? false;
+        return result.success;
       } catch (e) {
         console.error("[useOnCallRecords] Failed to update record:", e);
         return false;
@@ -73,11 +74,11 @@ export function useOnCallRecords() {
         console.error("[useOnCallRecords] API not available");
         return false;
       }
-      const success = await window.api.deleteOnCallRecord(id);
-      if (success) {
+      const result = await window.api.deleteOnCallRecord(id);
+      if (result.success) {
         setOnCall((prev) => prev.filter((r) => r.id !== id));
       }
-      return success ?? false;
+      return result.success;
     } catch (e) {
       console.error("[useOnCallRecords] Failed to delete record:", e);
       return false;
@@ -90,11 +91,11 @@ export function useOnCallRecords() {
         console.error("[useOnCallRecords] API not available");
         return false;
       }
-      const success = await window.api.deleteOnCallByTeam(team);
-      if (success) {
+      const result = await window.api.deleteOnCallByTeam(team);
+      if (result.success) {
         setOnCall((prev) => prev.filter((r) => r.team !== team));
       }
-      return success ?? false;
+      return result.success;
     } catch (e) {
       console.error("[useOnCallRecords] Failed to delete team records:", e);
       return false;

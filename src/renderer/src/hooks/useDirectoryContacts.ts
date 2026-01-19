@@ -22,14 +22,26 @@ export function useDirectoryContacts(contacts: Contact[]) {
     const newContact = { name: contact.name || '', email: contact.email || '', phone: contact.phone || '', title: contact.title || '', _searchString: (contact.name + contact.email + contact.title + contact.phone).toLowerCase(), avatar: undefined } as Contact;
     setOptimisticAdds(prev => [newContact, ...prev]);
     setIsAddModalOpen(false);
-    try { const success = await window.api?.addContact(contact); if (!success) { setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email)); showToast('Failed to create contact: Unable to save to file', 'error'); } }
+    try { 
+      const result = await window.api?.addContact(contact); 
+      if (!result?.success) { 
+        setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email)); 
+        showToast(result?.error || 'Failed to create contact: Unable to save to file', 'error'); 
+      } 
+    }
     catch (error) { setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email)); showToast(`Failed to create contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error'); }
   };
 
   const handleUpdateContact = async (updated: Partial<Contact>) => {
     if (updated.email) setOptimisticUpdates(prev => new Map(prev).set(updated.email!, updated));
     setEditingContact(null);
-    try { const success = await window.api?.addContact(updated); if (!success) { if (updated.email) setOptimisticUpdates(prev => { const next = new Map(prev); next.delete(updated.email!); return next; }); showToast('Failed to update contact: Unable to save changes', 'error'); } }
+    try { 
+      const result = await window.api?.addContact(updated); 
+      if (!result?.success) { 
+        if (updated.email) setOptimisticUpdates(prev => { const next = new Map(prev); next.delete(updated.email!); return next; }); 
+        showToast(result?.error || 'Failed to update contact: Unable to save changes', 'error'); 
+      } 
+    }
     catch (error) { if (updated.email) setOptimisticUpdates(prev => { const next = new Map(prev); next.delete(updated.email!); return next; }); showToast(`Failed to update contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error'); }
   };
 
@@ -38,7 +50,13 @@ export function useDirectoryContacts(contacts: Contact[]) {
     const email = deleteConfirmation.email;
     setOptimisticDeletes(prev => new Set(prev).add(email));
     setDeleteConfirmation(null);
-    try { const success = await window.api?.removeContact(email); if (!success) { setOptimisticDeletes(prev => { const next = new Set(prev); next.delete(email); return next; }); showToast('Failed to delete contact: Contact not found or file error', 'error'); } }
+    try { 
+      const result = await window.api?.removeContact(email); 
+      if (!result?.success) { 
+        setOptimisticDeletes(prev => { const next = new Set(prev); next.delete(email); return next; }); 
+        showToast(result?.error || 'Failed to delete contact: Contact not found or file error', 'error'); 
+      } 
+    }
     catch (error) { setOptimisticDeletes(prev => { const next = new Set(prev); next.delete(email); return next; }); showToast(`Failed to delete contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error'); }
   };
 

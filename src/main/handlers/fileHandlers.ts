@@ -1,7 +1,6 @@
 import { ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { existsSync } from 'fs';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
 import { importGroupsFromCsv } from '../operations';
@@ -10,7 +9,7 @@ export function setupFileHandlers(getDataRoot: () => string) {
   const getContactsFilePath = () => {
     const root = getDataRoot();
     const fullPath = join(root, 'contacts.csv');
-    return existsSync(fullPath) ? fullPath : fullPath;
+    return fullPath;
   };
 
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
@@ -38,7 +37,8 @@ export function setupFileHandlers(getDataRoot: () => string) {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV, async () => {
-    return importGroupsFromCsv(getDataRoot());
+  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV, async (): Promise<IpcResult> => {
+    const success = await importGroupsFromCsv(getDataRoot());
+    return { success };
   });
 }

@@ -77,11 +77,11 @@ export function MainApp() {
       return;
     }
     try {
-      const success = await window.api.addContact(contact);
-      if (success) {
+      const result = await window.api.addContact(contact);
+      if (result.success) {
         showToast("Contact created successfully", "success");
       } else {
-        showToast("Failed to create contact", "error");
+        showToast(result.error || "Failed to create contact", "error");
       }
     } catch (e) {
       console.error("[App] Failed to save contact:", e);

@@ -1,5 +1,6 @@
+/* eslint-disable no-undef */
 import { Page } from '@playwright/test';
-import { AppData, BridgeAPI, RadarSnapshot, BridgeGroup, Contact, Server, WeatherData, WeatherAlert } from '../../src/shared/ipc';
+import { AppData, BridgeAPI, RadarSnapshot, BridgeGroup, Contact, Server, WeatherData, WeatherAlert, ContactRecord, ServerRecord, OnCallRecord } from '../../src/shared/ipc';
 
 export const MOCK_GROUPS: BridgeGroup[] = [
   {
@@ -61,7 +62,7 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
   // Mock geolocation before anything else
   await page.addInitScript(() => {
     const mockGeolocation = {
-      getCurrentPosition: (success: any) => {
+      getCurrentPosition: (success: PositionCallback) => {
         setTimeout(() => {
           success({
             coords: {
@@ -74,10 +75,10 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
               speed: null,
             },
             timestamp: Date.now(),
-          });
+          } as GeolocationPosition);
         }, 100);
       },
-      watchPosition: (success: any) => {
+      watchPosition: (success: PositionCallback) => {
         const id = Math.floor(Math.random() * 1000);
         setTimeout(() => {
           success({
@@ -87,14 +88,13 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
               accuracy: 100,
             },
             timestamp: Date.now(),
-          });
+          } as GeolocationPosition);
         }, 100);
         return id;
       },
       clearWatch: () => {},
     };
-    // eslint-disable-next-line no-undef
-    (navigator as any).geolocation = mockGeolocation;
+    (navigator as unknown as { geolocation: unknown }).geolocation = mockGeolocation;
   });
 
   await page.addInitScript((args) => {
@@ -104,7 +104,7 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
     const currentData: AppData = JSON.parse(JSON.stringify(mockData));
     
     let dataCallback: ((data: AppData) => void) | null = null;
-    let radarCallback: ((data: RadarSnapshot) => void) | null = null;
+    let _radarCallback: ((data: RadarSnapshot) => void) | null = null;
 
     const broadcast = () => {
       console.log('[Mock API] Broadcasting data update', currentData);
@@ -119,9 +119,9 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
       openPath: async () => {},
       openExternal: async () => {},
       openContactsFile: async () => {},
-      importGroupsFromCsv: async () => true,
-      importContactsFile: async () => true,
-      importServersFile: async () => true,
+      importGroupsFromCsv: async () => ({ success: true }),
+      importContactsFile: async () => ({ success: true }),
+      importServersFile: async () => ({ success: true }),
       
       subscribeToData: (callback) => {
         dataCallback = callback;
@@ -155,9 +155,9 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
       useCachedAuth: async () => true,
       
       subscribeToRadar: (callback) => {
-         radarCallback = callback;
+         _radarCallback = callback;
          callback(mockRadar);
-         return () => { radarCallback = null; };
+         return () => { _radarCallback = null; };
       },
       
       logBridge: () => {},
@@ -170,13 +170,13 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
          } as Contact;
          currentData.contacts.push(newContact);
          broadcast();
-         return true;
+         return { success: true };
       },
       
       removeContact: async (email) => {
          currentData.contacts = currentData.contacts.filter(c => c.email !== email);
          broadcast();
-         return true;
+         return { success: true };
       },
       
       addServer: async (server) => {
@@ -187,16 +187,16 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
          } as Server;
          currentData.servers.push(newServer);
          broadcast();
-         return true;
+         return { success: true };
       },
       
       removeServer: async (name) => {
          currentData.servers = currentData.servers.filter(s => s.name !== name);
          broadcast();
-         return true;
+         return { success: true };
       },
       
-      importContactsWithMapping: async () => true,
+      importContactsWithMapping: async () => ({ success: true }),
       changeDataFolder: async () => true,
       resetDataFolder: async () => true,
       getDataPath: async () => '/mock/data/path',
@@ -206,7 +206,7 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
       isMaximized: async () => false,
       onMaximizeChange: () => {},
       removeMaximizeListener: () => {},
-      generateDummyData: async () => true,
+      generateDummyData: async () => ({ success: true }),
       getIpLocation: async () => ({
           lat: 40.7128,
           lon: -74.0060,
@@ -220,44 +220,45 @@ export async function injectMockApi(page: Page, overrides: MockOverrides = {}) {
       getWeatherAlerts: async () => mockAlerts || [],
       
       searchLocation: async () => ({ results: [] }),
-      updateOnCallTeam: async () => true,
-      removeOnCallTeam: async () => true,
-      renameOnCallTeam: async () => true,
-      saveAllOnCall: async () => true,
+      updateOnCallTeam: async () => ({ success: true }),
+      removeOnCallTeam: async () => ({ success: true }),
+      renameOnCallTeam: async () => ({ success: true }),
+      reorderOnCallTeams: async () => ({ success: true }),
+      saveAllOnCall: async () => ({ success: true }),
       getGroups: async () => currentData.groups,
-      saveGroup: async () => ({ id: 'new_group', name: 'New Group', contacts: [], createdAt: Date.now(), updatedAt: Date.now() }),
-      updateGroup: async () => true,
-      deleteGroup: async () => true,
+      saveGroup: async () => ({ success: true, data: { id: 'new_group', name: 'New Group', contacts: [], createdAt: Date.now(), updatedAt: Date.now() } }),
+      updateGroup: async () => ({ success: true }),
+      deleteGroup: async () => ({ success: true }),
       getBridgeHistory: async () => [],
-      addBridgeHistory: async () => ({ id: 'history_1', timestamp: Date.now(), note: '', groups: [], contacts: [], recipientCount: 0 }),
-      deleteBridgeHistory: async () => true,
-      clearBridgeHistory: async () => true,
+      addBridgeHistory: async () => ({ success: true, data: { id: 'history_1', timestamp: Date.now(), note: '', groups: [], contacts: [], recipientCount: 0 } }),
+      deleteBridgeHistory: async () => ({ success: true }),
+      clearBridgeHistory: async () => ({ success: true }),
       getNotes: async () => ({ contacts: {}, servers: {} }),
-      setContactNote: async () => true,
-      setServerNote: async () => true,
+      setContactNote: async () => ({ success: true }),
+      setServerNote: async () => ({ success: true }),
       getSavedLocations: async () => [],
-      saveLocation: async () => ({ id: 'loc_1', name: 'Test Location', lat: 0, lon: 0, isDefault: false }),
-      deleteLocation: async () => true,
-      setDefaultLocation: async () => true,
-      clearDefaultLocation: async () => true,
-      updateLocation: async () => true,
-      exportData: async () => true,
-      importData: async () => ({ success: true, imported: 0, updated: 0, skipped: 0, errors: [] }),
+      saveLocation: async () => ({ success: true, data: { id: 'loc_1', name: 'Test Location', lat: 0, lon: 0, isDefault: false } }),
+      deleteLocation: async () => ({ success: true }),
+      setDefaultLocation: async () => ({ success: true }),
+      clearDefaultLocation: async () => ({ success: true }),
+      updateLocation: async () => ({ success: true }),
+      exportData: async () => ({ success: true }),
+      importData: async () => ({ success: true, data: { success: true, imported: 0, updated: 0, skipped: 0, errors: [] } }),
       getDataStats: async () => ({ contacts: { count: 0, lastUpdated: 0 }, servers: { count: 0, lastUpdated: 0 }, oncall: { count: 0, lastUpdated: 0 }, groups: { count: 0, lastUpdated: 0 }, hasCsvFiles: false }),
-      migrateFromCsv: async () => ({ success: true, contacts: { migrated: 0, errors: [] }, servers: { migrated: 0, errors: [] }, oncall: { migrated: 0, errors: [] }, groups: { migrated: 0, errors: [] } }),
+      migrateFromCsv: async () => ({ success: true, data: { success: true, contacts: { migrated: 0, errors: [] }, servers: { migrated: 0, errors: [] }, oncall: { migrated: 0, errors: [] }, groups: { migrated: 0, errors: [] } } }),
       getContacts: async () => [],
-      addContactRecord: async () => null,
-      updateContactRecord: async () => true,
-      deleteContactRecord: async () => true,
+      addContactRecord: async () => ({ success: true, data: null as unknown as ContactRecord }),
+      updateContactRecord: async () => ({ success: true }),
+      deleteContactRecord: async () => ({ success: true }),
       getServers: async () => [],
-      addServerRecord: async () => null,
-      updateServerRecord: async () => true,
-      deleteServerRecord: async () => true,
+      addServerRecord: async () => ({ success: true, data: null as unknown as ServerRecord }),
+      updateServerRecord: async () => ({ success: true }),
+      deleteServerRecord: async () => ({ success: true }),
       getOnCall: async () => [],
-      addOnCallRecord: async () => null,
-      updateOnCallRecord: async () => true,
-      deleteOnCallRecord: async () => true,
-      deleteOnCallByTeam: async () => true,
+      addOnCallRecord: async () => ({ success: true, data: null as unknown as OnCallRecord }),
+      updateOnCallRecord: async () => ({ success: true }),
+      deleteOnCallRecord: async () => ({ success: true }),
+      deleteOnCallByTeam: async () => ({ success: true }),
       writeClipboard: async () => true
     };
 

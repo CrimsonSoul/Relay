@@ -70,9 +70,9 @@ const api: BridgeAPI = {
 
   subscribeToRadar: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.RADAR_DATA);
-    ipcRenderer.on(IPC_CHANNELS.RADAR_DATA, (_event, data: RadarSnapshot) => {
-      callback(data);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, data: RadarSnapshot) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.RADAR_DATA, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.RADAR_DATA, handler);
   },
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
