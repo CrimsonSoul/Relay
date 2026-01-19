@@ -81,13 +81,11 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     // Fetch initial data immediately
     void window.api.getInitialData().then(initialData => {
       if (initialData) {
-        console.log('[AppData] Fetched initial data');
         setData(initialData);
       }
     });
 
     const unsubscribeData = window.api.subscribeToData((newData: AppData) => {
-      console.log('[AppData] Received broadcast update. Last updated:', new Date(newData.lastUpdated).toLocaleTimeString(), 'OnCall count:', newData.onCall.length);
       setData(newData);
       settleReloadIndicator();
     });

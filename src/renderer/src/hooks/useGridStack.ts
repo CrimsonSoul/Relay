@@ -5,7 +5,8 @@ import { OnCallRow, TeamLayout } from '@shared/ipc';
 export function useGridStack(
   localOnCall: OnCallRow[], 
   setLocalOnCall: (rows: OnCallRow[]) => void,
-  getItemHeight: (team: string) => number
+  getItemHeight: (team: string) => number,
+  teamLayout?: TeamLayout
 ) {
   const gridRef = useRef<HTMLDivElement>(null);
   const gridInstanceRef = useRef<GridStack | null>(null);
@@ -76,18 +77,8 @@ export function useGridStack(
       }).map(item => item.getAttribute('gs-id')).filter(Boolean) as string[];
 
       // Only act if the canonical order has changed OR if layout positions changed
-      // (For simplicity, we persist on every change event to capture position tweaks)
-      // Actually, let's keep the order change check but also check layout changes?
-      // Since 'change' fires on any move, we can just persist.
-      // But let's check order to decide if we update local list order.
-      
       const orderChanged = JSON.stringify(prevOrderRef.current) !== JSON.stringify(newOrder);
       
-      console.log('[GridStack] prevOrder:', prevOrderRef.current, 'newOrder:', newOrder, 'changed:', orderChanged);
-      
-      // Always persist layout changes, even if order is same (e.g. asymmetric move)
-      console.log('[GridStack] Layout changed. New Order:', newOrder, 'Layout:', layout);
-
       const newFlatList: OnCallRow[] = [];
       newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
       
@@ -173,12 +164,10 @@ export function useGridStack(
         // Use receiver's column count for responsive layout
         const columnCount = grid.getColumn();
         
-        console.log('[GridStack] Syncing layout:', newOrder, 'columns:', columnCount);
-        
         const newLayout = newOrder.map((team, i) => ({
           id: team,
-          x: columnCount === 1 ? 0 : i % columnCount,
-          y: columnCount === 1 ? i : Math.floor(i / columnCount),
+          x: columnCount === 1 ? 0 : (teamLayout?.[team]?.x ?? (i % columnCount)),
+          y: columnCount === 1 ? i : (teamLayout?.[team]?.y ?? Math.floor(i / columnCount)),
           w: 1,
           h: getItemHeight(team)
         }));
@@ -195,7 +184,7 @@ export function useGridStack(
     
     prevOrderRef.current = newOrder;
     return undefined;
-  }, [localOnCall, getItemHeight]);
+  }, [localOnCall, getItemHeight, teamLayout]);
 
   // Initial initialization
   useEffect(() => {
