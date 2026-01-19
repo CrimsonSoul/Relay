@@ -223,7 +223,7 @@ export function MainApp() {
           {mountedTabs.has("Personnel") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Personnel" ? "block" : "none" }}>
               <Suspense fallback={<TabFallback />}>
-                <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
+                <PersonnelTab onCall={data.onCall} contacts={data.contacts} teamLayout={data.teamLayout} />
               </Suspense>
             </div>
           )}

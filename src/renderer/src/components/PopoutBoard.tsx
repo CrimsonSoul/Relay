@@ -47,10 +47,17 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
   // ensuring perfect content sizing without height formula issues.
   const columns = useMemo(() => {
     const cols: string[][] = [[], []];
-    teams.forEach(team => {
+    
+    // First, sort all teams by their Y coordinate to maintain vertical sequence
+    const sortedTeams = [...teams].sort((a, b) => {
+      const yA = teamLayout?.[a]?.y ?? 0;
+      const yB = teamLayout?.[b]?.y ?? 0;
+      return yA - yB;
+    });
+
+    sortedTeams.forEach(team => {
       const x = teamLayout?.[team]?.x ?? 0;
       // Map to column 0 or 1. Default to 0.
-      // If layout has more columns, we clamp to 1 for now (2-col layout)
       const colIndex = x > 0 ? 1 : 0;
       cols[colIndex].push(team);
     });
@@ -128,9 +135,9 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
         >COPY ALL</TactileButton>
       </CollapsibleHeader>
 
-      <div style={{ display: 'flex', gap: '24px', paddingBottom: "40px", alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: '12px', padding: '12px', paddingBottom: "40px", alignItems: 'flex-start' }}>
         {/* Column 0 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '24px', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
           {columns[0].map(team => (
             <div key={team} style={{ width: '100%' }}>
                <TeamCard
@@ -150,7 +157,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
         </div>
 
         {/* Column 1 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '24px', minWidth: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
            {columns[1].map(team => (
             <div key={team} style={{ width: '100%' }}>
                <TeamCard

@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useLayoutEffect } from "react";
-import { OnCallRow, Contact } from "@shared/ipc";
+import { OnCallRow, Contact, TeamLayout } from "@shared/ipc";
 import "gridstack/dist/gridstack.min.css";
 import { TactileButton } from "../components/TactileButton";
 import { Modal } from "../components/Modal";
@@ -68,14 +68,14 @@ const GridStackItem: React.FC<{
   );
 };
 
-export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }> = ({ onCall, contacts }) => {
+export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; teamLayout?: TeamLayout }> = ({ onCall, contacts, teamLayout }) => {
   const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, getItemHeight, setLocalOnCall } = usePersonnel(onCall);
   const [isAddingTeam, setIsAddingTeam] = useState(false); const [newTeamName, setNewTeamName] = useState("");
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ team: string; onConfirm: () => void } | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
-  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight);
+  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight, teamLayout);
   const { showToast } = useToast();
 
   const isPopout = window.location.hash.includes('popout');
@@ -135,8 +135,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[] }
           <GridStackItem
             key={team}
             team={team}
-            x={i % 2}
-            y={Math.floor(i / 2)}
+            x={teamLayout?.[team]?.x ?? (i % 2)}
+            y={teamLayout?.[team]?.y ?? Math.floor(i / 2)}
             h={getItemHeight(team)}
           >
             <TeamCard

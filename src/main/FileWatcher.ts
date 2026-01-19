@@ -20,7 +20,7 @@ interface WatcherCallbacks {
 // All files to watch (both CSV and JSON)
 const ALL_CONTACT_FILES = [...CONTACT_FILES, CONTACTS_JSON_FILE];
 const ALL_SERVER_FILES = [...SERVER_FILES, SERVERS_JSON_FILE];
-const ALL_ONCALL_FILES = [...ONCALL_FILES, ONCALL_JSON_FILE];
+const ALL_ONCALL_FILES = [...ONCALL_FILES, ONCALL_JSON_FILE, "oncall_layout.json"];
 const ALL_GROUP_FILES = [...GROUP_FILES, GROUPS_JSON_FILE];
 
 import { loggers } from "./logger";
