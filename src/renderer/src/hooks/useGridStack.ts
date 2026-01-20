@@ -12,8 +12,12 @@ export function useGridStack(
   const gridRef = useRef<HTMLDivElement>(null);
   const gridInstanceRef = useRef<GridStack | null>(null);
   
+  // Update ref immediately on each render to ensure latest data in handlers
   const localOnCallRef = useRef(localOnCall);
+  localOnCallRef.current = localOnCall;
+
   const isDraggingRef = useRef(false);
+  const wasDraggedRef = useRef(false); // New: track if a drag actually happened
   const isExternalUpdateRef = useRef(false); // Guard against feedback loop from grid.load()
   const prevOrderRef = useRef<string[]>(Array.from(new Set(localOnCall.map(r => r.team))));
 
@@ -41,12 +45,17 @@ export function useGridStack(
 
     grid.on('dragstop', () => {
       isDraggingRef.current = false;
+      wasDraggedRef.current = true; // Mark that a user drag occurred
     });
 
     grid.on('change', () => {
       if (!gridInstanceRef.current) return;
       if (isExternalUpdateRef.current) return; // Ignore changes triggered by our own grid.load()
       
+      // Only process reorder if it was caused by an actual user drag
+      if (!wasDraggedRef.current) return;
+      wasDraggedRef.current = false;
+
       const grid = gridInstanceRef.current;
       
       // IMPORTANT: Spread to avoid mutating GridStack's internal array
@@ -176,7 +185,15 @@ export function useGridStack(
         // Guard: prevent change handler from firing during our load()
         isExternalUpdateRef.current = true;
         grid.load(newLayout);
-        isExternalUpdateRef.current = false;
+        
+        // Use double-requestAnimationFrame to ensure the guard persists
+        // until after the browser has processed the GridStack DOM updates
+        // and any potentially deferred 'change' events.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            isExternalUpdateRef.current = false;
+          });
+        });
       }, 50);
       
       prevOrderRef.current = newOrder;
