@@ -4,11 +4,10 @@
  */
 
 import { ipcMain } from "electron";
-import { IPC_CHANNELS, type DataStats, type IpcResult, type OnCallRecord } from "../../shared/ipc";
+import { IPC_CHANNELS, type DataStats, type IpcResult } from "../../shared/ipc";
 import {
   ContactRecordInputSchema,
   ServerRecordInputSchema,
-  OnCallRecordInputSchema,
   ExportOptionsSchema,
   DataCategorySchema,
   validateIpcDataSafe,
@@ -26,10 +25,6 @@ import {
   deleteServerRecord,
   // OnCall
   getOnCall,
-  addOnCallRecord,
-  updateOnCallRecord,
-  deleteOnCallRecord,
-  deleteOnCallByTeam,
   // Groups (for stats)
   getGroups,
   // Migration
@@ -108,35 +103,6 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
   // ==================== OnCall ====================
   ipcMain.handle(IPC_CHANNELS.GET_ONCALL, async () => {
     return getOnCall(getDataRoot());
-  });
-
-  ipcMain.handle(IPC_CHANNELS.ADD_ONCALL_RECORD, async (_, record): Promise<IpcResult> => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(OnCallRecordInputSchema, record, 'ADD_ONCALL_RECORD');
-    if (!validated) return { success: false, error: 'Invalid on-call data' };
-    const result = await addOnCallRecord(getDataRoot(), validated as Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>);
-    return { success: !!result, data: result || undefined };
-  });
-
-  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_RECORD, async (_, id, updates): Promise<IpcResult> => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const success = await updateOnCallRecord(getDataRoot(), id, updates);
-    return { success };
-  });
-
-  ipcMain.handle(IPC_CHANNELS.DELETE_ONCALL_RECORD, async (_, id): Promise<IpcResult> => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const success = await deleteOnCallRecord(getDataRoot(), id);
-    return { success };
-  });
-
-  ipcMain.handle(IPC_CHANNELS.DELETE_ONCALL_BY_TEAM, async (_, team): Promise<IpcResult> => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof team !== 'string' || !team) return { success: false, error: 'Invalid team name' };
-    const success = await deleteOnCallByTeam(getDataRoot(), team);
-    return { success };
   });
 
   // ==================== Data Manager ====================

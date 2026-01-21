@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { OnCallRow, Contact, TeamLayout } from "@shared/ipc";
 import { CollapsibleHeader, useCollapsibleHeader } from "../components/CollapsibleHeader";
 import { TeamCard } from "../components/personnel/TeamCard";
@@ -7,6 +7,7 @@ import { useToast } from "../components/Toast";
 import { Tooltip } from "../components/Tooltip";
 import { TactileButton } from "../components/TactileButton";
 import { ContextMenu, ContextMenuItem } from "../components/ContextMenu";
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 
 // Helper for copying
 function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
@@ -29,7 +30,6 @@ interface PopoutBoardProps {
 
 export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, teamLayout }) => {
   const { showToast } = useToast();
-  // We reuse usePersonnel hook to get derived team lists and alerts
   const { 
     localOnCall, 
     weekRange, 
@@ -41,36 +41,41 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
-  
-  // Calculate columns based on teamLayout
-  // This replaces GridStack with a simple CSS Masonry-style layout
-  // ensuring perfect content sizing without height formula issues.
-  const columns = useMemo(() => {
-    const cols: string[][] = [[], []];
-    
-    // First, sort all teams by their Y coordinate to maintain vertical sequence
-    const sortedTeams = [...teams].sort((a, b) => {
-      const yA = teamLayout?.[a]?.y ?? 0;
-      const yB = teamLayout?.[b]?.y ?? 0;
-      if (yA !== yB) return yA - yB;
-      const xA = teamLayout?.[a]?.x ?? 0;
-      const xB = teamLayout?.[b]?.x ?? 0;
-      return xA - xB;
-    });
+  const [isKiosk, setIsKiosk] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [isRemoteDragging, setIsRemoteDragging] = useState(false);
 
-    sortedTeams.forEach((team, i) => {
-      let x = teamLayout?.[team]?.x;
-      // Default to the same logic as PersonnelTab if layout is missing: (i % 2)
-      // Note: This assumes sortedTeams is in the same order as 'teams' used in PersonnelTab's mapping
-      // which it should be roughly if no layout exists (both iterate array).
-      if (x === undefined) x = (i % 2);
-      
-      // Map to column 0 or 1.
-      const colIndex = x > 0 ? 1 : 0;
-      cols[colIndex].push(team);
+  useEffect(() => {
+    return window.api?.onDragStateChange((isDragging) => {
+      setIsRemoteDragging(isDragging);
     });
-    return cols;
-  }, [teams, teamLayout]);
+  }, []);
+
+  useEffect(() => {
+    setLastUpdated(new Date());
+  }, [localOnCall]);
+  
+  const [animationParent, enableAnimations] = useAutoAnimate({
+    duration: 500,
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+  });
+
+  // Disable animations during active window resize to prevent jank
+  useEffect(() => {
+    let resizeTimeout: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      enableAnimations(false);
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        enableAnimations(true);
+      }, 150);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
+    };
+  }, [enableAnimations]);
 
   const handleCopyTeamInfo = useCallback(async (team: string, rows: OnCallRow[]) => {
     const text = formatTeamOnCall(team, rows);
@@ -96,10 +101,10 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
   }, [teams, localOnCall, showToast]);
 
   const alertConfigs = [
+    { day: 0, type: 'first-responder', label: 'Update First Responder', bg: 'var(--color-accent-primary)' },
     { day: 1, type: 'general', label: 'Update Weekly Schedule', bg: 'var(--color-accent-primary)' }, 
     { day: 3, type: 'sql', label: 'Update SQL DBA', bg: '#EF4444' }, 
-    { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }, 
-    { day: 5, type: 'network', label: 'Update Network/Voice/FTS', bg: '#3B82F6' }
+    { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }
   ];
   
   const renderAlerts = () => alertConfigs
@@ -127,62 +132,94 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
     ));
 
   return (
-    <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto" }}>
+    <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: isKiosk ? "0" : "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto", position: 'relative' }}>
       
-      {/* Read-only Header */}
-      <CollapsibleHeader 
-        title="On-Call Board" 
-        subtitle={<>{weekRange}{renderAlerts()}</>} 
-        isCollapsed={isCollapsed}
-      >
-        <TactileButton
-          onClick={handleCopyAllOnCall}
-          title="Copy All On-Call Info"
-          style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
-          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>}
-        >COPY ALL</TactileButton>
-      </CollapsibleHeader>
-
-      <div style={{ display: 'flex', gap: '12px', padding: '12px', paddingBottom: "40px", alignItems: 'flex-start' }}>
-        {/* Column 0 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
-          {columns[0].map(team => (
-            <div key={team} style={{ width: '100%' }}>
-               <TeamCard
-                team={team}
-                rows={localOnCall.filter((r) => r.team === team)}
-                contacts={contacts}
-                onUpdateRows={() => {}}
-                onRenameTeam={() => {}}
-                onRemoveTeam={() => {}}
-                setConfirm={() => {}}
-                setMenu={setMenu}
-                onCopyTeamInfo={handleCopyTeamInfo}
-                isReadOnly={true}
-              />
-            </div>
-          ))}
+      {isRemoteDragging && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 9999,
+          background: 'rgba(11, 13, 18, 0.4)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'all',
+          transition: 'all 0.3s ease'
+        }}>
+          <div style={{
+            background: 'rgba(0, 0, 0, 0.8)',
+            padding: '20px 40px',
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            color: '#fff',
+            fontSize: '18px',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+          }}>
+            <span className="animate-spin" style={{ display: 'inline-block', width: '20px', height: '20px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--color-accent-blue)', borderRadius: '50%' }} />
+            Board being updated...
+          </div>
         </div>
+      )}
 
-        {/* Column 1 */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
-           {columns[1].map(team => (
-            <div key={team} style={{ width: '100%' }}>
-               <TeamCard
-                team={team}
-                rows={localOnCall.filter((r) => r.team === team)}
-                contacts={contacts}
-                onUpdateRows={() => {}}
-                onRenameTeam={() => {}}
-                onRemoveTeam={() => {}}
-                setConfirm={() => {}}
-                setMenu={setMenu}
-                onCopyTeamInfo={handleCopyTeamInfo}
-                isReadOnly={true}
-              />
+      {!isKiosk && (
+        <CollapsibleHeader 
+          title="On-Call Board" 
+          subtitle={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span>{weekRange}</span>
+              <span style={{ fontSize: '12px', color: 'var(--color-text-quaternary)', opacity: 0.8 }}>
+                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              {renderAlerts()}
             </div>
-          ))}
+          } 
+          isCollapsed={isCollapsed}
+        >
+          <TactileButton
+            onClick={() => setIsKiosk(true)}
+            title="Kiosk Mode (Full Screen)"
+            style={{ marginRight: '8px' }}
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>}
+          >KIOSK</TactileButton>
+          <TactileButton
+            onClick={handleCopyAllOnCall}
+            title="Copy All On-Call Info"
+            icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>}
+          >COPY ALL</TactileButton>
+        </CollapsibleHeader>
+      )}
+
+      {isKiosk && (
+        <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000, display: 'flex', gap: '8px', opacity: 0.4 }} onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')} onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}>
+           <div style={{ background: 'rgba(0,0,0,0.6)', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', color: '#fff', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center' }}>
+             Last Update: {lastUpdated.toLocaleTimeString()}
+           </div>
+           <TactileButton size="sm" onClick={() => setIsKiosk(false)} variant="ghost" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', color: '#fff' }}>Exit Kiosk</TactileButton>
         </div>
+      )}
+
+      <div ref={animationParent} className="oncall-grid" role="list" aria-label="On-Call Teams" style={{ padding: isKiosk ? "40px" : "0" }}>
+        {teams.map((team) => (
+          <div key={team} className="oncall-grid-item" role="listitem">
+            <TeamCard
+              team={team}
+              rows={localOnCall.filter((r) => r.team === team)}
+              contacts={contacts}
+              onUpdateRows={() => {}}
+              onRenameTeam={() => {}}
+              onRemoveTeam={() => {}}
+              setConfirm={() => {}}
+              setMenu={setMenu}
+              onCopyTeamInfo={handleCopyTeamInfo}
+              isReadOnly={true}
+            />
+          </div>
+        ))}
       </div>
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}

@@ -192,6 +192,10 @@ export type BridgeAPI = {
   generateDummyData: () => Promise<IpcResult>;
   getIpLocation: () => Promise<IpLocationResult>;
   logToMain: (entry: LogEntry) => void;
+  // Drag and Drop Sync
+  notifyDragStart: () => void;
+  notifyDragStop: () => void;
+  onDragStateChange: (callback: (isDragging: boolean) => void) => () => void;
   // Bridge Groups
   getGroups: () => Promise<BridgeGroup[]>;
   saveGroup: (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IpcResult<BridgeGroup>>;
@@ -327,6 +331,9 @@ export const IPC_CHANNELS = {
   MIGRATE_CSV_TO_JSON: "data:migrate",
   // Clipboard
   CLIPBOARD_WRITE: "clipboard:write",
+  // Drag Sync
+  DRAG_STARTED: "drag:started",
+  DRAG_STOPPED: "drag:stopped",
 } as const;
 
 export type BridgeEvent = {

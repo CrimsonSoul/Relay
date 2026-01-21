@@ -15,6 +15,23 @@ export function setupWindowHandlers(
     createAuxWindow?.(route);
   });
 
+  // Drag Sync - broadcast to all windows
+  ipcMain.on(IPC_CHANNELS.DRAG_STARTED, () => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.DRAG_STARTED);
+      }
+    });
+  });
+
+  ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, () => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.DRAG_STOPPED);
+      }
+    });
+  });
+
   // Clipboard - use Electron's native clipboard API
   ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (_, text: string) => {
     try {

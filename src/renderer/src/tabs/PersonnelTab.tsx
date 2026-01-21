@@ -1,6 +1,5 @@
-import React, { useState, useCallback, useRef, useLayoutEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { OnCallRow, Contact, TeamLayout } from "@shared/ipc";
-import "gridstack/dist/gridstack.min.css";
 import { TactileButton } from "../components/TactileButton";
 import { Modal } from "../components/Modal";
 import { Input } from "../components/Input";
@@ -8,12 +7,12 @@ import { ContextMenu, ContextMenuItem } from "../components/ContextMenu";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { Tooltip } from "../components/Tooltip";
 import { CollapsibleHeader, useCollapsibleHeader } from "../components/CollapsibleHeader";
-import { TeamCard } from "../components/personnel/TeamCard";
 import { usePersonnel } from "../hooks/usePersonnel";
-import { useGridStack } from "../hooks/useGridStack";
 import { useToast } from "../components/Toast";
-
-const gridStackStyles = `.grid-stack { background: transparent; } .grid-stack-item { cursor: grab; } .grid-stack-item:active { cursor: grabbing; } .grid-stack-placeholder { background: transparent !important; border: none !important; } .grid-stack-item.ui-draggable-dragging { opacity: 0.95; z-index: 100; } .grid-stack-item.ui-draggable-dragging > .grid-stack-item-content { box-shadow: 0 8px 32px rgba(0,0,0,0.35); } .grid-stack-item > .ui-resizable-handle { display: none !important; } .ui-resizable-se { display: none !important; } .grid-stack > .grid-stack-item { transition: left 0.2s ease-out, top 0.2s ease-out; } .grid-stack > .grid-stack-item.ui-draggable-dragging { transition: none; }`;
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, sortableKeyboardCoordinates, rectSortingStrategy } from "@dnd-kit/sortable";
+import { SortableTeamCard } from "../components/oncall/SortableTeamCard";
+import { useAutoAnimate } from '@formkit/auto-animate/react';
 
 // Format on-call rows as text for copying
 function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
@@ -28,67 +27,59 @@ function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
   return `${team}: ${members.join(' | ')}`;
 }
 
-/**
- * Robust wrapper for GridStack items.
- * Forcefully syncs gs-x and gs-y attributes to the DOM when props change.
- * This ensures that when GridStack re-initializes, it sees the correct positions
- * even if React's reconciliation just moved the DOM node.
- */
-const GridStackItem: React.FC<{
-  team: string;
-  x?: number;
-  y?: number;
-  h: number;
-  children: React.ReactNode;
-}> = ({ team, x, y, h, children }) => {
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Imperatively sync attributes whenever x or y changes
-  // Use useLayoutEffect to ensure attributes are set before GridStack reads them
-  useLayoutEffect(() => {
-    if (ref.current) {
-      if (x !== undefined) ref.current.setAttribute("gs-x", String(x));
-      else ref.current.removeAttribute("gs-x");
-
-      if (y !== undefined) ref.current.setAttribute("gs-y", String(y));
-      else ref.current.removeAttribute("gs-y");
-
-      if (x === undefined && y === undefined) {
-         ref.current.setAttribute("gs-auto-position", "true");
-      } else {
-         ref.current.removeAttribute("gs-auto-position");
-      }
-      
-      ref.current.setAttribute("gs-h", String(h));
-    }
-  }, [x, y, h]);
-
-  return (
-    <div
-      ref={ref}
-      className="grid-stack-item"
-      gs-id={team}
-      gs-w="1"
-      gs-h={h}
-      gs-x={x}
-      gs-y={y}
-    >
-      {children}
-    </div>
-  );
-};
-
 export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; teamLayout?: TeamLayout }> = ({ onCall, contacts, teamLayout }) => {
-  const { localOnCall, localLayout, setLocalLayout, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, getItemHeight, setLocalOnCall } = usePersonnel(onCall, teamLayout);
+  const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, handleReorderTeams } = usePersonnel(onCall, teamLayout);
   const [isAddingTeam, setIsAddingTeam] = useState(false); const [newTeamName, setNewTeamName] = useState("");
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ team: string; onConfirm: () => void } | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
-  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight, localLayout, setLocalLayout);
   const { showToast } = useToast();
 
+  const [animationParent, enableAnimations] = useAutoAnimate({
+    duration: 500,
+    easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+  });
+
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    enableAnimations(!isDragging);
+  }, [isDragging, enableAnimations]);
+
+  // Disable animations during active window resize to prevent jank
+  useEffect(() => {
+    let resizeTimeout: ReturnType<typeof setTimeout>;
+    const handleResize = () => {
+      enableAnimations(false);
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        enableAnimations(true);
+      }, 150);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(resizeTimeout);
+    };
+  }, [enableAnimations]);
+
   const isPopout = window.location.hash.includes('popout');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+        const oldIndex = teams.indexOf(active.id as string);
+        const newIndex = teams.indexOf(over.id as string);
+        void handleReorderTeams(oldIndex, newIndex);
+
+    }
+  };
 
   // Copy handlers - use Electron's native clipboard API
   const handleCopyTeamInfo = useCallback(async (team: string, rows: OnCallRow[]) => {
@@ -114,12 +105,16 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
     }
   }, [teams, localOnCall, showToast]);
 
-  const alertConfigs = [{ day: 1, type: 'general', label: 'Update Weekly Schedule', bg: 'var(--color-accent-primary)' }, { day: 3, type: 'sql', label: 'Update SQL DBA', bg: '#EF4444' }, { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }, { day: 5, type: 'network', label: 'Update Network/Voice/FTS', bg: '#3B82F6' }];
+  const alertConfigs = [
+    { day: 0, type: 'first-responder', label: 'Update First Responder', bg: 'var(--color-accent-primary)' },
+    { day: 1, type: 'general', label: 'Update Weekly Schedule', bg: 'var(--color-accent-primary)' }, 
+    { day: 3, type: 'sql', label: 'Update SQL DBA', bg: '#EF4444' }, 
+    { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }
+  ];
   const renderAlerts = () => alertConfigs.filter(c => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type))).map(c => <Tooltip key={c.type} content="Click to dismiss"><div onClick={() => dismissAlert(c.type)} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: c.bg, padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>{c.label}</div></Tooltip>);
 
   return (
     <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto" }}>
-      <style>{gridStackStyles}</style>
       <CollapsibleHeader title="On-Call Board" subtitle={<>{weekRange}{renderAlerts()}</>} isCollapsed={isCollapsed}>
         <TactileButton
           onClick={handleCopyAllOnCall}
@@ -140,31 +135,54 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
         <TactileButton variant="primary" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD TEAM</TactileButton>
       </CollapsibleHeader>
 
-      <div ref={gridRef} className="grid-stack" style={{ paddingBottom: "40px" }}>
-        {teams.map((team, i) => (
-          <GridStackItem
-            key={team}
-            team={team}
-            x={localLayout?.[team]?.x ?? 0}
-            y={localLayout?.[team]?.y ?? 10000}
-            h={getItemHeight(team)}
+      <DndContext 
+        sensors={sensors} 
+        collisionDetection={closestCenter} 
+        onDragStart={() => {
+          setIsDragging(true);
+          window.api?.notifyDragStart();
+        }}
+        onDragEnd={(event) => {
+          handleDragEnd(event);
+          // Small delay before re-enabling animations to let dnd-kit finish its transition
+          setTimeout(() => setIsDragging(false), 50);
+          window.api?.notifyDragStop();
+        }}
+        onDragCancel={() => {
+          setIsDragging(false);
+          window.api?.notifyDragStop();
+        }}
+      >
+        <SortableContext items={teams} strategy={rectSortingStrategy}>
+          <div 
+            ref={animationParent} 
+            className="oncall-grid" 
+            role="list" 
+            aria-label="Sortable On-Call Teams"
           >
-            <TeamCard
-              team={team}
-              rows={localOnCall.filter((r) => r.team === team)}
-              contacts={contacts}
-              onUpdateRows={handleUpdateRows}
-              onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
-              onRemoveTeam={handleRemoveTeam}
-              setConfirm={setConfirmDelete}
-              setMenu={setMenu}
-              onCopyTeamInfo={handleCopyTeamInfo}
-            />
-          </GridStackItem>
-        ))}
-      </div>
+            {teams.map((team) => (
+              <div key={team} className="oncall-grid-item" role="listitem">
+                <SortableTeamCard
+                  team={team}
+                  rows={localOnCall.filter((r) => r.team === team)}
+                  contacts={contacts}
+                  onUpdateRows={handleUpdateRows}
+                  onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
+                  onRemoveTeam={handleRemoveTeam}
+                  setConfirm={setConfirmDelete}
+                  setMenu={setMenu}
+                  onCopyTeamInfo={handleCopyTeamInfo}
+                />
+              </div>
+            ))}
+          </div>
+        </SortableContext>
+        <div aria-live="polite" className="sr-only">
+          {isDragging ? "Dragging team" : ""}
+        </div>
+      </DndContext>
 
-      <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => renamingTeam && void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null))}>Rename</TactileButton></div></div></Modal>
+      <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }}>Rename</TactileButton></div></div></Modal>
 
       <Modal isOpen={isAddingTeam} onClose={() => setIsAddingTeam(false)} title="Add New Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input placeholder="Team Name (e.g. SRE, Support)" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }}>Add Team</TactileButton></div></div></Modal>
 

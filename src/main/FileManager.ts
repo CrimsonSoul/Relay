@@ -14,7 +14,7 @@ import { atomicWriteWithLock } from "./fileLock";
 
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseContacts, parseServers, parseOnCall, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, updateOnCallTeam as updateOnCallTeamOp, removeOnCallTeam as removeOnCallTeamOp, renameOnCallTeam as renameOnCallTeamOp, reorderOnCallTeams as reorderOnCallTeamsOp, saveAllOnCall as saveAllOnCallOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
+import { FileContext, parseContacts, parseServers, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
 import { parseCsvAsync } from "./csvUtils";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
@@ -127,13 +127,10 @@ export class FileManager implements FileContext {
     return parseServers(this);
   }
 
-  // Load on-call - prefer JSON if available, fallback to CSV
+  // Load on-call - JSON only
   private async loadOnCall(): Promise<OnCallRow[]> {
-    if (existsSync(join(this.rootDir, "oncall.json"))) {
-      const records = await getOnCallJson(this.rootDir);
-      return records.map(onCallRecordToOnCallRow);
-    }
-    return parseOnCall(this);
+    const records = await getOnCallJson(this.rootDir);
+    return records.map(onCallRecordToOnCallRow);
   }
 
   private async loadLayout(): Promise<TeamLayout> {
@@ -435,21 +432,17 @@ export class FileManager implements FileContext {
     this.cachedData.onCall = newFlatList;
     this.emitter.sendPayload(this.cachedData);
 
-    if (this.hasJsonData()) {
-      const records = rows.map((r) => ({
-        id: r.id, // Pass the ID
-        team: r.team,
-        role: r.role,
-        name: r.name,
-        contact: r.contact,
-        timeWindow: r.timeWindow,
-      }));
-      const success = await updateOnCallTeamJson(this.rootDir, team, records);
-      // Skip readAndEmit() on success since we already updated cache optimistically
-      return success;
-    }
-    const result = await updateOnCallTeamOp(this, team, rows);
-    return result;
+    const records = rows.map((r) => ({
+      id: r.id, // Pass the ID
+      team: r.team,
+      role: r.role,
+      name: r.name,
+      contact: r.contact,
+      timeWindow: r.timeWindow,
+    }));
+    const success = await updateOnCallTeamJson(this.rootDir, team, records);
+    // Skip readAndEmit() on success since we already updated cache optimistically
+    return success;
   }
 
   public async removeOnCallTeam(team: string) {
@@ -457,12 +450,8 @@ export class FileManager implements FileContext {
     this.cachedData.onCall = this.cachedData.onCall.filter(r => r.team !== team);
     this.emitter.sendPayload(this.cachedData);
 
-    if (this.hasJsonData()) {
-      const success = await deleteOnCallByTeam(this.rootDir, team);
-      return success;
-    }
-    const result = await removeOnCallTeamOp(this, team);
-    return result;
+    const success = await deleteOnCallByTeam(this.rootDir, team);
+    return success;
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
@@ -472,12 +461,8 @@ export class FileManager implements FileContext {
     );
     this.emitter.sendPayload(this.cachedData);
 
-    if (this.hasJsonData()) {
-      const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
-      return success;
-    }
-    const result = await renameOnCallTeamOp(this, oldName, newName);
-    return result;
+    const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
+    return success;
   }
 
   public async reorderOnCallTeams(teamOrder: string[], layout?: TeamLayout) {
@@ -518,14 +503,9 @@ export class FileManager implements FileContext {
         await atomicWriteWithLock(layoutPath, JSON.stringify(layout, null, 2));
       }
 
-      if (this.hasJsonData()) {
-        const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
-        // Skip readAndEmit() on success since we already updated cache optimistically
-        if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON)`);
-        return success;
-      }
-      const success = await reorderOnCallTeamsOp(this, teamOrder);
-      if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (CSV)`);
+      const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
+      // Skip readAndEmit() on success since we already updated cache optimistically
+      if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON)`);
       return success;
     } finally {
       setTimeout(() => {
@@ -539,22 +519,17 @@ export class FileManager implements FileContext {
     this.cachedData.onCall = rows;
     this.emitter.sendPayload(this.cachedData);
 
-    if (this.hasJsonData()) {
-      const records = rows.map((r) => ({
-        id: r.id, // Pass ID
-        team: r.team,
-        role: r.role,
-        name: r.name,
-        contact: r.contact,
-        timeWindow: r.timeWindow,
-      }));
-      const success = await saveAllOnCallJson(this.rootDir, records);
-      if (success) await this.readAndEmit();
-      return success;
-    }
-    const result = await saveAllOnCallOp(this, rows);
-    if (result) await this.readAndEmit();
-    return result;
+    const records = rows.map((r) => ({
+      id: r.id, // Pass ID
+      team: r.team,
+      role: r.role,
+      name: r.name,
+      contact: r.contact,
+      timeWindow: r.timeWindow,
+    }));
+    const success = await saveAllOnCallJson(this.rootDir, records);
+    if (success) await this.readAndEmit();
+    return success;
   }
   public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) { await this.readAndEmit(); } return success; }
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }
