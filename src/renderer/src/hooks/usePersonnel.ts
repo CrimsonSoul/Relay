@@ -110,7 +110,7 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
 
   return {
     localOnCall,
-    localLayout, // Return this!
+    localLayout,
     weekRange,
     dismissedAlerts,
     dismissAlert,
