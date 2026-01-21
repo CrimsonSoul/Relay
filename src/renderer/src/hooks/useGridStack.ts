@@ -7,7 +7,8 @@ export function useGridStack(
   localOnCall: OnCallRow[], 
   setLocalOnCall: (rows: OnCallRow[]) => void,
   getItemHeight: (team: string) => number,
-  teamLayout?: TeamLayout
+  teamLayout?: TeamLayout,
+  onLayoutChange?: (layout: TeamLayout) => void
 ) {
   const gridRef = useRef<HTMLDivElement>(null);
   const gridInstanceRef = useRef<GridStack | null>(null);
@@ -79,6 +80,11 @@ export function useGridStack(
           };
         }
       });
+      
+      // Update local layout state immediately
+      if (onLayoutChange) {
+        onLayoutChange(layout);
+      }
       
       const newOrder = items.sort((a, b) => {
         const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');

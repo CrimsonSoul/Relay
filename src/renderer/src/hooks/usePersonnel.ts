@@ -166,42 +166,10 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     // Optimistic Update: Add row
     setLocalOnCall((prev) => [...prev, initialRow]);
 
-    // Calculate safe layout position to prevent overlaps
-    // Default behavior: place at bottom of the list
-    let maxY = 0;
-    
-    // Use localLayout state instead of prop to ensure we have the latest
-    if (localLayout) {
-      Object.entries(localLayout).forEach(([teamName, pos]) => {
-         const h = getItemHeight(teamName);
-         const bottom = pos.y + h;
-         if (bottom > maxY) {
-           maxY = bottom;
-         }
-      });
-    }
-
-    // Force explicit position for the new team
-    const newTeamPos = { x: 0, y: maxY };
-    const newLayout = {
-      ...(localLayout || {}),
-      [name]: newTeamPos
-    };
-
-    // Optimistic Update: Layout
-    setLocalLayout(newLayout);
-
     // 1. Add the team data
     const success = await window.api?.updateOnCallTeam(name, [initialRow]);
     
     if (success) {
-      // Get current team order including new team
-      const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
-      if (!currentTeams.includes(name)) currentTeams.push(name);
-
-      // Persist layout
-      await window.api?.reorderOnCallTeams(currentTeams, newLayout);
-      
       showToast(`Added team ${name}`, "success");
     } else {
       isLocalUpdateRef.current = false;
@@ -212,6 +180,7 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
   return {
     localOnCall,
     localLayout,
+    setLocalLayout, // Export this so GridStack can sync layout state
     weekRange,
     dismissedAlerts,
     dismissAlert,
