@@ -166,36 +166,16 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     // Optimistic Update: Add row
     setLocalOnCall((prev) => [...prev, initialRow]);
 
-    // Calculate safe layout position to prevent overlaps
-    // Default behavior: place at bottom of the list
-    let maxY = 0;
-    
-    // Use localLayout state instead of prop to ensure we have the latest
-    if (localLayout && Object.keys(localLayout).length > 0) {
-      Object.entries(localLayout).forEach(([teamName, pos]) => {
-         // getItemHeight uses localOnCall, which is stale here (doesn't have new team yet)
-         // That's fine, we only care about EXISTING teams to find the bottom.
-         const h = getItemHeight(teamName);
-         const bottom = pos.y + h;
-         if (bottom > maxY) {
-           maxY = bottom;
-         }
-      });
-    } else if (localOnCall.length > 0) {
-       // Fallback: if layout is empty but we have teams, assume they are stacked.
-       // Estimate height based on number of existing teams * avg height (assume 4).
-       // This is a safety buffer to avoid 0,0 collision if layout state is missing.
-       maxY = localOnCall.reduce((acc, r) => {
-         // Count unique teams processed so far? No, simpler:
-         // Just find the number of unique teams and multiply by safe height
-         return acc; 
-       }, 0);
-       const uniqueTeams = new Set(localOnCall.map(r => r.team)).size;
-       maxY = uniqueTeams * 4; // 4 units per team safe guess
-    }
+    // "Gravity" Strategy:
+    // We don't need to calculate the exact pixel-perfect bottom.
+    // We just need to place the new item FAR below everything else.
+    // GridStack (with float: false) will automatically "gravity" it up 
+    // to the next available slot, compacting the layout perfectly.
+    // This guarantees no overlaps at (0,0).
+    const safeY = 10000; 
 
     // Force explicit position for the new team
-    const newTeamPos = { x: 0, y: maxY };
+    const newTeamPos = { x: 0, y: safeY };
     const newLayout = {
       ...(localLayout || {}),
       [name]: newTeamPos
