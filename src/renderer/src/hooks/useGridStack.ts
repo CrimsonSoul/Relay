@@ -215,7 +215,13 @@ export function useGridStack(
 
           return {
             id: team,
-            autoPosition: true,
+            // Use gravity strategy for unknown items instead of autoPosition.
+            // autoPosition can sometimes be flaky during full grid reloads or race conditions,
+            // potentially placing items at (0,0) and overlapping.
+            // Placing at y=10000 guarantees it starts at the bottom, and float:true will
+            // naturally bubble it up to the correct spot.
+            x: 0,
+            y: 10000,
             w: 1,
             h: getItemHeight(team)
           };
