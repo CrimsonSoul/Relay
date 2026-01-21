@@ -77,7 +77,7 @@ vi.mock('./fileLock', () => {
         try {
             return await fs.readFile(filePath, 'utf-8');
         } catch (e) {
-            if ((e as any).code === 'ENOENT') return null;
+            if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
             throw e;
         }
     }),
