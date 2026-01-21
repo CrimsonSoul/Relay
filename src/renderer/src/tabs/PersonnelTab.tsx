@@ -47,6 +47,13 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
     enableAnimations(!isDragging);
   }, [isDragging, enableAnimations]);
 
+  // Ensure drag state is cleared on unmount
+  useEffect(() => {
+    return () => {
+      window.api?.notifyDragStop();
+    };
+  }, []);
+
   // Disable animations during active window resize to prevent jank
   useEffect(() => {
     let resizeTimeout: ReturnType<typeof setTimeout>;
@@ -155,19 +162,27 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
       <DndContext 
         sensors={sensors} 
         collisionDetection={closestCenter} 
-        onDragStart={() => {
-          setIsDragging(true);
-          window.api?.notifyDragStart();
+        onDragStart={(event) => {
+          const { active } = event;
+          // Only start drag if it's a team card (active.id is one of the team names)
+          if (teams.includes(active.id as string)) {
+            setIsDragging(true);
+            window.api?.notifyDragStart();
+          }
         }}
         onDragEnd={(event) => {
-          handleDragEnd(event);
-          // Small delay before re-enabling animations to let dnd-kit finish its transition
-          setTimeout(() => setIsDragging(false), 50);
-          window.api?.notifyDragStop();
+          if (isDragging) {
+            handleDragEnd(event);
+            // Small delay before re-enabling animations to let dnd-kit finish its transition
+            setTimeout(() => setIsDragging(false), 50);
+            window.api?.notifyDragStop();
+          }
         }}
         onDragCancel={() => {
-          setIsDragging(false);
-          window.api?.notifyDragStop();
+          if (isDragging) {
+            setIsDragging(false);
+            window.api?.notifyDragStop();
+          }
         }}
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
