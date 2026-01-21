@@ -66,6 +66,13 @@ if (!gotLock) {
 
     setupWindowListeners(state.mainWindow);
 
+    state.mainWindow.on('close', () => {
+      // Close all other windows when the main window is closed
+      BrowserWindow.getAllWindows().forEach(win => {
+        if (win !== state.mainWindow) win.close();
+      });
+    });
+
     const isDev = process.env.ELECTRON_RENDERER_URL !== undefined;
     
     // Set Content Security Policy
@@ -193,7 +200,7 @@ if (!gotLock) {
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) void createWindow();
       });
-    } catch (error: Error | unknown) {
+    } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });
       dialog.showErrorBox('Critical Startup Error', errorMessage);
@@ -208,7 +215,7 @@ if (!gotLock) {
     app.quit();
   });
 
-  process.on('unhandledRejection', (reason: Error | unknown) => {
+  process.on('unhandledRejection', (reason: unknown) => {
     loggers.main.error('Unhandled Rejection', { reason: reason instanceof Error ? reason.message : String(reason) });
   });
 }
