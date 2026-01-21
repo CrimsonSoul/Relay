@@ -9,6 +9,24 @@
   --color-bg-card: rgba(255, 255, 255, 0.015);
   --color-bg-card-hover: rgba(255, 255, 255, 0.03);
   --color-bg-sidebar: #0F1115;
+  color-scheme: dark;
+
+  /* Text */
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #A1A1AA;
+  --color-text-tertiary: #71717A;
+  --color-text-quaternary: #52525B;
+
+  /* Accents */
+  --color-accent-blue: #3B82F6;
+  --color-accent-blue-hover: #60A5FA;
+  --color-accent-blue-dim: rgba(59, 130, 246, 0.5);
+  --color-accent-blue-subtle: rgba(59, 130, 246, 0.1);
+  --color-accent-green: #10B981;
+  --color-accent-green-subtle: rgba(16, 185, 129, 0.1);
+  --color-danger: #FF5C5C;
+  --color-danger-hover: #FF7A7A;
+  --color-danger-subtle: rgba(255, 92, 92, 0.1);
 
   /* Borders */
 
