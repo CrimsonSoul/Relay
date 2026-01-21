@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useEffect, useState, useMemo, ReactNode } from 'react';
-import { loggers, ErrorCategory } from '../utils/logger';
+import React, { createContext, useContext, useEffect, useState, useMemo, ReactNode, useCallback } from 'react';
+import { loggers } from '../utils/logger';
 
 export interface LocationState {
   lat: number | null;
