@@ -28,9 +28,25 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
   // Sync local layout with prop updates
   useEffect(() => {
     if (teamLayout) {
-      setLocalLayout(teamLayout);
+      setLocalLayout(prev => {
+        // Smart Merge:
+        // If the server layout is missing keys that we have locally (and those keys exist in our team list),
+        // it likely means we have an optimistic update that the server hasn't reflected yet.
+        // We should preserve those local keys to prevent the UI from "flickering" them to default positions.
+        
+        const nextLayout = { ...teamLayout };
+        
+        // Check for local keys that are missing in remote
+        Object.keys(prev).forEach(key => {
+          if (!nextLayout[key] && localOnCall.some(r => r.team === key)) {
+             nextLayout[key] = prev[key];
+          }
+        });
+        
+        return nextLayout;
+      });
     }
-  }, [teamLayout]);
+  }, [teamLayout, localOnCall]);
 
   // Ref to track if the update was triggered locally (optimistic update)
   // to avoid overwriting state with the same data when it broadcasts back.
