@@ -177,21 +177,18 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
       let maxY = 0;
       if (teamLayout) {
         Object.entries(teamLayout).forEach(([teamName, pos]) => {
-           // Estimate height of this team to find its bottom
-           // We can't access getItemHeight easily here for ALL teams efficiently without recalc, 
-           // but we can trust the 'y' pos is the start. 
-           // We need to know where it ends.
-           // A safe heuristic is to assume max height of ~6 units if unknown, or just look at Y.
-           // Better approach: Since GridStack packs them, finding the max Y start is a good baseline.
-           if (pos.y >= maxY) {
-             maxY = pos.y + 2; // Add 2 buffer units
+           // Calculate the bottom of this specific widget
+           const h = getItemHeight(teamName);
+           const bottom = pos.y + h;
+           if (bottom > maxY) {
+             maxY = bottom;
            }
         });
       }
 
       const newLayout = {
         ...(teamLayout || {}),
-        [name]: { x: 0, y: maxY + 2 } // Place well below others
+        [name]: { x: 0, y: maxY } // Place exactly at the bottom (no buffer needed if maxY is true bottom)
       };
 
       // Get current team order including new team

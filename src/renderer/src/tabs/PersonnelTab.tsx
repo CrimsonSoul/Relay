@@ -36,8 +36,8 @@ function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
  */
 const GridStackItem: React.FC<{
   team: string;
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
   h: number;
   children: React.ReactNode;
 }> = ({ team, x, y, h, children }) => {
@@ -47,8 +47,18 @@ const GridStackItem: React.FC<{
   // Use useLayoutEffect to ensure attributes are set before GridStack reads them
   useLayoutEffect(() => {
     if (ref.current) {
-      ref.current.setAttribute("gs-x", String(x));
-      ref.current.setAttribute("gs-y", String(y));
+      if (x !== undefined) ref.current.setAttribute("gs-x", String(x));
+      else ref.current.removeAttribute("gs-x");
+
+      if (y !== undefined) ref.current.setAttribute("gs-y", String(y));
+      else ref.current.removeAttribute("gs-y");
+
+      if (x === undefined && y === undefined) {
+         ref.current.setAttribute("gs-auto-position", "true");
+      } else {
+         ref.current.removeAttribute("gs-auto-position");
+      }
+      
       ref.current.setAttribute("gs-h", String(h));
     }
   }, [x, y, h]);
@@ -135,8 +145,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
           <GridStackItem
             key={team}
             team={team}
-            x={teamLayout?.[team]?.x ?? (i % 2)}
-            y={teamLayout?.[team]?.y ?? Math.floor(i / 2)}
+            x={teamLayout?.[team]?.x}
+            y={teamLayout?.[team]?.y}
             h={getItemHeight(team)}
           >
             <TeamCard
