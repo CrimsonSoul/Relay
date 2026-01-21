@@ -79,13 +79,13 @@ const GridStackItem: React.FC<{
 };
 
 export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; teamLayout?: TeamLayout }> = ({ onCall, contacts, teamLayout }) => {
-  const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, getItemHeight, setLocalOnCall } = usePersonnel(onCall, teamLayout);
+  const { localOnCall, localLayout, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, getItemHeight, setLocalOnCall } = usePersonnel(onCall, teamLayout);
   const [isAddingTeam, setIsAddingTeam] = useState(false); const [newTeamName, setNewTeamName] = useState("");
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ team: string; onConfirm: () => void } | null>(null);
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
-  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight, teamLayout);
+  const { gridRef } = useGridStack(localOnCall, setLocalOnCall, getItemHeight, localLayout);
   const { showToast } = useToast();
 
   const isPopout = window.location.hash.includes('popout');
@@ -145,8 +145,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
           <GridStackItem
             key={team}
             team={team}
-            x={teamLayout?.[team]?.x}
-            y={teamLayout?.[team]?.y}
+            x={localLayout?.[team]?.x}
+            y={localLayout?.[team]?.y}
             h={getItemHeight(team)}
           >
             <TeamCard
