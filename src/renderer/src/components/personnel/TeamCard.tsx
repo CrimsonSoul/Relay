@@ -1,15 +1,20 @@
 import React, { useMemo, useState } from 'react';
 import { OnCallRow, Contact } from "@shared/ipc";
-import { getColorForString } from "../../utils/colors";
+import { getColorForString, PALETTE } from "../../utils/colors";
 import { Tooltip } from "../Tooltip";
 import { MaintainTeamModal } from "../MaintainTeamModal";
 import { ContextMenuItem } from "../ContextMenu";
 import { TeamRow } from "./TeamRow";
 
-interface TeamCardProps { team: string; rows: OnCallRow[]; contacts: Contact[]; onUpdateRows: (team: string, rows: OnCallRow[]) => void; onRenameTeam: (oldName: string, newName: string) => void; onRemoveTeam: (team: string) => void; setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void; setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void; onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void; isReadOnly?: boolean; }
+interface TeamCardProps { team: string; index?: number; rows: OnCallRow[]; contacts: Contact[]; onUpdateRows: (team: string, rows: OnCallRow[]) => void; onRenameTeam: (oldName: string, newName: string) => void; onRemoveTeam: (team: string) => void; setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void; setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void; onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void; isReadOnly?: boolean; }
 
-export const TeamCard = React.memo(({ team, rows, contacts, onUpdateRows, onRenameTeam, onRemoveTeam, setConfirm, setMenu, onCopyTeamInfo, isReadOnly = false }: TeamCardProps) => {
-  const colorScheme = getColorForString(team);
+export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows, onRenameTeam, onRemoveTeam, setConfirm, setMenu, onCopyTeamInfo, isReadOnly = false }: TeamCardProps) => {
+  const colorScheme = useMemo(() => {
+    if (typeof index === 'number') {
+      return PALETTE[index % PALETTE.length];
+    }
+    return getColorForString(team);
+  }, [team, index]);
   const [isEditing, setIsEditing] = useState(false);
   const teamRows = useMemo(() => rows || [], [rows]);
   const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
