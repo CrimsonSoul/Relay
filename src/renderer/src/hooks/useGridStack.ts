@@ -177,25 +177,26 @@ export function useGridStack(
       }
     });
 
-    // 2. Sync Heights (if data changed, height might change)
-    // GridStack doesn't automatically update height if content grows.
-    // We must manually update it.
-    // But we avoid doing this if dragging.
-    if (!isDraggingRef.current) {
-        grid.getGridItems().forEach(el => {
-            const id = el.getAttribute('gs-id');
-            if (id) {
-                const targetH = getItemHeight(id);
-                const currentH = parseInt(el.getAttribute('gs-h') || '0');
-                if (targetH !== currentH) {
-                    grid.update(el, { h: targetH });
-                }
-            }
-        });
-        
-        // 3. Compact if necessary (gravity)
-        grid.compact();
-    }
+      // 2. Sync Heights (if data changed, height might change)
+      // GridStack doesn't automatically update height if content grows.
+      // We must manually update it.
+      // But we avoid doing this if dragging.
+      if (!isDraggingRef.current) {
+          const items = grid.getGridItems();
+          items.forEach(el => {
+              const id = el.getAttribute('gs-id');
+              if (id) {
+                  const targetH = getItemHeight(id);
+                  const currentH = parseInt(el.getAttribute('gs-h') || '0');
+                  if (targetH !== currentH) {
+                      grid.update(el, { h: targetH });
+                  }
+              }
+          });
+          
+          // 3. Compact if necessary (gravity)
+          grid.compact();
+      }
 
     // Update prevOrderRef to match current data
     const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
