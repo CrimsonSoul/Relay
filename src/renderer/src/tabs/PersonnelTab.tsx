@@ -145,8 +145,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
           <GridStackItem
             key={team}
             team={team}
-            x={localLayout?.[team]?.x}
-            y={localLayout?.[team]?.y}
+            x={localLayout?.[team]?.x ?? 0}
+            y={localLayout?.[team]?.y ?? 10000}
             h={getItemHeight(team)}
           >
             <TeamCard
