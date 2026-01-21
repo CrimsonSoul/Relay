@@ -37,7 +37,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
     getAlertKey, 
     currentDay, 
     teams,
-  } = usePersonnel(onCall);
+  } = usePersonnel(onCall, teamLayout);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -52,12 +52,20 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
     const sortedTeams = [...teams].sort((a, b) => {
       const yA = teamLayout?.[a]?.y ?? 0;
       const yB = teamLayout?.[b]?.y ?? 0;
-      return yA - yB;
+      if (yA !== yB) return yA - yB;
+      const xA = teamLayout?.[a]?.x ?? 0;
+      const xB = teamLayout?.[b]?.x ?? 0;
+      return xA - xB;
     });
 
-    sortedTeams.forEach(team => {
-      const x = teamLayout?.[team]?.x ?? 0;
-      // Map to column 0 or 1. Default to 0.
+    sortedTeams.forEach((team, i) => {
+      let x = teamLayout?.[team]?.x;
+      // Default to the same logic as PersonnelTab if layout is missing: (i % 2)
+      // Note: This assumes sortedTeams is in the same order as 'teams' used in PersonnelTab's mapping
+      // which it should be roughly if no layout exists (both iterate array).
+      if (x === undefined) x = (i % 2);
+      
+      // Map to column 0 or 1.
       const colIndex = x > 0 ? 1 : 0;
       cols[colIndex].push(team);
     });

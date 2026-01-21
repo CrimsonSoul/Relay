@@ -18,7 +18,27 @@ const getWeekRange = () => {
     )}, ${sunday.getFullYear()}`;
 };
 
-export function usePersonnel(onCall: OnCallRow[]) {
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { OnCallRow, TeamLayout } from "@shared/ipc";
+import { useToast } from '../components/Toast';
+
+const getWeekRange = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+    const sunday = new Date(now.getFullYear(), now.getMonth(), diff + 6);
+    const options: Intl.DateTimeFormatOptions = { month: "long", day: "numeric" };
+    return `${monday.toLocaleDateString(
+      undefined,
+      options
+    )} - ${sunday.toLocaleDateString(
+      undefined,
+      options
+    )}, ${sunday.getFullYear()}`;
+};
+
+export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
   const { showToast } = useToast();
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [weekRange, setWeekRange] = useState(getWeekRange());
@@ -142,26 +162,6 @@ export function usePersonnel(onCall: OnCallRow[]) {
     }
   };
 
-  const handleAddTeam = async (name: string) => {
-    const initialRow: OnCallRow = {
-      id: crypto.randomUUID(),
-      team: name,
-      role: "Primary",
-      name: "",
-      contact: "",
-      timeWindow: "",
-    };
-    isLocalUpdateRef.current = true;
-    const success = await window.api?.updateOnCallTeam(name, [initialRow]);
-    if (success) {
-      setLocalOnCall((prev) => [...prev, initialRow]);
-      showToast(`Added team ${name}`, "success");
-    } else {
-      isLocalUpdateRef.current = false;
-      showToast("Failed to add team", "error");
-    }
-  };
-
   const getItemHeight = useCallback(
     (teamName: string) => {
       const rows = localOnCall.filter((r) => r.team === teamName);
@@ -172,6 +172,62 @@ export function usePersonnel(onCall: OnCallRow[]) {
     },
     [localOnCall]
   );
+
+  const handleAddTeam = async (name: string) => {
+    const initialRow: OnCallRow = {
+      id: crypto.randomUUID(),
+      team: name,
+      role: "Primary",
+      name: "",
+      contact: "",
+      timeWindow: "",
+    };
+    isLocalUpdateRef.current = true;
+    
+    // Optimistic Update
+    setLocalOnCall((prev) => [...prev, initialRow]);
+
+    // 1. Add the team data
+    const success = await window.api?.updateOnCallTeam(name, [initialRow]);
+    
+    if (success) {
+      // 2. Calculate and persist safe layout position to prevent overlaps
+      // Default behavior: place at bottom of the list
+      // We look at all existing layout entries to find the lowest point
+      let maxY = 0;
+      if (teamLayout) {
+        Object.entries(teamLayout).forEach(([teamName, pos]) => {
+           // Estimate height of this team to find its bottom
+           // We can't access getItemHeight easily here for ALL teams efficiently without recalc, 
+           // but we can trust the 'y' pos is the start. 
+           // We need to know where it ends.
+           // A safe heuristic is to assume max height of ~6 units if unknown, or just look at Y.
+           // Better approach: Since GridStack packs them, finding the max Y start is a good baseline.
+           if (pos.y >= maxY) {
+             maxY = pos.y + 2; // Add 2 buffer units
+           }
+        });
+      }
+
+      const newLayout = {
+        ...(teamLayout || {}),
+        [name]: { x: 0, y: maxY + 2 } // Place well below others
+      };
+
+      // Get current team order including new team
+      const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
+      if (!currentTeams.includes(name)) currentTeams.push(name);
+
+      // Persist layout
+      await window.api?.reorderOnCallTeams(currentTeams, newLayout);
+      
+      showToast(`Added team ${name}`, "success");
+    } else {
+      isLocalUpdateRef.current = false;
+      // Revert optimistic update? Technically hard here without deep clone history.
+      showToast("Failed to add team", "error");
+    }
+  };
 
   return {
     localOnCall,
@@ -189,3 +245,4 @@ export function usePersonnel(onCall: OnCallRow[]) {
     setLocalOnCall
   };
 }
+
