@@ -49,27 +49,12 @@ export function useGridStack(
       wasDraggedRef.current = true; // Mark that a user drag occurred
     });
 
-    grid.on('change', () => {
-      if (!gridInstanceRef.current) return;
-      if (isExternalUpdateRef.current) return; // Ignore changes triggered by our own grid.load()
-      
-      // Only process reorder if it was caused by an actual user drag
-      if (!wasDraggedRef.current) return;
-      wasDraggedRef.current = false;
-
+    // Capture layout helper
+    const captureLayout = () => {
       const grid = gridInstanceRef.current;
+      if (!grid || !onLayoutChange) return;
       
-      // IMPORTANT: Spread to avoid mutating GridStack's internal array
-      const items = [...grid.getGridItems()];
-      
-      // DIAGNOSTIC: Log raw positions before sorting
-      logger.debug('[GridStack] change event fired. Raw items:', items.map(el => ({
-        id: el.getAttribute('gs-id'),
-        x: el.getAttribute('gs-x'),
-        y: el.getAttribute('gs-y')
-      })));
-      
-      // Capture actual layout positions
+      const items = grid.getGridItems();
       const layout: TeamLayout = {};
       items.forEach(el => {
         const id = el.getAttribute('gs-id');
@@ -80,11 +65,34 @@ export function useGridStack(
           };
         }
       });
+      onLayoutChange(layout);
+    };
+
+    grid.on('change', () => {
+      if (!gridInstanceRef.current) return;
+      if (isExternalUpdateRef.current) return;
+      
+      // Only process reorder if it was caused by an actual user drag
+      if (!wasDraggedRef.current) return;
+      wasDraggedRef.current = false;
+
+      const grid = gridInstanceRef.current;
+      
+      // Capture layout immediately on user interaction
+      captureLayout();
+
+      // IMPORTANT: Spread to avoid mutating GridStack's internal array
+      const items = [...grid.getGridItems()];
+      
+      // DIAGNOSTIC: Log raw positions before sorting
+      logger.debug('[GridStack] change event fired. Raw items:', items.map(el => ({
+        id: el.getAttribute('gs-id'),
+        x: el.getAttribute('gs-x'),
+        y: el.getAttribute('gs-y')
+      })));
       
       // Update local layout state immediately
-      if (onLayoutChange) {
-        onLayoutChange(layout);
-      }
+      // (Handled by captureLayout now)
       
       const newOrder = items.sort((a, b) => {
         const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');
@@ -216,6 +224,12 @@ export function useGridStack(
         // Guard: prevent change handler from firing during our load()
         isExternalUpdateRef.current = true;
         grid.load(newLayout);
+        
+        // After load, if we have auto-positioned items, we should capture the resulting layout
+        // so that our local state reflects reality.
+        requestAnimationFrame(() => {
+           captureLayout();
+        });
         
         // Use double-requestAnimationFrame to ensure the guard persists
         // until after the browser has processed the GridStack DOM updates
