@@ -35,7 +35,15 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({ row, contacts,
         onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.04)")} onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}>
         <div {...attributes} {...listeners} style={{ cursor: isDragging ? "grabbing" : "grab", opacity: 0.4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>⋮⋮</div>
         <div style={{ position: "relative" }}>
-          <Combobox value={row.role} onChange={(val) => onUpdate({ ...row, role: val })} options={[{ label: "Primary", value: "Primary" }, { label: "Backup", value: "Backup" }, { label: "Backup/Weekend", value: "Backup/Weekend" }, { label: "Weekend", value: "Weekend" }]}
+          <Combobox value={row.role} onChange={(val) => onUpdate({ ...row, role: val })} options={[
+            { label: "Primary", value: "Primary" }, 
+            { label: "Backup", value: "Backup" }, 
+            { label: "Backup/Weekend", value: "Backup/Weekend" }, 
+            { label: "Weekend", value: "Weekend" },
+            { label: "Network", value: "Network" },
+            { label: "Telecom", value: "Telecom" },
+            { label: "Member", value: "Member" }
+          ]}
             placeholder="Role" style={{ fontWeight: 600, fontSize: "12px", fontFamily: "var(--font-mono)" }} onOpenChange={setIsActive} />
         </div>
         <div style={{ position: "relative" }}>

@@ -7,6 +7,7 @@ import { ContextMenuItem } from '../ContextMenu';
 
 interface SortableTeamCardProps {
   team: string;
+  index: number;
   rows: OnCallRow[];
   contacts: Contact[];
   onUpdateRows: (team: string, rows: OnCallRow[]) => void;

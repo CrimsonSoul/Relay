@@ -132,7 +132,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
             icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>}
           >POP OUT</TactileButton>
         )}
-        <TactileButton variant="primary" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD TEAM</TactileButton>
+        <TactileButton variant="primary" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD CARD</TactileButton>
       </CollapsibleHeader>
 
       <DndContext 
@@ -160,10 +160,11 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
             role="list" 
             aria-label="Sortable On-Call Teams"
           >
-            {teams.map((team) => (
+            {teams.map((team, idx) => (
               <div key={team} className="oncall-grid-item" role="listitem">
                 <SortableTeamCard
                   team={team}
+                  index={idx}
                   rows={localOnCall.filter((r) => r.team === team)}
                   contacts={contacts}
                   onUpdateRows={handleUpdateRows}
@@ -182,11 +183,11 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
         </div>
       </DndContext>
 
-      <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }}>Rename</TactileButton></div></div></Modal>
+      <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Card" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }}>Rename</TactileButton></div></div></Modal>
 
-      <Modal isOpen={isAddingTeam} onClose={() => setIsAddingTeam(false)} title="Add New Team" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input placeholder="Team Name (e.g. SRE, Support)" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }}>Add Team</TactileButton></div></div></Modal>
+      <Modal isOpen={isAddingTeam} onClose={() => setIsAddingTeam(false)} title="Add New Card" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input placeholder="Card Name (e.g. SRE, Support)" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }}>Add Card</TactileButton></div></div></Modal>
 
-      {confirmDelete && <ConfirmModal isOpen={!!confirmDelete} onClose={() => setConfirmDelete(null)} onConfirm={confirmDelete.onConfirm} title="Remove Team" message={`Are you sure you want to remove the team "${confirmDelete.team}"? This will delete all members in this team.`} confirmLabel="Remove" isDanger />}
+      {confirmDelete && <ConfirmModal isOpen={!!confirmDelete} onClose={() => setConfirmDelete(null)} onConfirm={confirmDelete.onConfirm} title="Remove Card" message={`Are you sure you want to remove the card "${confirmDelete.team}"? This will delete all members in this card.`} confirmLabel="Remove" isDanger />}
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </div>
   );
