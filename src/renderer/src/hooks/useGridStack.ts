@@ -4,7 +4,7 @@ import { OnCallRow, TeamLayout } from '@shared/ipc';
 import { logger } from '../utils/logger';
 
 export function useGridStack(
-  localOnCall: OnCallRow[], 
+  localOnCall: OnCallRow[],
   setLocalOnCall: (rows: OnCallRow[]) => void,
   getItemHeight: (team: string) => number,
   teamLayout?: TeamLayout,
@@ -12,32 +12,34 @@ export function useGridStack(
 ) {
   const gridRef = useRef<HTMLDivElement>(null);
   const gridInstanceRef = useRef<GridStack | null>(null);
-  
+
   // Update ref immediately on each render to ensure latest data in handlers
   const localOnCallRef = useRef(localOnCall);
   localOnCallRef.current = localOnCall;
 
+  // Track dragging state to prevent updates during drag
   const isDraggingRef = useRef(false);
-  const wasDraggedRef = useRef(false); // New: track if a drag actually happened
-  const isExternalUpdateRef = useRef(false); // Guard against feedback loop from grid.load()
+  const wasDraggedRef = useRef(false);
+  
+  // Track previous order to detect changes
   const prevOrderRef = useRef<string[]>(Array.from(new Set(localOnCall.map(r => r.team))));
 
   const initGrid = useCallback(() => {
     if (!gridRef.current) return;
-    
+
     const getColumnCount = () => (gridRef.current?.offsetWidth || window.innerWidth) < 900 ? 1 : 2;
 
-    const grid = GridStack.init({ 
-      column: getColumnCount(), 
-      cellHeight: 75, 
-      margin: 12, 
-      float: false, 
-      animate: true, 
-      staticGrid: false, 
-      draggable: { handle: '.grid-stack-item-content' }, 
-      resizable: { handles: '' } 
+    const grid = GridStack.init({
+      column: getColumnCount(),
+      cellHeight: 75,
+      margin: 12,
+      float: false, // Critical: Gravity enabled
+      animate: true,
+      staticGrid: false,
+      draggable: { handle: '.grid-stack-item-content' },
+      resizable: { handles: '' }
     }, gridRef.current);
-    
+
     gridInstanceRef.current = grid;
 
     grid.on('dragstart', () => {
@@ -46,14 +48,14 @@ export function useGridStack(
 
     grid.on('dragstop', () => {
       isDraggingRef.current = false;
-      wasDraggedRef.current = true; // Mark that a user drag occurred
+      wasDraggedRef.current = true;
     });
 
     // Capture layout helper
     const captureLayout = () => {
       const grid = gridInstanceRef.current;
       if (!grid || !onLayoutChange) return;
-      
+
       const items = grid.getGridItems();
       const layout: TeamLayout = {};
       items.forEach(el => {
@@ -64,6 +66,146 @@ export function useGridStack(
             y: parseInt(el.getAttribute('gs-y') || '0')
           };
         }
+      });
+      onLayoutChange(layout);
+    };
+
+    grid.on('change', () => {
+      if (!gridInstanceRef.current) return;
+      
+      // Only process reorder if it was caused by an actual user drag
+      // or if we explicitly want to capture auto-layout changes (which we do now)
+      // But mainly we care about drag/drop for persisting ORDER
+      
+      if (wasDraggedRef.current) {
+         wasDraggedRef.current = false;
+         captureLayout();
+
+         const grid = gridInstanceRef.current;
+         const items = [...grid.getGridItems()];
+         
+         const newOrder = items.sort((a, b) => {
+           const aY = parseInt(a.getAttribute('gs-y') || '0'), bY = parseInt(b.getAttribute('gs-y') || '0');
+           if (aY !== bY) return aY - bY;
+           return parseInt(a.getAttribute('gs-x') || '0') - parseInt(b.getAttribute('gs-x') || '0');
+         }).map(item => item.getAttribute('gs-id')).filter(Boolean) as string[];
+
+         const orderChanged = JSON.stringify(prevOrderRef.current) !== JSON.stringify(newOrder);
+         
+         const newFlatList: OnCallRow[] = [];
+         newOrder.forEach(teamName => newFlatList.push(...localOnCallRef.current.filter(r => r.team === teamName)));
+         
+         prevOrderRef.current = newOrder;
+         
+         if (orderChanged) {
+           setLocalOnCall(newFlatList);
+         }
+         
+         // Persist order and layout
+         const currentLayout = {}; // We captured it above via captureLayout(), but we need to pass it here too if we want to save.
+         // Actually, captureLayout updates the parent state. 
+         // But we also need to send to backend.
+         const layoutToSave: TeamLayout = {};
+         items.forEach(el => {
+            const id = el.getAttribute('gs-id');
+            if (id) layoutToSave[id] = { x: parseInt(el.getAttribute('gs-x') || '0'), y: parseInt(el.getAttribute('gs-y') || '0') };
+         });
+
+         void window.api?.reorderOnCallTeams(newOrder, layoutToSave);
+      } else {
+         // Non-drag change (auto-positioning etc) - just capture layout
+         captureLayout();
+      }
+    });
+
+    // Cleanup for resize observer logic
+    const handleResize = (width?: number) => {
+      if (gridInstanceRef.current && gridRef.current) {
+        const w = width || gridRef.current.offsetWidth || window.innerWidth;
+        const count = w < 900 ? 1 : 2;
+
+        if (gridInstanceRef.current.getColumn() !== count) {
+          if (count === 2) {
+            gridInstanceRef.current.column(2, 'none');
+            // ... (rest of resize logic)
+          } else {
+            gridInstanceRef.current.column(1, 'moveScale');
+          }
+        }
+      }
+    };
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          handleResize(entry.contentRect.width);
+        }
+      }
+    });
+
+    observer.observe(gridRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [setLocalOnCall]); // Removed onLayoutChange from dep array to avoid re-init loop
+
+  // --- NEW LOGIC: Widget Lifecycle Management via makeWidget ---
+  
+  useEffect(() => {
+    const grid = gridInstanceRef.current;
+    if (!grid || !gridRef.current) return;
+
+    // 1. Identify new elements in the DOM that are not widgets yet
+    const domChildren = Array.from(gridRef.current.children) as HTMLElement[];
+    const widgetElements = grid.getGridItems();
+    
+    // GridStack adds 'grid-stack-item' class.
+    // If we render with React, we add 'grid-stack-item'.
+    // We need to check if GridStack *knows* about it.
+    // GridStack attaches `gridstackNode` property to the element.
+    
+    domChildren.forEach(el => {
+      if (el.classList.contains('grid-stack-item') && !(el as any).gridstackNode) {
+        // This is a new element from React!
+        // GridStack doesn't know it yet.
+        // The element ALREADY has attributes gs-x, gs-y, gs-h from GridStackItem.
+        // So we just tell GridStack to make it a widget.
+        
+        // IMPORTANT: If we set gs-y=10000 in React, makeWidget reads it.
+        grid.makeWidget(el);
+      }
+    });
+
+    // 2. Sync Heights (if data changed, height might change)
+    // GridStack doesn't automatically update height if content grows.
+    // We must manually update it.
+    // But we avoid doing this if dragging.
+    if (!isDraggingRef.current) {
+        grid.getGridItems().forEach(el => {
+            const id = el.getAttribute('gs-id');
+            if (id) {
+                const targetH = getItemHeight(id);
+                const currentH = parseInt(el.getAttribute('gs-h') || '0');
+                if (targetH !== currentH) {
+                    grid.update(el, { h: targetH });
+                }
+            }
+        });
+        
+        // 3. Compact if necessary (gravity)
+        grid.compact();
+    }
+
+    // Update prevOrderRef to match current data
+    const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
+    prevOrderRef.current = currentTeams;
+
+  }, [localOnCall, getItemHeight]); // Run whenever data changes (and thus DOM changes)
+
+  return { gridRef };
+}
+
       });
       onLayoutChange(layout);
     };
