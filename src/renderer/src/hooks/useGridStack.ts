@@ -174,13 +174,38 @@ export function useGridStack(
         // Use receiver's column count for responsive layout
         const columnCount = grid.getColumn();
         
-        const newLayout = newOrder.map((team, i) => ({
-          id: team,
-          x: columnCount === 1 ? 0 : (teamLayout?.[team]?.x ?? (i % columnCount)),
-          y: columnCount === 1 ? i : (teamLayout?.[team]?.y ?? Math.floor(i / columnCount)),
-          w: 1,
-          h: getItemHeight(team)
-        }));
+        const newLayout = newOrder.map((team, i) => {
+          const storedPos = teamLayout?.[team];
+          // If we have a stored position, use it.
+          // If NOT, use autoPosition to let GridStack find the best slot (avoids overlaps).
+          // Fallback to simple stacking only if columnCount is 1 (mobile/narrow).
+          if (columnCount === 1) {
+            return {
+              id: team,
+              x: 0,
+              y: i,
+              w: 1,
+              h: getItemHeight(team)
+            };
+          }
+          
+          if (storedPos) {
+            return {
+              id: team,
+              x: storedPos.x,
+              y: storedPos.y,
+              w: 1,
+              h: getItemHeight(team)
+            };
+          }
+
+          return {
+            id: team,
+            autoPosition: true,
+            w: 1,
+            h: getItemHeight(team)
+          };
+        });
         
         // Guard: prevent change handler from firing during our load()
         isExternalUpdateRef.current = true;
