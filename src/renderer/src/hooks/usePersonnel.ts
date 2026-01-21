@@ -1,24 +1,4 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { OnCallRow } from "@shared/ipc";
-import { useToast } from '../components/Toast';
-
-const getWeekRange = () => {
-    const now = new Date();
-    const day = now.getDay();
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
-    const sunday = new Date(now.getFullYear(), now.getMonth(), diff + 6);
-    const options: Intl.DateTimeFormatOptions = { month: "long", day: "numeric" };
-    return `${monday.toLocaleDateString(
-      undefined,
-      options
-    )} - ${sunday.toLocaleDateString(
-      undefined,
-      options
-    )}, ${sunday.getFullYear()}`;
-};
-
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { OnCallRow, TeamLayout } from "@shared/ipc";
 import { useToast } from '../components/Toast';
 
@@ -245,4 +225,3 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     setLocalOnCall
   };
 }
-
