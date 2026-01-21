@@ -18,39 +18,23 @@ const getWeekRange = () => {
     )}, ${sunday.getFullYear()}`;
 };
 
-export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
+export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   const { showToast } = useToast();
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
-  const [localLayout, setLocalLayout] = useState<TeamLayout>(teamLayout || {});
   const [weekRange, setWeekRange] = useState(getWeekRange());
   const [currentDay, setCurrentDay] = useState(new Date().getDay());
 
-  // Sync local layout with prop updates
-  useEffect(() => {
-    if (teamLayout) {
-      setLocalLayout(prev => {
-        // Smart Merge:
-        // If the server layout is missing keys that we have locally (and those keys exist in our team list),
-        // it likely means we have an optimistic update that the server hasn't reflected yet.
-        // We should preserve those local keys to prevent the UI from "flickering" them to default positions.
-        
-        const nextLayout = { ...teamLayout };
-        
-        // Check for local keys that are missing in remote
-        Object.keys(prev).forEach(key => {
-          if (!nextLayout[key] && localOnCall.some(r => r.team === key)) {
-             nextLayout[key] = prev[key];
-          }
-        });
-        
-        return nextLayout;
-      });
-    }
-  }, [teamLayout, localOnCall]);
-
   // Ref to track if the update was triggered locally (optimistic update)
-  // to avoid overwriting state with the same data when it broadcasts back.
   const isLocalUpdateRef = useRef(false);
+
+  // Sync with external updates, respecting local optimistic state
+  useEffect(() => {
+    if (!isLocalUpdateRef.current) {
+        setLocalOnCall(onCall);
+    } else {
+        isLocalUpdateRef.current = false;
+    }
+  }, [onCall]);
 
   // Alert Logic
   const getAlertKey = useCallback((type: string) => {
@@ -59,7 +43,7 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
   }, []);
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
-    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle'), getAlertKey('network')];
+    const check = [getAlertKey('first-responder'), getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle')];
     const saved = new Set<string>();
     check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
     return saved;
@@ -77,7 +61,7 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
       const newDay = new Date().getDay();
       if (newDay !== currentDay) {
         setCurrentDay(newDay);
-        const types = ['general', 'sql', 'oracle', 'network'];
+        const types = ['first-responder', 'general', 'sql', 'oracle'];
         const saved = new Set<string>();
         types.forEach(type => {
             const key = getAlertKey(type);
@@ -95,17 +79,17 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
       if (!map.has(row.team)) map.set(row.team, []);
       map.get(row.team)?.push(row);
     });
-    const result = Array.from(map.keys());
-    return result;
+    return Array.from(map.keys());
   }, [localOnCall]);
 
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
     const day = new Date().getDay();
     const lowerTeam = team.toLowerCase();
+    
+    if (day === 0 && lowerTeam.includes('first responder')) dismissAlert('first-responder');
     if (day === 1) dismissAlert('general');
     if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
-    if (day === 5 && (lowerTeam.includes('network') || lowerTeam.includes('voice') || lowerTeam.includes('fts'))) dismissAlert('network');
 
     isLocalUpdateRef.current = true;
     setLocalOnCall((prev) => {
@@ -157,17 +141,6 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     }
   };
 
-  const getItemHeight = useCallback(
-    (teamName: string) => {
-      const rows = localOnCall.filter((r) => r.team === teamName);
-      // Formula tuned for cellHeight: 75 and margin: 12
-      // Header (~60px) + rows (~40px each)
-      const rowHeight = Math.ceil((rows.length * 40 + 65) / 75);
-      return Math.max(2, rowHeight);
-    },
-    [localOnCall]
-  );
-
   const handleAddTeam = async (name: string) => {
     const initialRow: OnCallRow = {
       id: crypto.randomUUID(),
@@ -179,38 +152,14 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     };
     isLocalUpdateRef.current = true;
     
-    // Optimistic Update: Add row
     setLocalOnCall((prev) => [...prev, initialRow]);
 
-    // "Gravity" Strategy:
-    // We don't need to calculate the exact pixel-perfect bottom.
-    // We just need to place the new item FAR below everything else.
-    // GridStack (with float: false) will automatically "gravity" it up 
-    // to the next available slot, compacting the layout perfectly.
-    // This guarantees no overlaps at (0,0).
-    const safeY = 10000; 
-
-    // Force explicit position for the new team
-    const newTeamPos = { x: 0, y: safeY };
-    const newLayout = {
-      ...(localLayout || {}),
-      [name]: newTeamPos
-    };
-
-    // Optimistic Update: Layout
-    setLocalLayout(newLayout);
-
-    // 1. Add the team data
     const success = await window.api?.updateOnCallTeam(name, [initialRow]);
     
     if (success) {
-      // Get current team order including new team
       const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
       if (!currentTeams.includes(name)) currentTeams.push(name);
-
-      // Persist layout
-      await window.api?.reorderOnCallTeams(currentTeams, newLayout);
-      
+      await window.api?.reorderOnCallTeams(currentTeams, {});
       showToast(`Added team ${name}`, "success");
     } else {
       isLocalUpdateRef.current = false;
@@ -218,10 +167,26 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     }
   };
 
+  const handleReorderTeams = async (oldIndex: number, newIndex: number) => {
+    if (oldIndex === newIndex) return;
+
+    const currentTeams = [...teams];
+    const [movedTeam] = currentTeams.splice(oldIndex, 1);
+    currentTeams.splice(newIndex, 0, movedTeam);
+    
+    const newFlatList: OnCallRow[] = [];
+    currentTeams.forEach(t => {
+       newFlatList.push(...localOnCall.filter(r => r.team === t));
+    });
+
+    isLocalUpdateRef.current = true;
+    setLocalOnCall(newFlatList);
+
+    await window.api?.reorderOnCallTeams(currentTeams, {});
+  };
+
   return {
     localOnCall,
-    localLayout,
-    setLocalLayout, // Export this so GridStack can sync layout state
     weekRange,
     dismissedAlerts,
     dismissAlert,
@@ -232,7 +197,7 @@ export function usePersonnel(onCall: OnCallRow[], teamLayout?: TeamLayout) {
     handleRemoveTeam,
     handleRenameTeam,
     handleAddTeam,
-    getItemHeight,
+    handleReorderTeams,
     setLocalOnCall
   };
 }
