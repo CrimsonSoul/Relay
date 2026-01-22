@@ -101,7 +101,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
             {loc.error && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0 16px", background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ff8a8a", borderRadius: "16px", fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", height: "44px", animation: "fadeIn 0.2s ease-out", boxShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
-                <span>Location not found</span>
+                <span>{loc.error}</span>
               </div>
             )}
             <SearchInput style={{ height: "44px" }} placeholder="Search city..." value={loc.manualInput} onChange={(e) => loc.setManualInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleManualSearch()} />
