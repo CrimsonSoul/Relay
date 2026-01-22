@@ -53,7 +53,11 @@ export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTem
         border: isPrimary 
           ? "1px solid rgba(245, 158, 11, 0.3)" 
           : (isActive ? "1px solid rgba(37, 99, 235, 0.1)" : "1px solid transparent"),
-        boxShadow: isActive ? "0 0 10px rgba(37, 99, 235, 0.05)" : (isPrimary ? "0 0 8px rgba(245, 158, 11, 0.05)" : "none"),
+        boxShadow: (isActive && isPrimary)
+          ? "0 0 12px rgba(245, 158, 11, 0.15), 0 0 8px rgba(37, 99, 235, 0.05)"
+          : isActive 
+            ? "0 0 10px rgba(37, 99, 235, 0.05)" 
+            : (isPrimary ? "0 0 12px rgba(245, 158, 11, 0.12)" : "none"),
         transition: "all 0.3s ease",
         position: "relative"
       }}
