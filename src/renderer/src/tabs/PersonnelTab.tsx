@@ -131,6 +131,8 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
   ];
   const renderAlerts = () => alertConfigs.filter(c => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type))).map(c => <Tooltip key={c.type} content="Click to dismiss"><div onClick={() => dismissAlert(c.type)} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: c.bg, padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>{c.label}</div></Tooltip>);
 
+  const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete || localOnCall.some(() => false)); // placeholder for isEditing in modal if needed, but better to use a dedicated flag
+
   return (
     <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto" }}>
       <CollapsibleHeader title="On-Call Board" subtitle={<>{weekRange}{renderAlerts()}</>} isCollapsed={isCollapsed}>
@@ -160,11 +162,12 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
       </CollapsibleHeader>
 
       <DndContext 
+        id="personnel-board-dnd"
         sensors={sensors} 
         collisionDetection={closestCenter} 
         onDragStart={(event) => {
+          if (isAnyModalOpen) return;
           const { active } = event;
-          // Only start drag if it's a team card (active.id is one of the team names)
           if (teams.includes(active.id as string)) {
             setIsDragging(true);
             window.api?.notifyDragStart();
@@ -173,7 +176,6 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
         onDragEnd={(event) => {
           if (isDragging) {
             handleDragEnd(event);
-            // Small delay before re-enabling animations to let dnd-kit finish its transition
             setTimeout(() => setIsDragging(false), 50);
             window.api?.notifyDragStop();
           }
@@ -217,6 +219,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
       </DndContext>
 
       <Modal isOpen={!!renamingTeam} onClose={() => setRenamingTeam(null)} title="Rename Card" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input value={renamingTeam?.new || ""} onChange={(e) => setRenamingTeam(p => p ? { ...p, new: e.target.value } : null)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (renamingTeam) { void handleRenameTeam(renamingTeam.old, renamingTeam.new).then(() => setRenamingTeam(null)); } }}>Rename</TactileButton></div></div></Modal>
+
 
       <Modal isOpen={isAddingTeam} onClose={() => setIsAddingTeam(false)} title="Add New Card" width="400px"><div style={{ display: "flex", flexDirection: "column", gap: "16px" }}><Input placeholder="Card Name (e.g. SRE, Support)" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} autoFocus onKeyDown={(e) => { if (e.key === "Enter" && newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }} /><div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}><TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>Cancel</TactileButton><TactileButton variant="primary" onClick={() => { if (newTeamName.trim()) { void handleAddTeam(newTeamName.trim()); setNewTeamName(""); setIsAddingTeam(false); } }}>Add Card</TactileButton></div></div></Modal>
 

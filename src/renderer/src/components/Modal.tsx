@@ -81,6 +81,8 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           // overflow: 'hidden' // Removed to allow tooltips/dropdowns to overflow
         }}
         onClick={e => e.stopPropagation()}
+        onPointerDown={e => e.stopPropagation()}
+        onMouseDown={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? 'modal-title' : undefined}
