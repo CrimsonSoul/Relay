@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { OnCallRow, Contact, TeamLayout } from "@shared/ipc";
 import { TactileButton } from "../components/TactileButton";
 import { Modal } from "../components/Modal";
@@ -78,13 +78,24 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // Pre-group rows by team for performance
+  const groupedOnCall = useMemo(() => {
+    const map = new Map<string, OnCallRow[]>();
+    localOnCall.forEach((row) => {
+      const existing = map.get(row.team) || [];
+      existing.push(row);
+      map.set(row.team, existing);
+    });
+    return map;
+  }, [localOnCall]);
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.id !== over.id) {
         const oldIndex = teams.indexOf(active.id as string);
         const newIndex = teams.indexOf(over.id as string);
         void handleReorderTeams(oldIndex, newIndex);
-
+        showToast(`Moved ${active.id} to position ${newIndex + 1}`, 'info');
     }
   };
 
@@ -93,33 +104,35 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
     const text = formatTeamOnCall(team, rows);
     const success = await window.api?.writeClipboard(text);
     if (success) {
-      showToast(`Copied ${team} on-call info`, 'success');
+      showToast(`Copied ${team} info`, 'success');
     } else {
-      showToast('Failed to copy to clipboard', 'error');
+      showToast('Failed to copy', 'error');
     }
   }, [showToast]);
 
   const handleCopyAllOnCall = useCallback(async () => {
     const allText = teams.map(team => {
-      const teamRows = localOnCall.filter(r => r.team === team);
+      const teamRows = groupedOnCall.get(team) || [];
       return formatTeamOnCall(team, teamRows);
     }).join('\n');
     const success = await window.api?.writeClipboard(allText);
     if (success) {
-      showToast('Copied all on-call info', 'success');
+      showToast('Copied all info', 'success');
     } else {
-      showToast('Failed to copy to clipboard', 'error');
+      showToast('Failed to copy', 'error');
     }
-  }, [teams, localOnCall, showToast]);
+  }, [teams, groupedOnCall, showToast]);
 
   const handleExportCsv = useCallback(async () => {
-    const success = await window.api?.exportData({
+    const result = await window.api?.exportData({
       format: 'csv',
       category: 'oncall',
       includeMetadata: false
     });
-    if (success) {
-      showToast('On-call board exported successfully', 'success');
+    if (result) {
+      showToast('Exported successfully', 'success');
+    } else {
+      showToast('Export failed', 'error');
     }
   }, [showToast]);
 
@@ -131,7 +144,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
   ];
   const renderAlerts = () => alertConfigs.filter(c => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type))).map(c => <Tooltip key={c.type} content="Click to dismiss"><div onClick={() => dismissAlert(c.type)} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: c.bg, padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>{c.label}</div></Tooltip>);
 
-  const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete || localOnCall.some(() => false)); // placeholder for isEditing in modal if needed, but better to use a dedicated flag
+  const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete);
 
   return (
     <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto" }}>
@@ -139,12 +152,14 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
         <TactileButton
           onClick={handleCopyAllOnCall}
           title="Copy All On-Call Info"
+          aria-label="Copy All On-Call Info"
           style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
           icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>}
         >COPY ALL</TactileButton>
         <TactileButton
           onClick={handleExportCsv}
           title="Export to CSV (Excel)"
+          aria-label="Export to CSV"
           style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
           icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>}
         >EXPORT</TactileButton>
@@ -154,11 +169,12 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
               window.api?.openAuxWindow('popout/board');
             }}
             title="Pop Out Board"
+            aria-label="Pop Out Board"
             style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
             icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>}
           >POP OUT</TactileButton>
         )}
-        <TactileButton variant="primary" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD CARD</TactileButton>
+        <TactileButton variant="primary" aria-label="Add Card" style={{ padding: isCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} onClick={() => setIsAddingTeam(true)}>+ ADD CARD</TactileButton>
       </CollapsibleHeader>
 
       <DndContext 
@@ -199,7 +215,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
                 <SortableTeamCard
                   team={team}
                   index={idx}
-                  rows={localOnCall.filter((r) => r.team === team)}
+                  rows={groupedOnCall.get(team) || []}
                   contacts={contacts}
                   onUpdateRows={handleUpdateRows}
                   onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
@@ -214,7 +230,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
           </div>
         </SortableContext>
         <div aria-live="polite" className="sr-only">
-          {isDragging ? "Dragging team" : ""}
+          {isDragging ? `Dragging team ${isDragging}` : ""}
         </div>
       </DndContext>
 
