@@ -5,8 +5,7 @@ import { Tooltip } from "../Tooltip";
 import { useToast } from '../Toast';
 import { isTimeWindowActive } from '../../utils/timeParsing';
 
-interface TeamRowProps { row: OnCallRow; hasAnyTimeWindow: boolean; gridTemplate: string }
-
+interface TeamRowProps { row: OnCallRow; hasAnyTimeWindow: boolean; gridTemplate: string; tick?: number }
 const getRoleAbbrev = (role: string) => {
   const r = (role || "").toLowerCase();
   if (r.includes("primary")) { return "PRI"; }
@@ -20,9 +19,10 @@ const getRoleAbbrev = (role: string) => {
   return role.substring(0, 3).toUpperCase();
 };
 
-export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTemplate }) => {
+export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTemplate, tick }) => {
   const { showToast } = useToast();
-  const isActive = useMemo(() => isTimeWindowActive(row.timeWindow || ""), [row.timeWindow]);
+  const isActive = useMemo(() => isTimeWindowActive(row.timeWindow || ""), [row.timeWindow, tick]);
+
   const isPrimary = useMemo(() => {
     const r = (row.role || "").toLowerCase();
     return r.includes("primary") || r === "pri";
@@ -85,35 +85,6 @@ export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTem
           )}
           <div style={{ 
             color: isActive ? "var(--color-accent-blue)" : (isPrimary ? "#F59E0B" : (row.name ? "var(--color-text-primary)" : "var(--color-text-quaternary)")), 
-            fontSize: "18px", 
-            fontWeight: 700, 
-            whiteSpace: "nowrap", 
-            overflow: "hidden", 
-            textOverflow: "ellipsis",
-            paddingRight: "12px"
-          }}>
-            {row.name || "—"}
-          </div>
-        </div>
-      </Tooltip>
-
-      <Tooltip content={row.name} block>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: "120px" }}>
-          {isActive && (
-            <div 
-              className="animate-active-indicator"
-              style={{ 
-                width: "8px", 
-                height: "8px", 
-                borderRadius: "50%", 
-                background: "var(--color-accent-blue)",
-                boxShadow: "0 0 10px var(--color-accent-blue)",
-                flexShrink: 0
-              }} 
-            />
-          )}
-          <div style={{ 
-            color: isActive ? "var(--color-accent-blue)" : (row.name ? "var(--color-text-primary)" : "var(--color-text-quaternary)"), 
             fontSize: "18px", 
             fontWeight: 700, 
             whiteSpace: "nowrap", 

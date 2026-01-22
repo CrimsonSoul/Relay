@@ -23,6 +23,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [weekRange, setWeekRange] = useState(getWeekRange());
   const [currentDay, setCurrentDay] = useState(new Date().getDay());
+  const [tick, setTick] = useState(Date.now());
 
   // Ref to track if the update was triggered locally (optimistic update)
   const isLocalUpdateRef = useRef(false);
@@ -58,6 +59,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   useEffect(() => {
     const interval = setInterval(() => {
       setWeekRange(getWeekRange());
+      setTick(Date.now());
       const newDay = new Date().getDay();
       if (newDay !== currentDay) {
         setCurrentDay(newDay);
@@ -198,6 +200,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     handleRenameTeam,
     handleAddTeam,
     handleReorderTeams,
-    setLocalOnCall
+    setLocalOnCall,
+    tick
   };
 }

@@ -37,6 +37,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
     getAlertKey, 
     currentDay, 
     teams,
+    tick
   } = usePersonnel(onCall, teamLayout);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
@@ -217,6 +218,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
               setMenu={setMenu}
               onCopyTeamInfo={handleCopyTeamInfo}
               isReadOnly={true}
+              tick={tick}
             />
           </div>
         ))}
