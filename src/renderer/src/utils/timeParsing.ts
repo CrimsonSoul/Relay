@@ -47,9 +47,7 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   const hasTimeMention = tw.match(/\d/);
   if (!hasTimeMention) {
     // If it's a day match but no numbers (time) mentioned, it's active for that day
-    const active = hasDayMention && dayMatch;
-    console.debug(`[timeParsing] Day-only match for "${timeWindow}": ${active}`);
-    return active;
+    return hasDayMention && dayMatch;
   }
 
   // Handle Time Constraints (e.g., "0800-1700", "8am-5pm", "08:00 - 17:00")
@@ -77,18 +75,14 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
     const endTime = parseTime(timeRangeMatch[3], timeRangeMatch[4]);
     const currentTime = date.getHours() * 100 + date.getMinutes();
 
-    let active = false;
     if (startTime <= endTime) {
-      active = currentTime >= startTime && currentTime <= endTime;
+      return currentTime >= startTime && currentTime <= endTime;
     } else {
       // Over-midnight range
-      active = currentTime >= startTime || currentTime <= endTime;
+      return currentTime >= startTime || currentTime <= endTime;
     }
-    console.debug(`[timeParsing] Range match for "${timeWindow}": ${active} (Current: ${currentTime}, Start: ${startTime}, End: ${endTime})`);
-    return active;
   }
 
-  console.debug(`[timeParsing] No match for "${timeWindow}"`);
   // If we found numbers but couldn't parse a range, default to inactive for safety
   return false;
 };
