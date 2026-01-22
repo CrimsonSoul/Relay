@@ -34,14 +34,25 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({ isOpen, on
 
   const handleUpdate = (updated: OnCallRow) => setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
   const handleRemove = (id: string) => setRows((prev) => prev.filter((r) => r.id !== id));
-  const handleAddRow = () => setRows((prev) => [...prev, { id: crypto.randomUUID(), team: teamName, role: "", name: "", contact: "", timeWindow: "" }]);
-  const handleSave = () => { onSave(teamName, rows); onClose(); };
+  const handleAddRow = () => setRows((prev) => [...prev, { id: crypto.randomUUID(), team: teamName, role: "Member", name: "", contact: "", timeWindow: "" }]);
+  const handleSave = () => { 
+    const finalRows = rows.map(r => ({
+      ...r,
+      role: r.role.trim() || "Member"
+    }));
+    onSave(teamName, finalRows); 
+    onClose(); 
+  };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Team: ${teamName}`} width="900px">
-      <div style={{ display: "flex", flexDirection: "column", height: "65vh" }}>
+    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="900px">
+      <div 
+        style={{ display: "flex", flexDirection: "column", height: "65vh" }}
+        onPointerDown={e => e.stopPropagation()}
+        onMouseDown={e => e.stopPropagation()}
+      >
         <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "10px 16px", display: "flex", flexDirection: "column", gap: "4px" }}>
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext id={`modal-dnd-${teamName}`} sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
               {rows.map((row) => (<SortableEditRow key={row.id} row={row} contacts={contacts} onUpdate={handleUpdate} onRemove={() => handleRemove(row.id)} />))}
             </SortableContext>
