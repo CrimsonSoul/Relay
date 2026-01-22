@@ -83,7 +83,7 @@ export function useDirectory(contacts: Contact[], groups: BridgeGroup[], onAddTo
     timeoutsRef.current.set(contact.email, timeout);
   }, [onAddToAssembler]);
 
-  const handleCreateContact = (contact: Partial<Contact>) => contactOps.handleCreateContact(contact, setIsAddModalOpen);
+  const handleCreateContact = (contact: Partial<Contact>) => contactOps.handleCreateContact(contact);
 
   return {
     search, setSearch, filtered, recentlyAdded, isAddModalOpen, setIsAddModalOpen, focusedIndex, setFocusedIndex, sortConfig, setSortConfig,

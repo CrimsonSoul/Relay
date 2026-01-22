@@ -154,19 +154,27 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     };
     isLocalUpdateRef.current = true;
     
-    setLocalOnCall((prev) => [...prev, initialRow]);
-
-    const success = await window.api?.updateOnCallTeam(name, [initialRow]);
-    
-    if (success) {
-      const currentTeams = Array.from(new Set(localOnCall.map(r => r.team)));
-      if (!currentTeams.includes(name)) currentTeams.push(name);
-      await window.api?.reorderOnCallTeams(currentTeams, {});
-      showToast(`Added team ${name}`, "success");
-    } else {
-      isLocalUpdateRef.current = false;
-      showToast("Failed to add team", "error");
-    }
+    // Use functional update to ensure we have latest state
+    setLocalOnCall((prev) => {
+      const next = [...prev, initialRow];
+      
+      // Chain the API calls after the state update logic
+      void (async () => {
+        const success = await window.api?.updateOnCallTeam(name, [initialRow]);
+        if (success) {
+          const currentTeams = Array.from(new Set(next.map(r => r.team)));
+          await window.api?.reorderOnCallTeams(currentTeams, {});
+          showToast(`Added team ${name}`, "success");
+        } else {
+          isLocalUpdateRef.current = false;
+          // Rollback local state
+          setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
+          showToast("Failed to add team", "error");
+        }
+      })();
+      
+      return next;
+    });
   };
 
   const handleReorderTeams = async (oldIndex: number, newIndex: number) => {
@@ -182,9 +190,17 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     });
 
     isLocalUpdateRef.current = true;
+    const oldFlatList = [...localOnCall];
     setLocalOnCall(newFlatList);
 
-    await window.api?.reorderOnCallTeams(currentTeams, {});
+    const success = await window.api?.reorderOnCallTeams(currentTeams, {});
+    if (success) {
+      showToast("Teams reordered", "success");
+    } else {
+      isLocalUpdateRef.current = false;
+      setLocalOnCall(oldFlatList);
+      showToast("Failed to save team order", "error");
+    }
   };
 
   return {

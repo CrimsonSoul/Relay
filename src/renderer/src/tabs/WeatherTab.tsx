@@ -3,6 +3,7 @@ import { TabFallback } from "../components/TabFallback";
 import { CollapsibleHeader } from "../components/CollapsibleHeader";
 import { TactileButton } from "../components/TactileButton";
 import { SearchInput } from "../components/SearchInput";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { WeatherAlertCard, HourlyForecast, DailyForecast, RadarPanel, getWeatherDescription, type WeatherTabProps } from "./weather";
 import { useWeatherLocation } from "../hooks/useWeatherLocation";
 import { useSavedLocations } from "../hooks/useSavedLocations";
@@ -10,6 +11,7 @@ import type { SavedLocation } from "@shared/ipc";
 
 export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, location, loading, onLocationChange, onManualRefresh }) => {
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
   const loc = useWeatherLocation(location, loading, onLocationChange, onManualRefresh);
 
   // Saved locations state
@@ -21,6 +23,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   const [renameModal, setRenameModal] = useState<SavedLocation | null>(null);
   const [renameName, setRenameName] = useState("");
   const [activeSavedLocation, setActiveSavedLocation] = useState<SavedLocation | null>(null);
+  const [locationToDelete, setLocationToDelete] = useState<SavedLocation | null>(null);
   const locationMenuRef = useRef<HTMLDivElement>(null);
 
   // Close menu when clicking outside
@@ -50,6 +53,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
 
   const handleSelectSavedLocation = async (saved: SavedLocation) => {
     // Reverse geocode to get the city name
+    setIsSearching(true);
     try {
       const data = await window.api.searchLocation(`${saved.lat},${saved.lon}`);
       const cityName = data.results?.[0]
@@ -58,6 +62,8 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       onLocationChange({ name: cityName, latitude: saved.lat, longitude: saved.lon });
     } catch {
       onLocationChange({ name: saved.name, latitude: saved.lat, longitude: saved.lon });
+    } finally {
+      setIsSearching(false);
     }
     setActiveSavedLocation(saved);
     onManualRefresh(saved.lat, saved.lon);
@@ -78,14 +84,24 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   };
 
   // Wrappers to clear active saved location on manual actions
-  const handleManualSearch = () => {
+  const handleManualSearch = async () => {
     setActiveSavedLocation(null);
-    void loc.handleManualSearch();
+    setIsSearching(true);
+    try {
+      await loc.handleManualSearch();
+    } finally {
+      setIsSearching(false);
+    }
   };
 
-  const handleAutoLocate = () => {
+  const handleAutoLocate = async () => {
     setActiveSavedLocation(null);
-    void loc.handleAutoLocate();
+    setIsSearching(true);
+    try {
+      await loc.handleAutoLocate();
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   if (!location && loading) return <TabFallback />;
@@ -104,18 +120,41 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                 <span>{loc.error}</span>
               </div>
             )}
-            <SearchInput style={{ height: "44px" }} placeholder="Search city..." value={loc.manualInput} onChange={(e) => loc.setManualInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleManualSearch()} />
+            <SearchInput 
+              style={{ height: "44px" }} 
+              placeholder={isSearching ? "Searching..." : "Search city..."} 
+              value={loc.manualInput} 
+              onChange={(e) => loc.setManualInput(e.target.value)} 
+              onKeyDown={(e) => e.key === "Enter" && handleManualSearch()} 
+              disabled={isSearching}
+            />
           </div>
         }
       >
-        <TactileButton onClick={handleManualSearch} variant="primary" title="Search" style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>} />
-        <TactileButton onClick={handleAutoLocate} title="Detect Location" style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>} />
+        <TactileButton 
+          onClick={handleManualSearch} 
+          variant="primary" 
+          title="Search" 
+          aria-label="Search city"
+          disabled={isSearching}
+          style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} 
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>} 
+        />
+        <TactileButton 
+          onClick={handleAutoLocate} 
+          title="Detect Location" 
+          aria-label="Detect current location"
+          disabled={isSearching}
+          style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} 
+          icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>} 
+        />
 
         {/* Saved Locations Dropdown */}
         <div style={{ position: "relative" }} ref={locationMenuRef}>
           <TactileButton
             onClick={() => setShowLocationMenu(!showLocationMenu)}
             title="Saved Locations"
+            aria-label="Toggle saved locations menu"
             style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
             icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -174,6 +213,8 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                   {savedLocations.map((saved) => (
                     <div
                       key={saved.id}
+                      role="button"
+                      tabIndex={0}
                       style={{
                         padding: "10px 16px",
                         display: "flex",
@@ -182,7 +223,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                         borderBottom: "1px solid var(--color-border-subtle)",
                         cursor: "pointer",
                         transition: "background 0.1s ease",
+                        outline: "none"
                       }}
+                      onKeyDown={(e) => e.key === "Enter" && handleSelectSavedLocation(saved)}
                       onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
                       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                       onClick={() => handleSelectSavedLocation(saved)}
@@ -219,6 +262,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                         <button
                           onClick={(e) => { e.stopPropagation(); handleOpenRename(saved); }}
                           title="Rename"
+                          aria-label={`Rename ${saved.name}`}
                           style={{
                             background: "none",
                             border: "none",
@@ -238,6 +282,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                           <button
                             onClick={(e) => { e.stopPropagation(); void clearDefaultLocation(saved.id); }}
                             title="Clear default"
+                            aria-label={`Remove ${saved.name} as default`}
                             style={{
                               background: "none",
                               border: "none",
@@ -255,6 +300,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                           <button
                             onClick={(e) => { e.stopPropagation(); void setDefaultLocation(saved.id); }}
                             title="Set as default"
+                            aria-label={`Set ${saved.name} as default`}
                             style={{
                               background: "none",
                               border: "none",
@@ -271,8 +317,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
                         )}
                         {/* Delete button */}
                         <button
-                          onClick={(e) => { e.stopPropagation(); void deleteLocation(saved.id); }}
+                          onClick={(e) => { e.stopPropagation(); setLocationToDelete(saved); setShowLocationMenu(false); }}
                           title="Delete"
+                          aria-label={`Delete ${saved.name}`}
                           style={{
                             background: "none",
                             border: "none",
@@ -305,6 +352,24 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
           )}
         </div>
       </CollapsibleHeader>
+
+      {/* Confirmation Modals */}
+      {locationToDelete && (
+        <ConfirmModal 
+          isOpen={!!locationToDelete} 
+          onClose={() => setLocationToDelete(null)} 
+          onConfirm={async () => {
+            if (locationToDelete) {
+              await deleteLocation(locationToDelete.id);
+              setLocationToDelete(null);
+            }
+          }}
+          title="Delete Location"
+          message={`Are you sure you want to delete "${locationToDelete.name}"?`}
+          confirmLabel="Delete"
+          isDanger
+        />
+      )}
 
       {/* Save Location Modal */}
       {saveModalOpen && (

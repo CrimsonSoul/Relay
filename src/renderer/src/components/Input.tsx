@@ -153,8 +153,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
 
         {hasValue && !props.readOnly && !props.disabled && (
           <Tooltip content="Clear" position="top">
-            <div
+            <button
+              type="button"
               onClick={handleClear}
+              aria-label="Clear input"
               data-testid="input-clear-button"
               style={{
                 position: 'absolute',
@@ -172,7 +174,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 background: 'rgba(255, 255, 255, 0.08)',
                 zIndex: 50,
                 transition: 'all var(--transition-fast)',
-                border: '1px solid transparent'
+                border: '1px solid transparent',
+                padding: 0,
+                outline: 'none'
               }}
               onMouseEnter={e => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
@@ -186,12 +190,20 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 e.currentTarget.style.borderColor = 'transparent';
                 e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
               }}
+              onFocus={e => {
+                e.currentTarget.style.borderColor = 'var(--color-accent-primary)';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
+              }}
+              onBlur={e => {
+                e.currentTarget.style.borderColor = 'transparent';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
-            </div>
+            </button>
           </Tooltip>
         )}
       </div>

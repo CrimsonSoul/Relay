@@ -43,13 +43,6 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
       if (!isNaN(sanitized.latitude) && !isNaN(sanitized.longitude)) {
         setWeatherLocation(sanitized);
       }
-    } else if (!deviceLocation.loading && deviceLocation.lat !== null && deviceLocation.lon !== null) {
-      // Fallback to Device Location from global context
-      setWeatherLocation({
-        latitude: Number(deviceLocation.lat),
-        longitude: Number(deviceLocation.lon),
-        name: deviceLocation.city ? `${deviceLocation.city}, ${deviceLocation.region}` : 'Current Location'
-      });
     }
 
     // 2. Restore cached weather data and alerts for SWR
@@ -59,9 +52,20 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     if (cachedWeather) setWeatherData(cachedWeather);
     if (cachedAlerts) {
       setWeatherAlerts(cachedAlerts);
-      cachedAlerts.forEach(a => lastAlertIdsRef.current.add(a.id));
+      cachedAlerts.forEach(a => { lastAlertIdsRef.current.add(a.id); });
     }
-  }, [deviceLocation.loading, deviceLocation.lat, deviceLocation.lon]);
+  }, []); // Only run once on mount
+
+  // Update from device location only if we don't have a location set yet
+  useEffect(() => {
+    if (!weatherLocation && !deviceLocation.loading && deviceLocation.lat !== null && deviceLocation.lon !== null) {
+      setWeatherLocation({
+        latitude: Number(deviceLocation.lat),
+        longitude: Number(deviceLocation.lon),
+        name: deviceLocation.city ? `${deviceLocation.city}, ${deviceLocation.region}` : 'Current Location'
+      });
+    }
+  }, [deviceLocation.loading, deviceLocation.lat, deviceLocation.lon, deviceLocation.city, deviceLocation.region, weatherLocation]);
 
   /**
    * Fetches weather and alerts from API.
@@ -98,7 +102,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
               ) || newAlerts[0];
             showToast(`Weather Alert: ${severe.event}`, "error");
 
-            newAlerts.forEach((a: WeatherAlert) => lastAlertIdsRef.current.add(a.id));
+            newAlerts.forEach((a: WeatherAlert) => { lastAlertIdsRef.current.add(a.id); });
           }
         }
       } catch (err: unknown) {
@@ -126,7 +130,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
   useEffect(() => {
     if (!weatherLocation) return;
 
-    // Immediate fetch if we don't have fresh data
+    // Use a ref to track if we've already done the initial fetch for this location
     void fetchWeather(
       weatherLocation.latitude,
       weatherLocation.longitude,
@@ -138,7 +142,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [weatherLocation, fetchWeather, !!weatherData]);
+  }, [weatherLocation, fetchWeather, weatherData]);
 
   return {
     weatherLocation,
