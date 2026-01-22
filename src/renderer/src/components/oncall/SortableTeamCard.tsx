@@ -16,6 +16,7 @@ interface SortableTeamCardProps {
   setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void;
   setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void;
   onCopyTeamInfo: (team: string, rows: OnCallRow[]) => void;
+  tick?: number;
 }
 
 export const SortableTeamCard: React.FC<SortableTeamCardProps> = (props) => {

@@ -6,9 +6,9 @@ import { MaintainTeamModal } from "../MaintainTeamModal";
 import { ContextMenuItem } from "../ContextMenu";
 import { TeamRow } from "./TeamRow";
 
-interface TeamCardProps { team: string; index?: number; rows: OnCallRow[]; contacts: Contact[]; onUpdateRows: (team: string, rows: OnCallRow[]) => void; onRenameTeam: (oldName: string, newName: string) => void; onRemoveTeam: (team: string) => void; setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void; setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void; onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void; isReadOnly?: boolean; }
+interface TeamCardProps { team: string; index?: number; rows: OnCallRow[]; contacts: Contact[]; onUpdateRows: (team: string, rows: OnCallRow[]) => void; onRenameTeam: (oldName: string, newName: string) => void; onRemoveTeam: (team: string) => void; setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void; setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void; onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void; isReadOnly?: boolean; tick?: number; }
 
-export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows, onRenameTeam, onRemoveTeam, setConfirm, setMenu, onCopyTeamInfo, isReadOnly = false }: TeamCardProps) => {
+export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows, onRenameTeam, onRemoveTeam, setConfirm, setMenu, onCopyTeamInfo, isReadOnly = false, tick }: TeamCardProps) => {
   const colorScheme = useMemo(() => {
     if (typeof index === 'number') {
       return PALETTE[index % PALETTE.length];
@@ -84,7 +84,7 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
               {isReadOnly ? "No personnel assigned" : "Click to assign personnel"}
             </div>
           ) : (
-            teamRows.map((row) => <TeamRow key={row.id} row={row} hasAnyTimeWindow={hasAnyTimeWindow} gridTemplate={rowGridTemplate} />)
+            teamRows.map((row) => <TeamRow key={row.id} row={row} hasAnyTimeWindow={hasAnyTimeWindow} gridTemplate={rowGridTemplate} tick={tick} />)
           )}
         </div>
       </div>
@@ -93,6 +93,7 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
   );
 }, (prev, next) => {
   // Custom comparison to avoid re-render if rows content is same, even if array ref changed
+  if (prev.tick !== next.tick) return false;
   if (prev.team !== next.team) return false;
   if (prev.contacts !== next.contacts) return false; // fast reference check sufficient for contacts list?
   if (prev.rows.length !== next.rows.length) return false;

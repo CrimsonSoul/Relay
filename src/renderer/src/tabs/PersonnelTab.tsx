@@ -28,7 +28,7 @@ function formatTeamOnCall(team: string, rows: OnCallRow[]): string {
 }
 
 export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; teamLayout?: TeamLayout }> = ({ onCall, contacts, teamLayout }) => {
-  const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, handleReorderTeams } = usePersonnel(onCall, teamLayout);
+  const { localOnCall, weekRange, dismissedAlerts, dismissAlert, getAlertKey, currentDay, teams, handleUpdateRows, handleRemoveTeam, handleRenameTeam, handleAddTeam, handleReorderTeams, tick } = usePersonnel(onCall, teamLayout);
   const [isAddingTeam, setIsAddingTeam] = useState(false); const [newTeamName, setNewTeamName] = useState("");
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -205,6 +205,7 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
                   setConfirm={setConfirmDelete}
                   setMenu={setMenu}
                   onCopyTeamInfo={handleCopyTeamInfo}
+                  tick={tick}
                 />
               </div>
             ))}

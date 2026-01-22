@@ -43,15 +43,23 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   }
 
   if (!dayMatch) return false;
+  
+  const hasTimeMention = tw.match(/\d/);
+  if (!hasTimeMention) {
+    // If it's a day match but no numbers (time) mentioned, it's active for that day
+    const active = hasDayMention && dayMatch;
+    console.debug(`[timeParsing] Day-only match for "${timeWindow}": ${active}`);
+    return active;
+  }
 
-  // Handle Time Constraints (e.g., "0800-1700", "8am-5pm")
-  const timeRangeMatch = tw.match(/(\d{1,2}:?\d{0,2})\s*(am|pm)?\s*(?:-|to|through)\s*(\d{1,2}:?\d{0,2})\s*(am|pm)?/);
+  // Handle Time Constraints (e.g., "0800-1700", "8am-5pm", "08:00 - 17:00")
+  const timeRangeMatch = tw.match(/(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?\s*(?:-|to|through)\s*(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?/);
   if (timeRangeMatch) {
     const parseTime = (timeStr: string, meridiem?: string): number => {
       let hours = 0;
       let mins = 0;
       
-      const cleanTime = timeStr.replace(':', '');
+      const cleanTime = timeStr.replace(/[:.]/g, '');
       if (cleanTime.length <= 2) {
         hours = parseInt(cleanTime);
       } else {
@@ -69,14 +77,18 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
     const endTime = parseTime(timeRangeMatch[3], timeRangeMatch[4]);
     const currentTime = date.getHours() * 100 + date.getMinutes();
 
+    let active = false;
     if (startTime <= endTime) {
-      return currentTime >= startTime && currentTime <= endTime;
+      active = currentTime >= startTime && currentTime <= endTime;
     } else {
       // Over-midnight range
-      return currentTime >= startTime || currentTime <= endTime;
+      active = currentTime >= startTime || currentTime <= endTime;
     }
+    console.debug(`[timeParsing] Range match for "${timeWindow}": ${active} (Current: ${currentTime}, Start: ${startTime}, End: ${endTime})`);
+    return active;
   }
 
-  // If there's a day match but no specific time range found, assume active for that day
-  return hasDayMention && dayMatch;
+  console.debug(`[timeParsing] No match for "${timeWindow}"`);
+  // If we found numbers but couldn't parse a range, default to inactive for safety
+  return false;
 };
