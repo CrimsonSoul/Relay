@@ -7,7 +7,7 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
   const [permissionDenied, setPermissionDenied] = useState(false);
   const autoLocateAttemptedRef = useRef(false);
 
-  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+  const reverseGeocode = useCallback(async (lat: number, lon: number): Promise<string> => {
     try {
       if (!window.api) return 'Current Location';
       const data = await window.api.searchLocation(`${lat},${lon}`);
@@ -17,29 +17,71 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
       }
     } catch { /* Geocoding failure - return fallback */ }
     return 'Current Location';
-  };
+  }, []);
 
   const handleAutoLocate = useCallback(async () => {
-    setError(null); setPermissionDenied(false);
-    if (!('geolocation' in navigator)) { setError('Auto-location not supported by this browser.'); return; }
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        const lat = Number(latitude.toFixed(4));
-        const lon = Number(longitude.toFixed(4));
-        const name = await reverseGeocode(lat, lon);
-        const newLoc: Location = { latitude: lat, longitude: lon, name };
-        onLocationChange(newLoc);
-        onManualRefresh(lat, lon);
-      },
-      async (err) => {
-        console.error('[Weather] Geolocation failed:', err.message);
-        if (err.code === 1) { setPermissionDenied(true); setError('Location access was denied. Please search for your city manually.'); }
-        else { setError('Could not detect location automatically. Please search for your city manually.'); }
-      },
-      { timeout: 5000, maximumAge: 300000, enableHighAccuracy: false }
-    );
-  }, [onLocationChange, onManualRefresh]);
+    setError(null);
+    setPermissionDenied(false);
+
+    let foundAny = false;
+
+    // 1. Try IP Location (Fast/Reliable)
+    const tryIp = async (): Promise<boolean> => {
+      try {
+        const data = await window.api?.getIpLocation();
+        if (data?.lat && data?.lon && !foundAny) {
+          const lat = Number(Number(data.lat).toFixed(4));
+          const lon = Number(Number(data.lon).toFixed(4));
+          const name = data.city ? `${data.city}, ${data.region || ''} ${data.country}`.trim() : 'Current Location';
+          const newLoc: Location = { latitude: lat, longitude: lon, name };
+          onLocationChange(newLoc);
+          onManualRefresh(lat, lon);
+          foundAny = true;
+          return true;
+        }
+      } catch (err) {
+        console.warn('[Weather] IP location failed:', err);
+      }
+      return false;
+    };
+
+    // 2. Try GPS (Accurate)
+    const tryGps = (): Promise<boolean> => new Promise((resolve) => {
+      if (!('geolocation' in navigator)) {
+        resolve(false);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const lat = Number(latitude.toFixed(4));
+          const lon = Number(longitude.toFixed(4));
+          
+          // GPS is usually more accurate, so we always update if it succeeds
+          const name = await reverseGeocode(lat, lon);
+          const newLoc: Location = { latitude: lat, longitude: lon, name };
+          onLocationChange(newLoc);
+          onManualRefresh(lat, lon);
+          foundAny = true;
+          resolve(true);
+        },
+        (err) => {
+          console.warn('[Weather] GPS location failed:', err.message);
+          if (err.code === 1) setPermissionDenied(true);
+          resolve(false);
+        },
+        { timeout: 5000, maximumAge: 300000, enableHighAccuracy: false }
+      );
+    });
+
+    // Run both in parallel. GPS will refine IP if it succeeds later.
+    const [ipSuccess, gpsSuccess] = await Promise.all([tryIp(), tryGps()]);
+
+    if (!ipSuccess && !gpsSuccess && !foundAny) {
+      setError('Could not detect location automatically. Please search for your city manually.');
+    }
+  }, [onLocationChange, onManualRefresh, reverseGeocode]);
 
   useEffect(() => { if (!location && !loading && !autoLocateAttemptedRef.current) { autoLocateAttemptedRef.current = true; void handleAutoLocate(); } }, [location, loading, handleAutoLocate]);
 
