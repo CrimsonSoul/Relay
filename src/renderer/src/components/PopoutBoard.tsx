@@ -205,10 +205,11 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
       )}
 
       <div ref={animationParent} className="oncall-grid" role="list" aria-label="On-Call Teams" style={{ padding: isKiosk ? "40px" : "0" }}>
-        {teams.map((team) => (
+        {teams.map((team, idx) => (
           <div key={team} className="oncall-grid-item" role="listitem">
             <TeamCard
               team={team}
+              index={idx}
               rows={localOnCall.filter((r) => r.team === team)}
               contacts={contacts}
               onUpdateRows={() => {}}
