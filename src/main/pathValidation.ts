@@ -1,6 +1,8 @@
 import fs from 'fs';
 import { join } from 'path';
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
+import { isNodeError } from '@shared/types';
 
 export interface ValidationResult {
     success: boolean;
@@ -26,11 +28,6 @@ export function validateDataPath(path: string): ValidationResult {
 
         return { success: true };
     } catch (error: unknown) {
-        // Type guard for Node.js error with code property
-        const isNodeError = (err: unknown): err is NodeJS.ErrnoException => {
-            return typeof err === 'object' && err !== null && 'code' in err;
-        };
-
         const errorCode = isNodeError(error) ? error.code : undefined;
         const message = error instanceof Error ? error.message : String(error);
 

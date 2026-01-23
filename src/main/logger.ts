@@ -2,32 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { App } from 'electron';
 import { LogData } from '@shared/types';
+import { LogLevel, ErrorCategory } from '@shared/logging';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
 const SESSION_START_BORDER_LENGTH = 80;
 const MEMORY_SAMPLE_INTERVAL_MS = 5000; // Sample memory every 5 seconds
 const MB_DIVISOR = 1024 * 1024;
-
-export enum LogLevel {
-  DEBUG = 0,
-  INFO = 1,
-  WARN = 2,
-  ERROR = 3,
-  FATAL = 4,
-  NONE = 5
-}
-
-export enum ErrorCategory {
-  NETWORK = 'NETWORK',
-  FILE_SYSTEM = 'FILE_SYSTEM',
-  VALIDATION = 'VALIDATION',
-  AUTH = 'AUTH',
-  DATABASE = 'DATABASE',
-  IPC = 'IPC',
-  RENDERER = 'RENDERER',
-  UNKNOWN = 'UNKNOWN'
-}
 
 interface ErrorContext {
   category?: ErrorCategory;
@@ -219,7 +200,9 @@ class Logger {
 
     const sanitizedData = { ...data };
     const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
-    sensitiveFields.forEach(field => delete sanitizedData[field]);
+    for (const field of sensitiveFields) {
+      delete sanitizedData[field];
+    }
 
     if (Object.keys(sanitizedData).length > 0) {
       parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);

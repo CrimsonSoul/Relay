@@ -29,7 +29,7 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
 
     const fileManager = getFileManager();
     if (fileManager) {
-      ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)();
+      void fileManager.performBackup('periodic');
     }
   }, 24 * 60 * 60 * 1000);
 

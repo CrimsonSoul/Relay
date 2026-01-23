@@ -1,18 +1,8 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Contact, Server, BridgeGroup } from "@shared/ipc";
-import { getColorForString } from "../utils/colors";
-
-type ResultType = "contact" | "server" | "group" | "action";
-
-type SearchResult = {
-  id: string;
-  type: ResultType;
-  title: string;
-  subtitle?: string;
-  icon: React.ReactNode;
-  data: unknown;
-};
+import { useCommandSearch, SearchResult } from "../hooks/useCommandSearch";
+import { ContactIcon, GroupIcon, ServerIcon, ActionIcon } from "./command-palette/CommandIcons";
 
 type CommandPaletteProps = {
   isOpen: boolean;
@@ -24,6 +14,21 @@ type CommandPaletteProps = {
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
   onOpenAddContact: (email?: string) => void;
+};
+
+const RenderIcon: React.FC<{ result: SearchResult }> = ({ result }) => {
+  switch (result.type) {
+    case "contact":
+      return <ContactIcon name={result.title} />;
+    case "group":
+      return <GroupIcon />;
+    case "server":
+      return <ServerIcon />;
+    case "action":
+      return <ActionIcon type={result.iconType} />;
+    default:
+      return null;
+  }
 };
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -38,144 +43,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onOpenAddContact,
 }) => {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
-  // Focus input when opened
   useEffect(() => {
-    if (isOpen) {
-      setQuery("");
-      setSelectedIndex(0);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  }, [isOpen]);
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [query]);
 
-  // Build search results
-  const results = useMemo((): SearchResult[] => {
-    if (!query.trim()) {
-      // Show recent/default actions when empty
-      return [
-        {
-          id: "action-compose",
-          type: "action",
-          title: "Go to Compose",
-          subtitle: "Open bridge composition",
-          icon: <ActionIcon type="compose" />,
-          data: { action: "navigate", tab: "Compose" },
-        },
-        {
-          id: "action-personnel",
-          type: "action",
-          title: "Go to On-Call Board",
-          subtitle: "View current on-call assignments",
-          icon: <ActionIcon type="personnel" />,
-          data: { action: "navigate", tab: "Personnel" },
-        },
-        {
-          id: "action-people",
-          type: "action",
-          title: "Go to People",
-          subtitle: "Search contacts directory",
-          icon: <ActionIcon type="people" />,
-          data: { action: "navigate", tab: "People" },
-        },
-        {
-          id: "action-weather",
-          type: "action",
-          title: "Go to Weather",
-          subtitle: "Check current conditions",
-          icon: <ActionIcon type="weather" />,
-          data: { action: "navigate", tab: "Weather" },
-        },
-        {
-          id: "action-create-contact",
-          type: "action",
-          title: "Create New Contact",
-          subtitle: "Add a new person to the directory",
-          icon: <ActionIcon type="add-contact" />,
-          data: { action: "create-contact" },
-        },
-      ];
-    }
+  const results = useCommandSearch(debouncedQuery, contacts, servers, groups);
 
-    const lower = query.toLowerCase();
-    const results: SearchResult[] = [];
-    
-    // Check if query is email
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.trim());
-    const emailExists = contacts.some(c => c.email.toLowerCase() === lower);
-
-    // Add manual add option if valid email
-    if (isEmail) {
-      results.push({
-        id: "action-add-manual",
-        type: "action",
-        title: `Add "${query}" to Compose`,
-        subtitle: "Manually add to bridge recipients",
-        icon: <ActionIcon type="add" />,
-        data: { action: "add-manual", value: query },
-      });
-
-      // Add create contact option if email doesn't exist
-      if (!emailExists) {
-        results.push({
-          id: "action-create-contact-email",
-          type: "action",
-          title: `Create Contact: ${query}`,
-          subtitle: "Add new contact with this email",
-          icon: <ActionIcon type="add-contact" />,
-          data: { action: "create-contact", value: query },
-        });
-      }
-    }
-
-    // Search groups first (most important for NOC workflow)
-    groups.forEach((group) => {
-      if (group.name.toLowerCase().includes(lower)) {
-        results.push({
-          id: `group-${group.id}`,
-          type: "group",
-          title: group.name,
-          subtitle: `${group.contacts.length} member${group.contacts.length !== 1 ? "s" : ""}`,
-          icon: <GroupIcon />,
-          data: group,
-        });
-      }
-    });
-
-    // Search contacts
-    contacts.forEach((contact) => {
-      if (contact._searchString.includes(lower)) {
-        results.push({
-          id: `contact-${contact.email}`,
-          type: "contact",
-          title: contact.name || contact.email,
-          subtitle: contact.name ? contact.email : contact.title || undefined,
-          icon: <ContactIcon name={contact.name || contact.email} />,
-          data: contact,
-        });
-      }
-    });
-
-    // Search servers
-    servers.forEach((server) => {
-      if (server._searchString.includes(lower)) {
-        results.push({
-          id: `server-${server.name}`,
-          type: "server",
-          title: server.name,
-          subtitle: server.businessArea || server.owner || undefined,
-          icon: <ServerIcon />,
-          data: server,
-        });
-      }
-    });
-
-    return results.slice(0, 15); // Limit results
-  }, [query, contacts, servers, groups]);
-
-  // Reset selection when results change
+  // Focus input when opened
   useEffect(() => {
     setSelectedIndex(0);
   }, [results]);
@@ -212,7 +94,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           break;
       }
     },
-    [results, selectedIndex, onClose]
+    [results, selectedIndex, onClose, handleSelect]
   );
 
   // Handle result selection
@@ -379,7 +261,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 }}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <div style={{ flexShrink: 0 }}>{result.icon}</div>
+                <div style={{ flexShrink: 0 }}>
+                  <RenderIcon result={result} />
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
                     style={{
@@ -455,132 +339,4 @@ const kbdStyle: React.CSSProperties = {
   padding: "1px 4px",
   fontFamily: "inherit",
   fontSize: "10px",
-};
-
-// Icon components
-const ContactIcon: React.FC<{ name: string }> = ({ name }) => {
-  const color = getColorForString(name);
-  return (
-    <div
-      style={{
-        width: "28px",
-        height: "28px",
-        borderRadius: "6px",
-        background: color.bg,
-        color: color.text,
-        fontSize: "12px",
-        fontWeight: 700,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {name[0]?.toUpperCase() || "?"}
-    </div>
-  );
-};
-
-const GroupIcon: React.FC = () => (
-  <div
-    style={{
-      width: "28px",
-      height: "28px",
-      borderRadius: "6px",
-      background: "rgba(99, 179, 237, 0.15)",
-      color: "rgba(99, 179, 237, 1)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }}
-  >
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  </div>
-);
-
-const ServerIcon: React.FC = () => (
-  <div
-    style={{
-      width: "28px",
-      height: "28px",
-      borderRadius: "6px",
-      background: "rgba(139, 92, 246, 0.15)",
-      color: "rgba(139, 92, 246, 1)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-    }}
-  >
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-      <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-      <line x1="6" y1="6" x2="6.01" y2="6" />
-      <line x1="6" y1="18" x2="6.01" y2="18" />
-    </svg>
-  </div>
-);
-
-const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
-  const iconMap: Record<string, React.ReactNode> = {
-    compose: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-      </svg>
-    ),
-    personnel: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-    people: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-        <circle cx="12" cy="7" r="4" />
-      </svg>
-    ),
-    weather: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
-      </svg>
-    ),
-    add: (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
-    ),
-    "add-contact": (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-        <circle cx="8.5" cy="7" r="4"></circle>
-        <line x1="20" y1="8" x2="20" y2="14"></line>
-        <line x1="23" y1="11" x2="17" y2="11"></line>
-      </svg>
-    ),
-  };
-
-  return (
-    <div
-      style={{
-        width: "28px",
-        height: "28px",
-        borderRadius: "6px",
-        background: "rgba(255, 255, 255, 0.08)",
-        color: "var(--color-text-secondary)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      {iconMap[type] || null}
-    </div>
-  );
 };

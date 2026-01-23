@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useId } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { Tooltip } from './Tooltip';
 
 type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
@@ -24,7 +24,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
   } = style || {};
 
   // Sync internal ref with external ref if provided
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (typeof ref === 'function') {
       ref(innerRef.current);
     } else if (ref) {
@@ -32,13 +32,13 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
     }
   }, [ref]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (props.value !== undefined) {
       setHasValue(!!props.value);
     }
   }, [props.value]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (props.autoFocus && innerRef.current) {
       setTimeout(() => innerRef.current?.focus(), 150);
     }

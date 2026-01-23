@@ -7,6 +7,7 @@ import {
   ContactSchema,
   ServerSchema,
   OnCallRowsArraySchema,
+  TeamLayoutSchema,
   validateIpcDataSafe,
 } from '../../shared/ipcValidation';
 
@@ -111,8 +112,8 @@ export function setupDataHandlers(
       loggers.ipc.error('Invalid team order parameter');
       return { success: false, error: 'Invalid team order' };
     }
-    // Optional layout validation could go here
-    const result = await getFileManager()?.reorderOnCallTeams(teamOrder, layout) ?? false;
+    const validatedLayout = validateIpcDataSafe(TeamLayoutSchema, layout, 'REORDER_ONCALL_TEAMS');
+    const result = await getFileManager()?.reorderOnCallTeams(teamOrder, validatedLayout ?? undefined) ?? false;
     return { success: result };
   });
 
@@ -198,6 +199,10 @@ export function setupDataHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.DATA_GET_INITIAL, async () => {
+    if (!rateLimiters.dataReload.tryConsume().allowed) {
+      loggers.ipc.warn('Initial data request blocked by rate limit');
+      return null;
+    }
     const fileManager = getFileManager();
     if (!fileManager) return null;
     const data = fileManager.getCachedData();

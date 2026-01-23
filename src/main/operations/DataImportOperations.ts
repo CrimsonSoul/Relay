@@ -12,6 +12,7 @@ import type {
   ImportResult,
   DataCategory,
 } from "@shared/ipc";
+import { isValidEmail } from "../validationHelpers";
 import { bulkUpsertContacts } from "./ContactJsonOperations";
 import { bulkUpsertServers } from "./ServerJsonOperations";
 import { bulkUpsertOnCall } from "./OnCallJsonOperations";
@@ -23,16 +24,6 @@ import { loggers } from "../logger";
 
 // Maximum number of records allowed in a single import
 const MAX_IMPORT_RECORDS = 100000;
-
-// Basic email validation regex - allows most valid emails without being overly strict
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-/**
- * Validate email format
- */
-function isValidEmail(email: string): boolean {
-  return EMAIL_REGEX.test(email);
-}
 
 /**
  * Safely parse JSON with error handling
@@ -480,6 +471,10 @@ export async function importData(
 
 /**
  * Import from a specific path (for programmatic use)
+ * 
+ * SECURITY WARNING: This function accepts an arbitrary filePath and reads from it.
+ * It MUST NOT be exposed directly to IPC without strict validation of the filePath
+ * to prevent unauthorized file access.
  */
 export async function importFromPath(
   rootDir: string,

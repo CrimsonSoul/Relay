@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { RadarSnapshotSchema, validateIpcDataSafe } from '../../shared/ipcValidation';
 import { loggers } from '../logger';
+import { checkNetworkRateLimit } from '../rateLimiter';
 
 interface IpApiCoResponse {
   latitude?: number;
@@ -22,6 +24,7 @@ interface IpApiComResponse {
 
 export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null) {
   ipcMain.handle(IPC_CHANNELS.GET_IP_LOCATION, async () => {
+    if (!checkNetworkRateLimit()) return null;
     loggers.ipc.info('Received GET_IP_LOCATION request');
     
     // Provider 1: ipapi.co (HTTPS)
@@ -48,27 +51,32 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       loggers.ipc.warn('ipapi.co failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
-    // Provider 2: ip-api.com (HTTP - more reliable on some restricted networks)
-    try {
-      loggers.ipc.debug('Trying ip-api.com...');
-      const res = await fetch('http://ip-api.com/json/', {
-        signal: AbortSignal.timeout(5000)
-      });
-      if (res.ok) {
-        const data = await res.json() as IpApiComResponse;
-        loggers.ipc.info('Location found via ip-api.com', { city: data.city });
-        return {
-          lat: data.lat,
-          lon: data.lon,
-          city: data.city,
-          region: data.regionName,
-          country: data.country,
-          timezone: data.timezone
-        };
+    // Provider 2: ip-api.com (HTTPS with HTTP fallback)
+    for (const protocol of ['https', 'http']) {
+      try {
+        if (protocol === 'http') {
+          loggers.ipc.info('Falling back to HTTP for ip-api.com (corporate network compatibility)');
+        }
+        loggers.ipc.debug(`Trying ip-api.com (${protocol})...`);
+        const res = await fetch(`${protocol}://ip-api.com/json/`, {
+          signal: AbortSignal.timeout(5000)
+        });
+        if (res.ok) {
+          const data = await res.json() as IpApiComResponse;
+          loggers.ipc.info(`Location found via ip-api.com (${protocol})`, { city: data.city });
+          return {
+            lat: data.lat,
+            lon: data.lon,
+            city: data.city,
+            region: data.regionName,
+            country: data.country,
+            timezone: data.timezone
+          };
+        }
+        loggers.ipc.warn(`ip-api.com (${protocol}) returned non-OK status`, { status: res.status });
+      } catch (err) {
+        loggers.ipc.warn(`ip-api.com (${protocol}) failed`, { error: err instanceof Error ? err.message : String(err) });
       }
-      loggers.ipc.warn('ip-api.com returned non-OK status', { status: res.status });
-    } catch (err) {
-      loggers.ipc.warn('ip-api.com failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     // Provider 3: ipwho.is (HTTPS)
@@ -106,9 +114,12 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
   });
 
   ipcMain.on(IPC_CHANNELS.RADAR_DATA, (_event, payload) => {
+    const validatedPayload = validateIpcDataSafe(RadarSnapshotSchema, payload, 'RADAR_DATA');
+    if (!validatedPayload) return;
+
     const mainWindow = getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.RADAR_DATA, payload);
+      mainWindow.webContents.send(IPC_CHANNELS.RADAR_DATA, validatedPayload);
     }
   });
 }

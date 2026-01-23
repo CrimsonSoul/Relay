@@ -14,6 +14,8 @@ const DATA_RELOAD_MAX_TOKENS = 3;
 const DATA_RELOAD_REFILL_RATE = 0.5; // 1 token per 2 seconds
 const FS_OPERATIONS_MAX_TOKENS = 10;
 const FS_OPERATIONS_REFILL_RATE = 2; // 2 tokens per second
+const NETWORK_MAX_TOKENS = 10;
+const NETWORK_REFILL_RATE = 1; // 1 token per second
 
 interface RateLimiterConfig {
   maxTokens: number;      // Maximum number of tokens (burst capacity)
@@ -109,21 +111,46 @@ export const rateLimiters = {
     maxTokens: FS_OPERATIONS_MAX_TOKENS,
     refillRate: FS_OPERATIONS_REFILL_RATE,
     name: 'FSOperations'
+  }),
+
+  // External network operations
+  network: new RateLimiter({
+    maxTokens: NETWORK_MAX_TOKENS,
+    refillRate: NETWORK_REFILL_RATE,
+    name: 'Network'
   })
 };
+
+/**
+ * Convenience helper to check data mutation rate limit.
+ */
+export function checkMutationRateLimit(): boolean {
+  const result = rateLimiters.dataMutation.tryConsume();
+  if (!result.allowed) {
+    loggers.ipc.warn(`Data mutation blocked, retry after ${result.retryAfterMs}ms`);
+  }
+  return result.allowed;
+}
+
+/**
+ * Convenience helper to check network rate limit.
+ */
+export function checkNetworkRateLimit(): boolean {
+  return rateLimiters.network.tryConsume().allowed;
+}
 
 /**
  * Wrapper to apply rate limiting to an IPC handler.
  * Returns null if rate limited, otherwise executes the handler.
  */
-export function withRateLimit<T>(
+export async function withRateLimit<T>(
   limiter: RateLimiter,
   handler: () => Promise<T> | T,
   cost: number = 1
 ): Promise<T | null> {
   const result = limiter.tryConsume(cost);
   if (!result.allowed) {
-    return Promise.resolve(null);
+    return null;
   }
-  return Promise.resolve(handler());
+  return await handler();
 }

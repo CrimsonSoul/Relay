@@ -11,7 +11,7 @@ import { FileContext, SERVER_FILES } from "./FileContext";
 import { loggers } from "../logger";
 
 export async function parseServers(ctx: FileContext): Promise<Server[]> {
-  const path = ctx.resolveExistingFile(SERVER_FILES);
+  const path = await ctx.resolveExistingFile(SERVER_FILES);
   if (!path) return [];
 
   try {

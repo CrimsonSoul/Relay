@@ -4,6 +4,7 @@ import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
 import { importGroupsFromCsv } from '../operations';
+import { rateLimiters } from '../rateLimiter';
 
 export function setupFileHandlers(getDataRoot: () => string) {
   const getContactsFilePath = () => {
@@ -13,6 +14,7 @@ export function setupFileHandlers(getDataRoot: () => string) {
   };
 
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     if (!await validatePath(path, getDataRoot())) {
       loggers.security.error(`Blocked access to path outside data root: ${path}`);
       return;
@@ -21,10 +23,17 @@ export function setupFileHandlers(getDataRoot: () => string) {
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
-    await shell.openPath(getContactsFilePath());
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
+    const filePath = getContactsFilePath();
+    if (!await validatePath('contacts.csv', getDataRoot())) {
+      loggers.security.error('Blocked contacts file access - path validation failed');
+      return;
+    }
+    await shell.openPath(filePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     try {
       const parsed = new URL(url);
       if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {

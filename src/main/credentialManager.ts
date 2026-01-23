@@ -16,11 +16,17 @@ const pendingAuthRequests = new Map<string, {
   timestamp: number;
 }>();
 
-// Encrypted credential cache (in-memory, cleared on app close)
-const credentialCache = new Map<string, { username: string; encryptedPassword: Buffer }>();
+// Encrypted credential cache (in-memory, cleared on app close or timeout)
+const credentialCache = new Map<string, { 
+  username: string; 
+  encryptedPassword: Buffer;
+  timestamp: number;
+}>();
 
 // Nonce expiry time (5 minutes)
 const NONCE_EXPIRY_MS = 5 * 60 * 1000;
+// Credential cache expiry (30 minutes)
+const CREDENTIAL_CACHE_EXPIRY_MS = 30 * 60 * 1000;
 
 /**
  * Generate a secure random nonce for auth request validation
@@ -55,6 +61,18 @@ function cleanupExpiredNonces(): void {
   for (const [nonce, request] of pendingAuthRequests.entries()) {
     if (now - request.timestamp > NONCE_EXPIRY_MS) {
       pendingAuthRequests.delete(nonce);
+    }
+  }
+}
+
+/**
+ * Clean up expired cached credentials
+ */
+function cleanupExpiredCredentials(): void {
+  const now = Date.now();
+  for (const [host, entry] of credentialCache.entries()) {
+    if (now - entry.timestamp > CREDENTIAL_CACHE_EXPIRY_MS) {
+      credentialCache.delete(host);
     }
   }
 }
@@ -106,6 +124,7 @@ export function isSafeStorageAvailable(): boolean {
  * Cache credentials for a host using safeStorage encryption
  */
 export function cacheCredentials(host: string, username: string, password: string): boolean {
+  cleanupExpiredCredentials();
   if (!isSafeStorageAvailable()) {
     loggers.security.warn('safeStorage not available, credentials will not be cached', {
       host,
@@ -116,7 +135,7 @@ export function cacheCredentials(host: string, username: string, password: strin
 
   try {
     const encryptedPassword = safeStorage.encryptString(password);
-    credentialCache.set(host, { username, encryptedPassword });
+    credentialCache.set(host, { username, encryptedPassword, timestamp: Date.now() });
     return true;
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));
@@ -134,6 +153,7 @@ export function cacheCredentials(host: string, username: string, password: strin
  * Retrieve cached credentials for a host
  */
 export function getCachedCredentials(host: string): { username: string; password: string } | null {
+  cleanupExpiredCredentials();
   const cached = credentialCache.get(host);
   if (!cached || !isSafeStorageAvailable()) {
     return null;
@@ -141,6 +161,8 @@ export function getCachedCredentials(host: string): { username: string; password
 
   try {
     const password = safeStorage.decryptString(cached.encryptedPassword);
+    // Refresh timestamp on successful use
+    credentialCache.set(host, { ...cached, timestamp: Date.now() });
     return { username: cached.username, password };
   } catch (error: unknown) {
     const err = error instanceof Error ? error : new Error(String(error));

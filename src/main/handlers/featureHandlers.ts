@@ -11,6 +11,7 @@ import {
   SavedLocationSchema,
   LocationUpdateSchema,
   validateIpcDataSafe,
+  NotesTagsSchema,
 } from "../../shared/ipcValidation";
 import {
   getGroups,
@@ -127,7 +128,11 @@ export function setupFeatureHandlers(getDataRoot: () => string) {
       loggers.ipc.error('Invalid contact note parameters');
       return { success: false, error: 'Invalid parameters' };
     }
-    const success = await setContactNote(getDataRoot(), email, note, tags);
+    const validatedTags = validateIpcDataSafe(NotesTagsSchema, tags, 'SET_CONTACT_NOTE');
+    if (tags !== undefined && !validatedTags) {
+      return { success: false, error: 'Invalid tags' };
+    }
+    const success = await setContactNote(getDataRoot(), email, note, validatedTags);
     return { success };
   });
 
@@ -137,7 +142,11 @@ export function setupFeatureHandlers(getDataRoot: () => string) {
       loggers.ipc.error('Invalid server note parameters');
       return { success: false, error: 'Invalid parameters' };
     }
-    const success = await setServerNote(getDataRoot(), name, note, tags);
+    const validatedTags = validateIpcDataSafe(NotesTagsSchema, tags, 'SET_SERVER_NOTE');
+    if (tags !== undefined && !validatedTags) {
+      return { success: false, error: 'Invalid tags' };
+    }
+    const success = await setServerNote(getDataRoot(), name, note, validatedTags);
     return { success };
   });
 

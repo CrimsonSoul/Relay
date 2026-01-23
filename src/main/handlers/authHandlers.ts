@@ -8,7 +8,7 @@ export function setupAuthHandlers() {
     const authRequest = consumeAuthRequest(nonce);
     if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce'); return false; }
     if (remember) cacheCredentials(authRequest.host, username, password);
-    authRequest.callback(username, password);
+    authRequest.callback([username, password]);
     return true;
   });
 
@@ -17,7 +17,7 @@ export function setupAuthHandlers() {
     if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce for cached auth'); return false; }
     const cached = getCachedCredentials(authRequest.host);
     if (!cached) { loggers.auth.warn('No cached credentials for host', { host: authRequest.host }); return false; }
-    authRequest.callback(cached.username, cached.password);
+    authRequest.callback([cached.username, cached.password]);
     return true;
   });
 

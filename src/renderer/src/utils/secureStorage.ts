@@ -51,9 +51,9 @@ class SecureStorage {
 
   constructor() {
     if (CRYPTO_AVAILABLE) {
-      this.initializeEncryption().catch((error) => {
+      this.initializeEncryption().catch((error: unknown) => {
         loggers.storage.warn('Failed to initialize encryption, falling back to obfuscation', {
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
           category: ErrorCategory.RENDERER
         });
       });
@@ -95,7 +95,7 @@ class SecureStorage {
       );
     } catch (error: unknown) {
       loggers.storage.error('Encryption initialization failed', {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
     }
@@ -128,7 +128,7 @@ class SecureStorage {
       return btoa(String.fromCharCode(...combined));
     } catch (error: unknown) {
       loggers.storage.warn('Encryption failed, using obfuscation', {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
       return simpleObfuscate(data);
@@ -161,7 +161,7 @@ class SecureStorage {
     } catch (error: unknown) {
       // Fallback to simple deobfuscation if decryption fails
       loggers.storage.warn('Decryption failed, trying deobfuscation', {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
       return simpleDeobfuscate(data);
@@ -179,7 +179,7 @@ class SecureStorage {
     } catch (error: unknown) {
       loggers.storage.error('Failed to store item', {
         key,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
       throw error;
@@ -199,7 +199,7 @@ class SecureStorage {
     } catch (error: unknown) {
       loggers.storage.error('Failed to retrieve item', {
         key,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
       return defaultValue;
@@ -250,7 +250,7 @@ class SecureStorage {
     } catch (error: unknown) {
       loggers.storage.warn('Failed to retrieve item (sync), clearing corrupted data', {
         key,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         category: ErrorCategory.RENDERER
       });
       // Clear the corrupted key so we don't spam errors every frame/mount

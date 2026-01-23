@@ -1,20 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ContactRecord } from "@shared/ipc";
+import { useMounted } from "./useMounted";
 
 export function useContactRecords() {
+  const mounted = useMounted();
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadContacts = useCallback(async () => {
     try {
       const data = await window.api?.getContacts();
-      setContacts(data || []);
+      if (mounted.current) {
+        setContacts(data || []);
+      }
     } catch (e) {
       console.error("Failed to load contacts:", e);
     } finally {
-      setLoading(false);
+      if (mounted.current) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     void loadContacts();
@@ -30,18 +36,20 @@ export function useContactRecords() {
         const result = await window.api.addContactRecord(contact);
         if (result.success && result.data) {
           const record = result.data;
-          setContacts((prev) => {
-            // Check if this was an update (same email)
-            const existingIndex = prev.findIndex(
-              (c) => c.email.toLowerCase() === record.email.toLowerCase()
-            );
-            if (existingIndex !== -1) {
-              const updated = [...prev];
-              updated[existingIndex] = record;
-              return updated;
-            }
-            return [...prev, record];
-          });
+          if (mounted.current) {
+            setContacts((prev) => {
+              // Check if this was an update (same email)
+              const existingIndex = prev.findIndex(
+                (c) => c.email.toLowerCase() === record.email.toLowerCase()
+              );
+              if (existingIndex !== -1) {
+                const updated = [...prev];
+                updated[existingIndex] = record;
+                return updated;
+              }
+              return [...prev, record];
+            });
+          }
           return record;
         }
         return null;
@@ -50,7 +58,7 @@ export function useContactRecords() {
         return null;
       }
     },
-    []
+    [mounted]
   );
 
   const updateContact = useCallback(
@@ -64,7 +72,7 @@ export function useContactRecords() {
           return false;
         }
         const result = await window.api.updateContactRecord(id, updates);
-        if (result.success) {
+        if (result.success && mounted.current) {
           setContacts((prev) =>
             prev.map((c) =>
               c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c
@@ -77,7 +85,7 @@ export function useContactRecords() {
         return false;
       }
     },
-    []
+    [mounted]
   );
 
   const deleteContact = useCallback(async (id: string) => {
@@ -87,7 +95,7 @@ export function useContactRecords() {
         return false;
       }
       const result = await window.api.deleteContactRecord(id);
-      if (result.success) {
+      if (result.success && mounted.current) {
         setContacts((prev) => prev.filter((c) => c.id !== id));
       }
       return result.success;
@@ -95,7 +103,7 @@ export function useContactRecords() {
       console.error("[useContactRecords] Failed to delete contact:", e);
       return false;
     }
-  }, []);
+  }, [mounted]);
 
   const findByEmail = useCallback(
     (email: string) => {

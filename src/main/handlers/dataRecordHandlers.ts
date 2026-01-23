@@ -8,6 +8,8 @@ import { IPC_CHANNELS, type DataStats, type IpcResult } from "../../shared/ipc";
 import {
   ContactRecordInputSchema,
   ServerRecordInputSchema,
+  ContactRecordUpdateSchema,
+  ServerRecordUpdateSchema,
   ExportOptionsSchema,
   DataCategorySchema,
   validateIpcDataSafe,
@@ -62,7 +64,9 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
   ipcMain.handle(IPC_CHANNELS.UPDATE_CONTACT_RECORD, async (_, id, updates): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const success = await updateContactRecord(getDataRoot(), id, updates);
+    const validatedUpdates = validateIpcDataSafe(ContactRecordUpdateSchema, updates, 'UPDATE_CONTACT_RECORD');
+    if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
+    const success = await updateContactRecord(getDataRoot(), id, validatedUpdates);
     return { success };
   });
 
@@ -89,7 +93,9 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
   ipcMain.handle(IPC_CHANNELS.UPDATE_SERVER_RECORD, async (_, id, updates): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const success = await updateServerRecord(getDataRoot(), id, updates);
+    const validatedUpdates = validateIpcDataSafe(ServerRecordUpdateSchema, updates, 'UPDATE_SERVER_RECORD');
+    if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
+    const success = await updateServerRecord(getDataRoot(), id, validatedUpdates);
     return { success };
   });
 
