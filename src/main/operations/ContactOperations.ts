@@ -21,7 +21,7 @@ import { loggers } from "../logger";
  * Parse contacts.csv into an array of Contact objects
  */
 export async function parseContacts(ctx: FileContext): Promise<Contact[]> {
-  const path = ctx.resolveExistingFile(CONTACT_FILES);
+  const path = await ctx.resolveExistingFile(CONTACT_FILES);
   if (!path) return [];
 
   try {

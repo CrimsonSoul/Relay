@@ -23,6 +23,8 @@ const ALL_SERVER_FILES = [...SERVER_FILES, SERVERS_JSON_FILE];
 const ALL_ONCALL_FILES = [...ONCALL_FILES, ONCALL_JSON_FILE, "oncall_layout.json"];
 const ALL_GROUP_FILES = [...GROUP_FILES, GROUPS_JSON_FILE];
 
+const FILE_CHANGE_DEBOUNCE_MS = 200;
+
 import { loggers } from "./logger";
 
 // ...
@@ -74,7 +76,15 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
       loggers.fileManager.info(`[FileWatcher] Triggering reload for: ${Array.from(pendingUpdates).join(', ')}`);
       callbacks.onFileChange(new Set(pendingUpdates));
       pendingUpdates.clear();
-    }, 200); // Increased debounce slightly for safety
+    }, FILE_CHANGE_DEBOUNCE_MS);
+  });
+
+  watcher.on("close", () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+    pendingUpdates.clear();
   });
 
   return watcher;

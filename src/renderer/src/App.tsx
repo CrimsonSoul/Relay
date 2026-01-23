@@ -155,7 +155,7 @@ export function MainApp() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setActiveTab, setSettingsOpen, setIsCommandPaletteOpen, setIsShortcutsOpen]);
+  }, [setActiveTab, setSettingsOpen]); // Removed setIsCommandPaletteOpen, setIsShortcutsOpen
 
   if (isPopout) {
     return (
@@ -211,59 +211,73 @@ export function MainApp() {
         <div className="content-view">
           {mountedTabs.has("Compose") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Compose" ? "block" : "none" }}>
-              <AssemblerTab
-                groups={data.groups} contacts={data.contacts} onCall={data.onCall}
-                selectedGroupIds={selectedGroupIds} manualAdds={manualAdds} manualRemoves={manualRemoves}
-                onToggleGroup={handleToggleGroup} onAddManual={handleAddManual}
-                onRemoveManual={handleRemoveManual} onUndoRemove={handleUndoRemove} onResetManual={handleReset}
-                setSelectedGroupIds={setSelectedGroupIds} setManualAdds={setManualAdds}
-              />
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <AssemblerTab
+                  groups={data.groups} contacts={data.contacts} onCall={data.onCall}
+                  selectedGroupIds={selectedGroupIds} manualAdds={manualAdds} manualRemoves={manualRemoves}
+                  onToggleGroup={handleToggleGroup} onAddManual={handleAddManual}
+                  onRemoveManual={handleRemoveManual} onUndoRemove={handleUndoRemove} onResetManual={handleReset}
+                  setSelectedGroupIds={setSelectedGroupIds} setManualAdds={setManualAdds}
+                />
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("Personnel") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Personnel" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <PersonnelTab onCall={data.onCall} contacts={data.contacts} teamLayout={data.teamLayout} />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <PersonnelTab onCall={data.onCall} contacts={data.contacts} teamLayout={data.teamLayout} />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("People") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "People" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <DirectoryTab contacts={data.contacts} groups={data.groups} onAddToAssembler={handleAddToAssembler} />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <DirectoryTab contacts={data.contacts} groups={data.groups} onAddToAssembler={handleAddToAssembler} />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("Weather") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Weather" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <WeatherTab
-                  weather={weatherData} alerts={weatherAlerts} location={weatherLocation}
-                  loading={weatherLoading} onLocationChange={setWeatherLocation}
-                  onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
-                />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <WeatherTab
+                    weather={weatherData} alerts={weatherAlerts} location={weatherLocation}
+                    loading={weatherLoading} onLocationChange={setWeatherLocation}
+                    onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
+                  />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("Servers") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Servers" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <ServersTab servers={data.servers} contacts={data.contacts} />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <ServersTab servers={data.servers} contacts={data.contacts} />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("Radar") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "Radar" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <RadarTab />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <RadarTab />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
           {mountedTabs.has("AI") && (
             <div className="animate-fade-in" style={{ height: "100%", display: activeTab === "AI" ? "block" : "none" }}>
-              <Suspense fallback={<TabFallback />}>
-                <AIChatTab />
-              </Suspense>
+              <ErrorBoundary fallback={<TabFallback error />}>
+                <Suspense fallback={<TabFallback />}>
+                  <AIChatTab />
+                </Suspense>
+              </ErrorBoundary>
             </div>
           )}
         </div>

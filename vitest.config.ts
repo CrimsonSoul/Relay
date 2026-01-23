@@ -14,6 +14,24 @@ export default defineConfig({
       '@renderer': resolve(__dirname, 'src/renderer/src'),
       '@main': resolve(__dirname, 'src/main')
     },
-    testTimeout: 30000
+    testTimeout: 30000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      thresholds: {
+        lines: 30,
+        functions: 30,
+        branches: 20,
+        statements: 30
+      },
+      exclude: [
+        'node_modules/**',
+        'dist/**',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        'src/main/index.ts',
+        'src/renderer/**'
+      ]
+    }
   },
 });

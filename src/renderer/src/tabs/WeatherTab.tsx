@@ -5,6 +5,8 @@ import { TactileButton } from "../components/TactileButton";
 import { SearchInput } from "../components/SearchInput";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { WeatherAlertCard, HourlyForecast, DailyForecast, RadarPanel, getWeatherDescription, type WeatherTabProps } from "./weather";
+import { SaveLocationModal } from "./weather/SaveLocationModal";
+import { RenameLocationModal } from "./weather/RenameLocationModal";
 import { useWeatherLocation } from "../hooks/useWeatherLocation";
 import { useSavedLocations } from "../hooks/useSavedLocations";
 import type { SavedLocation } from "@shared/ipc";
@@ -18,10 +20,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   const { locations: savedLocations, saveLocation, deleteLocation, setDefaultLocation, clearDefaultLocation, updateLocation } = useSavedLocations();
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
-  const [saveName, setSaveName] = useState("");
-  const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [renameModal, setRenameModal] = useState<SavedLocation | null>(null);
-  const [renameName, setRenameName] = useState("");
   const [activeSavedLocation, setActiveSavedLocation] = useState<SavedLocation | null>(null);
   const [locationToDelete, setLocationToDelete] = useState<SavedLocation | null>(null);
   const locationMenuRef = useRef<HTMLDivElement>(null);
@@ -38,16 +37,14 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     return () => document.removeEventListener("mousedown", handler);
   }, [showLocationMenu]);
 
-  const handleSaveLocation = async () => {
-    if (!saveName.trim() || !location) return;
+  const handleSaveLocation = async (name: string, isDefault: boolean) => {
+    if (!name.trim() || !location) return;
     await saveLocation({
-      name: saveName.trim(),
+      name: name.trim(),
       lat: location.latitude,
       lon: location.longitude,
-      isDefault: saveAsDefault,
+      isDefault: isDefault,
     });
-    setSaveName("");
-    setSaveAsDefault(false);
     setSaveModalOpen(false);
   };
 
@@ -55,6 +52,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     // Reverse geocode to get the city name
     setIsSearching(true);
     try {
+      if (!window.api) {
+        throw new Error("API not available");
+      }
       const data = await window.api.searchLocation(`${saved.lat},${saved.lon}`);
       const cityName = data.results?.[0]
         ? `${data.results[0].name}, ${data.results[0].admin1 || ''} ${data.results[0].country_code}`.trim()
@@ -71,16 +71,14 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
   };
 
   const handleOpenRename = (saved: SavedLocation) => {
-    setRenameName(saved.name);
     setRenameModal(saved);
     setShowLocationMenu(false);
   };
 
-  const handleRename = async () => {
-    if (!renameModal || !renameName.trim()) return;
-    await updateLocation(renameModal.id, { name: renameName.trim() });
+  const handleRename = async (newName: string) => {
+    if (!renameModal || !newName.trim()) return;
+    await updateLocation(renameModal.id, { name: newName.trim() });
     setRenameModal(null);
-    setRenameName("");
   };
 
   // Wrappers to clear active saved location on manual actions
@@ -373,272 +371,20 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
 
       {/* Save Location Modal */}
       {saveModalOpen && (
-        <div
-          className="animate-fade-in"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-          onClick={() => setSaveModalOpen(false)}
-        >
-          <div
-            className="animate-scale-in"
-            style={{
-              width: "100%",
-              maxWidth: "380px",
-              background: "var(--color-bg-surface-opaque)",
-              borderRadius: "12px",
-              border: "1px solid var(--color-border-medium)",
-              boxShadow: "var(--shadow-modal)",
-              overflow: "hidden",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-border-subtle)" }}>
-              <div style={{ fontSize: "16px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                Save Location
-              </div>
-              <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
-                {location?.name} ({location?.latitude.toFixed(4)}, {location?.longitude.toFixed(4)})
-              </div>
-            </div>
-            <div style={{ padding: "20px" }}>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "var(--color-text-secondary)",
-                marginBottom: "8px",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}>
-                Name
-              </label>
-              <input
-                type="text"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-                placeholder="e.g., HQ, Store #1234"
-                autoFocus
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  fontSize: "14px",
-                  background: "rgba(0, 0, 0, 0.5)",
-                  border: "1px solid var(--color-border-subtle)",
-                  borderRadius: "8px",
-                  color: "var(--color-text-primary)",
-                  fontFamily: "inherit",
-                  outline: "none",
-                }}
-              />
-              <label style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "10px",
-                marginTop: "16px",
-                cursor: "pointer",
-                fontSize: "13px",
-                color: "var(--color-text-secondary)",
-              }}>
-                <input
-                  type="checkbox"
-                  checked={saveAsDefault}
-                  onChange={(e) => setSaveAsDefault(e.target.checked)}
-                  style={{ width: "16px", height: "16px", cursor: "pointer" }}
-                />
-                Set as default location
-              </label>
-            </div>
-            <div style={{
-              padding: "16px 20px",
-              borderTop: "1px solid var(--color-border-subtle)",
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "12px",
-            }}>
-              <button
-                onClick={() => setSaveModalOpen(false)}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  background: "rgba(255, 255, 255, 0.08)",
-                  color: "var(--color-text-secondary)",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveLocation}
-                disabled={!saveName.trim()}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  background: saveName.trim() ? "rgba(52, 211, 153, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                  color: saveName.trim() ? "rgba(52, 211, 153, 1)" : "var(--color-text-tertiary)",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: saveName.trim() ? "pointer" : "not-allowed",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (saveName.trim()) e.currentTarget.style.background = "rgba(52, 211, 153, 0.25)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = saveName.trim() ? "rgba(52, 211, 153, 0.15)" : "rgba(255, 255, 255, 0.05)";
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
+        <SaveLocationModal
+          location={location}
+          onClose={() => setSaveModalOpen(false)}
+          onSave={handleSaveLocation}
+        />
       )}
 
       {/* Rename Location Modal */}
       {renameModal && (
-        <div
-          className="animate-fade-in"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.4)",
-            backdropFilter: "blur(12px)",
-            WebkitBackdropFilter: "blur(12px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-          onClick={() => setRenameModal(null)}
-        >
-          <div
-            className="animate-scale-in"
-            style={{
-              width: "100%",
-              maxWidth: "380px",
-              background: "var(--color-bg-surface-opaque)",
-              borderRadius: "12px",
-              border: "1px solid var(--color-border-medium)",
-              boxShadow: "var(--shadow-modal)",
-              overflow: "hidden",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--color-border-subtle)" }}>
-              <div style={{ fontSize: "16px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                Rename Location
-              </div>
-              <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
-                {renameModal.lat.toFixed(4)}, {renameModal.lon.toFixed(4)}
-              </div>
-            </div>
-            <div style={{ padding: "20px" }}>
-              <label style={{
-                display: "block",
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "var(--color-text-secondary)",
-                marginBottom: "8px",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}>
-                Name
-              </label>
-              <input
-                type="text"
-                value={renameName}
-                onChange={(e) => setRenameName(e.target.value)}
-                placeholder="Location name"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && renameName.trim() && handleRename()}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  fontSize: "14px",
-                  background: "rgba(0, 0, 0, 0.5)",
-                  border: "1px solid var(--color-border-subtle)",
-                  borderRadius: "8px",
-                  color: "var(--color-text-primary)",
-                  fontFamily: "inherit",
-                  outline: "none",
-                }}
-              />
-            </div>
-            <div style={{
-              padding: "16px 20px",
-              borderTop: "1px solid var(--color-border-subtle)",
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "12px",
-            }}>
-              <button
-                onClick={() => setRenameModal(null)}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  background: "rgba(255, 255, 255, 0.08)",
-                  color: "var(--color-text-secondary)",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.12)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRename}
-                disabled={!renameName.trim()}
-                style={{
-                  padding: "10px 20px",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                  background: renameName.trim() ? "rgba(59, 130, 246, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                  color: renameName.trim() ? "rgba(59, 130, 246, 1)" : "var(--color-text-tertiary)",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: renameName.trim() ? "pointer" : "not-allowed",
-                  transition: "all 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  if (renameName.trim()) e.currentTarget.style.background = "rgba(59, 130, 246, 0.25)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = renameName.trim() ? "rgba(59, 130, 246, 0.15)" : "rgba(255, 255, 255, 0.05)";
-                }}
-              >
-                Rename
-              </button>
-            </div>
-          </div>
-        </div>
+        <RenameLocationModal
+          location={renameModal}
+          onClose={() => setRenameModal(null)}
+          onRename={handleRename}
+        />
       )}
 
       <div className="weather-tab-root weather-scroll-container" style={{ display: "flex", gap: "16px", flex: 1, minHeight: 0, overflow: "hidden" }}>

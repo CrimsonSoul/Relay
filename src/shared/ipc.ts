@@ -240,6 +240,7 @@ export type BridgeAPI = {
   migrateFromCsv: () => Promise<IpcResult<MigrationResult>>;
   // Clipboard
   writeClipboard: (text: string) => Promise<boolean>;
+  platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
 };
 
 export const IPC_CHANNELS = {

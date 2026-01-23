@@ -11,6 +11,7 @@ import { generateDummyDataAsync } from "./dataUtils";
 import { stringifyCsv } from "./csvUtils";
 import { loggers } from "./logger";
 import { atomicWriteWithLock } from "./fileLock";
+import { validatePath } from "./utils/pathSafety";
 
 import { createFileWatcher, FileType } from "./FileWatcher";
 import { FileEmitter, CachedData } from "./FileEmitter";
@@ -82,8 +83,8 @@ export class FileManager implements FileContext {
    */
   public init(): void {
     this.startWatching();
-    void this.readAndEmit();
-    void this.performBackup("init");
+    void this.readAndEmit().catch(e => loggers.fileManager.error("Init readAndEmit failed", { error: e }));
+    void this.performBackup("init").catch(e => loggers.fileManager.error("Init backup failed", { error: e }));
   }
 
   private startWatching() {
@@ -97,8 +98,16 @@ export class FileManager implements FileContext {
     return this.cachedData;
   }
 
-  public resolveExistingFile(fileNames: string[]): string | null {
-    for (const fileName of fileNames) { const path = join(this.rootDir, fileName); if (existsSync(path)) return path; }
+  public async resolveExistingFile(fileNames: string[]): Promise<string | null> {
+    for (const fileName of fileNames) {
+      const isValid = await validatePath(fileName, this.rootDir);
+      if (!isValid) {
+        loggers.fileManager.warn(`Blocked potentially unsafe file resolution attempt: ${fileName}`);
+        continue;
+      }
+      const path = join(this.rootDir, fileName);
+      if (existsSync(path)) return path;
+    }
     return null;
   }
 
@@ -142,6 +151,11 @@ export class FileManager implements FileContext {
       }
     } catch (e) {
       loggers.fileManager.error("Failed to load layout", { error: e });
+      this.emitError({
+        type: "parse",
+        message: "On-call layout file is corrupted. Layout has been reset to default.",
+        file: "oncall_layout.json"
+      });
     }
     return {};
   }
@@ -207,6 +221,11 @@ export class FileManager implements FileContext {
           this.internalWriteCount--;
         }, WRITE_GUARD_DELAY_MS);
       }
+    }).finally(() => {
+      // Clean up the lock map to prevent memory leak
+      if (this.fileLocks.get(path) === newLock) {
+        this.fileLocks.delete(path);
+      }
     });
 
     this.fileLocks.set(path, newLock);
@@ -223,6 +242,11 @@ export class FileManager implements FileContext {
         await atomicWriteWithLock(path, contentWithBom);
       } finally {
         setTimeout(() => this.internalWriteCount--, DETACHED_WRITE_GUARD_DELAY_MS);
+      }
+    }).finally(() => {
+      // Clean up the lock map to prevent memory leak
+      if (this.fileLocks.get(path) === newLock) {
+        this.fileLocks.delete(path);
       }
     });
 
@@ -414,6 +438,9 @@ export class FileManager implements FileContext {
     return cleanupServerContactsOp(this);
   }
   public async updateOnCallTeam(team: string, rows: OnCallRow[]) {
+    // Store previous state for rollback
+    const previousOnCall = [...this.cachedData.onCall];
+    
     // OPTIMISTIC UPDATE
     const normalizedTeam = team.trim().toLowerCase();
     // Maintain existing team order if possible
@@ -441,20 +468,52 @@ export class FileManager implements FileContext {
       timeWindow: r.timeWindow,
     }));
     const success = await updateOnCallTeamJson(this.rootDir, team, records);
+    
+    // ROLLBACK ON FAILURE
+    if (!success) {
+      loggers.fileManager.error('updateOnCallTeam persistence failed, rolling back');
+      this.cachedData.onCall = previousOnCall;
+      this.emitter.sendPayload(this.cachedData);
+      this.emitError({
+        type: 'persistence',
+        message: 'Changes could not be saved. Please try again.',
+        file: 'oncall.json'
+      });
+    }
+    
     // Skip readAndEmit() on success since we already updated cache optimistically
     return success;
   }
 
   public async removeOnCallTeam(team: string) {
+    // Store previous state for rollback
+    const previousOnCall = [...this.cachedData.onCall];
+    
     // OPTIMISTIC UPDATE
     this.cachedData.onCall = this.cachedData.onCall.filter(r => r.team !== team);
     this.emitter.sendPayload(this.cachedData);
 
     const success = await deleteOnCallByTeam(this.rootDir, team);
+    
+    // ROLLBACK ON FAILURE
+    if (!success) {
+      loggers.fileManager.error('removeOnCallTeam persistence failed, rolling back');
+      this.cachedData.onCall = previousOnCall;
+      this.emitter.sendPayload(this.cachedData);
+      this.emitError({
+        type: 'persistence',
+        message: 'Team deletion failed to save. Please try again.',
+        file: 'oncall.json'
+      });
+    }
+    
     return success;
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
+    // Store previous state for rollback
+    const previousOnCall = [...this.cachedData.onCall];
+    
     // OPTIMISTIC UPDATE
     this.cachedData.onCall = this.cachedData.onCall.map(r => 
       r.team === oldName ? { ...r, team: newName } : r
@@ -462,10 +521,27 @@ export class FileManager implements FileContext {
     this.emitter.sendPayload(this.cachedData);
 
     const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
+    
+    // ROLLBACK ON FAILURE
+    if (!success) {
+      loggers.fileManager.error('renameOnCallTeam persistence failed, rolling back');
+      this.cachedData.onCall = previousOnCall;
+      this.emitter.sendPayload(this.cachedData);
+      this.emitError({
+        type: 'persistence',
+        message: 'Team rename failed to save. Please try again.',
+        file: 'oncall.json'
+      });
+    }
+    
     return success;
   }
 
   public async reorderOnCallTeams(teamOrder: string[], layout?: TeamLayout) {
+    // Store previous state for rollback
+    const previousOnCall = [...this.cachedData.onCall];
+    const previousLayout = { ...this.cachedData.teamLayout };
+    
     // OPTIMISTIC UPDATE: Update memory cache and broadcast to all windows immediately
     const teamMap = new Map<string, OnCallRow[]>();
     this.cachedData.onCall.forEach(r => {
@@ -504,8 +580,20 @@ export class FileManager implements FileContext {
       }
 
       const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
-      // Skip readAndEmit() on success since we already updated cache optimistically
-      if (!success) loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON)`);
+      
+      // ROLLBACK ON FAILURE
+      if (!success) {
+        loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON), rolling back`);
+        this.cachedData.onCall = previousOnCall;
+        this.cachedData.teamLayout = previousLayout;
+        this.emitter.sendPayload(this.cachedData);
+        this.emitError({
+          type: 'persistence',
+          message: 'Team reorder failed to save. Please try again.',
+          file: 'oncall.json'
+        });
+      }
+      
       return success;
     } finally {
       setTimeout(() => {

@@ -154,27 +154,26 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     };
     isLocalUpdateRef.current = true;
     
-    // Use functional update to ensure we have latest state
-    setLocalOnCall((prev) => {
-      const next = [...prev, initialRow];
-      
-      // Chain the API calls after the state update logic
-      void (async () => {
-        const success = await window.api?.updateOnCallTeam(name, [initialRow]);
-        if (success) {
-          const currentTeams = Array.from(new Set(next.map(r => r.team)));
-          await window.api?.reorderOnCallTeams(currentTeams, {});
-          showToast(`Added team ${name}`, "success");
-        } else {
-          isLocalUpdateRef.current = false;
-          // Rollback local state
-          setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
-          showToast("Failed to add team", "error");
-        }
-      })();
-      
-      return next;
-    });
+    // 1. Update local state optimistically
+    const nextList = [...localOnCall, initialRow];
+    setLocalOnCall(nextList);
+    
+    // 2. Perform API calls outside the setter
+    try {
+      const success = await window.api?.updateOnCallTeam(name, [initialRow]);
+      if (success) {
+        const currentTeams = Array.from(new Set(nextList.map(r => r.team)));
+        await window.api?.reorderOnCallTeams(currentTeams, {});
+        showToast(`Added team ${name}`, "success");
+      } else {
+        throw new Error("API call failed");
+      }
+    } catch (_err) {
+      isLocalUpdateRef.current = false;
+      // Rollback local state
+      setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
+      showToast("Failed to add team", "error");
+    }
   };
 
   const handleReorderTeams = async (oldIndex: number, newIndex: number) => {

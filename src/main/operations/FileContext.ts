@@ -37,7 +37,7 @@ export interface FileContext {
   safeStringify(data: string[][]): string;
 
   /** Find the first existing file from a list of candidates */
-  resolveExistingFile(fileNames: string[]): string | null;
+  resolveExistingFile(fileNames: string[]): Promise<string | null>;
 
   /** Check if a file contains the default dummy data */
   isDummyData(fileName: string): Promise<boolean>;

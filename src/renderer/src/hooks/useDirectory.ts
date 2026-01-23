@@ -5,6 +5,8 @@ import { useDirectoryContacts } from './useDirectoryContacts';
 
 type SortConfig = { key: keyof Contact | 'groups'; direction: 'asc' | 'desc' };
 
+const RECENTLY_ADDED_RESET_MS = 2000;
+
 export function useDirectory(contacts: Contact[], groups: BridgeGroup[], onAddToAssembler: (contact: Contact) => void) {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
@@ -40,7 +42,8 @@ export function useDirectory(contacts: Contact[], groups: BridgeGroup[], onAddTo
 
   const handleSort = (key: keyof Contact | 'groups') => setSortConfig(cur => cur.key === key ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' });
 
-  const effectiveContacts = useMemo(() => contactOps.getEffectiveContacts(), [contactOps, contacts]);
+  const { getEffectiveContacts } = contactOps;
+  const effectiveContacts = useMemo(() => getEffectiveContacts(), [getEffectiveContacts]);
 
   const filtered = useMemo(() => {
     const res = effectiveContacts.filter(c => !debouncedSearch || c._searchString.includes(debouncedSearch.toLowerCase()));
@@ -62,7 +65,7 @@ export function useDirectory(contacts: Contact[], groups: BridgeGroup[], onAddTo
   // Cleanup all timeouts on unmount
   useEffect(() => {
     return () => {
-      timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      timeoutsRef.current.forEach((timeout) => { clearTimeout(timeout); });
       timeoutsRef.current.clear();
     };
   }, []);
@@ -79,7 +82,7 @@ export function useDirectory(contacts: Contact[], groups: BridgeGroup[], onAddTo
     const timeout = setTimeout(() => {
       setRecentlyAdded(prev => { const s = new Set(prev); s.delete(contact.email); return s; });
       timeoutsRef.current.delete(contact.email);
-    }, 2000);
+    }, RECENTLY_ADDED_RESET_MS);
     timeoutsRef.current.set(contact.email, timeout);
   }, [onAddToAssembler]);
 

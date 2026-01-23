@@ -1,19 +1,21 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { LogEntrySchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 
 /**
  * Setup IPC handler for renderer-to-main logging
  */
 export function setupLoggerHandlers(): void {
-  ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (_event, entry: {
-    level: string;
-    module: string;
-    message: string;
-    data?: unknown;
-  }) => {
+  ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (_event, entry) => {
     try {
-      const { level, module, message, data } = entry;
+      const validated = LogEntrySchema.safeParse(entry);
+      if (!validated.success) {
+        loggers.ipc.warn('Invalid log entry received from renderer', { error: validated.error.message });
+        return;
+      }
+
+      const { level, module, message, data } = validated.data;
 
       // Map level string to logger method
       switch (level.toUpperCase()) {

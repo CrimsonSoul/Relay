@@ -28,8 +28,13 @@ export async function getOnCall(rootDir: string): Promise<OnCallRecord[]> {
     const contents = await readWithLock(path);
     if (!contents) return [];
     
-    const data = JSON.parse(contents);
-    return Array.isArray(data) ? data : [];
+    try {
+      const data = JSON.parse(contents);
+      return Array.isArray(data) ? data : [];
+    } catch (parseError) {
+      loggers.fileManager.error("[OnCallJsonOperations] JSON parse error:", { error: parseError, path });
+      return [];
+    }
   } catch (e) {
     if (e instanceof Error && (e as NodeJS.ErrnoException).code === "ENOENT") return [];
     loggers.fileManager.error("[OnCallJsonOperations] getOnCall error:", { error: e });

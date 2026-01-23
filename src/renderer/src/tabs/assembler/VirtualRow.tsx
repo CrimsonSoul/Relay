@@ -32,3 +32,5 @@ export const VirtualRow = memo(
     );
   }
 );
+
+VirtualRow.displayName = "VirtualRow";

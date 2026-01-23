@@ -1,3 +1,6 @@
+const BUSINESS_HOURS = { START: 8, END: 17 };
+const WEEKDAYS = { MONDAY: 1, FRIDAY: 5 };
+
 export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()): boolean => {
   if (!timeWindow) return false;
   const tw = timeWindow.toLowerCase().trim();
@@ -14,7 +17,8 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   // Business Hours Shortcut
   if (tw.includes("business hours")) {
     const hour = date.getHours();
-    return currentDay >= 1 && currentDay <= 5 && hour >= 8 && hour < 17;
+    return currentDay >= WEEKDAYS.MONDAY && currentDay <= WEEKDAYS.FRIDAY && 
+           hour >= BUSINESS_HOURS.START && hour < BUSINESS_HOURS.END;
   }
 
   // Handle Day Constraints (e.g., "Mon-Fri", "Saturday")
