@@ -6,7 +6,7 @@ import {
   consumeAuthRequest, 
   cacheCredentials, 
   getCachedCredentials,
-} from './CredentialManager';
+} from './credentialManager';
 
 // Mock electron
 vi.mock('electron', () => ({
