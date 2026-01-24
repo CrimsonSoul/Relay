@@ -37,6 +37,7 @@ export function MainApp() {
   const searchParams = new URLSearchParams(window.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
+  const isMac = window.api?.platform === 'darwin';
 
   const { data, isReloading, handleSync } = useAppData(showToast);
   
@@ -168,7 +169,7 @@ export function MainApp() {
           flexShrink: 0, 
           display: 'flex', 
           alignItems: 'center', 
-          paddingLeft: '24px',
+          paddingLeft: isMac ? '80px' : '24px',
           background: 'transparent'
         } as React.CSSProperties}>
              <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontWeight: 800, opacity: 0.4, userSelect: 'none', letterSpacing: '0.1em' }}>RELAY ON-CALL BOARD</span>
