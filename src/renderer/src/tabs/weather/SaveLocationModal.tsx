@@ -28,7 +28,7 @@ export const SaveLocationModal: React.FC<SaveLocationModalProps> = ({ location, 
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 9999,
+        zIndex: 30000,
       }}
       onClick={onClose}
     >
