@@ -290,17 +290,13 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
  * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: any, // Using any to avoid React dependency
+  Component: (props: P) => any, // Function component type without React dependency
   flagName: keyof FeatureFlags,
   fallback?: any
 ) {
   return function FeatureFlagWrapper(props: P) {
     if (isFeatureEnabled(flagName)) {
-      // React.createElement equivalent without import
-      if (typeof Component === 'function') {
-        return Component(props);
-      }
-      return null;
+      return Component(props);
     }
     return fallback || null;
   };
