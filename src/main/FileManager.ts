@@ -165,20 +165,18 @@ export class FileManager implements FileContext {
     try {
       const content = await this.fsService.readFile("oncall_layout.json");
       if (content) {
-        const parsed = JSON.parse(content);
-        // Ensure it is an object and not an array or null
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          return parsed;
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            return parsed;
+          }
+          loggers.fileManager.warn("oncall_layout.json was not a valid object, ignoring");
+        } catch (jsonErr) {
+          loggers.fileManager.warn("oncall_layout.json contains invalid JSON, treating as empty", { error: jsonErr });
         }
-        loggers.fileManager.warn("oncall_layout.json was not a valid object, ignoring");
       }
     } catch (e) {
-      loggers.fileManager.error("Failed to load layout", { error: e });
-      this.emitError({
-        type: "parse",
-        message: "On-call layout file is corrupted. Layout has been reset to default.",
-        file: "oncall_layout.json"
-      });
+      loggers.fileManager.error("Unexpected error loading layout", { error: e });
     }
     return {};
   }
