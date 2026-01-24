@@ -9,6 +9,18 @@
  * - Gradual rollout percentages
  */
 
+// Safe access to process.env
+const getEnv = (key: string): string | undefined => {
+  try {
+    // eslint-disable-next-line no-undef
+    return typeof process !== 'undefined' ? process.env[key] : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const isDevelopment = getEnv('NODE_ENV') === 'development';
+
 export type FeatureFlagConfig = {
   enabled: boolean;
   description: string;
@@ -48,7 +60,7 @@ export type FeatureFlags = {
 const DEFAULT_FLAGS: FeatureFlags = {
   // Testing & Development
   enableDebugMode: {
-    enabled: process.env.NODE_ENV === 'development',
+    enabled: isDevelopment,
     description: 'Enable debug mode with additional logging and diagnostics',
     enabledForDevMode: true,
   },
@@ -58,7 +70,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
     enabledForDevMode: true,
   },
   enableVerboseLogging: {
-    enabled: process.env.VERBOSE_LOGGING === 'true',
+    enabled: getEnv('VERBOSE_LOGGING') === 'true',
     description: 'Enable verbose logging for all modules',
     enabledForDevMode: true,
   },
@@ -87,14 +99,14 @@ const DEFAULT_FLAGS: FeatureFlags = {
     requiresRestart: false,
   },
   enableExperimentalFeatures: {
-    enabled: process.env.EXPERIMENTAL === 'true',
+    enabled: getEnv('EXPERIMENTAL') === 'true',
     description: 'Enable all experimental features',
     enabledForDevMode: true,
   },
   
   // Security & Performance
   enableStrictCSP: {
-    enabled: process.env.NODE_ENV === 'production',
+    enabled: !isDevelopment,
     description: 'Enforce strict Content Security Policy',
     requiresRestart: true,
   },
@@ -152,7 +164,7 @@ class FeatureFlagManager {
     // Environment variable overrides (FEATURE_FLAG_<NAME>=true/false)
     Object.keys(this.flags).forEach((key) => {
       const envKey = `FEATURE_FLAG_${this.toSnakeCase(key).toUpperCase()}`;
-      const envValue = process.env[envKey];
+      const envValue = getEnv(envKey);
       if (envValue !== undefined) {
         this.overrides[key as keyof FeatureFlags] = {
           ...this.flags[key as keyof FeatureFlags],
@@ -173,7 +185,7 @@ class FeatureFlagManager {
     if (!flag) return false;
 
     // Check dev mode override
-    if (process.env.NODE_ENV === 'development' && flag.enabledForDevMode) {
+    if (isDevelopment && flag.enabledForDevMode) {
       return true;
     }
 
