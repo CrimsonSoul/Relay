@@ -165,7 +165,12 @@ export class FileManager implements FileContext {
     try {
       const content = await this.fsService.readFile("oncall_layout.json");
       if (content) {
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        // Ensure it is an object and not an array or null
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed;
+        }
+        loggers.fileManager.warn("oncall_layout.json was not a valid object, ignoring");
       }
     } catch (e) {
       loggers.fileManager.error("Failed to load layout", { error: e });

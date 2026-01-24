@@ -27,7 +27,7 @@ export const RenameLocationModal: React.FC<RenameLocationModalProps> = ({ locati
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 9999,
+        zIndex: 30000,
       }}
       onClick={onClose}
     >
