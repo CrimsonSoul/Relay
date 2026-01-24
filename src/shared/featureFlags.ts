@@ -279,15 +279,28 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
 
 /**
  * HOC for React components that depend on feature flags
+ * NOTE: This requires React to be available. Import React in your component file.
+ * 
+ * @example
+ * ```tsx
+ * import React from 'react';
+ * import { withFeatureFlag } from '@shared/featureFlags';
+ * 
+ * const MyFeature = withFeatureFlag(MyComponent, 'enableNewFeature', <div>Coming soon!</div>);
+ * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: React.ComponentType<P>,
+  Component: any, // Using any to avoid React dependency
   flagName: keyof FeatureFlags,
-  fallback?: React.ReactNode
+  fallback?: any
 ) {
   return function FeatureFlagWrapper(props: P) {
     if (isFeatureEnabled(flagName)) {
-      return <Component {...props} />;
+      // React.createElement equivalent without import
+      if (typeof Component === 'function') {
+        return Component(props);
+      }
+      return null;
     }
     return fallback || null;
   };

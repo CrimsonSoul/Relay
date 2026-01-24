@@ -105,7 +105,8 @@ export class FileManager implements FileContext {
   /**
    * File locks map to prevent concurrent writes to the same file.
    * Keys are file paths, values are promises that resolve when the write completes.
-   * Locks are automatically cleaned up when the write operation completes.
+   * Locks are automatically cleaned up when operations complete, during periodic
+   * maintenance checks (every 5 minutes), and when destroy() is called.
    */
   private fileLocks: Map<string, Promise<void>> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
