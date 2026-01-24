@@ -46,6 +46,8 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRemoteDragging, setIsRemoteDragging] = useState(false);
 
+  const isMac = window.api?.platform === 'darwin';
+
   useEffect(() => {
     return window.api?.onDragStateChange((isDragging) => {
       setIsRemoteDragging(isDragging);
@@ -170,6 +172,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
       {!isKiosk && (
         <CollapsibleHeader 
           title="On-Call Board" 
+          style={{ paddingLeft: isMac ? '60px' : '0px', transition: 'padding-left 0.25s ease' }}
           subtitle={
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span>{weekRange}</span>
