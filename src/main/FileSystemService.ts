@@ -4,6 +4,7 @@ import { join } from "path";
 import { atomicWriteWithLock } from "./fileLock";
 import { validatePath } from "./utils/pathSafety";
 import { loggers } from "./logger";
+import { retryFileOperation } from "./retryUtils";
 
 /**
  * FileSystemService - Handles low-level file system operations,
@@ -53,17 +54,26 @@ export class FileSystemService {
   public async readFile(fileName: string): Promise<string | null> {
     const path = join(this.rootDir, fileName);
     if (!existsSync(path)) return null;
-    return fs.readFile(path, "utf-8");
+    return retryFileOperation(
+      () => fs.readFile(path, "utf-8"),
+      `readFile(${fileName})`
+    );
   }
 
   public async atomicWrite(fileName: string, content: string): Promise<void> {
     const path = join(this.rootDir, fileName);
     const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-    await atomicWriteWithLock(path, contentWithBom);
+    await retryFileOperation(
+      () => atomicWriteWithLock(path, contentWithBom),
+      `atomicWrite(${fileName})`
+    );
   }
 
   public async atomicWriteFullPath(fullPath: string, content: string): Promise<void> {
     const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-    await atomicWriteWithLock(fullPath, contentWithBom);
+    await retryFileOperation(
+      () => atomicWriteWithLock(fullPath, contentWithBom),
+      `atomicWriteFullPath(${fullPath})`
+    );
   }
 }
