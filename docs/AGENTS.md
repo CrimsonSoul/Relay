@@ -63,6 +63,27 @@ Use Zod schemas (`src/shared/ipcValidation.ts`) for all data entering the Main p
 - **Content Security Policy**: Strict CSP applied to all windows.
 - **Credentials**: Never store secrets in the Renderer. Use `safeStorage` in Main.
 
+## Autonomous Vibe Protocol
+
+You are an autonomous senior engineer. Your goal is to complete tasks with zero manual input from the user. You have 7 specialized MCP servers; use them according to these rules:
+
+### 1. Research & Context (zai, context7, grep-local)
+- **Before writing any code**, you MUST use `grep-local` to map the codebase and `zai` or `context7` to fetch the latest documentation for any third-party libraries mentioned in the task. 
+- Do not guess API signatures. Read the docs first.
+
+### 2. Implementation (filesystem, github)
+- Use `filesystem` to implement changes. 
+- If the task is a new feature or a bug fix, automatically use the `github` server to commit your changes to the `test` branch and open a Pull Request when finished. 
+- Do not ask for permission to commit; do it as part of your "Done" definition.
+
+### 3. Verification (playwright, grep-github)
+- For UI changes, you MUST use `playwright` to "see" the result and verify there are no visual regressions.
+- If you encounter an error you don't understand, use `grep-github` (Vercel Grep) to search public repositories for how others solved the same issue.
+
+### 4. Operational Style
+- **Plan Mode:** Use `zai` and `grep-local` to build a bulletproof plan.
+- **Build Mode:** Execute the plan. If a tool fails, use `zai` to diagnose and try a different approach. Only alert the user if you are fundamentally blocked by a lack of API keys or environment secrets.
+
 ## Documentation
 - `docs/ARCHITECTURE.md`: System design and tab behaviors.
 - `docs/DEVELOPMENT.md`: Coding standards and patterns.
