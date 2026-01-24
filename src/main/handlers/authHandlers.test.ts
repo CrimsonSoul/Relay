@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupAuthHandlers } from './authHandlers';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import * as CredentialManager from '../CredentialManager';
+import * as CredentialManager from '../credentialManager';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -16,7 +16,7 @@ vi.mock('electron', () => ({
 }));
 
 // Mock CredentialManager
-vi.mock('../CredentialManager', () => ({
+vi.mock('../credentialManager', () => ({
   generateAuthNonce: vi.fn(),
   registerAuthRequest: vi.fn(),
   consumeAuthRequest: vi.fn(),
