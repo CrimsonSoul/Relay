@@ -83,6 +83,8 @@
 
 .toast-message {
   flex: 1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .toast-close {
@@ -90,13 +92,14 @@
   border: none;
   padding: 4px;
   cursor: pointer;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .toast-close:hover {
