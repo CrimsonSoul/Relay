@@ -2,6 +2,21 @@
 
 This document captures deeper implementation guidance for the Electron + Vite desktop app, focusing on data handling, IPC contracts, UI tab behaviors, authentication flows, and test coverage.
 
+## Table of Contents
+- [Environment and Setup](#environment-and-setup)
+- [Styling Philosophy](#styling-philosophy-analog-precision)
+- [Data Handling & Persistence](#data-handling--persistence)
+- [Business Logic Layer](#business-logic-layer-srcmainoperations)
+- [IPC API](#ipc-api-main--renderer)
+- [Tab Behaviors](#tab-behaviors)
+- [Authentication & Security](#authentication--security)
+- [Testing Strategy](#testing-strategy)
+- [State Management Strategy](#state-management-strategy)
+- [Database Migration Path](#database-migration-path)
+- [Feature Flag System](#feature-flag-system)
+- [Memory Management & Performance](#memory-management--performance)
+- [Implementation Notes](#implementation-notes)
+
 ## Environment and setup
 - **Stack**: Electron 34 + React 18 + TypeScript 5.9.
 - **Build**: Vite + electron-vite.
@@ -61,12 +76,268 @@ To maintain clean separation of concerns, business logic is decoupled from IPC h
 - **Unit tests (Vitest)**:
   - Located alongside source files (`*.test.ts`) or in `__tests__` directories.
   - Cover operations, utility functions, and validation logic.
+  - **Current Coverage**: 37.71% (Target: 60%+)
 - **Integration tests**:
   - Test IPC handlers and complex workflows.
+  - Focus on main-renderer communication paths.
 - **E2E tests (Playwright)**:
   - Located in `tests/e2e/`.
   - Verify critical user paths (startup, navigation, CRUD) on the packaged application.
   - Use `await expect(...).toBeVisible()` patterns for reliability (avoid hardcoded waits).
+- **Test Organization**:
+  - Main process tests: `src/main/**/*.test.ts`
+  - Shared module tests: `src/shared/**/*.test.ts`
+  - Renderer tests: `src/renderer/**/*.test.tsx`
+  - E2E tests: `tests/e2e/**/*.spec.ts`
+
+## State Management Strategy
+
+### Current Implementation
+The application currently uses React Context and hooks for state management:
+- **Global State**: App data (contacts, servers, on-call) managed via context providers
+- **Local State**: Component-level state with `useState` and `useReducer`
+- **Data Synchronization**: FileManager broadcasts updates via EventEmitter pattern
+
+### Evaluation of Advanced Solutions
+
+#### Zustand
+**Pros:**
+- Minimal boilerplate compared to Redux
+- TypeScript-first with excellent type inference
+- No Provider wrapper needed
+- Supports middleware (persist, devtools)
+- ~1KB bundle size
+
+**Cons:**
+- Less suitable for complex state trees
+- Limited built-in DevTools support
+
+**Recommended Use Cases:**
+- Global UI state (theme, preferences)
+- Feature flags state
+- Performance-critical state updates
+
+#### Jotai
+**Pros:**
+- Atomic state management model
+- Excellent for derived state
+- Built-in async support
+- TypeScript-first
+- ~2KB bundle size
+
+**Cons:**
+- Different mental model than Redux/Context
+- Smaller ecosystem
+- Learning curve for atomic patterns
+
+**Recommended Use Cases:**
+- Granular UI state management
+- Complex derived state calculations
+- Form state management
+
+#### Recommendation
+For Relay's architecture, a **hybrid approach** is recommended:
+1. **Keep React Context** for app data (contacts, servers, on-call) since it's already synchronized with FileManager
+2. **Add Zustand** for UI-specific global state (theme, sidebar state, modal state)
+3. **Consider Jotai** for complex forms or derived state calculations if needed
+
+**Migration Path:**
+1. Phase 1: Introduce Zustand for new global UI features
+2. Phase 2: Migrate non-data global state to Zustand
+3. Phase 3: Evaluate performance and decide on full migration
+
+## Database Migration Path
+
+### Current State: JSON Files
+**Advantages:**
+- Simple, human-readable format
+- Easy debugging and manual edits
+- Fast for small-to-medium datasets
+- No dependencies
+
+**Limitations:**
+- Full file rewrites on every update
+- No transactional guarantees
+- Limited query capabilities
+- Performance degrades with large datasets (>10k records)
+
+### Proposed: SQLite Migration
+
+#### Why SQLite?
+- **Zero-Config**: Single file database, no server needed
+- **ACID Compliant**: Full transactional support
+- **Fast**: Efficient indexing and querying
+- **Embedded**: No external dependencies
+- **Cross-Platform**: Works on all platforms
+- **Mature**: Battle-tested, stable API
+
+#### Migration Strategy
+
+**Phase 1: Parallel Write (Recommended First Step)**
+- Keep JSON files as primary storage
+- Write changes to both JSON and SQLite
+- Validate data consistency
+- Build confidence in SQLite implementation
+- Timeline: 1-2 weeks
+
+**Phase 2: Dual Read with SQLite Primary**
+- Switch reads to SQLite
+- Keep JSON as backup/fallback
+- Monitor performance and errors
+- Timeline: 2-4 weeks
+
+**Phase 3: SQLite Only**
+- Remove JSON read/write logic
+- Keep JSON export functionality for backups
+- Implement automatic migration for users
+- Timeline: 1 week
+
+#### Technical Implementation
+
+**Libraries:**
+- `better-sqlite3`: Fast, synchronous SQLite wrapper
+- `drizzle-orm`: Type-safe ORM with excellent TypeScript support
+- Alternative: `kysely` for more SQL-like experience
+
+**Schema Design:**
+```sql
+-- Contacts table
+CREATE TABLE contacts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  phone TEXT,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(email)
+);
+
+-- Servers table  
+CREATE TABLE servers (
+  id TEXT PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  business_area TEXT,
+  lob TEXT,
+  comment TEXT,
+  owner TEXT,
+  contact TEXT,
+  os TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(name)
+);
+
+-- On-Call table
+CREATE TABLE oncall (
+  id TEXT PRIMARY KEY,
+  team TEXT NOT NULL,
+  role TEXT NOT NULL,
+  name TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  time_window TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Indexes for performance
+CREATE INDEX idx_contacts_email ON contacts(email);
+CREATE INDEX idx_contacts_name ON contacts(name);
+CREATE INDEX idx_servers_name ON servers(name);
+CREATE INDEX idx_oncall_team ON oncall(team);
+```
+
+**Encryption:**
+- Use `sqlcipher` for database encryption
+- Integrate with existing credential management
+- Transparent encryption at rest
+
+#### Benefits of Migration
+1. **Performance**: 10-100x faster queries for large datasets
+2. **Reliability**: ACID transactions prevent data corruption
+3. **Scalability**: Handles 100k+ records efficiently
+4. **Features**: Full-text search, complex queries, aggregations
+5. **Backup**: Point-in-time recovery, easier backup strategies
+
+#### Risks & Mitigation
+1. **Risk**: Data loss during migration
+   - **Mitigation**: Automatic backup before migration, rollback capability
+2. **Risk**: Increased complexity
+   - **Mitigation**: Use ORM with good TypeScript support, comprehensive testing
+3. **Risk**: Performance regression for small datasets
+   - **Mitigation**: Benchmark before/after, optimize indices
+4. **Risk**: Cross-platform issues
+   - **Mitigation**: Test on all platforms early, use native modules
+
+#### Timeline
+- **Phase 1**: 2 weeks (design, parallel write)
+- **Phase 2**: 3 weeks (testing, dual read)
+- **Phase 3**: 1 week (cutover, cleanup)
+- **Total**: 6-8 weeks for full migration
+
+## Feature Flag System
+
+The application now includes a comprehensive feature flag system (`src/shared/featureFlags.ts`):
+
+**Capabilities:**
+- Environment-based configuration
+- Gradual rollout percentages
+- Dev mode overrides
+- Runtime enable/disable
+- Restart requirements
+
+**Usage:**
+```typescript
+import { isFeatureEnabled } from '@shared/featureFlags';
+
+if (isFeatureEnabled('enableSQLiteMigration')) {
+  // Use SQLite operations
+} else {
+  // Use JSON operations
+}
+```
+
+**Environment Variables:**
+```bash
+FEATURE_FLAG_ENABLE_SQLITE_MIGRATION=true
+FEATURE_FLAG_ENABLE_DEBUG_MODE=true
+```
+
+## Memory Management & Performance
+
+### File Lock Management
+**Implementation**: `src/main/FileManager.ts`
+- File locks prevent concurrent writes
+- Automatic cleanup via Promise finalizers
+- Periodic monitoring (every 5 minutes)
+- Manual cleanup on destroy
+
+**Best Practices:**
+- Keep lock duration minimal
+- Use detached writes for background operations
+- Monitor lock count in production
+
+### Electron Process Optimization
+**Main Process:**
+- Minimize memory footprint via lazy loading
+- Use streaming for large file operations
+- Implement periodic garbage collection hints
+
+**Renderer Process:**
+- Virtual scrolling for large lists (react-window)
+- Lazy component loading (React.lazy)
+- Memoization for expensive calculations
+
+### Performance Monitoring
+**Current:**
+- Basic memory logging in file operations
+- Error tracking via structured logging
+
+**Recommended Additions:**
+- IPC latency tracking
+- File operation duration metrics
+- Memory usage trends
+- CPU profiling for hot paths
 
 ## Implementation notes
 - Keep a shared `types` module for IPC payloads to reduce drift between main and renderer.

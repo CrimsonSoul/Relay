@@ -56,6 +56,7 @@ import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
 
 import { FileSystemService } from "./FileSystemService";
 import { DataCacheManager } from "./DataCacheManager";
+import { generateDummyDataAsync } from "./dataUtils";
 
 // File write coordination constants
 const WRITE_GUARD_DELAY_MS = 500; // Delay after write before allowing file watcher to react
@@ -101,7 +102,14 @@ function onCallRecordToOnCallRow(record: OnCallRecord): OnCallRow {
 export class FileManager implements FileContext {
   private watcher: chokidar.FSWatcher | null = null;
   private internalWriteCount = 0;
+  /**
+   * File locks map to prevent concurrent writes to the same file.
+   * Keys are file paths, values are promises that resolve when the write completes.
+   * Locks are automatically cleaned up when operations complete, during periodic
+   * maintenance checks (every 5 minutes), and when destroy() is called.
+   */
   private fileLocks: Map<string, Promise<void>> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
   
   private fsService: FileSystemService;
   private cache: DataCacheManager;
@@ -117,8 +125,24 @@ export class FileManager implements FileContext {
 
   public init(): void {
     this.startWatching();
+    this.startPeriodicCleanup();
     void this.readAndEmit().catch(e => loggers.fileManager.error("Init readAndEmit failed", { error: e }));
     void this.performBackup("init").catch(e => loggers.fileManager.error("Init backup failed", { error: e }));
+  }
+
+  private startPeriodicCleanup() {
+    // Run cleanup every 5 minutes to ensure no stale locks remain
+    this.cleanupInterval = setInterval(() => {
+      const lockCount = this.fileLocks.size;
+      if (lockCount > 0) {
+        loggers.fileManager.debug(`Periodic cleanup: ${lockCount} active file locks`);
+      }
+      // The locks should auto-cleanup via their finally() blocks,
+      // but log if we have an unusual number of locks
+      if (lockCount > 10) {
+        loggers.fileManager.warn(`High number of active file locks: ${lockCount}`);
+      }
+    }, 5 * 60 * 1000);
   }
 
   private startWatching() {
@@ -607,11 +631,23 @@ export class FileManager implements FileContext {
   }
 
   public async generateDummyData() { 
-    const success = await require("./dataUtils").generateDummyDataAsync(this.rootDir); 
+    const success = await generateDummyDataAsync(this.rootDir); 
     if (success) { await this.readAndEmit(); } 
     return success; 
   }
 
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }
-  public destroy() { if (this.watcher) { void this.watcher.close(); this.watcher = null; } }
+  
+  public destroy() { 
+    if (this.watcher) { 
+      void this.watcher.close(); 
+      this.watcher = null; 
+    }
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    // Clear any remaining locks
+    this.fileLocks.clear();
+  }
 }

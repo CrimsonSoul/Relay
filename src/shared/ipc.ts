@@ -81,7 +81,7 @@ export type RadarSnapshot = {
 };
 
 export type DataError = {
-  type: "validation" | "parse" | "write" | "read";
+  type: "validation" | "parse" | "write" | "read" | "persistence" | "network" | "auth";
   message: string;
   file?: string;
   details?: unknown;
