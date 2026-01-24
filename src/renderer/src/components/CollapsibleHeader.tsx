@@ -7,6 +7,7 @@ interface CollapsibleHeaderProps {
     search?: ReactNode; // Integrated search bar
     isCollapsed?: boolean; // Allow external control
     onCollapsedChange?: (collapsed: boolean) => void;
+    style?: React.CSSProperties;
 }
 
 /**
@@ -19,6 +20,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
     children,
     search,
     isCollapsed = false,
+    style,
 }) => {
     return (
         <div
@@ -31,6 +33,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 flexWrap: 'wrap',
                 transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                 flexShrink: 0,
+                ...style
             }}
         >
             <div style={{ minWidth: '200px', flex: 1 }}>
