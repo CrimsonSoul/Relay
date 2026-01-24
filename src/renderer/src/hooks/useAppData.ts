@@ -77,6 +77,14 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
   useEffect(() => {
     if (!window.api) return;
+
+    // Fetch initial data immediately
+    void window.api.getInitialData().then(initialData => {
+      if (initialData) {
+        setData(initialData);
+      }
+    });
+
     const unsubscribeData = window.api.subscribeToData((newData: AppData) => {
       setData(newData);
       settleReloadIndicator();

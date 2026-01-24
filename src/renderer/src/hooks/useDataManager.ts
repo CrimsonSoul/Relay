@@ -6,6 +6,7 @@ import type {
   DataStats,
   MigrationResult,
 } from "@shared/ipc";
+import { loggers } from "../utils/logger";
 
 export function useDataManager() {
   const [exporting, setExporting] = useState(false);
@@ -23,7 +24,7 @@ export function useDataManager() {
       }
       return data;
     } catch (e) {
-      console.error("Failed to load data stats:", e);
+      loggers.storage.error("Failed to load data stats", { error: e });
       return null;
     }
   }, []);
@@ -31,10 +32,10 @@ export function useDataManager() {
   const exportData = useCallback(async (options: ExportOptions) => {
     setExporting(true);
     try {
-      const success = await window.api?.exportData(options);
-      return success || false;
+      const result = await window.api?.exportData(options);
+      return result?.success || false;
     } catch (e) {
-      console.error("Export failed:", e);
+      loggers.storage.error("Export failed", { error: e });
       return false;
     } finally {
       setExporting(false);
@@ -45,14 +46,15 @@ export function useDataManager() {
     setImporting(true);
     try {
       const result = await window.api?.importData(category);
-      if (result) {
-        setLastImportResult(result);
+      if (result?.success && result.data) {
+        setLastImportResult(result.data);
         // Refresh stats after import
         await loadStats();
+        return result.data;
       }
-      return result;
+      return null;
     } catch (e) {
-      console.error("Import failed:", e);
+      loggers.storage.error("Import failed", { error: e });
       return null;
     } finally {
       setImporting(false);
@@ -63,14 +65,15 @@ export function useDataManager() {
     setMigrating(true);
     try {
       const result = await window.api?.migrateFromCsv();
-      if (result) {
-        setLastMigrationResult(result);
+      if (result?.success && result.data) {
+        setLastMigrationResult(result.data);
         // Refresh stats after migration
         await loadStats();
+        return result.data;
       }
-      return result;
+      return null;
     } catch (e) {
-      console.error("Migration failed:", e);
+      loggers.storage.error("Migration failed", { error: e });
       return null;
     } finally {
       setMigrating(false);

@@ -59,31 +59,51 @@ vi.mock('./fileLock', () => {
   return {
     withFileLock: vi.fn(async (_path, cb) => cb()),
     isFileLocked: vi.fn(async () => false),
-    atomicWriteWithLock: vi.fn(async (path, content) => {
-        // Just write directly in mock
+    atomicWriteWithLock: vi.fn(async (filePath, content) => {
+        // Just write directly in mock, but use a temp file + rename to be atomic
+        // and avoid race conditions where readFile might see an empty file
         const fs = await import('fs/promises');
-        await fs.writeFile(path, content, 'utf-8');
+        const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+        try {
+            await fs.writeFile(tempPath, content, 'utf-8');
+            await fs.rename(tempPath, filePath);
+        } catch (e) {
+            try { await fs.unlink(tempPath); } catch { /* ignore */ }
+            throw e;
+        }
     }),
-    readWithLock: vi.fn(async (path) => {
+    readWithLock: vi.fn(async (filePath) => {
         const fs = await import('fs/promises');
-        return fs.readFile(path, 'utf-8');
+        try {
+            return await fs.readFile(filePath, 'utf-8');
+        } catch (e) {
+            if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw e;
+        }
     }),
-    modifyWithLock: vi.fn(async (path, modifier) => {
+    modifyWithLock: vi.fn(async (filePath, modifier) => {
         const fs = await import('fs/promises');
         let content = '';
-        try { content = await fs.readFile(path, 'utf-8'); } catch (_e) { /* ignore */ }
+        try { content = await fs.readFile(filePath, 'utf-8'); } catch (_e) { /* ignore */ }
         const newContent = await modifier(content);
-        await fs.writeFile(path, newContent, 'utf-8');
+        
+        const tempPath = `${filePath}.${Date.now()}.tmp`;
+        await fs.writeFile(tempPath, newContent, 'utf-8');
+        await fs.rename(tempPath, filePath);
     }),
-    modifyJsonWithLock: vi.fn(async (path, modifier, defaultValue) => {
+    modifyJsonWithLock: vi.fn(async (filePath, modifier, defaultValue) => {
         const fs = await import('fs/promises');
         let data = defaultValue;
         try {
-            const content = await fs.readFile(path, 'utf-8');
+            const content = await fs.readFile(filePath, 'utf-8');
             data = JSON.parse(content);
         } catch (_e) { /* ignore */ }
         const newData = await modifier(data);
-        await fs.writeFile(path, JSON.stringify(newData, null, 2), 'utf-8');
+        const content = JSON.stringify(newData, null, 2);
+        
+        const tempPath = `${filePath}.${Date.now()}.tmp`;
+        await fs.writeFile(tempPath, content, 'utf-8');
+        await fs.rename(tempPath, filePath);
     })
   };
 });
@@ -238,11 +258,9 @@ describe('FileManager', () => {
       await fs.writeFile(path.join(tmpDir, 'contacts.csv'), complexCsv);
 
       await fileManager.readAndEmit();
-
-      // No rewrite expected here unless phone needs formatting?
-      // "Office: 555-123-4567" -> might not change if phone parser keeps it raw or formats valid part
-      // Check for name persistence
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
+      
+      // Wait for content as it might be rewritten for cleaning/normalization
+      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), 'Smith, John');
       expect(content).toContain('Smith, John');
       expect(content).toContain('VP of Sales & Marketing');
       expect(content).toContain('john@example.com');

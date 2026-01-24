@@ -79,5 +79,5 @@ Files include:
 ### Documentation
 - **[Full Logging Guide](docs/LOGGING.md)** - Complete usage documentation
 - **[Examples](docs/LOGGING_EXAMPLES.ts)** - Common patterns and best practices
-- **[Implementation Details](docs/LOGGING_IMPLEMENTATION.md)** - Technical overview
+- **[Architecture](docs/ARCHITECTURE.md)** - System design overview
 

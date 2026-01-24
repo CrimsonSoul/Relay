@@ -4,6 +4,7 @@ import { SidebarItem } from "../../components/SidebarItem";
 import { ContextMenu } from "../../components/ContextMenu";
 import { SidebarToggleHandle } from "./SidebarToggleHandle";
 import { SaveGroupModal } from "./SaveGroupModal";
+import { loggers } from "../../utils/logger";
 
 type AssemblerSidebarProps = {
   groups: BridgeGroup[];
@@ -62,10 +63,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     try {
       const result = await onSaveGroup({ name, contacts: currentEmails });
       if (!result) {
-        console.error("[AssemblerSidebar] Failed to save group");
+        loggers.app.error("[AssemblerSidebar] Failed to save group");
       }
     } catch (e) {
-      console.error("[AssemblerSidebar] Error saving group:", e);
+      loggers.app.error("[AssemblerSidebar] Error saving group", { error: e });
     }
   }, [onSaveGroup, currentEmails]);
 
@@ -74,10 +75,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
       try {
         const success = await onUpdateGroup(groupToRename.id, { name: newName });
         if (!success) {
-          console.error("[AssemblerSidebar] Failed to rename group");
+          loggers.app.error("[AssemblerSidebar] Failed to rename group");
         }
       } catch (e) {
-        console.error("[AssemblerSidebar] Error renaming group:", e);
+        loggers.app.error("[AssemblerSidebar] Error renaming group", { error: e });
       } finally {
         setGroupToRename(null);
       }
@@ -88,10 +89,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     try {
       const success = await onUpdateGroup(group.id, { contacts: currentEmails });
       if (!success) {
-        console.error("[AssemblerSidebar] Failed to update group");
+        loggers.app.error("[AssemblerSidebar] Failed to update group");
       }
     } catch (e) {
-      console.error("[AssemblerSidebar] Error updating group:", e);
+      loggers.app.error("[AssemblerSidebar] Error updating group", { error: e });
     }
   }, [onUpdateGroup, currentEmails]);
 
@@ -99,10 +100,10 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     try {
       const success = await onDeleteGroup(group.id);
       if (!success) {
-        console.error("[AssemblerSidebar] Failed to delete group");
+        loggers.app.error("[AssemblerSidebar] Failed to delete group");
       }
     } catch (e) {
-      console.error("[AssemblerSidebar] Error deleting group:", e);
+      loggers.app.error("[AssemblerSidebar] Error deleting group", { error: e });
     }
   }, [onDeleteGroup]);
 

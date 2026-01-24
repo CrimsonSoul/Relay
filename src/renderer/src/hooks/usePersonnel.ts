@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import { OnCallRow } from "@shared/ipc";
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { OnCallRow, TeamLayout } from "@shared/ipc";
 import { useToast } from '../components/Toast';
 
 const getWeekRange = () => {
@@ -18,11 +18,24 @@ const getWeekRange = () => {
     )}, ${sunday.getFullYear()}`;
 };
 
-export function usePersonnel(onCall: OnCallRow[]) {
+export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   const { showToast } = useToast();
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [weekRange, setWeekRange] = useState(getWeekRange());
   const [currentDay, setCurrentDay] = useState(new Date().getDay());
+  const [tick, setTick] = useState(Date.now());
+
+  // Ref to track if the update was triggered locally (optimistic update)
+  const isLocalUpdateRef = useRef(false);
+
+  // Sync with external updates, respecting local optimistic state
+  useEffect(() => {
+    if (!isLocalUpdateRef.current) {
+        setLocalOnCall(onCall);
+    } else {
+        isLocalUpdateRef.current = false;
+    }
+  }, [onCall]);
 
   // Alert Logic
   const getAlertKey = useCallback((type: string) => {
@@ -31,7 +44,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
   }, []);
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
-    const check = [getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle'), getAlertKey('network')];
+    const check = [getAlertKey('first-responder'), getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle')];
     const saved = new Set<string>();
     check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
     return saved;
@@ -44,16 +57,13 @@ export function usePersonnel(onCall: OnCallRow[]) {
   }, [getAlertKey]);
 
   useEffect(() => {
-    setLocalOnCall(onCall);
-  }, [onCall]);
-
-  useEffect(() => {
     const interval = setInterval(() => {
       setWeekRange(getWeekRange());
+      setTick(Date.now());
       const newDay = new Date().getDay();
       if (newDay !== currentDay) {
         setCurrentDay(newDay);
-        const types = ['general', 'sql', 'oracle', 'network'];
+        const types = ['first-responder', 'general', 'sql', 'oracle'];
         const saved = new Set<string>();
         types.forEach(type => {
             const key = getAlertKey(type);
@@ -77,11 +87,13 @@ export function usePersonnel(onCall: OnCallRow[]) {
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
     const day = new Date().getDay();
     const lowerTeam = team.toLowerCase();
+    
+    if (day === 0 && lowerTeam.includes('first responder')) dismissAlert('first-responder');
     if (day === 1) dismissAlert('general');
     if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
-    if (day === 5 && (lowerTeam.includes('network') || lowerTeam.includes('voice') || lowerTeam.includes('fts'))) dismissAlert('network');
 
+    isLocalUpdateRef.current = true;
     setLocalOnCall((prev) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
       if (!teamOrder.includes(team)) {
@@ -99,20 +111,26 @@ export function usePersonnel(onCall: OnCallRow[]) {
     });
 
     const success = await window.api?.updateOnCallTeam(team, rows);
-    if (!success) showToast("Failed to save changes", "error");
+    if (!success) {
+      isLocalUpdateRef.current = false;
+      showToast("Failed to save changes", "error");
+    }
   };
 
   const handleRemoveTeam = async (team: string) => {
+    isLocalUpdateRef.current = true;
     const success = await window.api?.removeOnCallTeam(team);
     if (success) {
       setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
       showToast(`Removed ${team}`, "success");
     } else {
+      isLocalUpdateRef.current = false;
       showToast("Failed to remove team", "error");
     }
   };
 
   const handleRenameTeam = async (oldName: string, newName: string) => {
+    isLocalUpdateRef.current = true;
     const success = await window.api?.renameOnCallTeam(oldName, newName);
     if (success) {
       setLocalOnCall((prev) =>
@@ -120,6 +138,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
       );
       showToast(`Renamed ${oldName} to ${newName}`, "success");
     } else {
+      isLocalUpdateRef.current = false;
       showToast("Failed to rename team", "error");
     }
   };
@@ -133,25 +152,55 @@ export function usePersonnel(onCall: OnCallRow[]) {
       contact: "",
       timeWindow: "",
     };
-    const success = await window.api?.updateOnCallTeam(name, [initialRow]);
-    if (success) {
-      setLocalOnCall((prev) => [...prev, initialRow]);
-      showToast(`Added team ${name}`, "success");
-    } else {
+    isLocalUpdateRef.current = true;
+    
+    // 1. Update local state optimistically
+    const nextList = [...localOnCall, initialRow];
+    setLocalOnCall(nextList);
+    
+    // 2. Perform API calls outside the setter
+    try {
+      const success = await window.api?.updateOnCallTeam(name, [initialRow]);
+      if (success) {
+        const currentTeams = Array.from(new Set(nextList.map(r => r.team)));
+        await window.api?.reorderOnCallTeams(currentTeams, {});
+        showToast(`Added team ${name}`, "success");
+      } else {
+        throw new Error("API call failed");
+      }
+    } catch (_err) {
+      isLocalUpdateRef.current = false;
+      // Rollback local state
+      setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
       showToast("Failed to add team", "error");
     }
   };
 
-  const getItemHeight = useCallback(
-    (teamName: string) => {
-      const rows = localOnCall.filter((r) => r.team === teamName);
-      // Formula tuned for cellHeight: 75 and margin: 12
-      // Header (~60px) + rows (~40px each)
-      const rowHeight = Math.ceil((rows.length * 40 + 65) / 75);
-      return Math.max(2, rowHeight);
-    },
-    [localOnCall]
-  );
+  const handleReorderTeams = async (oldIndex: number, newIndex: number) => {
+    if (oldIndex === newIndex) return;
+
+    const currentTeams = [...teams];
+    const [movedTeam] = currentTeams.splice(oldIndex, 1);
+    currentTeams.splice(newIndex, 0, movedTeam);
+    
+    const newFlatList: OnCallRow[] = [];
+    currentTeams.forEach(t => {
+       newFlatList.push(...localOnCall.filter(r => r.team === t));
+    });
+
+    isLocalUpdateRef.current = true;
+    const oldFlatList = [...localOnCall];
+    setLocalOnCall(newFlatList);
+
+    const success = await window.api?.reorderOnCallTeams(currentTeams, {});
+    if (success) {
+      showToast("Teams reordered", "success");
+    } else {
+      isLocalUpdateRef.current = false;
+      setLocalOnCall(oldFlatList);
+      showToast("Failed to save team order", "error");
+    }
+  };
 
   return {
     localOnCall,
@@ -165,7 +214,8 @@ export function usePersonnel(onCall: OnCallRow[]) {
     handleRemoveTeam,
     handleRenameTeam,
     handleAddTeam,
-    getItemHeight,
-    setLocalOnCall
+    handleReorderTeams,
+    setLocalOnCall,
+    tick
   };
 }

@@ -52,10 +52,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       {/* App Icon */}
       <div
         onClick={() => onTabChange("Compose")}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onTabChange("Compose");
+          }
+        }}
         onMouseEnter={() => setIsIconHovered(true)}
         onMouseLeave={() => setIsIconHovered(false)}
         id="app-icon-container"
         className="interactive"
+        role="button"
+        tabIndex={0}
+        aria-label="Go to Compose tab"
         style={{
           width: "40px",
           height: "40px",

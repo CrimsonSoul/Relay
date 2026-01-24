@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo, useEffect } from "react";
 import { secureStorage } from '../utils/secureStorage';
 import { BridgeGroup, Contact } from "@shared/ipc";
 import { useToast } from "../components/Toast";
+import { loggers } from "../utils/logger";
 
 export interface SortConfig { key: string; direction: 'asc' | 'desc'; }
 
@@ -42,7 +43,7 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
           if (typeof newValue === 'boolean') {
             setIsGroupSidebarCollapsed(newValue);
           }
-        } catch (err) {
+        } catch (_err) {
           // Ignore parse errors from other instances
         }
       }
@@ -155,7 +156,7 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
         showToast("Failed to create contact", "error");
       }
     } catch (e) {
-      console.error("[useAssembler] Failed to save contact:", e);
+      loggers.app.error("[useAssembler] Failed to save contact", { error: e });
       showToast("Failed to create contact", "error");
     }
   };

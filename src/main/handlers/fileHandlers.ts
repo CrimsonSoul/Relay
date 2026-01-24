@@ -1,19 +1,20 @@
 import { ipcMain, shell } from 'electron';
 import { join } from 'path';
-import { existsSync } from 'fs';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
 import { importGroupsFromCsv } from '../operations';
+import { rateLimiters } from '../rateLimiter';
 
 export function setupFileHandlers(getDataRoot: () => string) {
   const getContactsFilePath = () => {
     const root = getDataRoot();
     const fullPath = join(root, 'contacts.csv');
-    return existsSync(fullPath) ? fullPath : fullPath;
+    return fullPath;
   };
 
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     if (!await validatePath(path, getDataRoot())) {
       loggers.security.error(`Blocked access to path outside data root: ${path}`);
       return;
@@ -22,10 +23,17 @@ export function setupFileHandlers(getDataRoot: () => string) {
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
-    await shell.openPath(getContactsFilePath());
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
+    const filePath = getContactsFilePath();
+    if (!await validatePath('contacts.csv', getDataRoot())) {
+      loggers.security.error('Blocked contacts file access - path validation failed');
+      return;
+    }
+    await shell.openPath(filePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     try {
       const parsed = new URL(url);
       if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
@@ -38,7 +46,8 @@ export function setupFileHandlers(getDataRoot: () => string) {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV, async () => {
-    return importGroupsFromCsv(getDataRoot());
+  ipcMain.handle(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV, async (): Promise<IpcResult> => {
+    const success = await importGroupsFromCsv(getDataRoot());
+    return { success };
   });
 }

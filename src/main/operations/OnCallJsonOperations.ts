@@ -5,8 +5,6 @@
  */
 
 import { join } from "path";
-import fs from "fs/promises";
-import { existsSync } from "fs";
 import type { OnCallRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -30,10 +28,15 @@ export async function getOnCall(rootDir: string): Promise<OnCallRecord[]> {
     const contents = await readWithLock(path);
     if (!contents) return [];
     
-    const data = JSON.parse(contents);
-    return Array.isArray(data) ? data : [];
+    try {
+      const data = JSON.parse(contents);
+      return Array.isArray(data) ? data : [];
+    } catch (parseError) {
+      loggers.fileManager.error("[OnCallJsonOperations] JSON parse error:", { error: parseError, path });
+      return [];
+    }
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (e instanceof Error && (e as NodeJS.ErrnoException).code === "ENOENT") return [];
     loggers.fileManager.error("[OnCallJsonOperations] getOnCall error:", { error: e });
     throw e;
   }
@@ -173,6 +176,9 @@ export async function updateOnCallTeamJson(
     await modifyJsonWithLock<OnCallRecord[]>(path, (records) => {
       const now = Date.now();
 
+      // Find the index of the first record for this team to preserve order
+      const firstIndex = records.findIndex((r) => r.team.trim().toLowerCase() === normalizedTeam);
+
       // Remove existing records for this team (case-insensitive check for robustness)
       const filtered = records.filter((r) => r.team.trim().toLowerCase() !== normalizedTeam);
 
@@ -189,6 +195,15 @@ export async function updateOnCallTeamJson(
       }));
 
       loggers.fileManager.info(`[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records (IDs preserved)`);
+
+      if (firstIndex !== -1) {
+        // Insert at original position to preserve team order
+        // Note: We use the index from the original array, which corresponds to the insertion point
+        // in the filtered array (assuming all prior items were kept).
+        return [...filtered.slice(0, firstIndex), ...recordsWithIds, ...filtered.slice(firstIndex)];
+      }
+
+      // If team didn't exist, append to end
       return [...filtered, ...recordsWithIds];
     }, []);
 

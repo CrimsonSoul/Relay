@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Location } from '../tabs/weather/types';
+import { useMounted } from './useMounted';
+import { loggers } from '../utils/logger';
 
 export function useWeatherLocation(location: Location | null, loading: boolean, onLocationChange: (loc: Location) => void, onManualRefresh: (lat: number, lon: number) => void) {
+  const mounted = useMounted();
   const [manualInput, setManualInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const autoLocateAttemptedRef = useRef(false);
 
-  const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+  const reverseGeocode = useCallback(async (lat: number, lon: number): Promise<string> => {
     try {
       if (!window.api) return 'Current Location';
       const data = await window.api.searchLocation(`${lat},${lon}`);
@@ -17,37 +20,85 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
       }
     } catch { /* Geocoding failure - return fallback */ }
     return 'Current Location';
-  };
+  }, []);
 
   const handleAutoLocate = useCallback(async () => {
-    setError(null); setPermissionDenied(false);
-    if (!('geolocation' in navigator)) { setError('Auto-location not supported by this browser.'); return; }
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        const lat = Number(latitude.toFixed(4));
-        const lon = Number(longitude.toFixed(4));
-        const name = await reverseGeocode(lat, lon);
-        const newLoc: Location = { latitude: lat, longitude: lon, name };
-        onLocationChange(newLoc);
-        onManualRefresh(lat, lon);
-      },
-      async (err) => {
-        console.error('[Weather] Geolocation failed:', err.message);
-        if (err.code === 1) { setPermissionDenied(true); setError('Location access was denied. Please search for your city manually.'); }
-        else { setError('Could not detect location automatically. Please search for your city manually.'); }
-      },
-      { timeout: 5000, maximumAge: 300000, enableHighAccuracy: false }
-    );
-  }, [onLocationChange, onManualRefresh]);
+    if (mounted.current) {
+      setError(null);
+      setPermissionDenied(false);
+    }
+
+    let foundAny = false;
+
+    // 1. Try IP Location (Fast/Reliable)
+    const tryIp = async (): Promise<boolean> => {
+      try {
+        const data = await window.api?.getIpLocation();
+        if (data?.lat && data?.lon && !foundAny) {
+          const lat = Number(Number(data.lat).toFixed(4));
+          const lon = Number(Number(data.lon).toFixed(4));
+          const name = data.city ? `${data.city}, ${data.region || ''} ${data.country}`.trim() : 'Current Location';
+          const newLoc: Location = { latitude: lat, longitude: lon, name };
+          if (mounted.current) {
+            onLocationChange(newLoc);
+            onManualRefresh(lat, lon);
+          }
+          foundAny = true;
+          return true;
+        }
+      } catch (err) {
+        loggers.weather.warn('[Weather] IP location failed', { error: err });
+      }
+      return false;
+    };
+
+    // 2. Try GPS (Accurate)
+    const tryGps = (): Promise<boolean> => new Promise((resolve) => {
+      if (!('geolocation' in navigator)) {
+        resolve(false);
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          const lat = Number(latitude.toFixed(4));
+          const lon = Number(longitude.toFixed(4));
+          
+          // GPS is usually more accurate, so we always update if it succeeds
+          const name = await reverseGeocode(lat, lon);
+          const newLoc: Location = { latitude: lat, longitude: lon, name };
+          if (mounted.current) {
+            onLocationChange(newLoc);
+            onManualRefresh(lat, lon);
+          }
+          foundAny = true;
+          resolve(true);
+        },
+        (err) => {
+          loggers.weather.warn('[Weather] GPS location failed', { error: err.message });
+          if (err.code === 1 && mounted.current) setPermissionDenied(true);
+          resolve(false);
+        },
+        { timeout: 5000, maximumAge: 300000, enableHighAccuracy: false }
+      );
+    });
+
+    // Run both in parallel. GPS will refine IP if it succeeds later.
+    const [ipSuccess, gpsSuccess] = await Promise.all([tryIp(), tryGps()]);
+
+    if (!ipSuccess && !gpsSuccess && !foundAny && mounted.current) {
+      setError('Could not detect location automatically. Please search for your city manually.');
+    }
+  }, [onLocationChange, onManualRefresh, reverseGeocode, mounted]);
 
   useEffect(() => { if (!location && !loading && !autoLocateAttemptedRef.current) { autoLocateAttemptedRef.current = true; void handleAutoLocate(); } }, [location, loading, handleAutoLocate]);
 
   const handleManualSearch = async () => {
     if (!manualInput.trim()) return;
-    setError(null);
+    if (mounted.current) setError(null);
     if (!window.api) {
-      setError('API not available');
+      if (mounted.current) setError('API not available');
       return;
     }
     try {
@@ -56,15 +107,19 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
         const { lat, lon, name, admin1, country_code } = data.results[0];
         const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
         const newLoc: Location = { latitude: Number(lat.toFixed(4)), longitude: Number(lon.toFixed(4)), name: label };
-        onLocationChange(newLoc);
-        onManualRefresh(newLoc.latitude, newLoc.longitude);
-        setManualInput('');
+        if (mounted.current) {
+          onLocationChange(newLoc);
+          onManualRefresh(newLoc.latitude, newLoc.longitude);
+          setManualInput('');
+        }
       } else {
-        setError('Location not found. Try a different search term.');
+        if (mounted.current) setError('Location not found. Try a different search term.');
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message || 'Search failed');
+      if (mounted.current) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message || 'Search failed');
+      }
     }
   };
 

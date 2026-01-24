@@ -18,8 +18,8 @@ export const ContactSchema = z.object({
   _searchString: z.string().optional(),
   raw: z.object({
     id: z.string().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.number().optional(),
+    updatedAt: z.number().optional(),
   }).optional(),
 });
 
@@ -37,8 +37,8 @@ export const ServerSchema = z.object({
   _searchString: z.string().optional(),
   raw: z.object({
     id: z.string().optional(),
-    createdAt: z.string().optional(),
-    updatedAt: z.string().optional(),
+    createdAt: z.number().optional(),
+    updatedAt: z.number().optional(),
   }).optional(),
 });
 
@@ -51,7 +51,7 @@ export const OnCallRowSchema = z.object({
   role: z.string(),
   name: z.string(),
   contact: z.string(),
-  timeWindow: z.string(),
+  timeWindow: z.string().optional(),
 });
 
 export const OnCallRowsArraySchema = z.array(OnCallRowSchema);
@@ -63,8 +63,8 @@ export const GroupSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
   contacts: z.array(z.string().email()),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
+  createdAt: z.number().optional(),
+  updatedAt: z.number().optional(),
 });
 
 export const GroupUpdateSchema = z.object({
@@ -87,7 +87,72 @@ export const BridgeHistoryEntrySchema = z.object({
 
 export type ValidatedBridgeHistoryEntry = z.infer<typeof BridgeHistoryEntrySchema>;
 
+// ==================== Data Record Input Schemas ====================
+
+export const ContactRecordInputSchema = z.object({
+  name: z.string(),
+  email: z.string().email(),
+  phone: z.string(),
+  title: z.string(),
+});
+
+export const ServerRecordInputSchema = z.object({
+  name: z.string().min(1),
+  businessArea: z.string(),
+  lob: z.string(),
+  comment: z.string(),
+  owner: z.string(),
+  contact: z.string(),
+  os: z.string(),
+});
+
+export const OnCallRecordInputSchema = z.object({
+  team: z.string().min(1),
+  role: z.string(),
+  name: z.string(),
+  contact: z.string(),
+  timeWindow: z.string().optional(),
+});
+
+export const ContactRecordUpdateSchema = ContactRecordInputSchema.partial().strict();
+export const ServerRecordUpdateSchema = ServerRecordInputSchema.partial().strict();
+
+export const TeamLayoutSchema = z.record(z.string(), z.object({
+  x: z.number(),
+  y: z.number(),
+  w: z.number(),
+  h: z.number(),
+  static: z.boolean().optional(),
+})).optional();
+
+export const RadarSnapshotSchema = z.object({
+  counters: z.object({
+    ok: z.number().optional(),
+    pending: z.number().optional(),
+    internalError: z.number().optional(),
+  }),
+  statusText: z.string().optional(),
+  statusColor: z.string().optional(),
+  statusVariant: z.enum(['success', 'warning', 'danger', 'info']).optional(),
+  lastUpdated: z.number(),
+});
+
+export const SearchQuerySchema = z.string()
+  .min(1)
+  .max(200)
+  .refine(s => !/[<>{}]/.test(s), 'Invalid characters in search query');
+
+export const ExportOptionsSchema = z.object({
+  format: z.enum(['json', 'csv']),
+  category: z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']),
+  includeMetadata: z.boolean().optional(),
+});
+
+export const DataCategorySchema = z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']);
+
 // ==================== Note Schemas ====================
+export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();
+
 export const NoteSchema = z.object({
   targetType: z.enum(['contact', 'server']),
   targetId: z.string().min(1),
@@ -97,11 +162,22 @@ export const NoteSchema = z.object({
 export type ValidatedNote = z.infer<typeof NoteSchema>;
 
 // ==================== Location Schemas ====================
+export const LatitudeSchema = z.number().min(-90).max(90);
+export const LongitudeSchema = z.number().min(-180).max(180);
+
+export const LogEntrySchema = z.object({
+  level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),
+  module: z.string().max(100),
+  message: z.string().max(5000),
+  data: z.record(z.unknown()).optional(),
+  timestamp: z.string().optional()
+});
+
 export const SavedLocationSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  lat: z.number(),
-  lon: z.number(),
+  lat: LatitudeSchema,
+  lon: LongitudeSchema,
   isDefault: z.boolean().optional(),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
@@ -109,8 +185,8 @@ export const SavedLocationSchema = z.object({
 
 export const LocationUpdateSchema = z.object({
   name: z.string().min(1).optional(),
-  lat: z.number().optional(),
-  lon: z.number().optional(),
+  lat: LatitudeSchema.optional(),
+  lon: LongitudeSchema.optional(),
 });
 
 export type ValidatedSavedLocation = z.infer<typeof SavedLocationSchema>;
@@ -133,10 +209,20 @@ export function validateIpcData<T>(schema: z.ZodSchema<T>, data: unknown, contex
 /**
  * Validates and returns the parsed data, or returns null with logged error
  */
-export function validateIpcDataSafe<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T | null {
+export function validateIpcDataSafe<T>(
+  schema: z.ZodSchema<T>, 
+  data: unknown, 
+  context: string,
+  logger?: (msg: string, data?: Record<string, unknown>) => void
+): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
-    console.error(`IPC validation failed for ${context}:`, result.error.format());
+    const errorData = result.error.format();
+    if (logger) {
+      logger(`IPC validation failed for ${context}`, { error: errorData });
+    } else {
+      console.error(`IPC validation failed for ${context}:`, errorData);
+    }
     return null;
   }
   return result.data;

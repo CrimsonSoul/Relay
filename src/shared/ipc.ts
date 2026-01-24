@@ -30,6 +30,13 @@ export type OnCallRow = {
 
 export type OnCallData = OnCallRow[];
 
+export type IpcResult<T = void> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+  rateLimited?: boolean;
+};
+
 export type OnCallEntry = {
   team: string;
   primary: string;  // email
@@ -37,11 +44,16 @@ export type OnCallEntry = {
   backupLabel?: string;
 };
 
+export type TeamLayout = {
+  [teamName: string]: { x: number; y: number };
+};
+
 export type AppData = {
   groups: BridgeGroup[];
   contacts: Contact[];
   servers: Server[];
   onCall: OnCallData;
+  teamLayout?: TeamLayout;
   lastUpdated: number;
 };
 
@@ -139,6 +151,7 @@ export type BridgeAPI = {
   onReloadComplete: (callback: (success: boolean) => void) => () => void;
   onDataError: (callback: (error: DataError) => void) => () => void;
   onImportProgress: (callback: (progress: ImportProgress) => void) => () => void;
+  getInitialData: () => Promise<AppData>;
   reloadData: () => Promise<void>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => void;
   submitAuth: (
@@ -149,24 +162,24 @@ export type BridgeAPI = {
   ) => Promise<boolean>;
   cancelAuth: (nonce: string) => void;
   useCachedAuth: (nonce: string) => Promise<boolean>;
-  subscribeToRadar: (callback: (data: RadarSnapshot) => void) => void;
+  subscribeToRadar: (callback: (data: RadarSnapshot) => void) => () => void;
   logBridge: (groups: string[]) => void;
   getWeather: (lat: number, lon: number) => Promise<WeatherData>;
   searchLocation: (query: string) => Promise<LocationSearchResult>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
-  addContact: (contact: Partial<Contact>) => Promise<boolean>;
-  removeContact: (email: string) => Promise<boolean>;
-  addServer: (server: Partial<Server>) => Promise<boolean>;
-  removeServer: (name: string) => Promise<boolean>;
-  importContactsWithMapping: () => Promise<boolean>;
+  addContact: (contact: Partial<Contact>) => Promise<IpcResult>;
+  removeContact: (email: string) => Promise<IpcResult>;
+  addServer: (server: Partial<Server>) => Promise<IpcResult>;
+  removeServer: (name: string) => Promise<IpcResult>;
+  importContactsWithMapping: () => Promise<IpcResult>;
   changeDataFolder: () => Promise<boolean>;
   resetDataFolder: () => Promise<boolean>;
   getDataPath: () => Promise<string>;
-  updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<boolean>;
-  removeOnCallTeam: (team: string) => Promise<boolean>;
-  renameOnCallTeam: (oldName: string, newName: string) => Promise<boolean>;
-  reorderOnCallTeams: (teamOrder: string[]) => Promise<boolean>;
-  saveAllOnCall: (rows: OnCallRow[]) => Promise<boolean>;
+  updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<IpcResult>;
+  removeOnCallTeam: (team: string) => Promise<IpcResult>;
+  renameOnCallTeam: (oldName: string, newName: string) => Promise<IpcResult>;
+  reorderOnCallTeams: (teamOrder: string[], layout?: TeamLayout) => Promise<IpcResult>;
+  saveAllOnCall: (rows: OnCallRow[]) => Promise<IpcResult>;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -176,53 +189,58 @@ export type BridgeAPI = {
   ) => void;
   removeMaximizeListener: () => void;
   openAuxWindow: (route: string) => void;
-  generateDummyData: () => Promise<boolean>;
+  generateDummyData: () => Promise<IpcResult>;
   getIpLocation: () => Promise<IpLocationResult>;
   logToMain: (entry: LogEntry) => void;
+  // Drag and Drop Sync
+  notifyDragStart: () => void;
+  notifyDragStop: () => void;
+  onDragStateChange: (callback: (isDragging: boolean) => void) => () => void;
   // Bridge Groups
   getGroups: () => Promise<BridgeGroup[]>;
-  saveGroup: (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => Promise<BridgeGroup | null>;
-  updateGroup: (id: string, updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>) => Promise<boolean>;
-  deleteGroup: (id: string) => Promise<boolean>;
+  saveGroup: (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IpcResult<BridgeGroup>>;
+  updateGroup: (id: string, updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>) => Promise<IpcResult>;
+  deleteGroup: (id: string) => Promise<IpcResult>;
   // Bridge History
   getBridgeHistory: () => Promise<BridgeHistoryEntry[]>;
-  addBridgeHistory: (entry: Omit<BridgeHistoryEntry, 'id' | 'timestamp'>) => Promise<BridgeHistoryEntry | null>;
-  deleteBridgeHistory: (id: string) => Promise<boolean>;
-  clearBridgeHistory: () => Promise<boolean>;
+  addBridgeHistory: (entry: Omit<BridgeHistoryEntry, 'id' | 'timestamp'>) => Promise<IpcResult<BridgeHistoryEntry>>;
+  deleteBridgeHistory: (id: string) => Promise<IpcResult>;
+  clearBridgeHistory: () => Promise<IpcResult>;
   // Notes
   getNotes: () => Promise<NotesData>;
-  setContactNote: (email: string, note: string, tags: string[]) => Promise<boolean>;
-  setServerNote: (name: string, note: string, tags: string[]) => Promise<boolean>;
+  setContactNote: (email: string, note: string, tags: string[]) => Promise<IpcResult>;
+  setServerNote: (name: string, note: string, tags: string[]) => Promise<IpcResult>;
   // Saved Locations
   getSavedLocations: () => Promise<SavedLocation[]>;
-  saveLocation: (location: Omit<SavedLocation, 'id'>) => Promise<SavedLocation | null>;
-  deleteLocation: (id: string) => Promise<boolean>;
-  setDefaultLocation: (id: string) => Promise<boolean>;
-  clearDefaultLocation: (id: string) => Promise<boolean>;
-  updateLocation: (id: string, updates: Partial<Omit<SavedLocation, 'id'>>) => Promise<boolean>;
+  saveLocation: (location: Omit<SavedLocation, 'id'>) => Promise<IpcResult<SavedLocation>>;
+  deleteLocation: (id: string) => Promise<IpcResult>;
+  setDefaultLocation: (id: string) => Promise<IpcResult>;
+  clearDefaultLocation: (id: string) => Promise<IpcResult>;
+  updateLocation: (id: string, updates: Partial<Omit<SavedLocation, 'id'>>) => Promise<IpcResult>;
   // Contact Records (JSON)
   getContacts: () => Promise<ContactRecord[]>;
-  addContactRecord: (contact: Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ContactRecord | null>;
-  updateContactRecord: (id: string, updates: Partial<Omit<ContactRecord, 'id' | 'createdAt'>>) => Promise<boolean>;
-  deleteContactRecord: (id: string) => Promise<boolean>;
+  addContactRecord: (contact: Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IpcResult<ContactRecord>>;
+  updateContactRecord: (id: string, updates: Partial<Omit<ContactRecord, 'id' | 'createdAt'>>) => Promise<IpcResult>;
+  deleteContactRecord: (id: string) => Promise<IpcResult>;
   // Server Records (JSON)
   getServers: () => Promise<ServerRecord[]>;
-  addServerRecord: (server: Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ServerRecord | null>;
-  updateServerRecord: (id: string, updates: Partial<Omit<ServerRecord, 'id' | 'createdAt'>>) => Promise<boolean>;
-  deleteServerRecord: (id: string) => Promise<boolean>;
+  addServerRecord: (server: Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IpcResult<ServerRecord>>;
+  updateServerRecord: (id: string, updates: Partial<Omit<ServerRecord, 'id' | 'createdAt'>>) => Promise<IpcResult>;
+  deleteServerRecord: (id: string) => Promise<IpcResult>;
   // OnCall Records (JSON)
   getOnCall: () => Promise<OnCallRecord[]>;
-  addOnCallRecord: (record: Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<OnCallRecord | null>;
-  updateOnCallRecord: (id: string, updates: Partial<Omit<OnCallRecord, 'id' | 'createdAt'>>) => Promise<boolean>;
-  deleteOnCallRecord: (id: string) => Promise<boolean>;
-  deleteOnCallByTeam: (team: string) => Promise<boolean>;
+  addOnCallRecord: (record: Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>) => Promise<IpcResult<OnCallRecord>>;
+  updateOnCallRecord: (id: string, updates: Partial<Omit<OnCallRecord, 'id' | 'createdAt'>>) => Promise<IpcResult>;
+  deleteOnCallRecord: (id: string) => Promise<IpcResult>;
+  deleteOnCallByTeam: (team: string) => Promise<IpcResult>;
   // Data Manager
-  exportData: (options: ExportOptions) => Promise<boolean>;
-  importData: (category: DataCategory) => Promise<ImportResult>;
+  exportData: (options: ExportOptions) => Promise<IpcResult>;
+  importData: (category: DataCategory) => Promise<IpcResult<ImportResult>>;
   getDataStats: () => Promise<DataStats>;
-  migrateFromCsv: () => Promise<MigrationResult>;
+  migrateFromCsv: () => Promise<IpcResult<MigrationResult>>;
   // Clipboard
   writeClipboard: (text: string) => Promise<boolean>;
+  platform: 'aix' | 'android' | 'darwin' | 'freebsd' | 'haiku' | 'linux' | 'openbsd' | 'sunos' | 'win32' | 'cygwin' | 'netbsd';
 };
 
 export const IPC_CHANNELS = {
@@ -252,6 +270,7 @@ export const IPC_CHANNELS = {
   SAVE_ALL_ONCALL: "data:saveAllOnCall",
   IMPORT_CONTACTS_WITH_MAPPING: "data:importContactsWithMapping",
   GENERATE_DUMMY_DATA: "data:generateDummyData",
+  DATA_GET_INITIAL: "data:getInitial",
   DATA_UPDATED: "data:updated",
   DATA_RELOAD: "data:reload",
   DATA_RELOAD_STARTED: "data:reload-started",
@@ -313,6 +332,9 @@ export const IPC_CHANNELS = {
   MIGRATE_CSV_TO_JSON: "data:migrate",
   // Clipboard
   CLIPBOARD_WRITE: "clipboard:write",
+  // Drag Sync
+  DRAG_STARTED: "drag:started",
+  DRAG_STOPPED: "drag:stopped",
 } as const;
 
 export type BridgeEvent = {

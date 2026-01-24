@@ -47,6 +47,8 @@ export default [
         NodeJS: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
+        AbortController: 'readonly',
+        AbortSignal: 'readonly',
         require: 'readonly',
         console: 'readonly',
         crypto: 'readonly',

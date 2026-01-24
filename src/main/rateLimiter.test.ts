@@ -189,7 +189,7 @@ describe('rateLimiters', () => {
     expect(rateLimiters.fileImport.getTokens()).toBe(5);
 
     // Data mutation should be more permissive
-    expect(rateLimiters.dataMutation.getTokens()).toBe(30);
+    expect(rateLimiters.dataMutation.getTokens()).toBe(100);
 
     // Data reload should be moderate
     expect(rateLimiters.dataReload.getTokens()).toBe(3);

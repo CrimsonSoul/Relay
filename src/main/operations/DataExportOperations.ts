@@ -102,7 +102,8 @@ function groupsToCsv(groups: BridgeGroup[], includeMetadata: boolean): string {
 function escapeCSV(field: string | number | undefined): string {
   const str = String(field ?? "");
   // Prevent formula injection - prefix with single quote inside quotes
-  if (/^[=+\-@]/.test(str)) {
+  // Guards against =, +, -, @, Tab (0x09), and Carriage Return (0x0D)
+  if (/^[=+\-@\t\r]/.test(str)) {
     return `"'${str.replace(/"/g, '""')}"`;
   }
   if (str.includes(",") || str.includes('"') || str.includes("\n")) {
@@ -247,6 +248,10 @@ export async function exportData(
 
 /**
  * Export to a specific path (for programmatic use)
+ * 
+ * SECURITY WARNING: This function accepts an arbitrary destPath and writes to it.
+ * It MUST NOT be exposed directly to IPC without strict validation of the destPath
+ * to prevent unauthorized file creation/overwrite.
  */
 export async function exportToPath(
   rootDir: string,

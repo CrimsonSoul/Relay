@@ -4,7 +4,16 @@
  */
 
 import { ipcMain } from "electron";
-import { IPC_CHANNELS, type DataStats } from "../../shared/ipc";
+import { IPC_CHANNELS, type DataStats, type IpcResult } from "../../shared/ipc";
+import {
+  ContactRecordInputSchema,
+  ServerRecordInputSchema,
+  ContactRecordUpdateSchema,
+  ServerRecordUpdateSchema,
+  ExportOptionsSchema,
+  DataCategorySchema,
+  validateIpcDataSafe,
+} from "../../shared/ipcValidation";
 import {
   // Contacts
   getContacts,
@@ -18,10 +27,6 @@ import {
   deleteServerRecord,
   // OnCall
   getOnCall,
-  addOnCallRecord,
-  updateOnCallRecord,
-  deleteOnCallRecord,
-  deleteOnCallByTeam,
   // Groups (for stats)
   getGroups,
   // Migration
@@ -48,19 +53,28 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
     return getContacts(getDataRoot());
   });
 
-  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT_RECORD, async (_, contact) => {
-    if (!checkMutationRateLimit()) return null;
-    return addContactRecord(getDataRoot(), contact);
+  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT_RECORD, async (_, contact): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    const validated = validateIpcDataSafe(ContactRecordInputSchema, contact, 'ADD_CONTACT_RECORD', (m, d) => loggers.ipc.warn(m, d));
+    if (!validated) return { success: false, error: 'Invalid contact data' };
+    const result = await addContactRecord(getDataRoot(), validated);
+    return { success: !!result, data: result || undefined };
   });
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CONTACT_RECORD, async (_, id, updates) => {
-    if (!checkMutationRateLimit()) return false;
-    return updateContactRecord(getDataRoot(), id, updates);
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CONTACT_RECORD, async (_, id, updates): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
+    const validatedUpdates = validateIpcDataSafe(ContactRecordUpdateSchema, updates, 'UPDATE_CONTACT_RECORD', (m, d) => loggers.ipc.warn(m, d));
+    if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
+    const success = await updateContactRecord(getDataRoot(), id, validatedUpdates);
+    return { success };
   });
 
-  ipcMain.handle(IPC_CHANNELS.DELETE_CONTACT_RECORD, async (_, id) => {
-    if (!checkMutationRateLimit()) return false;
-    return deleteContactRecord(getDataRoot(), id);
+  ipcMain.handle(IPC_CHANNELS.DELETE_CONTACT_RECORD, async (_, id): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
+    const success = await deleteContactRecord(getDataRoot(), id);
+    return { success };
   });
 
   // ==================== Servers ====================
@@ -68,19 +82,28 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
     return getServers(getDataRoot());
   });
 
-  ipcMain.handle(IPC_CHANNELS.ADD_SERVER_RECORD, async (_, server) => {
-    if (!checkMutationRateLimit()) return null;
-    return addServerRecord(getDataRoot(), server);
+  ipcMain.handle(IPC_CHANNELS.ADD_SERVER_RECORD, async (_, server): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    const validated = validateIpcDataSafe(ServerRecordInputSchema, server, 'ADD_SERVER_RECORD', (m, d) => loggers.ipc.warn(m, d));
+    if (!validated) return { success: false, error: 'Invalid server data' };
+    const result = await addServerRecord(getDataRoot(), validated);
+    return { success: !!result, data: result || undefined };
   });
 
-  ipcMain.handle(IPC_CHANNELS.UPDATE_SERVER_RECORD, async (_, id, updates) => {
-    if (!checkMutationRateLimit()) return false;
-    return updateServerRecord(getDataRoot(), id, updates);
+  ipcMain.handle(IPC_CHANNELS.UPDATE_SERVER_RECORD, async (_, id, updates): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
+    const validatedUpdates = validateIpcDataSafe(ServerRecordUpdateSchema, updates, 'UPDATE_SERVER_RECORD', (m, d) => loggers.ipc.warn(m, d));
+    if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
+    const success = await updateServerRecord(getDataRoot(), id, validatedUpdates);
+    return { success };
   });
 
-  ipcMain.handle(IPC_CHANNELS.DELETE_SERVER_RECORD, async (_, id) => {
-    if (!checkMutationRateLimit()) return false;
-    return deleteServerRecord(getDataRoot(), id);
+  ipcMain.handle(IPC_CHANNELS.DELETE_SERVER_RECORD, async (_, id): Promise<IpcResult> => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
+    const success = await deleteServerRecord(getDataRoot(), id);
+    return { success };
   });
 
   // ==================== OnCall ====================
@@ -88,36 +111,22 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
     return getOnCall(getDataRoot());
   });
 
-  ipcMain.handle(IPC_CHANNELS.ADD_ONCALL_RECORD, async (_, record) => {
-    if (!checkMutationRateLimit()) return null;
-    return addOnCallRecord(getDataRoot(), record);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_RECORD, async (_, id, updates) => {
-    if (!checkMutationRateLimit()) return false;
-    return updateOnCallRecord(getDataRoot(), id, updates);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.DELETE_ONCALL_RECORD, async (_, id) => {
-    if (!checkMutationRateLimit()) return false;
-    return deleteOnCallRecord(getDataRoot(), id);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.DELETE_ONCALL_BY_TEAM, async (_, team) => {
-    if (!checkMutationRateLimit()) return false;
-    return deleteOnCallByTeam(getDataRoot(), team);
-  });
-
   // ==================== Data Manager ====================
-  ipcMain.handle(IPC_CHANNELS.EXPORT_DATA, async (_, options) => {
-    return exportData(getDataRoot(), options);
+  ipcMain.handle(IPC_CHANNELS.EXPORT_DATA, async (_, options): Promise<IpcResult> => {
+    const validated = validateIpcDataSafe(ExportOptionsSchema, options, 'EXPORT_DATA', (m, d) => loggers.ipc.warn(m, d));
+    if (!validated) return { success: false, error: 'Invalid export options' };
+    const success = await exportData(getDataRoot(), validated);
+    return { success };
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_DATA, async (_, category) => {
+  ipcMain.handle(IPC_CHANNELS.IMPORT_DATA, async (_, category): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) {
-      return { success: false, imported: 0, updated: 0, skipped: 0, errors: ["Rate limited"] };
+      return { success: false, rateLimited: true, error: "Rate limited" };
     }
-    return importData(getDataRoot(), category);
+    const validated = validateIpcDataSafe(DataCategorySchema, category, 'IMPORT_DATA', (m, d) => loggers.ipc.warn(m, d));
+    if (!validated) return { success: false, error: 'Invalid category' };
+    const result = await importData(getDataRoot(), validated);
+    return { success: result.success, data: result };
   });
 
   ipcMain.handle(IPC_CHANNELS.GET_DATA_STATS, async (): Promise<DataStats> => {
@@ -145,15 +154,15 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
     };
   });
 
-  ipcMain.handle(IPC_CHANNELS.MIGRATE_CSV_TO_JSON, async () => {
+  ipcMain.handle(IPC_CHANNELS.MIGRATE_CSV_TO_JSON, async (): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) {
       return {
         success: false,
-        contacts: { migrated: 0, errors: ["Rate limited"] },
-        servers: { migrated: 0, errors: [] },
-        oncall: { migrated: 0, errors: [] },
+        rateLimited: true,
+        error: "Rate limited"
       };
     }
-    return migrateAllCsvToJson(getDataRoot());
+    const result = await migrateAllCsvToJson(getDataRoot());
+    return { success: result.success, data: result };
   });
 }

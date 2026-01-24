@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { NotesData, NoteEntry } from "@shared/ipc";
+import { loggers } from "../utils/logger";
 
 export function useNotes() {
   const [notes, setNotes] = useState<NotesData>({ contacts: {}, servers: {} });
@@ -10,7 +11,7 @@ export function useNotes() {
       const data = await window.api?.getNotes();
       setNotes(data || { contacts: {}, servers: {} });
     } catch (e) {
-      console.error("Failed to load notes:", e);
+      loggers.app.error("Failed to load notes", { error: e });
     } finally {
       setLoading(false);
     }

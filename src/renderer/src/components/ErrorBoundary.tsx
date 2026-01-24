@@ -1,9 +1,11 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { TactileButton } from "./TactileButton";
-import { loggers, ErrorCategory } from "../utils/logger";
+import { loggers } from "../utils/logger";
+import { ErrorCategory } from "@shared/logging";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
+  fallback?: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -32,6 +34,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
       return (
         <div
           style={{

@@ -9,6 +9,7 @@ import fs from "fs/promises";
 import { existsSync } from "fs";
 import { dialog } from "electron";
 import type { BridgeGroup } from "@shared/ipc";
+import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
 import { parseCsvAsync } from "../csvUtils";
 import { modifyJsonWithLock } from "../fileLock";
@@ -28,7 +29,7 @@ export async function getGroups(rootDir: string): Promise<BridgeGroup[]> {
     const data = JSON.parse(contents);
     return Array.isArray(data) ? data : [];
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (isNodeError(e) && e.code === "ENOENT") return [];
     loggers.fileManager.error("[GroupOperations] getGroups error:", { error: e });
     throw e;
   }
