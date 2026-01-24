@@ -162,11 +162,13 @@ export async function retryNetworkOperation<T>(
       // Retry on network errors and 5xx responses
       if (error instanceof Error) {
         const message = error.message.toLowerCase();
+        // Check for 5xx HTTP status codes (500-599)
+        const has5xxError = /\b5\d\d\b/.test(message);
         return (
           isTransientError(error) ||
           message.includes('network') ||
           message.includes('timeout') ||
-          message.includes('5') // 5xx errors
+          has5xxError
         );
       }
       return false;

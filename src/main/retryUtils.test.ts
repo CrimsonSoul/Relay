@@ -184,13 +184,42 @@ describe('retryUtils', () => {
       expect(operation).toHaveBeenCalledTimes(2);
     });
 
-    it('should not retry on client errors', async () => {
+    it('should retry on various 5xx error codes', async () => {
+      const testCases = [
+        'HTTP 500 Internal Server Error',
+        'HTTP 502 Bad Gateway',
+        'HTTP 503 Service Unavailable',
+        'HTTP 504 Gateway Timeout',
+        'Error 599 Network Connect Timeout Error',
+      ];
+
+      for (const errorMessage of testCases) {
+        const operation = vi.fn()
+          .mockRejectedValueOnce(new Error(errorMessage))
+          .mockResolvedValue('success');
+
+        const result = await retryNetworkOperation(operation, 'apiCall');
+        expect(result).toBe('success');
+      }
+    });
+
+    it('should not retry on client errors (4xx)', async () => {
       const operation = vi.fn()
         .mockRejectedValue(new Error('HTTP 404 Not Found'));
 
       await expect(
         retryNetworkOperation(operation, 'apiCall')
       ).rejects.toThrow('404');
+      expect(operation).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not retry on errors containing digit 5 in non-status contexts', async () => {
+      const operation = vi.fn()
+        .mockRejectedValue(new Error('Failed to connect to port 5432'));
+
+      await expect(
+        retryNetworkOperation(operation, 'apiCall')
+      ).rejects.toThrow('5432');
       expect(operation).toHaveBeenCalledTimes(1);
     });
   });
