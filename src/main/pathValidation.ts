@@ -23,9 +23,19 @@ export async function validateDataPath(path: string): Promise<ValidationResult> 
         // 1. Check if path exists, create if it doesn't
         try {
             await fs.promises.access(path);
-        } catch {
-            // Path doesn't exist, try creating it
-            await fs.promises.mkdir(path, { recursive: true });
+        } catch (accessError) {
+            // Path doesn't exist - check error type
+            const isNodeError = (err: unknown): err is NodeJS.ErrnoException => {
+                return typeof err === 'object' && err !== null && 'code' in err;
+            };
+            
+            // Only try to create if it's a "not found" error
+            if (isNodeError(accessError) && accessError.code === 'ENOENT') {
+                await fs.promises.mkdir(path, { recursive: true });
+            } else {
+                // Re-throw other errors (e.g., permission denied on parent directory)
+                throw accessError;
+            }
         }
 
         // 2. Check for write permissions by attempting to write a test file

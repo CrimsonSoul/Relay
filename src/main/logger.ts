@@ -140,7 +140,8 @@ class Logger {
 
   private ensureLogDirectory(): void {
     // Use async operations to avoid blocking startup
-    void (async () => {
+    // Errors are intentionally caught and logged to console to avoid recursion
+    (async () => {
       try {
         await fs.promises.mkdir(this.logPath, { recursive: true });
         
@@ -149,9 +150,13 @@ class Logger {
         await fs.promises.appendFile(this.currentLogFile, sessionMarker);
       } catch (e) {
         // Don't use logger.error here or we might recurse
+        // Log to console as a fallback for critical initialization errors
         console.error('[Logger] Failed to create log directory:', e);
       }
-    })();
+    })().catch(err => {
+      // Additional safety net for any unhandled promise rejections
+      console.error('[Logger] Unhandled error in ensureLogDirectory:', err);
+    });
   }
 
   private formatTimestamp(): string {
@@ -293,8 +298,9 @@ class Logger {
       // Check if file exists using async API
       try {
         await fs.promises.access(filePath);
-      } catch {
-        return; // File doesn't exist
+      } catch (accessError) {
+        // File doesn't exist, no rotation needed
+        return;
       }
 
       const stats = await fs.promises.stat(filePath);
@@ -316,8 +322,9 @@ class Logger {
           } else {
             await fs.promises.rename(oldFile, newFile);
           }
-        } catch {
-          // File doesn't exist, continue
+        } catch (fileError) {
+          // File doesn't exist, no action needed - this is expected behavior
+          // Continue to next file in rotation sequence
         }
       }
 
