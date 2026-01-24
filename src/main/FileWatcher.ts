@@ -23,10 +23,21 @@ const ALL_SERVER_FILES = [...SERVER_FILES, SERVERS_JSON_FILE];
 const ALL_ONCALL_FILES = [...ONCALL_FILES, ONCALL_JSON_FILE];
 const ALL_GROUP_FILES = [...GROUP_FILES, GROUPS_JSON_FILE];
 
+// File watcher configuration constants
+const FILE_CHANGE_DEBOUNCE_MS = 200; // Debounce delay for file change events
+
 import { loggers } from "./logger";
 
 // ...
 
+/**
+ * Creates a file watcher for monitoring changes to data files.
+ * Uses debouncing to batch multiple rapid changes into a single reload event.
+ * 
+ * @param rootDir - Root directory to watch for file changes
+ * @param callbacks - Callbacks for handling file changes
+ * @returns Chokidar watcher instance
+ */
 export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks): chokidar.FSWatcher {
   // Watch the root directory
   // usePolling is enabled to ensure detection on network drives (OneDrive) where native events may be dropped
@@ -74,7 +85,7 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
       loggers.fileManager.info(`[FileWatcher] Triggering reload for: ${Array.from(pendingUpdates).join(', ')}`);
       callbacks.onFileChange(new Set(pendingUpdates));
       pendingUpdates.clear();
-    }, 200); // Increased debounce slightly for safety
+    }, FILE_CHANGE_DEBOUNCE_MS);
   });
 
   return watcher;

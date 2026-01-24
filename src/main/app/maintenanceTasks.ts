@@ -1,10 +1,21 @@
 import { loggers } from '../logger';
 import { FileManager } from '../FileManager';
 
+// Constants for maintenance intervals
+const MAINTENANCE_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const INITIAL_MEMORY_CHECK_DELAY_MS = 60000; // 1 minute
+const MB_DIVISOR = 1024 * 1024; // Bytes to MB conversion
+
 interface GlobalWithGC {
   gc?: () => void;
 }
 
+/**
+ * Sets up periodic maintenance tasks for the application.
+ * Includes memory monitoring, garbage collection, and backup operations.
+ * 
+ * @param getFileManager - Function to retrieve the current FileManager instance
+ */
 export function setupMaintenanceTasks(getFileManager: () => FileManager | null) {
   // Periodic maintenance task (runs every 24 hours)
   setInterval(() => {
@@ -12,10 +23,10 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
 
     const memory = process.memoryUsage();
     loggers.main.info('Memory Stats:', {
-      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
-      heapTotal: `${Math.round(memory.heapTotal / 1024 / 1024)}MB`,
-      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`,
-      external: `${Math.round(memory.external / 1024 / 1024)}MB`
+      rss: `${Math.round(memory.rss / MB_DIVISOR)}MB`,
+      heapTotal: `${Math.round(memory.heapTotal / MB_DIVISOR)}MB`,
+      heapUsed: `${Math.round(memory.heapUsed / MB_DIVISOR)}MB`,
+      external: `${Math.round(memory.external / MB_DIVISOR)}MB`
     });
 
     if ((global as GlobalWithGC).gc) {
@@ -31,14 +42,14 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
     if (fileManager) {
       ((fileManager as unknown as Record<string, unknown>).performBackup as unknown)();
     }
-  }, 24 * 60 * 60 * 1000);
+  }, MAINTENANCE_INTERVAL_MS);
 
   // Initial maintenance check after 1 minute
   setTimeout(() => {
     const memory = process.memoryUsage();
     loggers.main.info('Startup Memory Stats:', {
-      rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
-      heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`
+      rss: `${Math.round(memory.rss / MB_DIVISOR)}MB`,
+      heapUsed: `${Math.round(memory.heapUsed / MB_DIVISOR)}MB`
     });
-  }, 60000);
+  }, INITIAL_MEMORY_CHECK_DELAY_MS);
 }
