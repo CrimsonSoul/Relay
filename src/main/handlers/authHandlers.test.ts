@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupAuthHandlers } from './authHandlers';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import * as credentialManager from '../credentialManager';
+import * as CredentialManager from '../CredentialManager';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -15,8 +15,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-// Mock credentialManager
-vi.mock('../credentialManager', () => ({
+// Mock CredentialManager
+vi.mock('../CredentialManager', () => ({
   generateAuthNonce: vi.fn(),
   registerAuthRequest: vi.fn(),
   consumeAuthRequest: vi.fn(),
@@ -55,7 +55,7 @@ describe('authHandlers', () => {
   describe('AUTH_SUBMIT', () => {
     it('should consume nonce and execute callback', async () => {
       const callback = vi.fn();
-      vi.mocked(credentialManager.consumeAuthRequest).mockReturnValue({
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
         callback
       });
@@ -64,30 +64,30 @@ describe('authHandlers', () => {
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]({}, params);
 
       expect(result).toBe(true);
-      expect(credentialManager.consumeAuthRequest).toHaveBeenCalledWith('n1');
-      expect(credentialManager.cacheCredentials).toHaveBeenCalledWith('test.com', 'user', 'pass');
+      expect(CredentialManager.consumeAuthRequest).toHaveBeenCalledWith('n1');
+      expect(CredentialManager.cacheCredentials).toHaveBeenCalledWith('test.com', 'user', 'pass');
       expect(callback).toHaveBeenCalledWith(['user', 'pass']);
     });
 
     it('should reject invalid nonce', async () => {
-      vi.mocked(credentialManager.consumeAuthRequest).mockReturnValue(null);
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
 
       const params = { nonce: 'invalid', username: 'u', password: 'p', remember: false };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]({}, params);
 
       expect(result).toBe(false);
-      expect(credentialManager.cacheCredentials).not.toHaveBeenCalled();
+      expect(CredentialManager.cacheCredentials).not.toHaveBeenCalled();
     });
   });
 
   describe('AUTH_USE_CACHED', () => {
     it('should use cached credentials if available', async () => {
       const callback = vi.fn();
-      vi.mocked(credentialManager.consumeAuthRequest).mockReturnValue({
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
         callback
       });
-      vi.mocked(credentialManager.getCachedCredentials).mockReturnValue({
+      vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue({
         username: 'cached-user',
         password: 'cached-password'
       });
@@ -99,11 +99,11 @@ describe('authHandlers', () => {
     });
 
     it('should fail if no cached credentials exist', async () => {
-      vi.mocked(credentialManager.consumeAuthRequest).mockReturnValue({
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
         callback: vi.fn()
       });
-      vi.mocked(credentialManager.getCachedCredentials).mockReturnValue(null);
+      vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 
       const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]({}, { nonce: 'n1' });
 
@@ -114,7 +114,7 @@ describe('authHandlers', () => {
   describe('AUTH_CANCEL', () => {
     it('should call cancelAuthRequest', () => {
       handlers[IPC_CHANNELS.AUTH_CANCEL]({}, { nonce: 'n1' });
-      expect(credentialManager.cancelAuthRequest).toHaveBeenCalledWith('n1');
+      expect(CredentialManager.cancelAuthRequest).toHaveBeenCalledWith('n1');
     });
   });
 });

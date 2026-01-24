@@ -1,13 +1,41 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { dialog, BrowserWindow } from "electron";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { FileContext, SERVER_FILES } from "./FileContext";
 import { cleanupServerContacts } from "./ServerCleanup";
 import { loggers } from "../logger";
+import { rateLimiters } from "../rateLimiter";
 
 export { cleanupServerContacts };
+
+/**
+ * Show a file dialog and import servers from the selected CSV file.
+ */
+export async function importServersViaDialog(
+  ctx: FileContext,
+  browserWindow: BrowserWindow,
+  title: string = 'Import Servers CSV'
+): Promise<{ success: boolean; rateLimited?: boolean; message?: string }> {
+  const rateLimitResult = rateLimiters.fileImport.tryConsume();
+  if (!rateLimitResult.allowed) {
+    return { success: false, rateLimited: true };
+  }
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(browserWindow, {
+    title,
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+    properties: ['openFile']
+  });
+
+  if (canceled || filePaths.length === 0) {
+    return { success: false, message: 'Cancelled' };
+  }
+
+  return importServersWithMapping(ctx, filePaths[0]);
+}
 
 const STD_HEADERS = ["Name", "Business Area", "LOB", "Comment", "Owner", "IT Contact", "OS"];
 

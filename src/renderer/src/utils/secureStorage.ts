@@ -23,7 +23,8 @@
  * This design is by choice for performance and user experience with non-sensitive data.
  */
 
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
 
 const STORAGE_PREFIX = 'relay_';
 const CRYPTO_AVAILABLE = typeof crypto !== 'undefined' && crypto.subtle;

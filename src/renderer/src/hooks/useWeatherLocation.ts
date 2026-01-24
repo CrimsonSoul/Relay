@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Location } from '../tabs/weather/types';
 import { useMounted } from './useMounted';
+import { loggers } from '../utils/logger';
 
 export function useWeatherLocation(location: Location | null, loading: boolean, onLocationChange: (loc: Location) => void, onManualRefresh: (lat: number, lon: number) => void) {
   const mounted = useMounted();
@@ -46,7 +47,7 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
           return true;
         }
       } catch (err) {
-        console.warn('[Weather] IP location failed:', err);
+        loggers.weather.warn('[Weather] IP location failed', { error: err });
       }
       return false;
     };
@@ -75,7 +76,7 @@ export function useWeatherLocation(location: Location | null, loading: boolean, 
           resolve(true);
         },
         (err) => {
-          console.warn('[Weather] GPS location failed:', err.message);
+          loggers.weather.warn('[Weather] GPS location failed', { error: err.message });
           if (err.code === 1 && mounted.current) setPermissionDenied(true);
           resolve(false);
         },

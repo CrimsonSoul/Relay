@@ -114,7 +114,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
   });
 
   ipcMain.on(IPC_CHANNELS.RADAR_DATA, (_event, payload) => {
-    const validatedPayload = validateIpcDataSafe(RadarSnapshotSchema, payload, 'RADAR_DATA');
+    const validatedPayload = validateIpcDataSafe(RadarSnapshotSchema, payload, 'RADAR_DATA', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedPayload) return;
 
     const mainWindow = getMainWindow();

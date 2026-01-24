@@ -1,7 +1,8 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SearchQuerySchema } from '../../shared/ipcValidation';
-import { loggers, ErrorCategory } from '../logger';
+import { loggers } from '../logger';
+import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
 
 // NWS API Response Types (for type safety)

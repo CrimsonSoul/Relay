@@ -55,7 +55,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
 
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT_RECORD, async (_, contact): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(ContactRecordInputSchema, contact, 'ADD_CONTACT_RECORD');
+    const validated = validateIpcDataSafe(ContactRecordInputSchema, contact, 'ADD_CONTACT_RECORD', (m, d) => loggers.ipc.warn(m, d));
     if (!validated) return { success: false, error: 'Invalid contact data' };
     const result = await addContactRecord(getDataRoot(), validated);
     return { success: !!result, data: result || undefined };
@@ -64,7 +64,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
   ipcMain.handle(IPC_CHANNELS.UPDATE_CONTACT_RECORD, async (_, id, updates): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const validatedUpdates = validateIpcDataSafe(ContactRecordUpdateSchema, updates, 'UPDATE_CONTACT_RECORD');
+    const validatedUpdates = validateIpcDataSafe(ContactRecordUpdateSchema, updates, 'UPDATE_CONTACT_RECORD', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
     const success = await updateContactRecord(getDataRoot(), id, validatedUpdates);
     return { success };
@@ -84,7 +84,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
 
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER_RECORD, async (_, server): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(ServerRecordInputSchema, server, 'ADD_SERVER_RECORD');
+    const validated = validateIpcDataSafe(ServerRecordInputSchema, server, 'ADD_SERVER_RECORD', (m, d) => loggers.ipc.warn(m, d));
     if (!validated) return { success: false, error: 'Invalid server data' };
     const result = await addServerRecord(getDataRoot(), validated);
     return { success: !!result, data: result || undefined };
@@ -93,7 +93,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
   ipcMain.handle(IPC_CHANNELS.UPDATE_SERVER_RECORD, async (_, id, updates): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof id !== 'string' || !id) return { success: false, error: 'Invalid ID' };
-    const validatedUpdates = validateIpcDataSafe(ServerRecordUpdateSchema, updates, 'UPDATE_SERVER_RECORD');
+    const validatedUpdates = validateIpcDataSafe(ServerRecordUpdateSchema, updates, 'UPDATE_SERVER_RECORD', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedUpdates) return { success: false, error: 'Invalid update data' };
     const success = await updateServerRecord(getDataRoot(), id, validatedUpdates);
     return { success };
@@ -113,7 +113,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
 
   // ==================== Data Manager ====================
   ipcMain.handle(IPC_CHANNELS.EXPORT_DATA, async (_, options): Promise<IpcResult> => {
-    const validated = validateIpcDataSafe(ExportOptionsSchema, options, 'EXPORT_DATA');
+    const validated = validateIpcDataSafe(ExportOptionsSchema, options, 'EXPORT_DATA', (m, d) => loggers.ipc.warn(m, d));
     if (!validated) return { success: false, error: 'Invalid export options' };
     const success = await exportData(getDataRoot(), validated);
     return { success };
@@ -123,7 +123,7 @@ export function setupDataRecordHandlers(getDataRoot: () => string) {
     if (!checkMutationRateLimit()) {
       return { success: false, rateLimited: true, error: "Rate limited" };
     }
-    const validated = validateIpcDataSafe(DataCategorySchema, category, 'IMPORT_DATA');
+    const validated = validateIpcDataSafe(DataCategorySchema, category, 'IMPORT_DATA', (m, d) => loggers.ipc.warn(m, d));
     if (!validated) return { success: false, error: 'Invalid category' };
     const result = await importData(getDataRoot(), validated);
     return { success: result.success, data: result };

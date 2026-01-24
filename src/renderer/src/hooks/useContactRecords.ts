@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ContactRecord } from "@shared/ipc";
 import { useMounted } from "./useMounted";
+import { loggers } from "../utils/logger";
 
 export function useContactRecords() {
   const mounted = useMounted();
@@ -14,7 +15,7 @@ export function useContactRecords() {
         setContacts(data || []);
       }
     } catch (e) {
-      console.error("Failed to load contacts:", e);
+      loggers.directory.error("Failed to load contacts", { error: e });
     } finally {
       if (mounted.current) {
         setLoading(false);
@@ -30,7 +31,7 @@ export function useContactRecords() {
     async (contact: Omit<ContactRecord, "id" | "createdAt" | "updatedAt">) => {
       try {
         if (!window.api) {
-          console.error("[useContactRecords] API not available");
+          loggers.api.error("[useContactRecords] API not available");
           return null;
         }
         const result = await window.api.addContactRecord(contact);
@@ -54,7 +55,7 @@ export function useContactRecords() {
         }
         return null;
       } catch (e) {
-        console.error("[useContactRecords] Failed to add contact:", e);
+        loggers.directory.error("[useContactRecords] Failed to add contact", { error: e });
         return null;
       }
     },
@@ -68,7 +69,7 @@ export function useContactRecords() {
     ) => {
       try {
         if (!window.api) {
-          console.error("[useContactRecords] API not available");
+          loggers.api.error("[useContactRecords] API not available");
           return false;
         }
         const result = await window.api.updateContactRecord(id, updates);
@@ -81,7 +82,7 @@ export function useContactRecords() {
         }
         return result.success;
       } catch (e) {
-        console.error("[useContactRecords] Failed to update contact:", e);
+        loggers.directory.error("[useContactRecords] Failed to update contact", { error: e });
         return false;
       }
     },
@@ -91,7 +92,7 @@ export function useContactRecords() {
   const deleteContact = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useContactRecords] API not available");
+        loggers.api.error("[useContactRecords] API not available");
         return false;
       }
       const result = await window.api.deleteContactRecord(id);
@@ -100,7 +101,7 @@ export function useContactRecords() {
       }
       return result.success;
     } catch (e) {
-      console.error("[useContactRecords] Failed to delete contact:", e);
+      loggers.directory.error("[useContactRecords] Failed to delete contact", { error: e });
       return false;
     }
   }, [mounted]);

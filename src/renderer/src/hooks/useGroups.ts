@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BridgeGroup } from "@shared/ipc";
 import { useToast } from "../components/Toast";
+import { loggers } from "../utils/logger";
 
 export function useGroups() {
   const { showToast } = useToast();
@@ -13,7 +14,7 @@ export function useGroups() {
       const data = await window.api?.getGroups();
       setGroups(data || []);
     } catch (e) {
-      console.error("Failed to load groups:", e);
+      loggers.directory.error("Failed to load groups", { error: e });
       showToast("Failed to load groups", "error");
     } finally {
       setLoading(false);

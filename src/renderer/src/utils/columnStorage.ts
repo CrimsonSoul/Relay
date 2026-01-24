@@ -1,5 +1,6 @@
 import { secureStorage } from './secureStorage';
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
 
 export type ColumnWidths = Record<string, number>;
 export type ColumnOrder<T extends string = string> = T[];

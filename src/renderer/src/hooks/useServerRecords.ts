@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ServerRecord } from "@shared/ipc";
+import { loggers } from "../utils/logger";
 
 export function useServerRecords() {
   const [servers, setServers] = useState<ServerRecord[]>([]);
@@ -10,7 +11,7 @@ export function useServerRecords() {
       const data = await window.api?.getServers();
       setServers(data || []);
     } catch (e) {
-      console.error("Failed to load servers:", e);
+      loggers.directory.error("Failed to load servers", { error: e });
     } finally {
       setLoading(false);
     }
@@ -24,7 +25,7 @@ export function useServerRecords() {
     async (server: Omit<ServerRecord, "id" | "createdAt" | "updatedAt">) => {
       try {
         if (!window.api) {
-          console.error("[useServerRecords] API not available");
+          loggers.api.error("[useServerRecords] API not available");
           return null;
         }
         const result = await window.api.addServerRecord(server);
@@ -46,7 +47,7 @@ export function useServerRecords() {
         }
         return null;
       } catch (e) {
-        console.error("[useServerRecords] Failed to add server:", e);
+        loggers.directory.error("[useServerRecords] Failed to add server", { error: e });
         return null;
       }
     },
@@ -60,7 +61,7 @@ export function useServerRecords() {
     ) => {
       try {
         if (!window.api) {
-          console.error("[useServerRecords] API not available");
+          loggers.api.error("[useServerRecords] API not available");
           return false;
         }
         const result = await window.api.updateServerRecord(id, updates);
@@ -73,7 +74,7 @@ export function useServerRecords() {
         }
         return result.success;
       } catch (e) {
-        console.error("[useServerRecords] Failed to update server:", e);
+        loggers.directory.error("[useServerRecords] Failed to update server", { error: e });
         return false;
       }
     },
@@ -83,7 +84,7 @@ export function useServerRecords() {
   const deleteServer = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useServerRecords] API not available");
+        loggers.api.error("[useServerRecords] API not available");
         return false;
       }
       const result = await window.api.deleteServerRecord(id);
@@ -92,7 +93,7 @@ export function useServerRecords() {
       }
       return result.success;
     } catch (e) {
-      console.error("[useServerRecords] Failed to delete server:", e);
+      loggers.directory.error("[useServerRecords] Failed to delete server", { error: e });
       return false;
     }
   }, []);

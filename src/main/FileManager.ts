@@ -4,21 +4,58 @@
  */
 import chokidar from "chokidar";
 import { join } from "path";
-import { type Contact, type Server, type OnCallRow, type DataError, type ImportProgress, type ContactRecord, type ServerRecord, type OnCallRecord, type TeamLayout } from "@shared/ipc";
+import { 
+  type Contact, 
+  type Server, 
+  type OnCallRow, 
+  type DataError, 
+  type ImportProgress, 
+  type ContactRecord, 
+  type ServerRecord, 
+  type OnCallRecord, 
+  type TeamLayout 
+} from "@shared/ipc";
 import fs from "fs/promises";
 import { existsSync } from "fs";
-import { generateDummyDataAsync } from "./dataUtils";
-import { stringifyCsv } from "./csvUtils";
-import { loggers } from "./logger";
-import { atomicWriteWithLock } from "./fileLock";
-import { validatePath } from "./utils/pathSafety";
 
+import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
-import { FileEmitter, CachedData } from "./FileEmitter";
-import { FileContext, parseContacts, parseServers, addContact as addContactOp, removeContact as removeContactOp, importContactsWithMapping as importContactsWithMappingOp, addServer as addServerOp, removeServer as removeServerOp, importServersWithMapping as importServersWithMappingOp, cleanupServerContacts as cleanupServerContactsOp, performBackup as performBackupOp, getGroups, getContacts as getContactsJson, getServers as getServersJson, getOnCall as getOnCallJson, updateOnCallTeamJson, deleteOnCallByTeam, renameOnCallTeamJson, reorderOnCallTeamsJson, saveAllOnCallJson, addContactRecord, deleteContactRecord, bulkUpsertContacts, findContactByEmail, addServerRecord, deleteServerRecord, bulkUpsertServers, findServerByName } from "./operations";
-import { parseCsvAsync } from "./csvUtils";
+import { 
+  FileContext, 
+  parseContacts, 
+  parseServers, 
+  addContact as addContactOp, 
+  removeContact as removeContactOp, 
+  importContactsWithMapping as importContactsWithMappingOp, 
+  addServer as addServerOp, 
+  removeServer as removeServerOp, 
+  importServersWithMapping as importServersWithMappingOp, 
+  cleanupServerContacts as cleanupServerContactsOp, 
+  performBackup as performBackupOp, 
+  getGroups, 
+  getContacts as getContactsJson, 
+  getServers as getServersJson, 
+  getOnCall as getOnCallJson, 
+  updateOnCallTeamJson, 
+  deleteOnCallByTeam, 
+  renameOnCallTeamJson, 
+  reorderOnCallTeamsJson, 
+  saveAllOnCallJson, 
+  addContactRecord, 
+  deleteContactRecord, 
+  bulkUpsertContacts, 
+  findContactByEmail, 
+  addServerRecord, 
+  deleteServerRecord, 
+  bulkUpsertServers, 
+  findServerByName 
+} from "./operations";
+import { parseCsvAsync, stringifyCsv } from "./csvUtils";
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from "@shared/csvTypes";
 import { cleanAndFormatPhoneNumber } from "@shared/phoneUtils";
+
+import { FileSystemService } from "./FileSystemService";
+import { DataCacheManager } from "./DataCacheManager";
 
 // File write coordination constants
 const WRITE_GUARD_DELAY_MS = 500; // Delay after write before allowing file watcher to react
@@ -63,24 +100,21 @@ function onCallRecordToOnCallRow(record: OnCallRecord): OnCallRow {
 
 export class FileManager implements FileContext {
   private watcher: chokidar.FSWatcher | null = null;
-  public readonly rootDir: string;
-  public readonly bundledDataPath: string;
-  private emitter: FileEmitter;
   private internalWriteCount = 0;
-  private cachedData: CachedData = { groups: [], contacts: [], servers: [], onCall: [], teamLayout: {} };
+  private fileLocks: Map<string, Promise<void>> = new Map();
+  
+  private fsService: FileSystemService;
+  private cache: DataCacheManager;
+
+  public get rootDir(): string { return this.fsService.rootDir; }
+  public get bundledDataPath(): string { return this.fsService.bundledDataPath; }
 
   constructor(rootDir: string, bundledPath: string) {
-    this.rootDir = rootDir;
-    this.bundledDataPath = bundledPath;
-    this.emitter = new FileEmitter();
+    this.fsService = new FileSystemService(rootDir, bundledPath);
+    this.cache = new DataCacheManager();
     loggers.fileManager.info(`Initialized. Root: ${this.rootDir}`);
   }
 
-  /**
-   * Initialize the FileManager by starting file watching, loading data, and performing backup.
-   * Intentionally fires async operations without awaiting for non-blocking startup.
-   * The operations complete in the background and emit events when ready.
-   */
   public init(): void {
     this.startWatching();
     void this.readAndEmit().catch(e => loggers.fileManager.error("Init readAndEmit failed", { error: e }));
@@ -94,31 +128,18 @@ export class FileManager implements FileContext {
     });
   }
 
-  public getCachedData(): CachedData {
-    return this.cachedData;
+  public getCachedData() {
+    return this.cache.getCache();
   }
 
   public async resolveExistingFile(fileNames: string[]): Promise<string | null> {
-    for (const fileName of fileNames) {
-      const isValid = await validatePath(fileName, this.rootDir);
-      if (!isValid) {
-        loggers.fileManager.warn(`Blocked potentially unsafe file resolution attempt: ${fileName}`);
-        continue;
-      }
-      const path = join(this.rootDir, fileName);
-      if (existsSync(path)) return path;
-    }
-    return null;
+    return this.fsService.resolveExistingFile(fileNames);
   }
 
-  // Check if JSON data files exist (migration completed)
   private hasJsonData(): boolean {
-    return existsSync(join(this.rootDir, "contacts.json")) ||
-           existsSync(join(this.rootDir, "servers.json")) ||
-           existsSync(join(this.rootDir, "oncall.json"));
+    return this.fsService.hasJsonData();
   }
 
-  // Load contacts - prefer JSON if available, fallback to CSV
   private async loadContacts(): Promise<Contact[]> {
     if (existsSync(join(this.rootDir, "contacts.json"))) {
       const records = await getContactsJson(this.rootDir);
@@ -127,7 +148,6 @@ export class FileManager implements FileContext {
     return parseContacts(this);
   }
 
-  // Load servers - prefer JSON if available, fallback to CSV
   private async loadServers(): Promise<Server[]> {
     if (existsSync(join(this.rootDir, "servers.json"))) {
       const records = await getServersJson(this.rootDir);
@@ -136,7 +156,6 @@ export class FileManager implements FileContext {
     return parseServers(this);
   }
 
-  // Load on-call - JSON only
   private async loadOnCall(): Promise<OnCallRow[]> {
     const records = await getOnCallJson(this.rootDir);
     return records.map(onCallRecordToOnCallRow);
@@ -144,9 +163,8 @@ export class FileManager implements FileContext {
 
   private async loadLayout(): Promise<TeamLayout> {
     try {
-      const path = join(this.rootDir, "oncall_layout.json");
-      if (existsSync(path)) {
-        const content = await fs.readFile(path, "utf-8");
+      const content = await this.fsService.readFile("oncall_layout.json");
+      if (content) {
         return JSON.parse(content);
       }
     } catch (e) {
@@ -162,7 +180,7 @@ export class FileManager implements FileContext {
 
   private async readAndEmitIncremental(filesToUpdate: Set<FileType>) {
     if (filesToUpdate.size === 0) { await this.readAndEmit(); return; }
-    this.emitter.emitReloadStarted();
+    this.cache.emitReloadStarted();
     try {
       const [g, c, s, o] = await Promise.all([
         filesToUpdate.has("groups") ? getGroups(this.rootDir) : null,
@@ -170,13 +188,24 @@ export class FileManager implements FileContext {
         filesToUpdate.has("servers") ? this.loadServers() : null,
         filesToUpdate.has("oncall") ? this.loadOnCall() : null
       ]);
-      if (g) this.cachedData.groups = g; if (c) this.cachedData.contacts = c; if (s) this.cachedData.servers = s; if (o) this.cachedData.onCall = o;
-      this.emitter.sendPayload(this.cachedData); this.emitter.emitReloadCompleted(true);
-    } catch (error) { loggers.fileManager.error("Error in incremental update", { error }); this.emitter.emitReloadCompleted(false); }
+      
+      const updates: Partial<ReturnType<typeof this.cache.getCache>> = {};
+      if (g) updates.groups = g;
+      if (c) updates.contacts = c;
+      if (s) updates.servers = s;
+      if (o) updates.onCall = o;
+      
+      this.cache.updateCache(updates);
+      this.cache.broadcast();
+      this.cache.emitReloadCompleted(true);
+    } catch (error) { 
+      loggers.fileManager.error("Error in incremental update", { error }); 
+      this.cache.emitReloadCompleted(false); 
+    }
   }
 
   public async readAndEmit() {
-    this.emitter.emitReloadStarted();
+    this.cache.emitReloadStarted();
     try {
       const [groups, contacts, servers, onCall, teamLayout] = await Promise.all([
         getGroups(this.rootDir),
@@ -185,83 +214,61 @@ export class FileManager implements FileContext {
         this.loadOnCall(),
         this.loadLayout()
       ]);
-      this.cachedData = { groups, contacts, servers, onCall, teamLayout };
-      this.emitter.sendPayload(this.cachedData);
-      this.emitter.emitReloadCompleted(true);
-    } catch (error) { loggers.fileManager.error("Error reading files", { error }); this.emitter.emitReloadCompleted(false); }
-  }
-
-  public async isDummyData(fileName: string): Promise<boolean> {
-    try {
-      const [current, bundled] = await Promise.all([
-        fs.readFile(join(this.rootDir, fileName), "utf-8"),
-        fs.readFile(join(this.bundledDataPath, fileName), "utf-8")
-      ]);
-      return current.replace(/\r\n/g, "\n").trim() === bundled.replace(/\r\n/g, "\n").trim();
-    } catch (e) {
-      loggers.fileManager.debug('isDummyData check failed', { fileName, error: e });
-      return false;
+      this.cache.updateCache({ groups, contacts, servers, onCall, teamLayout });
+      this.cache.broadcast();
+      this.cache.emitReloadCompleted(true);
+    } catch (error) { 
+      loggers.fileManager.error("Error reading files", { error }); 
+      this.cache.emitReloadCompleted(false); 
     }
   }
 
-  private fileLocks: Map<string, Promise<void>> = new Map();
+  public async isDummyData(fileName: string): Promise<boolean> {
+    return this.fsService.isDummyData(fileName);
+  }
 
   public async writeAndEmit(path: string, content: string) {
-    // In-process mutex: Ensure one write per file at a time within this instance
     const existingLock = this.fileLocks.get(path) || Promise.resolve();
-    
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
-        const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-        await atomicWriteWithLock(path, contentWithBom);
+        await this.fsService.atomicWriteFullPath(path, content);
         await this.readAndEmit();
       } finally {
-        setTimeout(() => {
-          this.internalWriteCount--;
-        }, WRITE_GUARD_DELAY_MS);
+        setTimeout(() => { this.internalWriteCount--; }, WRITE_GUARD_DELAY_MS);
       }
     }).finally(() => {
-      // Clean up the lock map to prevent memory leak
-      if (this.fileLocks.get(path) === newLock) {
-        this.fileLocks.delete(path);
-      }
+      if (this.fileLocks.get(path) === newLock) { this.fileLocks.delete(path); }
     });
-
     this.fileLocks.set(path, newLock);
     return newLock;
   }
 
   public async rewriteFileDetached(path: string, content: string) {
     const existingLock = this.fileLocks.get(path) || Promise.resolve();
-    
     const newLock = existingLock.then(async () => {
       this.internalWriteCount++;
       try {
-        const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-        await atomicWriteWithLock(path, contentWithBom);
+        await this.fsService.atomicWriteFullPath(path, content);
       } finally {
         setTimeout(() => this.internalWriteCount--, DETACHED_WRITE_GUARD_DELAY_MS);
       }
     }).finally(() => {
-      // Clean up the lock map to prevent memory leak
-      if (this.fileLocks.get(path) === newLock) {
-        this.fileLocks.delete(path);
-      }
+      if (this.fileLocks.get(path) === newLock) { this.fileLocks.delete(path); }
     });
-
     this.fileLocks.set(path, newLock);
     return newLock;
   }
+
   public safeStringify(data: unknown): string {
-    // Auto-detect: if data is not a 2D array (CSV format), use JSON
     if (typeof data === 'object' && data !== null && !Array.isArray((data as Record<string, unknown>)[0])) {
       return JSON.stringify(data, null, 2);
     }
     return stringifyCsv(data as string[][]);
   }
-  public emitError(error: DataError) { this.emitter.emitError(error); }
-  public emitProgress(progress: ImportProgress) { this.emitter.emitProgress(progress); }
+
+  public emitError(error: DataError) { this.cache.emitError(error); }
+  public emitProgress(progress: ImportProgress) { this.cache.emitProgress(progress); }
 
   // Delegated Operations
   public async removeContact(email: string) {
@@ -291,6 +298,7 @@ export class FileManager implements FileContext {
     }
     return addContactOp(this, contact);
   }
+
   public async importContactsWithMapping(path: string) {
     if (this.hasJsonData()) {
       try {
@@ -338,6 +346,7 @@ export class FileManager implements FileContext {
     }
     return importContactsWithMappingOp(this, path);
   }
+
   public async addServer(server: Partial<Server>) {
     if (this.hasJsonData()) {
       const record = {
@@ -368,6 +377,7 @@ export class FileManager implements FileContext {
     }
     return removeServerOp(this, name);
   }
+
   public async importServersWithMapping(path: string) {
     if (this.hasJsonData()) {
       try {
@@ -433,34 +443,32 @@ export class FileManager implements FileContext {
     }
     return importServersWithMappingOp(this, path);
   }
+
   public async cleanupServerContacts() {
     if (this.hasJsonData()) return; // Skip in JSON mode
     return cleanupServerContactsOp(this);
   }
+
   public async updateOnCallTeam(team: string, rows: OnCallRow[]) {
-    // Store previous state for rollback
-    const previousOnCall = [...this.cachedData.onCall];
-    
-    // OPTIMISTIC UPDATE
+    const previousOnCall = [...this.cache.getCache().onCall];
     const normalizedTeam = team.trim().toLowerCase();
-    // Maintain existing team order if possible
-    const currentOrder = Array.from(new Set(this.cachedData.onCall.map(r => r.team)));
+    const currentOrder = Array.from(new Set(previousOnCall.map(r => r.team)));
     const newFlatList: OnCallRow[] = [];
     
     if (currentOrder.some(t => t.toLowerCase() === normalizedTeam)) {
       currentOrder.forEach(t => {
         if (t.toLowerCase() === normalizedTeam) newFlatList.push(...rows);
-        else newFlatList.push(...this.cachedData.onCall.filter(r => r.team === t));
+        else newFlatList.push(...previousOnCall.filter(r => r.team === t));
       });
     } else {
-      newFlatList.push(...this.cachedData.onCall, ...rows);
+      newFlatList.push(...previousOnCall, ...rows);
     }
     
-    this.cachedData.onCall = newFlatList;
-    this.emitter.sendPayload(this.cachedData);
+    this.cache.updateCache({ onCall: newFlatList });
+    this.cache.broadcast();
 
     const records = rows.map((r) => ({
-      id: r.id, // Pass the ID
+      id: r.id,
       team: r.team,
       role: r.role,
       name: r.name,
@@ -469,11 +477,10 @@ export class FileManager implements FileContext {
     }));
     const success = await updateOnCallTeamJson(this.rootDir, team, records);
     
-    // ROLLBACK ON FAILURE
     if (!success) {
       loggers.fileManager.error('updateOnCallTeam persistence failed, rolling back');
-      this.cachedData.onCall = previousOnCall;
-      this.emitter.sendPayload(this.cachedData);
+      this.cache.updateCache({ onCall: previousOnCall });
+      this.cache.broadcast();
       this.emitError({
         type: 'persistence',
         message: 'Changes could not be saved. Please try again.',
@@ -481,25 +488,20 @@ export class FileManager implements FileContext {
       });
     }
     
-    // Skip readAndEmit() on success since we already updated cache optimistically
     return success;
   }
 
   public async removeOnCallTeam(team: string) {
-    // Store previous state for rollback
-    const previousOnCall = [...this.cachedData.onCall];
-    
-    // OPTIMISTIC UPDATE
-    this.cachedData.onCall = this.cachedData.onCall.filter(r => r.team !== team);
-    this.emitter.sendPayload(this.cachedData);
+    const previousOnCall = [...this.cache.getCache().onCall];
+    this.cache.updateCache({ onCall: previousOnCall.filter(r => r.team !== team) });
+    this.cache.broadcast();
 
     const success = await deleteOnCallByTeam(this.rootDir, team);
     
-    // ROLLBACK ON FAILURE
     if (!success) {
       loggers.fileManager.error('removeOnCallTeam persistence failed, rolling back');
-      this.cachedData.onCall = previousOnCall;
-      this.emitter.sendPayload(this.cachedData);
+      this.cache.updateCache({ onCall: previousOnCall });
+      this.cache.broadcast();
       this.emitError({
         type: 'persistence',
         message: 'Team deletion failed to save. Please try again.',
@@ -511,22 +513,18 @@ export class FileManager implements FileContext {
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
-    // Store previous state for rollback
-    const previousOnCall = [...this.cachedData.onCall];
-    
-    // OPTIMISTIC UPDATE
-    this.cachedData.onCall = this.cachedData.onCall.map(r => 
-      r.team === oldName ? { ...r, team: newName } : r
-    );
-    this.emitter.sendPayload(this.cachedData);
+    const previousOnCall = [...this.cache.getCache().onCall];
+    this.cache.updateCache({ 
+      onCall: previousOnCall.map(r => r.team === oldName ? { ...r, team: newName } : r) 
+    });
+    this.cache.broadcast();
 
     const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
     
-    // ROLLBACK ON FAILURE
     if (!success) {
       loggers.fileManager.error('renameOnCallTeam persistence failed, rolling back');
-      this.cachedData.onCall = previousOnCall;
-      this.emitter.sendPayload(this.cachedData);
+      this.cache.updateCache({ onCall: previousOnCall });
+      this.cache.broadcast();
       this.emitError({
         type: 'persistence',
         message: 'Team rename failed to save. Please try again.',
@@ -538,13 +536,11 @@ export class FileManager implements FileContext {
   }
 
   public async reorderOnCallTeams(teamOrder: string[], layout?: TeamLayout) {
-    // Store previous state for rollback
-    const previousOnCall = [...this.cachedData.onCall];
-    const previousLayout = { ...this.cachedData.teamLayout };
+    const previousOnCall = [...this.cache.getCache().onCall];
+    const previousLayout = { ...this.cache.getCache().teamLayout };
     
-    // OPTIMISTIC UPDATE: Update memory cache and broadcast to all windows immediately
     const teamMap = new Map<string, OnCallRow[]>();
-    this.cachedData.onCall.forEach(r => {
+    previousOnCall.forEach(r => {
       const list = teamMap.get(r.team) || [];
       list.push(r);
       teamMap.set(r.team, list);
@@ -562,31 +558,21 @@ export class FileManager implements FileContext {
       if (!processedTeams.has(team)) orderedRows.push(...rows);
     }
 
-    this.cachedData.onCall = orderedRows;
-    if (layout) {
-      this.cachedData.teamLayout = layout;
-    }
-    this.emitter.sendPayload(this.cachedData);
+    this.cache.updateCache({ onCall: orderedRows, teamLayout: layout || previousLayout });
+    this.cache.broadcast();
 
-    loggers.fileManager.info(`[FileManager] Reordered On-Call teams. Broadcasted new state.`);
-
-    // BACKGROUND PERSISTENCE
     this.internalWriteCount++;
     try {
       if (layout) {
-        // Save layout separately
-        const layoutPath = join(this.rootDir, "oncall_layout.json");
-        await atomicWriteWithLock(layoutPath, JSON.stringify(layout, null, 2));
+        await this.fsService.atomicWrite("oncall_layout.json", JSON.stringify(layout, null, 2));
       }
 
       const success = await reorderOnCallTeamsJson(this.rootDir, teamOrder);
       
-      // ROLLBACK ON FAILURE
       if (!success) {
         loggers.fileManager.error(`[FileManager] Failed to persist reorder (JSON), rolling back`);
-        this.cachedData.onCall = previousOnCall;
-        this.cachedData.teamLayout = previousLayout;
-        this.emitter.sendPayload(this.cachedData);
+        this.cache.updateCache({ onCall: previousOnCall, teamLayout: previousLayout });
+        this.cache.broadcast();
         this.emitError({
           type: 'persistence',
           message: 'Team reorder failed to save. Please try again.',
@@ -596,19 +582,16 @@ export class FileManager implements FileContext {
       
       return success;
     } finally {
-      setTimeout(() => {
-        this.internalWriteCount--;
-      }, WRITE_GUARD_DELAY_MS);
+      setTimeout(() => { this.internalWriteCount--; }, WRITE_GUARD_DELAY_MS);
     }
   }
 
   public async saveAllOnCall(rows: OnCallRow[]) {
-    // OPTIMISTIC UPDATE
-    this.cachedData.onCall = rows;
-    this.emitter.sendPayload(this.cachedData);
+    this.cache.updateCache({ onCall: rows });
+    this.cache.broadcast();
 
     const records = rows.map((r) => ({
-      id: r.id, // Pass ID
+      id: r.id,
       team: r.team,
       role: r.role,
       name: r.name,
@@ -619,7 +602,13 @@ export class FileManager implements FileContext {
     if (success) await this.readAndEmit();
     return success;
   }
-  public async generateDummyData() { const success = await generateDummyDataAsync(this.rootDir); if (success) { await this.readAndEmit(); } return success; }
+
+  public async generateDummyData() { 
+    const success = await require("./dataUtils").generateDummyDataAsync(this.rootDir); 
+    if (success) { await this.readAndEmit(); } 
+    return success; 
+  }
+
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }
   public destroy() { if (this.watcher) { void this.watcher.close(); this.watcher = null; } }
 }

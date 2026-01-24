@@ -6,6 +6,7 @@ import type {
   DataStats,
   MigrationResult,
 } from "@shared/ipc";
+import { loggers } from "../utils/logger";
 
 export function useDataManager() {
   const [exporting, setExporting] = useState(false);
@@ -23,7 +24,7 @@ export function useDataManager() {
       }
       return data;
     } catch (e) {
-      console.error("Failed to load data stats:", e);
+      loggers.storage.error("Failed to load data stats", { error: e });
       return null;
     }
   }, []);
@@ -34,7 +35,7 @@ export function useDataManager() {
       const result = await window.api?.exportData(options);
       return result?.success || false;
     } catch (e) {
-      console.error("Export failed:", e);
+      loggers.storage.error("Export failed", { error: e });
       return false;
     } finally {
       setExporting(false);
@@ -53,7 +54,7 @@ export function useDataManager() {
       }
       return null;
     } catch (e) {
-      console.error("Import failed:", e);
+      loggers.storage.error("Import failed", { error: e });
       return null;
     } finally {
       setImporting(false);
@@ -72,7 +73,7 @@ export function useDataManager() {
       }
       return null;
     } catch (e) {
-      console.error("Migration failed:", e);
+      loggers.storage.error("Migration failed", { error: e });
       return null;
     } finally {
       setMigrating(false);

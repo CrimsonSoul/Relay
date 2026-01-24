@@ -95,7 +95,6 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
         const oldIndex = teams.indexOf(active.id as string);
         const newIndex = teams.indexOf(over.id as string);
         void handleReorderTeams(oldIndex, newIndex);
-        showToast(`Moved ${active.id} to position ${newIndex + 1}`, 'info');
     }
   };
 

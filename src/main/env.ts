@@ -5,7 +5,8 @@
  * Should be called early in the main process startup.
  */
 
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
 
 interface EnvSchema {
   [key: string]: {

@@ -11,6 +11,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { ShortcutsModal } from "./components/ShortcutsModal";
 import { AddContactModal } from "./components/AddContactModal";
 import { Contact } from "@shared/ipc";
+import { loggers } from "./utils/logger";
 import "./styles.css";
 
 // Hooks
@@ -84,7 +85,7 @@ export function MainApp() {
         showToast(result.error || "Failed to create contact", "error");
       }
     } catch (e) {
-      console.error("[App] Failed to save contact:", e);
+      loggers.app.error("Failed to save contact", { error: e });
       showToast("Failed to create contact", "error");
     }
   };

@@ -6,7 +6,7 @@ import {
   consumeAuthRequest, 
   cacheCredentials, 
   getCachedCredentials,
-} from './credentialManager';
+} from './CredentialManager';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -30,7 +30,7 @@ vi.mock('./logger', () => ({
   }
 }));
 
-describe('credentialManager', () => {
+describe('CredentialManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
