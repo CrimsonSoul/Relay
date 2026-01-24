@@ -57,10 +57,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const results = useCommandSearch(debouncedQuery, contacts, servers, groups);
 
-  // Focus input when opened
+  // Reset selection when results change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [results]);
+  }, [debouncedQuery]); 
 
   // Scroll selected item into view
   useEffect(() => {
@@ -69,6 +69,50 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       selected?.scrollIntoView({ block: "nearest" });
     }
   }, [selectedIndex]);
+
+  // Focus input when opened
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    } else {
+      setQuery("");
+    }
+  }, [isOpen]);
+
+  // Handle result selection (Moved before handleKeyDown to fix circular dependency)
+  const handleSelect = useCallback(
+    (result: SearchResult) => {
+      switch (result.type) {
+        case "contact": {
+          const contact = result.data as Contact;
+          onAddContactToBridge(contact.email);
+          break;
+        }
+        case "group": {
+          const group = result.data as BridgeGroup;
+          onToggleGroup(group.id);
+          break;
+        }
+        case "server": {
+          onNavigateToTab("Servers");
+          break;
+        }
+        case "action": {
+          const action = result.data as { action: string; tab?: string; value?: string };
+          if (action.action === "navigate" && action.tab) {
+            onNavigateToTab(action.tab);
+          } else if (action.action === "create-contact") {
+            onOpenAddContact(action.value);
+          } else if (action.action === "add-manual" && action.value) {
+            onAddContactToBridge(action.value);
+          }
+          break;
+        }
+      }
+      onClose();
+    },
+    [onAddContactToBridge, onToggleGroup, onNavigateToTab, onClose, onOpenAddContact]
+  );
 
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
@@ -97,83 +141,28 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     [results, selectedIndex, onClose, handleSelect]
   );
 
-  // Handle result selection
-  const handleSelect = useCallback(
-    (result: SearchResult) => {
-      switch (result.type) {
-        case "contact": {
-          const contact = result.data as Contact;
-          onAddContactToBridge(contact.email);
-          break;
-        }
-        case "group": {
-          const group = result.data as BridgeGroup;
-          onToggleGroup(group.id);
-          break;
-        }
-        case "server": {
-          onNavigateToTab("Servers");
-          break;
-        }
-        case "action": {
-          const action = result.data as { action: string; tab?: string; value?: string };
-          if (action.action === "navigate" && action.tab) {
-            onNavigateToTab(action.tab);
-          } else if (action.action === "create-contact") {
-            // If value is provided (from email search), pass it to the handler if possible, 
-            // but currently onOpenAddContact doesn't take args. 
-            // The user only asked for the trigger. The Modal will open empty or we can improve this later.
-            // Wait, I should update the prop to accept an optional email.
-            onOpenAddContact(action.value);
-          } else if (action.action === "add-manual" && action.value) {
-            onAddContactToBridge(action.value);
-          }
-          break;
-        }
-      }
-      onClose();
-    },
-    [onAddContactToBridge, onToggleGroup, onNavigateToTab, onClose, onOpenAddContact]
-  );
-
   if (!isOpen) return null;
 
   return createPortal(
-    <div
-      className="animate-fade-in"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0, 0, 0, 0.4)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        display: "flex",
-        justifyContent: "center",
-        paddingTop: "15vh",
-        zIndex: 10002,
-      }}
+    <button
+      className="command-palette-overlay animate-fade-in"
       onClick={onClose}
+      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      aria-label="Close command palette backdrop"
+      type="button"
     >
       <div
-        className="animate-slide-down"
-        style={{
-          width: "100%",
-          maxWidth: "560px",
-          background: "var(--color-bg-surface-opaque)",
-          borderRadius: "12px",
-          border: "1px solid var(--color-border-medium)",
-          boxShadow: "var(--shadow-modal)",
-          overflow: "hidden",
-          height: "fit-content",
-          maxHeight: "70vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className="command-palette-container animate-slide-down"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command Palette"
+        tabIndex={-1}
       >
         {/* Search Input */}
-        <div style={{ padding: "16px", borderBottom: "1px solid var(--color-border-subtle)" }}>
-          <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <div className="command-palette-search-wrapper">
+          <div className="command-palette-input-container">
             <svg
               width="18"
               height="18"
@@ -185,6 +174,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               strokeLinejoin="round"
               style={{ position: "absolute", left: "12px", pointerEvents: "none" }}
             >
+              <title>Search Icon</title>
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -195,17 +185,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Search contacts, groups..."
-              style={{
-                width: "100%",
-                padding: "12px 12px 12px 44px",
-                fontSize: "16px",
-                background: "rgba(0, 0, 0, 0.5)",
-                border: "1px solid var(--color-border-subtle)",
-                borderRadius: "8px",
-                color: "var(--color-text-primary)",
-                outline: "none",
-                fontFamily: "inherit",
-              }}
+              className="command-palette-input"
+              aria-label="Search command palette"
             />
             <div
               style={{
@@ -225,22 +206,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
 
         {/* Results */}
-        <div
-          ref={resultsRef}
-          style={{
-            flex: 1,
-            overflowY: "auto",
-            padding: "8px",
-          }}
-        >
+        <div ref={resultsRef} className="command-palette-results" role="listbox">
           {results.length === 0 ? (
-            <div
-              style={{
-                padding: "32px",
-                textAlign: "center",
-                color: "var(--color-text-tertiary)",
-              }}
-            >
+            <div style={{ padding: "32px", textAlign: "center", color: "var(--color-text-tertiary)" }}>
               No results found
             </div>
           ) : (
@@ -249,17 +217,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 key={result.id}
                 data-index={index}
                 onClick={() => handleSelect(result)}
-                style={{
-                  padding: "10px 12px",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "12px",
-                  background: index === selectedIndex ? "rgba(255, 255, 255, 0.08)" : "transparent",
-                  transition: "background 0.1s ease",
-                }}
+                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleSelect(result)}
+                className={`command-palette-result-item ${index === selectedIndex ? "is-selected" : ""}`}
                 onMouseEnter={() => setSelectedIndex(index)}
+                role="option"
+                aria-selected={index === selectedIndex}
+                tabIndex={0}
               >
                 <div style={{ flexShrink: 0 }}>
                   <RenderIcon result={result} />
@@ -306,37 +269,19 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            padding: "10px 16px",
-            borderTop: "1px solid var(--color-border-subtle)",
-            display: "flex",
-            gap: "16px",
-            fontSize: "11px",
-            color: "var(--color-text-tertiary)",
-          }}
-        >
+        <div className="command-palette-footer">
           <span>
-            <kbd style={kbdStyle}>↑↓</kbd> Navigate
+            <kbd className="kbd-key">↑↓</kbd> Navigate
           </span>
           <span>
-            <kbd style={kbdStyle}>↵</kbd> Select
+            <kbd className="kbd-key">↵</kbd> Select
           </span>
           <span>
-            <kbd style={kbdStyle}>esc</kbd> Close
+            <kbd className="kbd-key">esc</kbd> Close
           </span>
         </div>
       </div>
-    </div>,
+    </button>,
     document.body
   );
-};
-
-const kbdStyle: React.CSSProperties = {
-  background: "var(--color-bg-surface)",
-  border: "1px solid var(--color-border-subtle)",
-  borderRadius: "3px",
-  padding: "1px 4px",
-  fontFamily: "inherit",
-  fontSize: "10px",
 };

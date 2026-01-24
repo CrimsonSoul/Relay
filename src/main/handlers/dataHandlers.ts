@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 import { FileManager } from '../FileManager';
 import { rateLimiters } from '../rateLimiter';
@@ -10,6 +10,10 @@ import {
   TeamLayoutSchema,
   validateIpcDataSafe,
 } from '../../shared/ipcValidation';
+import {
+  importContactsViaDialog,
+  importServersViaDialog
+} from '../operations';
 
 export function setupDataHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -23,32 +27,10 @@ export function setupDataHandlers(
     return result.allowed;
   };
 
-  const handleContactsImport = async (title: string): Promise<IpcResult> => {
-    const rateLimitResult = rateLimiters.fileImport.tryConsume();
-    if (!rateLimitResult.allowed) {
-      loggers.ipc.warn(`Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
-      return { success: false, rateLimited: true };
-    }
-
-    const mainWindow = getMainWindow();
-    const fileManager = getFileManager();
-    if (!mainWindow) return { success: false, error: 'Main window not found' };
-
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title,
-      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
-      properties: ['openFile']
-    });
-
-    if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
-    const success = await fileManager?.importContactsWithMapping(filePaths[0]) ?? false;
-    return { success };
-  };
-
   // Contact operations
   ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_, contact): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validatedContact = validateIpcDataSafe(ContactSchema, contact, 'ADD_CONTACT');
+    const validatedContact = validateIpcDataSafe(ContactSchema, contact, 'ADD_CONTACT', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedContact) {
       loggers.ipc.error('Invalid contact data received');
       return { success: false, error: 'Invalid contact data' };
@@ -67,9 +49,6 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  // Note: Group operations are now handled in featureHandlers.ts
-  // using JSON-based storage (GET_GROUPS, SAVE_GROUP, UPDATE_GROUP, DELETE_GROUP, IMPORT_GROUPS_FROM_CSV)
-
   // On-Call operations
   ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_, team, rows): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
@@ -77,7 +56,7 @@ export function setupDataHandlers(
       loggers.ipc.error('Invalid team parameter');
       return { success: false, error: 'Invalid team name' };
     }
-    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'UPDATE_ONCALL_TEAM');
+    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'UPDATE_ONCALL_TEAM', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedRows) {
       loggers.ipc.error('Invalid on-call rows data');
       return { success: false, error: 'Invalid on-call data' };
@@ -112,14 +91,14 @@ export function setupDataHandlers(
       loggers.ipc.error('Invalid team order parameter');
       return { success: false, error: 'Invalid team order' };
     }
-    const validatedLayout = validateIpcDataSafe(TeamLayoutSchema, layout, 'REORDER_ONCALL_TEAMS');
+    const validatedLayout = validateIpcDataSafe(TeamLayoutSchema, layout, 'REORDER_ONCALL_TEAMS', (m, d) => loggers.ipc.warn(m, d));
     const result = await getFileManager()?.reorderOnCallTeams(teamOrder, validatedLayout ?? undefined) ?? false;
     return { success: result };
   });
 
   ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'SAVE_ALL_ONCALL');
+    const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'SAVE_ALL_ONCALL', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedRows) {
       loggers.ipc.error('Invalid on-call rows data');
       return { success: false, error: 'Invalid on-call data' };
@@ -130,11 +109,17 @@ export function setupDataHandlers(
 
   // Contact import operations
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
-    return handleContactsImport('Merge Contacts CSV');
+    const mainWindow = getMainWindow();
+    const fileManager = getFileManager();
+    if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };
+    return importContactsViaDialog(fileManager, mainWindow, 'Merge Contacts CSV');
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_FILE, async () => {
-    return handleContactsImport('Merge Contacts CSV');
+    const mainWindow = getMainWindow();
+    const fileManager = getFileManager();
+    if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };
+    return importContactsViaDialog(fileManager, mainWindow, 'Merge Contacts CSV');
   });
 
   // Development only
@@ -149,7 +134,7 @@ export function setupDataHandlers(
   // Server operations
   ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_, server): Promise<IpcResult> => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validatedServer = validateIpcDataSafe(ServerSchema, server, 'ADD_SERVER');
+    const validatedServer = validateIpcDataSafe(ServerSchema, server, 'ADD_SERVER', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedServer) {
       loggers.ipc.error('Invalid server data received');
       return { success: false, error: 'Invalid server data' };
@@ -169,25 +154,10 @@ export function setupDataHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.IMPORT_SERVERS_FILE, async (): Promise<IpcResult> => {
-    const rateLimitResult = rateLimiters.fileImport.tryConsume();
-    if (!rateLimitResult.allowed) return { success: false, rateLimited: true };
-
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
-    if (!mainWindow) return { success: false, error: 'Main window not found' };
-
-    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
-      title: 'Import Servers CSV',
-      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
-      properties: ['openFile']
-    });
-
-    if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
-    const result = await fileManager?.importServersWithMapping(filePaths[0]);
-    if (result && typeof result === 'object' && 'success' in result) {
-        return result as IpcResult;
-    }
-    return { success: !!result };
+    if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };
+    return importServersViaDialog(fileManager, mainWindow, 'Import Servers CSV');
   });
 
   // Data reload

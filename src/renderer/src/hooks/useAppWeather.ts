@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { WeatherAlert, WeatherData } from "../../../shared/ipc";
 import { LocationState } from '../contexts/LocationContext';
 import { secureStorage } from '../utils/secureStorage';
-import { loggers, ErrorCategory } from '../utils/logger';
+import { loggers } from '../utils/logger';
+import { ErrorCategory } from '@shared/logging';
 import { useMounted } from './useMounted';
 
 const WEATHER_POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes

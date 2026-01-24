@@ -4,6 +4,7 @@ import { Contact } from '@shared/ipc';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 import { sanitizePhoneNumber, formatPhoneNumber } from '@shared/phoneUtils';
+import { loggers } from '../utils/logger';
 
 type Props = {
   isOpen: boolean;
@@ -47,7 +48,7 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
       await onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
       onClose();
     } catch (err) {
-      console.error('[AddContactModal] Save failed:', err);
+      loggers.directory.error('[AddContactModal] Save failed', { error: err });
       // We don't close the modal so the user can see/fix the data
     } finally {
       setIsSubmitting(false);

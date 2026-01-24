@@ -7,3 +7,4 @@ export * from "./BridgeReminderModal";
 export * from "./SaveGroupModal";
 export * from "./BridgeHistoryModal";
 export * from "./HistoryNotePrompt";
+export * from "./CompositionList";

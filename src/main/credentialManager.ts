@@ -5,7 +5,8 @@
 
 import { safeStorage } from 'electron';
 import * as crypto from 'crypto';
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
 
 type AuthCallback = (_authParams: [username: string, password: string]) => void;
 

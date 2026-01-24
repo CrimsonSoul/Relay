@@ -259,3 +259,24 @@
               0 0 20px rgba(37, 99, 235, 0.1) !important;
   z-index: 10;
 }
+
+.weather-saved-location-item {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  text-align: left;
+}
+
+.weather-saved-location-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}

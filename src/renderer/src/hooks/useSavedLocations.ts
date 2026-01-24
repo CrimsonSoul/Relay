@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { SavedLocation } from "@shared/ipc";
+import { loggers } from "../utils/logger";
 
 export function useSavedLocations() {
   const [locations, setLocations] = useState<SavedLocation[]>([]);
@@ -10,7 +11,7 @@ export function useSavedLocations() {
       const data = await window.api?.getSavedLocations();
       setLocations(data || []);
     } catch (e) {
-      console.error("Failed to load saved locations:", e);
+      loggers.location.error("Failed to load saved locations", { error: e });
     } finally {
       setLoading(false);
     }
@@ -24,7 +25,7 @@ export function useSavedLocations() {
     async (location: Omit<SavedLocation, "id">) => {
       try {
         if (!window.api) {
-          console.error("[useSavedLocations] API not available");
+          loggers.api.error("[useSavedLocations] API not available");
           return null;
         }
         const result = await window.api.saveLocation(location);
@@ -40,7 +41,7 @@ export function useSavedLocations() {
         }
         return result;
       } catch (e) {
-        console.error("[useSavedLocations] Failed to save location:", e);
+        loggers.location.error("[useSavedLocations] Failed to save location", { error: e });
         return null;
       }
     },
@@ -50,7 +51,7 @@ export function useSavedLocations() {
   const deleteLocation = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useSavedLocations] API not available");
+        loggers.api.error("[useSavedLocations] API not available");
         return false;
       }
       const success = await window.api.deleteLocation(id);
@@ -59,7 +60,7 @@ export function useSavedLocations() {
       }
       return success ?? false;
     } catch (e) {
-      console.error("[useSavedLocations] Failed to delete location:", e);
+      loggers.location.error("[useSavedLocations] Failed to delete location", { error: e });
       return false;
     }
   }, []);
@@ -67,7 +68,7 @@ export function useSavedLocations() {
   const setDefaultLocation = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useSavedLocations] API not available");
+        loggers.api.error("[useSavedLocations] API not available");
         return false;
       }
       const success = await window.api.setDefaultLocation(id);
@@ -78,7 +79,7 @@ export function useSavedLocations() {
       }
       return success ?? false;
     } catch (e) {
-      console.error("[useSavedLocations] Failed to set default location:", e);
+      loggers.location.error("[useSavedLocations] Failed to set default location", { error: e });
       return false;
     }
   }, []);
@@ -86,7 +87,7 @@ export function useSavedLocations() {
   const clearDefaultLocation = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useSavedLocations] API not available");
+        loggers.api.error("[useSavedLocations] API not available");
         return false;
       }
       const success = await window.api.clearDefaultLocation(id);
@@ -97,7 +98,7 @@ export function useSavedLocations() {
       }
       return success ?? false;
     } catch (e) {
-      console.error("[useSavedLocations] Failed to clear default location:", e);
+      loggers.location.error("[useSavedLocations] Failed to clear default location", { error: e });
       return false;
     }
   }, []);
@@ -105,7 +106,7 @@ export function useSavedLocations() {
   const updateLocation = useCallback(async (id: string, updates: Partial<Omit<SavedLocation, "id">>) => {
     try {
       if (!window.api) {
-        console.error("[useSavedLocations] API not available");
+        loggers.api.error("[useSavedLocations] API not available");
         return false;
       }
       const success = await window.api.updateLocation(id, updates);
@@ -116,7 +117,7 @@ export function useSavedLocations() {
       }
       return success ?? false;
     } catch (e) {
-      console.error("[useSavedLocations] Failed to update location:", e);
+      loggers.location.error("[useSavedLocations] Failed to update location", { error: e });
       return false;
     }
   }, []);

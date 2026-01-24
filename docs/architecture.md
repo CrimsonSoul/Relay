@@ -3,8 +3,8 @@
 This document captures deeper implementation guidance for the Electron + Vite desktop app, focusing on data handling, IPC contracts, UI tab behaviors, authentication flows, and test coverage.
 
 ## Environment and setup
-- **Stack**: Electron main process with a Vite-driven renderer (likely React/TypeScript), bundled with npm scripts.
-- **Install**: `npm install` to pull dependencies.
+- **Stack**: Electron 34 + React 18 + TypeScript 5.9.
+- **Build**: Vite + electron-vite.
 - **Development**: `npm run dev` starts Vite in watch mode and boots Electron with hot reload. Keep the console open to monitor main-process logs.
 - **Production build**: `npm run build` outputs bundled renderer assets and packages an Electron binary. Run the packaged app to verify IPC wiring outside the dev server.
 - **Linting/formatting**: Adopt project defaults (e.g., ESLint/Prettier) to keep main/renderer code style consistent.
@@ -15,57 +15,58 @@ This document captures deeper implementation guidance for the Electron + Vite de
 - **Components**: Buttons and toggles should feel "instrumented"—clear borders, high-contrast focus states, minimal radius. Avoid excessive shadows; rely on consistent elevation tokens.
 - **Motion**: Animations should be short (<150 ms) and driven by state change significance (e.g., confirming an action). No looping or decorative motion.
 
-## Data watcher and parsing
-- **Sources**: CSV/TSV or newline-delimited text dropped into a watched directory (configurable via app settings or IPC command).
-- **Watcher behavior**:
-  - Debounce file change events to avoid duplicate parses during rapid writes.
-  - Ignore partial writes by confirming file stability (size or mtime) before parsing.
-  - Emit structured progress events: `file:queued`, `file:parsing`, `file:error`, `file:complete`.
-- **Parsing**:
-  - Stream rows to reduce memory use; enforce column headers and validate required fields.
-  - Attach metadata per batch (source path, checksum, ingest timestamp) for auditing.
-  - Emit parser diagnostics (line number, offending field) back to the renderer for inline surfacing.
-- **State**: Maintain a rolling cache of recent ingests in the main process; renderer requests snapshots via IPC to hydrate views on load.
+## Data Handling & Persistence
+Relay uses a local-first architecture with JSON-based storage for high performance and privacy.
+
+- **Data Root**: Data is stored in the user's data directory (configurable).
+- **JSON Storage**: Contacts, servers, on-call schedules, and groups are stored in dedicated JSON files (e.g., `contacts.json`, `servers.json`).
+- **Legacy CSV**: Support for importing legacy CSV files (`contacts.csv`, `servers.csv`) is maintained, with migration tools available.
+- **Atomic Writes**: All file writes are atomic (using temporary files and rename) to prevent data corruption.
+- **Backups**: Automatic backups are created during critical operations (migrations, bulk imports).
+
+## Business Logic Layer (`src/main/operations`)
+To maintain clean separation of concerns, business logic is decoupled from IPC handlers and placed in `src/main/operations`.
+
+- **Modular Design**: Each domain (Contacts, Servers, On-Call) has its own operation modules (e.g., `ContactJsonOperations.ts`, `ServerOperations.ts`).
+- **Testability**: Operations are pure functions or classes that can be unit tested without mocking Electron IPC.
+- **Reusability**: Operations can be called by multiple IPC handlers or internal maintenance tasks.
 
 ## IPC API (main ↔ renderer)
 - **Principles**: Narrow, declarative channels; validate payloads; never expose `remote` or Node globals to the renderer.
-- **Suggested channels**:
-  - `watcher:setPath(path: string)`: configure the watched directory; responds with confirmation or error.
-  - `watcher:state`: request current watcher status and recent ingest metadata.
-  - `data:stream`: subscribe to parsed row batches; payload includes file id, sequence number, and rows.
-  - `data:ack(fileId: string, seq: number)`: renderer acknowledges receipt to advance backpressure window.
-  - `auth:tokenStatus`: fetch current token, expiry, and provider information.
-  - `http:request`: proxy outbound HTTP calls; main process attaches auth headers and enforces CORS/host allowlists.
-  - `log:event`: structured telemetry from renderer to main for diagnostics.
-- **Safety**: Use `contextIsolation`, `preload` scripts, and `ipcMain.handle`/`ipcRenderer.invoke` patterns. Validate types server-side before acting.
+- **Structure**: Handlers are organized by domain in `src/main/handlers/`.
+- **Validation**: All IPC inputs are validated using Zod schemas (`src/shared/ipcValidation.ts`) before processing.
+
+### Key Channels
+- **Data Records**: CRUD operations for contacts, servers, etc. (e.g., `data:addContact`, `data:getServers`).
+- **Configuration**: App settings and paths (e.g., `config:getDataPath`).
+- **Weather/Location**: External API proxies (e.g., `weather:get`).
+- **Logging**: Telemetry from renderer (e.g., `logger:toMain`).
 
 ## Tab behaviors
-- **Monitor tab**: Live stream of ingest progress and parsed anomalies. Supports filtering by file, severity, and time window. Auto-scrolls but can be paused for inspection.
-- **Review tab**: Presents parsed datasets for manual validation. Tracks unsaved annotations; block navigation away if edits are pending and prompt to save/discard.
-- **Actions tab**: Operational commands (export, dispatch alerts, mark anomalies). Requires an active authentication token; disables actions when token is absent/expired.
-- **Navigation guard**: Global route guard checks for pending edits or ongoing uploads before switching tabs. Surfaces a modal with contextual options (save, discard, stay).
+- **Compose (Assembler)**: Build and manage communication bridges. Select contacts/groups and "Draft Bridge" to initiate actions.
+- **On-Call (Personnel)**: visual grid of on-call teams. Drag-and-drop reordering, team management, and shift assignments.
+- **People (Directory)**: Searchable list of all contacts. Add, edit, or delete personnel.
+- **Servers**: Server infrastructure monitoring list with status indicators.
+- **Weather**: Dashboard for environmental awareness. Supports multiple locations and severe weather alerts.
+- **Radar**: Real-time weather radar visualization.
+- **AI Chat**: Sandboxed interface for AI assistants (Gemini, ChatGPT) with privacy controls (auto-clear on exit).
 
-## Authentication interception flow
-- **Objective**: Centralize outbound HTTP requests in the main process to avoid token leaks from the renderer.
-- **Flow**:
-  1. Renderer invokes `http:request` with method, path, and payload.
-  2. Main process retrieves stored token (refreshing if provider supports it) and applies headers.
-  3. Requests are validated against an allowlist (host and path patterns) before dispatch.
-  4. Responses (or errors with status codes) are returned via `invoke` result. 401/403 responses trigger a token-invalid event to the renderer.
-  5. Renderer responds by showing a re-auth prompt; upon success, token is stored in the main process keychain/secure storage.
-- **Interception**: Leverage `session.webRequest.onBeforeSendHeaders` to inspect/augment headers and to block disallowed domains during navigation or asset loads.
+## Authentication & Security
+- **Credential Management**: Sensitive credentials (proxies, API keys) are stored using Electron's `safeStorage` API.
+- **Interception**: `authHandlers.ts` intercepts HTTP 401 challenges and prompts the user via the renderer, securely caching the result.
+- **Context Isolation**: Enabled for all renderer windows. No direct Node.js access.
+- **CSP**: Strict Content Security Policy enforced.
 
 ## Testing strategy
-- **Unit tests**:
-  - Parser functions with varied delimiters, malformed rows, and large files.
-  - IPC handlers, especially validation branches and error propagation.
-  - UI state reducers/selectors for tabs, filters, and auth state.
+- **Unit tests (Vitest)**:
+  - Located alongside source files (`*.test.ts`) or in `__tests__` directories.
+  - Cover operations, utility functions, and validation logic.
 - **Integration tests**:
-  - Electron + Vite end-to-end using packaged or `npm run dev` builds with Playwright or Spectron alternatives.
-  - File watcher lifecycle: simulate file creation/update and assert events and renderer updates.
-  - Auth interception: mock token refresh and ensure blocked requests are surfaced correctly.
-- **Fixtures**: Store canonical CSV/TSV samples under `fixtures/` with known-good outputs and error manifests.
-- **Automation**: Wire tests to CI with per-PR runs; collect coverage especially around parser edge cases and IPC boundaries.
+  - Test IPC handlers and complex workflows.
+- **E2E tests (Playwright)**:
+  - Located in `tests/e2e/`.
+  - Verify critical user paths (startup, navigation, CRUD) on the packaged application.
+  - Use `await expect(...).toBeVisible()` patterns for reliability (avoid hardcoded waits).
 
 ## Implementation notes
 - Keep a shared `types` module for IPC payloads to reduce drift between main and renderer.

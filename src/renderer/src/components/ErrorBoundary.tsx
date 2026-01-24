@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { TactileButton } from "./TactileButton";
-import { loggers, ErrorCategory } from "../utils/logger";
+import { loggers } from "../utils/logger";
+import { ErrorCategory } from "@shared/logging";
 
 interface ErrorBoundaryProps {
   children: ReactNode;

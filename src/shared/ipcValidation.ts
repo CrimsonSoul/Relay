@@ -209,10 +209,20 @@ export function validateIpcData<T>(schema: z.ZodSchema<T>, data: unknown, contex
 /**
  * Validates and returns the parsed data, or returns null with logged error
  */
-export function validateIpcDataSafe<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T | null {
+export function validateIpcDataSafe<T>(
+  schema: z.ZodSchema<T>, 
+  data: unknown, 
+  context: string,
+  logger?: (msg: string, data?: Record<string, unknown>) => void
+): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
-    console.error(`IPC validation failed for ${context}:`, result.error.format());
+    const errorData = result.error.format();
+    if (logger) {
+      logger(`IPC validation failed for ${context}`, { error: errorData });
+    } else {
+      console.error(`IPC validation failed for ${context}:`, errorData);
+    }
     return null;
   }
   return result.data;

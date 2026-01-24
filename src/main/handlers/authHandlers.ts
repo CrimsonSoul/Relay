@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { generateAuthNonce, registerAuthRequest, consumeAuthRequest, cancelAuthRequest, cacheCredentials, getCachedCredentials } from '../credentialManager';
+import { generateAuthNonce, registerAuthRequest, consumeAuthRequest, cancelAuthRequest, cacheCredentials, getCachedCredentials } from '../CredentialManager';
 import { loggers } from '../logger';
 
 export function setupAuthHandlers() {

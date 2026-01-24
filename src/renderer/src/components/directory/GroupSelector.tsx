@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
+import { loggers } from '../../utils/logger';
 
 interface GroupSelectorProps {
   contact: Contact;
@@ -51,7 +52,7 @@ export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelect
       // Rollback on failure
       setMembership(prev => ({ ...prev, [group.id]: previousState }));
       const message = isMember ? `Failed to remove from ${group.name}` : `Failed to add to ${group.name}`;
-      console.error('[GroupSelector] Failed to toggle group membership:', error);
+      loggers.directory.error('[GroupSelector] Failed to toggle group membership', { error });
       onError?.(message);
     } finally {
       setUpdating(null);

@@ -1,7 +1,7 @@
 # Comprehensive Error Logging Guide
 
 ## Overview
-The Relay application now has a professional-grade logging system that captures errors, warnings, and debugging information throughout both the main and renderer processes. All logs are automatically saved to disk and can be used for troubleshooting.
+The Relay application has a professional-grade logging system that captures errors, warnings, and debugging information throughout both the main and renderer processes. All logs are automatically saved to disk and can be used for troubleshooting.
 
 ## Log File Locations
 
@@ -55,19 +55,6 @@ loggers.network.error('API call failed', {
   category: ErrorCategory.NETWORK,
   url: 'https://api.example.com'
 });
-
-// File system errors
-loggers.fileManager.error('Failed to read file', {
-  error: err.message,
-  stack: err.stack,
-  category: ErrorCategory.FILE_SYSTEM,
-  filepath: '/path/to/file.csv'
-});
-
-// Performance timing
-const endTimer = loggers.main.startTimer('Database query');
-// ... do work ...
-endTimer(); // Logs duration automatically
 ```
 
 ### In Renderer Process (Frontend)
@@ -77,7 +64,6 @@ import { loggers, ErrorCategory } from '../utils/logger';
 
 // Component logging
 loggers.ui.info('User opened settings modal');
-loggers.weather.debug('Fetching weather data', { location: 'Denver, CO' });
 
 // Error with user action context
 loggers.directory.error('Failed to add contact', {
@@ -86,60 +72,27 @@ loggers.directory.error('Failed to add contact', {
   category: ErrorCategory.VALIDATION,
   userAction: 'Clicked "Add Contact" button'
 });
-
-// Network errors
-loggers.network.error('Weather API request failed', {
-  error: err.message,
-  category: ErrorCategory.NETWORK,
-  userAction: 'Searched for location'
-});
 ```
 
-## Available Log Levels
+## Best Practices
 
-1. **DEBUG** - Detailed technical information (only in development)
-2. **INFO** - General informational messages
-3. **WARN** - Warning messages that might need attention
-4. **ERROR** - Error conditions that were handled
-5. **FATAL** - Critical errors that may cause app termination
+### ✅ DO's
 
-## Error Categories
+- **Use Structured Logging**: Always use the provided module loggers instead of `console`.
+- **Use Appropriate Log Levels**: 
+  - `DEBUG`: Technical details for development.
+  - `INFO`: Significant application milestones.
+  - `WARN`: Issues that don't stop the app but need attention.
+  - `ERROR`: Handled failures.
+  - `FATAL`: Critical failures that crash the app.
+- **Categorize Errors**: Always include an `ErrorCategory` for filtering.
+- **Include Context**: Use the data object to provide relevant IDs or state (excluding secrets).
 
-Use these categories to classify errors for easier filtering and analysis:
+### ❌ DON'Ts
 
-- `ErrorCategory.NETWORK` - Network/API failures
-- `ErrorCategory.FILE_SYSTEM` - File read/write errors
-- `ErrorCategory.VALIDATION` - Data validation failures
-- `ErrorCategory.AUTH` - Authentication issues
-- `ErrorCategory.DATABASE` - Database/storage errors
-- `ErrorCategory.IPC` - Main/Renderer communication errors
-- `ErrorCategory.RENDERER` - Frontend-specific errors
-- `ErrorCategory.UI` - User interface errors
-- `ErrorCategory.COMPONENT` - React component errors
-- `ErrorCategory.UNKNOWN` - Uncategorized errors
-
-## Pre-configured Module Loggers
-
-### Main Process
-- `loggers.main` - Main application lifecycle
-- `loggers.fileManager` - File operations
-- `loggers.ipc` - IPC communication
-- `loggers.security` - Security-related events
-- `loggers.auth` - Authentication
-- `loggers.weather` - Weather data fetching
-- `loggers.location` - Location services
-- `loggers.config` - Configuration changes
-- `loggers.network` - Network requests
-
-### Renderer Process
-- `loggers.app` - Application-level events
-- `loggers.weather` - Weather UI and data
-- `loggers.directory` - Personnel directory
-- `loggers.ui` - UI interactions
-- `loggers.location` - Location detection
-- `loggers.api` - API calls from renderer
-- `loggers.storage` - LocalStorage operations
-- `loggers.network` - Network requests
+- **Never use `console.log` or `console.error`**: They are not captured by the persistent logging system in production.
+- **Never log sensitive data**: Passwords, API keys, and tokens are automatically filtered, but it's best practice to avoid them entirely in log calls.
+- **Don't over-log**: Avoid logging inside tight loops or for trivial UI events.
 
 ## Advanced Features
 
@@ -159,123 +112,16 @@ await fetchContacts();
 timer(); // Logs: "Fetch contacts completed | Duration: 245ms"
 ```
 
-### Error Context
+## Available Modules
 
-The logger automatically includes:
-- **Stack traces** for all errors
-- **Memory usage** (heap used/total)
-- **Timestamps** (ISO 8601 format)
-- **Component stacks** for React errors
-- **Current URL** (renderer process)
-- **Correlation IDs** (if provided)
+### Main Process
+- `loggers.main`, `loggers.fileManager`, `loggers.ipc`, `loggers.security`, `loggers.auth`, `loggers.weather`, `loggers.location`, `loggers.config`, `loggers.network`
 
-### Example with Full Context
+### Renderer Process
+- `loggers.app`, `loggers.weather`, `loggers.directory`, `loggers.ui`, `loggers.location`, `loggers.api`, `loggers.storage`, `loggers.network`
 
-```typescript
-try {
-  await importContactsFile(filePath);
-} catch (err) {
-  loggers.fileManager.error('Contact import failed', {
-    error: err.message,
-    stack: err.stack,
-    category: ErrorCategory.FILE_SYSTEM,
-    userAction: 'Clicked "Import Contacts"',
-    correlationId: generateId(), // For tracking related events
-    filepath: filePath,
-    filesize: fs.statSync(filePath).size
-  });
-}
-```
+## Viewing Logs in Production
 
-## Replacing Old Console Statements
-
-### Before
-```typescript
-console.error('[Weather] Fetch error:', err);
-```
-
-### After
-```typescript
-loggers.weather.error('Failed to fetch weather data', {
-  error: err.message,
-  stack: err.stack,
-  category: ErrorCategory.NETWORK
-});
-```
-
-## Best Practices
-
-1. **Always include error category** for easier filtering
-2. **Add user action context** when logging from user interactions
-3. **Include relevant data** (but not sensitive information like passwords)
-4. **Use appropriate log levels** - Don't log everything as ERROR
-5. **Create module loggers** for new features: `logger.createChild('MyModule')`
-6. **Use timing for performance** monitoring when optimizing
-
-## Viewing Logs
-
-### During Development
-Logs appear in the console and are written to files.
-
-### In Production
-
-**Windows:**
-1. Press `Win + R`
-2. Type: `%AppData%\Relay\logs`
-3. Press Enter
-4. Open `relay.log` (all logs) or `errors.log` (errors only)
-
-**macOS:**
-1. Open Finder
-2. Press `Cmd+Shift+G`
-3. Type: `~/Library/Application Support/Relay/logs/`
-4. Press Go
-5. Open `relay.log` (all logs) or `errors.log` (errors only)
-
-**Linux:**
-1. Open File Manager
-2. Navigate to: `~/.config/Relay/logs/`
-3. Open `relay.log` (all logs) or `errors.log` (errors only)
-
-### Sharing Logs for Support
-Attach both `relay.log` and `errors.log` when reporting issues. These files contain the complete diagnostic history of your session.
-
-## Session Markers
-
-Each time the app starts, a session marker is written:
-
-```
-================================================================================
-SESSION START: 2026-01-09T08:56:16.000Z
-Platform: darwin | Node: v20.9.0 | Electron: 35.2.0
-================================================================================
-```
-
-This makes it easy to identify when different sessions occurred.
-
-## Statistics
-
-Get logging statistics programmatically:
-
-```typescript
-import { logger } from './logger';
-
-const stats = logger.getStats();
-console.log(stats);
-// {
-//   sessionDuration: 3456789,  // milliseconds
-//   errorCount: 3,
-//   warnCount: 7,
-//   logPath: '/Users/ryan/Library/Application Support/Relay/logs'
-// }
-```
-
-## Security
-
-The logger automatically sanitizes sensitive data:
-- `password` fields are removed
-- `token` fields are removed
-- `apiKey` fields are removed
-- `secret` fields are removed
-
-**Never** log user credentials or secrets directly.
+- **Windows**: `%AppData%\Relay\logs`
+- **macOS**: `~/Library/Application Support/Relay/logs/`
+- **Linux**: `~/.config/Relay/logs/`

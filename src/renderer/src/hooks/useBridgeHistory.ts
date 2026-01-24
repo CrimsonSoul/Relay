@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import type { BridgeHistoryEntry } from "@shared/ipc";
 import { useToast } from "../components/Toast";
+import { loggers } from "../utils/logger";
 
 export function useBridgeHistory() {
   const { showToast } = useToast();
@@ -13,7 +14,7 @@ export function useBridgeHistory() {
       const data = await window.api?.getBridgeHistory();
       setHistory(data || []);
     } catch (e) {
-      console.error("Failed to load bridge history:", e);
+      loggers.app.error("Failed to load bridge history", { error: e });
       showToast("Failed to load bridge history", "error");
     } finally {
       setLoading(false);
