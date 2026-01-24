@@ -139,23 +139,32 @@ class Logger {
   }
 
   private ensureLogDirectory(): void {
-    try {
-      if (!fs.existsSync(this.logPath)) {
-        fs.mkdirSync(this.logPath, { recursive: true });
+    // Use async operations to avoid blocking startup
+    void (async () => {
+      try {
+        await fs.promises.mkdir(this.logPath, { recursive: true });
+        
+        // Write session start marker asynchronously
+        const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
+        await fs.promises.appendFile(this.currentLogFile, sessionMarker);
+      } catch (e) {
+        // Don't use logger.error here or we might recurse
+        console.error('[Logger] Failed to create log directory:', e);
       }
-      // Write session start marker
-      const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
-      fs.appendFileSync(this.currentLogFile, sessionMarker);
-    } catch (e) {
-      // Don't use logger.error here or we might recurse
-      console.error('[Logger] Failed to create log directory:', e);
-    }
+    })();
   }
 
   private formatTimestamp(): string {
     return new Date().toISOString();
   }
 
+  /**
+   * Extracts error context from log data for structured error logging.
+   * Includes category, error codes, stack traces, performance metrics, and memory usage.
+   * 
+   * @param data - Log data containing error information
+   * @returns Structured error context with relevant diagnostic information
+   */
   private extractErrorContext(data: LogData): ErrorContext {
     const context: ErrorContext = {};
 
@@ -193,6 +202,13 @@ class Logger {
     return context;
   }
 
+  /**
+   * Formats a log entry into a human-readable string with metadata.
+   * Includes timestamp, log level, module name, message, and optional context data.
+   * 
+   * @param entry - The log entry to format
+   * @returns Formatted log string ready for console/file output
+   */
   private formatLogEntry(entry: LogEntry): string {
     const parts: string[] = [
       `[${entry.timestamp}]`,
@@ -213,6 +229,13 @@ class Logger {
     return output;
   }
 
+  /**
+   * Appends sanitized data to log output parts.
+   * Removes sensitive fields (password, token, apiKey, secret) before serialization.
+   * 
+   * @param parts - Array of log parts to append to
+   * @param data - Optional log data to sanitize and append
+   */
   private appendDataToParts(parts: string[], data?: LogData): void {
     if (!data) return;
 
@@ -225,6 +248,13 @@ class Logger {
     }
   }
 
+  /**
+   * Appends error context metadata to log output parts.
+   * Includes category, error code, correlation ID, user action, performance, and memory info.
+   * 
+   * @param parts - Array of log parts to append to
+   * @param context - Optional error context to append
+   */
   private appendErrorContextToParts(parts: string[], context?: ErrorContext): void {
     if (!context) return;
 
@@ -251,34 +281,60 @@ class Logger {
     return level >= this.config.level;
   }
 
+  /**
+   * Rotates log files when they exceed the maximum file size.
+   * Shifts existing rotated logs (e.g., relay.1.log -> relay.2.log) and creates a new active log.
+   * Uses async file operations to avoid blocking the main thread.
+   * 
+   * @param filePath - Path to the log file to check and potentially rotate
+   */
   private async rotateIfNeeded(filePath: string): Promise<void> {
     try {
-      if (!fs.existsSync(filePath)) return;
+      // Check if file exists using async API
+      try {
+        await fs.promises.access(filePath);
+      } catch {
+        return; // File doesn't exist
+      }
 
-      const stats = fs.statSync(filePath);
+      const stats = await fs.promises.stat(filePath);
       if (stats.size < this.config.maxFileSize) return;
 
       const baseName = path.basename(filePath, '.log');
       const dirName = path.dirname(filePath);
 
+      // Rotate log files asynchronously
       for (let i = this.config.maxFiles; i >= 1; i--) {
         const oldFile = path.join(dirName, `${baseName}.${i}.log`);
         const newFile = path.join(dirName, `${baseName}.${i + 1}.log`);
-        if (fs.existsSync(oldFile)) {
+        
+        try {
+          await fs.promises.access(oldFile);
+          // File exists
           if (i === this.config.maxFiles) {
-            fs.unlinkSync(oldFile);
+            await fs.promises.unlink(oldFile);
           } else {
-            fs.renameSync(oldFile, newFile);
+            await fs.promises.rename(oldFile, newFile);
           }
+        } catch {
+          // File doesn't exist, continue
         }
       }
 
-      fs.renameSync(filePath, path.join(dirName, `${baseName}.1.log`));
+      await fs.promises.rename(filePath, path.join(dirName, `${baseName}.1.log`));
     } catch (e) {
       console.error('[Logger] Failed to rotate logs:', e);
     }
   }
 
+  /**
+   * Writes a log line to the appropriate file(s) asynchronously.
+   * Uses a write queue to batch operations and avoid excessive I/O.
+   * Errors are written to both the main log and a separate error log.
+   * 
+   * @param line - The formatted log line to write
+   * @param isError - Whether this is an error-level log (written to error log too)
+   */
   private async writeToFile(line: string, isError = false): Promise<void> {
     if (!this.config.file || !this.initialized) return;
 
@@ -335,20 +391,16 @@ class Logger {
     if (this.config.console) {
       switch (level) {
         case LogLevel.DEBUG:
-          // eslint-disable-next-line no-console
           console.debug(formatted);
           break;
         case LogLevel.INFO:
-          // eslint-disable-next-line no-console
           console.info(formatted);
           break;
         case LogLevel.WARN:
-          // eslint-disable-next-line no-console
           console.warn(formatted);
           break;
         case LogLevel.ERROR:
         case LogLevel.FATAL:
-          // eslint-disable-next-line no-console
           console.error(formatted);
           break;
       }

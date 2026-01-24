@@ -1,6 +1,11 @@
 /**
  * Simple token bucket rate limiter for IPC handlers.
  * Prevents DoS from repeated expensive operations.
+ * 
+ * Implements the token bucket algorithm where:
+ * - Each operation consumes tokens from a bucket
+ * - Tokens refill at a constant rate over time
+ * - Requests are rejected when insufficient tokens are available
  */
 
 import { loggers } from './logger';
@@ -41,6 +46,10 @@ export class RateLimiter {
     this.name = config.name || 'RateLimiter';
   }
 
+  /**
+   * Refills the token bucket based on elapsed time since last refill.
+   * Tokens are added at the configured refill rate, capped at maxTokens.
+   */
   private refill(): void {
     const now = Date.now();
     const elapsedMs = now - this.lastRefill;
@@ -51,6 +60,9 @@ export class RateLimiter {
 
   /**
    * Try to consume a token. Returns whether the request is allowed.
+   * 
+   * @param cost - Number of tokens to consume (default: 1)
+   * @returns Result indicating if request is allowed and retry time if not
    */
   tryConsume(cost: number = 1): RateLimitResult {
     this.refill();
@@ -115,6 +127,11 @@ export const rateLimiters = {
 /**
  * Wrapper to apply rate limiting to an IPC handler.
  * Returns null if rate limited, otherwise executes the handler.
+ * 
+ * @param limiter - The rate limiter instance to use
+ * @param handler - The handler function to execute if not rate limited
+ * @param cost - Number of tokens to consume (default: 1)
+ * @returns Promise resolving to handler result or null if rate limited
  */
 export function withRateLimit<T>(
   limiter: RateLimiter,

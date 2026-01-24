@@ -16,7 +16,7 @@ export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
   getFileManager: () => FileManager | null,
   getDataRoot: () => string,
-  onDataPathChange: (newPath: string) => void,
+  onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string,
   createAuxWindow?: (route: string) => void
 ) {

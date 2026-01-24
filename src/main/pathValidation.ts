@@ -7,22 +7,31 @@ export interface ValidationResult {
     error?: string;
 }
 
-export function validateDataPath(path: string): ValidationResult {
+/**
+ * Validates that a data path is accessible and writable.
+ * Performs checks asynchronously to avoid blocking the main thread.
+ * 
+ * @param path - The file system path to validate
+ * @returns A promise resolving to validation result with success status and optional error message
+ */
+export async function validateDataPath(path: string): Promise<ValidationResult> {
     if (!path) {
         return { success: false, error: 'Path is empty.' };
     }
 
     try {
-        // 1. Check if we can access the path (exists or can be created)
-        if (!fs.existsSync(path)) {
-            // Try creating it to see if we have permissions
-            fs.mkdirSync(path, { recursive: true });
+        // 1. Check if path exists, create if it doesn't
+        try {
+            await fs.promises.access(path);
+        } catch {
+            // Path doesn't exist, try creating it
+            await fs.promises.mkdir(path, { recursive: true });
         }
 
         // 2. Check for write permissions by attempting to write a test file
         const testFile = join(path, '.perm-check');
-        fs.writeFileSync(testFile, 'test');
-        fs.unlinkSync(testFile);
+        await fs.promises.writeFile(testFile, 'test');
+        await fs.promises.unlink(testFile);
 
         return { success: true };
     } catch (error: unknown) {

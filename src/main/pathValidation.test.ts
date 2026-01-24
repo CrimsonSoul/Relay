@@ -35,29 +35,28 @@ describe('validateDataPath', () => {
         }
     });
 
-    it('should return success for a valid writeable directory', () => {
+    it('should return success for a valid writeable directory', async () => {
         fs.mkdirSync(testDir);
-        const result = validateDataPath(testDir);
+        const result = await validateDataPath(testDir);
         expect(result.success).toBe(true);
         expect(result.error).toBeUndefined();
     });
 
-    it('should create directory if it does not exist', () => {
-        const result = validateDataPath(testDir);
+    it('should create directory if it does not exist', async () => {
+        const result = await validateDataPath(testDir);
         expect(result.success).toBe(true);
         expect(fs.existsSync(testDir)).toBe(true);
     });
 
-    it('should return error for invalid path (mocked failure)', () => {
-         // It's hard to simulate permission errors on actual OS tmp dirs without root/chmod
-         // So we will spy on fs.writeFileSync to throw EACCES
-         const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
-             const err = new Error('Permission denied');
+    it('should return error for invalid path (mocked failure)', async () => {
+         // Spy on fs.promises.writeFile to throw EACCES
+         const spy = vi.spyOn(fs.promises, 'writeFile').mockImplementation(() => {
+             const err: NodeJS.ErrnoException = new Error('Permission denied');
              err.code = 'EACCES';
-             throw err;
+             return Promise.reject(err);
          });
 
-         const result = validateDataPath(testDir);
+         const result = await validateDataPath(testDir);
          expect(result.success).toBe(false);
          expect(result.error).toContain('Write permission denied');
 

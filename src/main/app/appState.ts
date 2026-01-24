@@ -40,9 +40,9 @@ export function getDataRoot() {
   return defaultDataPath;
 }
 
-export function handleDataPathChange(newPath: string) {
+export async function handleDataPathChange(newPath: string): Promise<void> {
   if (!state.mainWindow) return;
-  const validation = validateDataPath(newPath);
+  const validation = await validateDataPath(newPath);
   if (!validation.success) throw new Error(validation.error || 'Invalid data path');
   copyDataFiles(state.currentDataRoot, newPath);
   ensureDataFiles(newPath);

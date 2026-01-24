@@ -197,11 +197,9 @@ class RendererLogger {
     // Console output
     switch (level) {
       case LogLevel.DEBUG:
-        // eslint-disable-next-line no-console
         console.debug(formatted);
         break;
       case LogLevel.INFO:
-        // eslint-disable-next-line no-console
         console.info(formatted);
         break;
       case LogLevel.WARN:
