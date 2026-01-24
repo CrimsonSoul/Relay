@@ -16,6 +16,8 @@ export function useAIChat() {
   const [activeService, setActiveService] = useState<AIService>('gemini');
   const [isLoading, setIsLoading] = useState<Record<AIService, boolean>>({ gemini: false, chatgpt: false });
   const [lastActive, setLastActive] = useState<Record<AIService, number>>({ gemini: Date.now(), chatgpt: Date.now() });
+  const lastActiveRef = useRef(lastActive);
+  useEffect(() => { lastActiveRef.current = lastActive; }, [lastActive]);
   const [isSuspended, setIsSuspended] = useState<Record<AIService, boolean>>({ gemini: false, chatgpt: false });
 
   const geminiRef = useRef<WebviewTag>(null);
@@ -42,7 +44,7 @@ export function useAIChat() {
       chatgpt?.removeEventListener('did-start-loading', handleChatgptLoadStart);
       chatgpt?.removeEventListener('did-stop-loading', handleChatgptLoadStop);
     };
-  }, [isSuspended]);
+  }, []); // Removed isSuspended dependency
 
   // Update last active time when switching service
   useEffect(() => {
@@ -54,10 +56,12 @@ export function useAIChat() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
+      const currentLastActive = lastActiveRef.current;
+      
       setIsSuspended(prev => {
         const next = { ...prev }; let changed = false;
         for (const service of AI_SERVICES) {
-          if (service.id !== activeService && !prev[service.id] && now - lastActive[service.id] > SUSPENSION_TIMEOUT_MS) {
+          if (service.id !== activeService && !prev[service.id] && now - currentLastActive[service.id] > SUSPENSION_TIMEOUT_MS) {
             next[service.id] = true; changed = true;
           }
         }
@@ -65,7 +69,7 @@ export function useAIChat() {
       });
     }, 60000);
     return () => clearInterval(interval);
-  }, [activeService, lastActive]);
+  }, [activeService]); // Removed lastActive from dependencies
 
   const handleRefresh = () => { const webview = getWebviewRef(activeService).current; webview?.reloadIgnoringCache(); };
   const wakeUp = (service: AIService) => setIsSuspended(prev => ({ ...prev, [service]: false }));

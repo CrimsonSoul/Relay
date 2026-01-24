@@ -4,11 +4,12 @@ import { Contact } from '@shared/ipc';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 import { sanitizePhoneNumber, formatPhoneNumber } from '@shared/phoneUtils';
+import { loggers } from '../utils/logger';
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (contact: Partial<Contact>) => void;
+  onSave: (contact: Partial<Contact>) => void | Promise<void>;
   initialEmail?: string;
   editContact?: Contact; // If provided, we are in edit mode
 };
@@ -38,14 +39,20 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
     }
   }, [isOpen, initialEmail, editContact]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email) return;
 
     setIsSubmitting(true);
-    // Optimistic: Do not await.
-    onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
-    onClose();
+    try {
+      await onSave({ name, email, phone: sanitizePhoneNumber(phone), title });
+      onClose();
+    } catch (err) {
+      loggers.directory.error('[AddContactModal] Save failed', { error: err });
+      // We don't close the modal so the user can see/fix the data
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handlePhoneBlur = () => {

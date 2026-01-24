@@ -1,5 +1,6 @@
 import { secureStorage } from './secureStorage';
-import { loggers, ErrorCategory } from './logger';
+import { loggers } from './logger';
+import { ErrorCategory } from '@shared/logging';
 
 export type ColumnWidths = Record<string, number>;
 export type ColumnOrder<T extends string = string> = T[];
@@ -40,7 +41,7 @@ export function loadColumnWidths<T extends ColumnWidths>(
     return { ...defaults, ...filtered };
   } catch (e: unknown) {
     loggers.storage.error(`Failed to load column widths from ${storageKey}`, {
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
       category: ErrorCategory.RENDERER
     });
     return defaults;
@@ -58,7 +59,7 @@ export function saveColumnWidths(
     secureStorage.setItemSync(storageKey, widths);
   } catch (e: unknown) {
     loggers.storage.error(`Failed to save column widths to ${storageKey}`, {
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
       category: ErrorCategory.RENDERER
     });
   }
@@ -88,7 +89,7 @@ export function loadColumnOrder<T extends string>(
     return parsed as T[];
   } catch (e: unknown) {
     loggers.storage.error(`Failed to load column order from ${storageKey}`, {
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
       category: ErrorCategory.RENDERER
     });
     return defaults;
@@ -106,7 +107,7 @@ export function saveColumnOrder<T extends string>(
     secureStorage.setItemSync(storageKey, order);
   } catch (e: unknown) {
     loggers.storage.error(`Failed to save column order to ${storageKey}`, {
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
       category: ErrorCategory.RENDERER
     });
   }
@@ -117,10 +118,12 @@ export function saveColumnOrder<T extends string>(
  */
 export function clearColumnStorage(...storageKeys: string[]): void {
   try {
-    storageKeys.forEach(key => secureStorage.removeItem(key));
+    for (const key of storageKeys) {
+      secureStorage.removeItem(key);
+    }
   } catch (e: unknown) {
     loggers.storage.error('Failed to clear column storage', {
-      error: e.message,
+      error: e instanceof Error ? e.message : String(e),
       category: ErrorCategory.RENDERER
     });
   }

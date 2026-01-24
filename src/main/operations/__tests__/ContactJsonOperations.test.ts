@@ -1,16 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getContacts } from '../ContactJsonOperations';
-import fs from 'fs/promises';
-import { existsSync } from 'fs';
 
 // Mock everything needed for fileLock
-vi.mock('proper-lockfile', () => ({
-  default: {
-    lock: vi.fn().mockResolvedValue(vi.fn()),
-    check: vi.fn().mockResolvedValue(false)
-  }
-}));
-
 vi.mock('../../fileLock', () => {
   // Use a factory function to allow individual tests to override
   return {
@@ -44,7 +34,7 @@ describe('ContactJsonOperations Data Safety', () => {
   });
 
   it('should throw error on transient read failure (EACCES) to prevent data wipe', async () => {
-    const error: any = new Error('EACCES');
+    const error = new Error('EACCES') as NodeJS.ErrnoException;
     error.code = 'EACCES';
     vi.mocked(readWithLock).mockRejectedValue(error);
 
@@ -55,7 +45,7 @@ describe('ContactJsonOperations Data Safety', () => {
   });
 
   it('should return empty array on file not found (ENOENT)', async () => {
-    const error: any = new Error('ENOENT');
+    const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';
     vi.mocked(readWithLock).mockRejectedValue(error);
     
@@ -65,7 +55,7 @@ describe('ContactJsonOperations Data Safety', () => {
   });
 
   it('should return empty array when existsSync is true but readFile returns ENOENT (race condition)', async () => {
-    const error: any = new Error('ENOENT');
+    const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';
     vi.mocked(readWithLock).mockRejectedValue(error);
 

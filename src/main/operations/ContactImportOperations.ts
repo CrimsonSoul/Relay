@@ -1,11 +1,41 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { dialog, BrowserWindow } from "electron";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { cleanAndFormatPhoneNumber } from '../../shared/phoneUtils';
 import { CONTACT_COLUMN_ALIASES } from "@shared/csvTypes";
 import { FileContext, CONTACT_FILES } from "./FileContext";
 import { loggers } from "../logger";
+import { rateLimiters } from "../rateLimiter";
+
+/**
+ * Show a file dialog and import contacts from the selected CSV file.
+ */
+export async function importContactsViaDialog(
+  ctx: FileContext,
+  browserWindow: BrowserWindow,
+  title: string = 'Import Contacts CSV'
+): Promise<{ success: boolean; rateLimited?: boolean; error?: string }> {
+  const rateLimitResult = rateLimiters.fileImport.tryConsume();
+  if (!rateLimitResult.allowed) {
+    loggers.ipc.warn(`Import blocked, retry after ${rateLimitResult.retryAfterMs}ms`);
+    return { success: false, rateLimited: true };
+  }
+
+  const { canceled, filePaths } = await dialog.showOpenDialog(browserWindow, {
+    title,
+    filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+    properties: ['openFile']
+  });
+
+  if (canceled || filePaths.length === 0) {
+    return { success: false, error: 'Cancelled' };
+  }
+
+  const success = await importContactsWithMapping(ctx, filePaths[0]);
+  return { success };
+}
 
 /**
  * Import contacts from an external CSV file, merging with existing data

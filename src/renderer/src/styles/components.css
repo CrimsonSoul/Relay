@@ -23,7 +23,7 @@
   transition: all var(--transition-smooth);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  outline: none;
+  outline: transparent;
   overflow: hidden;
   user-select: none;
   white-space: nowrap;
@@ -241,4 +241,42 @@
 .tooltip-container:hover .tooltip-content {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Card Lift Effect */
+.lift-on-hover {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+              background 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.lift-on-hover:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 
+              0 0 20px rgba(37, 99, 235, 0.1) !important;
+  z-index: 10;
+}
+
+.weather-saved-location-item {
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  transition: background 0.1s ease;
+  outline: none;
+  background: transparent;
+  width: 100%;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  text-align: left;
+}
+
+.weather-saved-location-item:hover {
+  background: rgba(255, 255, 255, 0.05);
 }

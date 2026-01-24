@@ -1,6 +1,9 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { loggers, ErrorCategory } from '../logger';
+import { SearchQuerySchema } from '../../shared/ipcValidation';
+import { loggers } from '../logger';
+import { ErrorCategory } from '@shared/logging';
+import { checkNetworkRateLimit } from '../rateLimiter';
 
 // NWS API Response Types (for type safety)
 interface NWSAlertProperties {
@@ -29,9 +32,16 @@ interface NWSAlertsResponse {
 export function setupWeatherHandlers() {
   // Weather Handlers
   ipcMain.handle(IPC_CHANNELS.GET_WEATHER, async (_event, lat, lon) => {
+    if (!checkNetworkRateLimit()) return null;
     try {
       const nLat = Number(lat);
       const nLon = Number(lon);
+
+      if (isNaN(nLat) || isNaN(nLon) || nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) {
+        loggers.weather.warn('Invalid coordinates for weather fetch', { lat, lon });
+        throw new Error('Invalid coordinates');
+      }
+
       const res = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16`
       );
@@ -50,8 +60,14 @@ export function setupWeatherHandlers() {
   });
 
   ipcMain.handle(IPC_CHANNELS.SEARCH_LOCATION, async (_event, query: string) => {
+    if (!checkNetworkRateLimit()) return { results: [] };
     try {
-      const trimmedQuery = query.trim();
+      const validated = SearchQuerySchema.safeParse(query);
+      if (!validated.success) {
+        loggers.weather.warn('Invalid search query', { error: validated.error.message, query });
+        return { results: [] };
+      }
+      const trimmedQuery = validated.data.trim();
       
       // Handle Zip Code (US 5-digit)
       if (/^\d{5}$/.test(trimmedQuery)) {
@@ -76,7 +92,7 @@ export function setupWeatherHandlers() {
               };
             }
           }
-        } catch (err) {
+        } catch (_err) {
           loggers.weather.warn('Zip code search failed, falling back to general search', { query: trimmedQuery });
         }
       }
@@ -115,10 +131,15 @@ export function setupWeatherHandlers() {
 
   // Weather Alerts (NWS API - US only)
   ipcMain.handle(IPC_CHANNELS.GET_WEATHER_ALERTS, async (_event, lat, lon) => {
+    if (!checkNetworkRateLimit()) return [];
     try {
       const nLat = Number(lat);
       const nLon = Number(lon);
-      if (isNaN(nLat) || isNaN(nLon)) return [];
+      
+      if (isNaN(nLat) || isNaN(nLon) || nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) {
+        loggers.weather.warn('Invalid coordinates for alerts fetch', { lat, lon });
+        return [];
+      }
 
       // NWS requires a point lookup first (optional check, but NWS alerts endpoint also takes point)
       // Point lookup is good for verifying it's in a supported area

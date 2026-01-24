@@ -5,8 +5,6 @@
  */
 
 import { join } from "path";
-import fs from "fs/promises";
-import { existsSync } from "fs";
 import type { ServerRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -30,10 +28,15 @@ export async function getServers(rootDir: string): Promise<ServerRecord[]> {
     const contents = await readWithLock(path);
     if (!contents) return [];
     
-    const data = JSON.parse(contents);
-    return Array.isArray(data) ? data : [];
+    try {
+      const data = JSON.parse(contents);
+      return Array.isArray(data) ? data : [];
+    } catch (parseError) {
+      loggers.fileManager.error("[ServerJsonOperations] JSON parse error:", { error: parseError, path });
+      return [];
+    }
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (e instanceof Error && (e as NodeJS.ErrnoException).code === "ENOENT") return [];
     loggers.fileManager.error("[ServerJsonOperations] getServers error:", { error: e });
     throw e;
   }

@@ -5,8 +5,6 @@
  */
 
 import { join } from "path";
-import fs from "fs/promises";
-import { existsSync } from "fs";
 import type { ContactRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -15,7 +13,7 @@ const CONTACTS_FILE = "contacts.json";
 const CONTACTS_FILE_PATH = (rootDir: string) => join(rootDir, CONTACTS_FILE);
 
 function generateId(): string {
-  return `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `contact_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
 }
 
 /**
@@ -30,10 +28,15 @@ export async function getContacts(rootDir: string): Promise<ContactRecord[]> {
     const contents = await readWithLock(path);
     if (!contents) return [];
     
-    const data = JSON.parse(contents);
-    return Array.isArray(data) ? data : [];
+    try {
+      const data = JSON.parse(contents);
+      return Array.isArray(data) ? data : [];
+    } catch (parseError) {
+      loggers.fileManager.error("[ContactJsonOperations] JSON parse error:", { error: parseError, path });
+      return [];
+    }
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return [];
+    if (e instanceof Error && (e as NodeJS.ErrnoException).code === "ENOENT") return [];
     loggers.fileManager.error("[ContactJsonOperations] getContacts error:", { error: e });
     throw e;
   }

@@ -16,3 +16,6 @@ export { WeatherAlertCard } from "./WeatherAlertCard";
 export { HourlyForecast } from "./HourlyForecast";
 export { DailyForecast } from "./DailyForecast";
 export { RadarPanel } from "./RadarPanel";
+export { WeatherHeader } from "./WeatherHeader";
+export { SaveLocationModal } from "./SaveLocationModal";
+export { RenameLocationModal } from "./RenameLocationModal";

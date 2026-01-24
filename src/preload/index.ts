@@ -46,6 +46,7 @@ const api: BridgeAPI = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.IMPORT_PROGRESS, handler);
   },
 
+  getInitialData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_GET_INITIAL),
   reloadData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_RELOAD),
 
   onAuthRequested: (callback) => {
@@ -69,9 +70,9 @@ const api: BridgeAPI = {
 
   subscribeToRadar: (callback) => {
     ipcRenderer.removeAllListeners(IPC_CHANNELS.RADAR_DATA);
-    ipcRenderer.on(IPC_CHANNELS.RADAR_DATA, (_event, data: RadarSnapshot) => {
-      callback(data);
-    });
+    const handler = (_event: Electron.IpcRendererEvent, data: RadarSnapshot) => callback(data);
+    ipcRenderer.on(IPC_CHANNELS.RADAR_DATA, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.RADAR_DATA, handler);
   },
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
@@ -89,11 +90,26 @@ const api: BridgeAPI = {
   updateOnCallTeam: (team, rows) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_TEAM, team, rows),
   removeOnCallTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_ONCALL_TEAM, team),
   renameOnCallTeam: (oldName, newName) => ipcRenderer.invoke(IPC_CHANNELS.RENAME_ONCALL_TEAM, oldName, newName),
-  reorderOnCallTeams: (teamOrder) => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder),
+  reorderOnCallTeams: (teamOrder, layout) => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder, layout),
   saveAllOnCall: (rows) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALL_ONCALL, rows),
   generateDummyData: () => ipcRenderer.invoke(IPC_CHANNELS.GENERATE_DUMMY_DATA),
   getIpLocation: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IP_LOCATION),
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
+
+  // Drag Sync
+  notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),
+  notifyDragStop: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STOPPED),
+  onDragStateChange: (callback) => {
+    const startHandler = () => callback(true);
+    const stopHandler = () => callback(false);
+    ipcRenderer.on(IPC_CHANNELS.DRAG_STARTED, startHandler);
+    ipcRenderer.on(IPC_CHANNELS.DRAG_STOPPED, stopHandler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.DRAG_STARTED, startHandler);
+      ipcRenderer.removeListener(IPC_CHANNELS.DRAG_STOPPED, stopHandler);
+    };
+  },
+
   // Bridge Groups
   getGroups: () => ipcRenderer.invoke(IPC_CHANNELS.GET_GROUPS),
   saveGroup: (group) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_GROUP, group),
@@ -127,10 +143,6 @@ const api: BridgeAPI = {
   deleteServerRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_SERVER_RECORD, id),
   // OnCall Records (JSON)
   getOnCall: () => ipcRenderer.invoke(IPC_CHANNELS.GET_ONCALL),
-  addOnCallRecord: (record) => ipcRenderer.invoke(IPC_CHANNELS.ADD_ONCALL_RECORD, record),
-  updateOnCallRecord: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_RECORD, id, updates),
-  deleteOnCallRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_RECORD, id),
-  deleteOnCallByTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_BY_TEAM, team),
   // Data Manager
   exportData: (options) => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_DATA, options),
   importData: (category) => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_DATA, category),

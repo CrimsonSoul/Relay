@@ -49,3 +49,5 @@ export const VirtualRow = memo(({ index, style, data }: ListChildComponentProps<
     />
   );
 });
+
+VirtualRow.displayName = 'VirtualRow';

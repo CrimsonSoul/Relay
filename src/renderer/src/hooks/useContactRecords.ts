@@ -1,20 +1,27 @@
 import { useState, useEffect, useCallback } from "react";
 import type { ContactRecord } from "@shared/ipc";
+import { useMounted } from "./useMounted";
+import { loggers } from "../utils/logger";
 
 export function useContactRecords() {
+  const mounted = useMounted();
   const [contacts, setContacts] = useState<ContactRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadContacts = useCallback(async () => {
     try {
       const data = await window.api?.getContacts();
-      setContacts(data || []);
+      if (mounted.current) {
+        setContacts(data || []);
+      }
     } catch (e) {
-      console.error("Failed to load contacts:", e);
+      loggers.directory.error("Failed to load contacts", { error: e });
     } finally {
-      setLoading(false);
+      if (mounted.current) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     void loadContacts();
@@ -24,31 +31,35 @@ export function useContactRecords() {
     async (contact: Omit<ContactRecord, "id" | "createdAt" | "updatedAt">) => {
       try {
         if (!window.api) {
-          console.error("[useContactRecords] API not available");
+          loggers.api.error("[useContactRecords] API not available");
           return null;
         }
         const result = await window.api.addContactRecord(contact);
-        if (result) {
-          setContacts((prev) => {
-            // Check if this was an update (same email)
-            const existingIndex = prev.findIndex(
-              (c) => c.email.toLowerCase() === result.email.toLowerCase()
-            );
-            if (existingIndex !== -1) {
-              const updated = [...prev];
-              updated[existingIndex] = result;
-              return updated;
-            }
-            return [...prev, result];
-          });
+        if (result.success && result.data) {
+          const record = result.data;
+          if (mounted.current) {
+            setContacts((prev) => {
+              // Check if this was an update (same email)
+              const existingIndex = prev.findIndex(
+                (c) => c.email.toLowerCase() === record.email.toLowerCase()
+              );
+              if (existingIndex !== -1) {
+                const updated = [...prev];
+                updated[existingIndex] = record;
+                return updated;
+              }
+              return [...prev, record];
+            });
+          }
+          return record;
         }
-        return result;
+        return null;
       } catch (e) {
-        console.error("[useContactRecords] Failed to add contact:", e);
+        loggers.directory.error("[useContactRecords] Failed to add contact", { error: e });
         return null;
       }
     },
-    []
+    [mounted]
   );
 
   const updateContact = useCallback(
@@ -58,42 +69,42 @@ export function useContactRecords() {
     ) => {
       try {
         if (!window.api) {
-          console.error("[useContactRecords] API not available");
+          loggers.api.error("[useContactRecords] API not available");
           return false;
         }
-        const success = await window.api.updateContactRecord(id, updates);
-        if (success) {
+        const result = await window.api.updateContactRecord(id, updates);
+        if (result.success && mounted.current) {
           setContacts((prev) =>
             prev.map((c) =>
               c.id === id ? { ...c, ...updates, updatedAt: Date.now() } : c
             )
           );
         }
-        return success ?? false;
+        return result.success;
       } catch (e) {
-        console.error("[useContactRecords] Failed to update contact:", e);
+        loggers.directory.error("[useContactRecords] Failed to update contact", { error: e });
         return false;
       }
     },
-    []
+    [mounted]
   );
 
   const deleteContact = useCallback(async (id: string) => {
     try {
       if (!window.api) {
-        console.error("[useContactRecords] API not available");
+        loggers.api.error("[useContactRecords] API not available");
         return false;
       }
-      const success = await window.api.deleteContactRecord(id);
-      if (success) {
+      const result = await window.api.deleteContactRecord(id);
+      if (result.success && mounted.current) {
         setContacts((prev) => prev.filter((c) => c.id !== id));
       }
-      return success ?? false;
+      return result.success;
     } catch (e) {
-      console.error("[useContactRecords] Failed to delete contact:", e);
+      loggers.directory.error("[useContactRecords] Failed to delete contact", { error: e });
       return false;
     }
-  }, []);
+  }, [mounted]);
 
   const findByEmail = useCallback(
     (email: string) => {

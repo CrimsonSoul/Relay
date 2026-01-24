@@ -6,13 +6,15 @@ interface TooltipProps {
     children: React.ReactElement;
     position?: 'top' | 'bottom' | 'left' | 'right';
     width?: string;
+    block?: boolean;
 }
 
 export const Tooltip: React.FC<TooltipProps> = ({
     content,
     children,
     position = 'top',
-    width = 'max-content'
+    width = 'max-content',
+    block = false
 }) => {
     const [isVisible, setIsVisible] = useState(false);
     const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -20,9 +22,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
     useEffect(() => {
         if (isVisible && triggerRef.current) {
-            // Retrieve the first child element if it exists; otherwise fall back to the wrapper.
-            // This ensures we get the correct bounding box even if the wrapper has collapsed 
-            // due to an absolutely positioned child (e.g. SidebarToggleHandle).
             const target = triggerRef.current.firstElementChild || triggerRef.current;
             const rect = target.getBoundingClientRect();
             const scrollY = window.scrollY;
@@ -31,7 +30,6 @@ export const Tooltip: React.FC<TooltipProps> = ({
             let t = 0;
             let l = 0;
 
-            // Basic positioning logic - can be refined
             switch (position) {
                 case 'bottom':
                     t = rect.bottom + scrollY + 8;
@@ -72,7 +70,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
                 ref={triggerRef}
                 onMouseEnter={() => setIsVisible(true)}
                 onMouseLeave={() => setIsVisible(false)}
-                style={{ display: 'inline-flex', minWidth: 0, flexShrink: 1 }}
+                style={{ display: block ? 'block' : 'inline-flex', minWidth: 0, width: block ? '100%' : 'auto' }}
             >
                 {children}
             </div>

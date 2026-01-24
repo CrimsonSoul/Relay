@@ -1,6 +1,9 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
+const ALLOWED_AUX_ROUTES = new Set(['popout/board']);
+const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
+
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
   createAuxWindow?: (route: string) => void
@@ -12,12 +15,35 @@ export function setupWindowHandlers(
   });
 
   ipcMain.on(IPC_CHANNELS.WINDOW_OPEN_AUX, (_, route: string) => {
+    if (typeof route !== 'string' || !ALLOWED_AUX_ROUTES.has(route)) {
+      return;
+    }
     createAuxWindow?.(route);
+  });
+
+  // Drag Sync - broadcast to all windows
+  ipcMain.on(IPC_CHANNELS.DRAG_STARTED, () => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.DRAG_STARTED);
+      }
+    });
+  });
+
+  ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, () => {
+    BrowserWindow.getAllWindows().forEach(win => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.DRAG_STOPPED);
+      }
+    });
   });
 
   // Clipboard - use Electron's native clipboard API
   ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (_, text: string) => {
     try {
+      if (typeof text !== 'string' || text.length > MAX_CLIPBOARD_LENGTH) {
+        return false;
+      }
       clipboard.writeText(text);
       return true;
     } catch {

@@ -8,6 +8,7 @@ import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import type { NotesData } from "@shared/ipc";
+import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
 import { modifyJsonWithLock } from "../fileLock";
 
@@ -30,7 +31,7 @@ export async function getNotes(rootDir: string): Promise<NotesData> {
       servers: data.servers || {},
     };
   } catch (e) {
-    if ((e as any)?.code === "ENOENT") return emptyNotes;
+    if (isNodeError(e) && e.code === "ENOENT") return emptyNotes;
     loggers.fileManager.error("[NotesOperations] getNotes error:", { error: e });
     throw e;
   }
