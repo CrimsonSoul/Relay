@@ -244,7 +244,7 @@ describe('ContactOperations', () => {
       expect(phoneValue).toBeDefined();
     });
 
-    it('should create columns if they dont exist', async () => {
+    it("should create columns if they don't exist", async () => {
       const existingCsv = 'OldColumn\nOldValue';
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(fs.readFile).mockResolvedValue(existingCsv);

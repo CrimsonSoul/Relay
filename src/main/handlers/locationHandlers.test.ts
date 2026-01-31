@@ -33,10 +33,13 @@ vi.mock('../../shared/ipcValidation', () => ({
 }));
 
 describe('locationHandlers', () => {
-  let mockMainWindow: any;
+  let mockMainWindow: Partial<BrowserWindow> & {
+    webContents: { send: ReturnType<typeof vi.fn> };
+    isDestroyed: ReturnType<typeof vi.fn>;
+  };
   let getMainWindow: () => BrowserWindow | null;
-  let ipLocationHandler: any;
-  let radarDataHandler: any;
+  let ipLocationHandler: (() => Promise<unknown>) | undefined;
+  let radarDataHandler: ((event: unknown, payload: unknown) => void) | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();

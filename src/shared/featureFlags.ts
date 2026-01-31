@@ -302,20 +302,17 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
  * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: (props: P) => React.ReactElement | null,
+  Component: (props: P) => JSX.Element | null,
   flagName: keyof FeatureFlags,
-  fallback?: React.ReactNode
-): (props: P) => React.ReactElement | null {
-  return function FeatureFlagWrapper(props: P): React.ReactElement | null {
+  fallback?: JSX.Element | null
+): (props: P) => JSX.Element | null {
+  return function FeatureFlagWrapper(props: P): JSX.Element | null {
     if (isFeatureEnabled(flagName)) {
       return Component(props);
     }
-    return fallback as React.ReactElement | null || null;
+    return fallback ?? null;
   };
 }
 
-// Type alias for React types (will be resolved at usage site where React is imported)
-declare namespace React {
-  type ReactElement = unknown;
-  type ReactNode = unknown;
-}
+// Note: JSX.Element is a global type available when JSX is used.
+// This avoids importing React while maintaining type safety.

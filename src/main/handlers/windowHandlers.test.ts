@@ -19,8 +19,8 @@ vi.mock('electron', () => ({
 }));
 
 describe('windowHandlers', () => {
-  let mockWindow: any;
-  let mockEvent: any;
+  let mockWindow: Partial<BrowserWindow>;
+  let mockEvent: { sender: typeof mockWindow.webContents };
   let getMainWindow: () => BrowserWindow | null;
 
   beforeEach(() => {
@@ -193,7 +193,9 @@ describe('windowHandlers', () => {
           call => call[0] === IPC_CHANNELS.WINDOW_OPEN_AUX
         )?.[1];
 
-        handler?.({}, 123 as any);
+        // Testing with non-string input (number) to verify validation
+        const invalidInput = 123;
+        handler?.({}, invalidInput as never);
 
         expect(createAuxWindow).not.toHaveBeenCalled();
       });
@@ -201,9 +203,15 @@ describe('windowHandlers', () => {
 
     describe('DRAG_STARTED and DRAG_STOPPED', () => {
       it('should broadcast DRAG_STARTED to all windows', () => {
-        const window1 = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-        const window2 = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2] as any);
+        const window1 = { 
+          isDestroyed: vi.fn(() => false), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        const window2 = { 
+          isDestroyed: vi.fn(() => false), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2]);
 
         setupWindowHandlers(getMainWindow);
         const handler = vi.mocked(ipcMain.on).mock.calls.find(
@@ -212,14 +220,20 @@ describe('windowHandlers', () => {
 
         handler?.();
 
-        expect(window1.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STARTED);
-        expect(window2.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STARTED);
+        expect((window1 as any).webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STARTED);
+        expect((window2 as any).webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STARTED);
       });
 
       it('should broadcast DRAG_STOPPED to all windows', () => {
-        const window1 = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-        const window2 = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2] as any);
+        const window1 = { 
+          isDestroyed: vi.fn(() => false), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        const window2 = { 
+          isDestroyed: vi.fn(() => false), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2]);
 
         setupWindowHandlers(getMainWindow);
         const handler = vi.mocked(ipcMain.on).mock.calls.find(
@@ -228,14 +242,20 @@ describe('windowHandlers', () => {
 
         handler?.();
 
-        expect(window1.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STOPPED);
-        expect(window2.webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STOPPED);
+        expect((window1 as any).webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STOPPED);
+        expect((window2 as any).webContents.send).toHaveBeenCalledWith(IPC_CHANNELS.DRAG_STOPPED);
       });
 
       it('should skip destroyed windows when broadcasting', () => {
-        const window1 = { isDestroyed: vi.fn(() => false), webContents: { send: vi.fn() } };
-        const window2 = { isDestroyed: vi.fn(() => true), webContents: { send: vi.fn() } };
-        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2] as any);
+        const window1 = { 
+          isDestroyed: vi.fn(() => false), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        const window2 = { 
+          isDestroyed: vi.fn(() => true), 
+          webContents: { send: vi.fn() } 
+        } as unknown as BrowserWindow;
+        vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([window1, window2]);
 
         setupWindowHandlers(getMainWindow);
         const handler = vi.mocked(ipcMain.on).mock.calls.find(
@@ -244,8 +264,8 @@ describe('windowHandlers', () => {
 
         handler?.();
 
-        expect(window1.webContents.send).toHaveBeenCalled();
-        expect(window2.webContents.send).not.toHaveBeenCalled();
+        expect((window1 as any).webContents.send).toHaveBeenCalled();
+        expect((window2 as any).webContents.send).not.toHaveBeenCalled();
       });
     });
 
@@ -268,7 +288,9 @@ describe('windowHandlers', () => {
           call => call[0] === IPC_CHANNELS.CLIPBOARD_WRITE
         )?.[1];
 
-        const result = await handler?.({}, 123 as any);
+        // Testing with non-string input (number) to verify validation
+        const invalidInput = 123;
+        const result = await handler?.({}, invalidInput as never);
 
         expect(clipboard.writeText).not.toHaveBeenCalled();
         expect(result).toBe(false);

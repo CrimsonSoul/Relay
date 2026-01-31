@@ -312,8 +312,7 @@ function saveUserPreference(key: string, value: unknown): void {
 
 import { useState, useEffect } from 'react';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function useDataLoader<T>(fetchFn: () => Promise<T>, deps: any[]) {
+function useDataLoader<T>(fetchFn: () => Promise<T>, deps: readonly unknown[]) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
   
