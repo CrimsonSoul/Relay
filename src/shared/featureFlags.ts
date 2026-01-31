@@ -302,14 +302,17 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
  * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: (props: P) => any, // Function component type without React dependency
+  Component: (props: P) => JSX.Element | null,
   flagName: keyof FeatureFlags,
-  fallback?: any
-) {
-  return function FeatureFlagWrapper(props: P) {
+  fallback?: JSX.Element | null
+): (props: P) => JSX.Element | null {
+  return function FeatureFlagWrapper(props: P): JSX.Element | null {
     if (isFeatureEnabled(flagName)) {
       return Component(props);
     }
-    return fallback || null;
+    return fallback ?? null;
   };
 }
+
+// Note: JSX.Element is a global type available when JSX is used.
+// This avoids importing React while maintaining type safety.
