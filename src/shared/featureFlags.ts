@@ -302,14 +302,20 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
  * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: (props: P) => any, // Function component type without React dependency
+  Component: (props: P) => React.ReactElement | null,
   flagName: keyof FeatureFlags,
-  fallback?: any
-) {
-  return function FeatureFlagWrapper(props: P) {
+  fallback?: React.ReactNode
+): (props: P) => React.ReactElement | null {
+  return function FeatureFlagWrapper(props: P): React.ReactElement | null {
     if (isFeatureEnabled(flagName)) {
       return Component(props);
     }
-    return fallback || null;
+    return fallback as React.ReactElement | null || null;
   };
+}
+
+// Type alias for React types (will be resolved at usage site where React is imported)
+declare namespace React {
+  type ReactElement = unknown;
+  type ReactNode = unknown;
 }

@@ -1,6 +1,6 @@
 
 /* eslint-disable no-undef */
-import { _electron as electron, test, expect } from '@playwright/test';
+import { _electron as electron, test, expect, ElectronApplication, Page } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -8,8 +8,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 test.describe('Vital Critical Path', () => {
-  let electronApp: any;
-  let window: any;
+  let electronApp: ElectronApplication;
+  let window: Page;
 
   test.beforeEach(async ({ page: _page }, testInfo) => {
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');

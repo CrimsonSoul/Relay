@@ -10,6 +10,7 @@
 // ============================================================================
 
 import { loggers, ErrorCategory } from '../main/logger';
+import type { Contact } from '../shared/ipc';
 
 // -----------------------------------------------------------------------------
 // 1. Network/API Errors
@@ -40,10 +41,11 @@ async function fetchWeatherData(lat: number, lon: number) {
     timer(); // Logs completion with duration
     return data;
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
     loggers.weather.error('Failed to fetch weather data', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.NETWORK,
       lat,
       lon,
@@ -71,12 +73,14 @@ async function readContactsFile(filePath: string) {
     });
     return content;
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    const nodeError = error as Error & { code?: string };
     loggers.fileManager.error('Failed to read contacts file', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.FILE_SYSTEM,
-      errorCode: err.code, // e.g., 'ENOENT', 'EACCES'
+      errorCode: nodeError.code, // e.g., 'ENOENT', 'EACCES'
       filePath
     });
     throw err;
@@ -87,7 +91,7 @@ async function readContactsFile(filePath: string) {
 // 3. Validation Errors
 // -----------------------------------------------------------------------------
 
-function validateContact(contact: any) {
+function validateContact(contact: Partial<Contact>): void {
   const errors: string[] = [];
   
   if (!contact.email || !isValidEmail(contact.email)) {
@@ -151,10 +155,11 @@ function handleAuthAttempt(host: string, username: string, password: string, rem
     
     loggers.auth.info('Authentication successful', { host, username });
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
     loggers.auth.error('Authentication failed', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.AUTH,
       host,
       username,
@@ -172,7 +177,7 @@ import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc';
 
 export function setupDataHandlers() {
-  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_event, contact) => {
+  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_event, contact: Partial<Contact>) => {
     loggers.ipc.debug('IPC request: add contact', { email: contact.email });
     
     try {
@@ -185,10 +190,11 @@ export function setupDataHandlers() {
       
       return result;
       
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
       loggers.ipc.error('Failed to add contact via IPC', {
-        error: err.message,
-        stack: err.stack,
+        error: error.message,
+        stack: error.stack,
         category: ErrorCategory.IPC,
         contact: { email: contact.email }
       });
@@ -228,10 +234,11 @@ function handleButtonClick(action: string) {
     performAction(action);
     loggers.ui.info('Action completed successfully', { action });
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
     loggers.ui.error('Action failed', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.UI,
       action,
       userAction: `Clicked ${action} button`
@@ -262,10 +269,11 @@ async function loadWeatherData(location: string) {
     timer();
     return data;
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
     loggers.weather.error('Failed to load weather data', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.NETWORK,
       location,
       userAction: 'User searched for weather location'
@@ -280,15 +288,16 @@ async function loadWeatherData(location: string) {
 // 9. LocalStorage Operations
 // -----------------------------------------------------------------------------
 
-function saveUserPreference(key: string, value: any) {
+function saveUserPreference(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
     loggers.storage.debug('Saved user preference', { key });
     
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const error = err instanceof Error ? err : new Error(String(err));
     loggers.storage.error('Failed to save user preference', {
-      error: err.message,
-      stack: err.stack,
+      error: error.message,
+      stack: error.stack,
       category: ErrorCategory.RENDERER,
       key,
       // Don't log the value - might be large
@@ -303,6 +312,7 @@ function saveUserPreference(key: string, value: any) {
 
 import { useState, useEffect } from 'react';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function useDataLoader<T>(fetchFn: () => Promise<T>, deps: any[]) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
@@ -316,13 +326,14 @@ function useDataLoader<T>(fetchFn: () => Promise<T>, deps: any[]) {
         loggers.api.debug('Data loaded successfully');
         timer();
       })
-      .catch(err => {
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
         loggers.api.error('Failed to load data', {
-          error: err.message,
-          stack: err.stack,
+          error: error.message,
+          stack: error.stack,
           category: ErrorCategory.NETWORK
         });
-        setError(err);
+        setError(error);
         timer();
       });
   }, deps);
@@ -342,7 +353,7 @@ function generateId(): string {
   return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
 
-function addContactToFile(contact: any): Promise<boolean> {
+function addContactToFile(contact: Partial<Contact>): Promise<boolean> {
   // Implementation
   return Promise.resolve(true);
 }
