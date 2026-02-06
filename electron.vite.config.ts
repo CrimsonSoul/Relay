@@ -15,14 +15,13 @@ export default defineConfig({
     },
     build: {
       outDir: 'dist/main',
-      minify: 'esbuild', // Faster minification
-      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
+      minify: 'esbuild',
+      sourcemap: process.env.NODE_ENV === 'development',
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },
         output: {
-          // Optimize for fast startup
           format: 'es',
           entryFileNames: '[name].js',
         },
@@ -38,8 +37,8 @@ export default defineConfig({
     },
     build: {
       outDir: 'dist/preload',
-      minify: 'esbuild', // Minify for smaller size and faster load
-      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
+      minify: 'esbuild',
+      sourcemap: process.env.NODE_ENV === 'development',
       rollupOptions: {
         output: {
           format: 'cjs',
@@ -68,29 +67,24 @@ export default defineConfig({
     },
     build: {
       outDir: 'dist/renderer',
-      // Windows-specific optimizations for faster load times
-      minify: 'esbuild', // esbuild is faster than terser for startup
+      minify: 'esbuild',
       cssCodeSplit: true,
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
-          // Manual chunks for better caching and faster loads
           manualChunks: {
             'react-vendor': ['react', 'react-dom'],
             'dnd-vendor': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
             'virtual-vendor': ['react-window', 'react-virtualized-auto-sizer'],
           },
-          // Smaller chunk names for faster parsing on Windows
           chunkFileNames: 'js/[name]-[hash].js',
           entryFileNames: 'js/[name]-[hash].js',
           assetFileNames: 'assets/[name]-[hash].[ext]',
         },
       },
-      // Target modern browsers only (since we control the Electron version)
       target: 'esnext',
-      // Optimize for production startup
-      reportCompressedSize: false, // Faster builds
-      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
+      reportCompressedSize: false,
+      sourcemap: process.env.NODE_ENV === 'development',
     },
   },
 });

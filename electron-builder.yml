@@ -34,12 +34,8 @@ win:
         - x64
   artifactName: "Relay.exe"
   icon: build/icon.ico
-  # Windows-specific optimizations for faster startup
   requestedExecutionLevel: "asInvoker"
-  # Use NSIS for better startup performance than portable in some cases
-  # But keeping portable as requested - it's already optimized
-compression: "normal" # Balanced: smaller build, good startup
-# Electron download optimizations
+compression: "normal"
 electronDownload:
   cache: ".electron"
 
