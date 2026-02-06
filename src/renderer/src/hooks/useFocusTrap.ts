@@ -27,7 +27,8 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
   useEffect(() => {
     if (!isActive || !containerRef.current) return;
 
-    const focusableElements = containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    const focusableElements =
+      containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
     if (focusableElements.length > 0) {
       // Small delay to ensure modal content is rendered
       requestAnimationFrame(() => {
@@ -37,36 +38,40 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
   }, [isActive]);
 
   // Handle Tab key to trap focus
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (!isActive || !containerRef.current) return;
-    if (e.key !== 'Tab') return;
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (!isActive || !containerRef.current) return;
+      if (e.key !== 'Tab') return;
 
-    const focusableElements = containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
-    if (focusableElements.length === 0) return;
+      const focusableElements =
+        containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (focusableElements.length === 0) return;
 
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
 
-    // Shift+Tab on first element -> go to last
-    if (e.shiftKey && document.activeElement === firstElement) {
-      e.preventDefault();
-      lastElement.focus();
-      return;
-    }
+      // Shift+Tab on first element -> go to last
+      if (e.shiftKey && document.activeElement === firstElement) {
+        e.preventDefault();
+        lastElement.focus();
+        return;
+      }
 
-    // Tab on last element -> go to first
-    if (!e.shiftKey && document.activeElement === lastElement) {
-      e.preventDefault();
-      firstElement.focus();
-      return;
-    }
+      // Tab on last element -> go to first
+      if (!e.shiftKey && document.activeElement === lastElement) {
+        e.preventDefault();
+        firstElement.focus();
+        return;
+      }
 
-    // If focus is outside the container, bring it back
-    if (!containerRef.current.contains(document.activeElement)) {
-      e.preventDefault();
-      firstElement.focus();
-    }
-  }, [isActive]);
+      // If focus is outside the container, bring it back
+      if (!containerRef.current.contains(document.activeElement)) {
+        e.preventDefault();
+        firstElement.focus();
+      }
+    },
+    [isActive],
+  );
 
   // Attach keydown listener
   useEffect(() => {

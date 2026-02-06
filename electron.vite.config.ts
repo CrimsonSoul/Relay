@@ -10,8 +10,8 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'src/shared')
-      }
+        '@shared': resolve(__dirname, 'src/shared'),
+      },
     },
     build: {
       outDir: 'dist/main',
@@ -19,22 +19,22 @@ export default defineConfig({
       sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
       rollupOptions: {
         input: {
-          index: resolve(__dirname, 'src/main/index.ts')
+          index: resolve(__dirname, 'src/main/index.ts'),
         },
         output: {
           // Optimize for fast startup
           format: 'es',
-          entryFileNames: '[name].js'
-        }
-      }
-    }
+          entryFileNames: '[name].js',
+        },
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
       alias: {
-        '@shared': resolve(__dirname, 'src/shared')
-      }
+        '@shared': resolve(__dirname, 'src/shared'),
+      },
     },
     build: {
       outDir: 'dist/preload',
@@ -44,31 +44,27 @@ export default defineConfig({
         output: {
           format: 'cjs',
           inlineDynamicImports: true,
-          entryFileNames: '[name].cjs'
+          entryFileNames: '[name].cjs',
         },
         input: {
-          index: resolve(__dirname, 'src/preload/index.ts')
-        }
-      }
-    }
+          index: resolve(__dirname, 'src/preload/index.ts'),
+        },
+      },
+    },
   },
   renderer: {
     root: 'src/renderer',
     resolve: {
       alias: {
         '@renderer': resolve(__dirname, 'src/renderer/src'),
-        '@shared': resolve(__dirname, 'src/shared')
-      }
+        '@shared': resolve(__dirname, 'src/shared'),
+      },
     },
-    plugins: [react({
-      babel: {
-        plugins: []
-      }
-    })],
+    plugins: [react()],
     server: {
       hmr: {
-        overlay: false
-      }
+        overlay: false,
+      },
     },
     build: {
       outDir: 'dist/renderer',
@@ -82,19 +78,19 @@ export default defineConfig({
           manualChunks: {
             'react-vendor': ['react', 'react-dom'],
             'dnd-vendor': ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
-            'virtual-vendor': ['react-window', 'react-virtualized-auto-sizer']
+            'virtual-vendor': ['react-window', 'react-virtualized-auto-sizer'],
           },
           // Smaller chunk names for faster parsing on Windows
           chunkFileNames: 'js/[name]-[hash].js',
           entryFileNames: 'js/[name]-[hash].js',
-          assetFileNames: 'assets/[name]-[hash].[ext]'
-        }
+          assetFileNames: 'assets/[name]-[hash].[ext]',
+        },
       },
       // Target modern browsers only (since we control the Electron version)
       target: 'esnext',
       // Optimize for production startup
       reportCompressedSize: false, // Faster builds
-      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden' // Hidden in production for security
-    }
-  }
+      sourcemap: process.env.NODE_ENV === 'development' ? true : 'hidden', // Hidden in production for security
+    },
+  },
 });

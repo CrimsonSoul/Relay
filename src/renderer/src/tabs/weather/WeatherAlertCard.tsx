@@ -1,6 +1,6 @@
-import { Tooltip } from "../../components/Tooltip";
-import type { WeatherAlert } from "./types";
-import { SEVERITY_COLORS } from "./utils";
+import { Tooltip } from '../../components/Tooltip';
+import type { WeatherAlert } from './types';
+import { SEVERITY_COLORS } from './utils';
 
 interface WeatherAlertCardProps {
   alert: WeatherAlert;
@@ -13,31 +13,44 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
   isExpanded,
   onToggle,
 }) => {
-  const colors = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS["Unknown"];
+  const colors = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS['Unknown'];
 
   return (
-    <Tooltip content={isExpanded ? "Click to collapse" : "Click to view full alert details"} position="top">
+    <Tooltip
+      content={isExpanded ? 'Click to collapse' : 'Click to view full alert details'}
+      position="top"
+    >
       <div
+        role="button"
+        tabIndex={0}
+        aria-expanded={isExpanded}
+        aria-label={`Weather alert: ${alert.event}`}
         style={{
           background: colors.bg,
           border: `1px solid ${colors.border}`,
-          borderRadius: "8px",
-          padding: "10px 14px",
-          cursor: "pointer",
-          transition: "all var(--transition-smooth)",
-          transformOrigin: "center center",
+          borderRadius: '8px',
+          padding: '10px 14px',
+          cursor: 'pointer',
+          transition: 'all var(--transition-smooth)',
+          transformOrigin: 'center center',
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "none";
-          e.currentTarget.style.boxShadow = "var(--shadow-md)";
+          e.currentTarget.style.transform = 'none';
+          e.currentTarget.style.boxShadow = 'var(--shadow-md)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "none";
-          e.currentTarget.style.boxShadow = "none";
+          e.currentTarget.style.transform = 'none';
+          e.currentTarget.style.boxShadow = 'none';
         }}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
           {/* Alert Icon */}
           <svg
             width="20"
@@ -48,7 +61,7 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{ flexShrink: 0, marginTop: "2px" }}
+            style={{ flexShrink: 0, marginTop: '2px' }}
           >
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" />
@@ -57,46 +70,48 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                flexWrap: "wrap",
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
               }}
             >
               <span
                 style={{
                   fontWeight: 700,
-                  fontSize: "18px",
+                  fontSize: '18px',
                   color: colors.text,
-                  letterSpacing: "-0.01em",
+                  letterSpacing: '-0.01em',
                 }}
               >
                 {alert.event}
               </span>
               <span
                 style={{
-                  fontSize: "12px",
-                  padding: "2px 8px",
-                  borderRadius: "6px",
-                  background: "rgba(0,0,0,0.3)",
+                  fontSize: '12px',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  background: 'rgba(0,0,0,0.3)',
                   color: colors.text,
-                  textTransform: "uppercase",
+                  textTransform: 'uppercase',
                   fontWeight: 800,
                 }}
               >
-                {alert.severity === "Unknown" 
-                  ? (alert.event.toLowerCase().includes("outlook") ? "Outlook" : "Advisory")
+                {alert.severity === 'Unknown'
+                  ? alert.event.toLowerCase().includes('outlook')
+                    ? 'Outlook'
+                    : 'Advisory'
                   : alert.severity}
               </span>
-              {alert.urgency === "Immediate" && (
+              {alert.urgency === 'Immediate' && (
                 <span
                   style={{
-                    fontSize: "12px",
-                    padding: "2px 8px",
-                    borderRadius: "6px",
-                    background: "rgba(220, 38, 38, 0.4)",
-                    color: "#FFF",
-                    textTransform: "uppercase",
+                    fontSize: '12px',
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(220, 38, 38, 0.4)',
+                    color: '#FFF',
+                    textTransform: 'uppercase',
                     fontWeight: 800,
                   }}
                 >
@@ -106,11 +121,11 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             </div>
             <p
               style={{
-                fontSize: "16px",
-                color: "var(--color-text-primary)",
+                fontSize: '16px',
+                color: 'var(--color-text-primary)',
                 opacity: 0.9,
-                margin: "8px 0 4px", // More room around headline
-                lineHeight: "1.4",
+                margin: '8px 0 4px', // More room around headline
+                lineHeight: '1.4',
                 fontWeight: 600, // Slightly bolder for better contrast
               }}
             >
@@ -118,42 +133,42 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             </p>
             <div
               style={{
-                display: "grid",
-                gridTemplateRows: isExpanded ? "1fr" : "0fr",
-                transition: "grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                display: 'grid',
+                gridTemplateRows: isExpanded ? '1fr' : '0fr',
+                transition: 'grid-template-rows 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
-              <div style={{ overflow: "hidden" }}>
+              <div style={{ overflow: 'hidden' }}>
                 <div
                   className="weather-scroll-container"
                   style={{
-                    marginTop: "10px",
-                    paddingTop: "10px",
+                    marginTop: '10px',
+                    paddingTop: '10px',
                     borderTop: `1px solid ${colors.border}`,
                     opacity: isExpanded ? 1 : 0,
-                    transform: isExpanded ? "translateY(0)" : "translateY(-5px)",
-                    transition: "opacity 0.3s ease-out, transform 0.3s ease-out",
+                    transform: isExpanded ? 'translateY(0)' : 'translateY(-5px)',
+                    transition: 'opacity 0.3s ease-out, transform 0.3s ease-out',
                   }}
                 >
                   <p
                     style={{
-                      fontSize: "14px",
-                      color: "var(--color-text-tertiary)",
-                      margin: "0 0 8px",
-                      lineHeight: "1.5",
-                      whiteSpace: "pre-wrap",
-                      maxHeight: "120px",
-                      overflowY: "auto",
+                      fontSize: '14px',
+                      color: 'var(--color-text-tertiary)',
+                      margin: '0 0 8px',
+                      lineHeight: '1.5',
+                      whiteSpace: 'pre-wrap',
+                      maxHeight: '120px',
+                      overflowY: 'auto',
                     }}
                   >
                     {alert.description}
                   </p>
                   <div
                     style={{
-                      display: "flex",
-                      gap: "16px",
-                      fontSize: "12px",
-                      color: "var(--color-text-quaternary)",
+                      display: 'flex',
+                      gap: '16px',
+                      fontSize: '12px',
+                      color: 'var(--color-text-quaternary)',
                     }}
                   >
                     <span>Expires: {new Date(alert.expires).toLocaleString()}</span>
@@ -175,8 +190,8 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             strokeLinejoin="round"
             style={{
               flexShrink: 0,
-              transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform var(--transition-smooth)",
+              transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform var(--transition-smooth)',
             }}
           >
             <polyline points="6 9 12 15 18 9" />

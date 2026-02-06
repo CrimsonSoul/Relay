@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isUncPath, validatePath } from './pathSafety';
 import fsPromises from 'fs/promises';
-import { normalize, resolve } from 'path';
+import { resolve } from 'path';
 
 // Mock logger
 vi.mock('../logger', () => ({
@@ -66,9 +66,9 @@ describe('pathSafety', () => {
     it('should block symlink escapes', async () => {
       const symlinkPath = 'uploads/link';
       const resolvedSymlink = '/etc/passwd';
-      
+
       const absSymlinkPath = resolve(root, symlinkPath);
-      
+
       vi.mocked(fsPromises.realpath).mockImplementation(async (p) => {
         if (p === root) return root;
         if (p === absSymlinkPath) return resolvedSymlink;

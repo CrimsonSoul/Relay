@@ -6,9 +6,20 @@ type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   variant?: 'default' | 'vivid';
   label?: string;
   containerStyle?: React.CSSProperties;
+  ref?: React.Ref<HTMLInputElement>;
 };
 
-export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, icon, className, variant: _variant = 'default', label, containerStyle, id: providedId, ...props }, ref) => {
+export const Input: React.FC<InputProps> = ({
+  style,
+  icon,
+  className,
+  variant: _variant = 'default',
+  label,
+  containerStyle,
+  id: providedId,
+  ref,
+  ...props
+}) => {
   const innerRef = useRef<HTMLInputElement>(null);
   const [hasValue, setHasValue] = useState(!!props.value || !!props.defaultValue);
   const generatedId = useId();
@@ -16,10 +27,27 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
 
   // Separate layout styles for wrapper vs visual styles for input
   const {
-    width, height, minWidth, minHeight, maxWidth, maxHeight,
-    margin, marginTop, marginBottom, marginLeft, marginRight,
-    flex, flexGrow, flexShrink, flexBasis,
-    position, zIndex, top, bottom, left, right,
+    width,
+    height,
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight,
+    margin,
+    marginTop,
+    marginBottom,
+    marginLeft,
+    marginRight,
+    flex,
+    flexGrow,
+    flexShrink,
+    flexBasis,
+    position,
+    zIndex,
+    top,
+    bottom,
+    left,
+    right,
     ...inputStyle
   } = style || {};
 
@@ -28,7 +56,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
     if (typeof ref === 'function') {
       ref(innerRef.current);
     } else if (ref) {
-      (ref as React.MutableRefObject<HTMLInputElement | null>).current = innerRef.current;
+      ref.current = innerRef.current;
     }
   }, [ref]);
 
@@ -47,7 +75,10 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (innerRef.current) {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value',
+      )?.set;
       nativeInputValueSetter?.call(innerRef.current, '');
 
       const event = new Event('input', { bubbles: true });
@@ -60,7 +91,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
           currentTarget: innerRef.current,
           bubbles: true,
           cancelable: false,
-          type: 'change'
+          type: 'change',
         } as unknown as React.ChangeEvent<HTMLInputElement>;
         syntheticEvent.target.value = '';
         props.onChange(syntheticEvent);
@@ -72,27 +103,45 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
   };
 
   return (
-    <div style={{
-      position: position || 'relative',
-      width: width || '100%',
-      height, minWidth, minHeight, maxWidth, maxHeight,
-      margin, marginTop, marginBottom, marginLeft, marginRight,
-      flex, flexGrow, flexShrink, flexBasis,
-      zIndex, top, bottom, left, right,
-      ...containerStyle
-    }}>
+    <div
+      style={{
+        position: position || 'relative',
+        width: width || '100%',
+        height,
+        minWidth,
+        minHeight,
+        maxWidth,
+        maxHeight,
+        margin,
+        marginTop,
+        marginBottom,
+        marginLeft,
+        marginRight,
+        flex,
+        flexGrow,
+        flexShrink,
+        flexBasis,
+        zIndex,
+        top,
+        bottom,
+        left,
+        right,
+        ...containerStyle,
+      }}
+    >
       {label && (
-        <label 
+        <label
           htmlFor={id}
-          className="text-truncate" 
+          className="text-truncate"
           style={{
             display: 'block',
             fontSize: '15px',
             fontWeight: 650,
             color: 'var(--color-text-secondary)',
             marginBottom: '8px',
-            letterSpacing: '0.01em'
-          }}>
+            letterSpacing: '0.01em',
+          }}
+        >
           {label}
         </label>
       )}
@@ -128,7 +177,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
               pointerEvents: 'none',
               display: 'flex',
               alignItems: 'center',
-              zIndex: 10
+              zIndex: 10,
             }}
           >
             {icon}
@@ -160,30 +209,39 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 transition: 'all var(--transition-fast)',
                 border: '1px solid transparent',
                 padding: 0,
-                outline: 'none'
+                outline: 'none',
               }}
-              onMouseEnter={e => {
+              onMouseEnter={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
                 e.currentTarget.style.color = 'var(--color-text-primary)';
                 e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
                 e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
               }}
-              onMouseLeave={e => {
+              onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
                 e.currentTarget.style.color = 'var(--color-text-secondary)';
                 e.currentTarget.style.borderColor = 'transparent';
                 e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
               }}
-              onFocus={e => {
+              onFocus={(e) => {
                 e.currentTarget.style.borderColor = 'var(--color-accent-blue)';
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
               }}
-              onBlur={e => {
+              onBlur={(e) => {
                 e.currentTarget.style.borderColor = 'transparent';
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -193,6 +251,4 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
       </div>
     </div>
   );
-});
-
-Input.displayName = 'Input';
+};

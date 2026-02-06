@@ -1,5 +1,12 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useEffect } from 'react';
-import './Toast.css';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  ReactNode,
+  useRef,
+  useEffect,
+} from 'react';
 
 type ToastType = 'success' | 'error' | 'info';
 
@@ -36,20 +43,26 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   }, []);
 
-  const showToast = useCallback((message: string, type: ToastType) => {
-    const id = window.crypto.randomUUID();
-    setToasts((prev) => [...prev, { id, message, type }]);
+  const showToast = useCallback(
+    (message: string, type: ToastType) => {
+      const id = window.crypto.randomUUID();
+      setToasts((prev) => [...prev, { id, message, type }]);
 
-    const timeout = setTimeout(() => {
-      removeToast(id);
-    }, 4000);
-    timeoutsRef.current.set(id, timeout);
-  }, [removeToast]);
+      const timeout = setTimeout(() => {
+        removeToast(id);
+      }, 4000);
+      timeoutsRef.current.set(id, timeout);
+    },
+    [removeToast],
+  );
 
   useEffect(() => {
+    const timeouts = timeoutsRef.current;
     return () => {
-      timeoutsRef.current.forEach((timeout) => { clearTimeout(timeout); });
-      timeoutsRef.current.clear();
+      timeouts.forEach((timeout) => {
+        clearTimeout(timeout);
+      });
+      timeouts.clear();
     };
   }, []);
 
@@ -58,20 +71,29 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       {children}
       <div className="toast-container" aria-label="Notifications">
         {toasts.map((toast) => (
-          <div 
-            key={toast.id} 
-            className={`toast toast-${toast.type} animate-slide-up`}
+          <div
+            key={toast.id}
+            className={`toast toast-${toast.type} toast-slide-up`}
             role="status"
             aria-live="polite"
           >
             <span className="toast-message">{toast.message}</span>
-            <button 
+            <button
               type="button"
               className="toast-close"
               onClick={() => removeToast(toast.id)}
               aria-label="Close notification"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
@@ -85,9 +107,5 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
 export const NoopToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const showToast = useCallback(() => {}, []);
-  return (
-    <ToastContext.Provider value={{ showToast }}>
-      {children}
-    </ToastContext.Provider>
-  );
+  return <ToastContext.Provider value={{ showToast }}>{children}</ToastContext.Provider>;
 };

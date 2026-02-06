@@ -16,6 +16,8 @@ declare global {
         preload?: string;
         allowpopups?: boolean;
         partition?: string;
+        useragent?: string;
+        webpreferences?: string;
       };
     }
   }

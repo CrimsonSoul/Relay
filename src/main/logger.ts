@@ -1,5 +1,5 @@
-import fsPromises from 'node:fs/promises';
-import path from 'node:path';
+import fsPromises from 'fs/promises';
+import path from 'path';
 import type { App } from 'electron';
 import { LogData } from '@shared/types';
 import { LogLevel, ErrorCategory } from '@shared/logging';
@@ -52,7 +52,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   maxFileSize: 10 * 1024 * 1024, // 10MB (increased for detailed logging)
   maxFiles: 5, // Keep more historical logs
   includePerformanceMetrics: true,
-  includeMemoryUsage: true
+  includeMemoryUsage: true,
 };
 
 class Logger {
@@ -85,13 +85,18 @@ class Logger {
 
     if (isElectron) {
       // Dynamic import to avoid breaking pure Node environments
-      import('electron').then(({ app }) => {
-        if (app.isReady()) {
-          this.initializeWithApp(app);
-        } else {
-          app.whenReady().then(() => this.initializeWithApp(app)).catch(() => this.setupFallback());
-        }
-      }).catch(() => this.setupFallback());
+      import('electron')
+        .then(({ app }) => {
+          if (app.isReady()) {
+            this.initializeWithApp(app);
+          } else {
+            app
+              .whenReady()
+              .then(() => this.initializeWithApp(app))
+              .catch(() => this.setupFallback());
+          }
+        })
+        .catch(() => this.setupFallback());
     } else {
       this.setupFallback();
     }
@@ -163,7 +168,7 @@ class Logger {
     if (this.config.includePerformanceMetrics) {
       context.performance = {
         timestamp: Date.now(),
-        duration: data?.duration
+        duration: data?.duration,
       };
     }
 
@@ -184,7 +189,7 @@ class Logger {
       `[${entry.timestamp}]`,
       `[${entry.level.padEnd(5)}]`,
       `[${entry.module.padEnd(15)}]`,
-      entry.message
+      entry.message,
     ];
 
     this.appendDataToParts(parts, entry.data);
@@ -224,14 +229,16 @@ class Logger {
 
     if (context.memoryUsage) {
       const mem = context.memoryUsage;
-      parts.push(`| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`);
+      parts.push(
+        `| Mem: ${Math.round(mem.heapUsed / MB_DIVISOR)}MB/${Math.round(mem.heapTotal / MB_DIVISOR)}MB`,
+      );
     }
   }
 
   private formatStackTrace(stack: string): string {
     return stack
       .split('\n')
-      .map(line => `    ${line}`)
+      .map((line) => `    ${line}`)
       .join('\n');
   }
 
@@ -314,7 +321,7 @@ class Logger {
     if (level === LogLevel.WARN) this.warnCount++;
 
     const levelName = LogLevel[level];
-    const errorContext = (level >= LogLevel.WARN) ? this.extractErrorContext(data) : undefined;
+    const errorContext = level >= LogLevel.WARN ? this.extractErrorContext(data) : undefined;
 
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
@@ -322,7 +329,7 @@ class Logger {
       module,
       message,
       data,
-      errorContext
+      errorContext,
     };
 
     const formatted = this.formatLogEntry(entry);
@@ -398,7 +405,7 @@ class Logger {
       sessionDuration: Date.now() - this.sessionStartTime,
       errorCount: this.errorCount,
       warnCount: this.warnCount,
-      logPath: this.logPath
+      logPath: this.logPath,
     };
   }
 
@@ -456,7 +463,7 @@ class ModuleLogger {
 
 // Global logger instance
 export const logger = new Logger({
-  level: process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO
+  level: process.env.NODE_ENV === 'development' ? LogLevel.DEBUG : LogLevel.INFO,
 });
 
 // Activate the logger to start looking for paths
@@ -473,5 +480,5 @@ export const loggers = {
   weather: logger.createChild('Weather'),
   location: logger.createChild('Location'),
   config: logger.createChild('Config'),
-  network: logger.createChild('Network')
+  network: logger.createChild('Network'),
 };

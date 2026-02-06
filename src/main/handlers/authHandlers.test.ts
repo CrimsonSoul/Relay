@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupAuthHandlers } from './authHandlers';
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS } from '@shared/ipc';
 import * as CredentialManager from '../CredentialManager';
 
 // Mock electron
@@ -40,7 +40,7 @@ describe('authHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Capture handlers
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler;
@@ -57,7 +57,7 @@ describe('authHandlers', () => {
       const callback = vi.fn();
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
-        callback
+        callback,
       });
 
       const validNonce = 'a'.repeat(64);
@@ -86,11 +86,11 @@ describe('authHandlers', () => {
       const callback = vi.fn();
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
-        callback
+        callback,
       });
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue({
         username: 'cached-user',
-        password: 'cached-password'
+        password: 'cached-password',
       });
 
       const validNonce = 'b'.repeat(64);
@@ -103,7 +103,7 @@ describe('authHandlers', () => {
     it('should fail if no cached credentials exist', async () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
         host: 'test.com',
-        callback: vi.fn()
+        callback: vi.fn(),
       });
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 

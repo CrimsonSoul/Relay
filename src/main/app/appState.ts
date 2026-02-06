@@ -4,7 +4,12 @@ import { FileManager } from '../FileManager';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
-import { copyDataFilesAsync, ensureDataFilesAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
+import {
+  copyDataFilesAsync,
+  ensureDataFilesAsync,
+  loadConfigAsync,
+  saveConfigAsync,
+} from '../dataUtils';
 import { validateDataPath } from '../pathValidation';
 import { loggers } from '../logger';
 
@@ -17,7 +22,8 @@ export interface AppState {
 export const state: AppState = { mainWindow: null, fileManager: null, currentDataRoot: '' };
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
-export const getBundledDataPath = () => app.isPackaged ? join(process.resourcesPath, 'data') : join(process.cwd(), 'data');
+export const getBundledDataPath = () =>
+  app.isPackaged ? join(process.resourcesPath, 'data') : join(process.cwd(), 'data');
 
 /**
  * Cached promise for the data root resolution.
@@ -68,13 +74,23 @@ export async function handleDataPathChange(newPath: string): Promise<void> {
   state.currentDataRoot = newPath;
   dataRootPromise = null;
 
-  if (state.fileManager) { state.fileManager.destroy(); state.fileManager = null; }
+  if (state.fileManager) {
+    state.fileManager.destroy();
+    state.fileManager = null;
+  }
   state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
   state.fileManager.init();
 }
 
 export function setupIpc(createAuxWindow?: (route: string) => void) {
-  setupIpcHandlers(() => state.mainWindow, () => state.fileManager, getDataRoot, handleDataPathChange, getDefaultDataPath, createAuxWindow);
+  setupIpcHandlers(
+    () => state.mainWindow,
+    () => state.fileManager,
+    getDataRoot,
+    handleDataPathChange,
+    getDefaultDataPath,
+    createAuxWindow,
+  );
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);
   setupLoggerHandlers();
@@ -83,7 +99,10 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
 export function setupPermissions(sess: Electron.Session) {
   sess.setPermissionRequestHandler((webContents, permission, callback) => {
     // Only grant geolocation to any content; restrict media to main window only
-    if (permission === 'geolocation') { callback(true); return; }
+    if (permission === 'geolocation') {
+      callback(true);
+      return;
+    }
     if (permission === 'media') {
       const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
       callback(!!isMainWindow);

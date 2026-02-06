@@ -23,7 +23,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ChildComponent />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText('Normal Component')).toBeInTheDocument();
@@ -37,7 +37,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     const reloadButton = screen.getByText('Reload Application');
@@ -67,7 +67,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     const reloadButton = screen.getByText('Reload Application');
@@ -86,7 +86,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(consoleSpy).toHaveBeenCalled();
@@ -100,7 +100,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText('Custom error message for testing')).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe('ErrorBoundary Component', () => {
     render(
       <ErrorBoundary>
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText('Unknown error')).toBeInTheDocument();
@@ -138,7 +138,7 @@ describe('ErrorBoundary Component', () => {
       <ErrorBoundary>
         <NormalChild />
         <ThrowError />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();

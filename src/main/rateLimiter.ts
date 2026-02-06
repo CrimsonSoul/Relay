@@ -18,9 +18,9 @@ const NETWORK_MAX_TOKENS = 10;
 const NETWORK_REFILL_RATE = 1; // 1 token per second
 
 interface RateLimiterConfig {
-  maxTokens: number;      // Maximum number of tokens (burst capacity)
-  refillRate: number;     // Tokens added per second
-  name?: string;          // Optional name for logging
+  maxTokens: number; // Maximum number of tokens (burst capacity)
+  refillRate: number; // Tokens added per second
+  name?: string; // Optional name for logging
 }
 
 interface RateLimitResult {
@@ -69,7 +69,7 @@ export class RateLimiter {
     loggers.ipc.warn(`Rate limited: ${this.name}`, {
       retryAfterMs,
       cost,
-      availableTokens: this.tokens
+      availableTokens: this.tokens,
     });
     return { allowed: false, retryAfterMs };
   }
@@ -89,68 +89,41 @@ export const rateLimiters = {
   fileImport: new RateLimiter({
     maxTokens: FILE_IMPORT_MAX_TOKENS,
     refillRate: FILE_IMPORT_REFILL_RATE,
-    name: 'FileImport'
+    name: 'FileImport',
   }),
 
   // Data mutations (add/remove contact/server): More generous for normal CRUD operations
   dataMutation: new RateLimiter({
     maxTokens: DATA_MUTATION_MAX_TOKENS,
     refillRate: DATA_MUTATION_REFILL_RATE,
-    name: 'DataMutation'
+    name: 'DataMutation',
   }),
 
   // Data reload: Prevents excessive reload requests
   dataReload: new RateLimiter({
     maxTokens: DATA_RELOAD_MAX_TOKENS,
     refillRate: DATA_RELOAD_REFILL_RATE,
-    name: 'DataReload'
+    name: 'DataReload',
   }),
 
   // File system operations (open path, open external)
   fsOperations: new RateLimiter({
     maxTokens: FS_OPERATIONS_MAX_TOKENS,
     refillRate: FS_OPERATIONS_REFILL_RATE,
-    name: 'FSOperations'
+    name: 'FSOperations',
   }),
 
   // External network operations
   network: new RateLimiter({
     maxTokens: NETWORK_MAX_TOKENS,
     refillRate: NETWORK_REFILL_RATE,
-    name: 'Network'
-  })
+    name: 'Network',
+  }),
 };
-
-/**
- * Convenience helper to check data mutation rate limit.
- */
-export function checkMutationRateLimit(): boolean {
-  const result = rateLimiters.dataMutation.tryConsume();
-  if (!result.allowed) {
-    loggers.ipc.warn(`Data mutation blocked, retry after ${result.retryAfterMs}ms`);
-  }
-  return result.allowed;
-}
 
 /**
  * Convenience helper to check network rate limit.
  */
 export function checkNetworkRateLimit(): boolean {
   return rateLimiters.network.tryConsume().allowed;
-}
-
-/**
- * Wrapper to apply rate limiting to an IPC handler.
- * Returns null if rate limited, otherwise executes the handler.
- */
-export async function withRateLimit<T>(
-  limiter: RateLimiter,
-  handler: () => Promise<T> | T,
-  cost: number = 1
-): Promise<T | null> {
-  const result = limiter.tryConsume(cost);
-  if (!result.allowed) {
-    return null;
-  }
-  return await handler();
 }

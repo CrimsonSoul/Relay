@@ -1,6 +1,6 @@
 /**
  * Environment Variable Validation Utility
- * 
+ *
  * Ensures all required environment variables are present and correctly formatted.
  * Should be called early in the main process startup.
  */
@@ -22,16 +22,16 @@ const SCHEMA: EnvSchema = {
   NODE_ENV: {
     type: 'string',
     defaultValue: 'production',
-    validate: (v) => ['development', 'production', 'test'].includes(v)
+    validate: (v) => ['development', 'production', 'test'].includes(v),
   },
   ELECTRON_ENABLE_LOGGING: {
     type: 'boolean',
-    defaultValue: false
+    defaultValue: false,
   },
   ELECTRON_RENDERER_URL: {
     type: 'string', // Only in dev
-    required: false
-  }
+    required: false,
+  },
 };
 
 /**
@@ -60,7 +60,10 @@ export function validateEnv(): void {
       // Type validation
       if (config.type === 'number' && isNaN(Number(value))) {
         errors.push(`Environment variable ${key} must be a number, got: ${value}`);
-      } else if (config.type === 'boolean' && !['true', 'false', '1', '0'].includes(value.toLowerCase())) {
+      } else if (
+        config.type === 'boolean' &&
+        !['true', 'false', '1', '0'].includes(value.toLowerCase())
+      ) {
         errors.push(`Environment variable ${key} must be a boolean, got: ${value}`);
       }
 
@@ -79,9 +82,9 @@ export function validateEnv(): void {
   if (errors.length > 0) {
     loggers.main.error('Environment validation errors detected', {
       errors,
-      category: ErrorCategory.VALIDATION
+      category: ErrorCategory.VALIDATION,
     });
-    
+
     // In production, we might want to fail fast for CRITICAL env vars
     // For now, we just log them.
   } else {

@@ -10,23 +10,19 @@ export default defineConfig({
   resolve: {
     alias: {
       '@renderer': resolve(__dirname, 'src/renderer/src'),
-      '@shared': resolve(__dirname, 'src/shared')
-    }
+      '@shared': resolve(__dirname, 'src/shared'),
+    },
   },
-  plugins: [react({
-    babel: {
-      plugins: []
-    }
-  })],
+  plugins: [react()],
   server: {
     host: 'localhost',
-    port: 4173
+    port: 4173,
   },
   preview: {
     host: 'localhost',
-    port: 4173
+    port: 4173,
   },
   build: {
-    outDir: 'dist/renderer'
-  }
+    outDir: 'dist/renderer',
+  },
 });

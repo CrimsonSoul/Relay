@@ -3,6 +3,56 @@ import tseslint from '@typescript-eslint/eslint-plugin';
 import tsParser from '@typescript-eslint/parser';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
+import globals from 'globals';
+
+// Shared parser options for all TypeScript files
+const sharedParserOptions = {
+  ecmaFeatures: { jsx: true },
+  ecmaVersion: 'latest',
+  sourceType: 'module',
+  project: ['./tsconfig.json', './tsconfig.renderer.json', './tsconfig.node.json'],
+  tsconfigRootDir: import.meta.dirname,
+};
+
+// Shared TypeScript rules applied to all source files
+const sharedTsRules = {
+  'no-unused-vars': 'off',
+  '@typescript-eslint/no-unused-vars': [
+    'warn',
+    {
+      argsIgnorePattern: '^_',
+      varsIgnorePattern: '^_',
+      caughtErrorsIgnorePattern: '^_',
+    },
+  ],
+  '@typescript-eslint/explicit-function-return-type': 'off',
+  '@typescript-eslint/explicit-module-boundary-types': 'off',
+  '@typescript-eslint/strict-boolean-expressions': 'off',
+};
+
+// Shared React + hooks rules
+const sharedReactRules = {
+  'react/react-in-jsx-scope': 'off',
+  'react/prop-types': 'off',
+  'react-hooks/rules-of-hooks': 'error',
+  'react-hooks/exhaustive-deps': 'warn',
+};
+
+// Shared promise safety rules
+const promiseRules = {
+  '@typescript-eslint/no-floating-promises': 'error',
+  '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
+};
+
+// React + hooks plugins bundle
+const reactPlugins = {
+  '@typescript-eslint': tseslint,
+  react,
+  'react-hooks': reactHooks,
+};
+
+const reactSettings = { react: { version: 'detect' } };
 
 export default [
   {
@@ -20,271 +70,118 @@ export default [
     ],
   },
   js.configs.recommended,
+
+  // Main process
   {
     files: ['src/main/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-        project: ['./tsconfig.json', './tsconfig.renderer.json', './tsconfig.node.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      globals: {
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        global: 'readonly',
-        __dirname: 'readonly',
-        __filename: 'readonly',
-        Electron: 'readonly',
-        NodeJS: 'readonly',
-        fetch: 'readonly',
-        URL: 'readonly',
-        AbortController: 'readonly',
-        AbortSignal: 'readonly',
-        require: 'readonly',
-        console: 'readonly',
-        crypto: 'readonly',
-      },
+      parserOptions: sharedParserOptions,
+      globals: { ...globals.node, Electron: 'readonly', NodeJS: 'readonly' },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-      react: react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: {
-        version: 'detect',
-      },
-    },
+    plugins: reactPlugins,
+    settings: reactSettings,
     rules: {
+      ...sharedTsRules,
+      ...sharedReactRules,
+      ...promiseRules,
       '@typescript-eslint/no-explicit-any': 'error',
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { 
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
-      }],
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/explicit-module-boundary-types': 'off',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
-      '@typescript-eslint/strict-boolean-expressions': 'off',
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+
+  // Preload
   {
     files: ['src/preload/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-        project: ['./tsconfig.json', './tsconfig.renderer.json', './tsconfig.node.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      globals: {
-        Electron: 'readonly',
-        process: 'readonly',
-        document: 'readonly',
-        window: 'readonly',
-        navigator: 'readonly',
-        HTMLElement: 'readonly',
-        getComputedStyle: 'readonly',
-        MutationObserver: 'readonly',
-        console: 'readonly',
-        localStorage: 'readonly',
-        sessionStorage: 'readonly',
-        crypto: 'readonly',
-        btoa: 'readonly',
-        atob: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        performance: 'readonly',
-        URL: 'readonly',
-      },
+      parserOptions: sharedParserOptions,
+      globals: { ...globals.node, ...globals.browser, Electron: 'readonly', NodeJS: 'readonly' },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-      react: react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: {
-        version: 'detect',
-      },
-    },
+    plugins: reactPlugins,
+    settings: reactSettings,
     rules: {
+      ...sharedTsRules,
+      ...promiseRules,
       '@typescript-eslint/no-explicit-any': 'error',
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { 
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
-      }],
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/explicit-module-boundary-types': 'off',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
-      '@typescript-eslint/strict-boolean-expressions': 'off',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+
+  // Shared
   {
     files: ['src/shared/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-        project: ['./tsconfig.json', './tsconfig.renderer.json', './tsconfig.node.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      globals: {
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        console: 'readonly',
-        crypto: 'readonly',
-      },
+      parserOptions: sharedParserOptions,
+      globals: { ...globals.nodeBuiltin },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-    },
+    plugins: { '@typescript-eslint': tseslint },
     rules: {
+      ...sharedTsRules,
       '@typescript-eslint/no-explicit-any': 'warn',
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { 
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
-      }],
       '@typescript-eslint/no-floating-promises': 'error',
       '@typescript-eslint/no-misused-promises': 'off',
-      '@typescript-eslint/strict-boolean-expressions': 'off',
     },
   },
+
+  // Renderer
   {
     files: ['src/renderer/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
-      parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
-        ecmaVersion: 'latest',
-        sourceType: 'module',
-        project: ['./tsconfig.json', './tsconfig.renderer.json', './tsconfig.node.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      globals: {
-        React: 'readonly',
-        Electron: 'readonly',
-        requestAnimationFrame: 'readonly',
-        window: 'readonly',
-        document: 'readonly',
-        navigator: 'readonly',
-        HTMLElement: 'readonly',
-        getComputedStyle: 'readonly',
-        MutationObserver: 'readonly',
-        console: 'readonly',
-        fetch: 'readonly',
-        localStorage: 'readonly',
-        sessionStorage: 'readonly',
-        crypto: 'readonly',
-        btoa: 'readonly',
-        atob: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        performance: 'readonly',
-        Request: 'readonly',
-        Response: 'readonly',
-        Headers: 'readonly',
-        AbortController: 'readonly',
-        URL: 'readonly',
-        URLSearchParams: 'readonly',
-      },
+      parserOptions: sharedParserOptions,
+      globals: { ...globals.browser, React: 'readonly', Electron: 'readonly' },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-      react: react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: {
-        version: 'detect',
-      },
-    },
+    plugins: { ...reactPlugins, 'jsx-a11y': jsxA11y },
+    settings: reactSettings,
     rules: {
+      ...sharedTsRules,
+      ...sharedReactRules,
+      ...promiseRules,
+      ...jsxA11y.flatConfigs.recommended.rules,
+      'jsx-a11y/no-autofocus': 'off', // Intentional in modal/search UX with useFocusTrap
       '@typescript-eslint/no-explicit-any': 'warn',
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { 
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
-      }],
-      '@typescript-eslint/explicit-function-return-type': 'off',
-      '@typescript-eslint/explicit-module-boundary-types': 'off',
-      '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
-      '@typescript-eslint/strict-boolean-expressions': 'off',
-      'react/react-in-jsx-scope': 'off',
-      'react/prop-types': 'off',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+
+  // Scripts
   {
     files: ['scripts/**/*.{mjs,js}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
-      globals: {
-        console: 'readonly',
-        process: 'readonly',
-      },
+      globals: { ...globals.node },
     },
     rules: {
       'no-console': 'off',
     },
   },
+
+  // Tests
   {
-    files: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.spec.ts', 'src/**/*.spec.tsx', 'tests/**/*.ts', 'tests/e2e/**/*.{ts,tsx}', '**/__tests__/**/*'],
+    files: [
+      'src/**/*.test.ts',
+      'src/**/*.test.tsx',
+      'src/**/*.spec.ts',
+      'src/**/*.spec.tsx',
+      'tests/**/*.ts',
+      'tests/e2e/**/*.{ts,tsx}',
+      '**/__tests__/**/*',
+    ],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
-        ecmaFeatures: {
-          jsx: true,
-        },
+        ecmaFeatures: { jsx: true },
         ecmaVersion: 'latest',
         sourceType: 'module',
       },
       globals: {
+        ...globals.node,
+        NodeJS: 'readonly',
         describe: 'readonly',
         it: 'readonly',
         test: 'readonly',
@@ -294,30 +191,13 @@ export default [
         afterEach: 'readonly',
         beforeAll: 'readonly',
         afterAll: 'readonly',
-        console: 'readonly',
-        process: 'readonly',
-        setTimeout: 'readonly',
-        clearTimeout: 'readonly',
       },
     },
-    plugins: {
-      '@typescript-eslint': tseslint,
-      react: react,
-      'react-hooks': reactHooks,
-    },
-    settings: {
-      react: {
-        version: 'detect',
-      },
-    },
+    plugins: reactPlugins,
+    settings: reactSettings,
     rules: {
+      ...sharedTsRules,
       '@typescript-eslint/no-explicit-any': 'warn',
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { 
-        'argsIgnorePattern': '^_',
-        'varsIgnorePattern': '^_',
-        'caughtErrorsIgnorePattern': '^_'
-      }],
     },
   },
 ];

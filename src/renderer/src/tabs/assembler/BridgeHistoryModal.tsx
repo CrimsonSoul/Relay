@@ -1,8 +1,8 @@
-import React, { useState } from "react";
-import { Modal } from "../../components/Modal";
-import { TactileButton } from "../../components/TactileButton";
-import { ContextMenu } from "../../components/ContextMenu";
-import type { BridgeHistoryEntry } from "@shared/ipc";
+import React, { useState } from 'react';
+import { Modal } from '../../components/Modal';
+import { TactileButton } from '../../components/TactileButton';
+import { ContextMenu } from '../../components/ContextMenu';
+import type { BridgeHistoryEntry } from '@shared/ipc';
 
 type BridgeHistoryModalProps = {
   isOpen: boolean;
@@ -33,20 +33,19 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
     const date = new Date(timestamp);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
-    const isYesterday =
-      new Date(now.getTime() - 86400000).toDateString() === date.toDateString();
+    const isYesterday = new Date(now.getTime() - 86400000).toDateString() === date.toDateString();
 
     if (isToday) {
-      return `Today at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+      return `Today at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     }
     if (isYesterday) {
-      return `Yesterday at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+      return `Yesterday at ${date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
     }
     return date.toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
     });
   };
 
@@ -59,21 +58,21 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
-      <div style={{ padding: "24px", minWidth: "480px", maxWidth: "600px" }}>
+      <div style={{ padding: '24px', minWidth: '480px', maxWidth: '600px' }}>
         <div
           style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "16px",
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
           }}
         >
           <h2
             style={{
               margin: 0,
-              fontSize: "18px",
+              fontSize: '18px',
               fontWeight: 600,
-              color: "var(--color-text-primary)",
+              color: 'var(--color-text-primary)',
             }}
           >
             Bridge History
@@ -82,11 +81,11 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
             <TactileButton
               variant="secondary"
               onClick={() => {
-                if (window.confirm("Clear all bridge history?")) {
+                if (window.confirm('Clear all bridge history?')) {
                   onClear();
                 }
               }}
-              style={{ fontSize: "12px", padding: "6px 12px" }}
+              style={{ fontSize: '12px', padding: '6px 12px' }}
             >
               Clear All
             </TactileButton>
@@ -96,89 +95,96 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
         {history.length === 0 ? (
           <div
             style={{
-              padding: "48px 24px",
-              textAlign: "center",
-              color: "var(--color-text-tertiary)",
+              padding: '48px 24px',
+              textAlign: 'center',
+              color: 'var(--color-text-tertiary)',
             }}
           >
-            <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.3 }}>
-              ∅
-            </div>
-            <p style={{ margin: 0, fontSize: "14px" }}>
+            <div style={{ fontSize: '32px', marginBottom: '12px', opacity: 0.3 }}>∅</div>
+            <p style={{ margin: 0, fontSize: '14px' }}>
               No bridge history yet. History is saved when you copy a bridge.
             </p>
           </div>
         ) : (
           <div
             style={{
-              maxHeight: "400px",
-              overflowY: "auto",
-              margin: "0 -24px",
-              padding: "0 24px",
+              maxHeight: '400px',
+              overflowY: 'auto',
+              margin: '0 -24px',
+              padding: '0 24px',
             }}
           >
             {history.map((entry) => (
               <div
                 key={entry.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   onLoad(entry);
                   onClose();
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onLoad(entry);
+                    onClose();
+                  }
+                }}
                 onContextMenu={(e) => handleContextMenu(e, entry)}
                 style={{
-                  padding: "12px 16px",
-                  borderRadius: "8px",
-                  marginBottom: "8px",
-                  background: "var(--color-bg-surface-elevated)",
-                  border: "1px solid var(--color-border-subtle)",
-                  cursor: "pointer",
-                  transition: "all 0.15s ease",
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  marginBottom: '8px',
+                  background: 'var(--color-bg-surface-elevated)',
+                  border: '1px solid var(--color-border-subtle)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--color-bg-card-hover)";
-                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)";
+                  e.currentTarget.style.background = 'var(--color-bg-card-hover)';
+                  e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)';
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--color-bg-surface-elevated)";
-                  e.currentTarget.style.borderColor = "var(--color-border-subtle)";
+                  e.currentTarget.style.background = 'var(--color-bg-surface-elevated)';
+                  e.currentTarget.style.borderColor = 'var(--color-border-subtle)';
                 }}
               >
                 <div
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    marginBottom: "8px",
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    marginBottom: '8px',
                   }}
                 >
                   <span
                     style={{
-                      fontSize: "12px",
-                      color: "var(--color-text-tertiary)",
+                      fontSize: '12px',
+                      color: 'var(--color-text-tertiary)',
                     }}
                   >
                     {formatDate(entry.timestamp)}
                   </span>
                   <span
                     style={{
-                      fontSize: "12px",
-                      color: "var(--color-text-secondary)",
-                      background: "var(--color-bg-card-hover)",
-                      border: "1px solid rgba(255, 255, 255, 0.08)",
-                      padding: "2px 8px",
-                      borderRadius: "8px",
+                      fontSize: '12px',
+                      color: 'var(--color-text-secondary)',
+                      background: 'var(--color-bg-card-hover)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      padding: '2px 8px',
+                      borderRadius: '8px',
                     }}
                   >
-                    {entry.recipientCount} recipient{entry.recipientCount !== 1 ? "s" : ""}
+                    {entry.recipientCount} recipient{entry.recipientCount !== 1 ? 's' : ''}
                   </span>
                 </div>
                 {entry.note && (
                   <div
                     style={{
-                      fontSize: "14px",
+                      fontSize: '14px',
                       fontWeight: 500,
-                      color: "var(--color-text-primary)",
-                      marginBottom: "6px",
+                      color: 'var(--color-text-primary)',
+                      marginBottom: '6px',
                     }}
                   >
                     {entry.note}
@@ -187,21 +193,21 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                 {entry.groups.length > 0 && (
                   <div
                     style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "4px",
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '4px',
                     }}
                   >
                     {entry.groups.map((group) => (
                       <span
                         key={group}
                         style={{
-                          fontSize: "11px",
-                          padding: "2px 8px",
-                          borderRadius: "10px",
-                          background: "rgba(99, 179, 237, 0.15)",
-                          color: "rgba(99, 179, 237, 1)",
-                          border: "1px solid rgba(99, 179, 237, 0.3)",
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background: 'rgba(99, 179, 237, 0.15)',
+                          color: 'rgba(99, 179, 237, 1)',
+                          border: '1px solid rgba(99, 179, 237, 0.3)',
                         }}
                       >
                         {group}
@@ -216,11 +222,11 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
 
         <div
           style={{
-            display: "flex",
-            justifyContent: "flex-end",
-            marginTop: "20px",
-            paddingTop: "16px",
-            borderTop: "1px solid var(--color-border-subtle)",
+            display: 'flex',
+            justifyContent: 'flex-end',
+            marginTop: '20px',
+            paddingTop: '16px',
+            borderTop: '1px solid var(--color-border-subtle)',
           }}
         >
           <TactileButton variant="secondary" onClick={onClose}>
@@ -236,7 +242,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
           onClose={() => setContextMenu(null)}
           items={[
             {
-              label: "Load Bridge",
+              label: 'Load Bridge',
               onClick: () => {
                 onLoad(contextMenu.entry);
                 setContextMenu(null);
@@ -260,7 +266,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
               ),
             },
             {
-              label: "Save as Group",
+              label: 'Save as Group',
               onClick: () => {
                 onSaveAsGroup(contextMenu.entry);
                 setContextMenu(null);
@@ -283,7 +289,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
               ),
             },
             {
-              label: "Delete",
+              label: 'Delete',
               onClick: () => {
                 onDelete(contextMenu.entry.id);
                 setContextMenu(null);

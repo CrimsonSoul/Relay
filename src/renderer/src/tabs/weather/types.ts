@@ -1,30 +1,4 @@
-import type { WeatherAlert } from "@shared/ipc";
-
-export interface WeatherData {
-  timezone?: string;
-  utc_offset_seconds?: number;
-  current_weather: {
-    temperature: number;
-    windspeed: number;
-    winddirection: number;
-    weathercode: number;
-    time: string;
-  };
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-    weathercode: number[];
-    precipitation_probability: number[];
-  };
-  daily: {
-    time: string[];
-    weathercode: number[];
-    temperature_2m_max: number[];
-    temperature_2m_min: number[];
-    wind_speed_10m_max: number[];
-    precipitation_probability_max: number[];
-  };
-}
+import type { WeatherAlert, WeatherData } from '@shared/ipc';
 
 export interface Location {
   latitude: number;
@@ -42,4 +16,4 @@ export interface WeatherTabProps {
 }
 
 // Re-export for convenience
-export type { WeatherAlert };
+export type { WeatherAlert, WeatherData };

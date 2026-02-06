@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
-import type { NoteEntry } from "@shared/ipc";
-import { TagBadge } from "./notes/TagBadge";
-import { TagInput } from "./notes/TagInput";
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import type { NoteEntry } from '@shared/ipc';
+import { TagBadge } from './notes/TagBadge';
+import { TagInput } from './notes/TagInput';
 
 type NotesModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  entityType: "contact" | "server";
+  entityType: 'contact' | 'server';
   entityId: string;
   entityName: string;
   existingNote?: NoteEntry;
@@ -22,17 +22,17 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   existingNote,
   onSave,
 }) => {
-  const [note, setNote] = useState(existingNote?.note || "");
-  const [tagInput, setTagInput] = useState("");
+  const [note, setNote] = useState(existingNote?.note || '');
+  const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(existingNote?.tags || []);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isOpen) {
-      setNote(existingNote?.note || "");
+      setNote(existingNote?.note || '');
       setTags(existingNote?.tags || []);
-      setTagInput("");
+      setTagInput('');
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen, existingNote]);
@@ -42,7 +42,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
     if (trimmed && !tags.includes(trimmed)) {
       setTags([...tags, trimmed]);
     }
-    setTagInput("");
+    setTagInput('');
   };
 
   const handleRemoveTag = (tag: string) => {
@@ -50,7 +50,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+    if (e.key === 'Enter') {
       e.preventDefault();
       handleAddTag();
     }
@@ -74,7 +74,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
     <button
       className="modal-overlay animate-fade-in"
       onClick={onClose}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
+      onKeyDown={(e) => e.key === 'Escape' && onClose()}
       aria-label="Close modal backdrop"
       type="button"
     >
@@ -82,10 +82,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
         className="modal-container animate-scale-in"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="notes-modal-title"
-        tabIndex={-1}
+        role="presentation"
       >
         {/* Header */}
         <div className="modal-header">
@@ -110,7 +107,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
           </div>
           <div style={{ flex: 1 }}>
             <div id="notes-modal-title" className="modal-title-main">
-              {entityType === "contact" ? "Contact Notes" : "Server Notes"}
+              {entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
             </div>
             <div className="modal-title-sub">{entityName}</div>
           </div>
@@ -140,8 +137,10 @@ export const NotesModal: React.FC<NotesModalProps> = ({
         {/* Content */}
         <div className="modal-content">
           {/* Note textarea */}
-          <div style={{ marginBottom: "16px" }}>
-            <label className="modal-label" htmlFor="note-textarea">Note</label>
+          <div style={{ marginBottom: '16px' }}>
+            <label className="modal-label" htmlFor="note-textarea">
+              Note
+            </label>
             <textarea
               id="note-textarea"
               ref={textareaRef}
@@ -154,7 +153,9 @@ export const NotesModal: React.FC<NotesModalProps> = ({
 
           {/* Tags */}
           <div>
-            <label className="modal-label" htmlFor="tag-input-field">Tags</label>
+            <label className="modal-label" htmlFor="tag-input-field">
+              Tags
+            </label>
 
             {/* Tag list */}
             {tags.length > 0 && (
@@ -181,17 +182,12 @@ export const NotesModal: React.FC<NotesModalProps> = ({
           <button type="button" onClick={onClose} className="btn-cancel">
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-save"
-          >
-            {saving ? "Saving..." : "Save Notes"}
+          <button type="button" onClick={handleSave} disabled={saving} className="btn-save">
+            {saving ? 'Saving...' : 'Save Notes'}
           </button>
         </div>
       </div>
     </button>,
-    document.body
+    document.body,
   );
 };

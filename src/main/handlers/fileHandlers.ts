@@ -1,6 +1,6 @@
 import { ipcMain, shell } from 'electron';
-import { join, extname } from 'path';
-import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
+import { extname } from 'path';
+import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
 import { importGroupsFromCsv } from '../operations';
@@ -8,19 +8,24 @@ import { rateLimiters } from '../rateLimiter';
 
 /** Safe file extensions allowed for shell.openPath */
 const SAFE_OPEN_EXTENSIONS = new Set([
-  '.csv', '.json', '.txt', '.log', '.md', '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.svg'
+  '.csv',
+  '.json',
+  '.txt',
+  '.log',
+  '.md',
+  '.pdf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.svg',
 ]);
 
 export function setupFileHandlers(getDataRoot: () => Promise<string>) {
-  const getContactsFilePath = async () => {
-    const root = await getDataRoot();
-    return join(root, 'contacts.csv');
-  };
-
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     const root = await getDataRoot();
-    if (!await validatePath(path, root)) {
+    if (!(await validatePath(path, root))) {
       loggers.security.error(`Blocked access to path outside data root: ${path}`);
       return;
     }
@@ -31,17 +36,6 @@ export function setupFileHandlers(getDataRoot: () => Promise<string>) {
       return;
     }
     await shell.openPath(path);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.OPEN_CONTACTS_FILE, async () => {
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
-    const filePath = await getContactsFilePath();
-    const root = await getDataRoot();
-    if (!await validatePath('contacts.csv', root)) {
-      loggers.security.error('Blocked contacts file access - path validation failed');
-      return;
-    }
-    await shell.openPath(filePath);
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session, dialog } from 'electron';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
 
@@ -10,9 +10,9 @@ const __dirname = dirname(__filename);
 import { validateEnv } from './env';
 import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
-import { setupWindowListeners } from './handlers/windowHandlers';
+import { setupWindowListeners, ALLOWED_AUX_ROUTES } from './handlers/windowHandlers';
 
-// Validate environment early 
+// Validate environment early
 validateEnv();
 
 const gotLock = app.requestSingleInstanceLock();
@@ -31,7 +31,7 @@ if (!gotLock) {
     arch: process.arch,
     platform: process.platform,
     electron: process.versions.electron,
-    node: process.versions.node
+    node: process.versions.node,
   });
 
   // Windows-specific optimizations
@@ -48,8 +48,15 @@ if (!gotLock) {
 
   async function createWindow() {
     state.mainWindow = new BrowserWindow({
-      width: 960, height: 800, minWidth: 400, minHeight: 600, center: true,
-      backgroundColor: '#0B0D12', titleBarStyle: 'hidden', trafficLightPosition: { x: 12, y: 12 }, show: true,
+      width: 960,
+      height: 800,
+      minWidth: 400,
+      minHeight: 600,
+      center: true,
+      backgroundColor: '#0B0D12',
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 12, y: 12 },
+      show: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.cjs'),
         contextIsolation: true,
@@ -59,21 +66,25 @@ if (!gotLock) {
         webSecurity: true,
         allowRunningInsecureContent: false,
         experimentalFeatures: false,
-        ...(process.platform === 'win32' && { spellcheck: false, enableWebSQL: false, v8CacheOptions: 'none' })
-      }
+        ...(process.platform === 'win32' && {
+          spellcheck: false,
+          enableWebSQL: false,
+          v8CacheOptions: 'none',
+        }),
+      },
     });
 
     setupWindowListeners(state.mainWindow);
 
     state.mainWindow.on('close', () => {
       // Close all other windows when the main window is closed
-      BrowserWindow.getAllWindows().forEach(win => {
+      BrowserWindow.getAllWindows().forEach((win) => {
         if (win !== state.mainWindow) win.close();
       });
     });
 
     const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
-    
+
     // Set Content Security Policy
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
@@ -81,21 +92,21 @@ if (!gotLock) {
           ...details.responseHeaders,
           'Content-Security-Policy': [
             "default-src 'self'; " +
-            `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
-            "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
-            "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
-            "font-src 'self' data:; " +
-            "frame-src 'self' https://www.rainviewer.com https://cw-intra-web; " +
-            "object-src 'none'; " +
-            "base-uri 'self'; " +
-            "form-action 'self';"
+              `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
+              "style-src 'self' 'unsafe-inline'; " +
+              "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
+              "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
+              "font-src 'self' data:; " +
+              "frame-src 'self' https://www.rainviewer.com https://cw-intra-web; " +
+              "object-src 'none'; " +
+              "base-uri 'self'; " +
+              "form-action 'self';",
           ],
           'X-Content-Type-Options': ['nosniff'],
           'X-Frame-Options': ['DENY'],
           'X-XSS-Protection': ['1; mode=block'],
-          'Referrer-Policy': ['strict-origin-when-cross-origin']
-        }
+          'Referrer-Policy': ['strict-origin-when-cross-origin'],
+        },
       });
     });
 
@@ -116,8 +127,11 @@ if (!gotLock) {
       await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
       const indexPath = join(__dirname, '../renderer/index.html');
-      void state.mainWindow.loadFile(indexPath).catch(err => {
-        loggers.main.error('Failed to load local index.html', { path: indexPath, error: err.message });
+      void state.mainWindow.loadFile(indexPath).catch((err) => {
+        loggers.main.error('Failed to load local index.html', {
+          path: indexPath,
+          error: err.message,
+        });
         throw err;
       });
     }
@@ -150,7 +164,7 @@ if (!gotLock) {
         return;
       }
 
-      const isAllowed = ALLOWED_WEBVIEW_ORIGINS.some(origin => params.src.startsWith(origin));
+      const isAllowed = ALLOWED_WEBVIEW_ORIGINS.some((origin) => params.src.startsWith(origin));
       if (!isAllowed) {
         loggers.security.warn(`Blocked WebView navigation to non-allowlisted URL: ${params.src}`);
         event.preventDefault();
@@ -181,15 +195,14 @@ if (!gotLock) {
     });
   }
 
-  const ALLOWED_AUX_ROUTES = ['oncall', 'weather', 'directory', 'servers', 'assembler', 'personnel', 'popout/board'];
-
   async function createAuxWindow(route: string) {
-    if (!ALLOWED_AUX_ROUTES.includes(route)) {
+    if (!ALLOWED_AUX_ROUTES.has(route)) {
       loggers.security.warn(`Blocked aux window with invalid route: ${route}`);
       return;
     }
     const auxWindow = new BrowserWindow({
-      width: 960, height: 800,
+      width: 960,
+      height: 800,
       backgroundColor: '#0B0D12',
       title: 'Relay - On-Call Board',
       titleBarStyle: 'hidden',
@@ -199,16 +212,20 @@ if (!gotLock) {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        webSecurity: true
-      }
+        webSecurity: true,
+      },
     });
 
     setupWindowListeners(auxWindow);
 
     // Prevent aux window navigation hijacking
     auxWindow.webContents.on('will-navigate', (event, url) => {
-      const auxIsDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
-      if (auxIsDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+      if (
+        !app.isPackaged &&
+        process.env.ELECTRON_RENDERER_URL &&
+        url.startsWith(process.env.ELECTRON_RENDERER_URL)
+      )
+        return;
       if (url.startsWith('file://')) return;
       loggers.security.warn(`Blocked aux window navigation to: ${url}`);
       event.preventDefault();
@@ -218,8 +235,7 @@ if (!gotLock) {
       return { action: 'deny' };
     });
 
-    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
-    if (isDev) {
+    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
       const url = `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`;
       loggers.main.info(`Loading aux window URL: ${url}`);
       await auxWindow.loadURL(url);
@@ -281,6 +297,8 @@ if (!gotLock) {
   });
 
   process.on('unhandledRejection', (reason: unknown) => {
-    loggers.main.error('Unhandled Rejection', { reason: reason instanceof Error ? reason.message : String(reason) });
+    loggers.main.error('Unhandled Rejection', {
+      reason: reason instanceof Error ? reason.message : String(reason),
+    });
   });
 }

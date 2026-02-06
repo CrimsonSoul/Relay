@@ -1,17 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Contact } from "@shared/ipc";
+import { Contact } from '@shared/ipc';
 
-export type Tab =
-  | "Compose"
-  | "Personnel"
-  | "People"
-  | "Servers"
-  | "Radar"
-  | "Weather"
-  | "AI";
+export type Tab = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Radar' | 'Weather' | 'AI';
 
 export function useAppAssembler() {
-  const [activeTab, setActiveTab] = useState<Tab>("Compose");
+  const [activeTab, setActiveTab] = useState<Tab>('Compose');
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
@@ -19,9 +12,7 @@ export function useAppAssembler() {
 
   const handleAddToAssembler = useCallback((contact: Contact) => {
     setManualRemoves((prev) => prev.filter((e) => e !== contact.email));
-    setManualAdds((prev) =>
-      prev.includes(contact.email) ? prev : [...prev, contact.email]
-    );
+    setManualAdds((prev) => (prev.includes(contact.email) ? prev : [...prev, contact.email]));
   }, []);
 
   const handleUndoRemove = useCallback(() => {
@@ -70,7 +61,6 @@ export function useAppAssembler() {
     manualAdds,
     setManualAdds,
     manualRemoves,
-    setManualRemoves,
     settingsOpen,
     setSettingsOpen,
     handleAddToAssembler,
