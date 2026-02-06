@@ -56,7 +56,7 @@ if (!gotLock) {
       backgroundColor: '#0B0D12',
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 12, y: 12 },
-      show: true,
+      show: false,
       webPreferences: {
         preload: join(__dirname, '../preload/index.cjs'),
         contextIsolation: true,
@@ -69,7 +69,6 @@ if (!gotLock) {
         ...(process.platform === 'win32' && {
           spellcheck: false,
           enableWebSQL: false,
-          v8CacheOptions: 'none',
         }),
       },
     });
