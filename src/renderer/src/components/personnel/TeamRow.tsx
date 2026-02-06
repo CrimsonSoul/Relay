@@ -28,13 +28,11 @@ const getRoleLabel = (role: string) => {
 };
 
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
-  ({ row, hasAnyTimeWindow, gridTemplate, tick }) => {
+  ({ row, hasAnyTimeWindow, gridTemplate, tick: _tick }) => {
     const { showToast } = useToast();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick is intentionally included to force re-evaluation on interval ticks
-    const isActive = useMemo(
-      () => isTimeWindowActive(row.timeWindow || ''),
-      [row.timeWindow, tick],
-    );
+    // _tick is destructured to trigger re-render on interval ticks;
+    // isTimeWindowActive checks the current time so it needs to run each render.
+    const isActive = isTimeWindowActive(row.timeWindow || '');
 
     const isPrimary = useMemo(() => {
       const r = (row.role || '').toLowerCase();
