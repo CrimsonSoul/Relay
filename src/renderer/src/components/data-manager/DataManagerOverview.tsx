@@ -10,7 +10,7 @@ export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <div
       style={{
-        fontSize: "13px",
+        fontSize: "18px",
         fontWeight: 700,
         color: "var(--color-text-tertiary)",
         textTransform: "uppercase",
@@ -19,7 +19,7 @@ export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
     >
       Data Statistics
     </div>
-    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
       <StatCard
         label="Contacts"
         count={stats?.contacts.count || 0}
@@ -44,11 +44,11 @@ export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
     {stats?.hasCsvFiles && (
       <div
         style={{
-          padding: "12px 16px",
+          padding: "14px 18px",
           background: "rgba(255, 180, 0, 0.1)",
           border: "1px solid rgba(255, 180, 0, 0.3)",
-          borderRadius: "8px",
-          fontSize: "13px",
+          borderRadius: "10px",
+          fontSize: "18px",
           color: "var(--color-text-secondary)",
         }}
       >

@@ -91,13 +91,13 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     left: 0,
                     right: 0,
                     marginTop: '4px',
-                    background: '#1E1E21', // Solid background to prevent transparency
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '8px',
+                    background: 'var(--color-bg-chrome)',
+                    border: 'var(--border-medium)',
+                    borderRadius: '10px',
                     maxHeight: '200px',
                     overflowY: 'auto',
                     zIndex: 9999,
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    boxShadow: 'var(--shadow-lg)',
                     padding: '4px'
                 }}>
                     {filteredOptions.length > 0 ? (
@@ -116,7 +116,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
                                     alignItems: 'center'
                                 }}
                                 onMouseEnter={e => {
-                                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                                    e.currentTarget.style.background = 'var(--color-bg-surface-elevated)';
                                 }}
                                 onMouseLeave={e => {
                                     e.currentTarget.style.background = 'transparent';

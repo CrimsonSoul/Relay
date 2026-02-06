@@ -4,9 +4,15 @@ import { getColorForString } from '../../utils/colors';
 export const GroupPill = ({ group }: { group: string }) => {
   const c = getColorForString(group);
   return (
-    <span style={{
-      fontSize: '12px', color: c.text, background: c.bg, border: `1px solid ${c.border}`,
-      padding: '3px 10px', borderRadius: '12px', fontWeight: 700, whiteSpace: 'nowrap'
+    <span className="card-surface" style={{
+      fontSize: '13px',
+      color: c.text,
+      padding: '4px 12px',
+      borderRadius: '12px',
+      fontWeight: 600,
+      whiteSpace: 'nowrap',
+      display: 'inline-flex',
+      alignItems: 'center',
     }}>
       {group.toUpperCase()}
     </span>

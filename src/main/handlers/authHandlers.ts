@@ -5,6 +5,20 @@ import { loggers } from '../logger';
 
 export function setupAuthHandlers() {
   ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (_event, { nonce, username, password, remember }) => {
+    // Input validation
+    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+      loggers.auth.warn('Invalid auth nonce format');
+      return false;
+    }
+    if (typeof username !== 'string' || username.length > 256) {
+      loggers.auth.warn('Invalid username format');
+      return false;
+    }
+    if (typeof password !== 'string' || password.length > 1024) {
+      loggers.auth.warn('Invalid password format');
+      return false;
+    }
+
     const authRequest = consumeAuthRequest(nonce);
     if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce'); return false; }
     if (remember) cacheCredentials(authRequest.host, username, password);
@@ -13,6 +27,10 @@ export function setupAuthHandlers() {
   });
 
   ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, { nonce }) => {
+    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+      loggers.auth.warn('Invalid auth nonce format for cached auth');
+      return false;
+    }
     const authRequest = consumeAuthRequest(nonce);
     if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce for cached auth'); return false; }
     const cached = getCachedCredentials(authRequest.host);
@@ -21,7 +39,13 @@ export function setupAuthHandlers() {
     return true;
   });
 
-  ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (_event, { nonce }) => cancelAuthRequest(nonce));
+  ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (_event, { nonce }) => {
+    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+      loggers.auth.warn('Invalid auth nonce format for cancel');
+      return;
+    }
+    cancelAuthRequest(nonce);
+  });
 }
 
 export function setupAuthInterception(getMainWindow: () => BrowserWindow | null) {

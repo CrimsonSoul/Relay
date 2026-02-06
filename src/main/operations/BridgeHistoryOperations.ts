@@ -7,6 +7,7 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { randomUUID } from "crypto";
 import type { BridgeHistoryEntry } from "@shared/ipc";
 import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
@@ -18,7 +19,7 @@ const MAX_HISTORY_ENTRIES = 100; // Keep last 100 entries
 const MAX_HISTORY_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 function generateId(): string {
-  return `history_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `history_${Date.now()}_${randomUUID()}`;
 }
 
 export async function getBridgeHistory(rootDir: string): Promise<BridgeHistoryEntry[]> {

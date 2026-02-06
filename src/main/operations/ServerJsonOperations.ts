@@ -5,6 +5,7 @@
  */
 
 import { join } from "path";
+import { randomUUID } from "crypto";
 import type { ServerRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -13,7 +14,7 @@ const SERVERS_FILE = "servers.json";
 const SERVERS_FILE_PATH = (rootDir: string) => join(rootDir, SERVERS_FILE);
 
 function generateId(): string {
-  return `server_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `server_${Date.now()}_${randomUUID()}`;
 }
 
 /**

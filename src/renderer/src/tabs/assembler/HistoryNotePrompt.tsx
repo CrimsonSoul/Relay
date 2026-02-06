@@ -21,7 +21,7 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
         bottom: "24px",
         right: "24px",
         background: "var(--color-bg-surface-opaque)",
-        border: "1px solid var(--color-border-medium)",
+        border: "var(--border-medium)",
         borderRadius: "12px",
         padding: "16px",
         boxShadow: "var(--shadow-lg)",
@@ -62,9 +62,9 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
           width: "100%",
           padding: "8px 12px",
           fontSize: "13px",
-          border: "1px solid var(--color-border-medium)",
+          border: "var(--border-medium)",
           borderRadius: "6px",
-          background: "rgba(0, 0, 0, 0.5)",
+          background: "var(--color-bg-surface-elevated)",
           color: "var(--color-text-primary)",
           outline: "none",
           marginBottom: "12px",
@@ -78,8 +78,8 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
           style={{
             padding: "6px 12px",
             fontSize: "12px",
-            background: "transparent",
-            border: "1px solid var(--color-border-medium)",
+            background: "var(--color-bg-surface-elevated)",
+            border: "var(--border-medium)",
             borderRadius: "6px",
             color: "var(--color-text-secondary)",
             cursor: "pointer",
@@ -87,10 +87,10 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
             transition: "all 0.15s ease",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+            e.currentTarget.style.background = "var(--color-bg-card-hover)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.background = "var(--color-bg-surface-elevated)";
           }}
         >
           Cancel
@@ -100,8 +100,8 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
           style={{
             padding: "6px 12px",
             fontSize: "12px",
-            background: "transparent",
-            border: "1px solid var(--color-border-medium)",
+            background: "var(--color-bg-surface-elevated)",
+            border: "var(--border-medium)",
             borderRadius: "6px",
             color: "var(--color-text-secondary)",
             cursor: "pointer",
@@ -109,10 +109,10 @@ export const HistoryNotePrompt: React.FC<HistoryNotePromptProps> = ({
             transition: "all 0.15s ease",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+            e.currentTarget.style.background = "var(--color-bg-card-hover)";
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.background = "var(--color-bg-surface-elevated)";
           }}
         >
           Skip

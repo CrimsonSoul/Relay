@@ -5,6 +5,7 @@
  */
 
 import { join } from "path";
+import { randomUUID } from "crypto";
 import type { ContactRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -13,7 +14,7 @@ const CONTACTS_FILE = "contacts.json";
 const CONTACTS_FILE_PATH = (rootDir: string) => join(rootDir, CONTACTS_FILE);
 
 function generateId(): string {
-  return `contact_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  return `contact_${Date.now()}_${randomUUID()}`;
 }
 
 /**

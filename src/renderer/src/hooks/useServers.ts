@@ -27,7 +27,7 @@ export function useServers(servers: Server[], contacts: Contact[]) {
 
   useEffect(() => { if (contextMenu) { const handler = () => setContextMenu(null); window.addEventListener('click', handler); return () => window.removeEventListener('click', handler); } }, [contextMenu]);
 
-  const handleDelete = async () => { if (contextMenu) { await window.api.removeServer(contextMenu.server.name); setContextMenu(null); } };
+  const handleDelete = async () => { if (contextMenu) { try { await window.api?.removeServer(contextMenu.server.name); } catch { /* handled by IPC layer */ } setContextMenu(null); } };
   const handleEdit = () => { if (contextMenu) { setEditingServer(contextMenu.server); setIsAddModalOpen(true); setContextMenu(null); } };
   const openAddModal = () => { setEditingServer(undefined); setIsAddModalOpen(true); };
 

@@ -100,23 +100,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
         <input
           id={id}
           ref={innerRef}
-          style={{
-            width: '100%',
-            background: 'var(--color-bg-surface)',
-            border: 'var(--border-medium)',
-            borderRadius: 'var(--radius-md)',
-            padding: '8px 14px',
-            paddingLeft: icon ? '36px' : '14px',
-            paddingRight: hasValue ? '36px' : '14px',
-            fontSize: '15px',
-            color: 'var(--color-text-primary)',
-            outline: 'none',
-            fontFamily: 'var(--font-family-base)',
-            transition: 'all var(--transition-base)',
-            boxShadow: 'var(--shadow-xs)',
-            letterSpacing: '-0.01em',
-            ...inputStyle
-          }}
+          style={{ ...(icon ? { paddingLeft: '40px' } : {}), ...inputStyle }}
           onFocus={(e) => {
             setHasValue(!!e.target.value);
             props.onFocus?.(e);
@@ -126,7 +110,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
             props.onBlur?.(e);
           }}
           {...props}
-          className={className}
+          className={`tactile-input ${className}`}
           onChange={(e) => {
             setHasValue(!!e.target.value);
             props.onChange?.(e);
@@ -191,7 +175,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(({ style, ic
                 e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
               }}
               onFocus={e => {
-                e.currentTarget.style.borderColor = 'var(--color-accent-primary)';
+                e.currentTarget.style.borderColor = 'var(--color-accent-blue)';
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
               }}
               onBlur={e => {

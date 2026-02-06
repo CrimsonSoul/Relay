@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { App } from 'electron';
 import { LogData } from '@shared/types';
@@ -121,13 +121,17 @@ class Logger {
   }
 
   private ensureLogDirectory(): void {
+    // Fire-and-forget async init; sync fallback only for the mkdir
+    // to guarantee the directory exists before any log writes
+    void this.ensureLogDirectoryAsync();
+  }
+
+  private async ensureLogDirectoryAsync(): Promise<void> {
     try {
-      if (!fs.existsSync(this.logPath)) {
-        fs.mkdirSync(this.logPath, { recursive: true });
-      }
+      await fsPromises.mkdir(this.logPath, { recursive: true });
       // Write session start marker
       const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
-      fs.appendFileSync(this.currentLogFile, sessionMarker);
+      await fsPromises.appendFile(this.currentLogFile, sessionMarker);
     } catch (_e) {
       // Don't use logger.error here or we might recurse
       console.error('[Logger] Failed to create log directory:', _e);
@@ -237,9 +241,13 @@ class Logger {
 
   private async rotateIfNeeded(filePath: string): Promise<void> {
     try {
-      if (!fs.existsSync(filePath)) return;
+      let stats;
+      try {
+        stats = await fsPromises.stat(filePath);
+      } catch {
+        return; // File doesn't exist
+      }
 
-      const stats = fs.statSync(filePath);
       if (stats.size < this.config.maxFileSize) return;
 
       const baseName = path.basename(filePath, '.log');
@@ -248,16 +256,19 @@ class Logger {
       for (let i = this.config.maxFiles; i >= 1; i--) {
         const oldFile = path.join(dirName, `${baseName}.${i}.log`);
         const newFile = path.join(dirName, `${baseName}.${i + 1}.log`);
-        if (fs.existsSync(oldFile)) {
+        try {
+          await fsPromises.access(oldFile);
           if (i === this.config.maxFiles) {
-            fs.unlinkSync(oldFile);
+            await fsPromises.unlink(oldFile);
           } else {
-            fs.renameSync(oldFile, newFile);
+            await fsPromises.rename(oldFile, newFile);
           }
+        } catch {
+          // File doesn't exist, skip
         }
       }
 
-      fs.renameSync(filePath, path.join(dirName, `${baseName}.1.log`));
+      await fsPromises.rename(filePath, path.join(dirName, `${baseName}.1.log`));
     } catch (e) {
       console.error('[Logger] Failed to rotate logs:', e);
     }
@@ -280,13 +291,13 @@ class Logger {
       // Write main log queue (async)
       while (this.writeQueue.length > 0) {
         const batch = this.writeQueue.splice(0, LOG_BATCH_SIZE).join('\n') + '\n';
-        await fs.promises.appendFile(this.currentLogFile, batch);
+        await fsPromises.appendFile(this.currentLogFile, batch);
       }
 
       // Write error log queue (async)
       while (this.errorQueue.length > 0) {
         const batch = this.errorQueue.splice(0, LOG_BATCH_SIZE).join('\n') + '\n';
-        await fs.promises.appendFile(this.errorLogFile, batch);
+        await fsPromises.appendFile(this.errorLogFile, batch);
       }
     } catch (e) {
       console.error('[Logger] Failed to write to log file:', e);

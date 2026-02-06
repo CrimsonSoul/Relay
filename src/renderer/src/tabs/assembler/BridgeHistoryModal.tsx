@@ -129,17 +129,17 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                   padding: "12px 16px",
                   borderRadius: "8px",
                   marginBottom: "8px",
-                  background: "rgba(0, 0, 0, 0.3)",
+                  background: "var(--color-bg-surface-elevated)",
                   border: "1px solid var(--color-border-subtle)",
                   cursor: "pointer",
                   transition: "all 0.15s ease",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
-                  e.currentTarget.style.borderColor = "var(--color-border-medium)";
+                  e.currentTarget.style.background = "var(--color-bg-card-hover)";
+                  e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.08)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(0, 0, 0, 0.3)";
+                  e.currentTarget.style.background = "var(--color-bg-surface-elevated)";
                   e.currentTarget.style.borderColor = "var(--color-border-subtle)";
                 }}
               >
@@ -163,9 +163,10 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                     style={{
                       fontSize: "12px",
                       color: "var(--color-text-secondary)",
-                      background: "rgba(255,255,255,0.06)",
+                      background: "var(--color-bg-card-hover)",
+                      border: "1px solid rgba(255, 255, 255, 0.08)",
                       padding: "2px 8px",
-                      borderRadius: "10px",
+                      borderRadius: "8px",
                     }}
                   >
                     {entry.recipientCount} recipient{entry.recipientCount !== 1 ? "s" : ""}

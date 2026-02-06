@@ -51,7 +51,7 @@ vi.mock('../logger', () => ({
 describe('dataRecordHandlers', () => {
   const handlers: Record<string, Function> = {};
   const dataRoot = '/test/data';
-  const getDataRoot = () => dataRoot;
+  const getDataRoot = async () => dataRoot;
 
   beforeEach(() => {
     vi.clearAllMocks();

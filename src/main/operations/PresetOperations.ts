@@ -8,6 +8,7 @@ import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
 import { dialog } from "electron";
+import { randomUUID } from "crypto";
 import type { BridgeGroup } from "@shared/ipc";
 import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
@@ -18,7 +19,7 @@ const GROUPS_FILE = "bridgeGroups.json";
 const GROUPS_FILE_PATH = (rootDir: string) => join(rootDir, GROUPS_FILE);
 
 function generateId(): string {
-  return `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `group_${Date.now()}_${randomUUID()}`;
 }
 
 export async function getGroups(rootDir: string): Promise<BridgeGroup[]> {

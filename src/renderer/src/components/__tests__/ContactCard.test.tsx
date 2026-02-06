@@ -44,7 +44,7 @@ describe('ContactCard Component', () => {
 
     const cardElement = container.querySelector('.contact-card-hover');
     expect(cardElement).toHaveStyle({
-      background: 'rgba(59, 130, 246, 0.08)'
+      background: 'rgba(59, 130, 246, 0.06)'
     });
   });
 

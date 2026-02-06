@@ -3,8 +3,9 @@ import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
+const RADAR_URL = 'https://cw-intra-web/CWDashboard/Home/Radar';
+
 export const RadarTab: React.FC = () => {
-  const [url] = useState('https://cw-intra-web/CWDashboard/Home/Radar');
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -32,8 +33,8 @@ export const RadarTab: React.FC = () => {
       height: '100%',
       display: 'flex',
       flexDirection: 'column',
-      padding: '20px 24px 24px 24px',
-      background: 'var(--color-bg-app)',
+      padding: '24px 32px',
+      background: 'transparent',
       overflow: 'hidden'
     }}>
 
@@ -71,10 +72,10 @@ export const RadarTab: React.FC = () => {
         position: 'relative',
         background: 'black',
         overflow: 'hidden',
-        borderRadius: '12px',
+        borderRadius: '16px',
         // Force the GPU to clip the webview using a mask-image hack
-        WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
-        maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='12' ry='12' fill='white' /%3E%3C/svg%3E")`,
+        WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='16' ry='16' fill='white' /%3E%3C/svg%3E")`,
+        maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='16' ry='16' fill='white' /%3E%3C/svg%3E")`,
         transform: 'translateZ(0)',
       }}>
         {/* 
@@ -85,8 +86,8 @@ export const RadarTab: React.FC = () => {
         <div style={{
           position: 'absolute',
           inset: 0,
-          borderRadius: '12px',
-          border: '1.5px solid var(--color-bg-app)', // Use app background color to mask
+          borderRadius: '16px',
+          border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 0 0 1px rgba(0,0,0,0.5)', // Extra sub-pixel choke
           pointerEvents: 'none',
           zIndex: 10,
@@ -94,8 +95,10 @@ export const RadarTab: React.FC = () => {
 
         <webview
           ref={webviewRef}
-          src={url}
+          src={RADAR_URL}
           partition="persist:dispatcher-radar"
+          title="Dispatcher Radar"
+          webpreferences="contextIsolation=yes, nodeIntegration=no"
           style={{
             width: '100%',
             height: '100%',
@@ -105,9 +108,6 @@ export const RadarTab: React.FC = () => {
         />
       </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 };

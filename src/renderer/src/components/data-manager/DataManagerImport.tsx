@@ -23,7 +23,7 @@ export const DataManagerImport: React.FC<Props> = ({
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <div
       style={{
-        fontSize: "13px",
+        fontSize: "18px",
         fontWeight: 700,
         color: "var(--color-text-tertiary)",
         textTransform: "uppercase",
@@ -34,15 +34,15 @@ export const DataManagerImport: React.FC<Props> = ({
     </div>
     <div
       style={{
-        fontSize: "12px",
+        fontSize: "18px",
         color: "var(--color-text-secondary)",
-        lineHeight: 1.5,
+        lineHeight: 1.55,
       }}
     >
       Import data from JSON or CSV files. Existing records will be updated by
       email (contacts), name (servers), or team+role+name (on-call).
     </div>
-    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
       <CategorySelect
         value={importCategory}
         onChange={setImportCategory}
@@ -52,7 +52,7 @@ export const DataManagerImport: React.FC<Props> = ({
         onClick={onImport}
         variant="primary"
         disabled={importing}
-        style={{ minWidth: "100px", justifyContent: "center" }}
+        style={{ minWidth: "170px", height: "56px", fontSize: "20px", justifyContent: "center" }}
       >
         {importing ? "Importing..." : "Import..."}
       </TactileButton>
@@ -60,7 +60,7 @@ export const DataManagerImport: React.FC<Props> = ({
     {lastImportResult && (
       <div
         style={{
-          padding: "12px 16px",
+          padding: "14px 18px",
           background: lastImportResult.success
             ? "rgba(0, 180, 80, 0.1)"
             : "rgba(255, 80, 80, 0.1)",
@@ -69,8 +69,8 @@ export const DataManagerImport: React.FC<Props> = ({
               ? "rgba(0, 180, 80, 0.3)"
               : "rgba(255, 80, 80, 0.3)"
           }`,
-          borderRadius: "8px",
-          fontSize: "13px",
+          borderRadius: "10px",
+          fontSize: "18px",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between" }}>
@@ -96,7 +96,7 @@ export const DataManagerImport: React.FC<Props> = ({
           <div
             style={{
               marginTop: "8px",
-              fontSize: "12px",
+              fontSize: "16px",
               color: "var(--color-text-secondary)",
             }}
           >

@@ -18,7 +18,7 @@ export const PALETTE: ColorScheme[] = [
   { bg: 'rgba(132, 204, 22, 0.2)', border: 'rgba(132, 204, 22, 0.4)', text: '#BEF264', fill: '#84CC16' }, // Lime
   { bg: 'rgba(244, 63, 94, 0.2)', border: 'rgba(244, 63, 94, 0.4)', text: '#FDA4AF', fill: '#F43F5E' }, // Rose
   { bg: 'rgba(20, 184, 166, 0.2)', border: 'rgba(20, 184, 166, 0.4)', text: '#5EEAD4', fill: '#14B8A6' }, // Teal
-  { bg: 'rgba(100, 116, 139, 0.2)', border: 'rgba(100, 116, 139, 0.4)', text: '#CBD5E1', fill: '#64748B' }, // Slate
+  { bg: 'rgba(251, 191, 36, 0.2)', border: 'rgba(251, 191, 36, 0.4)', text: '#FDE68A', fill: '#FBBF24' }, // Gold
   { bg: 'rgba(168, 85, 247, 0.2)', border: 'rgba(168, 85, 247, 0.4)', text: '#D8B4FE', fill: '#A855F7' }, // Purple
 ];
 

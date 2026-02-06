@@ -2,14 +2,14 @@ import React from 'react';
 import { TactileButton } from './TactileButton';
 import { Modal } from './Modal';
 
-const menuItemStyle = { borderRadius: '4px', textTransform: 'none' as const, justifyContent: 'flex-start' as const, fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' };
-const sectionHeaderStyle = { padding: '8px 12px 4px', fontSize: '10px', fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' };
+const menuItemStyle = { borderRadius: '8px', textTransform: 'none' as const, justifyContent: 'flex-start' as const, fontSize: '13px', fontWeight: 500, color: 'var(--color-text-secondary)' };
+const sectionHeaderStyle = { padding: '8px 12px 4px', fontSize: '10px', fontWeight: 600, color: 'var(--color-text-tertiary)', textTransform: 'uppercase' as const, letterSpacing: '0.05em' };
 
 interface MenuItemProps { label: string; onClick: () => void }
 const MenuItem: React.FC<MenuItemProps> = ({ label, onClick }) => <TactileButton onClick={onClick} variant="ghost" block style={menuItemStyle}>{label}</TactileButton>;
 
 const SectionHeader: React.FC<{ title: string }> = ({ title }) => <div style={sectionHeaderStyle}>{title}</div>;
-const Divider = () => <div style={{ height: '1px', background: 'var(--color-border)', margin: '4px 8px' }} />;
+const Divider = () => <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.06)', margin: '4px 8px' }} />;
 
 interface SettingsMenuProps { onOpenGroups: () => void; onOpenContacts: () => void; onImportGroups: () => void; onImportContacts: () => void }
 
@@ -43,9 +43,9 @@ export const SettingsMenu: React.FC<SettingsMenuProps> = ({ onOpenGroups, onOpen
     <div ref={menuRef} style={{ position: 'relative' }}>
       <TactileButton onClick={() => setIsOpen(!isOpen)} variant="secondary" active={isOpen}>Settings</TactileButton>
       {isOpen && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '200px', background: '#0b0d12', border: '1px solid var(--color-border)', borderRadius: '8px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)', zIndex: 100, backdropFilter: 'blur(20px)', padding: '8px' }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '220px', background: 'var(--color-bg-chrome)', border: 'var(--border-medium)', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', zIndex: 100, backdropFilter: 'blur(20px)', padding: '8px' }}>
           <SectionHeader title="Data Storage" />
-          <div style={{ padding: '4px 12px 8px', fontSize: '11px', color: 'var(--text-secondary)', wordBreak: 'break-all', opacity: 0.7 }}>{dataPath || 'Loading...'}</div>
+          <div style={{ padding: '4px 12px 8px', fontSize: '11px', color: 'var(--color-text-secondary)', wordBreak: 'break-all', opacity: 0.75 }}>{dataPath || 'Loading...'}</div>
           <MenuItem label="Change Folder..." onClick={handleChangeFolder} />
           <MenuItem label="Reset to Default" onClick={handleReset} />
           <MenuItem label="Generate Dummy Data" onClick={handleGenerateDummyData} />

@@ -8,7 +8,7 @@ interface SidebarButtonProps {
   onClick: () => void;
 }
 
-export const SidebarButton: React.FC<SidebarButtonProps> = ({
+export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(({
   icon,
   label,
   isActive,
@@ -16,15 +16,14 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
 }) => {
   const [isHovered, setIsHovered] = useState(false);
 
-  const background = isActive || isHovered ? "var(--color-accent-blue)" : "rgba(255, 255, 255, 0.03)";
-  const getTransform = () => {
-    if (!isHovered) return "scale(1)";
-    return isActive ? "scale(1.05)" : "translateY(-1px) scale(1.05)";
-  };
-
+  const background = isActive ? "var(--app-surface-2)" : (isHovered ? "rgba(255, 255, 255, 0.04)" : "transparent");
+  
   return (
     <Tooltip content={label} position="right">
       <button
+        type="button"
+        aria-label={label}
+        aria-pressed={isActive}
         data-testid={`sidebar-${label.toLowerCase().replaceAll(/\s+/g, '-')}`}
         data-active={isActive}
         onClick={onClick}
@@ -34,18 +33,17 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          width: "40px",
-          height: "40px",
+          width: "50px",
+          height: "50px",
           background,
-          border: "none",
+          border: isActive ? "1px solid rgba(255, 255, 255, 0.08)" : "1px solid transparent",
           cursor: "pointer",
           position: "relative",
-          color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
-          transition: "all var(--transition-smooth)",
-          borderRadius: "20px",
+          color: isActive ? "#ffffff" : (isHovered ? "#ffffff" : "var(--color-text-secondary)"),
+          transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+          borderRadius: "14px",
           outline: "none",
-          transform: getTransform(),
-          boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
+          boxShadow: isActive ? "0 8px 24px rgba(0, 0, 0, 0.4)" : "none",
         }}
       >
         <div
@@ -53,8 +51,10 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            transition: "all var(--transition-smooth)",
-            filter: isActive || isHovered ? "grayscale(0) opacity(1)" : "grayscale(1) opacity(0.85)",
+            transition: "all 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
+            transform: isHovered ? "scale(1.1)" : "scale(1)",
+            opacity: isActive || isHovered ? 1 : 0.6,
+            filter: isActive ? "drop-shadow(0 0 8px rgba(59, 130, 246, 0.5))" : "none"
           }}
         >
           {icon}
@@ -64,18 +64,17 @@ export const SidebarButton: React.FC<SidebarButtonProps> = ({
           <div
             style={{
               position: "absolute",
-              left: "-12px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              height: "24px",
+              left: "-11px",
+              top: "12px",
+              bottom: "12px",
               width: "4px",
-              background: "white",
+              background: "var(--color-accent-blue)",
               borderRadius: "0 4px 4px 0",
-              boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
+              boxShadow: "0 0 15px var(--color-accent-blue)",
             }}
           />
         )}
       </button>
     </Tooltip>
   );
-};
+});

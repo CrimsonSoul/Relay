@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import type { WeatherData } from "./types";
 import { Tooltip } from "../../components/Tooltip";
-import { getWeatherIcon, getWeatherDescription } from "./utils";
+import { getWeatherIcon, getWeatherDescription, getWeatherOffsetMs } from "./utils";
 
 interface HourlyForecastProps {
   weather: WeatherData | null;
@@ -9,33 +9,46 @@ interface HourlyForecastProps {
 
 export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
   // Filter hourly forecast to only show future hours
-  const filteredHourlyForecast = useMemo(() => {
-    if (!weather) return [];
-    const now = new Date();
-    const currentHour = now.getHours();
+  const hourlyState = useMemo(() => {
+    if (!weather) {
+      return { items: [], startIndex: 0 };
+    }
 
-    return weather.hourly.time
-      .map((t, i) => ({
+    const times = weather.hourly.time || [];
+    if (times.length === 0) {
+      return { items: [], startIndex: 0 };
+    }
+
+    const offsetMs = getWeatherOffsetMs(weather);
+    const locationNow = new Date(Date.now() + offsetMs);
+    const locationKey = `${locationNow.getUTCFullYear()}-${String(locationNow.getUTCMonth() + 1).padStart(2, "0")}-${String(locationNow.getUTCDate()).padStart(2, "0")}T${String(locationNow.getUTCHours()).padStart(2, "0")}:00`;
+    const utcNow = new Date();
+    const utcKey = `${utcNow.getUTCFullYear()}-${String(utcNow.getUTCMonth() + 1).padStart(2, "0")}-${String(utcNow.getUTCDate()).padStart(2, "0")}T${String(utcNow.getUTCHours()).padStart(2, "0")}:00`;
+
+    let startIndex = times.findIndex((t) => t === locationKey);
+    if (startIndex === -1) {
+      startIndex = times.findIndex((t) => t === utcKey);
+    }
+    if (startIndex === -1) {
+      startIndex = times.findIndex((t) => t > locationKey);
+    }
+    if (startIndex === -1) {
+      startIndex = 0;
+    }
+
+    const items = times.slice(startIndex, startIndex + 12).map((t, offset) => {
+      const index = startIndex + offset;
+      return {
         time: t,
-        temp: weather.hourly.temperature_2m[i],
-        code: weather.hourly.weathercode[i],
-        precip: weather.hourly.precipitation_probability[i],
-        index: i,
-      }))
-      .filter((item) => {
-        const date = new Date(item.time);
-        // Show current hour and future hours, up to 12 items
-        return (
-          date >=
-            new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-              currentHour
-            )
-        );
-      })
-      .slice(0, 12);
+        temp: weather.hourly.temperature_2m[index],
+        code: weather.hourly.weathercode[index],
+        precip: weather.hourly.precipitation_probability[index],
+        index,
+        isNow: index === startIndex,
+      };
+    });
+
+    return { items, startIndex };
   }, [weather]);
 
   if (!weather) return null;
@@ -43,21 +56,22 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
   return (
     <div
       style={{
-        background: "var(--color-bg-card)",
-        borderRadius: "10px",
-        padding: "14px",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--app-surface)",
+        borderRadius: "16px",
+        padding: "20px",
+        border: "1px solid rgba(255,255,255,0.06)",
         flexShrink: 0,
+        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
       }}
     >
       <h3
         style={{
           fontSize: "12px",
-          fontWeight: 600,
-          marginBottom: "12px",
+          fontWeight: 700,
+          marginBottom: "16px",
           color: "var(--color-text-secondary)",
           textTransform: "uppercase",
-          letterSpacing: "0.5px",
+          letterSpacing: "0.05em",
         }}
       >
         Hourly Forecast
@@ -67,10 +81,10 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: "4px",
+          gap: "8px",
           overflowX: "auto",
           overflowY: "hidden",
-          padding: "24px 10px",
+          padding: "8px 4px",
           scrollBehavior: "smooth",
           listStyle: "none",
           margin: 0,
@@ -92,13 +106,15 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
           }
         }}
       >
-        {filteredHourlyForecast.map((item) => {
-          const date = new Date(item.time);
-          const now = new Date();
-          const isNow =
-            date.getHours() === now.getHours() &&
-            date.getDate() === now.getDate();
-          const timeLabel = isNow ? "Current hour" : date.toLocaleTimeString([], { hour: "numeric" });
+        {hourlyState.items.map((item) => {
+          const timePart = item.time.split("T")[1] || "00:00";
+          const hourStr = timePart.split(":")[0] || "0";
+          const hours = Number(hourStr);
+          const displayHour = hours % 12 || 12;
+          const suffix = hours >= 12 ? "PM" : "AM";
+          const hourLabel = `${displayHour} ${suffix}`;
+          const isNow = item.isNow;
+          const timeLabel = isNow ? "Current hour" : hourLabel;
           const precipLabel = item.precip > 0 ? `${item.precip}% chance of precipitation` : "no precipitation expected";
           const ariaLabel = `${timeLabel}, ${Math.round(item.temp)} degrees, ${precipLabel}`;
           return (
@@ -131,20 +147,18 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
                 e.currentTarget.style.transform = "translateY(0) scale(1)";
               }}
             >
-              <span
-                style={{
-                  fontSize: "12px",
-                  color: isNow
-                    ? "var(--color-accent-blue)"
-                    : "var(--color-text-tertiary)",
-                  marginBottom: "6px",
-                  fontWeight: isNow ? 600 : 400,
-                }}
-              >
-                {isNow
-                  ? "Now"
-                  : date.toLocaleTimeString([], { hour: "numeric" })}
-              </span>
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: isNow
+                      ? "var(--color-accent-blue)"
+                      : "var(--color-text-tertiary)",
+                    marginBottom: "6px",
+                    fontWeight: isNow ? 600 : 400,
+                  }}
+                >
+                  {isNow ? "Now" : hourLabel}
+                </span>
               <Tooltip content={getWeatherDescription(item.code)} position="top">
                 <div style={{ marginBottom: "6px" }}>
                   {getWeatherIcon(item.code, 18)}
@@ -165,7 +179,7 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
               ) : (
                 <div style={{ height: "15px" }} />
               )}
-              <span style={{ fontSize: "14px", fontWeight: 500 }}>
+              <span style={{ fontSize: "14px", fontWeight: 600, color: '#ffffff' }}>
                 {Math.round(item.temp)}°
               </span>
             </li>

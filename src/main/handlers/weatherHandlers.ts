@@ -43,7 +43,8 @@ export function setupWeatherHandlers() {
       }
 
       const res = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16`
+        `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16&timezone=auto`,
+        { cache: "no-store" }
       );
       if (!res.ok) throw new Error('Failed to fetch weather data');
       return await res.json();
@@ -55,7 +56,7 @@ export function setupWeatherHandlers() {
         lat,
         lon
       });
-      throw err;
+      return { error: 'Weather service unavailable' };
     }
   });
 
@@ -125,7 +126,7 @@ export function setupWeatherHandlers() {
         category: ErrorCategory.NETWORK,
         query
       });
-      throw err;
+      return { error: 'Location search unavailable' };
     }
   });
 

@@ -13,13 +13,20 @@ interface IpApiCoResponse {
   timezone?: string;
 }
 
-interface IpApiComResponse {
-  lat?: number;
-  lon?: number;
+interface IpInfoIoResponse {
+  ip?: string;
   city?: string;
-  regionName?: string;
+  region?: string;
   country?: string;
+  loc?: string; // "lat,lon" format
   timezone?: string;
+}
+
+/** Runtime validation for location API responses */
+function validateLocationResponse(data: { lat?: unknown; lon?: unknown; city?: unknown; region?: unknown; country?: unknown; timezone?: unknown }): boolean {
+  const lat = Number(data.lat);
+  const lon = Number(data.lon);
+  return !isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
 }
 
 export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null) {
@@ -36,8 +43,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       });
       if (res.ok) {
         const data = await res.json() as IpApiCoResponse;
-        loggers.ipc.info('Location found via ipapi.co', { city: data.city });
-        return {
+        const result = {
           lat: data.latitude,
           lon: data.longitude,
           city: data.city,
@@ -45,38 +51,46 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
           country: data.country_name,
           timezone: data.timezone
         };
+        if (validateLocationResponse(result)) {
+          loggers.ipc.info('Location found via ipapi.co', { city: data.city });
+          return result;
+        }
+        loggers.ipc.warn('ipapi.co returned invalid location data');
+      } else {
+        loggers.ipc.warn('ipapi.co returned non-OK status', { status: res.status });
       }
-      loggers.ipc.warn('ipapi.co returned non-OK status', { status: res.status });
     } catch (err) {
       loggers.ipc.warn('ipapi.co failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
-    // Provider 2: ip-api.com (HTTPS with HTTP fallback)
-    for (const protocol of ['https', 'http']) {
-      try {
-        if (protocol === 'http') {
-          loggers.ipc.info('Falling back to HTTP for ip-api.com (corporate network compatibility)');
+    // Provider 2: ipinfo.io (HTTPS only — replaced insecure ip-api.com)
+    try {
+      loggers.ipc.debug('Trying ipinfo.io...');
+      const res = await fetch('https://ipinfo.io/json', {
+        headers: { 'User-Agent': 'Relay-App' },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (res.ok) {
+        const data = await res.json() as IpInfoIoResponse;
+        const [lat, lon] = (data.loc || '').split(',').map(Number);
+        const result = {
+          lat,
+          lon,
+          city: data.city,
+          region: data.region,
+          country: data.country,
+          timezone: data.timezone
+        };
+        if (validateLocationResponse(result)) {
+          loggers.ipc.info('Location found via ipinfo.io', { city: data.city });
+          return result;
         }
-        loggers.ipc.debug(`Trying ip-api.com (${protocol})...`);
-        const res = await fetch(`${protocol}://ip-api.com/json/`, {
-          signal: AbortSignal.timeout(5000)
-        });
-        if (res.ok) {
-          const data = await res.json() as IpApiComResponse;
-          loggers.ipc.info(`Location found via ip-api.com (${protocol})`, { city: data.city });
-          return {
-            lat: data.lat,
-            lon: data.lon,
-            city: data.city,
-            region: data.regionName,
-            country: data.country,
-            timezone: data.timezone
-          };
-        }
-        loggers.ipc.warn(`ip-api.com (${protocol}) returned non-OK status`, { status: res.status });
-      } catch (err) {
-        loggers.ipc.warn(`ip-api.com (${protocol}) failed`, { error: err instanceof Error ? err.message : String(err) });
+        loggers.ipc.warn('ipinfo.io returned invalid location data');
+      } else {
+        loggers.ipc.warn('ipinfo.io returned non-OK status', { status: res.status });
       }
+    } catch (err) {
+      loggers.ipc.warn('ipinfo.io failed', { error: err instanceof Error ? err.message : String(err) });
     }
 
     // Provider 3: ipwho.is (HTTPS)
@@ -96,8 +110,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
           timezone?: { id?: string };
         };
         if (data.success) {
-          loggers.ipc.info('Location found via ipwho.is', { city: data.city });
-          return {
+          const result = {
             lat: data.latitude,
             lon: data.longitude,
             city: data.city,
@@ -105,6 +118,11 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
             country: data.country,
             timezone: data.timezone?.id
           };
+          if (validateLocationResponse(result)) {
+            loggers.ipc.info('Location found via ipwho.is', { city: data.city });
+            return result;
+          }
+          loggers.ipc.warn('ipwho.is returned invalid location data');
         }
       }
     } catch (err) {

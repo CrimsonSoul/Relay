@@ -6,6 +6,7 @@
 import { join } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { randomUUID } from "crypto";
 import type { SavedLocation } from "@shared/ipc";
 import { isNodeError } from "@shared/types";
 import { loggers } from "../logger";
@@ -15,7 +16,7 @@ const LOCATIONS_FILE = "savedLocations.json";
 const LOCATIONS_FILE_PATH = (rootDir: string) => join(rootDir, LOCATIONS_FILE);
 
 function generateId(): string {
-  return `loc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `loc_${Date.now()}_${randomUUID()}`;
 }
 
 export async function getSavedLocations(rootDir: string): Promise<SavedLocation[]> {

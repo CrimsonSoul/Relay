@@ -16,7 +16,6 @@ import {
   type TeamLayout 
 } from "@shared/ipc";
 import fs from "fs/promises";
-import { existsSync } from "fs";
 
 import { loggers } from "./logger";
 import { createFileWatcher, FileType } from "./FileWatcher";
@@ -136,24 +135,28 @@ export class FileManager implements FileContext {
     return this.fsService.resolveExistingFile(fileNames);
   }
 
-  private hasJsonData(): boolean {
+  private async hasJsonData(): Promise<boolean> {
     return this.fsService.hasJsonData();
   }
 
   private async loadContacts(): Promise<Contact[]> {
-    if (existsSync(join(this.rootDir, "contacts.json"))) {
+    try {
+      await fs.access(join(this.rootDir, "contacts.json"));
       const records = await getContactsJson(this.rootDir);
       return records.map(contactRecordToContact);
+    } catch {
+      return parseContacts(this);
     }
-    return parseContacts(this);
   }
 
   private async loadServers(): Promise<Server[]> {
-    if (existsSync(join(this.rootDir, "servers.json"))) {
+    try {
+      await fs.access(join(this.rootDir, "servers.json"));
       const records = await getServersJson(this.rootDir);
       return records.map(serverRecordToServer);
+    } catch {
+      return parseServers(this);
     }
-    return parseServers(this);
   }
 
   private async loadOnCall(): Promise<OnCallRow[]> {
@@ -275,7 +278,7 @@ export class FileManager implements FileContext {
 
   // Delegated Operations
   public async removeContact(email: string) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       const contact = await findContactByEmail(this.rootDir, email);
       if (contact) {
         const success = await deleteContactRecord(this.rootDir, contact.id);
@@ -288,7 +291,7 @@ export class FileManager implements FileContext {
   }
 
   public async addContact(contact: Partial<Contact>) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       const record = {
         name: contact.name || "",
         email: contact.email || "",
@@ -303,7 +306,7 @@ export class FileManager implements FileContext {
   }
 
   public async importContactsWithMapping(path: string) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       try {
         const content = await fs.readFile(path, "utf-8");
         const data = await parseCsvAsync(content);
@@ -351,7 +354,7 @@ export class FileManager implements FileContext {
   }
 
   public async addServer(server: Partial<Server>) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       const record = {
         name: server.name || "",
         businessArea: server.businessArea || "",
@@ -369,7 +372,7 @@ export class FileManager implements FileContext {
   }
 
   public async removeServer(name: string) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       const server = await findServerByName(this.rootDir, name);
       if (server) {
         const success = await deleteServerRecord(this.rootDir, server.id);
@@ -382,7 +385,7 @@ export class FileManager implements FileContext {
   }
 
   public async importServersWithMapping(path: string) {
-    if (this.hasJsonData()) {
+    if (await this.hasJsonData()) {
       try {
         const content = await fs.readFile(path, "utf-8");
         const lines = content.split(/\r?\n/);
@@ -448,7 +451,7 @@ export class FileManager implements FileContext {
   }
 
   public async cleanupServerContacts() {
-    if (this.hasJsonData()) return; // Skip in JSON mode
+    if (await this.hasJsonData()) return; // Skip in JSON mode
     return cleanupServerContactsOp(this);
   }
 
@@ -606,10 +609,22 @@ export class FileManager implements FileContext {
     return success;
   }
 
-  public async generateDummyData() { 
-    const success = await require("./dataUtils").generateDummyDataAsync(this.rootDir); 
-    if (success) { await this.readAndEmit(); } 
-    return success; 
+  public async generateDummyData() {
+    // Only allow in development mode
+    const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL !== undefined;
+    if (!isDev) {
+      loggers.fileManager.warn('generateDummyData blocked in production mode');
+      return false;
+    }
+    try {
+      const { generateDummyDataAsync } = await import("./dataUtils");
+      const success = await generateDummyDataAsync(this.rootDir); 
+      if (success) { await this.readAndEmit(); } 
+      return success;
+    } catch (err) {
+      loggers.fileManager.error('generateDummyData failed', { error: err instanceof Error ? err.message : String(err) });
+      return false;
+    }
   }
 
   public async performBackup(reason = "auto") { return performBackupOp(this.rootDir, reason); }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { TabFallback } from "../components/TabFallback";
 import { ConfirmModal } from "../components/ConfirmModal";
 import { 
@@ -41,7 +41,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     return () => document.removeEventListener("mousedown", handler);
   }, [showLocationMenu]);
 
-  const handleSaveLocation = async (name: string, isDefault: boolean) => {
+  const handleSaveLocation = useCallback(async (name: string, isDefault: boolean) => {
     if (!name.trim() || !location) return;
     await saveLocation({
       name: name.trim(),
@@ -50,9 +50,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
       isDefault: isDefault,
     });
     setSaveModalOpen(false);
-  };
+  }, [location, saveLocation]);
 
-  const handleSelectSavedLocation = async (saved: SavedLocation) => {
+  const handleSelectSavedLocation = useCallback(async (saved: SavedLocation) => {
     // Reverse geocode to get the city name
     setIsSearching(true);
     try {
@@ -72,20 +72,20 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     setActiveSavedLocation(saved);
     onManualRefresh(saved.lat, saved.lon);
     setShowLocationMenu(false);
-  };
+  }, [onLocationChange, onManualRefresh]);
 
-  const handleOpenRename = (saved: SavedLocation) => {
+  const handleOpenRename = useCallback((saved: SavedLocation) => {
     setRenameModal(saved);
     setShowLocationMenu(false);
-  };
+  }, []);
 
-  const handleRename = async (newName: string) => {
+  const handleRename = useCallback(async (newName: string) => {
     if (!renameModal || !newName.trim()) return;
     await updateLocation(renameModal.id, { name: newName.trim() });
     setRenameModal(null);
-  };
+  }, [renameModal, updateLocation]);
 
-  const handleManualSearch = async () => {
+  const handleManualSearch = useCallback(async () => {
     setActiveSavedLocation(null);
     setIsSearching(true);
     try {
@@ -93,9 +93,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [loc]);
 
-  const handleAutoLocate = async () => {
+  const handleAutoLocate = useCallback(async () => {
     setActiveSavedLocation(null);
     setIsSearching(true);
     try {
@@ -103,12 +103,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [loc]);
 
   if (!location && loading) return <TabFallback />;
 
   return (
-    <div className="weather-scroll-container" style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", background: "var(--color-bg-app)", padding: "20px 24px", gap: "12px", overflow: "hidden" }}>
+    <div className="weather-font-surface weather-scroll-container" style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", background: "transparent", padding: "24px 32px", gap: "24px", overflow: "hidden" }}>
       <WeatherHeader
         location={location}
         activeSavedLocation={activeSavedLocation}

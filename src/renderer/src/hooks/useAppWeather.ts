@@ -9,12 +9,43 @@ import { useMounted } from './useMounted';
 const WEATHER_POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const WEATHER_CACHE_KEY = 'cached_weather_data';
 const WEATHER_ALERTS_CACHE_KEY = 'cached_weather_alerts';
+const WEATHER_CACHE_VERSION = 2;
+const WEATHER_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+type WeatherCache = {
+  version: number;
+  fetchedAt: number;
+  data: WeatherData;
+};
 
 interface Location {
   latitude: number;
   longitude: number;
   name?: string;
 }
+
+const isWeatherDataUsable = (data: WeatherData | null): data is WeatherData => {
+  if (!data) return false;
+  const hasHourly = Array.isArray(data.hourly?.time) && data.hourly.time.length > 0;
+  const hasOffset = typeof data.utc_offset_seconds === 'number';
+  const hasTimezone = typeof data.timezone === 'string';
+  return hasHourly && hasOffset && hasTimezone;
+};
+
+const loadCachedWeather = (): WeatherData | null => {
+  const cached = secureStorage.getItemSync<unknown>(WEATHER_CACHE_KEY);
+  if (!cached || typeof cached !== 'object') return null;
+
+  if ('version' in cached && 'fetchedAt' in cached && 'data' in cached) {
+    const cache = cached as WeatherCache;
+    if (cache.version !== WEATHER_CACHE_VERSION) return null;
+    if (Date.now() - cache.fetchedAt > WEATHER_CACHE_TTL_MS) return null;
+    return isWeatherDataUsable(cache.data) ? cache.data : null;
+  }
+
+  // Legacy cache format (raw WeatherData) is discarded to avoid timezone issues
+  return null;
+};
 
 /**
  * Hook to manage weather data fetching, polling, and persistence.
@@ -51,8 +82,12 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     }
 
     // 2. Restore cached weather data and alerts for SWR
-    const cachedWeather = secureStorage.getItemSync<WeatherData>(WEATHER_CACHE_KEY);
+    const cachedWeather = loadCachedWeather();
     const cachedAlerts = secureStorage.getItemSync<WeatherAlert[]>(WEATHER_ALERTS_CACHE_KEY);
+
+    if (!cachedWeather) {
+      secureStorage.removeItem(WEATHER_CACHE_KEY);
+    }
 
     if (mounted.current) {
       if (cachedWeather) setWeatherData(cachedWeather);
@@ -101,7 +136,16 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
         setWeatherAlerts(aData);
 
         // Cache for SWR
-        secureStorage.setItemSync(WEATHER_CACHE_KEY, wData);
+        if (wData) {
+          const cache: WeatherCache = {
+            version: WEATHER_CACHE_VERSION,
+            fetchedAt: Date.now(),
+            data: wData
+          };
+          secureStorage.setItemSync(WEATHER_CACHE_KEY, cache);
+        } else {
+          secureStorage.removeItem(WEATHER_CACHE_KEY);
+        }
         secureStorage.setItemSync(WEATHER_ALERTS_CACHE_KEY, aData);
 
         // Handle Realtime Alerts
@@ -117,6 +161,14 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
             showToast(`Weather Alert: ${severe.event}`, "error");
 
             newAlerts.forEach((a: WeatherAlert) => { lastAlertIdsRef.current.add(a.id); });
+          }
+          
+          // Prune IDs that are no longer active to prevent unbound growth
+          const currentIds = new Set(aData.map(a => a.id));
+          for (const id of lastAlertIdsRef.current) {
+            if (!currentIds.has(id)) {
+              lastAlertIdsRef.current.delete(id);
+            }
           }
         }
       } catch (err: unknown) {
@@ -141,17 +193,25 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
   }, [weatherLocation]);
 
   // Weather Polling
-  const hasInitialFetchRef = useRef(false);
+  const lastFetchedLocationRef = useRef<string>("");
+  
   useEffect(() => {
     if (!weatherLocation) return;
 
-    if (!hasInitialFetchRef.current) {
+    const locKey = `${weatherLocation.latitude},${weatherLocation.longitude}`;
+    const isNewLocation = lastFetchedLocationRef.current !== locKey;
+
+    if (isNewLocation) {
+      if (mounted.current) {
+        setWeatherData(null);
+        setWeatherAlerts([]);
+      }
       void fetchWeather(
         weatherLocation.latitude,
         weatherLocation.longitude,
-        !!weatherDataRef.current
+        false // Not silent for new location
       );
-      hasInitialFetchRef.current = true;
+      lastFetchedLocationRef.current = locKey;
     }
 
     const interval = setInterval(() => {
@@ -159,7 +219,7 @@ export function useAppWeather(deviceLocation: LocationState, showToast: (msg: st
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [weatherLocation, fetchWeather]); // Removed weatherData from dependencies
+  }, [weatherLocation, fetchWeather]);
 
   return {
     weatherLocation,

@@ -5,6 +5,7 @@
  */
 
 import { join } from "path";
+import { randomUUID } from "crypto";
 import type { OnCallRecord } from "@shared/ipc";
 import { loggers } from "../logger";
 import { modifyJsonWithLock, readWithLock } from "../fileLock";
@@ -13,7 +14,7 @@ const ONCALL_FILE = "oncall.json";
 const ONCALL_FILE_PATH = (rootDir: string) => join(rootDir, ONCALL_FILE);
 
 function generateId(): string {
-  return `oncall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `oncall_${Date.now()}_${randomUUID()}`;
 }
 
 /**

@@ -25,7 +25,8 @@ export function useAIChat() {
 
   const getWebviewRef = (service: AIService) => service === 'gemini' ? geminiRef : chatgptRef;
 
-  // Attach webview event listeners
+  // Attach webview event listeners -- re-run when suspension state changes
+  // so listeners are reattached after a webview is re-mounted in the DOM
   useEffect(() => {
     const gemini = geminiRef.current, chatgpt = chatgptRef.current;
     const handleGeminiLoadStart = () => setIsLoading(prev => ({ ...prev, gemini: true }));
@@ -44,7 +45,7 @@ export function useAIChat() {
       chatgpt?.removeEventListener('did-start-loading', handleChatgptLoadStart);
       chatgpt?.removeEventListener('did-stop-loading', handleChatgptLoadStop);
     };
-  }, []); // Removed isSuspended dependency
+  }, [isSuspended]); // Re-attach when suspension changes (webviews re-mount)
 
   // Update last active time when switching service
   useEffect(() => {

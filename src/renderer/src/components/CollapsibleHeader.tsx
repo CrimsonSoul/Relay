@@ -8,6 +8,8 @@ interface CollapsibleHeaderProps {
     isCollapsed?: boolean; // Allow external control
     onCollapsedChange?: (collapsed: boolean) => void;
     style?: React.CSSProperties;
+    expandedTitleSize?: string;
+    collapsedTitleSize?: string;
 }
 
 /**
@@ -21,6 +23,8 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
     search,
     isCollapsed = false,
     style,
+    expandedTitleSize = 'clamp(26px, 5vw, 40px)',
+    collapsedTitleSize = 'clamp(20px, 4vw, 32px)',
 }) => {
     return (
         <div
@@ -28,7 +32,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: isCollapsed ? 'center' : 'flex-end',
-                marginBottom: isCollapsed ? '8px' : '16px',
+                marginBottom: isCollapsed ? '12px' : '24px',
                 gap: '12px',
                 flexWrap: 'wrap',
                 transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -39,12 +43,13 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
             <div style={{ minWidth: '200px', flex: 1 }}>
                 <h1
                     style={{
-                        fontSize: isCollapsed ? 'clamp(20px, 4vw, 32px)' : 'clamp(26px, 5vw, 40px)',
-                        fontWeight: 800,
+                        fontSize: isCollapsed ? collapsedTitleSize : expandedTitleSize,
+                        fontWeight: 700,
                         margin: '0 0 8px 0',
-                        color: 'var(--color-text-primary)',
+                        color: '#ffffff',
                         transition: 'font-size 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                         lineHeight: 1.1,
+                        letterSpacing: '-0.02em',
                         willChange: 'font-size',
                         whiteSpace: 'normal',
                         wordBreak: 'keep-all',
@@ -55,8 +60,8 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                 </h1>
                 <div
                     style={{
-                        fontSize: 'clamp(14px, 2vw, 18px)',
-                        color: 'var(--color-text-tertiary)',
+                        fontSize: 'clamp(14px, 2vw, 16px)',
+                        color: 'var(--color-text-secondary)',
                         margin: 0,
                         fontWeight: 500,
                         maxHeight: isCollapsed ? '0px' : '150px',
@@ -64,7 +69,7 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
                         overflow: 'hidden',
                         transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                         display: 'block',
-                        lineHeight: 1.4,
+                        lineHeight: 1.5,
                         willChange: 'opacity, max-height',
                         paddingBottom: isCollapsed ? 0 : '4px'
                     }}

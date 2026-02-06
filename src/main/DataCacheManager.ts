@@ -19,7 +19,7 @@ export class DataCacheManager {
     this.emitter = new FileEmitter();
   }
 
-  public getCache(): CachedData {
+  public getCache(): Readonly<CachedData> {
     return this.cachedData;
   }
 
