@@ -73,7 +73,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   // Focus input when opened
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 50);
+      requestAnimationFrame(() => inputRef.current?.focus());
     } else {
       setQuery("");
     }
@@ -164,15 +164,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         <div className="command-palette-search-wrapper">
           <div className="command-palette-input-container">
             <svg
-              width="18"
-              height="18"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="var(--color-text-tertiary)"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ position: "absolute", left: "12px", pointerEvents: "none" }}
+              style={{ position: "absolute", left: "16px", pointerEvents: "none" }}
             >
               <title>Search Icon</title>
               <circle cx="11" cy="11" r="8" />
@@ -187,35 +187,27 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               placeholder="Search contacts, groups..."
               className="command-palette-input"
               aria-label="Search command palette"
+              aria-controls="command-palette-listbox"
+              aria-activedescendant={results.length > 0 ? `command-result-${selectedIndex}` : undefined}
             />
-            <div
-              style={{
-                position: "absolute",
-                right: "12px",
-                fontSize: "11px",
-                color: "var(--color-text-tertiary)",
-                background: "var(--color-bg-app)",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                border: "1px solid var(--color-border-subtle)",
-              }}
-            >
+            <div className="command-palette-esc-badge">
               ESC
             </div>
           </div>
         </div>
 
         {/* Results */}
-        <div ref={resultsRef} className="command-palette-results" role="listbox">
+        <div ref={resultsRef} className="command-palette-results" role="listbox" id="command-palette-listbox">
           {results.length === 0 ? (
-            <div style={{ padding: "32px", textAlign: "center", color: "var(--color-text-tertiary)" }}>
-              No results found
-            </div>
+              <div className="command-palette-empty">
+                No results found
+              </div>
           ) : (
             results.map((result, index) => (
               <div
                 key={result.id}
                 data-index={index}
+                id={`command-result-${index}`}
                 onClick={() => handleSelect(result)}
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && handleSelect(result)}
                 className={`command-palette-result-item ${index === selectedIndex ? "is-selected" : ""}`}
@@ -224,43 +216,20 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 aria-selected={index === selectedIndex}
                 tabIndex={0}
               >
-                <div style={{ flexShrink: 0 }}>
+                <div className="command-palette-result-icon">
                   <RenderIcon result={result} />
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: "14px",
-                      fontWeight: 500,
-                      color: "var(--color-text-primary)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                <div className="command-palette-result-info">
+                  <div className="command-palette-result-title">
                     {result.title}
                   </div>
                   {result.subtitle && (
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "var(--color-text-tertiary)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
+                    <div className="command-palette-result-subtitle">
                       {result.subtitle}
                     </div>
                   )}
                 </div>
-                <div
-                  style={{
-                    fontSize: "11px",
-                    color: "var(--color-text-tertiary)",
-                    textTransform: "capitalize",
-                  }}
-                >
+                <div className="command-palette-result-type">
                   {result.type}
                 </div>
               </div>

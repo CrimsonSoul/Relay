@@ -9,67 +9,76 @@
 
 import { z } from 'zod';
 
+// ==================== Size Limits ====================
+const MAX_NAME = 500;
+const MAX_FIELD = 1000;
+const MAX_NOTE = 10000;
+const MAX_SEARCH = 2000;
+const MAX_ID = 200;
+const MAX_ARRAY_ITEMS = 500;
+const MAX_GROUP_CONTACTS = 200;
+
 // ==================== Contact Schemas ====================
 export const ContactSchema = z.object({
-  name: z.string(),
-  email: z.string().email(),
-  phone: z.string(),
-  title: z.string(),
-  _searchString: z.string().optional(),
+  name: z.string().min(1).max(MAX_NAME),
+  email: z.string().email().max(MAX_FIELD),
+  phone: z.string().max(MAX_FIELD),
+  title: z.string().max(MAX_FIELD),
+  _searchString: z.string().max(MAX_SEARCH).optional(),
   raw: z.object({
-    id: z.string().optional(),
+    id: z.string().max(MAX_ID).optional(),
     createdAt: z.number().optional(),
     updatedAt: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
 });
 
 export type ValidatedContact = z.infer<typeof ContactSchema>;
 
 // ==================== Server Schemas ====================
 export const ServerSchema = z.object({
-  name: z.string().min(1),
-  businessArea: z.string(),
-  lob: z.string(),
-  comment: z.string(),
-  owner: z.string(),
-  contact: z.string(),
-  os: z.string(),
-  _searchString: z.string().optional(),
+  name: z.string().min(1).max(MAX_NAME),
+  businessArea: z.string().max(MAX_FIELD),
+  lob: z.string().max(MAX_FIELD),
+  comment: z.string().max(MAX_NOTE),
+  owner: z.string().max(MAX_FIELD),
+  contact: z.string().max(MAX_FIELD),
+  os: z.string().max(MAX_FIELD),
+  _searchString: z.string().max(MAX_SEARCH).optional(),
   raw: z.object({
-    id: z.string().optional(),
+    id: z.string().max(MAX_ID).optional(),
     createdAt: z.number().optional(),
     updatedAt: z.number().optional(),
-  }).optional(),
+  }).passthrough().optional(),
 });
 
 export type ValidatedServer = z.infer<typeof ServerSchema>;
 
 // ==================== OnCall Schemas ====================
 export const OnCallRowSchema = z.object({
-  id: z.string(),
-  team: z.string().min(1),
-  role: z.string(),
-  name: z.string(),
-  contact: z.string(),
-  timeWindow: z.string().optional(),
+  id: z.string().max(MAX_ID),
+  team: z.string().min(1).max(MAX_NAME),
+  role: z.string().max(MAX_FIELD),
+  name: z.string().max(MAX_NAME),
+  contact: z.string().max(MAX_FIELD),
+  timeWindow: z.string().max(MAX_FIELD).optional(),
 });
 
-export const OnCallRowsArraySchema = z.array(OnCallRowSchema);
+export const OnCallRowsArraySchema = z.array(OnCallRowSchema).max(MAX_ARRAY_ITEMS);
 
 export type ValidatedOnCallRow = z.infer<typeof OnCallRowSchema>;
 
 // ==================== Group Schemas ====================
 export const GroupSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1),
-  contacts: z.array(z.string().email()),
+  id: z.string().max(MAX_ID).optional(),
+  name: z.string().min(1).max(MAX_NAME),
+  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_GROUP_CONTACTS),
   createdAt: z.number().optional(),
   updatedAt: z.number().optional(),
 });
 
 export const GroupUpdateSchema = z.object({
-  name: z.string().min(1).optional(),
-  contacts: z.array(z.string().email()).optional(),
+  name: z.string().min(1).max(MAX_NAME).optional(),
+  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_GROUP_CONTACTS).optional(),
 });
 
 export type ValidatedGroup = z.infer<typeof GroupSchema>;
@@ -77,11 +86,11 @@ export type ValidatedGroupUpdate = z.infer<typeof GroupUpdateSchema>;
 
 // ==================== Bridge History Schemas ====================
 export const BridgeHistoryEntrySchema = z.object({
-  id: z.string().optional(),
+  id: z.string().max(MAX_ID).optional(),
   timestamp: z.number().optional(),
-  note: z.string(),
-  groups: z.array(z.string()),
-  contacts: z.array(z.string()),
+  note: z.string().max(MAX_NOTE),
+  groups: z.array(z.string().max(MAX_NAME)).max(MAX_ARRAY_ITEMS),
+  contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_ARRAY_ITEMS),
   recipientCount: z.number(),
 });
 
@@ -90,40 +99,44 @@ export type ValidatedBridgeHistoryEntry = z.infer<typeof BridgeHistoryEntrySchem
 // ==================== Data Record Input Schemas ====================
 
 export const ContactRecordInputSchema = z.object({
-  name: z.string(),
-  email: z.string().email(),
-  phone: z.string(),
-  title: z.string(),
+  name: z.string().min(1).max(MAX_NAME),
+  email: z.string().email().max(MAX_FIELD),
+  phone: z.string().max(MAX_FIELD),
+  title: z.string().max(MAX_FIELD),
 });
 
 export const ServerRecordInputSchema = z.object({
-  name: z.string().min(1),
-  businessArea: z.string(),
-  lob: z.string(),
-  comment: z.string(),
-  owner: z.string(),
-  contact: z.string(),
-  os: z.string(),
+  name: z.string().min(1).max(MAX_NAME),
+  businessArea: z.string().max(MAX_FIELD),
+  lob: z.string().max(MAX_FIELD),
+  comment: z.string().max(MAX_NOTE),
+  owner: z.string().max(MAX_FIELD),
+  contact: z.string().max(MAX_FIELD),
+  os: z.string().max(MAX_FIELD),
 });
 
 export const OnCallRecordInputSchema = z.object({
-  team: z.string().min(1),
-  role: z.string(),
-  name: z.string(),
-  contact: z.string(),
-  timeWindow: z.string().optional(),
+  team: z.string().min(1).max(MAX_NAME),
+  role: z.string().max(MAX_FIELD),
+  name: z.string().max(MAX_NAME),
+  contact: z.string().max(MAX_FIELD),
+  timeWindow: z.string().max(MAX_FIELD).optional(),
 });
 
 export const ContactRecordUpdateSchema = ContactRecordInputSchema.partial().strict();
 export const ServerRecordUpdateSchema = ServerRecordInputSchema.partial().strict();
+export const OnCallRecordUpdateSchema = OnCallRecordInputSchema.partial().strict();
 
-export const TeamLayoutSchema = z.record(z.string(), z.object({
+export const TeamLayoutSchema = z.record(z.string().max(MAX_NAME), z.object({
   x: z.number(),
   y: z.number(),
-  w: z.number(),
-  h: z.number(),
+  w: z.number().optional(),
+  h: z.number().optional(),
   static: z.boolean().optional(),
-})).optional();
+})).refine(
+  (obj) => obj === undefined || Object.keys(obj).length <= 100,
+  'Too many teams in layout (max 100)'
+).optional();
 
 export const RadarSnapshotSchema = z.object({
   counters: z.object({
@@ -131,8 +144,8 @@ export const RadarSnapshotSchema = z.object({
     pending: z.number().optional(),
     internalError: z.number().optional(),
   }),
-  statusText: z.string().optional(),
-  statusColor: z.string().optional(),
+  statusText: z.string().max(MAX_FIELD).optional(),
+  statusColor: z.string().max(100).optional(),
   statusVariant: z.enum(['success', 'warning', 'danger', 'info']).optional(),
   lastUpdated: z.number(),
 });
@@ -155,8 +168,8 @@ export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();
 
 export const NoteSchema = z.object({
   targetType: z.enum(['contact', 'server']),
-  targetId: z.string().min(1),
-  content: z.string(),
+  targetId: z.string().min(1).max(MAX_FIELD),
+  content: z.string().max(MAX_NOTE),
 });
 
 export type ValidatedNote = z.infer<typeof NoteSchema>;
@@ -174,8 +187,8 @@ export const LogEntrySchema = z.object({
 });
 
 export const SavedLocationSchema = z.object({
-  id: z.string().optional(),
-  name: z.string().min(1),
+  id: z.string().max(MAX_ID).optional(),
+  name: z.string().min(1).max(MAX_NAME),
   lat: LatitudeSchema,
   lon: LongitudeSchema,
   isDefault: z.boolean().optional(),
@@ -184,7 +197,7 @@ export const SavedLocationSchema = z.object({
 });
 
 export const LocationUpdateSchema = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).max(MAX_NAME).optional(),
   lat: LatitudeSchema.optional(),
   lon: LongitudeSchema.optional(),
 });

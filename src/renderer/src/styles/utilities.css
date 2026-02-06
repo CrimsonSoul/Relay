@@ -2,17 +2,21 @@
    Reusable Utility Classes
    =========================== */
 
-/* Card base styles */
-.card-base {
-  background: rgba(255, 255, 255, 0.03);
+/* ===========================
+   Unified Card System
+   =========================== */
+.card-surface {
+  background: var(--color-bg-chrome);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-radius: 14px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.card-base:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.08);
+.card-surface:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 }
 
 /* Accent strip for left border */
@@ -21,9 +25,9 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
-  opacity: 0.6;
-  border-radius: 16px 0 0 16px;
+  width: 3px;
+  opacity: 0.7;
+  border-radius: 14px 0 0 14px;
 }
 
 /* Smooth transition utility */
@@ -109,7 +113,7 @@
 
 /* Badge/pill styles */
 .badge {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 12px;
@@ -131,10 +135,27 @@
 }
 
 .tab-subtitle {
-  font-size: 16px;
+  font-size: 18px;
   color: var(--color-text-tertiary);
   font-weight: 500;
   margin: 8px 0 0 0;
+}
+
+/* Typography size classes for 10-foot readability (replaces [style*=] selectors) */
+.text-xs  { font-size: var(--text-xs); }
+.text-sm  { font-size: var(--text-sm); }
+.text-base { font-size: var(--text-base); }
+.text-md  { font-size: var(--text-md); }
+.text-lg  { font-size: var(--text-lg); }
+.text-xl  { font-size: var(--text-xl); }
+.text-2xl { font-size: var(--text-2xl); }
+.text-3xl { font-size: var(--text-3xl); }
+.text-4xl { font-size: var(--text-4xl); }
+
+/* Weather tab uses a denser type scale for forecast grids */
+.weather-font-surface,
+.weather-font-surface * {
+  font-family: var(--font-family-weather);
 }
 
 /* Hover Background Utility */
@@ -161,12 +182,16 @@
   transform: translateY(-0.5px);
 }
 
+/* Legacy hover classes -- delegate to unified card-surface */
+.server-card-hover,
+.contact-card-hover {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
 .server-card-hover:hover,
 .contact-card-hover:hover {
-  background: rgba(255, 255, 255, 0.04) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .spillover-badge {

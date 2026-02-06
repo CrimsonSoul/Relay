@@ -3,8 +3,8 @@ import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
 
 export function setupConfigHandlers(
   getMainWindow: () => BrowserWindow | null,
-  getDataRoot: () => string,
-  onDataPathChange: (newPath: string) => void,
+  getDataRoot: () => Promise<string>,
+  onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string
 ) {
   ipcMain.handle(IPC_CHANNELS.GET_DATA_PATH, async () => {
@@ -23,7 +23,7 @@ export function setupConfigHandlers(
     if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
 
     try {
-      onDataPathChange(filePaths[0]);
+      await onDataPathChange(filePaths[0]);
       return { success: true };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
@@ -34,7 +34,7 @@ export function setupConfigHandlers(
   ipcMain.handle(IPC_CHANNELS.RESET_DATA_FOLDER, async (): Promise<IpcResult> => {
     const defaultPath = getDefaultDataPath();
     try {
-      onDataPathChange(defaultPath);
+      await onDataPathChange(defaultPath);
       return { success: true };
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);

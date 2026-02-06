@@ -10,7 +10,7 @@ export type Tab =
   | "Weather"
   | "AI";
 
-export function useAppAssembler(isReloading: boolean) {
+export function useAppAssembler() {
   const [activeTab, setActiveTab] = useState<Tab>("Compose");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
@@ -39,7 +39,10 @@ export function useAppAssembler(isReloading: boolean) {
   }, []);
 
   const handleAddManual = useCallback((email: string) => {
-    setManualAdds((p) => [...p, email]);
+    setManualAdds((p) => {
+      if (p.includes(email)) return p;
+      return [...p, email];
+    });
   }, []);
 
   const handleRemoveManual = useCallback((email: string) => {
@@ -56,9 +59,8 @@ export function useAppAssembler(isReloading: boolean) {
   }, []);
 
   const handleTabChange = useCallback((tab: Tab) => {
-    if (isReloading) return;
     setActiveTab(tab);
-  }, [isReloading]);
+  }, []);
 
   return {
     activeTab,

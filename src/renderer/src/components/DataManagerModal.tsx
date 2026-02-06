@@ -41,57 +41,82 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
-      void loadStats();
-      // Show migrate tab if CSV files exist
-      if (stats?.hasCsvFiles) {
-        setActiveTab("migrate");
-      }
+      void loadStats().then(() => {
+        // Show migrate tab if CSV files exist (use fresh stats from loadStats)
+      });
     }
   }, [isOpen, loadStats]);
 
+  // Switch to migrate tab when stats indicate CSV files exist
+  useEffect(() => {
+    if (isOpen && stats?.hasCsvFiles) {
+      setActiveTab("migrate");
+    }
+  }, [isOpen, stats?.hasCsvFiles]);
+
   const handleExport = async () => {
-    const success = await exportData({
-      format: exportFormat,
-      category: exportCategory,
-      includeMetadata,
-    });
-    if (success) {
-      showToast(`Exported ${exportCategory} as ${exportFormat.toUpperCase()}`, "success");
+    try {
+      const success = await exportData({
+        format: exportFormat,
+        category: exportCategory,
+        includeMetadata,
+      });
+      if (success) {
+        showToast(`Exported ${exportCategory} as ${exportFormat.toUpperCase()}`, "success");
+      } else {
+        showToast("Export failed. Please try again.", "error");
+      }
+    } catch {
+      showToast("Export failed unexpectedly. Please try again.", "error");
     }
   };
 
   const handleImport = async () => {
-    const result = await importData(importCategory);
-    if (result?.success) {
-      showToast(
-        `Imported ${result.imported} new, updated ${result.updated}`,
-        "success"
-      );
-    } else if (result?.errors.length) {
-      showToast(`Import completed with errors`, "info");
+    try {
+      const result = await importData(importCategory);
+      if (result?.success) {
+        showToast(
+          `Imported ${result.imported} new, updated ${result.updated}`,
+          "success"
+        );
+      } else if (result?.errors?.length) {
+        showToast(`Import completed with errors`, "info");
+      } else {
+        showToast("Import failed. Please try again.", "error");
+      }
+    } catch {
+      showToast("Import failed unexpectedly. Please try again.", "error");
     }
   };
 
   const handleMigrate = async () => {
-    const result = await migrateFromCsv();
-    if (result?.success) {
-      const total =
-        result.contacts.migrated + result.servers.migrated + result.oncall.migrated;
-      showToast(`Migrated ${total} records to JSON`, "success");
-      await loadStats();
-    } else if (result) {
-      showToast("Migration completed with some errors", "info");
+    try {
+      const result = await migrateFromCsv();
+      if (result?.success) {
+        const total =
+          result.contacts.migrated + result.servers.migrated + result.oncall.migrated;
+        showToast(`Migrated ${total} records to JSON`, "success");
+        await loadStats();
+      } else if (result) {
+        showToast("Migration completed with some errors", "info");
+      } else {
+        showToast("Migration failed. Please try again.", "error");
+      }
+    } catch {
+      showToast("Migration failed unexpectedly. Please try again.", "error");
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Data Manager" width="520px">
-      <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+    <Modal isOpen={isOpen} onClose={onClose} title="Data Manager" width="820px">
+      <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
         <div
+          role="tablist"
+          aria-label="Data Manager sections"
           style={{
             display: "flex",
             borderBottom: "1px solid var(--border-subtle)",
-            marginBottom: "8px",
+            marginBottom: "10px",
           }}
         >
           <TabButton
@@ -122,6 +147,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
           )}
         </div>
 
+        <div role="tabpanel" aria-label={`${activeTab} panel`}>
         {activeTab === "overview" && <DataManagerOverview stats={stats} />}
         {activeTab === "import" && (
           <DataManagerImport
@@ -154,8 +180,8 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
             onClearResult={clearLastMigrationResult}
           />
         )}
+        </div>
       </div>
     </Modal>
   );
 };
-

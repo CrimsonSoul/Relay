@@ -27,7 +27,7 @@ export const DataManagerExport: React.FC<Props> = ({
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <div
       style={{
-        fontSize: "13px",
+        fontSize: "18px",
         fontWeight: 700,
         color: "var(--color-text-tertiary)",
         textTransform: "uppercase",
@@ -38,15 +38,15 @@ export const DataManagerExport: React.FC<Props> = ({
     </div>
     <div
       style={{
-        fontSize: "12px",
+        fontSize: "18px",
         color: "var(--color-text-secondary)",
-        lineHeight: 1.5,
+        lineHeight: 1.55,
       }}
     >
       Export your data as JSON or CSV. JSON preserves all data including IDs
       and timestamps. CSV is compatible with spreadsheet applications.
     </div>
-    <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+    <div style={{ display: "flex", gap: "14px", alignItems: "center" }}>
       <CategorySelect value={exportCategory} onChange={setExportCategory} />
       <FormatSelect value={exportFormat} onChange={setExportFormat} />
     </div>
@@ -54,8 +54,8 @@ export const DataManagerExport: React.FC<Props> = ({
       style={{
         display: "flex",
         alignItems: "center",
-        gap: "8px",
-        fontSize: "13px",
+        gap: "10px",
+        fontSize: "18px",
         color: "var(--color-text-secondary)",
         cursor: "pointer",
       }}
@@ -64,7 +64,7 @@ export const DataManagerExport: React.FC<Props> = ({
         type="checkbox"
         checked={includeMetadata}
         onChange={(e) => setIncludeMetadata(e.target.checked)}
-        style={{ cursor: "pointer" }}
+        style={{ cursor: "pointer", width: "20px", height: "20px" }}
       />
       Include IDs and timestamps
     </label>
@@ -72,7 +72,7 @@ export const DataManagerExport: React.FC<Props> = ({
       onClick={onExport}
       variant="primary"
       disabled={exporting}
-      style={{ justifyContent: "center" }}
+      style={{ justifyContent: "center", height: "56px", fontSize: "20px" }}
     >
       {exporting ? "Exporting..." : "Export..."}
     </TactileButton>

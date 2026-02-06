@@ -84,7 +84,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
         onKeyDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
+        aria-labelledby="notes-modal-title"
         tabIndex={-1}
       >
         {/* Header */}
@@ -109,7 +109,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
             </svg>
           </div>
           <div style={{ flex: 1 }}>
-            <div id="modal-title" className="modal-title-main">
+            <div id="notes-modal-title" className="modal-title-main">
               {entityType === "contact" ? "Contact Notes" : "Server Notes"}
             </div>
             <div className="modal-title-sub">{entityName}</div>

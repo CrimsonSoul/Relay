@@ -62,7 +62,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   }), [dir.filtered, dir.recentlyAdded, dir.handleAddWrapper, groups, dir.groupMap, dir.focusedIndex, dir.setFocusedIndex, dir.setContextMenu, getContactNote, handleNotesClick]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '20px 24px 24px 24px', background: 'var(--color-bg-app)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px 32px', background: 'transparent', overflow: 'hidden' }}>
       <CollapsibleHeader title="Personnel Directory" subtitle="Global search and management of organization contacts" isCollapsed={dir.isHeaderCollapsed}
         search={<SearchInput placeholder="Search people..." value={dir.search} onChange={(e) => dir.setSearch(e.target.value)} autoFocus />}>
         {dir.filtered.length > 0 && <div style={{ fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', marginRight: '8px' }}>{dir.filtered.length} matches</div>}

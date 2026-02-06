@@ -1,6 +1,8 @@
 import type { WeatherAlert } from "@shared/ipc";
 
 export interface WeatherData {
+  timezone?: string;
+  utc_offset_seconds?: number;
   current_weather: {
     temperature: number;
     windspeed: number;

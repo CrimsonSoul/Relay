@@ -11,7 +11,7 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 export const TactileButton: React.FC<Props> = ({
   children,
-  variant = 'secondary', // Default to secondary now as per design system
+  variant = 'secondary', 
   size = 'md',
   active = false,
   icon,
@@ -40,6 +40,8 @@ export const TactileButton: React.FC<Props> = ({
       type={props.type ?? 'button'}
       style={{
         width: block ? '100%' : undefined,
+        height: size === 'sm' ? '32px' : '40px',
+        padding: size === 'sm' ? '0 12px' : '0 20px',
         ...style
       }}
       className={classes}

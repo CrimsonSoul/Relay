@@ -1,5 +1,6 @@
-import fs from 'fs';
-import { join } from 'path';
+import fsPromises from 'fs/promises';
+import { join, normalize, resolve, isAbsolute } from 'path';
+import { app } from 'electron';
 import { loggers } from './logger';
 import { ErrorCategory } from '@shared/logging';
 import { isNodeError } from '@shared/types';
@@ -9,22 +10,47 @@ export interface ValidationResult {
     error?: string;
 }
 
-export function validateDataPath(path: string): ValidationResult {
+export async function validateDataPath(path: string): Promise<ValidationResult> {
     if (!path) {
         return { success: false, error: 'Path is empty.' };
     }
 
+    // Reject path traversal attempts
+    const normalized = normalize(path);
+    if (normalized.includes('..')) {
+        return { success: false, error: 'Path traversal is not allowed.' };
+    }
+
+    // Ensure path is absolute
+    if (!isAbsolute(normalized)) {
+        return { success: false, error: 'Path must be absolute.' };
+    }
+
+    // Ensure path is within a reasonable parent (user home or app data)
+    const userDataDir = app.getPath('userData');
+    const homeDir = app.getPath('home');
+    const resolvedPath = resolve(normalized);
+    if (!resolvedPath.startsWith(homeDir) && !resolvedPath.startsWith(userDataDir)) {
+        return { success: false, error: 'Path must be within user home directory.' };
+    }
+
     try {
         // 1. Check if we can access the path (exists or can be created)
-        if (!fs.existsSync(path)) {
-            // Try creating it to see if we have permissions
-            fs.mkdirSync(path, { recursive: true });
+        try {
+            await fsPromises.access(resolvedPath);
+        } catch {
+            // Path doesn't exist, try creating it to see if we have permissions
+            await fsPromises.mkdir(resolvedPath, { recursive: true });
         }
 
         // 2. Check for write permissions by attempting to write a test file
-        const testFile = join(path, '.perm-check');
-        fs.writeFileSync(testFile, 'test');
-        fs.unlinkSync(testFile);
+        const testFile = join(resolvedPath, '.perm-check');
+        await fsPromises.writeFile(testFile, 'test');
+        try {
+            await fsPromises.unlink(testFile);
+        } catch {
+            // Best-effort cleanup
+        }
 
         return { success: true };
     } catch (error: unknown) {

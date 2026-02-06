@@ -53,13 +53,23 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     }
   }, [isOpen, serverToEdit]);
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
+    if (!window.api) { setSubmitError('API not available'); return; }
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-       await window.api.addServer(formData);
-       onClose();
+       const result = await window.api.addServer(formData);
+       if (result?.success) {
+         onClose();
+       } else {
+         setSubmitError(result?.error || 'Failed to save server');
+       }
+    } catch {
+       setSubmitError('Failed to save server');
     } finally {
        setIsSubmitting(false);
     }
@@ -127,6 +137,11 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. Windows"
         />
 
+        {submitError && (
+          <div style={{ color: 'var(--color-text-danger, #ff6b6b)', fontSize: '13px', marginTop: '4px' }}>
+            {submitError}
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
           <TactileButton onClick={handleSubmit} disabled={isSubmitting || !formData.name}>
             {isSubmitting ? 'Saving...' : 'Save Server'}

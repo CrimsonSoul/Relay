@@ -18,7 +18,7 @@ interface MaintainTeamModalProps {
 export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({ isOpen, onClose, teamName, initialRows, contacts, onSave }) => {
   const [rows, setRows] = useState<OnCallRow[]>([]);
 
-  useEffect(() => { if (isOpen) setRows(initialRows.map((r) => ({ ...r }))); }, [isOpen]);
+  useEffect(() => { if (isOpen) setRows(initialRows.map((r) => ({ ...r }))); }, [isOpen, initialRows]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -45,13 +45,13 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({ isOpen, on
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="900px">
+    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="960px">
       <div 
         style={{ display: "flex", flexDirection: "column", height: "65vh" }}
         onPointerDown={e => e.stopPropagation()}
         onMouseDown={e => e.stopPropagation()}
       >
-        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "10px 16px", display: "flex", flexDirection: "column", gap: "4px" }}>
+        <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "10px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
           <DndContext id={`modal-dnd-${teamName}`} sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
               {rows.map((row) => (<SortableEditRow key={row.id} row={row} contacts={contacts} onUpdate={handleUpdate} onRemove={() => handleRemove(row.id)} />))}

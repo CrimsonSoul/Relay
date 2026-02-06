@@ -9,6 +9,7 @@
 import { join, basename } from "path";
 import fs from "fs/promises";
 import { existsSync } from "fs";
+import { randomUUID } from "crypto";
 import type { ContactRecord, ServerRecord, OnCallRecord, BridgeGroup, MigrationResult } from "@shared/ipc";
 import { parseCsvAsync, desanitizeField } from "../csvUtils";
 import { HeaderMatcher } from "../HeaderMatcher";
@@ -28,19 +29,19 @@ const GROUPS_CSV = "groups.csv";
 const GROUPS_JSON = "bridgeGroups.json";
 
 function generateContactId(): string {
-  return `contact_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `contact_${Date.now()}_${randomUUID()}`;
 }
 
 function generateServerId(): string {
-  return `server_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `server_${Date.now()}_${randomUUID()}`;
 }
 
 function generateOnCallId(): string {
-  return `oncall_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `oncall_${Date.now()}_${randomUUID()}`;
 }
 
 function generateGroupId(): string {
-  return `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return `group_${Date.now()}_${randomUUID()}`;
 }
 
 /**

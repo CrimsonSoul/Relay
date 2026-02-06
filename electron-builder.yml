@@ -25,7 +25,7 @@ directories:
 npmRebuild: false
 removePackageScripts: true
 extraResources:
-  - from: data
+  - from: resources
     to: data
 win:
   target:
@@ -51,3 +51,8 @@ mac:
         - x64
   artifactName: "Relay-${arch}.dmg"
   category: public.app-category.developer-tools
+  icon: build/icon.icns
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist

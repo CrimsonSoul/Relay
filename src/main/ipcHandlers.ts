@@ -8,41 +8,60 @@ import { setupFileHandlers } from './handlers/fileHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
 import { setupFeatureHandlers } from './handlers/featureHandlers';
 import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
+import { loggers } from './logger';
 
 /**
  * Orchestrates all IPC handlers for the application.
+ * Each handler group is wrapped in try/catch to prevent a single failure
+ * from leaving all subsequent handlers unregistered.
+ *
+ * `getDataRoot` is async — it resolves from config on the first call,
+ * then returns the cached value on subsequent calls with no I/O.
  */
 export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
   getFileManager: () => FileManager | null,
-  getDataRoot: () => string,
-  onDataPathChange: (newPath: string) => void,
+  getDataRoot: () => Promise<string>,
+  onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string,
   createAuxWindow?: (route: string) => void
 ) {
+  const safeSetup = (name: string, fn: () => void) => {
+    try {
+      fn();
+    } catch (err) {
+      loggers.main.error(`Failed to setup ${name} handlers`, { error: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  // Guard wrapper: logs a warning if data root hasn't resolved yet
+  const guardedGetDataRoot = async (): Promise<string> => {
+    const root = await getDataRoot();
+    if (!root) {
+      loggers.main.warn('getDataRoot() returned empty string — data root not yet initialized');
+    }
+    return root;
+  };
+
   // Config & App State
-  setupConfigHandlers(getMainWindow, getDataRoot, onDataPathChange, getDefaultDataPath);
+  safeSetup('config', () => setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath));
 
   // Data Mutations (Contacts, Groups, Servers, On-Call)
-  setupDataHandlers(getMainWindow, getFileManager);
+  safeSetup('data', () => setupDataHandlers(getMainWindow, getFileManager));
 
   // File System Operations
-  setupFileHandlers(getDataRoot);
+  safeSetup('file', () => setupFileHandlers(guardedGetDataRoot));
 
   // Location & Weather
-  setupLocationHandlers(getMainWindow);
-  setupWeatherHandlers();
+  safeSetup('location', () => setupLocationHandlers(getMainWindow));
+  safeSetup('weather', () => setupWeatherHandlers());
 
   // Window Management
-  setupWindowHandlers(getMainWindow, createAuxWindow);
+  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow));
 
   // Feature Handlers (Presets, History, Notes, Saved Locations)
-  setupFeatureHandlers(getDataRoot);
+  safeSetup('feature', () => setupFeatureHandlers(guardedGetDataRoot));
 
   // Data Record Handlers (JSON-based contacts, servers, on-call, data manager)
-  setupDataRecordHandlers(getDataRoot);
-
-  // Listen for maximize/unmaximize events and notify renderer
-  // Handled in main/index.ts after window creation
-
+  safeSetup('dataRecord', () => setupDataRecordHandlers(guardedGetDataRoot));
 }

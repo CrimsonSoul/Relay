@@ -1,7 +1,7 @@
 import React from "react";
 import { Tooltip } from "../../components/Tooltip";
 import type { WeatherData } from "./types";
-import { getWeatherIcon, getWeatherDescription } from "./utils";
+import { getWeatherIcon, getWeatherDescription, getWeatherOffsetMs } from "./utils";
 
 interface DailyForecastProps {
   weather: WeatherData | null;
@@ -10,27 +10,33 @@ interface DailyForecastProps {
 export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
   if (!weather) return null;
 
+  const offsetMs = getWeatherOffsetMs(weather);
+  const locationNow = new Date(Date.now() + offsetMs);
+  const todayKey = `${locationNow.getUTCFullYear()}-${String(locationNow.getUTCMonth() + 1).padStart(2, "0")}-${String(locationNow.getUTCDate()).padStart(2, "0")}`;
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
   return (
     <div
       style={{
-        background: "var(--color-bg-card)",
-        borderRadius: "10px",
-        padding: "14px",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--app-surface)",
+        borderRadius: "16px",
+        padding: "20px",
+        border: "1px solid rgba(255,255,255,0.06)",
         flex: 1,
         minHeight: 0,
         display: "flex",
         flexDirection: "column",
+        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
       }}
     >
       <h3
         style={{
-          fontSize: "13px",
-          fontWeight: 600,
-          marginBottom: "12px",
+          fontSize: "12px",
+          fontWeight: 700,
+          marginBottom: "16px",
           color: "var(--color-text-secondary)",
           textTransform: "uppercase",
-          letterSpacing: "0.5px",
+          letterSpacing: "0.05em",
           flexShrink: 0,
         }}
       >
@@ -45,23 +51,31 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
           flex: 1,
           overflowY: "auto",
           overflowX: "hidden",
-          padding: "10px 20px",
+          padding: "4px",
         }}
       >
         {weather.daily.time.map((t, i) => {
-          const date = new Date(t);
-          const isToday = date.toDateString() === new Date().toDateString();
+          const [yearStr, monthStr, dayStr] = t.split("-");
+          const year = Number(yearStr);
+          const month = Number(monthStr);
+          const day = Number(dayStr);
+          const isToday = t === todayKey;
+          const dayIndex = Number.isFinite(year) && Number.isFinite(month) && Number.isFinite(day)
+            ? new Date(Date.UTC(year, month - 1, day)).getUTCDay()
+            : 0;
+          const dayLabel = isToday ? "Today" : weekdays[dayIndex];
           return (
             <div
               key={t}
               style={{
                 display: "flex",
                 alignItems: "center",
-                padding: "10px 8px",
-                borderRadius: "6px",
-                background: isToday ? "rgba(59, 130, 246, 0.1)" : "transparent",
+                padding: "12px 12px",
+                borderRadius: "10px",
+                background: isToday ? "rgba(59, 130, 246, 0.08)" : "transparent",
                 transition: "all var(--transition-base)",
                 cursor: "default",
+                border: isToday ? "1px solid rgba(59, 130, 246, 0.15)" : "1px solid transparent",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = isToday
@@ -86,9 +100,7 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
                     : "var(--color-text-primary)",
                 }}
               >
-                {isToday
-                  ? "Today"
-                  : date.toLocaleDateString([], { weekday: "short" })}
+                {dayLabel}
               </span>
               <Tooltip content={getWeatherDescription(weather.daily.weathercode[i])} position="top">
                 <div

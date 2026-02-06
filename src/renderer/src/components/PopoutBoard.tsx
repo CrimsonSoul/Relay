@@ -104,35 +104,51 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
   }, [teams, localOnCall, showToast]);
 
   const alertConfigs = [
-    { day: 0, type: 'first-responder', label: 'Update First Responder', bg: 'var(--color-accent-primary)' },
-    { day: 1, type: 'general', label: 'Update Weekly Schedule', bg: 'var(--color-accent-primary)' }, 
-    { day: 3, type: 'sql', label: 'Update SQL DBA', bg: '#EF4444' }, 
-    { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }
-  ];
+    { day: 0, type: 'first-responder', label: 'Update First Responder', tone: 'info' },
+    { day: 1, type: 'general', label: 'Update Weekly Schedule', tone: 'info' },
+    { day: 3, type: 'sql', label: 'Update SQL DBA', tone: 'danger' },
+    { day: 4, type: 'oracle', label: 'Update Oracle DBA', tone: 'danger' }
+  ] as const;
   
   const renderAlerts = () => alertConfigs
     .filter(c => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type)))
-    .map(c => (
-      <Tooltip key={c.type} content="Alert from Main Window">
-        <div 
-          style={{ 
-            fontSize: '12px', 
-            fontWeight: 700, 
-            color: '#fff', 
-            background: c.bg, 
-            padding: '4px 8px', 
-            borderRadius: '4px', 
-            marginLeft: '12px', 
-            textTransform: 'uppercase', 
-            letterSpacing: '0.05em', 
-            userSelect: 'none',
-            opacity: 0.9 
-          }}
-        >
-          {c.label}
-        </div>
-      </Tooltip>
-    ));
+    .map((c) => {
+      const isDanger = c.tone === 'danger';
+      return (
+        <Tooltip key={c.type} content="Alert from Main Window">
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: isDanger ? '#FCA5A5' : '#93C5FD',
+              padding: '8px 16px',
+              borderRadius: '14px',
+              marginLeft: '8px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              userSelect: 'none',
+            }}
+            className="card-surface"
+          >
+            <span
+              className="animate-active-indicator"
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                background: isDanger ? '#F87171' : '#60A5FA',
+                boxShadow: isDanger ? '0 0 6px rgba(248, 113, 113, 0.6)' : '0 0 6px rgba(96, 165, 250, 0.6)',
+                flexShrink: 0,
+              }}
+            />
+            {c.label}
+          </div>
+        </Tooltip>
+      );
+    });
 
   return (
     <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: isKiosk ? "0" : "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto", position: 'relative' }}>
@@ -151,10 +167,10 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
           transition: 'all 0.3s ease'
         }}>
           <div style={{
-            background: 'rgba(0, 0, 0, 0.8)',
+            background: 'var(--color-bg-chrome)',
             padding: '20px 40px',
             borderRadius: '16px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
+            border: 'var(--border-medium)',
             color: '#fff',
             fontSize: '18px',
             fontWeight: 600,
@@ -200,10 +216,10 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, team
 
       {isKiosk && (
         <div style={{ position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000, display: 'flex', gap: '8px', opacity: 0.4 }} onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')} onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}>
-           <div style={{ background: 'rgba(0,0,0,0.6)', padding: '4px 12px', borderRadius: '20px', fontSize: '11px', color: '#fff', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center' }}>
+           <div style={{ background: 'var(--color-bg-surface-elevated)', padding: '4px 12px', borderRadius: '10px', fontSize: '11px', color: '#fff', backdropFilter: 'blur(10px)', border: 'var(--border-medium)', display: 'flex', alignItems: 'center' }}>
              Last Update: {lastUpdated.toLocaleTimeString()}
            </div>
-           <TactileButton size="sm" onClick={() => setIsKiosk(false)} variant="ghost" style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(10px)', color: '#fff' }}>Exit Kiosk</TactileButton>
+           <TactileButton size="sm" onClick={() => setIsKiosk(false)} variant="ghost" style={{ background: 'var(--color-bg-surface-elevated)', border: 'var(--border-medium)', backdropFilter: 'blur(10px)', color: '#fff' }}>Exit Kiosk</TactileButton>
         </div>
       )}
 

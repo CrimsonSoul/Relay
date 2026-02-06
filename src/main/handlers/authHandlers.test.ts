@@ -60,11 +60,12 @@ describe('authHandlers', () => {
         callback
       });
 
-      const params = { nonce: 'n1', username: 'user', password: 'pass', remember: true };
+      const validNonce = 'a'.repeat(64);
+      const params = { nonce: validNonce, username: 'user', password: 'pass', remember: true };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]({}, params);
 
       expect(result).toBe(true);
-      expect(CredentialManager.consumeAuthRequest).toHaveBeenCalledWith('n1');
+      expect(CredentialManager.consumeAuthRequest).toHaveBeenCalledWith(validNonce);
       expect(CredentialManager.cacheCredentials).toHaveBeenCalledWith('test.com', 'user', 'pass');
       expect(callback).toHaveBeenCalledWith(['user', 'pass']);
     });
@@ -72,7 +73,7 @@ describe('authHandlers', () => {
     it('should reject invalid nonce', async () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
 
-      const params = { nonce: 'invalid', username: 'u', password: 'p', remember: false };
+      const params = { nonce: 'short', username: 'u', password: 'p', remember: false };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]({}, params);
 
       expect(result).toBe(false);
@@ -92,7 +93,8 @@ describe('authHandlers', () => {
         password: 'cached-password'
       });
 
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]({}, { nonce: 'n1' });
+      const validNonce = 'b'.repeat(64);
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]({}, { nonce: validNonce });
 
       expect(result).toBe(true);
       expect(callback).toHaveBeenCalledWith(['cached-user', 'cached-password']);
@@ -105,7 +107,8 @@ describe('authHandlers', () => {
       });
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]({}, { nonce: 'n1' });
+      const validNonce = 'b'.repeat(64);
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]({}, { nonce: validNonce });
 
       expect(result).toBe(false);
     });
@@ -113,8 +116,9 @@ describe('authHandlers', () => {
 
   describe('AUTH_CANCEL', () => {
     it('should call cancelAuthRequest', () => {
-      handlers[IPC_CHANNELS.AUTH_CANCEL]({}, { nonce: 'n1' });
-      expect(CredentialManager.cancelAuthRequest).toHaveBeenCalledWith('n1');
+      const validNonce = 'c'.repeat(64);
+      handlers[IPC_CHANNELS.AUTH_CANCEL]({}, { nonce: validNonce });
+      expect(CredentialManager.cancelAuthRequest).toHaveBeenCalledWith(validNonce);
     });
   });
 });

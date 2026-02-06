@@ -19,10 +19,10 @@ export const WindowControls = () => {
             setIsMaximized(maximized);
         };
 
-        globalThis.window.api?.onMaximizeChange?.(handleMaximizeChange);
+        const cleanup = globalThis.window.api?.onMaximizeChange?.(handleMaximizeChange);
 
         return () => {
-            globalThis.window.api?.removeMaximizeListener?.();
+            cleanup?.();
         };
     }, []);
 

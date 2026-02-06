@@ -1,10 +1,24 @@
+export type ContactRaw = {
+  id?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  [key: string]: unknown;
+};
+
 export type Contact = {
   name: string;
   email: string;
   phone: string;
   title: string;
   _searchString: string;
-  raw: Record<string, unknown>;
+  raw: ContactRaw;
+};
+
+export type ServerRaw = {
+  id?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  [key: string]: unknown;
 };
 
 export type Server = {
@@ -16,7 +30,7 @@ export type Server = {
   contact: string; // Email
   os: string;
   _searchString: string;
-  raw: Record<string, unknown>;
+  raw: ServerRaw;
 };
 
 export type OnCallRow = {
@@ -45,7 +59,7 @@ export type OnCallEntry = {
 };
 
 export type TeamLayout = {
-  [teamName: string]: { x: number; y: number };
+  [teamName: string]: { x: number; y: number; w?: number; h?: number; static?: boolean };
 };
 
 export type AppData = {
@@ -81,7 +95,7 @@ export type RadarSnapshot = {
 };
 
 export type DataError = {
-  type: "validation" | "parse" | "write" | "read";
+  type: "validation" | "parse" | "write" | "read" | "persistence";
   message: string;
   file?: string;
   details?: unknown;
@@ -97,6 +111,8 @@ export type ImportProgress = {
 
 // Weather and Location Types
 export type WeatherData = {
+  timezone?: string;
+  utc_offset_seconds?: number;
   current_weather: {
     temperature: number;
     windspeed: number;
@@ -153,7 +169,7 @@ export type BridgeAPI = {
   onImportProgress: (callback: (progress: ImportProgress) => void) => () => void;
   getInitialData: () => Promise<AppData>;
   reloadData: () => Promise<void>;
-  onAuthRequested: (callback: (request: AuthRequest) => void) => void;
+  onAuthRequested: (callback: (request: AuthRequest) => void) => (() => void);
   submitAuth: (
     nonce: string,
     username: string,
@@ -186,8 +202,7 @@ export type BridgeAPI = {
   isMaximized: () => Promise<boolean>;
   onMaximizeChange: (
     callback: (event: unknown, maximized: boolean) => void
-  ) => void;
-  removeMaximizeListener: () => void;
+  ) => () => void;
   openAuxWindow: (route: string) => void;
   generateDummyData: () => Promise<IpcResult>;
   getIpLocation: () => Promise<IpLocationResult>;
@@ -357,7 +372,7 @@ export type WeatherAlert = {
 };
 
 export type LogEntry = {
-  level: string;
+  level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
   module: string;
   message: string;
   data?: unknown;

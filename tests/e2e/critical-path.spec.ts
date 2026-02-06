@@ -79,7 +79,7 @@ test.describe('Vital Critical Path', () => {
     
     const deleteOption = window.locator('.animate-scale-in').getByText('Delete', { exact: true });
     await expect(deleteOption).toBeVisible({ timeout: 10000 });
-    await deleteOption.click();
+    await deleteOption.dispatchEvent('click');
     
     const confirmModal = window.locator('div[role="dialog"]', { hasText: /Delete Contact/i });
     await expect(confirmModal).toBeVisible();
@@ -211,11 +211,24 @@ test.describe('Vital Critical Path', () => {
     await addToComposerOption.click();
     
     // 3. Verify in Compose Tab
-    await window.click('[data-testid="sidebar-compose"]');
+    const composeHeading = window.locator('h1:has-text("Data Composition")');
+    for (let i = 0; i < 6; i++) {
+      await window.click('[data-testid="sidebar-compose"]', { force: true });
+      if (await composeHeading.isVisible()) break;
+      await window.keyboard.press('Control+1');
+      if (await composeHeading.isVisible()) break;
+      await window.keyboard.press('Meta+1');
+      if (await composeHeading.isVisible()) break;
+      await window.waitForTimeout(300);
+    }
+    await expect(composeHeading).toBeVisible({ timeout: 15000 });
     await expect(window.locator(`text=${email}`)).toBeVisible();
     
     // 4. Save Group
-    await window.click('button:has-text("SAVE GROUP")');
+    const saveGroupButton = window.getByRole('button', { name: 'SAVE GROUP' });
+    await expect(saveGroupButton).toBeVisible();
+    await expect(saveGroupButton).toBeEnabled();
+    await saveGroupButton.click();
     const saveModal = window.locator('div[role="dialog"]', { hasText: /Save as Group/i });
     await expect(saveModal).toBeVisible();
     

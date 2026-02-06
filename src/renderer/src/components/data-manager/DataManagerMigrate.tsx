@@ -21,7 +21,7 @@ export const DataManagerMigrate: React.FC<Props> = ({
   <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
     <div
       style={{
-        fontSize: "13px",
+        fontSize: "18px",
         fontWeight: 700,
         color: "var(--color-text-tertiary)",
         textTransform: "uppercase",
@@ -34,9 +34,9 @@ export const DataManagerMigrate: React.FC<Props> = ({
       <>
         <div
           style={{
-            fontSize: "12px",
+            fontSize: "18px",
             color: "var(--color-text-secondary)",
-            lineHeight: 1.5,
+            lineHeight: 1.55,
           }}
         >
           Convert your existing CSV files (contacts.csv, servers.csv, oncall.csv)
@@ -45,11 +45,11 @@ export const DataManagerMigrate: React.FC<Props> = ({
         </div>
         <div
           style={{
-            padding: "12px 16px",
-            background: "rgba(0,0,0,0.2)",
+            padding: "14px 18px",
+            background: "var(--color-bg-surface-elevated)",
             border: "1px solid var(--border-subtle)",
-            borderRadius: "8px",
-            fontSize: "12px",
+            borderRadius: "10px",
+            fontSize: "16px",
             color: "var(--color-text-secondary)",
           }}
         >
@@ -67,7 +67,7 @@ export const DataManagerMigrate: React.FC<Props> = ({
           onClick={onMigrate}
           variant="primary"
           disabled={migrating}
-          style={{ justifyContent: "center" }}
+          style={{ justifyContent: "center", height: "56px", fontSize: "20px" }}
         >
           {migrating ? "Migrating..." : "Migrate to JSON"}
         </TactileButton>
@@ -75,15 +75,15 @@ export const DataManagerMigrate: React.FC<Props> = ({
     ) : (
       <div
         style={{
-          padding: "24px",
+          padding: "28px",
           textAlign: "center",
           color: "var(--color-text-secondary)",
         }}
       >
-        <div style={{ fontSize: "14px", marginBottom: "8px" }}>
+        <div style={{ fontSize: "20px", marginBottom: "10px" }}>
           No CSV files found
         </div>
-        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
+        <div style={{ fontSize: "16px", color: "var(--color-text-tertiary)" }}>
           Your data is already using the JSON format
         </div>
       </div>
@@ -91,7 +91,7 @@ export const DataManagerMigrate: React.FC<Props> = ({
     {lastMigrationResult && (
       <div
         style={{
-          padding: "12px 16px",
+          padding: "14px 18px",
           background: lastMigrationResult.success
             ? "rgba(0, 180, 80, 0.1)"
             : "rgba(255, 180, 0, 0.1)",
@@ -100,8 +100,8 @@ export const DataManagerMigrate: React.FC<Props> = ({
               ? "rgba(0, 180, 80, 0.3)"
               : "rgba(255, 180, 0, 0.3)"
           }`,
-          borderRadius: "8px",
-          fontSize: "13px",
+          borderRadius: "10px",
+          fontSize: "17px",
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between" }}>

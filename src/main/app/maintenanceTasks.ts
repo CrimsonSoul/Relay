@@ -5,9 +5,13 @@ interface GlobalWithGC {
   gc?: () => void;
 }
 
-export function setupMaintenanceTasks(getFileManager: () => FileManager | null) {
+/**
+ * Sets up periodic maintenance tasks. Returns a cleanup function
+ * that should be called on app shutdown to clear the interval.
+ */
+export function setupMaintenanceTasks(getFileManager: () => FileManager | null): () => void {
   // Periodic maintenance task (runs every 24 hours)
-  setInterval(() => {
+  const intervalId = setInterval(() => {
     loggers.main.info('Running periodic maintenance...');
 
     const memory = process.memoryUsage();
@@ -34,11 +38,16 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null) 
   }, 24 * 60 * 60 * 1000);
 
   // Initial maintenance check after 1 minute
-  setTimeout(() => {
+  const timeoutId = setTimeout(() => {
     const memory = process.memoryUsage();
     loggers.main.info('Startup Memory Stats:', {
       rss: `${Math.round(memory.rss / 1024 / 1024)}MB`,
       heapUsed: `${Math.round(memory.heapUsed / 1024 / 1024)}MB`
     });
   }, 60000);
+
+  return () => {
+    clearInterval(intervalId);
+    clearTimeout(timeoutId);
+  };
 }

@@ -27,8 +27,21 @@ export function setupDataHandlers(
     return result.allowed;
   };
 
+  /** Wraps a mutation handler with outer try/catch to prevent unhandled rejections */
+  const safeMutation = (channel: string, handler: (...args: unknown[]) => Promise<IpcResult>) => {
+    ipcMain.handle(channel, async (...args) => {
+      try {
+        return await handler(...args);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        loggers.ipc.error(`${channel} failed`, { error: msg });
+        return { success: false, error: msg } as IpcResult;
+      }
+    });
+  };
+
   // Contact operations
-  ipcMain.handle(IPC_CHANNELS.ADD_CONTACT, async (_, contact): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.ADD_CONTACT, async (_, contact) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     const validatedContact = validateIpcDataSafe(ContactSchema, contact, 'ADD_CONTACT', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedContact) {
@@ -39,7 +52,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.REMOVE_CONTACT, async (_, email): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.REMOVE_CONTACT, async (_, email) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof email !== 'string' || !email) {
       loggers.ipc.error('Invalid email parameter');
@@ -50,7 +63,7 @@ export function setupDataHandlers(
   });
 
   // On-Call operations
-  ipcMain.handle(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_, team, rows): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.UPDATE_ONCALL_TEAM, async (_, team, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof team !== 'string' || !team) {
       loggers.ipc.error('Invalid team parameter');
@@ -65,7 +78,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_, team): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.REMOVE_ONCALL_TEAM, async (_, team) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof team !== 'string' || !team) {
       loggers.ipc.error('Invalid team parameter');
@@ -75,7 +88,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_, oldName, newName): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_, oldName, newName) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof oldName !== 'string' || !oldName || typeof newName !== 'string' || !newName) {
       loggers.ipc.error('Invalid team name parameters');
@@ -85,7 +98,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.REORDER_ONCALL_TEAMS, async (_, teamOrder, layout): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.REORDER_ONCALL_TEAMS, async (_, teamOrder, layout) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (!Array.isArray(teamOrder) || !teamOrder.every(t => typeof t === 'string')) {
       loggers.ipc.error('Invalid team order parameter');
@@ -96,7 +109,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.SAVE_ALL_ONCALL, async (_, rows) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     const validatedRows = validateIpcDataSafe(OnCallRowsArraySchema, rows, 'SAVE_ALL_ONCALL', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedRows) {
@@ -108,31 +121,33 @@ export function setupDataHandlers(
   });
 
   // Contact import operations
-  ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
+  safeMutation(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING, async () => {
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
     if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };
     return importContactsViaDialog(fileManager, mainWindow, 'Merge Contacts CSV');
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_CONTACTS_FILE, async () => {
+  safeMutation(IPC_CHANNELS.IMPORT_CONTACTS_FILE, async () => {
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
     if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };
     return importContactsViaDialog(fileManager, mainWindow, 'Merge Contacts CSV');
   });
 
-  // Development only
-  if (process.env.NODE_ENV === 'development') {
-    ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async (): Promise<IpcResult> => {
-      if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-      const success = await getFileManager()?.generateDummyData() ?? false;
-      return { success };
-    });
-  }
+  // Dummy data generation — only functional in development
+  ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async (): Promise<IpcResult> => {
+    const { app } = await import('electron');
+    if (app.isPackaged || process.env.NODE_ENV !== 'development') {
+      return { success: false, error: 'Not available in production' };
+    }
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
+    const success = await getFileManager()?.generateDummyData() ?? false;
+    return { success };
+  });
 
   // Server operations
-  ipcMain.handle(IPC_CHANNELS.ADD_SERVER, async (_, server): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.ADD_SERVER, async (_, server) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     const validatedServer = validateIpcDataSafe(ServerSchema, server, 'ADD_SERVER', (m, d) => loggers.ipc.warn(m, d));
     if (!validatedServer) {
@@ -143,7 +158,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.REMOVE_SERVER, async (_, name): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.REMOVE_SERVER, async (_, name) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     if (typeof name !== 'string' || !name) {
       loggers.ipc.error('Invalid server name parameter');
@@ -153,7 +168,7 @@ export function setupDataHandlers(
     return { success: result };
   });
 
-  ipcMain.handle(IPC_CHANNELS.IMPORT_SERVERS_FILE, async (): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.IMPORT_SERVERS_FILE, async () => {
     const mainWindow = getMainWindow();
     const fileManager = getFileManager();
     if (!mainWindow || !fileManager) return { success: false, error: 'Application state not ready' };

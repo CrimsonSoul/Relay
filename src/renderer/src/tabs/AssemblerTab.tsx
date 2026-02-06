@@ -129,14 +129,14 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         onImportFromCsv={importFromCsv}
         currentEmails={currentEmails}
       />
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflow: "hidden", position: "relative", zIndex: 5 }}>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "24px 32px", background: "transparent", overflow: "hidden", position: "relative", zIndex: 5 }}>
         <CollapsibleHeader title="Data Composition" subtitle="Assemble bridge recipients and manage emergency communications" isCollapsed={asm.isHeaderCollapsed}>
-          {manualRemoves.length > 0 && <TactileButton onClick={onUndoRemove} style={{ padding: asm.isHeaderCollapsed ? '8px 14px' : '12px 20px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>UNDO</TactileButton>}
-          <TactileButton onClick={onResetManual} style={{ padding: asm.isHeaderCollapsed ? '8px 14px' : '12px 20px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>RESET</TactileButton>
-          <TactileButton onClick={() => setIsHistoryOpen(true)} style={{ padding: asm.isHeaderCollapsed ? '8px 14px' : '12px 20px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>HISTORY</TactileButton>
-          <TactileButton onClick={handleCopyWithHistory} style={{ padding: asm.isHeaderCollapsed ? '8px 14px' : '12px 20px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>COPY</TactileButton>
-          <TactileButton onClick={() => setIsSaveGroupOpen(true)} style={{ padding: asm.isHeaderCollapsed ? '8px 14px' : '12px 20px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} disabled={asm.log.length === 0}>SAVE GROUP</TactileButton>
-          <TactileButton onClick={() => asm.setIsBridgeReminderOpen(true)} variant="primary" style={{ padding: asm.isHeaderCollapsed ? '8px 16px' : '15px 32px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>DRAFT BRIDGE</TactileButton>
+          {manualRemoves.length > 0 && <TactileButton onClick={onUndoRemove} style={{ height: '38px', padding: '0 16px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>UNDO</TactileButton>}
+          <TactileButton onClick={onResetManual} style={{ height: '38px', padding: '0 16px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>RESET</TactileButton>
+          <TactileButton onClick={() => setIsHistoryOpen(true)} style={{ height: '38px', padding: '0 16px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>HISTORY</TactileButton>
+          <TactileButton onClick={handleCopyWithHistory} style={{ height: '38px', padding: '0 16px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>COPY</TactileButton>
+          <TactileButton onClick={() => setIsSaveGroupOpen(true)} style={{ height: '38px', padding: '0 16px', fontSize: '13px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }} disabled={asm.log.length === 0}>SAVE GROUP</TactileButton>
+          <TactileButton onClick={() => asm.setIsBridgeReminderOpen(true)} variant="primary" style={{ height: '38px', padding: '0 20px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>DRAFT BRIDGE</TactileButton>
         </CollapsibleHeader>
 
         <CompositionList

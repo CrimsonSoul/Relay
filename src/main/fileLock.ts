@@ -24,6 +24,7 @@
 
 import { existsSync } from "fs";
 import fs from "fs/promises";
+import { randomUUID } from "crypto";
 import { loggers } from "./logger";
 
 // Helper to retry operations (kept for robustness against Windows transient errors)
@@ -72,7 +73,7 @@ export async function atomicWriteWithLock(
   filePath: string,
   content: string
 ): Promise<void> {
-  const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+  const tempPath = `${filePath}.${Date.now()}.${randomUUID()}.tmp`;
   try {
     // Write temp file
     await fs.writeFile(tempPath, content, "utf-8");

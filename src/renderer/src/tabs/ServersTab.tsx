@@ -38,7 +38,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const itemData = useMemo(() => ({ servers: h.filteredServers, contactLookup: h.contactLookup, onContextMenu: h.handleContextMenu, getServerNote, onNotesClick: handleNotesClick }), [h.filteredServers, h.contactLookup, h.handleContextMenu, getServerNote, handleNotesClick]);
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 24px 24px 24px', background: 'var(--color-bg-app)', overflow: 'hidden' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px 32px', background: 'transparent', overflow: 'hidden' }}>
       <CollapsibleHeader title="Infrastructure Hub" subtitle="Management and status of distributed node infrastructure" isCollapsed={h.isHeaderCollapsed}
         search={<SearchInput placeholder="Search infrastructure..." value={h.search} onChange={(e) => h.setSearch(e.target.value)} autoFocus />}>
         {h.filteredServers.length > 0 && <div style={{ fontSize: '13px', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap', marginRight: '8px' }}>{h.filteredServers.length} matches</div>}

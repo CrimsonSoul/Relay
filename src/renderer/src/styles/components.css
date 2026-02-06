@@ -12,97 +12,45 @@
   justify-content: center;
   gap: 8px;
   padding: 0 16px;
-  height: 44px;
-  border-radius: var(--radius-pill);
-  font-size: 15px;
+  height: 40px;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-chrome);
   color: var(--color-text-primary);
-  transition: all var(--transition-smooth);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  outline: transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
   overflow: hidden;
   user-select: none;
   white-space: nowrap;
 }
 
-.tactile-button::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg,
-      rgba(255, 255, 255, 0.08) 0%,
-      rgba(255, 255, 255, 0) 50%,
-      rgba(255, 255, 255, 0.08) 100%);
-  opacity: 0;
-  transition: opacity var(--transition-smooth);
-  pointer-events: none;
-}
-
-.tactile-button:hover::before {
-  opacity: 1;
-}
-
 .tactile-button:hover {
-  transform: translateY(-1px) scale(1.01);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+  background: var(--color-bg-surface-elevated);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
 }
 
 .tactile-button:active {
-  transform: translateY(0px) scale(0.97);
-  box-shadow: none;
-  transition: transform var(--transition-micro);
-}
-
-.tactile-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-/* Secondary / Default Variant */
-.tactile-button--secondary {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.tactile-button--secondary:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.tactile-button--secondary:active {
-  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(0px) scale(0.98);
+  transition: transform 0.1s ease-out;
 }
 
 /* Primary Variant */
 .tactile-button--primary {
-  background: linear-gradient(135deg, var(--color-accent-blue) 0%, #2563EB 100%);
+  background: var(--color-accent-blue);
   border-color: var(--color-accent-blue);
   color: white !important;
-}
-
-.tactile-button--primary::before {
-  background: linear-gradient(135deg,
-      rgba(255, 255, 255, 0.2) 0%,
-      rgba(255, 255, 255, 0) 50%,
-      rgba(255, 255, 255, 0.2) 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
 .tactile-button--primary:hover {
-  background: linear-gradient(135deg, var(--color-accent-blue-hover) 0%, var(--color-accent-blue) 100%);
-  box-shadow: var(--shadow-lg), var(--shadow-glow-blue);
-  transform: translateY(-2px) scale(1.02);
+  background: var(--color-accent-blue-hover);
   border-color: var(--color-accent-blue-hover);
-}
-
-.tactile-button--primary:active {
-  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
-  transform: translateY(0px) scale(0.97);
+  box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
 }
 
 /* Ghost Variant */
@@ -110,17 +58,11 @@
   background: transparent;
   border-color: transparent;
   color: var(--color-text-secondary);
-  box-shadow: none !important;
 }
 
 .tactile-button--ghost:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--color-text-primary);
-  transform: translateY(-0.5px);
-}
-
-.tactile-button--ghost:active {
-  background: rgba(255, 255, 255, 0.03);
 }
 
 /* Danger Variant */
@@ -143,28 +85,31 @@
   border-color: var(--color-accent-blue-subtle);
 }
 
-/* Tactile Input - Matching Button Aesthetic */
-.tactile-input {
-  height: 44px;
-  background: rgba(255, 255, 255, 0.03) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: var(--radius-pill) !important;
-  color: var(--color-text-primary) !important;
-  font-size: 15px !important;
-  transition: all var(--transition-smooth) !important;
-  padding-left: 44px !important;
-  padding-right: 16px !important;
+/* Tactile Input - Matching Button Aesthetic (doubled selector for specificity) */
+input.tactile-input.tactile-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 40px;
+  background: var(--color-bg-chrome);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  transition: all 0.2s ease;
+  padding-left: 14px;
+  padding-right: 32px;
+  outline: none;
 }
 
-.tactile-input:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  border-color: rgba(255, 255, 255, 0.2) !important;
+input.tactile-input.tactile-input:hover {
+  background: var(--color-bg-surface-elevated);
+  border-color: rgba(255, 255, 255, 0.15);
 }
 
-.tactile-input:focus {
-  background: rgba(255, 255, 255, 0.08) !important;
-  border-color: var(--color-accent-blue) !important;
-  box-shadow: 0 0 0 2px var(--color-accent-blue-subtle), var(--shadow-sm) !important;
+input.tactile-input.tactile-input:focus {
+  background: var(--color-bg-surface-elevated);
+  border-color: var(--color-accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
 .tactile-input-wrapper {
@@ -192,13 +137,13 @@
 .tactile-button--sm {
   height: 32px;
   padding: 0 14px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .tactile-button--md {
   height: 44px;
   padding: 0 20px;
-  font-size: 15px;
+  font-size: 17px;
 }
 
 /* Icon Only Modifier */
@@ -223,11 +168,11 @@
   bottom: 100%;
   right: 0;
   margin-bottom: 8px;
-  background: #0F0F0F;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-chrome);
+  border: var(--border-medium);
   padding: 8px 12px;
   border-radius: 8px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--color-text-primary);
   white-space: nowrap;
   z-index: 1000;
@@ -238,26 +183,60 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.tooltip-container:hover .tooltip-content {
+.tooltip-container:hover .tooltip-content,
+.tooltip-container:focus-within .tooltip-content {
   opacity: 1;
   transform: translateY(0);
 }
 
-/* Card Lift Effect */
+/* Card Lift Effect -- unified with card system */
 .lift-on-hover {
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
-              box-shadow 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
-              background 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
-              border-color 0.4s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
 .lift-on-hover:hover {
-  transform: translateY(-4px) scale(1.01) !important;
-  background: rgba(255, 255, 255, 0.05) !important;
+  transform: translateY(-2px) !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 
-              0 0 20px rgba(37, 99, 235, 0.1) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
   z-index: 10;
+}
+
+/* Sidebar App Icon - CSS hover replaces JS state */
+.sidebar-app-icon {
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  -webkit-app-region: no-drag;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-bottom: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.sidebar-app-icon:hover {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: var(--color-accent-blue);
+  transform: scale(1.04);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.sidebar-app-icon-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  opacity: 0.8;
+}
+
+.sidebar-app-icon:hover .sidebar-app-icon-inner {
+  opacity: 1;
+  transform: scale(1.1);
 }
 
 .weather-saved-location-item {

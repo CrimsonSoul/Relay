@@ -14,8 +14,8 @@ export const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
           height="14" 
           viewBox="0 0 24 24" 
           fill="none" 
-          stroke="currentColor" 
-          strokeWidth="2" 
+          stroke="var(--color-accent-blue)" 
+          strokeWidth="3" 
           strokeLinecap="round" 
           strokeLinejoin="round"
         >

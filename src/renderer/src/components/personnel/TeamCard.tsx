@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { OnCallRow, Contact } from "@shared/ipc";
-import { getColorForString, PALETTE } from "../../utils/colors";
+import { getColorForString } from "../../utils/colors";
 import { Tooltip } from "../Tooltip";
 import { MaintainTeamModal } from "../MaintainTeamModal";
 import { ContextMenuItem } from "../ContextMenu";
@@ -9,16 +9,11 @@ import { TeamRow } from "./TeamRow";
 interface TeamCardProps { team: string; index?: number; rows: OnCallRow[]; contacts: Contact[]; onUpdateRows: (team: string, rows: OnCallRow[]) => void; onRenameTeam: (oldName: string, newName: string) => void; onRemoveTeam: (team: string) => void; setConfirm: (confirm: { team: string; onConfirm: () => void } | null) => void; setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void; onCopyTeamInfo?: (team: string, rows: OnCallRow[]) => void; isReadOnly?: boolean; tick?: number; }
 
 export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows, onRenameTeam, onRemoveTeam, setConfirm, setMenu, onCopyTeamInfo, isReadOnly = false, tick }: TeamCardProps) => {
-  const colorScheme = useMemo(() => {
-    if (typeof index === 'number') {
-      return PALETTE[index % PALETTE.length];
-    }
-    return getColorForString(team);
-  }, [team, index]);
+  const colorScheme = useMemo(() => getColorForString(team), [team]);
   const [isEditing, setIsEditing] = useState(false);
   const teamRows = useMemo(() => rows || [], [rows]);
   const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
-  const rowGridTemplate = hasAnyTimeWindow ? "45px auto 1fr auto" : "45px auto 1fr";
+  const rowGridTemplate = hasAnyTimeWindow ? "auto 1fr auto auto" : "auto 1fr auto";
 
   const isEmpty = teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
 
@@ -28,22 +23,15 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
         role="button"
         tabIndex={0}
         aria-label={`Team: ${team}, ${teamRows.length} members`}
-        className={isReadOnly ? "" : "lift-on-hover"}
+        className={`card-surface ${isReadOnly ? "" : "lift-on-hover"}`}
         style={{ 
-          padding: "16px", 
-          background: "var(--color-bg-card)", 
-          borderRadius: "16px", 
-          border: "var(--border-subtle)", 
+          padding: "18px", 
           display: "flex", 
           flexDirection: "column", 
-          gap: "12px", 
-          position: "relative", 
-          overflow: "hidden", 
-          boxShadow: "var(--shadow-sm)", 
+          gap: "10px", 
           height: "100%",
           boxSizing: "border-box",
-          cursor: isReadOnly ? "default" : "grab",
-          transition: "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1), background 0.5s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.5s cubic-bezier(0.16, 1, 0.3, 1)"
+          cursor: isReadOnly ? "default" : "grab"
         }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation();
           if (isReadOnly) {
@@ -61,9 +49,9 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
         }}
         onKeyDown={(e) => { if (!isReadOnly && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setIsEditing(true); } }}
       >
-        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: "5px", background: colorScheme.text, opacity: 0.9, borderRadius: "16px 0 0 16px" }} />
+        <div className="accent-strip" style={{ background: colorScheme.text }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "8px" }}>
-          <div style={{ fontSize: "20px", fontWeight: 800, color: colorScheme.text, letterSpacing: "0.05em", textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "keep-all", whiteSpace: "normal" }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
+          <div style={{ fontSize: "18px", fontWeight: 700, color: colorScheme.text, letterSpacing: "0.06em", textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "keep-all", whiteSpace: "normal", opacity: 0.9 }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "4px", flexGrow: 1, justifyContent: "center" }}>
           {isEmpty ? (
@@ -94,8 +82,10 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
 }, (prev, next) => {
   // Custom comparison to avoid re-render if rows content is same, even if array ref changed
   if (prev.tick !== next.tick) return false;
+  if (prev.index !== next.index) return false; // Color depends on index — must re-render when position changes
   if (prev.team !== next.team) return false;
-  if (prev.contacts !== next.contacts) return false; // fast reference check sufficient for contacts list?
+  if (prev.isReadOnly !== next.isReadOnly) return false;
+  if (prev.contacts !== next.contacts) return false;
   if (prev.rows.length !== next.rows.length) return false;
   // Deep check rows - expensive? Max ~10 rows per team usually.
   for (let i = 0; i < prev.rows.length; i++) {

@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
 
-const ALLOWED_AUX_ROUTES = new Set(['popout/board']);
+const ALLOWED_AUX_ROUTES = new Set(['oncall', 'weather', 'directory', 'servers', 'assembler', 'personnel', 'popout/board']);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 
 export function setupWindowHandlers(

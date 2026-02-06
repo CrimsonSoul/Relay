@@ -51,7 +51,7 @@ export function MainApp() {
     manualRemoves, settingsOpen, setSettingsOpen,
     handleAddToAssembler, handleUndoRemove, handleReset,
     handleAddManual, handleRemoveManual, handleToggleGroup,
-  } = useAppAssembler(isReloading);
+  } = useAppAssembler();
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
@@ -179,13 +179,15 @@ export function MainApp() {
         </div>
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {popoutRoute?.includes('board') && (
-            <Suspense fallback={<TabFallback />}>
-              <PopoutBoard 
-                onCall={data.onCall} 
-                contacts={data.contacts}
-                teamLayout={data.teamLayout} 
-              />
-            </Suspense>
+            <ErrorBoundary fallback={<TabFallback error />}>
+              <Suspense fallback={<TabFallback />}>
+                <PopoutBoard 
+                  onCall={data.onCall} 
+                  contacts={data.contacts}
+                  teamLayout={data.teamLayout} 
+                />
+              </Suspense>
+            </ErrorBoundary>
           )}
         </div>
       </div>
@@ -200,8 +202,8 @@ export function MainApp() {
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
-      <main className="main-content">
-        <header className="app-header">
+      <main className="main-content" aria-label="Application content">
+        <header className="app-header" aria-label="Application navigation">
           <div className="header-title-container">
             <span className="header-breadcrumb">Relay / {activeTab === "Personnel" ? "On-Call Board" : activeTab}</span>
           </div>
@@ -289,23 +291,26 @@ export function MainApp() {
         <WindowControls />
       </div>
 
-      <Suspense fallback={null}>
-        {settingsOpen && (
-          <SettingsModal
-            isOpen={settingsOpen} onClose={() => setSettingsOpen(false)}
-            isSyncing={isReloading} onSync={handleSync}
-            onOpenDataManager={() => setIsDataManagerOpen(true)}
-          />
-        )}
-        {isDataManagerOpen && (
-          <DataManagerModal
-            isOpen={isDataManagerOpen}
-            onClose={() => setIsDataManagerOpen(false)}
-          />
-        )}
-      </Suspense>
+      <ErrorBoundary fallback={<TabFallback error />}>
+        <Suspense fallback={null}>
+          {settingsOpen && (
+            <SettingsModal
+              isOpen={settingsOpen} onClose={() => setSettingsOpen(false)}
+              isSyncing={isReloading} onSync={handleSync}
+              onOpenDataManager={() => setIsDataManagerOpen(true)}
+            />
+          )}
+          {isDataManagerOpen && (
+            <DataManagerModal
+              isOpen={isDataManagerOpen}
+              onClose={() => setIsDataManagerOpen(false)}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
 
-      <CommandPalette
+      <ErrorBoundary fallback={null}>
+        <CommandPalette
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         contacts={data.contacts}
@@ -322,18 +327,23 @@ export function MainApp() {
           setIsAddContactModalOpen(true);
         }}
       />
+      </ErrorBoundary>
 
-      <ShortcutsModal
-        isOpen={isShortcutsOpen}
-        onClose={() => setIsShortcutsOpen(false)}
-      />
+      <ErrorBoundary fallback={null}>
+        <ShortcutsModal
+          isOpen={isShortcutsOpen}
+          onClose={() => setIsShortcutsOpen(false)}
+        />
+      </ErrorBoundary>
 
-      <AddContactModal
-        isOpen={isAddContactModalOpen}
-        onClose={() => setIsAddContactModalOpen(false)}
-        onSave={handleContactSaved}
-        initialEmail={initialContactEmail}
-      />
+      <ErrorBoundary fallback={null}>
+        <AddContactModal
+          isOpen={isAddContactModalOpen}
+          onClose={() => setIsAddContactModalOpen(false)}
+          onSave={handleContactSaved}
+          initialEmail={initialContactEmail}
+        />
+      </ErrorBoundary>
     </div>
   );
 }

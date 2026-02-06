@@ -1,83 +1,115 @@
 :root {
-  /* Colors - Solid Dark Mode */
-  --color-bg-app: #0B0D12;
-  /* Main panel body */
-  --color-bg-surface: #18181B;
-  --color-bg-surface-opaque: #18181B;
-  /* Secondary headers/surfaces */
-  --color-bg-surface-elevated: #1E1E21;
-  --color-bg-card: rgba(255, 255, 255, 0.015);
-  --color-bg-card-hover: rgba(255, 255, 255, 0.03);
-  --color-bg-sidebar: #0F1115;
+  /* Blink-inspired Colors - Deep Slate/Black */
+  --color-bg-app: #0a0a0b;
+  --color-bg-surface: #0d1014;
+  --color-bg-surface-opaque: #0d1014;
+  --color-bg-surface-elevated: #11151a;
+  --color-bg-card: #0d1014;
+  --color-bg-card-hover: #1a1f27;
+  --color-bg-sidebar: #0d1014;
+  --color-bg-chrome: #0d1014;
   color-scheme: dark;
 
-  /* Text */
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: #A1A1AA;
-  --color-text-tertiary: #71717A;
-  --color-text-quaternary: #52525B;
+  /* App-specific tokens for parity */
+  --app-bg: #0a0a0b;
+  --app-surface: #0d1014;
+  --app-surface-2: #0d1014;
+  --app-surface-3: #11151a;
+  --app-border: rgba(255, 255, 255, 0.06);
+  --app-text: #e6e9ef;
+  --app-muted: #8a909a;
+  --app-accent: #3b82f6;
+  --app-accent-strong: #60a5fa;
+  --app-accent-soft: rgba(59, 130, 246, 0.2);
 
-  /* Accents */
-  --color-accent-blue: #3B82F6;
-  --color-accent-blue-hover: #60A5FA;
+  /* Text */
+  --color-text-primary: #e6e9ef;
+  --color-text-secondary: #8a909a;
+  --color-text-tertiary: #64748b;
+  --color-text-quaternary: #475569;
+
+  /* Accents (Blue) */
+  --color-accent-blue: #3b82f6;
+  --color-accent-blue-hover: #60a5fa;
   --color-accent-blue-dim: rgba(59, 130, 246, 0.5);
   --color-accent-blue-subtle: rgba(59, 130, 246, 0.1);
-  --color-accent-green: #10B981;
+  --color-accent-green: #10b981;
   --color-accent-green-subtle: rgba(16, 185, 129, 0.1);
-  --color-danger: #FF5C5C;
-  --color-danger-hover: #FF7A7A;
-  --color-danger-subtle: rgba(255, 92, 92, 0.1);
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+  --color-danger-subtle: rgba(239, 68, 68, 0.1);
+
+  /* Compatibility aliases for legacy styles */
+  --color-accent: var(--color-accent-blue);
+  --color-accent-primary: var(--color-accent-blue);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-medium: rgba(255, 255, 255, 0.08);
 
   /* Borders */
-
-  --border-subtle: 1px solid rgba(255, 255, 255, 0.05);
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.06);
   --border-medium: 1px solid rgba(255, 255, 255, 0.08);
   --border-strong: 1px solid rgba(255, 255, 255, 0.12);
 
-  /* Shadows - Elegant Design */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1),
-    0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15),
-    0 2px 4px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2),
-    0 4px 8px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.25),
-    0 6px 12px rgba(0, 0, 0, 0.12);
-  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+  /* Shadows - Deep and Premium */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  --shadow-modal: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 20px 40px rgba(0, 0, 0, 0.6);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.2);
 
   /* Typography */
-  --font-family-base: 'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  --font-family-mono: 'SF Mono',
-    'Monaco',
-    'Inconsolata',
-    'Fira Code',
-    monospace;
+  --font-family-base: "Sora Variable", "Sora", "Space Grotesk", "Avenir Next", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-family-mono: "JetBrains Mono", monospace;
+  --font-family-weather: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
 
-  /* Spacing Scale - Compact */
-  --space-1: 3px;
-  --space-2: 6px;
-  --space-3: 10px;
-  --space-4: 14px;
-  --space-5: 18px;
-  --space-6: 20px;
-  --space-8: 28px;
-  --space-10: 36px;
-  --space-12: 44px;
+  /* Spacing Scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
 
   /* Border Radius */
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 7px;
-  --radius-xl: 10px;
-  --radius-pill: 16px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-pill: 9999px;
   --radius-round: 50%;
+
+  /* Z-Index Scale */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 500;
+  --z-overlay: 1000;
+  --z-popover: 5000;
+  --z-modal: 9999;
+  --z-window-controls: 10001;
+  --z-command-palette: 10002;
+  --z-critical: 20000;
+
+  /* Font Size Scale */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-md: 17px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-4xl: 32px;
+
+  /* Warning Color */
+  --color-warning: rgba(251, 191, 36, 1);
+  --color-warning-subtle: rgba(251, 191, 36, 0.15);
 
   /* Transitions - Smooth Cubic Bezier Curves */
   --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
@@ -88,7 +120,7 @@
   --transition-micro: 0.1s ease-out;
 
   /* Layout - Compact */
-  --sidebar-width-collapsed: 72px;
+  --sidebar-width-collapsed: 80px;
   --header-height: 44px;
 }
 
@@ -114,10 +146,11 @@
   transition: background-color 0.2s ease;
 }
 
-*:hover > ::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-thumb:hover,
 .personnel-list:hover ::-webkit-scrollbar-thumb,
-.oncall-panel:hover ::-webkit-scrollbar-thumb {
+.oncall-panel:hover ::-webkit-scrollbar-thumb,
+.weather-scroll-container:hover ::-webkit-scrollbar-thumb,
+.command-palette-results:hover ::-webkit-scrollbar-thumb,
+.modal-content-scrollable:hover ::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -129,6 +162,7 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--font-family-base);
+  font-size: 17px;
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -136,29 +170,11 @@ body {
   height: 100vh;
 }
 
-.content-view {
-  flex: 1;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-app);
-  /* The darker content pane */
-
-  /* Precision Discord Rounding - Internal Pane only */
-  border-top-left-radius: 8px;
-  border-left: var(--border-subtle);
-  border-top: var(--border-subtle);
-  box-shadow: -2px -1px 4px rgba(0, 0, 0, 0.15);
-  /* Subtle inner depth */
-  position: relative;
-}
-
 .app-container {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background-color: var(--color-bg-app);
+  background: linear-gradient(180deg, var(--color-bg-chrome) 0%, var(--color-bg-app) 65%, var(--color-bg-app) 100%);
   overflow: hidden;
   position: relative;
 }
@@ -172,13 +188,24 @@ body {
   position: relative;
 }
 
+.content-view {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-app);
+  border-radius: 20px 20px 0 0;
+  position: relative;
+}
+
 .app-header {
   height: var(--header-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  background: transparent;
+  background: var(--color-bg-chrome);
   -webkit-app-region: drag;
   flex-shrink: 0;
 }
@@ -195,7 +222,7 @@ body {
 }
 
 .header-breadcrumb {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
@@ -213,6 +240,6 @@ body {
   position: absolute;
   top: 0;
   right: 0;
-  z-index: 10001;
+  z-index: var(--z-window-controls);
   pointer-events: none;
 }

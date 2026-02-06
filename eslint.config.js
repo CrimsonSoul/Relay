@@ -65,7 +65,7 @@ export default [
       },
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { 
         'argsIgnorePattern': '^_',
@@ -75,10 +75,12 @@ export default [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
       '@typescript-eslint/strict-boolean-expressions': 'off',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
@@ -129,7 +131,7 @@ export default [
       },
     },
     rules: {
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { 
         'argsIgnorePattern': '^_',
@@ -139,7 +141,7 @@ export default [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
       '@typescript-eslint/strict-boolean-expressions': 'off',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
@@ -248,10 +250,12 @@ export default [
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/explicit-module-boundary-types': 'off',
       '@typescript-eslint/no-floating-promises': 'error',
-      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/no-misused-promises': ['error', { checksVoidReturn: false }],
       '@typescript-eslint/strict-boolean-expressions': 'off',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
@@ -270,7 +274,7 @@ export default [
     },
   },
   {
-    files: ['tests/**/*.ts', 'tests/e2e/**/*.{ts,tsx}', '**/__tests__/**/*', '*.test.ts', '*.test.tsx', '*.spec.ts', '*.spec.tsx'],
+    files: ['src/**/*.test.ts', 'src/**/*.test.tsx', 'src/**/*.spec.ts', 'src/**/*.spec.tsx', 'tests/**/*.ts', 'tests/e2e/**/*.{ts,tsx}', '**/__tests__/**/*'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

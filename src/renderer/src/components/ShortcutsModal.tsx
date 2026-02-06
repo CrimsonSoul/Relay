@@ -58,7 +58,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
           maxWidth: "480px",
           background: "var(--color-bg-surface-opaque)",
           borderRadius: "12px",
-          border: "1px solid var(--color-border-medium)",
+          border: "var(--border-medium)",
           boxShadow: "var(--shadow-modal)",
           overflow: "hidden",
           maxHeight: "80vh",
@@ -83,8 +83,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
                 width: "36px",
                 height: "36px",
                 borderRadius: "10px",
-                background: "rgba(139, 92, 246, 0.15)",
-                color: "rgba(139, 92, 246, 1)",
+                background: "rgba(59, 130, 246, 0.15)",
+                border: "1px solid rgba(59, 130, 246, 0.35)",
+                color: "#60A5FA",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -129,7 +130,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.color = "var(--color-text-primary)";
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)";
+              e.currentTarget.style.background = "var(--color-bg-surface-elevated)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.color = "var(--color-text-tertiary)";
@@ -168,7 +169,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
                       alignItems: "center",
                       justifyContent: "space-between",
                       padding: "8px 12px",
-                      background: "rgba(255, 255, 255, 0.03)",
+                      background: "var(--color-bg-surface-elevated)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
                       borderRadius: "8px",
                     }}
                   >
@@ -180,8 +182,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
                         fontSize: "12px",
                         fontWeight: 600,
                         color: "var(--color-text-primary)",
-                        background: "var(--color-bg-surface)",
-                        border: "1px solid var(--color-border-subtle)",
+                        background: "var(--color-bg-card-hover)",
+                        border: "var(--border-subtle)",
                         padding: "4px 8px",
                         borderRadius: "6px",
                         fontFamily: "monospace",
@@ -206,7 +208,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
             color: "var(--color-text-tertiary)",
           }}
         >
-          Press <kbd style={{ background: "var(--color-bg-surface)", border: "1px solid var(--color-border-subtle)", borderRadius: "3px", padding: "2px 6px", fontFamily: "inherit", fontSize: "11px" }}>Esc</kbd> to close
+          Press <kbd style={{ background: "var(--color-bg-card-hover)", border: "var(--border-subtle)", borderRadius: "3px", padding: "2px 6px", fontFamily: "inherit", fontSize: "11px" }}>Esc</kbd> to close
         </div>
       </div>
     </div>,

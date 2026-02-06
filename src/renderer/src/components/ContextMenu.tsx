@@ -41,6 +41,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
       <div
         ref={menuRef}
         className="animate-scale-in"
+        role="menu"
         style={{
           position: 'fixed',
           top: y,
@@ -74,7 +75,15 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
         {items.map((item, i) => (
           <div
             key={i}
+            role="menuitem"
+            tabIndex={item.disabled ? -1 : 0}
             onClick={() => { if (!item.disabled) { item.onClick(); onClose(); } }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!item.disabled) { item.onClick(); onClose(); }
+              }
+            }}
             style={{
               padding: 'var(--space-2) var(--space-3)',
               cursor: item.disabled ? 'not-allowed' : 'pointer',
@@ -92,7 +101,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
             }}
             onMouseEnter={e => {
               if (!item.disabled) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.background = 'var(--color-bg-card-hover)';
                 if (item.danger) {
                   e.currentTarget.style.color = 'var(--color-danger-hover)';
                   e.currentTarget.style.background = 'rgba(232, 17, 35, 0.1)';

@@ -26,6 +26,10 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
   return (
     <Tooltip content={label}>
       <button
+        type="button"
+        role="treeitem"
+        aria-selected={active}
+        aria-label={`${label}, ${count || 0} items`}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
         style={{
@@ -59,31 +63,32 @@ export const SidebarItem = memo(({ label, count, active, onClick, onContextMenu 
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', overflow: 'hidden' }}>
           <span
-            className="text-balance break-word"
+            className="card-surface"
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
-              fontSize: '13px',
+              gap: '10px',
+              fontSize: '14px',
               color: color.text,
-              background: color.bg,
-              border: `1px solid ${color.border}`,
-              padding: '4px 10px',
-              borderRadius: '16px',
+              padding: '8px 16px',
+              borderRadius: '12px',
               fontWeight: 600,
-              maxWidth: '100%'
+              maxWidth: '100%',
+              width: '100%',
+              justifyContent: 'space-between'
             }}>
-            <span style={{ display: 'block', maxWidth: '100%' }}>
+            <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '12px' }}>
               {label}
             </span>
             {count !== undefined && (
               <span style={{
                 opacity: 0.8,
-                fontSize: '11px',
-                fontWeight: 500,
-                borderLeft: `1px solid ${color.border}`,
+                fontSize: '12px',
+                fontWeight: 600,
+                color: color.text,
                 paddingLeft: '6px',
-                flexShrink: 0
+                flexShrink: 0,
+                fontFamily: 'var(--font-mono)'
               }}>
                 {count}
               </span>

@@ -52,19 +52,21 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
 }) => {
   return (
     <CollapsibleHeader
-      title={activeSavedLocation ? `${activeSavedLocation.name} — ${location?.name || ""}` : (location?.name || "Weather")}
+      title={activeSavedLocation ? `${activeSavedLocation.name}` : (location?.name || "Weather")}
       subtitle={weather ? `${Math.round(weather.current_weather.temperature)}°F • ${getWeatherDescription(weather.current_weather.weathercode)}` : "Local weather conditions and alerts"}
       isCollapsed={false}
+      expandedTitleSize="clamp(24px, 4vw, 36px)"
+      collapsedTitleSize="clamp(20px, 3.2vw, 30px)"
       search={
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {loc.error && (
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0 16px", background: "rgba(239, 68, 68, 0.15)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ff8a8a", borderRadius: "16px", fontSize: "14px", fontWeight: 600, whiteSpace: "nowrap", height: "44px", animation: "fadeIn 0.2s ease-out", boxShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Error</title><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "0 16px", background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)", color: "#ff8a8a", borderRadius: "12px", fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", height: "40px", animation: "fadeIn 0.2s ease-out" }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><title>Error</title><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
               <span>{loc.error}</span>
             </div>
           )}
           <SearchInput 
-            style={{ height: "44px" }} 
+            style={{ height: "40px" }} 
             placeholder={isSearching ? "Searching..." : "Search city..."} 
             value={loc.manualInput} 
             onChange={(e) => loc.setManualInput(e.target.value)} 
@@ -115,10 +117,10 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
               top: "calc(100% + 8px)",
               right: 0,
               width: "280px",
-              background: "var(--color-bg-surface-opaque)",
-              borderRadius: "12px",
-              border: "1px solid var(--color-border-medium)",
-              boxShadow: "var(--shadow-lg)",
+              background: "var(--app-surface-2)",
+              borderRadius: "16px",
+              border: "1px solid rgba(255,255,255,0.08)",
+              boxShadow: "0 16px 32px rgba(0,0,0,0.4)",
               overflow: "hidden",
               zIndex: 100,
             }}>
@@ -128,13 +130,13 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                 onClick={() => { setSaveModalOpen(true); setShowLocationMenu(false); }}
                 style={{
                   width: "100%",
-                  padding: "12px 16px",
-                  background: "none",
+                  padding: "16px",
+                  background: "rgba(59, 130, 246, 0.05)",
                   border: "none",
-                  borderBottom: "1px solid var(--color-border-subtle)",
-                  color: "rgba(52, 211, 153, 1)",
+                  borderBottom: "1px solid rgba(255,255,255,0.05)",
+                  color: "var(--color-accent-blue)",
                   fontSize: "13px",
-                  fontWeight: 600,
+                  fontWeight: 650,
                   cursor: "pointer",
                   display: "flex",
                   alignItems: "center",

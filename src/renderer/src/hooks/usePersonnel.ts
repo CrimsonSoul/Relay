@@ -25,15 +25,13 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   const [currentDay, setCurrentDay] = useState(new Date().getDay());
   const [tick, setTick] = useState(Date.now());
 
-  // Ref to track if the update was triggered locally (optimistic update)
-  const isLocalUpdateRef = useRef(false);
+  // Track pending API calls to distinguish local optimistic updates from external pushes
+  const pendingMutationsRef = useRef(0);
 
-  // Sync with external updates, respecting local optimistic state
+  // Sync with external updates only when no local mutations are in-flight
   useEffect(() => {
-    if (!isLocalUpdateRef.current) {
+    if (pendingMutationsRef.current === 0) {
         setLocalOnCall(onCall);
-    } else {
-        isLocalUpdateRef.current = false;
     }
   }, [onCall]);
 
@@ -93,7 +91,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
 
-    isLocalUpdateRef.current = true;
+    pendingMutationsRef.current++;
     setLocalOnCall((prev) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
       if (!teamOrder.includes(team)) {
@@ -110,36 +108,45 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
       return newFlatList;
     });
 
-    const success = await window.api?.updateOnCallTeam(team, rows);
-    if (!success) {
-      isLocalUpdateRef.current = false;
-      showToast("Failed to save changes", "error");
+    try {
+      const success = await window.api?.updateOnCallTeam(team, rows);
+      if (!success) {
+        showToast("Failed to save changes", "error");
+      }
+    } finally {
+      pendingMutationsRef.current--;
     }
   };
 
   const handleRemoveTeam = async (team: string) => {
-    isLocalUpdateRef.current = true;
-    const success = await window.api?.removeOnCallTeam(team);
-    if (success) {
-      setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
-      showToast(`Removed ${team}`, "success");
-    } else {
-      isLocalUpdateRef.current = false;
-      showToast("Failed to remove team", "error");
+    pendingMutationsRef.current++;
+    try {
+      const success = await window.api?.removeOnCallTeam(team);
+      if (success) {
+        setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
+        showToast(`Removed ${team}`, "success");
+      } else {
+        showToast("Failed to remove team", "error");
+      }
+    } finally {
+      pendingMutationsRef.current--;
     }
   };
 
   const handleRenameTeam = async (oldName: string, newName: string) => {
-    isLocalUpdateRef.current = true;
-    const success = await window.api?.renameOnCallTeam(oldName, newName);
-    if (success) {
-      setLocalOnCall((prev) =>
-        prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r))
-      );
-      showToast(`Renamed ${oldName} to ${newName}`, "success");
-    } else {
-      isLocalUpdateRef.current = false;
-      showToast("Failed to rename team", "error");
+    pendingMutationsRef.current++;
+    try {
+      const success = await window.api?.renameOnCallTeam(oldName, newName);
+      if (success) {
+        setLocalOnCall((prev) =>
+          prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r))
+        );
+        showToast(`Renamed ${oldName} to ${newName}`, "success");
+      } else {
+        showToast("Failed to rename team", "error");
+      }
+    } finally {
+      pendingMutationsRef.current--;
     }
   };
 
@@ -152,7 +159,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
       contact: "",
       timeWindow: "",
     };
-    isLocalUpdateRef.current = true;
+    pendingMutationsRef.current++;
     
     // 1. Update local state optimistically
     const nextList = [...localOnCall, initialRow];
@@ -169,10 +176,11 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
         throw new Error("API call failed");
       }
     } catch (_err) {
-      isLocalUpdateRef.current = false;
       // Rollback local state
       setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
       showToast("Failed to add team", "error");
+    } finally {
+      pendingMutationsRef.current--;
     }
   };
 
@@ -188,17 +196,20 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
        newFlatList.push(...localOnCall.filter(r => r.team === t));
     });
 
-    isLocalUpdateRef.current = true;
+    pendingMutationsRef.current++;
     const oldFlatList = [...localOnCall];
     setLocalOnCall(newFlatList);
 
-    const success = await window.api?.reorderOnCallTeams(currentTeams, {});
-    if (success) {
-      showToast("Teams reordered", "success");
-    } else {
-      isLocalUpdateRef.current = false;
-      setLocalOnCall(oldFlatList);
-      showToast("Failed to save team order", "error");
+    try {
+      const success = await window.api?.reorderOnCallTeams(currentTeams, {});
+      if (success) {
+        showToast("Teams reordered", "success");
+      } else {
+        setLocalOnCall(oldFlatList);
+        showToast("Failed to save team order", "error");
+      }
+    } finally {
+      pendingMutationsRef.current--;
     }
   };
 

@@ -136,17 +136,60 @@ export const PersonnelTab: React.FC<{ onCall: OnCallRow[]; contacts: Contact[]; 
   }, [showToast]);
 
   const alertConfigs = [
-    { day: 0, type: 'first-responder', label: 'Update First Responder', bg: 'var(--color-accent-primary)' },
-    { day: 1, type: 'general', label: 'Update Weekly Schedule', bg: 'var(--color-accent-primary)' }, 
-    { day: 3, type: 'sql', label: 'Update SQL DBA', bg: '#EF4444' }, 
-    { day: 4, type: 'oracle', label: 'Update Oracle DBA', bg: '#EF4444' }
-  ];
-  const renderAlerts = () => alertConfigs.filter(c => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type))).map(c => <Tooltip key={c.type} content="Click to dismiss"><div onClick={() => dismissAlert(c.type)} style={{ fontSize: '12px', fontWeight: 700, color: '#fff', background: c.bg, padding: '4px 8px', borderRadius: '4px', marginLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: 'pointer', userSelect: 'none' }}>{c.label}</div></Tooltip>);
+    { day: 0, type: 'first-responder', label: 'Update First Responder', tone: 'info' },
+    { day: 1, type: 'general', label: 'Update Weekly Schedule', tone: 'info' },
+    { day: 3, type: 'sql', label: 'Update SQL DBA', tone: 'danger' },
+    { day: 4, type: 'oracle', label: 'Update Oracle DBA', tone: 'danger' }
+  ] as const;
+
+  const renderAlerts = () =>
+    alertConfigs
+      .filter((config) => config.day === currentDay && !dismissedAlerts.has(getAlertKey(config.type)))
+      .map((config) => {
+        const isDanger = config.tone === 'danger';
+        return (
+          <Tooltip key={config.type} content="Click to dismiss">
+            <button
+              type="button"
+              onClick={() => dismissAlert(config.type)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '13px',
+                fontWeight: 700,
+                color: isDanger ? '#FCA5A5' : '#93C5FD',
+                padding: '8px 16px',
+                borderRadius: '14px',
+                marginLeft: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+              className="card-surface"
+            >
+              <span
+                className="animate-active-indicator"
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: isDanger ? '#F87171' : '#60A5FA',
+                  boxShadow: isDanger ? '0 0 6px rgba(248, 113, 113, 0.6)' : '0 0 6px rgba(96, 165, 250, 0.6)',
+                  flexShrink: 0,
+                }}
+              />
+              {config.label}
+            </button>
+          </Tooltip>
+        );
+      });
 
   const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete);
 
   return (
-    <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "20px 24px 24px 24px", background: "var(--color-bg-app)", overflowY: "auto" }}>
+    <div ref={scrollContainerRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "24px 32px", background: "transparent", overflowY: "auto" }}>
       <CollapsibleHeader title="On-Call Board" subtitle={<>{weekRange}{renderAlerts()}</>} isCollapsed={isCollapsed}>
         <TactileButton
           onClick={handleCopyAllOnCall}

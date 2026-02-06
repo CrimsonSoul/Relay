@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 import { validateEnv } from './env';
-import { state, getDataRootAsync, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { setupWindowListeners } from './handlers/windowHandlers';
 
@@ -36,7 +36,6 @@ if (!gotLock) {
 
   // Windows-specific optimizations
   if (process.platform === 'win32') {
-    app.commandLine.appendSwitch('disable-gpu-sandbox');
     app.commandLine.appendSwitch('js-flags', '--max-old-space-size=512');
   }
 
@@ -73,7 +72,7 @@ if (!gotLock) {
       });
     });
 
-    const isDev = process.env.ELECTRON_RENDERER_URL !== undefined;
+    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
     
     // Set Content Security Policy
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -84,10 +83,13 @@ if (!gotLock) {
             "default-src 'self'; " +
             `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
             "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data: https:; " +
-            "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://ipapi.co http://ip-api.com https://ipwho.is https://*.rainviewer.com; " +
+            "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
+            "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
             "font-src 'self' data:; " +
-            "frame-src 'self' https://www.rainviewer.com https://your-intranet;"
+            "frame-src 'self' https://www.rainviewer.com https://your-intranet; " +
+            "object-src 'none'; " +
+            "base-uri 'self'; " +
+            "form-action 'self';"
           ],
           'X-Content-Type-Options': ['nosniff'],
           'X-Frame-Options': ['DENY'],
@@ -96,6 +98,19 @@ if (!gotLock) {
         }
       });
     });
+
+    // Initialize data BEFORE loading the renderer so IPC handlers have
+    // a ready FileManager when the renderer starts making requests.
+    loggers.main.info('Starting data initialization...');
+    try {
+      state.currentDataRoot = await getDataRoot();
+      loggers.main.info('Data root:', { path: state.currentDataRoot });
+      state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
+      state.fileManager.init();
+      loggers.main.info('FileManager initialized successfully');
+    } catch (error) {
+      loggers.main.error('Failed to initialize data', { error });
+    }
 
     if (isDev) {
       await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -107,45 +122,72 @@ if (!gotLock) {
       });
     }
 
-    // Initialize data asynchronously
-    void (async () => {
-      loggers.main.info('Starting data initialization...');
-      try {
-        state.currentDataRoot = await getDataRootAsync();
-        loggers.main.info('Data root:', { path: state.currentDataRoot });
-        if (state.mainWindow && !state.mainWindow.isDestroyed()) {
-          state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
-          state.fileManager.init();
-          loggers.main.info('FileManager initialized successfully');
-        }
-      } catch (error) {
-        loggers.main.error('Failed to initialize data', { error });
-      }
-    })();
-
     state.mainWindow.once('ready-to-show', () => {
       state.mainWindow?.show();
       state.mainWindow?.focus();
       loggers.main.debug('ready-to-show fired');
     });
 
+    // Webview security: restrict to HTTPS allowlist only
+    const ALLOWED_WEBVIEW_ORIGINS = [
+      'https://www.rainviewer.com',
+      'https://your-intranet',
+      'https://chatgpt.com',
+      'https://claude.ai',
+      'https://copilot.microsoft.com',
+      'https://gemini.google.com',
+    ];
+
     state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
       delete webPreferences.preload;
       webPreferences.nodeIntegration = false;
       webPreferences.contextIsolation = true;
-      if (params.src && !params.src.startsWith('http')) {
-        loggers.security.warn(`Blocked WebView navigation to non-http URL: ${params.src}`);
+      webPreferences.sandbox = true;
+
+      if (!params.src || !params.src.startsWith('https://')) {
+        loggers.security.warn(`Blocked WebView with non-HTTPS URL: ${params.src}`);
+        event.preventDefault();
+        return;
+      }
+
+      const isAllowed = ALLOWED_WEBVIEW_ORIGINS.some(origin => params.src.startsWith(origin));
+      if (!isAllowed) {
+        loggers.security.warn(`Blocked WebView navigation to non-allowlisted URL: ${params.src}`);
         event.preventDefault();
       }
     });
 
+    // Prevent the main window from navigating away (H-1: navigation hijacking defense)
+    state.mainWindow.webContents.on('will-navigate', (event, url) => {
+      // Allow dev server and local file reloads
+      if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+      if (url.startsWith('file://')) return;
+      loggers.security.warn(`Blocked main window navigation to: ${url}`);
+      event.preventDefault();
+    });
+
+    // Block window.open() from the renderer (H-1)
+    state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      loggers.security.warn(`Blocked window.open() attempt: ${url}`);
+      return { action: 'deny' };
+    });
+
     state.mainWindow.on('closed', () => {
       state.mainWindow = null;
-      state.fileManager = null;
+      if (state.fileManager) {
+        state.fileManager.destroy();
+        state.fileManager = null;
+      }
     });
   }
 
+  const ALLOWED_AUX_ROUTES = ['oncall', 'weather', 'directory', 'servers', 'assembler', 'personnel', 'popout/board'];
+
   async function createAuxWindow(route: string) {
+    if (!ALLOWED_AUX_ROUTES.includes(route)) {
+      loggers.security.warn(`Blocked aux window with invalid route: ${route}`);
+      return;
+    }
     const auxWindow = new BrowserWindow({
       width: 960, height: 800,
       backgroundColor: '#0B0D12',
@@ -163,7 +205,20 @@ if (!gotLock) {
 
     setupWindowListeners(auxWindow);
 
-    const isDev = process.env.ELECTRON_RENDERER_URL !== undefined;
+    // Prevent aux window navigation hijacking
+    auxWindow.webContents.on('will-navigate', (event, url) => {
+      const auxIsDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
+      if (auxIsDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+      if (url.startsWith('file://')) return;
+      loggers.security.warn(`Blocked aux window navigation to: ${url}`);
+      event.preventDefault();
+    });
+    auxWindow.webContents.setWindowOpenHandler(({ url }) => {
+      loggers.security.warn(`Blocked aux window.open() attempt: ${url}`);
+      return { action: 'deny' };
+    });
+
+    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
     if (isDev) {
       const url = `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`;
       loggers.main.info(`Loading aux window URL: ${url}`);
@@ -195,7 +250,17 @@ if (!gotLock) {
 
       setupIpc(createAuxWindow);
       await createWindow();
-      setupMaintenanceTasks(() => state.fileManager);
+      const cleanupMaintenance = setupMaintenanceTasks(() => state.fileManager);
+
+      // Graceful shutdown: clean up file watchers, timers, etc.
+      app.on('before-quit', () => {
+        loggers.main.info('App quitting — cleaning up resources');
+        cleanupMaintenance();
+        if (state.fileManager) {
+          state.fileManager.destroy();
+          state.fileManager = null;
+        }
+      });
 
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) void createWindow();
