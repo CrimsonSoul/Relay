@@ -9,6 +9,7 @@ import { setupLocationHandlers } from './handlers/locationHandlers';
 import { setupFeatureHandlers } from './handlers/featureHandlers';
 import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
 import { loggers } from './logger';
+import { getErrorMessage } from '@shared/types';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -24,13 +25,15 @@ export function setupIpcHandlers(
   getDataRoot: () => Promise<string>,
   onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string,
-  createAuxWindow?: (route: string) => void
+  createAuxWindow?: (route: string) => void,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
     try {
       fn();
     } catch (err) {
-      loggers.main.error(`Failed to setup ${name} handlers`, { error: err instanceof Error ? err.message : String(err) });
+      loggers.main.error(`Failed to setup ${name} handlers`, {
+        error: getErrorMessage(err),
+      });
     }
   };
 
@@ -44,7 +47,9 @@ export function setupIpcHandlers(
   };
 
   // Config & App State
-  safeSetup('config', () => setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath));
+  safeSetup('config', () =>
+    setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath),
+  );
 
   // Data Mutations (Contacts, Groups, Servers, On-Call)
   safeSetup('data', () => setupDataHandlers(getMainWindow, getFileManager));

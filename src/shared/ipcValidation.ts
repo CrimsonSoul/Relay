@@ -25,14 +25,15 @@ export const ContactSchema = z.object({
   phone: z.string().max(MAX_FIELD),
   title: z.string().max(MAX_FIELD),
   _searchString: z.string().max(MAX_SEARCH).optional(),
-  raw: z.object({
-    id: z.string().max(MAX_ID).optional(),
-    createdAt: z.number().optional(),
-    updatedAt: z.number().optional(),
-  }).passthrough().optional(),
+  raw: z
+    .object({
+      id: z.string().max(MAX_ID).optional(),
+      createdAt: z.number().optional(),
+      updatedAt: z.number().optional(),
+    })
+    .passthrough()
+    .optional(),
 });
-
-export type ValidatedContact = z.infer<typeof ContactSchema>;
 
 // ==================== Server Schemas ====================
 export const ServerSchema = z.object({
@@ -40,18 +41,20 @@ export const ServerSchema = z.object({
   businessArea: z.string().max(MAX_FIELD),
   lob: z.string().max(MAX_FIELD),
   comment: z.string().max(MAX_NOTE),
-  owner: z.string().max(MAX_FIELD),
-  contact: z.string().max(MAX_FIELD),
+  // owner and contact are email fields (can be empty when unknown)
+  owner: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
+  contact: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
   os: z.string().max(MAX_FIELD),
   _searchString: z.string().max(MAX_SEARCH).optional(),
-  raw: z.object({
-    id: z.string().max(MAX_ID).optional(),
-    createdAt: z.number().optional(),
-    updatedAt: z.number().optional(),
-  }).passthrough().optional(),
+  raw: z
+    .object({
+      id: z.string().max(MAX_ID).optional(),
+      createdAt: z.number().optional(),
+      updatedAt: z.number().optional(),
+    })
+    .passthrough()
+    .optional(),
 });
-
-export type ValidatedServer = z.infer<typeof ServerSchema>;
 
 // ==================== OnCall Schemas ====================
 export const OnCallRowSchema = z.object({
@@ -64,8 +67,6 @@ export const OnCallRowSchema = z.object({
 });
 
 export const OnCallRowsArraySchema = z.array(OnCallRowSchema).max(MAX_ARRAY_ITEMS);
-
-export type ValidatedOnCallRow = z.infer<typeof OnCallRowSchema>;
 
 // ==================== Group Schemas ====================
 export const GroupSchema = z.object({
@@ -81,9 +82,6 @@ export const GroupUpdateSchema = z.object({
   contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_GROUP_CONTACTS).optional(),
 });
 
-export type ValidatedGroup = z.infer<typeof GroupSchema>;
-export type ValidatedGroupUpdate = z.infer<typeof GroupUpdateSchema>;
-
 // ==================== Bridge History Schemas ====================
 export const BridgeHistoryEntrySchema = z.object({
   id: z.string().max(MAX_ID).optional(),
@@ -93,8 +91,6 @@ export const BridgeHistoryEntrySchema = z.object({
   contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_ARRAY_ITEMS),
   recipientCount: z.number(),
 });
-
-export type ValidatedBridgeHistoryEntry = z.infer<typeof BridgeHistoryEntrySchema>;
 
 // ==================== Data Record Input Schemas ====================
 
@@ -110,8 +106,9 @@ export const ServerRecordInputSchema = z.object({
   businessArea: z.string().max(MAX_FIELD),
   lob: z.string().max(MAX_FIELD),
   comment: z.string().max(MAX_NOTE),
-  owner: z.string().max(MAX_FIELD),
-  contact: z.string().max(MAX_FIELD),
+  // owner and contact are email fields (can be empty when unknown)
+  owner: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
+  contact: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
   os: z.string().max(MAX_FIELD),
 });
 
@@ -127,16 +124,19 @@ export const ContactRecordUpdateSchema = ContactRecordInputSchema.partial().stri
 export const ServerRecordUpdateSchema = ServerRecordInputSchema.partial().strict();
 export const OnCallRecordUpdateSchema = OnCallRecordInputSchema.partial().strict();
 
-export const TeamLayoutSchema = z.record(z.string().max(MAX_NAME), z.object({
-  x: z.number(),
-  y: z.number(),
-  w: z.number().optional(),
-  h: z.number().optional(),
-  static: z.boolean().optional(),
-})).refine(
-  (obj) => obj === undefined || Object.keys(obj).length <= 100,
-  'Too many teams in layout (max 100)'
-).optional();
+export const TeamLayoutSchema = z
+  .record(
+    z.string().max(MAX_NAME),
+    z.object({
+      x: z.number(),
+      y: z.number(),
+      w: z.number().optional(),
+      h: z.number().optional(),
+      static: z.boolean().optional(),
+    }),
+  )
+  .refine((obj) => Object.keys(obj).length <= 100, 'Too many teams in layout (max 100)')
+  .optional();
 
 export const RadarSnapshotSchema = z.object({
   counters: z.object({
@@ -150,10 +150,11 @@ export const RadarSnapshotSchema = z.object({
   lastUpdated: z.number(),
 });
 
-export const SearchQuerySchema = z.string()
+export const SearchQuerySchema = z
+  .string()
   .min(1)
   .max(200)
-  .refine(s => !/[<>{}]/.test(s), 'Invalid characters in search query');
+  .refine((s) => !/[<>{}]/.test(s), 'Invalid characters in search query');
 
 export const ExportOptionsSchema = z.object({
   format: z.enum(['json', 'csv']),
@@ -166,24 +167,16 @@ export const DataCategorySchema = z.enum(['contacts', 'servers', 'oncall', 'grou
 // ==================== Note Schemas ====================
 export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();
 
-export const NoteSchema = z.object({
-  targetType: z.enum(['contact', 'server']),
-  targetId: z.string().min(1).max(MAX_FIELD),
-  content: z.string().max(MAX_NOTE),
-});
-
-export type ValidatedNote = z.infer<typeof NoteSchema>;
-
 // ==================== Location Schemas ====================
-export const LatitudeSchema = z.number().min(-90).max(90);
-export const LongitudeSchema = z.number().min(-180).max(180);
+const LatitudeSchema = z.number().min(-90).max(90);
+const LongitudeSchema = z.number().min(-180).max(180);
 
 export const LogEntrySchema = z.object({
   level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),
   module: z.string().max(100),
   message: z.string().max(5000),
-  data: z.record(z.unknown()).optional(),
-  timestamp: z.string().optional()
+  data: z.record(z.string(), z.unknown()).optional(),
+  timestamp: z.string().optional(),
 });
 
 export const SavedLocationSchema = z.object({
@@ -202,38 +195,24 @@ export const LocationUpdateSchema = z.object({
   lon: LongitudeSchema.optional(),
 });
 
-export type ValidatedSavedLocation = z.infer<typeof SavedLocationSchema>;
-export type ValidatedLocationUpdate = z.infer<typeof LocationUpdateSchema>;
-
 // ==================== Utility Functions ====================
-
-/**
- * Validates and returns the parsed data, or throws a descriptive error
- */
-export function validateIpcData<T>(schema: z.ZodSchema<T>, data: unknown, context: string): T {
-  const result = schema.safeParse(data);
-  if (!result.success) {
-    const errorMessage = `IPC validation failed for ${context}: ${result.error.message}`;
-    throw new Error(errorMessage);
-  }
-  return result.data;
-}
 
 /**
  * Validates and returns the parsed data, or returns null with logged error
  */
 export function validateIpcDataSafe<T>(
-  schema: z.ZodSchema<T>, 
-  data: unknown, 
+  schema: z.ZodType<T>,
+  data: unknown,
   context: string,
-  logger?: (msg: string, data?: Record<string, unknown>) => void
+  logger?: (msg: string, data?: Record<string, unknown>) => void,
 ): T | null {
   const result = schema.safeParse(data);
   if (!result.success) {
-    const errorData = result.error.format();
+    const errorData = { message: result.error.message, issues: result.error.issues };
     if (logger) {
       logger(`IPC validation failed for ${context}`, { error: errorData });
     } else {
+      // Fallback for callers that don't provide a logger (all current callers do)
       console.error(`IPC validation failed for ${context}:`, errorData);
     }
     return null;

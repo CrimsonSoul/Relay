@@ -14,7 +14,13 @@ type Props = {
   editContact?: Contact; // If provided, we are in edit mode
 };
 
-export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, initialEmail = '', editContact }) => {
+export const AddContactModal: React.FC<Props> = ({
+  isOpen,
+  onClose,
+  onSave,
+  initialEmail = '',
+  editContact,
+}) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -60,19 +66,18 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
   };
 
   const fieldStyle: React.CSSProperties = {
-    marginBottom: '20px'
-  }
+    marginBottom: '20px',
+  };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={editContact ? "Edit Contact" : "Add Contact"}>
+    <Modal isOpen={isOpen} onClose={onClose} title={editContact ? 'Edit Contact' : 'Add Contact'}>
       <form onSubmit={handleSubmit}>
-
         <div style={fieldStyle}>
           <Input
             label="Full Name"
             value={name}
             variant="vivid"
-            onChange={e => setName(e.target.value)}
+            onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Alice Smith"
             required
             autoFocus
@@ -85,7 +90,7 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
             type="email"
             variant="vivid"
             value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={(e) => setEmail(e.target.value)}
             placeholder="alice@example.com"
             required
           />
@@ -96,7 +101,7 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
             label="Job Title"
             variant="vivid"
             value={title}
-            onChange={e => setTitle(e.target.value)}
+            onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Marketing Director"
           />
         </div>
@@ -107,28 +112,22 @@ export const AddContactModal: React.FC<Props> = ({ isOpen, onClose, onSave, init
             type="tel"
             variant="vivid"
             value={phone}
-            onChange={e => setPhone(e.target.value)}
+            onChange={(e) => setPhone(e.target.value)}
             onBlur={handlePhoneBlur}
             placeholder="e.g. (555) 123-4567"
           />
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-          <TactileButton
-            type="button"
-            onClick={onClose}
-          >
+        <div
+          style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}
+        >
+          <TactileButton type="button" onClick={onClose}>
             Cancel
           </TactileButton>
-          <TactileButton
-            type="submit"
-            disabled={isSubmitting}
-            variant="primary"
-          >
-            {isSubmitting ? 'Saving...' : (editContact ? 'Update Contact' : 'Create Contact')}
+          <TactileButton type="submit" disabled={isSubmitting} variant="primary">
+            {isSubmitting ? 'Saving...' : editContact ? 'Update Contact' : 'Create Contact'}
           </TactileButton>
         </div>
-
       </form>
     </Modal>
   );

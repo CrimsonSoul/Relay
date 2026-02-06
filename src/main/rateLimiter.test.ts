@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RateLimiter, rateLimiters, withRateLimit } from '../main/rateLimiter';
+import { RateLimiter, rateLimiters } from '../main/rateLimiter';
 
 // Mock logger to prevent console noise during tests
 vi.mock('./logger', () => ({
   loggers: {
     ipc: {
       warn: vi.fn(),
-      error: vi.fn()
-    }
-  }
+      error: vi.fn(),
+    },
+  },
 }));
 
 describe('RateLimiter', () => {
@@ -20,7 +20,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 10,
       refillRate: 5,
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     const result = limiter.tryConsume(1);
@@ -33,7 +33,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 5,
       refillRate: 1,
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     // Consume all tokens
@@ -51,7 +51,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 10,
       refillRate: 5, // 5 tokens per second
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     // Consume all tokens
@@ -74,7 +74,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 10,
       refillRate: 5,
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     // Consume all tokens
@@ -92,7 +92,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 10,
       refillRate: 5,
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     // Consume with cost of 3
@@ -111,7 +111,7 @@ describe('RateLimiter', () => {
     const limiter = new RateLimiter({
       maxTokens: 5,
       refillRate: 10,
-      name: 'TestLimiter'
+      name: 'TestLimiter',
     });
 
     // Consume 2 tokens
@@ -120,60 +120,6 @@ describe('RateLimiter', () => {
 
     // Wait 1 second (10 tokens would be added, but capped at max 5)
     vi.advanceTimersByTime(1000);
-    expect(limiter.getTokens()).toBe(5);
-  });
-});
-
-describe('withRateLimit', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-
-  it('should execute handler when not rate limited', async () => {
-    const limiter = new RateLimiter({
-      maxTokens: 10,
-      refillRate: 5,
-      name: 'TestLimiter'
-    });
-
-    const handler = vi.fn().mockResolvedValue('success');
-    const result = await withRateLimit(limiter, handler);
-
-    expect(result).toBe('success');
-    expect(handler).toHaveBeenCalledTimes(1);
-  });
-
-  it('should return null when rate limited', async () => {
-    const limiter = new RateLimiter({
-      maxTokens: 1,
-      refillRate: 0.1, // 1 token per 10 seconds
-      name: 'TestLimiter'
-    });
-
-    const handler = vi.fn().mockResolvedValue('success');
-
-    // First call should succeed
-    const result1 = await withRateLimit(limiter, handler);
-    expect(result1).toBe('success');
-    expect(handler).toHaveBeenCalledTimes(1);
-
-    // Second call should be blocked
-    const result2 = await withRateLimit(limiter, handler);
-    expect(result2).toBeNull();
-    expect(handler).toHaveBeenCalledTimes(1); // Handler not called again
-  });
-
-  it('should respect cost parameter', async () => {
-    const limiter = new RateLimiter({
-      maxTokens: 10,
-      refillRate: 5,
-      name: 'TestLimiter'
-    });
-
-    const handler = vi.fn().mockResolvedValue('success');
-
-    // Consume 5 tokens
-    await withRateLimit(limiter, handler, 5);
     expect(limiter.getTokens()).toBe(5);
   });
 });

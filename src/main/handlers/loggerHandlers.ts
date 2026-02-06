@@ -11,13 +11,13 @@ export function setupLoggerHandlers(): void {
   // Bridge group metrics — log which groups are being composed
   ipcMain.on(IPC_CHANNELS.LOG_BRIDGE, (_event, groups: unknown) => {
     try {
-      if (!Array.isArray(groups) || !groups.every(g => typeof g === 'string')) {
+      if (!Array.isArray(groups) || !groups.every((g) => typeof g === 'string')) {
         loggers.ipc.warn('Invalid LOG_BRIDGE payload — expected string[]');
         return;
       }
       loggers.bridge.info('Bridge composed', { groups, groupCount: groups.length });
     } catch (err) {
-      console.error('[LoggerHandler] Failed to process bridge log:', err);
+      loggers.ipc.error('Failed to process bridge log', { error: err });
     }
   });
 
@@ -29,7 +29,9 @@ export function setupLoggerHandlers(): void {
 
       const validated = LogEntrySchema.safeParse(entry);
       if (!validated.success) {
-        loggers.ipc.warn('Invalid log entry received from renderer', { error: validated.error.message });
+        loggers.ipc.warn('Invalid log entry received from renderer', {
+          error: validated.error.message,
+        });
         return;
       }
 
@@ -56,8 +58,7 @@ export function setupLoggerHandlers(): void {
           loggers.bridge.info(`[${module}] ${message}`, data);
       }
     } catch (err) {
-      // Fallback to console if logger fails
-      console.error('[LoggerHandler] Failed to process log from renderer:', err);
+      loggers.ipc.error('Failed to process log from renderer', { error: err });
     }
   });
 }

@@ -1,14 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AppData, type AuthRequest, type RadarSnapshot, type DataError, type ImportProgress } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  type BridgeAPI,
+  type AppData,
+  type AuthRequest,
+  type RadarSnapshot,
+  type DataError,
+  type ImportProgress,
+} from '@shared/ipc';
 
 const api: BridgeAPI = {
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
-  openContactsFile: () => ipcRenderer.invoke(IPC_CHANNELS.OPEN_CONTACTS_FILE),
   importGroupsFromCsv: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV),
-  importContactsFile: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_CONTACTS_FILE),
-  importServersFile: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_SERVERS_FILE),
-
   subscribeToData: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, data: AppData) => callback(data);
     ipcRenderer.on(IPC_CHANNELS.DATA_UPDATED, handler);
@@ -78,14 +82,15 @@ const api: BridgeAPI = {
   removeContact: (email) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_CONTACT, email),
   addServer: (server) => ipcRenderer.invoke(IPC_CHANNELS.ADD_SERVER, server),
   removeServer: (name) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_SERVER, name),
-  importContactsWithMapping: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_CONTACTS_WITH_MAPPING),
   changeDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.CHANGE_DATA_FOLDER),
   resetDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_DATA_FOLDER),
   getDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_PATH),
   updateOnCallTeam: (team, rows) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_TEAM, team, rows),
   removeOnCallTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_ONCALL_TEAM, team),
-  renameOnCallTeam: (oldName, newName) => ipcRenderer.invoke(IPC_CHANNELS.RENAME_ONCALL_TEAM, oldName, newName),
-  reorderOnCallTeams: (teamOrder, layout) => ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder, layout),
+  renameOnCallTeam: (oldName, newName) =>
+    ipcRenderer.invoke(IPC_CHANNELS.RENAME_ONCALL_TEAM, oldName, newName),
+  reorderOnCallTeams: (teamOrder, layout) =>
+    ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder, layout),
   saveAllOnCall: (rows) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALL_ONCALL, rows),
   generateDummyData: () => ipcRenderer.invoke(IPC_CHANNELS.GENERATE_DUMMY_DATA),
   getIpLocation: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IP_LOCATION),
@@ -117,8 +122,10 @@ const api: BridgeAPI = {
   clearBridgeHistory: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_BRIDGE_HISTORY),
   // Notes
   getNotes: () => ipcRenderer.invoke(IPC_CHANNELS.GET_NOTES),
-  setContactNote: (email, note, tags) => ipcRenderer.invoke(IPC_CHANNELS.SET_CONTACT_NOTE, email, note, tags),
-  setServerNote: (name, note, tags) => ipcRenderer.invoke(IPC_CHANNELS.SET_SERVER_NOTE, name, note, tags),
+  setContactNote: (email, note, tags) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_CONTACT_NOTE, email, note, tags),
+  setServerNote: (name, note, tags) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_SERVER_NOTE, name, note, tags),
   // Saved Locations
   getSavedLocations: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SAVED_LOCATIONS),
   saveLocation: (location) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_LOCATION, location),
@@ -129,24 +136,26 @@ const api: BridgeAPI = {
   // Contact Records (JSON)
   getContacts: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONTACTS),
   addContactRecord: (contact) => ipcRenderer.invoke(IPC_CHANNELS.ADD_CONTACT_RECORD, contact),
-  updateContactRecord: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONTACT_RECORD, id, updates),
+  updateContactRecord: (id, updates) =>
+    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONTACT_RECORD, id, updates),
   deleteContactRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_CONTACT_RECORD, id),
   // Server Records (JSON)
   getServers: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SERVERS),
   addServerRecord: (server) => ipcRenderer.invoke(IPC_CHANNELS.ADD_SERVER_RECORD, server),
-  updateServerRecord: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_SERVER_RECORD, id, updates),
+  updateServerRecord: (id, updates) =>
+    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_SERVER_RECORD, id, updates),
   deleteServerRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_SERVER_RECORD, id),
   // OnCall Records (JSON)
   getOnCall: () => ipcRenderer.invoke(IPC_CHANNELS.GET_ONCALL),
   addOnCallRecord: (record) => ipcRenderer.invoke(IPC_CHANNELS.ADD_ONCALL_RECORD, record),
-  updateOnCallRecord: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_RECORD, id, updates),
+  updateOnCallRecord: (id, updates) =>
+    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_RECORD, id, updates),
   deleteOnCallRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_RECORD, id),
   deleteOnCallByTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_BY_TEAM, team),
   // Data Manager
   exportData: (options) => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_DATA, options),
   importData: (category) => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_DATA, category),
   getDataStats: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_STATS),
-  migrateFromCsv: () => ipcRenderer.invoke(IPC_CHANNELS.MIGRATE_CSV_TO_JSON),
   // Clipboard
   writeClipboard: (text) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text),
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
@@ -154,12 +163,13 @@ const api: BridgeAPI = {
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
   isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
   onMaximizeChange: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(_event, maximized);
+    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) =>
+      callback(_event, maximized);
     ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
   },
   openAuxWindow: (route) => ipcRenderer.send(IPC_CHANNELS.WINDOW_OPEN_AUX, route),
-  platform: process.platform
+  platform: process.platform,
 };
 
 contextBridge.exposeInMainWorld('api', api);

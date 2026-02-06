@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { safeStorage } from 'electron';
-import { 
-  generateAuthNonce, 
-  registerAuthRequest, 
-  consumeAuthRequest, 
-  cacheCredentials, 
+import {
+  generateAuthNonce,
+  registerAuthRequest,
+  consumeAuthRequest,
+  cacheCredentials,
   getCachedCredentials,
 } from './CredentialManager';
 
@@ -26,8 +26,8 @@ vi.mock('./logger', () => ({
     },
   },
   ErrorCategory: {
-    AUTH: 'AUTH'
-  }
+    AUTH: 'AUTH',
+  },
 }));
 
 describe('CredentialManager', () => {
@@ -43,12 +43,12 @@ describe('CredentialManager', () => {
       const host = 'example.com';
 
       registerAuthRequest(nonce, host, callback);
-      
+
       const result = consumeAuthRequest(nonce);
       expect(result).not.toBeNull();
       expect(result?.host).toBe(host);
       expect(result?.callback).toBe(callback);
-      
+
       // Should be one-time use
       expect(consumeAuthRequest(nonce)).toBeNull();
     });

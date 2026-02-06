@@ -1,30 +1,43 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
-import { generateAuthNonce, registerAuthRequest, consumeAuthRequest, cancelAuthRequest, cacheCredentials, getCachedCredentials } from '../CredentialManager';
+import { IPC_CHANNELS } from '@shared/ipc';
+import {
+  generateAuthNonce,
+  registerAuthRequest,
+  consumeAuthRequest,
+  cancelAuthRequest,
+  cacheCredentials,
+  getCachedCredentials,
+} from '../credentialManager';
 import { loggers } from '../logger';
 
 export function setupAuthHandlers() {
-  ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (_event, { nonce, username, password, remember }) => {
-    // Input validation
-    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
-      loggers.auth.warn('Invalid auth nonce format');
-      return false;
-    }
-    if (typeof username !== 'string' || username.length > 256) {
-      loggers.auth.warn('Invalid username format');
-      return false;
-    }
-    if (typeof password !== 'string' || password.length > 1024) {
-      loggers.auth.warn('Invalid password format');
-      return false;
-    }
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_SUBMIT,
+    async (_event, { nonce, username, password, remember }) => {
+      // Input validation
+      if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+        loggers.auth.warn('Invalid auth nonce format');
+        return false;
+      }
+      if (typeof username !== 'string' || username.length > 256) {
+        loggers.auth.warn('Invalid username format');
+        return false;
+      }
+      if (typeof password !== 'string' || password.length > 1024) {
+        loggers.auth.warn('Invalid password format');
+        return false;
+      }
 
-    const authRequest = consumeAuthRequest(nonce);
-    if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce'); return false; }
-    if (remember) cacheCredentials(authRequest.host, username, password);
-    authRequest.callback([username, password]);
-    return true;
-  });
+      const authRequest = consumeAuthRequest(nonce);
+      if (!authRequest) {
+        loggers.auth.warn('Invalid or expired auth nonce');
+        return false;
+      }
+      if (remember) cacheCredentials(authRequest.host, username, password);
+      authRequest.callback([username, password]);
+      return true;
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, { nonce }) => {
     if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
@@ -32,9 +45,15 @@ export function setupAuthHandlers() {
       return false;
     }
     const authRequest = consumeAuthRequest(nonce);
-    if (!authRequest) { loggers.auth.warn('Invalid or expired auth nonce for cached auth'); return false; }
+    if (!authRequest) {
+      loggers.auth.warn('Invalid or expired auth nonce for cached auth');
+      return false;
+    }
     const cached = getCachedCredentials(authRequest.host);
-    if (!cached) { loggers.auth.warn('No cached credentials for host', { host: authRequest.host }); return false; }
+    if (!cached) {
+      loggers.auth.warn('No cached credentials for host', { host: authRequest.host });
+      return false;
+    }
     authRequest.callback([cached.username, cached.password]);
     return true;
   });
@@ -49,14 +68,28 @@ export function setupAuthHandlers() {
 }
 
 export function setupAuthInterception(getMainWindow: () => BrowserWindow | null) {
-  app.on('login', (event: Electron.Event, _webContents: Electron.WebContents, _request: Electron.AuthenticationResponseDetails, authInfo: Electron.AuthInfo, callback: (username?: string, password?: string) => void) => {
-    event.preventDefault();
-    const nonce = generateAuthNonce();
-    registerAuthRequest(nonce, authInfo.host, callback);
-    const cachedCreds = getCachedCredentials(authInfo.host);
-    const mainWindow = getMainWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.AUTH_REQUESTED, { host: authInfo.host, isProxy: authInfo.isProxy, nonce, hasCachedCredentials: cachedCreds !== null });
-    }
-  });
+  app.on(
+    'login',
+    (
+      event: Electron.Event,
+      _webContents: Electron.WebContents,
+      _request: Electron.AuthenticationResponseDetails,
+      authInfo: Electron.AuthInfo,
+      callback: (username?: string, password?: string) => void,
+    ) => {
+      event.preventDefault();
+      const nonce = generateAuthNonce();
+      registerAuthRequest(nonce, authInfo.host, callback);
+      const cachedCreds = getCachedCredentials(authInfo.host);
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.AUTH_REQUESTED, {
+          host: authInfo.host,
+          isProxy: authInfo.isProxy,
+          nonce,
+          hasCachedCredentials: cachedCreds !== null,
+        });
+      }
+    },
+  );
 }

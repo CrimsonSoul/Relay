@@ -1,19 +1,13 @@
-import { join } from "path";
-import fs from "fs/promises";
-import { loggers } from "../logger";
-import {
-  GROUP_FILES,
-  CONTACT_FILES,
-  SERVER_FILES,
-  ONCALL_FILES,
-  JSON_DATA_FILES,
-} from "./FileContext";
+import { join } from 'path';
+import fs from 'fs/promises';
+import { loggers } from '../logger';
+import { JSON_DATA_FILES } from './FileContext';
 
 /**
  * Format a date component with leading zero padding
  */
 function pad(n: number): string {
-  return String(n).padStart(2, "0");
+  return String(n).padStart(2, '0');
 }
 
 /**
@@ -34,9 +28,12 @@ function formatLocalTime(date: Date): string {
  * Perform a backup of all data files.
  * Returns the backup path on success, or null on failure.
  */
-export async function performBackup(rootDir: string, reason: string = "auto"): Promise<string | null> {
+export async function performBackup(
+  rootDir: string,
+  reason: string = 'auto',
+): Promise<string | null> {
   try {
-    const backupDir = join(rootDir, "backups");
+    const backupDir = join(rootDir, 'backups');
     // Ensure backup root exists
     await fs.mkdir(backupDir, { recursive: true });
 
@@ -52,15 +49,10 @@ export async function performBackup(rootDir: string, reason: string = "auto"): P
     await fs.mkdir(backupPath, { recursive: true });
 
     const filesToBackup = [
-      ...GROUP_FILES,
-      ...CONTACT_FILES,
-      ...SERVER_FILES,
-      ...ONCALL_FILES,
       ...JSON_DATA_FILES,
-      // Additional JSON files
-      "bridgeHistory.json",
-      "notes.json",
-      "savedLocations.json",
+      'bridgeHistory.json',
+      'notes.json',
+      'savedLocations.json',
     ];
     for (const file of filesToBackup) {
       const sourcePath = join(rootDir, file);
@@ -70,7 +62,7 @@ export async function performBackup(rootDir: string, reason: string = "auto"): P
       } catch (err: unknown) {
         // Ignore if file doesn't exist (might be fresh install)
         const error = err as NodeJS.ErrnoException;
-        if (error.code !== "ENOENT") {
+        if (error.code !== 'ENOENT') {
           loggers.fileManager.error(`Failed to backup ${file}`, { error: err });
         }
       }
@@ -86,7 +78,7 @@ export async function performBackup(rootDir: string, reason: string = "auto"): P
       const match = dirName.match(/^(\d{4}-\d{2}-\d{2})/);
       if (match) {
         // Parse folder date as local midnight for consistent comparison
-        const [year, month, day] = match[1].split("-").map(Number);
+        const [year, month, day] = match[1].split('-').map(Number);
         const folderDateMs = new Date(year, month - 1, day).getTime();
         // Delete if older than 30 days from start of today
         if (todayStart - folderDateMs > THIRTY_DAYS_MS) {
@@ -100,7 +92,7 @@ export async function performBackup(rootDir: string, reason: string = "auto"): P
     loggers.fileManager.info(`Backup created: ${backupFolderName} (${reason})`);
     return backupPath;
   } catch (error) {
-    loggers.fileManager.error("Backup failed", { error });
+    loggers.fileManager.error('Backup failed', { error });
     return null;
   }
 }

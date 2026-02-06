@@ -61,9 +61,11 @@
   --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.2);
 
   /* Typography */
-  --font-family-base: "Sora Variable", "Sora", "Space Grotesk", "Avenir Next", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-family-mono: "JetBrains Mono", monospace;
-  --font-family-weather: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-family-base:
+    'Sora Variable', 'Sora', 'Space Grotesk', 'Avenir Next', 'Segoe UI', -apple-system,
+    BlinkMacSystemFont, sans-serif;
+  --font-family-mono: 'JetBrains Mono', monospace;
+  --font-family-weather: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 
   /* Spacing Scale */
   --space-1: 4px;
@@ -146,11 +148,8 @@
   transition: background-color 0.2s ease;
 }
 
-.personnel-list:hover ::-webkit-scrollbar-thumb,
-.oncall-panel:hover ::-webkit-scrollbar-thumb,
 .weather-scroll-container:hover ::-webkit-scrollbar-thumb,
-.command-palette-results:hover ::-webkit-scrollbar-thumb,
-.modal-content-scrollable:hover ::-webkit-scrollbar-thumb {
+.command-palette-results:hover ::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -174,7 +173,12 @@ body {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background: linear-gradient(180deg, var(--color-bg-chrome) 0%, var(--color-bg-app) 65%, var(--color-bg-app) 100%);
+  background: linear-gradient(
+    180deg,
+    var(--color-bg-chrome) 0%,
+    var(--color-bg-app) 65%,
+    var(--color-bg-app) 100%
+  );
   overflow: hidden;
   position: relative;
 }
@@ -184,12 +188,14 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
 
 .content-view {
   flex: 1;
+  min-height: 0;
   padding: 0;
   overflow: hidden;
   display: flex;

@@ -47,7 +47,7 @@ describe('Path traversal protection', () => {
       '..\\..\\..\\windows\\system32',
       'folder/../../../escape',
       'valid/../../escape',
-      './valid/../../../escape'
+      './valid/../../../escape',
     ];
 
     // Each of these would fail the relative path check after normalization

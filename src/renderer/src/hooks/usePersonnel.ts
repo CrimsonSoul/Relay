@@ -1,24 +1,21 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { OnCallRow, TeamLayout } from "@shared/ipc";
+import { OnCallRow } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 
 const getWeekRange = () => {
-    const now = new Date();
-    const day = now.getDay();
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(now.getFullYear(), now.getMonth(), diff);
-    const sunday = new Date(now.getFullYear(), now.getMonth(), diff + 6);
-    const options: Intl.DateTimeFormatOptions = { month: "long", day: "numeric" };
-    return `${monday.toLocaleDateString(
-      undefined,
-      options
-    )} - ${sunday.toLocaleDateString(
-      undefined,
-      options
-    )}, ${sunday.getFullYear()}`;
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(now.getFullYear(), now.getMonth(), diff);
+  const sunday = new Date(now.getFullYear(), now.getMonth(), diff + 6);
+  const options: Intl.DateTimeFormatOptions = { month: 'long', day: 'numeric' };
+  return `${monday.toLocaleDateString(undefined, options)} - ${sunday.toLocaleDateString(
+    undefined,
+    options,
+  )}, ${sunday.getFullYear()}`;
 };
 
-export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
+export function usePersonnel(onCall: OnCallRow[]) {
   const { showToast } = useToast();
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
   const [weekRange, setWeekRange] = useState(getWeekRange());
@@ -31,7 +28,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   // Sync with external updates only when no local mutations are in-flight
   useEffect(() => {
     if (pendingMutationsRef.current === 0) {
-        setLocalOnCall(onCall);
+      setLocalOnCall(onCall);
     }
   }, [onCall]);
 
@@ -42,17 +39,31 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   }, []);
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
-    const check = [getAlertKey('first-responder'), getAlertKey('general'), getAlertKey('sql'), getAlertKey('oracle')];
+    const check = [
+      getAlertKey('first-responder'),
+      getAlertKey('general'),
+      getAlertKey('sql'),
+      getAlertKey('oracle'),
+    ];
     const saved = new Set<string>();
-    check.forEach(k => { if (localStorage.getItem(`dismissed-${k}`)) saved.add(k); });
+    check.forEach((k) => {
+      if (localStorage.getItem(`dismissed-${k}`)) saved.add(k);
+    });
     return saved;
   });
 
-  const dismissAlert = useCallback((type: string) => {
-    const key = getAlertKey(type);
-    localStorage.setItem(`dismissed-${key}`, 'true');
-    setDismissedAlerts(prev => { const next = new Set(prev); next.add(key); return next; });
-  }, [getAlertKey]);
+  const dismissAlert = useCallback(
+    (type: string) => {
+      const key = getAlertKey(type);
+      localStorage.setItem(`dismissed-${key}`, 'true');
+      setDismissedAlerts((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    },
+    [getAlertKey],
+  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -63,9 +74,9 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
         setCurrentDay(newDay);
         const types = ['first-responder', 'general', 'sql', 'oracle'];
         const saved = new Set<string>();
-        types.forEach(type => {
-            const key = getAlertKey(type);
-            if (localStorage.getItem(`dismissed-${key}`)) saved.add(key);
+        types.forEach((type) => {
+          const key = getAlertKey(type);
+          if (localStorage.getItem(`dismissed-${key}`)) saved.add(key);
         });
         setDismissedAlerts(saved);
       }
@@ -85,7 +96,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
   const handleUpdateRows = async (team: string, rows: OnCallRow[]) => {
     const day = new Date().getDay();
     const lowerTeam = team.toLowerCase();
-    
+
     if (day === 0 && lowerTeam.includes('first responder')) dismissAlert('first-responder');
     if (day === 1) dismissAlert('general');
     if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
@@ -111,7 +122,7 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     try {
       const success = await window.api?.updateOnCallTeam(team, rows);
       if (!success) {
-        showToast("Failed to save changes", "error");
+        showToast('Failed to save changes', 'error');
       }
     } finally {
       pendingMutationsRef.current--;
@@ -124,9 +135,9 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
       const success = await window.api?.removeOnCallTeam(team);
       if (success) {
         setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
-        showToast(`Removed ${team}`, "success");
+        showToast(`Removed ${team}`, 'success');
       } else {
-        showToast("Failed to remove team", "error");
+        showToast('Failed to remove team', 'error');
       }
     } finally {
       pendingMutationsRef.current--;
@@ -139,11 +150,11 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
       const success = await window.api?.renameOnCallTeam(oldName, newName);
       if (success) {
         setLocalOnCall((prev) =>
-          prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r))
+          prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
         );
-        showToast(`Renamed ${oldName} to ${newName}`, "success");
+        showToast(`Renamed ${oldName} to ${newName}`, 'success');
       } else {
-        showToast("Failed to rename team", "error");
+        showToast('Failed to rename team', 'error');
       }
     } finally {
       pendingMutationsRef.current--;
@@ -154,31 +165,31 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     const initialRow: OnCallRow = {
       id: crypto.randomUUID(),
       team: name,
-      role: "Primary",
-      name: "",
-      contact: "",
-      timeWindow: "",
+      role: 'Primary',
+      name: '',
+      contact: '',
+      timeWindow: '',
     };
     pendingMutationsRef.current++;
-    
+
     // 1. Update local state optimistically
     const nextList = [...localOnCall, initialRow];
     setLocalOnCall(nextList);
-    
+
     // 2. Perform API calls outside the setter
     try {
       const success = await window.api?.updateOnCallTeam(name, [initialRow]);
       if (success) {
-        const currentTeams = Array.from(new Set(nextList.map(r => r.team)));
+        const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
         await window.api?.reorderOnCallTeams(currentTeams, {});
-        showToast(`Added team ${name}`, "success");
+        showToast(`Added team ${name}`, 'success');
       } else {
-        throw new Error("API call failed");
+        throw new Error('API call failed');
       }
     } catch (_err) {
       // Rollback local state
-      setLocalOnCall(p => p.filter(r => r.id !== initialRow.id));
-      showToast("Failed to add team", "error");
+      setLocalOnCall((p) => p.filter((r) => r.id !== initialRow.id));
+      showToast('Failed to add team', 'error');
     } finally {
       pendingMutationsRef.current--;
     }
@@ -190,10 +201,10 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     const currentTeams = [...teams];
     const [movedTeam] = currentTeams.splice(oldIndex, 1);
     currentTeams.splice(newIndex, 0, movedTeam);
-    
+
     const newFlatList: OnCallRow[] = [];
-    currentTeams.forEach(t => {
-       newFlatList.push(...localOnCall.filter(r => r.team === t));
+    currentTeams.forEach((t) => {
+      newFlatList.push(...localOnCall.filter((r) => r.team === t));
     });
 
     pendingMutationsRef.current++;
@@ -203,10 +214,10 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     try {
       const success = await window.api?.reorderOnCallTeams(currentTeams, {});
       if (success) {
-        showToast("Teams reordered", "success");
+        showToast('Teams reordered', 'success');
       } else {
         setLocalOnCall(oldFlatList);
-        showToast("Failed to save team order", "error");
+        showToast('Failed to save team order', 'error');
       }
     } finally {
       pendingMutationsRef.current--;
@@ -227,6 +238,6 @@ export function usePersonnel(onCall: OnCallRow[], _teamLayout?: TeamLayout) {
     handleAddTeam,
     handleReorderTeams,
     setLocalOnCall,
-    tick
+    tick,
   };
 }

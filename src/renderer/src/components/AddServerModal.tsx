@@ -13,7 +13,7 @@ interface AddServerModalProps {
 export const AddServerModal: React.FC<AddServerModalProps> = ({
   isOpen,
   onClose,
-  serverToEdit
+  serverToEdit,
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -22,7 +22,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     comment: '',
     owner: '',
     contact: '',
-    os: ''
+    os: '',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,23 +31,23 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     if (isOpen) {
       if (serverToEdit) {
         setFormData({
-            name: serverToEdit.name || '',
-            businessArea: serverToEdit.businessArea || '',
-            lob: serverToEdit.lob || '',
-            comment: serverToEdit.comment || '',
-            owner: serverToEdit.owner || '',
-            contact: serverToEdit.contact || '',
-            os: serverToEdit.os || ''
+          name: serverToEdit.name || '',
+          businessArea: serverToEdit.businessArea || '',
+          lob: serverToEdit.lob || '',
+          comment: serverToEdit.comment || '',
+          owner: serverToEdit.owner || '',
+          contact: serverToEdit.contact || '',
+          os: serverToEdit.os || '',
         });
       } else {
         setFormData({
-            name: '',
-            businessArea: '',
-            lob: '',
-            comment: '',
-            owner: '',
-            contact: '',
-            os: ''
+          name: '',
+          businessArea: '',
+          lob: '',
+          comment: '',
+          owner: '',
+          contact: '',
+          os: '',
         });
       }
     }
@@ -57,27 +57,31 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
-    if (!window.api) { setSubmitError('API not available'); return; }
+    if (!window.api) {
+      setSubmitError('API not available');
+      return;
+    }
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-       const result = await window.api.addServer(formData);
-       if (result?.success) {
-         onClose();
-       } else {
-         setSubmitError(result?.error || 'Failed to save server');
-       }
+      const result = await window.api.addServer(formData);
+      if (result?.success) {
+        onClose();
+      } else {
+        setSubmitError(result?.error || 'Failed to save server');
+      }
     } catch {
-       setSubmitError('Failed to save server');
+      setSubmitError('Failed to save server');
     } finally {
-       setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleChange = (field: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setFormData(prev => ({ ...prev, [field]: e.target.value }));
-  };
+  const handleChange =
+    (field: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={serverToEdit ? 'Edit Server' : 'Add Server'}>
@@ -90,44 +94,44 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           autoFocus
         />
         <div style={{ display: 'flex', gap: '24px' }}>
-             <Input
-               label="Business Area"
-               value={formData.businessArea}
-               onChange={handleChange('businessArea')}
-               placeholder="e.g. Finance"
-               containerStyle={{ flex: 1 }}
-             />
-             <Input
-               label="LOB"
-               value={formData.lob}
-               onChange={handleChange('lob')}
-               placeholder="Line of Business"
-               containerStyle={{ flex: 1 }}
-             />
+          <Input
+            label="Business Area"
+            value={formData.businessArea}
+            onChange={handleChange('businessArea')}
+            placeholder="e.g. Finance"
+            containerStyle={{ flex: 1 }}
+          />
+          <Input
+            label="LOB"
+            value={formData.lob}
+            onChange={handleChange('lob')}
+            placeholder="Line of Business"
+            containerStyle={{ flex: 1 }}
+          />
         </div>
 
         <Input
-           label="Comment"
-           value={formData.comment}
-           onChange={handleChange('comment')}
-           placeholder="Notes..."
+          label="Comment"
+          value={formData.comment}
+          onChange={handleChange('comment')}
+          placeholder="Notes..."
         />
 
         <div style={{ display: 'flex', gap: '24px' }}>
-            <Input
-              label="LOB Owner (Email)"
-              value={formData.owner}
-              onChange={handleChange('owner')}
-              placeholder="owner@example.com"
-              containerStyle={{ flex: 1 }}
-            />
-            <Input
-              label="IT Contact (Email)"
-              value={formData.contact}
-              onChange={handleChange('contact')}
-              placeholder="support@example.com"
-              containerStyle={{ flex: 1 }}
-            />
+          <Input
+            label="LOB Owner (Email)"
+            value={formData.owner}
+            onChange={handleChange('owner')}
+            placeholder="owner@example.com"
+            containerStyle={{ flex: 1 }}
+          />
+          <Input
+            label="IT Contact (Email)"
+            value={formData.contact}
+            onChange={handleChange('contact')}
+            placeholder="support@example.com"
+            containerStyle={{ flex: 1 }}
+          />
         </div>
 
         <Input
@@ -138,7 +142,13 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
         />
 
         {submitError && (
-          <div style={{ color: 'var(--color-text-danger, #ff6b6b)', fontSize: '13px', marginTop: '4px' }}>
+          <div
+            style={{
+              color: 'var(--color-text-danger, #ff6b6b)',
+              fontSize: '13px',
+              marginTop: '4px',
+            }}
+          >
             {submitError}
           </div>
         )}

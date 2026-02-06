@@ -11,7 +11,7 @@ describe('ContactCard Component', () => {
     phone: '555-123-4567',
     title: 'Software Engineer',
     _searchString: 'john doe john.doe@example.com software engineer',
-    raw: {}
+    raw: {},
   };
 
   test('renders contact with name, email, title, and phone', () => {
@@ -29,7 +29,7 @@ describe('ContactCard Component', () => {
       email: 'test@example.com',
       title: 'Tester',
       _searchString: 'test@example.com tester',
-      raw: {}
+      raw: {},
     };
 
     render(<ContactCard {...contactWithInvalidName} />);
@@ -42,9 +42,9 @@ describe('ContactCard Component', () => {
   test('renders selected state', () => {
     const { container } = render(<ContactCard {...mockContact} selected={true} />);
 
-    const cardElement = container.querySelector('.contact-card-hover');
+    const cardElement = container.querySelector('.card-surface');
     expect(cardElement).toHaveStyle({
-      background: 'rgba(59, 130, 246, 0.06)'
+      background: 'rgba(59, 130, 246, 0.06)',
     });
   });
 
@@ -55,13 +55,11 @@ describe('ContactCard Component', () => {
       phone: '555-987-6543',
       title: 'Manager',
       _searchString: 'jane smith jane@example.com manager',
-      raw: {}
+      raw: {},
     };
 
     const groups = ['Engineering', 'Leads'];
-    render(
-      <ContactCard {...contactWithGroups} groups={groups} />
-    );
+    render(<ContactCard {...contactWithGroups} groups={groups} />);
 
     expect(screen.getByText('ENGINEERING')).toBeInTheDocument();
     expect(screen.getByText('LEADS')).toBeInTheDocument();
@@ -74,7 +72,7 @@ describe('ContactCard Component', () => {
       phone: '555-555-5555',
       title: 'Director',
       _searchString: 'bob johnson bob@example.com director',
-      raw: {}
+      raw: {},
     };
 
     const groups = ['Group1', 'Group2', 'Group3', 'Group4'];
@@ -93,10 +91,10 @@ describe('ContactCard Component', () => {
   test('calls onContextMenu when right-clicked', () => {
     const handleContextMenu = vi.fn();
     const { container } = render(
-      <ContactCard {...mockContact} onContextMenu={handleContextMenu} />
+      <ContactCard {...mockContact} onContextMenu={handleContextMenu} />,
     );
 
-    const cardElement = container.querySelector('.contact-card-hover') || container.firstChild;
+    const cardElement = container.querySelector('.card-surface') || container.firstChild;
     if (cardElement) {
       fireEvent.contextMenu(cardElement);
       expect(handleContextMenu).toHaveBeenCalled();
@@ -105,11 +103,9 @@ describe('ContactCard Component', () => {
 
   test('calls onRowClick when clicked', () => {
     const handleRowClick = vi.fn();
-    const { container } = render(
-      <ContactCard {...mockContact} onRowClick={handleRowClick} />
-    );
+    const { container } = render(<ContactCard {...mockContact} onRowClick={handleRowClick} />);
 
-    const cardElement = container.querySelector('.contact-card-hover') || container.firstChild;
+    const cardElement = container.querySelector('.card-surface') || container.firstChild;
     if (cardElement) {
       fireEvent.click(cardElement);
       expect(handleRowClick).toHaveBeenCalled();
@@ -130,7 +126,7 @@ describe('ContactCard Component', () => {
       title: 'Designer',
       phone: '',
       _searchString: 'alice brown alice@example.com designer',
-      raw: {}
+      raw: {},
     };
 
     render(<ContactCard {...contactWithoutPhone} />);
@@ -147,7 +143,7 @@ describe('ContactCard Component', () => {
       phone: '555-444-3333',
       title: '',
       _searchString: 'charlie wilson charlie@example.com',
-      raw: {}
+      raw: {},
     };
 
     render(<ContactCard {...contactWithoutTitle} />);
@@ -158,9 +154,7 @@ describe('ContactCard Component', () => {
 
   test('applies custom style', () => {
     const customStyle = { marginTop: '20px' };
-    const { container } = render(
-      <ContactCard {...mockContact} style={customStyle} />
-    );
+    const { container } = render(<ContactCard {...mockContact} style={customStyle} />);
 
     const cardElement = container.firstChild as HTMLElement;
     expect(cardElement).toHaveStyle(customStyle);

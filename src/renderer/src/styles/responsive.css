@@ -7,7 +7,7 @@
     gap: 24px !important;
   }
 
-  .weather-tab-root>div:last-child {
+  .weather-tab-root > div:last-child {
     flex: none !important;
     height: 450px !important;
     min-height: 450px !important;
@@ -24,23 +24,6 @@
   }
 }
 
-/* Responsive Server Cards */
-@media (max-width: 750px) {
-  .server-card-comment {
-    display: none !important;
-  }
-}
-
-@media (max-width: 650px) {
-  .server-card-people {
-    width: 180px !important;
-  }
-
-  .server-card-info {
-    flex: 0 0 160px !important;
-  }
-}
-
 @media (max-width: 768px) {
   .world-clock-container {
     gap: 8px !important;
@@ -52,10 +35,6 @@
 
   .world-clock-label {
     display: none !important;
-  }
-
-  .header-title {
-    max-width: 100px;
   }
 }
 
@@ -74,31 +53,10 @@
   height: 100%;
 }
 
-/* Masonry Layout for Pop-out (View Only) */
-.oncall-grid-masonry {
-  column-count: 2;
-  column-gap: 24px;
-  padding-bottom: 40px;
-}
-
-.oncall-grid-masonry > .oncall-grid-item {
-  break-inside: avoid;
-  margin-bottom: 24px;
-}
-
-@media (min-width: 1800px) {
-  .oncall-grid-masonry {
-    column-count: 3;
-  }
-}
-
 @media (max-width: 899px) {
   .oncall-grid {
     grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
     gap: 16px;
-  }
-  .oncall-grid-masonry {
-    column-count: 1;
   }
 }
 
@@ -111,7 +69,9 @@
 
 /* Accessibility Utilities */
 @media (prefers-reduced-motion: reduce) {
-  *, ::before, ::after {
+  *,
+  ::before,
+  ::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

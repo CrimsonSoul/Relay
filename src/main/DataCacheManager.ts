@@ -1,5 +1,5 @@
-import { FileEmitter, CachedData } from "./FileEmitter";
-import { type DataError, type ImportProgress } from "@shared/ipc";
+import { FileEmitter, CachedData } from './FileEmitter';
+import { type DataError, type ImportProgress } from '@shared/ipc';
 
 /**
  * DataCacheManager - Manages the in-memory cache of application data
@@ -12,7 +12,7 @@ export class DataCacheManager {
     contacts: [],
     servers: [],
     onCall: [],
-    teamLayout: {}
+    teamLayout: {},
   };
 
   constructor() {

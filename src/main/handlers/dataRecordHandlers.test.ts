@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setupDataRecordHandlers } from './dataRecordHandlers';
 import { ipcMain } from 'electron';
 import * as operations from '../operations';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -23,8 +23,6 @@ vi.mock('../operations', () => ({
   deleteServerRecord: vi.fn(),
   getOnCall: vi.fn(),
   getGroups: vi.fn(),
-  migrateAllCsvToJson: vi.fn(),
-  hasCsvFiles: vi.fn(),
   exportData: vi.fn(),
   importData: vi.fn(),
 }));
@@ -55,7 +53,7 @@ describe('dataRecordHandlers', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Capture handlers registered with ipcMain.handle
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler;
@@ -67,10 +65,12 @@ describe('dataRecordHandlers', () => {
   describe('GET_CONTACTS', () => {
     it('should call getContacts with data root', async () => {
       const mockContacts = [{ name: 'Test' }];
-      vi.mocked(operations.getContacts).mockResolvedValue(mockContacts as any);
+      vi.mocked(operations.getContacts).mockResolvedValue(
+        mockContacts as Awaited<ReturnType<typeof operations.getContacts>>,
+      );
 
       const result = await handlers[IPC_CHANNELS.GET_CONTACTS]();
-      
+
       expect(operations.getContacts).toHaveBeenCalledWith(dataRoot);
       expect(result).toEqual(mockContacts);
     });
@@ -82,10 +82,12 @@ describe('dataRecordHandlers', () => {
         name: 'John Doe',
         email: 'john@example.com',
         phone: '1234567890',
-        title: 'Engineer'
+        title: 'Engineer',
       };
       const mockResult = { id: '1' };
-      vi.mocked(operations.addContactRecord).mockResolvedValue(mockResult as any);
+      vi.mocked(operations.addContactRecord).mockResolvedValue(
+        mockResult as Awaited<ReturnType<typeof operations.addContactRecord>>,
+      );
 
       const result = await handlers[IPC_CHANNELS.ADD_CONTACT_RECORD]({}, contact);
 

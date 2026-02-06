@@ -1,12 +1,21 @@
 import { ipcMain, BrowserWindow, clipboard } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { loggers } from '../logger';
 
-const ALLOWED_AUX_ROUTES = new Set(['oncall', 'weather', 'directory', 'servers', 'assembler', 'personnel', 'popout/board']);
+export const ALLOWED_AUX_ROUTES = new Set([
+  'oncall',
+  'weather',
+  'directory',
+  'servers',
+  'assembler',
+  'personnel',
+  'popout/board',
+]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
-  createAuxWindow?: (route: string) => void
+  createAuxWindow?: (route: string) => void,
 ) {
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
@@ -23,7 +32,7 @@ export function setupWindowHandlers(
 
   // Drag Sync - broadcast to all windows
   ipcMain.on(IPC_CHANNELS.DRAG_STARTED, () => {
-    BrowserWindow.getAllWindows().forEach(win => {
+    BrowserWindow.getAllWindows().forEach((win) => {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC_CHANNELS.DRAG_STARTED);
       }
@@ -31,7 +40,7 @@ export function setupWindowHandlers(
   });
 
   ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, () => {
-    BrowserWindow.getAllWindows().forEach(win => {
+    BrowserWindow.getAllWindows().forEach((win) => {
       if (!win.isDestroyed()) {
         win.webContents.send(IPC_CHANNELS.DRAG_STOPPED);
       }
@@ -46,11 +55,14 @@ export function setupWindowHandlers(
       }
       clipboard.writeText(text);
       return true;
-    } catch {
+    } catch (err) {
+      loggers.ipc.warn('Clipboard write failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
       return false;
     }
   });
-  
+
   ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isMaximized()) {
@@ -78,7 +90,7 @@ export function setupWindowHandlers(
   // We can't attach listeners to the window instance here easily if it changes or isn't created yet,
   // but if getMainWindow returns the current instance, we can try.
   // A better pattern might be to let the main process setup these listeners on window creation.
-  // For now, we'll keep the IPCs here. The window event listeners (maximize/unmaximize) 
+  // For now, we'll keep the IPCs here. The window event listeners (maximize/unmaximize)
   // were in the body of setupIpcHandlers. We'll export a helper for that too.
 }
 

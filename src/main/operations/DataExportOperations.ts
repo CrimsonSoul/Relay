@@ -2,8 +2,8 @@
  * DataExportOperations - Export data to JSON or CSV format
  */
 
-import fs from "fs/promises";
-import { dialog } from "electron";
+import fs from 'fs/promises';
+import { dialog } from 'electron';
 import type {
   ContactRecord,
   ServerRecord,
@@ -11,14 +11,16 @@ import type {
   BridgeGroup,
   ExportOptions,
   DataCategory,
-} from "@shared/ipc";
-import { getContacts } from "./ContactJsonOperations";
-import { getServers } from "./ServerJsonOperations";
-import { getOnCall } from "./OnCallJsonOperations";
-import { getGroups } from "./PresetOperations";
-import { loggers } from "../logger";
+} from '@shared/ipc';
+import { getContacts } from './ContactJsonOperations';
+import { getServers } from './ServerJsonOperations';
+import { getOnCall } from './OnCallJsonOperations';
+import { getGroups } from './PresetOperations';
+import { loggers } from '../logger';
 
-function removeMetadata<T>(record: T & { id?: unknown; createdAt?: unknown; updatedAt?: unknown }): Omit<T, 'id' | 'createdAt' | 'updatedAt'> {
+function removeMetadata<T>(
+  record: T & { id?: unknown; createdAt?: unknown; updatedAt?: unknown },
+): Omit<T, 'id' | 'createdAt' | 'updatedAt'> {
   const r = { ...record };
   delete r.id;
   delete r.createdAt;
@@ -31,16 +33,24 @@ function removeMetadata<T>(record: T & { id?: unknown; createdAt?: unknown; upda
  */
 function contactsToCsv(contacts: ContactRecord[], includeMetadata: boolean): string {
   const headers = includeMetadata
-    ? ["ID", "Name", "Email", "Phone", "Title", "Created At", "Updated At"]
-    : ["Name", "Email", "Phone", "Title"];
+    ? ['ID', 'Name', 'Email', 'Phone', 'Title', 'Created At', 'Updated At']
+    : ['Name', 'Email', 'Phone', 'Title'];
 
   const rows = contacts.map((c) =>
     includeMetadata
-      ? [c.id, c.name, c.email, c.phone, c.title, new Date(c.createdAt).toISOString(), new Date(c.updatedAt).toISOString()]
-      : [c.name, c.email, c.phone, c.title]
+      ? [
+          c.id,
+          c.name,
+          c.email,
+          c.phone,
+          c.title,
+          new Date(c.createdAt).toISOString(),
+          new Date(c.updatedAt).toISOString(),
+        ]
+      : [c.name, c.email, c.phone, c.title],
   );
 
-  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
 }
 
 /**
@@ -48,16 +58,38 @@ function contactsToCsv(contacts: ContactRecord[], includeMetadata: boolean): str
  */
 function serversToCsv(servers: ServerRecord[], includeMetadata: boolean): string {
   const headers = includeMetadata
-    ? ["ID", "Name", "Business Area", "LOB", "Comment", "Owner", "Contact", "OS", "Created At", "Updated At"]
-    : ["Name", "Business Area", "LOB", "Comment", "Owner", "Contact", "OS"];
+    ? [
+        'ID',
+        'Name',
+        'Business Area',
+        'LOB',
+        'Comment',
+        'Owner',
+        'Contact',
+        'OS',
+        'Created At',
+        'Updated At',
+      ]
+    : ['Name', 'Business Area', 'LOB', 'Comment', 'Owner', 'Contact', 'OS'];
 
   const rows = servers.map((s) =>
     includeMetadata
-      ? [s.id, s.name, s.businessArea, s.lob, s.comment, s.owner, s.contact, s.os, new Date(s.createdAt).toISOString(), new Date(s.updatedAt).toISOString()]
-      : [s.name, s.businessArea, s.lob, s.comment, s.owner, s.contact, s.os]
+      ? [
+          s.id,
+          s.name,
+          s.businessArea,
+          s.lob,
+          s.comment,
+          s.owner,
+          s.contact,
+          s.os,
+          new Date(s.createdAt).toISOString(),
+          new Date(s.updatedAt).toISOString(),
+        ]
+      : [s.name, s.businessArea, s.lob, s.comment, s.owner, s.contact, s.os],
   );
 
-  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
 }
 
 /**
@@ -65,16 +97,25 @@ function serversToCsv(servers: ServerRecord[], includeMetadata: boolean): string
  */
 function onCallToCsv(records: OnCallRecord[], includeMetadata: boolean): string {
   const headers = includeMetadata
-    ? ["ID", "Team", "Role", "Name", "Contact", "Time Window", "Created At", "Updated At"]
-    : ["Team", "Role", "Name", "Contact", "Time Window"];
+    ? ['ID', 'Team', 'Role', 'Name', 'Contact', 'Time Window', 'Created At', 'Updated At']
+    : ['Team', 'Role', 'Name', 'Contact', 'Time Window'];
 
   const rows = records.map((r) =>
     includeMetadata
-      ? [r.id, r.team, r.role, r.name, r.contact, r.timeWindow || "", new Date(r.createdAt).toISOString(), new Date(r.updatedAt).toISOString()]
-      : [r.team, r.role, r.name, r.contact, r.timeWindow || ""]
+      ? [
+          r.id,
+          r.team,
+          r.role,
+          r.name,
+          r.contact,
+          r.timeWindow || '',
+          new Date(r.createdAt).toISOString(),
+          new Date(r.updatedAt).toISOString(),
+        ]
+      : [r.team, r.role, r.name, r.contact, r.timeWindow || ''],
   );
 
-  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
 }
 
 /**
@@ -82,16 +123,22 @@ function onCallToCsv(records: OnCallRecord[], includeMetadata: boolean): string 
  */
 function groupsToCsv(groups: BridgeGroup[], includeMetadata: boolean): string {
   const headers = includeMetadata
-    ? ["ID", "Name", "Contacts", "Created At", "Updated At"]
-    : ["Name", "Contacts"];
+    ? ['ID', 'Name', 'Contacts', 'Created At', 'Updated At']
+    : ['Name', 'Contacts'];
 
   const rows = groups.map((g) =>
     includeMetadata
-      ? [g.id, g.name, g.contacts.join(";"), new Date(g.createdAt).toISOString(), new Date(g.updatedAt).toISOString()]
-      : [g.name, g.contacts.join(";")]
+      ? [
+          g.id,
+          g.name,
+          g.contacts.join(';'),
+          new Date(g.createdAt).toISOString(),
+          new Date(g.updatedAt).toISOString(),
+        ]
+      : [g.name, g.contacts.join(';')],
   );
 
-  return [headers, ...rows].map((row) => row.map(escapeCSV).join(",")).join("\n");
+  return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
 }
 
 /**
@@ -100,13 +147,13 @@ function groupsToCsv(groups: BridgeGroup[], includeMetadata: boolean): string {
  * We prefix such values with a single quote to prevent execution.
  */
 function escapeCSV(field: string | number | undefined): string {
-  const str = String(field ?? "");
+  const str = String(field ?? '');
   // Prevent formula injection - prefix with single quote inside quotes
   // Guards against =, +, -, @, Tab (0x09), and Carriage Return (0x0D)
   if (/^[=+\-@\t\r]/.test(str)) {
     return `"'${str.replace(/"/g, '""')}"`;
   }
-  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
@@ -115,205 +162,141 @@ function escapeCSV(field: string | number | undefined): string {
 /**
  * Get file filters for save dialog
  */
-function getFileFilters(format: "json" | "csv") {
-  return format === "json"
-    ? [{ name: "JSON Files", extensions: ["json"] }]
-    : [{ name: "CSV Files", extensions: ["csv"] }];
+function getFileFilters(format: 'json' | 'csv') {
+  return format === 'json'
+    ? [{ name: 'JSON Files', extensions: ['json'] }]
+    : [{ name: 'CSV Files', extensions: ['csv'] }];
 }
 
 /**
  * Get default filename for export
  */
-function getDefaultFilename(category: DataCategory, format: "json" | "csv"): string {
+function getDefaultFilename(category: DataCategory, format: 'json' | 'csv'): string {
   const timestamp = new Date().toISOString().slice(0, 10);
   return `relay-${category}-${timestamp}.${format}`;
 }
 
 /**
+ * Generate export content for a given category and format.
+ * Shared logic used by both exportData and exportToPath.
+ */
+async function generateExportContent(
+  rootDir: string,
+  options: ExportOptions,
+): Promise<{ content: string; defaultName: string }> {
+  const { format, category, includeMetadata = false } = options;
+
+  let content: string;
+
+  if (category === 'all') {
+    const [contacts, servers, onCall, groups] = await Promise.all([
+      getContacts(rootDir),
+      getServers(rootDir),
+      getOnCall(rootDir),
+      getGroups(rootDir),
+    ]);
+
+    if (format === 'json') {
+      const allData = includeMetadata
+        ? { contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }
+        : {
+            contacts: contacts.map(removeMetadata),
+            servers: servers.map(removeMetadata),
+            onCall: onCall.map(removeMetadata),
+            groups: groups.map(removeMetadata),
+            exportedAt: new Date().toISOString(),
+          };
+
+      content = JSON.stringify(allData, null, 2);
+    } else {
+      // For CSV, create a combined file with sections
+      content = [
+        '# CONTACTS',
+        contactsToCsv(contacts, includeMetadata),
+        '',
+        '# SERVERS',
+        serversToCsv(servers, includeMetadata),
+        '',
+        '# ONCALL',
+        onCallToCsv(onCall, includeMetadata),
+        '',
+        '# GROUPS',
+        groupsToCsv(groups, includeMetadata),
+      ].join('\n');
+    }
+  } else {
+    // Export single category
+    switch (category) {
+      case 'contacts': {
+        const contacts = await getContacts(rootDir);
+        content =
+          format === 'json'
+            ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
+            : contactsToCsv(contacts, includeMetadata);
+        break;
+      }
+      case 'servers': {
+        const servers = await getServers(rootDir);
+        content =
+          format === 'json'
+            ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
+            : serversToCsv(servers, includeMetadata);
+        break;
+      }
+      case 'oncall': {
+        const onCall = await getOnCall(rootDir);
+        content =
+          format === 'json'
+            ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
+            : onCallToCsv(onCall, includeMetadata);
+        break;
+      }
+      case 'groups': {
+        const groups = await getGroups(rootDir);
+        content =
+          format === 'json'
+            ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
+            : groupsToCsv(groups, includeMetadata);
+        break;
+      }
+      default:
+        throw new Error(`Unknown category: ${category}`);
+    }
+  }
+
+  // Add BOM for CSV files for Excel compatibility
+  if (format === 'csv') {
+    content = '\uFEFF' + content;
+  }
+
+  return { content, defaultName: getDefaultFilename(category, format) };
+}
+
+/**
  * Export data to a file
  */
-export async function exportData(
-  rootDir: string,
-  options: ExportOptions
-): Promise<boolean> {
+export async function exportData(rootDir: string, options: ExportOptions): Promise<boolean> {
   try {
-    const { format, category, includeMetadata = false } = options;
+    const { content, defaultName } = await generateExportContent(rootDir, options);
 
     // Show save dialog
     const result = await dialog.showSaveDialog({
-      title: `Export ${category} as ${format.toUpperCase()}`,
-      defaultPath: getDefaultFilename(category, format),
-      filters: getFileFilters(format),
+      title: `Export ${options.category} as ${options.format.toUpperCase()}`,
+      defaultPath: defaultName,
+      filters: getFileFilters(options.format),
     });
 
     if (result.canceled || !result.filePath) {
       return false;
     }
 
-    let content: string;
-
-    if (category === "all") {
-      // Export all data as a single JSON file (or multiple CSVs in a folder)
-      if (format === "json") {
-        const [contacts, servers, onCall, groups] = await Promise.all([
-          getContacts(rootDir),
-          getServers(rootDir),
-          getOnCall(rootDir),
-          getGroups(rootDir),
-        ]);
-
-        const allData = includeMetadata
-          ? { contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }
-          : {
-              contacts: contacts.map(removeMetadata),
-              servers: servers.map(removeMetadata),
-              onCall: onCall.map(removeMetadata),
-              groups: groups.map(removeMetadata),
-              exportedAt: new Date().toISOString(),
-            };
-
-        content = JSON.stringify(allData, null, 2);
-      } else {
-        // For CSV, we'll create a combined file with sections
-        const [contacts, servers, onCall, groups] = await Promise.all([
-          getContacts(rootDir),
-          getServers(rootDir),
-          getOnCall(rootDir),
-          getGroups(rootDir),
-        ]);
-
-        content = [
-          "# CONTACTS",
-          contactsToCsv(contacts, includeMetadata),
-          "",
-          "# SERVERS",
-          serversToCsv(servers, includeMetadata),
-          "",
-          "# ONCALL",
-          onCallToCsv(onCall, includeMetadata),
-          "",
-          "# GROUPS",
-          groupsToCsv(groups, includeMetadata),
-        ].join("\n");
-      }
-    } else {
-      // Export single category
-      switch (category) {
-        case "contacts": {
-          const contacts = await getContacts(rootDir);
-          content = format === "json"
-            ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
-            : contactsToCsv(contacts, includeMetadata);
-          break;
-        }
-        case "servers": {
-          const servers = await getServers(rootDir);
-          content = format === "json"
-            ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
-            : serversToCsv(servers, includeMetadata);
-          break;
-        }
-        case "oncall": {
-          const onCall = await getOnCall(rootDir);
-          content = format === "json"
-            ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
-            : onCallToCsv(onCall, includeMetadata);
-          break;
-        }
-        case "groups": {
-          const groups = await getGroups(rootDir);
-          content = format === "json"
-            ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
-            : groupsToCsv(groups, includeMetadata);
-          break;
-        }
-        default:
-          throw new Error(`Unknown category: ${category}`);
-      }
-    }
-
-    // Add BOM for CSV files for Excel compatibility
-    if (format === "csv") {
-      content = "\uFEFF" + content;
-    }
-
-    await fs.writeFile(result.filePath, content, "utf-8");
-    loggers.fileManager.info(`[DataExportOperations] Exported ${category} to ${result.filePath}`);
+    await fs.writeFile(result.filePath, content, 'utf-8');
+    loggers.fileManager.info(
+      `[DataExportOperations] Exported ${options.category} to ${result.filePath}`,
+    );
     return true;
   } catch (e) {
-    loggers.fileManager.error("[DataExportOperations] exportData error:", { error: e });
-    return false;
-  }
-}
-
-/**
- * Export to a specific path (for programmatic use)
- * 
- * SECURITY WARNING: This function accepts an arbitrary destPath and writes to it.
- * It MUST NOT be exposed directly to IPC without strict validation of the destPath
- * to prevent unauthorized file creation/overwrite.
- */
-export async function exportToPath(
-  rootDir: string,
-  destPath: string,
-  options: ExportOptions
-): Promise<boolean> {
-  try {
-    const { format, category, includeMetadata = false } = options;
-
-    let content: string;
-
-    switch (category) {
-      case "contacts": {
-        const contacts = await getContacts(rootDir);
-        content = format === "json"
-          ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
-          : contactsToCsv(contacts, includeMetadata);
-        break;
-      }
-      case "servers": {
-        const servers = await getServers(rootDir);
-        content = format === "json"
-          ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
-          : serversToCsv(servers, includeMetadata);
-        break;
-      }
-      case "oncall": {
-        const onCall = await getOnCall(rootDir);
-        content = format === "json"
-          ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
-          : onCallToCsv(onCall, includeMetadata);
-        break;
-      }
-      case "groups": {
-        const groups = await getGroups(rootDir);
-        content = format === "json"
-          ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
-          : groupsToCsv(groups, includeMetadata);
-        break;
-      }
-      case "all": {
-        const [contacts, servers, onCall, groups] = await Promise.all([
-          getContacts(rootDir),
-          getServers(rootDir),
-          getOnCall(rootDir),
-          getGroups(rootDir),
-        ]);
-        content = JSON.stringify({ contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }, null, 2);
-        break;
-      }
-      default:
-        throw new Error(`Unknown category: ${category}`);
-    }
-
-    if (format === "csv") {
-      content = "\uFEFF" + content;
-    }
-
-    await fs.writeFile(destPath, content, "utf-8");
-    return true;
-  } catch (e) {
-    loggers.fileManager.error("[DataExportOperations] exportToPath error:", { error: e });
+    loggers.fileManager.error('[DataExportOperations] exportData error:', { error: e });
     return false;
   }
 }

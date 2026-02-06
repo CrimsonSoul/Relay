@@ -1,9 +1,3 @@
-/* Utility Classes */
-.glass-panel {
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-subtle);
-}
-
 /* Enhanced Tactile Button - Compact */
 .tactile-button {
   position: relative;
@@ -75,7 +69,9 @@
 .tactile-button--danger:hover {
   background: var(--color-danger);
   color: white;
-  box-shadow: var(--shadow-md), 0 0 20px rgba(255, 92, 92, 0.3);
+  box-shadow:
+    var(--shadow-md),
+    0 0 20px rgba(255, 92, 92, 0.3);
 }
 
 /* Active State */
@@ -180,7 +176,9 @@ input.tactile-input.tactile-input:focus {
   pointer-events: none;
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .tooltip-container:hover .tooltip-content,
@@ -237,6 +235,53 @@ input.tactile-input.tactile-input:focus {
 .sidebar-app-icon:hover .sidebar-app-icon-inner {
   opacity: 1;
   transform: scale(1.1);
+}
+
+/* Window Controls */
+.window-control-btn {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: default;
+  transition:
+    background var(--transition-micro),
+    color var(--transition-micro);
+  -webkit-app-region: no-drag;
+  outline: none;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.window-control-btn::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background: transparent;
+  transition: background var(--transition-micro);
+  z-index: -1;
+  border-radius: 2px;
+}
+
+.window-control-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.window-control-btn:hover::before {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.window-control-btn.close-btn:hover::before {
+  background: #e81123;
+}
+
+.window-control-btn.close-btn:hover {
+  color: #ffffff;
 }
 
 .weather-saved-location-item {

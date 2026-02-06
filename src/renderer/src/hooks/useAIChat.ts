@@ -10,29 +10,42 @@ const AI_SERVICES: { id: AIService; label: string; url: string }[] = [
 
 const SUSPENSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
-export const CHROME_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+export const CHROME_USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export function useAIChat() {
   const [activeService, setActiveService] = useState<AIService>('gemini');
-  const [isLoading, setIsLoading] = useState<Record<AIService, boolean>>({ gemini: false, chatgpt: false });
-  const [lastActive, setLastActive] = useState<Record<AIService, number>>({ gemini: Date.now(), chatgpt: Date.now() });
+  const [isLoading, setIsLoading] = useState<Record<AIService, boolean>>({
+    gemini: false,
+    chatgpt: false,
+  });
+  const [lastActive, setLastActive] = useState<Record<AIService, number>>({
+    gemini: Date.now(),
+    chatgpt: Date.now(),
+  });
   const lastActiveRef = useRef(lastActive);
-  useEffect(() => { lastActiveRef.current = lastActive; }, [lastActive]);
-  const [isSuspended, setIsSuspended] = useState<Record<AIService, boolean>>({ gemini: false, chatgpt: false });
+  useEffect(() => {
+    lastActiveRef.current = lastActive;
+  }, [lastActive]);
+  const [isSuspended, setIsSuspended] = useState<Record<AIService, boolean>>({
+    gemini: false,
+    chatgpt: false,
+  });
 
   const geminiRef = useRef<WebviewTag>(null);
   const chatgptRef = useRef<WebviewTag>(null);
 
-  const getWebviewRef = (service: AIService) => service === 'gemini' ? geminiRef : chatgptRef;
+  const getWebviewRef = (service: AIService) => (service === 'gemini' ? geminiRef : chatgptRef);
 
   // Attach webview event listeners -- re-run when suspension state changes
   // so listeners are reattached after a webview is re-mounted in the DOM
   useEffect(() => {
-    const gemini = geminiRef.current, chatgpt = chatgptRef.current;
-    const handleGeminiLoadStart = () => setIsLoading(prev => ({ ...prev, gemini: true }));
-    const handleGeminiLoadStop = () => setIsLoading(prev => ({ ...prev, gemini: false }));
-    const handleChatgptLoadStart = () => setIsLoading(prev => ({ ...prev, chatgpt: true }));
-    const handleChatgptLoadStop = () => setIsLoading(prev => ({ ...prev, chatgpt: false }));
+    const gemini = geminiRef.current,
+      chatgpt = chatgptRef.current;
+    const handleGeminiLoadStart = () => setIsLoading((prev) => ({ ...prev, gemini: true }));
+    const handleGeminiLoadStop = () => setIsLoading((prev) => ({ ...prev, gemini: false }));
+    const handleChatgptLoadStart = () => setIsLoading((prev) => ({ ...prev, chatgpt: true }));
+    const handleChatgptLoadStop = () => setIsLoading((prev) => ({ ...prev, chatgpt: false }));
 
     gemini?.addEventListener('did-start-loading', handleGeminiLoadStart);
     gemini?.addEventListener('did-stop-loading', handleGeminiLoadStop);
@@ -49,8 +62,8 @@ export function useAIChat() {
 
   // Update last active time when switching service
   useEffect(() => {
-    setLastActive(prev => ({ ...prev, [activeService]: Date.now() }));
-    setIsSuspended(prev => ({ ...prev, [activeService]: false }));
+    setLastActive((prev) => ({ ...prev, [activeService]: Date.now() }));
+    setIsSuspended((prev) => ({ ...prev, [activeService]: false }));
   }, [activeService]);
 
   // Check for suspension candidate every minute
@@ -58,12 +71,18 @@ export function useAIChat() {
     const interval = setInterval(() => {
       const now = Date.now();
       const currentLastActive = lastActiveRef.current;
-      
-      setIsSuspended(prev => {
-        const next = { ...prev }; let changed = false;
+
+      setIsSuspended((prev) => {
+        const next = { ...prev };
+        let changed = false;
         for (const service of AI_SERVICES) {
-          if (service.id !== activeService && !prev[service.id] && now - currentLastActive[service.id] > SUSPENSION_TIMEOUT_MS) {
-            next[service.id] = true; changed = true;
+          if (
+            service.id !== activeService &&
+            !prev[service.id] &&
+            now - currentLastActive[service.id] > SUSPENSION_TIMEOUT_MS
+          ) {
+            next[service.id] = true;
+            changed = true;
           }
         }
         return changed ? next : prev;
@@ -72,10 +91,23 @@ export function useAIChat() {
     return () => clearInterval(interval);
   }, [activeService]); // Removed lastActive from dependencies
 
-  const handleRefresh = () => { const webview = getWebviewRef(activeService).current; webview?.reloadIgnoringCache(); };
-  const wakeUp = (service: AIService) => setIsSuspended(prev => ({ ...prev, [service]: false }));
+  const handleRefresh = () => {
+    const webview = getWebviewRef(activeService).current;
+    webview?.reloadIgnoringCache();
+  };
+  const wakeUp = (service: AIService) => setIsSuspended((prev) => ({ ...prev, [service]: false }));
 
-  return { activeService, setActiveService, isLoading, isSuspended, geminiRef, chatgptRef, handleRefresh, wakeUp, AI_SERVICES };
+  return {
+    activeService,
+    setActiveService,
+    isLoading,
+    isSuspended,
+    geminiRef,
+    chatgptRef,
+    handleRefresh,
+    wakeUp,
+    AI_SERVICES,
+  };
 }
 
 export type { AIService };
