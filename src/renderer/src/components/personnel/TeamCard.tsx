@@ -13,7 +13,7 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
   const [isEditing, setIsEditing] = useState(false);
   const teamRows = useMemo(() => rows || [], [rows]);
   const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
-  const rowGridTemplate = hasAnyTimeWindow ? "auto 1fr auto auto" : "auto 1fr auto";
+  const rowGridTemplate = hasAnyTimeWindow ? "auto 1fr auto 100px" : "auto 1fr auto";
 
   const isEmpty = teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
 
@@ -51,7 +51,7 @@ export const TeamCard = React.memo(({ team, index, rows, contacts, onUpdateRows,
       >
         <div className="accent-strip" style={{ background: colorScheme.text }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingLeft: "8px" }}>
-          <div style={{ fontSize: "18px", fontWeight: 700, color: colorScheme.text, letterSpacing: "0.06em", textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "keep-all", whiteSpace: "normal", opacity: 0.9 }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
+          <div style={{ fontSize: "20px", fontWeight: 700, color: colorScheme.text, letterSpacing: "0.06em", textTransform: "uppercase", overflowWrap: "break-word", wordBreak: "keep-all", whiteSpace: "normal", opacity: 0.9 }}><Tooltip content={team}><span>{team}</span></Tooltip></div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", paddingLeft: "4px", flexGrow: 1, justifyContent: "center" }}>
           {isEmpty ? (

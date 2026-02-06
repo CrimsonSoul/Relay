@@ -101,7 +101,7 @@ export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTem
             color: row.name 
               ? (isPrimary ? "var(--color-text-primary)" : "var(--color-text-secondary)") 
               : "var(--color-text-quaternary)", 
-            fontSize: "18px", 
+            fontSize: isPrimary ? "22px" : "20px", 
             fontWeight: isPrimary ? 650 : 500, 
             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis"
           }}>
@@ -115,18 +115,20 @@ export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTem
         <div 
           onClick={handleCopyContact}
           style={{ 
-            color: "var(--color-text-tertiary)", 
-            fontSize: "16px", 
+            color: row.contact 
+              ? (isPrimary ? "var(--color-text-primary)" : "var(--color-text-secondary)")
+              : "var(--color-text-quaternary)", 
+            fontSize: isPrimary ? "20px" : "18px", 
             fontFamily: "var(--font-mono)", 
-            textAlign: "right", 
+            textAlign: "right",
             whiteSpace: "nowrap", 
-            fontWeight: 500,
+            fontWeight: isPrimary ? 700 : 500,
             cursor: row.contact ? "pointer" : "default",
             transition: "color 0.15s ease",
-            letterSpacing: "0.02em"
+            letterSpacing: "0.03em",
           }}
-          onMouseEnter={(e) => { if (row.contact) e.currentTarget.style.color = "var(--color-text-primary)"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = "var(--color-text-tertiary)"; }}
+          onMouseEnter={(e) => { if (row.contact) e.currentTarget.style.color = "var(--color-accent-blue-hover)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.color = row.contact ? (isPrimary ? "var(--color-text-primary)" : "var(--color-text-secondary)") : "var(--color-text-quaternary)"; }}
         >
           {formatPhoneNumber(row.contact)}
         </div>
@@ -141,11 +143,12 @@ export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTem
             fontWeight: 500,
             textAlign: "right", 
             whiteSpace: "nowrap", 
-            opacity: row.timeWindow ? 1 : 0,
+            visibility: row.timeWindow ? "visible" : "hidden",
             fontFamily: "var(--font-mono)",
-            letterSpacing: "0.01em"
+            letterSpacing: "0.01em",
+            minWidth: "80px",
           }}>
-            {row.timeWindow}
+            {row.timeWindow || "\u00A0"}
           </div>
         </Tooltip>
       )}
