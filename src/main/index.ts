@@ -12,6 +12,14 @@ import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } fr
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from './handlers/windowHandlers';
 
+// Ensure a consistent userData path for portable builds on Windows.
+// Without this, portable .exe instances launched from different locations
+// may resolve to different userData dirs and bypass the single-instance lock.
+if (process.platform === 'win32') {
+  const portableUserData = join(app.getPath('appData'), 'Relay');
+  app.setPath('userData', portableUserData);
+}
+
 // Validate environment early
 validateEnv();
 
