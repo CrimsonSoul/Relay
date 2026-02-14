@@ -61,25 +61,9 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
       expandedTitleSize="clamp(24px, 4vw, 36px)"
       collapsedTitleSize="clamp(20px, 3.2vw, 30px)"
       search={
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="weather-search-bar">
           {loc.error && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '0 16px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.2)',
-                color: '#ff8a8a',
-                borderRadius: '12px',
-                fontSize: '13px',
-                fontWeight: 600,
-                whiteSpace: 'nowrap',
-                height: '40px',
-                animation: 'fadeIn 0.2s ease-out',
-              }}
-            >
+            <div className="weather-error-badge">
               <svg
                 width="14"
                 height="14"
@@ -115,7 +99,6 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
         title="Search"
         aria-label="Search city"
         disabled={isSearching}
-        style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
         icon={
           <svg
             width="14"
@@ -138,7 +121,6 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
         title="Detect Location"
         aria-label="Detect current location"
         disabled={isSearching}
-        style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
         icon={
           <svg
             width="14"
@@ -157,12 +139,11 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
         }
       />
 
-      <div style={{ position: 'relative' }} ref={locationMenuRef}>
+      <div className="weather-location-menu-anchor" ref={locationMenuRef}>
         <TactileButton
           onClick={() => setShowLocationMenu(!showLocationMenu)}
           title="Saved Locations"
           aria-label="Toggle saved locations menu"
-          style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
           icon={
             <svg
               width="14"
@@ -182,21 +163,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
         />
 
         {showLocationMenu && (
-          <div
-            className="animate-slide-down"
-            style={{
-              position: 'absolute',
-              top: 'calc(100% + 8px)',
-              right: 0,
-              width: '280px',
-              background: 'var(--app-surface-2)',
-              borderRadius: '16px',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 16px 32px rgba(0,0,0,0.4)',
-              overflow: 'hidden',
-              zIndex: 100,
-            }}
-          >
+          <div className="animate-slide-down weather-location-menu">
             {location && (
               <button
                 type="button"
@@ -204,21 +171,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                   setSaveModalOpen(true);
                   setShowLocationMenu(false);
                 }}
-                style={{
-                  width: '100%',
-                  padding: '16px',
-                  background: 'rgba(59, 130, 246, 0.05)',
-                  border: 'none',
-                  borderBottom: '1px solid rgba(255,255,255,0.05)',
-                  color: 'var(--color-accent-blue)',
-                  fontSize: '13px',
-                  fontWeight: 650,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  textAlign: 'left',
-                }}
+                className="weather-save-location-btn"
               >
                 <svg
                   width="14"
@@ -239,7 +192,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
             )}
 
             {savedLocations.length > 0 ? (
-              <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+              <div className="weather-saved-list">
                 {savedLocations.map((saved) => (
                   <button
                     key={saved.id}
@@ -248,38 +201,18 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                     onKeyDown={(e) => e.key === 'Enter' && handleSelectSavedLocation(saved)}
                     onClick={() => handleSelectSavedLocation(saved)}
                   >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          color: 'var(--color-text-primary)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
+                    <div className="weather-saved-item-info">
+                      <div className="weather-saved-item-name">
                         {saved.name}
                         {saved.isDefault && (
-                          <span
-                            style={{
-                              fontSize: '10px',
-                              background: 'rgba(236, 201, 75, 0.15)',
-                              color: 'rgba(236, 201, 75, 1)',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              fontWeight: 700,
-                            }}
-                          >
-                            DEFAULT
-                          </span>
+                          <span className="weather-saved-item-default-badge">DEFAULT</span>
                         )}
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                      <div className="weather-saved-item-coords">
                         {saved.lat.toFixed(2)}, {saved.lon.toFixed(2)}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '4px' }}>
+                    <div className="weather-saved-item-actions">
                       <button
                         type="button"
                         onClick={(e) => {
@@ -288,14 +221,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                         }}
                         title="Rename"
                         aria-label={`Rename ${saved.name}`}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--color-text-tertiary)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          borderRadius: '4px',
-                        }}
+                        className="weather-saved-action-btn"
                       >
                         <svg
                           width="14"
@@ -319,14 +245,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                           }}
                           title="Clear default"
                           aria-label={`Remove ${saved.name} as default`}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'rgba(236, 201, 75, 1)',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            borderRadius: '4px',
-                          }}
+                          className="weather-saved-action-btn weather-saved-action-btn--active"
                         >
                           <svg
                             width="14"
@@ -349,14 +268,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                           }}
                           title="Set as default"
                           aria-label={`Set ${saved.name} as default`}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: 'var(--color-text-tertiary)',
-                            cursor: 'pointer',
-                            padding: '4px',
-                            borderRadius: '4px',
-                          }}
+                          className="weather-saved-action-btn"
                         >
                           <svg
                             width="14"
@@ -380,14 +292,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                         }}
                         title="Delete"
                         aria-label={`Delete ${saved.name}`}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          color: 'var(--color-text-tertiary)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                          borderRadius: '4px',
-                        }}
+                        className="weather-saved-action-btn"
                       >
                         <svg
                           width="14"
@@ -407,16 +312,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                 ))}
               </div>
             ) : (
-              <div
-                style={{
-                  padding: '24px 16px',
-                  textAlign: 'center',
-                  color: 'var(--color-text-tertiary)',
-                  fontSize: '13px',
-                }}
-              >
-                No saved locations yet
-              </div>
+              <div className="weather-location-empty">No saved locations yet</div>
             )}
           </div>
         )}

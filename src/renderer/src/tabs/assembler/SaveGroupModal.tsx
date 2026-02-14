@@ -61,72 +61,24 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose}>
-      <div style={{ padding: '24px', minWidth: '360px' }}>
-        <h2
-          style={{
-            margin: '0 0 8px 0',
-            fontSize: '18px',
-            fontWeight: 600,
-            color: 'var(--color-text-primary)',
-          }}
-        >
-          {title}
-        </h2>
-        <p
-          style={{
-            margin: '0 0 20px 0',
-            fontSize: '13px',
-            color: 'var(--color-text-secondary)',
-          }}
-        >
-          {description}
-        </p>
+      <div className="save-group-content">
+        <h2 className="save-group-title">{title}</h2>
+        <p className="save-group-description">{description}</p>
 
         {contacts && contacts.length > 0 && (
-          <div
-            style={{
-              marginBottom: '20px',
-              border: '1px solid var(--color-border-subtle)',
-              borderRadius: '8px',
-              background: 'var(--color-bg-surface)',
-              maxHeight: '180px',
-              overflowY: 'auto',
-            }}
-          >
-            <div
-              style={{
-                padding: '8px 12px',
-                fontSize: '11px',
-                fontWeight: 600,
-                color: 'var(--color-text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                borderBottom: '1px solid var(--color-border-subtle)',
-                position: 'sticky',
-                top: 0,
-                background: 'var(--color-bg-surface)',
-              }}
-            >
+          <div className="save-group-contacts">
+            <div className="save-group-contacts-header">
               {contacts.length} {contacts.length === 1 ? 'recipient' : 'recipients'}
             </div>
             {contacts.map((email) => (
-              <div
-                key={email}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  color: 'var(--color-text-secondary)',
-                  borderBottom: '1px solid var(--color-border-subtle)',
-                  fontFamily: 'monospace',
-                }}
-              >
+              <div key={email} className="save-group-contacts-item">
                 {email}
               </div>
             ))}
           </div>
         )}
 
-        <div style={{ marginBottom: '20px' }}>
+        <div className="save-group-input-wrapper">
           <Input
             label="Group Name"
             value={name}
@@ -140,20 +92,10 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
               if (e.key === 'Enter') handleSave();
             }}
           />
-          {error && (
-            <p
-              style={{
-                margin: '8px 0 0 0',
-                fontSize: '12px',
-                color: 'var(--color-danger)',
-              }}
-            >
-              {error}
-            </p>
-          )}
+          {error && <p className="save-group-error">{error}</p>}
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+        <div className="save-group-actions">
           <TactileButton variant="secondary" onClick={handleClose}>
             Cancel
           </TactileButton>

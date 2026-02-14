@@ -61,17 +61,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   );
 
   return (
-    <div
-      style={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px 32px',
-        background: 'transparent',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="tab-layout">
       <CollapsibleHeader
         title="Infrastructure Hub"
         subtitle="Management and status of distributed node infrastructure"
@@ -86,16 +76,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         }
       >
         {h.filteredServers.length > 0 && (
-          <div
-            style={{
-              fontSize: '13px',
-              color: 'var(--color-text-tertiary)',
-              whiteSpace: 'nowrap',
-              marginRight: '8px',
-            }}
-          >
-            {h.filteredServers.length} matches
-          </div>
+          <div className="match-count">{h.filteredServers.length} matches</div>
         )}
         <TactileButton
           onClick={() => h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
@@ -117,15 +98,14 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               ></polyline>
             </svg>
           }
-          style={{ marginRight: '8px', flexShrink: 0, width: '44px', height: '44px', padding: 0 }}
+          className="sort-toggle-btn"
+          style={{ height: '44px', padding: 0 }}
         />
         <TactileButton
           onClick={h.openAddModal}
           variant="primary"
-          style={{
-            padding: h.isHeaderCollapsed ? '8px 16px' : '15px 32px',
-            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+          className="btn-collapsible"
+          style={{ padding: h.isHeaderCollapsed ? '8px 16px' : '15px 32px' }}
           icon={
             <svg
               width="14"
@@ -146,7 +126,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         </TactileButton>
       </CollapsibleHeader>
 
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div className="tab-list-container">
         <AutoSizer
           renderProp={({ height, width }) => (
             <List
@@ -160,19 +140,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
           )}
         />
         {h.filteredServers.length === 0 && (
-          <div
-            style={{
-              height: '200px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-tertiary)',
-              fontStyle: 'italic',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div style={{ fontSize: '24px', opacity: 0.3 }}>∅</div>
+          <div className="tab-empty-state">
+            <div className="tab-empty-state-icon">∅</div>
             <div>No infrastructure found</div>
           </div>
         )}

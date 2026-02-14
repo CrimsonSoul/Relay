@@ -131,19 +131,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
   if (!location && loading) return <TabFallback />;
 
   return (
-    <div
-      className="weather-font-surface weather-scroll-container"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        width: '100%',
-        background: 'transparent',
-        padding: '24px 32px',
-        gap: '24px',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="weather-font-surface weather-scroll-container weather-tab-layout">
       <WeatherHeader
         location={location}
         activeSavedLocation={activeSavedLocation}
@@ -200,21 +188,8 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         />
       )}
 
-      <div
-        className="weather-tab-root weather-scroll-container"
-        style={{ display: 'flex', gap: '16px', flex: 1, minHeight: 0, overflow: 'hidden' }}
-      >
-        <div
-          className="weather-forecast-column weather-scroll-container"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px',
-            flex: '0 0 35%',
-            minWidth: '300px',
-            overflowY: 'auto',
-          }}
-        >
+      <div className="weather-tab-root weather-scroll-container weather-tab-body">
+        <div className="weather-forecast-column weather-scroll-container weather-tab-forecast-column">
           {alerts.length > 0 &&
             alerts.map((alert) => (
               <WeatherAlertCard

@@ -1,5 +1,5 @@
 import { LocationProvider, useLocation, NotesProvider } from './contexts';
-import React, { useEffect, useState, useCallback, Suspense, lazy } from 'react';
+import { useEffect, useState, useCallback, Suspense, lazy } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
@@ -45,7 +45,6 @@ export function MainApp() {
   const searchParams = new URLSearchParams(window.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
-  const isMac = window.api?.platform === 'darwin';
 
   const { data, isReloading, handleSync } = useAppData(showToast);
 
@@ -185,59 +184,14 @@ export function MainApp() {
 
   if (isPopout) {
     return (
-      <div
-        className="popout-container"
-        style={{
-          height: '100vh',
-          width: '100vw',
-          background: 'var(--color-bg-app)',
-          overflow: 'hidden',
-          position: 'relative',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <div
-          style={
-            {
-              height: '48px',
-              width: '100%',
-              WebkitAppRegion: 'drag',
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              paddingLeft: isMac ? '80px' : '24px',
-              background: 'transparent',
-            } as React.CSSProperties
-          }
-        >
-          <span
-            style={{
-              fontSize: '11px',
-              color: 'var(--color-text-tertiary)',
-              fontWeight: 800,
-              opacity: 0.4,
-              userSelect: 'none',
-              letterSpacing: '0.1em',
-            }}
-          >
-            RELAY ON-CALL BOARD
-          </span>
+      <div className="popout-container">
+        <div className="popout-header">
+          <span className="popout-title">RELAY ON-CALL BOARD</span>
         </div>
-        <div
-          style={
-            {
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              zIndex: 9999,
-              WebkitAppRegion: 'no-drag',
-            } as React.CSSProperties
-          }
-        >
+        <div className="popout-controls">
           <WindowControls />
         </div>
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div className="popout-body">
           {popoutRoute?.includes('board') && (
             <ErrorBoundary fallback={<TabFallback error />}>
               <Suspense fallback={<TabFallback />}>
@@ -277,8 +231,7 @@ export function MainApp() {
         <div className="content-view">
           {mountedTabs.has('Compose') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'Compose' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <AssemblerTab
@@ -301,8 +254,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('Personnel') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'Personnel' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>
@@ -317,8 +269,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('People') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'People' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'People' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>
@@ -333,8 +284,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('Weather') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'Weather' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'Weather' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>
@@ -352,8 +302,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('Servers') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'Servers' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>
@@ -364,8 +313,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('Radar') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'Radar' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'Radar' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>
@@ -376,8 +324,7 @@ export function MainApp() {
           )}
           {mountedTabs.has('AI') && (
             <div
-              className="animate-fade-in"
-              style={{ height: '100%', display: activeTab === 'AI' ? 'block' : 'none' }}
+              className={`tab-panel animate-fade-in${activeTab === 'AI' ? ' tab-panel--active' : ''}`}
             >
               <ErrorBoundary fallback={<TabFallback error />}>
                 <Suspense fallback={<TabFallback />}>

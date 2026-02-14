@@ -74,11 +74,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
         ref={triggerRef}
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
-        style={{
-          display: block ? 'block' : 'inline-flex',
-          minWidth: 0,
-          width: block ? '100%' : 'auto',
-        }}
+        className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}
       >
         {children}
       </div>
@@ -86,25 +82,12 @@ export const Tooltip: React.FC<TooltipProps> = ({
         content &&
         createPortal(
           <div
+            className="tooltip-popup"
             style={{
-              position: 'absolute',
               top: coords.top,
               left: coords.left,
               transform: getTransform(),
-              background: 'var(--color-bg-chrome)',
-              backdropFilter: 'blur(12px)',
-              border: 'var(--border-medium)',
-              borderRadius: '8px',
-              padding: '8px 12px',
-              color: 'var(--color-text-primary)',
-              fontSize: '11px',
-              boxShadow: 'var(--shadow-lg)',
-              zIndex: 10000,
-              pointerEvents: 'none',
               width,
-              maxWidth: '320px',
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
             }}
           >
             {content}

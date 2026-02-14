@@ -72,39 +72,13 @@ export const SettingsModal: React.FC<Props> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: 'var(--color-text-tertiary)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Data Synchronization
-          </div>
-          <TactileButton
-            onClick={onSync}
-            variant="primary"
-            style={{
-              width: '100%',
-              justifyContent: 'center',
-            }}
-          >
+      <div className="settings-body">
+        <div className="settings-section">
+          <div className="settings-section-heading">Data Synchronization</div>
+          <TactileButton onClick={onSync} variant="primary" block className="btn-center">
             {isSyncing ? (
               <>
-                <span
-                  className="animate-spin"
-                  style={{
-                    width: '12px',
-                    height: '12px',
-                    border: '2px solid currentColor',
-                    borderTopColor: 'transparent',
-                    borderRadius: '50%',
-                  }}
-                />
+                <span className="animate-spin settings-spinner" />
                 Syncing...
               </>
             ) : (
@@ -113,95 +87,46 @@ export const SettingsModal: React.FC<Props> = ({
           </TactileButton>
         </div>
 
-        <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+        <div className="settings-divider" />
 
         {onOpenDataManager && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div
-              style={{
-                fontSize: '13px',
-                fontWeight: 700,
-                color: 'var(--color-text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Data Management
-            </div>
+          <div className="settings-section">
+            <div className="settings-section-heading">Data Management</div>
             <TactileButton
               onClick={() => {
                 onClose();
                 onOpenDataManager();
               }}
               variant="primary"
-              style={{ justifyContent: 'center' }}
+              className="btn-center"
             >
               Open Data Manager...
             </TactileButton>
           </div>
         )}
 
-        <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+        <div className="settings-divider" />
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div
-            style={{
-              fontSize: '13px',
-              fontWeight: 700,
-              color: 'var(--color-text-tertiary)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            Storage Location
-          </div>
-          <div
-            style={{
-              fontSize: '12px',
-              color: 'var(--color-text-secondary)',
-              padding: '10px 14px',
-              background: 'var(--color-bg-surface-elevated)',
-              border: 'var(--border-medium)',
-              borderRadius: '8px',
-              wordBreak: 'break-word',
-              overflowWrap: 'anywhere',
-              lineHeight: '1.5',
-              fontFamily: 'var(--font-family-mono)',
-            }}
-          >
+        <div className="settings-section">
+          <div className="settings-section-heading">Storage Location</div>
+          <div className="settings-data-path">
             <DataPathDisplay key={pathKey} />
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <TactileButton
-              onClick={handleChangeFolder}
-              style={{ flex: 1, justifyContent: 'center' }}
-            >
+          <div className="settings-button-row">
+            <TactileButton onClick={handleChangeFolder} className="btn-flex-center">
               Change...
             </TactileButton>
-            <TactileButton
-              onClick={handleResetFolder}
-              style={{ flex: 1, justifyContent: 'center' }}
-            >
+            <TactileButton onClick={handleResetFolder} className="btn-flex-center">
               Reset to Default
             </TactileButton>
           </div>
         </div>
 
-        <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+        <div className="settings-divider" />
 
         {import.meta.env.DEV && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div
-              style={{
-                fontSize: '13px',
-                fontWeight: 700,
-                color: 'var(--color-text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Diagnostics & Demo
-            </div>
+          <div className="settings-section">
+            <div className="settings-section-heading">Diagnostics & Demo</div>
             <TactileButton
               onClick={async () => {
                 const result = await window.api?.generateDummyData();
@@ -212,7 +137,7 @@ export const SettingsModal: React.FC<Props> = ({
                   showToast('Failed to load dummy data', 'error');
                 }
               }}
-              style={{ justifyContent: 'center' }}
+              className="btn-center"
             >
               Load Dummy Data
             </TactileButton>

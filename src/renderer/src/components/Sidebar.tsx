@@ -32,23 +32,8 @@ const navItems: { label: string; tab: Tab; icon: React.ReactNode }[] = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpenSettings }) => {
-  const isDarwin = window.api?.platform === 'darwin';
-
   return (
-    <div
-      style={{
-        width: '80px',
-        background: 'var(--color-bg-chrome)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        paddingTop: isDarwin ? '54px' : '20px',
-        paddingBottom: '24px',
-        gap: '14px',
-        zIndex: 9002,
-        WebkitAppRegion: 'drag',
-      }}
-    >
+    <div className="sidebar">
       {/* App Icon / Branding Block */}
       <div
         onClick={() => onTabChange('Compose')}
@@ -69,26 +54,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         </div>
       </div>
 
-      <div
-        style={{
-          width: '36px',
-          height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent)',
-          marginBottom: '8px',
-          flexShrink: 0,
-        }}
-      />
+      <div className="sidebar-divider" />
 
-      <nav
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: '12px',
-          WebkitAppRegion: 'no-drag',
-        }}
-      >
+      <nav className="sidebar-nav">
         {navItems.map((item) => (
           <SidebarButton
             key={item.tab}
@@ -100,14 +68,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         ))}
       </nav>
 
-      <div
-        style={{
-          WebkitAppRegion: 'no-drag',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '14px',
-        }}
-      >
+      <div className="sidebar-footer">
         <SidebarButton
           label="Settings"
           isActive={false}

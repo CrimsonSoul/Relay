@@ -7,19 +7,9 @@ interface Props {
 }
 
 export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-    <div
-      style={{
-        fontSize: '18px',
-        fontWeight: 700,
-        color: 'var(--color-text-tertiary)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-      }}
-    >
-      Data Statistics
-    </div>
-    <div style={{ display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
+  <div className="data-manager-section">
+    <div className="data-manager-section-heading">Data Statistics</div>
+    <div className="data-manager-stats-row">
       <StatCard
         label="Contacts"
         count={stats?.contacts.count || 0}

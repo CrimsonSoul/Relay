@@ -169,7 +169,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ position: 'absolute', left: '16px', pointerEvents: 'none' }}
+              className="command-palette-search-icon"
             >
               <title>Search Icon</title>
               <circle cx="11" cy="11" r="8" />

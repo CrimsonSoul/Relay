@@ -86,21 +86,11 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="960px">
       <div
         role="presentation"
-        style={{ display: 'flex', flexDirection: 'column', height: '65vh' }}
+        className="maintain-team-body"
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            padding: '10px 8px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '2px',
-          }}
-        >
+        <div className="maintain-team-scroll">
           <DndContext
             id={`modal-dnd-${teamName}`}
             sensors={sensors}
@@ -121,28 +111,15 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
           </DndContext>
           <TactileButton
             variant="ghost"
-            style={{
-              width: '100%',
-              marginTop: '12px',
-              border: '1px dashed rgba(255,255,255,0.1)',
-              opacity: 0.8,
-              height: '48px',
-            }}
+            block
+            className="maintain-team-add-btn"
+            style={{ height: '48px' }}
             onClick={handleAddRow}
           >
             + Add Row
           </TactileButton>
         </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '12px',
-            marginTop: '24px',
-            paddingTop: '20px',
-            borderTop: '1px solid rgba(255,255,255,0.1)',
-          }}
-        >
+        <div className="maintain-team-footer">
           <TactileButton variant="secondary" onClick={onClose}>
             Cancel
           </TactileButton>

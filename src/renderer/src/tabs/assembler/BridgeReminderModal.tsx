@@ -15,18 +15,9 @@ export const BridgeReminderModal: React.FC<BridgeReminderModalProps> = ({
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Meeting Recording" width="400px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ fontSize: '14px', color: 'var(--color-text-primary)' }}>
-          Please ensure meeting recording is enabled.
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '12px',
-            marginTop: '8px',
-          }}
-        >
+      <div className="bridge-reminder-body">
+        <div className="bridge-reminder-message">Please ensure meeting recording is enabled.</div>
+        <div className="bridge-reminder-actions">
           <TactileButton onClick={onClose}>Cancel</TactileButton>
           <TactileButton
             onClick={() => {

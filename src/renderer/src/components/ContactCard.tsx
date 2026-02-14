@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { getColorForString } from '../utils/colors';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { Tooltip } from './Tooltip';
@@ -63,148 +63,46 @@ export const ContactCard = memo(
             onRowClick?.();
           }
         }}
-        style={{ width: '100%', height: '100%', ...style, display: 'flex', alignItems: 'center' }}
+        className="contact-card"
+        style={style}
       >
         <div
-          style={{
-            width: '100%',
-            height: 'calc(100% - 8px)',
-            display: 'flex',
-            alignItems: 'center',
-            paddingLeft: '20px',
-            paddingRight: '20px',
-            background: selected ? 'rgba(59, 130, 246, 0.06)' : undefined,
-            border: selected ? '1px solid rgba(59, 130, 246, 0.2)' : undefined,
-            gap: '16px',
-            cursor: 'default',
-          }}
-          className="card-surface"
+          className={`card-surface contact-card-body${selected ? ' contact-card-body--selected' : ''}`}
         >
           <div className="accent-strip" style={{ background: color }} />
           <Avatar name={name} email={email} />
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              flex: 1,
-              minWidth: 0,
-              gap: '4px',
-              justifyContent: 'center',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                overflow: 'hidden',
-                minWidth: 0,
-              }}
-            >
+          <div className="contact-card-info">
+            <div className="contact-card-name-row">
               <Tooltip content={displayName}>
-                <span
-                  className="text-balance break-word"
-                  style={{
-                    fontSize: '24px',
-                    fontWeight: 700,
-                    color: 'var(--color-text-primary)',
-                    letterSpacing: '-0.02em',
-                    display: 'block',
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {displayName}
-                </span>
+                <span className="text-balance break-word contact-card-name">{displayName}</span>
               </Tooltip>
-              {sourceLabel && (
-                <span
-                  style={{
-                    fontSize: '10px',
-                    background: 'rgba(255, 255, 255, 0.12)',
-                    color: 'var(--color-text-primary)',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                    fontWeight: 900,
-                    textTransform: 'uppercase',
-                    flexShrink: 0,
-                    letterSpacing: '0.05em',
-                  }}
-                >
-                  {sourceLabel}
-                </span>
-              )}
+              {sourceLabel && <span className="contact-card-source-label">{sourceLabel}</span>}
             </div>
-            <div
-              style={{
-                fontSize: '16px',
-                color: 'var(--color-text-secondary)',
-                fontWeight: 500,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                minWidth: 0,
-              }}
-            >
+            <div className="contact-card-meta">
               {title && (
                 <Tooltip content={title}>
-                  <span className="break-word" style={{ display: 'block', maxWidth: '100%' }}>
-                    {title}
-                  </span>
+                  <span className="break-word contact-card-tooltip-span">{title}</span>
                 </Tooltip>
               )}
-              {title && <span style={{ opacity: 0.3, fontSize: '16px', flexShrink: 0 }}>|</span>}
+              {title && <span className="contact-card-meta-separator">|</span>}
               <Tooltip content={email}>
-                <span
-                  className="break-word"
-                  style={{ display: 'block', maxWidth: '100%', opacity: 0.8 }}
-                >
-                  {email}
-                </span>
+                <span className="break-word contact-card-tooltip-span--faded">{email}</span>
               </Tooltip>
             </div>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              minWidth: 0,
-              gap: '12px',
-              justifyContent: 'flex-end',
-            }}
-          >
-            {/* Tags display */}
+          <div className="contact-card-right">
             {tags.length > 0 && (
-              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="server-card-tags">
                 {tags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag}
-                    style={{
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      color: 'var(--color-accent-blue)',
-                      padding: '4px 8px',
-                      borderRadius: '6px',
-                      letterSpacing: '0.02em',
-                      background: 'rgba(59, 130, 246, 0.1)',
-                    }}
-                  >
+                  <span key={tag} className="server-card-tag">
                     #{tag}
                   </span>
                 ))}
                 {tags.length > 3 && (
-                  <span
-                    style={{
-                      fontSize: '11px',
-                      color: 'var(--color-text-tertiary)',
-                      fontWeight: 600,
-                    }}
-                  >
-                    +{tags.length - 3}
-                  </span>
+                  <span className="server-card-tag-overflow">+{tags.length - 3}</span>
                 )}
               </div>
             )}
-            {/* Notes indicator - clickable */}
             {hasNotes && (
               <Tooltip content="Click to view notes">
                 <button
@@ -212,19 +110,7 @@ export const ContactCard = memo(
                     e.stopPropagation();
                     onNotesClick?.();
                   }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#FBBF24',
-                    border: 'none',
-                    cursor: 'pointer',
-                    padding: '6px',
-                    borderRadius: '6px',
-                    background: 'rgba(251, 191, 36, 0.1)',
-                    width: '28px',
-                    height: '28px',
-                  }}
+                  className="server-card-notes-btn"
                 >
                   <svg
                     width="14"
@@ -246,83 +132,24 @@ export const ContactCard = memo(
             )}
             {formattedPhone && (
               <Tooltip content={formattedPhone}>
-                <span
-                  className="text-truncate"
-                  style={{
-                    fontSize: '18px',
-                    color: 'var(--color-text-tertiary)',
-                    fontFamily: 'var(--font-mono)',
-                    fontWeight: 500,
-                    letterSpacing: '0.02em',
-                    minWidth: '160px',
-                    flexShrink: 0,
-                    display: 'block',
-                    textAlign: 'right',
-                    transition: 'color 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--color-text-primary)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--color-text-tertiary)')}
-                >
-                  {formattedPhone}
-                </span>
+                <span className="text-truncate contact-card-phone">{formattedPhone}</span>
               </Tooltip>
             )}
             {groups.length > 0 && (
               <Tooltip content={groups.join(', ')}>
-                <div
-                  style={{
-                    display: 'flex',
-                    gap: '6px',
-                    alignItems: 'center',
-                    cursor: 'help',
-                    flexWrap: 'wrap',
-                    overflow: 'hidden',
-                  }}
-                >
+                <div className="contact-card-groups">
                   {groups.slice(0, 2).map((g) => (
                     <GroupPill key={g} group={g} />
                   ))}
                   {groups.length > 2 && (
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        color: 'var(--color-text-tertiary)',
-                        fontWeight: 700,
-                        background: 'rgba(255,255,255,0.05)',
-                        padding: '2px 6px',
-                        borderRadius: '6px',
-                        flexShrink: 0,
-                      }}
-                    >
-                      +{groups.length - 2}
-                    </span>
+                    <span className="contact-card-group-overflow">+{groups.length - 2}</span>
                   )}
                 </div>
               </Tooltip>
             )}
           </div>
         </div>
-        {action && (
-          <div
-            className="row-actions"
-            style={{
-              position: 'absolute',
-              right: '32px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              background: 'var(--color-bg-surface)',
-              padding: '4px 8px',
-              borderRadius: '8px',
-              display: 'flex',
-              gap: '4px',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              zIndex: 10,
-            }}
-          >
-            {action}
-          </div>
-        )}
+        {action && <div className="row-actions contact-card-actions">{action}</div>}
       </div>
     );
   },

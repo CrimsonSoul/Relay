@@ -136,102 +136,19 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
 
   return (
     <>
-      <div
-        onContextMenu={handleSidebarContextMenu}
-        style={{
-          display: 'flex',
-          padding: '0',
-          height: '100%',
-          position: 'relative',
-          background: 'transparent',
-          zIndex: 20,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            height: '100%',
-            width: '100%',
-            overflow: 'visible',
-            justifyContent: 'flex-end',
-          }}
-        >
+      <div onContextMenu={handleSidebarContextMenu} className="assembler-sidebar">
+        <div className="assembler-sidebar-inner">
           <div
-            style={{
-              width: '216px',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              opacity: isCollapsed ? 0 : 1,
-              visibility: isCollapsed ? 'hidden' : 'visible',
-              transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.4s',
-              flexShrink: 0,
-            }}
+            className={`assembler-sidebar-panel${isCollapsed ? ' assembler-sidebar-panel--collapsed' : ''}`}
           >
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                overflowX: 'hidden',
-                padding: '40px 20px 16px 20px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-              }}
-            >
+            <div className="assembler-sidebar-scroll">
               {/* Groups Section */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  flex: 1,
-                  marginTop: '16px',
-                  width: '100%',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    height: '24px',
-                    marginBottom: '12px',
-                    padding: '0',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      color: 'var(--color-text-secondary)',
-                      letterSpacing: '0.02em',
-                    }}
-                  >
-                    Groups
-                  </div>
+              <div className="assembler-sidebar-groups">
+                <div className="assembler-sidebar-groups-header">
+                  <div className="assembler-sidebar-groups-title">Groups</div>
                   <button
                     onClick={() => setIsSaveGroupOpen(true)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      padding: '4px',
-                      cursor: 'pointer',
-                      color: 'var(--color-text-tertiary)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderRadius: '4px',
-                      transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = 'var(--color-text-secondary)';
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = 'var(--color-text-tertiary)';
-                      e.currentTarget.style.background = 'transparent';
-                    }}
+                    className="assembler-sidebar-add-btn"
                     title="Create new group"
                   >
                     <svg
@@ -249,7 +166,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                     </svg>
                   </button>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div className="assembler-sidebar-group-list">
                   {sortedGroups.map((group) => (
                     <SidebarItem
                       key={group.id}
@@ -261,16 +178,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                     />
                   ))}
                   {sortedGroups.length === 0 && (
-                    <div
-                      style={{
-                        color: 'var(--color-text-tertiary)',
-                        fontSize: '13px',
-                        fontStyle: 'italic',
-                        paddingLeft: '4px',
-                      }}
-                    >
-                      No groups yet.
-                    </div>
+                    <div className="assembler-sidebar-empty">No groups yet.</div>
                   )}
                 </div>
               </div>

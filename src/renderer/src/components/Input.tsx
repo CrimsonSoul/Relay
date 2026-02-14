@@ -25,32 +25,6 @@ export const Input: React.FC<InputProps> = ({
   const generatedId = useId();
   const id = providedId || generatedId;
 
-  // Separate layout styles for wrapper vs visual styles for input
-  const {
-    width,
-    height,
-    minWidth,
-    minHeight,
-    maxWidth,
-    maxHeight,
-    margin,
-    marginTop,
-    marginBottom,
-    marginLeft,
-    marginRight,
-    flex,
-    flexGrow,
-    flexShrink,
-    flexBasis,
-    position,
-    zIndex,
-    top,
-    bottom,
-    left,
-    right,
-    ...inputStyle
-  } = style || {};
-
   // Sync internal ref with external ref if provided
   useEffect(() => {
     if (typeof ref === 'function') {
@@ -103,53 +77,17 @@ export const Input: React.FC<InputProps> = ({
   };
 
   return (
-    <div
-      style={{
-        position: position || 'relative',
-        width: width || '100%',
-        height,
-        minWidth,
-        minHeight,
-        maxWidth,
-        maxHeight,
-        margin,
-        marginTop,
-        marginBottom,
-        marginLeft,
-        marginRight,
-        flex,
-        flexGrow,
-        flexShrink,
-        flexBasis,
-        zIndex,
-        top,
-        bottom,
-        left,
-        right,
-        ...containerStyle,
-      }}
-    >
+    <div className="input-wrapper" style={containerStyle}>
       {label && (
-        <label
-          htmlFor={id}
-          className="text-truncate"
-          style={{
-            display: 'block',
-            fontSize: '15px',
-            fontWeight: 650,
-            color: 'var(--color-text-secondary)',
-            marginBottom: '8px',
-            letterSpacing: '0.01em',
-          }}
-        >
+        <label htmlFor={id} className="input-label text-truncate">
           {label}
         </label>
       )}
-      <div style={{ position: 'relative', width: '100%' }}>
+      <div className="input-inner">
         <input
           id={id}
           ref={innerRef}
-          style={{ ...(icon ? { paddingLeft: '40px' } : {}), ...inputStyle }}
+          style={{ ...(icon ? { paddingLeft: '40px' } : {}), ...style }}
           onFocus={(e) => {
             setHasValue(!!e.target.value);
             props.onFocus?.(e);
@@ -166,23 +104,7 @@ export const Input: React.FC<InputProps> = ({
           }}
         />
 
-        {icon && (
-          <div
-            className="input-icon"
-            style={{
-              position: 'absolute',
-              left: '16px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              pointerEvents: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              zIndex: 10,
-            }}
-          >
-            {icon}
-          </div>
-        )}
+        {icon && <div className="input-icon">{icon}</div>}
 
         {hasValue && !props.readOnly && !props.disabled && (
           <Tooltip content="Clear" position="top">
@@ -191,46 +113,7 @@ export const Input: React.FC<InputProps> = ({
               onClick={handleClear}
               aria-label="Clear input"
               data-testid="input-clear-button"
-              style={{
-                position: 'absolute',
-                right: 'var(--space-2)',
-                top: '50%',
-                transform: 'translateY(-50%)',
-                color: 'var(--color-text-secondary)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '18px',
-                height: '18px',
-                borderRadius: 'var(--radius-round)',
-                background: 'rgba(255, 255, 255, 0.08)',
-                zIndex: 50,
-                transition: 'all var(--transition-fast)',
-                border: '1px solid transparent',
-                padding: 0,
-                outline: 'none',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-                e.currentTarget.style.transform = 'translateY(-50%) scale(1.05)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-                e.currentTarget.style.borderColor = 'transparent';
-                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
-              }}
-              onFocus={(e) => {
-                e.currentTarget.style.borderColor = 'var(--color-accent-blue)';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-              }}
-              onBlur={(e) => {
-                e.currentTarget.style.borderColor = 'transparent';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-              }}
+              className="input-clear-btn"
             >
               <svg
                 width="12"

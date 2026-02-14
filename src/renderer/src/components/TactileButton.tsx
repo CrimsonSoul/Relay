@@ -51,7 +51,7 @@ export const TactileButton: React.FC<Props> = ({
       {...props}
     >
       {loading ? (
-        <span className="animate-spin" style={{ display: 'inline-block' }}>
+        <span className="animate-spin tactile-button-spinner">
           <svg
             width="14"
             height="14"
@@ -68,19 +68,10 @@ export const TactileButton: React.FC<Props> = ({
           </svg>
         </span>
       ) : icon ? (
-        <span
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px', // standard icon size
-          }}
-        >
-          {icon}
-        </span>
+        <span className="tactile-button-icon">{icon}</span>
       ) : null}
 
-      {children && <span style={{ position: 'relative', zIndex: 2 }}>{children}</span>}
+      {children && <span className="tactile-button-label">{children}</span>}
     </button>
   );
 };

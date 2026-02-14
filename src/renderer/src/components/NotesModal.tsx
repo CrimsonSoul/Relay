@@ -105,7 +105,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
               <polyline points="10 9 9 9 8 9" />
             </svg>
           </div>
-          <div style={{ flex: 1 }}>
+          <div className="notes-title-flex">
             <div id="notes-modal-title" className="modal-title-main">
               {entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
             </div>
@@ -137,7 +137,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
         {/* Content */}
         <div className="modal-content">
           {/* Note textarea */}
-          <div style={{ marginBottom: '16px' }}>
+          <div className="notes-textarea-wrapper">
             <label className="modal-label" htmlFor="note-textarea">
               Note
             </label>

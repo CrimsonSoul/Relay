@@ -65,14 +65,10 @@ export const AddContactModal: React.FC<Props> = ({
     setPhone(formatPhoneNumber(phone));
   };
 
-  const fieldStyle: React.CSSProperties = {
-    marginBottom: '20px',
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={editContact ? 'Edit Contact' : 'Add Contact'}>
       <form onSubmit={handleSubmit}>
-        <div style={fieldStyle}>
+        <div className="add-contact-field">
           <Input
             label="Full Name"
             value={name}
@@ -84,7 +80,7 @@ export const AddContactModal: React.FC<Props> = ({
           />
         </div>
 
-        <div style={fieldStyle}>
+        <div className="add-contact-field">
           <Input
             label="Email Address"
             type="email"
@@ -96,7 +92,7 @@ export const AddContactModal: React.FC<Props> = ({
           />
         </div>
 
-        <div style={fieldStyle}>
+        <div className="add-contact-field">
           <Input
             label="Job Title"
             variant="vivid"
@@ -106,7 +102,7 @@ export const AddContactModal: React.FC<Props> = ({
           />
         </div>
 
-        <div style={fieldStyle}>
+        <div className="add-contact-field">
           <Input
             label="Phone Number"
             type="tel"
@@ -118,9 +114,7 @@ export const AddContactModal: React.FC<Props> = ({
           />
         </div>
 
-        <div
-          style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}
-        >
+        <div className="add-contact-actions">
           <TactileButton type="button" onClick={onClose}>
             Cancel
           </TactileButton>

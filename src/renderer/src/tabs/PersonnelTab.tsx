@@ -137,35 +137,10 @@ export const PersonnelTab: React.FC<{
             <button
               type="button"
               onClick={() => dismissAlert(config.type)}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '13px',
-                fontWeight: 700,
-                color: isDanger ? '#FCA5A5' : '#93C5FD',
-                padding: '8px 16px',
-                borderRadius: '14px',
-                marginLeft: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                cursor: 'pointer',
-                userSelect: 'none',
-              }}
-              className="card-surface"
+              className={`card-surface personnel-alert-btn ${isDanger ? 'personnel-alert-btn--danger' : 'personnel-alert-btn--info'}`}
             >
               <span
-                className="animate-active-indicator"
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: isDanger ? '#F87171' : '#60A5FA',
-                  boxShadow: isDanger
-                    ? '0 0 6px rgba(248, 113, 113, 0.6)'
-                    : '0 0 6px rgba(96, 165, 250, 0.6)',
-                  flexShrink: 0,
-                }}
+                className={`animate-active-indicator personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
               />
               {config.label}
             </button>
@@ -176,17 +151,7 @@ export const PersonnelTab: React.FC<{
   const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px 32px',
-        background: 'transparent',
-        overflowY: 'auto',
-      }}
-    >
+    <div ref={scrollContainerRef} className="personnel-tab-root">
       <CollapsibleHeader
         title="On-Call Board"
         subtitle={
@@ -201,7 +166,7 @@ export const PersonnelTab: React.FC<{
           onClick={handleCopyAllOnCall}
           title="Copy All On-Call Info"
           aria-label="Copy All On-Call Info"
-          style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          className="header-btn-mr"
           icon={
             <svg
               width="14"
@@ -224,7 +189,7 @@ export const PersonnelTab: React.FC<{
           onClick={handleExportCsv}
           title="Export to CSV (Excel)"
           aria-label="Export to CSV"
-          style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          className="header-btn-mr"
           icon={
             <svg
               width="14"
@@ -251,7 +216,7 @@ export const PersonnelTab: React.FC<{
             }}
             title="Pop Out Board"
             aria-label="Pop Out Board"
-            style={{ marginRight: '8px', transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}
+            className="header-btn-mr"
             icon={
               <svg
                 width="14"
@@ -275,10 +240,8 @@ export const PersonnelTab: React.FC<{
         <TactileButton
           variant="primary"
           aria-label="Add Card"
-          style={{
-            padding: isCollapsed ? '8px 16px' : '15px 32px',
-            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+          className="btn-collapsible"
+          style={{ padding: isCollapsed ? '8px 16px' : '15px 32px' }}
           onClick={() => setIsAddingTeam(true)}
         >
           + ADD CARD
@@ -348,7 +311,7 @@ export const PersonnelTab: React.FC<{
         title="Rename Card"
         width="400px"
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="modal-form-body">
           <Input
             value={renamingTeam?.new || ''}
             onChange={(e) => setRenamingTeam((p) => (p ? { ...p, new: e.target.value } : null))}
@@ -361,7 +324,7 @@ export const PersonnelTab: React.FC<{
               }
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div className="modal-form-actions">
             <TactileButton variant="secondary" onClick={() => setRenamingTeam(null)}>
               Cancel
             </TactileButton>
@@ -387,7 +350,7 @@ export const PersonnelTab: React.FC<{
         title="Add New Card"
         width="400px"
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="modal-form-body">
           <Input
             placeholder="Card Name (e.g. SRE, Support)"
             value={newTeamName}
@@ -401,7 +364,7 @@ export const PersonnelTab: React.FC<{
               }
             }}
           />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div className="modal-form-actions">
             <TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>
               Cancel
             </TactileButton>

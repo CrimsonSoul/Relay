@@ -130,6 +130,12 @@ if (!gotLock) {
       loggers.main.error('Failed to initialize data', { error });
     }
 
+    state.mainWindow.once('ready-to-show', () => {
+      state.mainWindow?.show();
+      state.mainWindow?.focus();
+      loggers.main.debug('ready-to-show fired');
+    });
+
     if (isDev) {
       await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
@@ -142,12 +148,6 @@ if (!gotLock) {
         throw err;
       });
     }
-
-    state.mainWindow.once('ready-to-show', () => {
-      state.mainWindow?.show();
-      state.mainWindow?.focus();
-      loggers.main.debug('ready-to-show fired');
-    });
 
     // Webview security: restrict to HTTPS allowlist only
     const ALLOWED_WEBVIEW_ORIGINS = [

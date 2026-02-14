@@ -102,17 +102,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        minHeight: 0,
-        padding: '24px 32px',
-        background: 'transparent',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="tab-layout">
       <CollapsibleHeader
         title="Personnel Directory"
         subtitle="Global search and management of organization contacts"
@@ -127,16 +117,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         }
       >
         {dir.filtered.length > 0 && (
-          <div
-            style={{
-              fontSize: '13px',
-              color: 'var(--color-text-tertiary)',
-              whiteSpace: 'nowrap',
-              marginRight: '8px',
-            }}
-          >
-            {dir.filtered.length} matches
-          </div>
+          <div className="match-count">{dir.filtered.length} matches</div>
         )}
         <TactileButton
           onClick={() =>
@@ -163,14 +144,13 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               ></polyline>
             </svg>
           }
-          style={{ marginRight: '8px', flexShrink: 0, width: '44px', height: '44px', padding: 0 }}
+          className="sort-toggle-btn"
+          style={{ height: '44px', padding: 0 }}
         />
         <TactileButton
           variant="primary"
-          style={{
-            padding: dir.isHeaderCollapsed ? '8px 16px' : '12px 24px',
-            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+          className="btn-collapsible"
+          style={{ padding: dir.isHeaderCollapsed ? '8px 16px' : '12px 24px' }}
           onClick={() => dir.setIsAddModalOpen(true)}
           icon={
             <svg
@@ -200,7 +180,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         role="toolbar"
         aria-label="Contacts list"
         tabIndex={0}
-        style={{ flex: 1, minHeight: 0, outline: 'none' }}
+        className="tab-list-container"
       >
         <AutoSizer
           renderProp={({ height, width }) => (
@@ -218,19 +198,8 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           )}
         />
         {dir.filtered.length === 0 && (
-          <div
-            style={{
-              height: '200px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--color-text-tertiary)',
-              fontStyle: 'italic',
-              flexDirection: 'column',
-              gap: '8px',
-            }}
-          >
-            <div style={{ fontSize: '24px', opacity: 0.3 }}>∅</div>
+          <div className="tab-empty-state">
+            <div className="tab-empty-state-icon">∅</div>
             <div>No contacts found</div>
           </div>
         )}
