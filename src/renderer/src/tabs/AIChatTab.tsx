@@ -19,28 +19,19 @@ export const AIChatTab: React.FC = () => {
   } = useAIChat();
 
   return (
-    <div
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: '24px 32px',
-        background: 'transparent',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="tab-layout">
       <CollapsibleHeader
         title="AI Chat"
         subtitle="Private session • Data clears when you leave"
         isCollapsed={true}
       >
-        <div style={{ display: 'flex', gap: '8px', marginRight: '16px' }}>
+        <div className="ai-service-switcher">
           {AI_SERVICES.map((service) => (
             <Tooltip key={service.id} content={`Switch to ${service.label}`}>
               <TactileButton
                 onClick={() => setActiveService(service.id)}
                 variant={activeService === service.id ? 'primary' : 'secondary'}
-                style={{ transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)', minWidth: '100px' }}
+                className="ai-service-btn"
               >
                 {service.label}
               </TactileButton>
@@ -60,7 +51,7 @@ export const AIChatTab: React.FC = () => {
               strokeWidth="3"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ animation: isLoading[activeService] ? 'spin 1s linear infinite' : 'none' }}
+              className={isLoading[activeService] ? 'animate-spin' : ''}
             >
               <path d="M23 4v6h-6" />
               <path d="M1 20v-6h6" />
@@ -70,29 +61,8 @@ export const AIChatTab: React.FC = () => {
         />
       </CollapsibleHeader>
 
-      <div
-        style={{
-          flex: 1,
-          position: 'relative',
-          background: 'black',
-          overflow: 'hidden',
-          borderRadius: '16px',
-          WebkitMaskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='16' ry='16' fill='white' /%3E%3C/svg%3E")`,
-          maskImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect x='0' y='0' width='100%25' height='100%25' rx='16' ry='16' fill='white' /%3E%3C/svg%3E")`,
-          transform: 'translateZ(0)',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            borderRadius: '16px',
-            border: '1px solid rgba(255,255,255,0.06)',
-            boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
-            pointerEvents: 'none',
-            zIndex: 10,
-          }}
-        />
+      <div className="webview-container">
+        <div className="webview-border-overlay" />
         {!isSuspended.gemini ? (
           <webview
             ref={geminiRef}
@@ -101,16 +71,8 @@ export const AIChatTab: React.FC = () => {
             useragent={CHROME_USER_AGENT}
             title="Gemini AI Chat"
             webpreferences="contextIsolation=yes, nodeIntegration=no"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              background: 'transparent',
-              visibility: activeService === 'gemini' ? 'visible' : 'hidden',
-            }}
+            className="webview-frame webview-frame--absolute"
+            style={{ visibility: activeService === 'gemini' ? 'visible' : 'hidden' }}
           />
         ) : (
           activeService === 'gemini' && (
@@ -125,16 +87,8 @@ export const AIChatTab: React.FC = () => {
             useragent={CHROME_USER_AGENT}
             title="ChatGPT AI Chat"
             webpreferences="contextIsolation=yes, nodeIntegration=no"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              border: 'none',
-              background: 'transparent',
-              visibility: activeService === 'chatgpt' ? 'visible' : 'hidden',
-            }}
+            className="webview-frame webview-frame--absolute"
+            style={{ visibility: activeService === 'chatgpt' ? 'visible' : 'hidden' }}
           />
         ) : (
           activeService === 'chatgpt' && (

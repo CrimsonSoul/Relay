@@ -85,7 +85,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={serverToEdit ? 'Edit Server' : 'Add Server'}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div className="add-server-form">
         <Input
           label="Server Name (Required)"
           value={formData.name}
@@ -93,7 +93,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. SRV-001"
           autoFocus
         />
-        <div style={{ display: 'flex', gap: '24px' }}>
+        <div className="add-server-row">
           <Input
             label="Business Area"
             value={formData.businessArea}
@@ -117,7 +117,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="Notes..."
         />
 
-        <div style={{ display: 'flex', gap: '24px' }}>
+        <div className="add-server-row">
           <Input
             label="LOB Owner (Email)"
             value={formData.owner}
@@ -141,18 +141,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. Windows"
         />
 
-        {submitError && (
-          <div
-            style={{
-              color: 'var(--color-text-danger, #ff6b6b)',
-              fontSize: '13px',
-              marginTop: '4px',
-            }}
-          >
-            {submitError}
-          </div>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+        {submitError && <div className="add-server-error">{submitError}</div>}
+        <div className="add-server-actions">
           <TactileButton onClick={handleSubmit} disabled={isSubmitting || !formData.name}>
             {isSubmitting ? 'Saving...' : 'Save Server'}
           </TactileButton>

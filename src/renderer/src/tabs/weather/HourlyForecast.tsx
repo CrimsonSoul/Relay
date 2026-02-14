@@ -54,49 +54,15 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
   if (!weather) return null;
 
   return (
-    <div
-      style={{
-        background: 'var(--app-surface)',
-        borderRadius: '16px',
-        padding: '20px',
-        border: '1px solid rgba(255,255,255,0.06)',
-        flexShrink: 0,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-      }}
-    >
-      <h3
-        style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          marginBottom: '16px',
-          color: 'var(--color-text-secondary)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        Hourly Forecast
-      </h3>
+    <div className="hourly-forecast">
+      <h3 className="hourly-forecast-title">Hourly Forecast</h3>
       <ul
-        className="weather-scroll-container"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          padding: '8px 4px',
-          scrollBehavior: 'smooth',
-          listStyle: 'none',
-          margin: 0,
-        }}
+        className="hourly-forecast-list weather-scroll-container"
         onWheel={(e) => {
-          // Smart horizontal scrolling: convert vertical scroll to horizontal
           const container = e.currentTarget;
           const hasHorizontalScroll = container.scrollWidth > container.clientWidth;
 
           if (hasHorizontalScroll) {
-            // Use deltaX if explicitly scrolling horizontally (trackpad gesture)
-            // Otherwise convert deltaY (mouse wheel) to horizontal scroll
             const scrollAmount = e.deltaX === 0 ? e.deltaY : e.deltaX;
 
             if (scrollAmount !== 0) {
@@ -124,63 +90,18 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
             <li
               key={item.time}
               aria-label={ariaLabel}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                background: isNow ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                minWidth: '48px',
-                flexShrink: 0,
-                transition: 'all var(--transition-smooth)',
-                transformOrigin: 'center center',
-                cursor: 'default',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = isNow
-                  ? 'rgba(59, 130, 246, 0.25)'
-                  : 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.transform = 'translateY(-4px) scale(1.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = isNow
-                  ? 'rgba(59, 130, 246, 0.15)'
-                  : 'transparent';
-                e.currentTarget.style.transform = 'translateY(0) scale(1)';
-              }}
+              className={`hourly-forecast-item${isNow ? ' hourly-forecast-item--now' : ''}`}
             >
-              <span
-                style={{
-                  fontSize: '12px',
-                  color: isNow ? 'var(--color-accent-blue)' : 'var(--color-text-tertiary)',
-                  marginBottom: '6px',
-                  fontWeight: isNow ? 600 : 400,
-                }}
-              >
-                {isNow ? 'Now' : hourLabel}
-              </span>
+              <span className="hourly-forecast-time">{isNow ? 'Now' : hourLabel}</span>
               <Tooltip content={getWeatherDescription(item.code)} position="top">
-                <div style={{ marginBottom: '6px' }}>{getWeatherIcon(item.code, 18)}</div>
+                <div className="hourly-forecast-icon">{getWeatherIcon(item.code, 18)}</div>
               </Tooltip>
-              {/* Rain Chance */}
               {item.precip > 0 ? (
-                <div
-                  style={{
-                    fontSize: '10px',
-                    color: '#60A5FA',
-                    fontWeight: 600,
-                    marginBottom: '2px',
-                  }}
-                >
-                  {item.precip}%
-                </div>
+                <div className="hourly-forecast-precip">{item.precip}%</div>
               ) : (
-                <div style={{ height: '15px' }} />
+                <div className="hourly-forecast-precip-spacer" />
               )}
-              <span style={{ fontSize: '14px', fontWeight: 600, color: '#ffffff' }}>
-                {Math.round(item.temp)}°
-              </span>
+              <span className="hourly-forecast-temp">{Math.round(item.temp)}°</span>
             </li>
           );
         })}

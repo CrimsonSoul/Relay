@@ -13,25 +13,15 @@ type CompositionListProps = {
 export const CompositionList: React.FC<CompositionListProps> = ({ log, itemData, onScroll }) => {
   if (log.length === 0) {
     return (
-      <div
-        style={{
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: '16px',
-          color: 'var(--color-text-tertiary)',
-        }}
-      >
-        <div style={{ fontSize: '48px', opacity: 0.1 }}>∅</div>
+      <div className="composition-list-empty">
+        <div className="composition-list-empty-icon">∅</div>
         <div>No recipients selected</div>
       </div>
     );
   }
 
   return (
-    <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+    <div className="composition-list-container">
       <AutoSizer
         renderProp={({ height, width }) => (
           <List

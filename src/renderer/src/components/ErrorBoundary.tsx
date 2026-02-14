@@ -38,51 +38,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         return this.props.fallback;
       }
       return (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100vh',
-            background: 'var(--color-bg-app)',
-            color: 'var(--color-text-primary)',
-            padding: '40px',
-            textAlign: 'center',
-          }}
-        >
-          <div style={{ fontSize: '48px', marginBottom: '20px', opacity: 0.3 }}>⚠</div>
-          <h1 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '12px' }}>
-            Something went wrong
-          </h1>
-          <p
-            style={{
-              fontSize: '14px',
-              color: 'var(--color-text-secondary)',
-              marginBottom: '24px',
-              maxWidth: '400px',
-            }}
-          >
+        <div className="error-page">
+          <div className="error-page-icon">⚠</div>
+          <h1 className="error-page-title">Something went wrong</h1>
+          <p className="error-page-message">
             The application encountered an unexpected error. Please restart the application.
           </p>
-          <pre
-            style={{
-              fontSize: '11px',
-              color: 'var(--color-text-tertiary)',
-              background: 'rgba(255,255,255,0.05)',
-              padding: '12px 16px',
-              borderRadius: '6px',
-              maxWidth: '500px',
-              overflow: 'auto',
-              textAlign: 'left',
-            }}
-          >
-            {this.state.error?.message || 'Unknown error'}
-          </pre>
+          <pre className="error-page-stack">{this.state.error?.message || 'Unknown error'}</pre>
           <TactileButton
             onClick={() => window.location.reload()}
             variant="primary"
-            style={{ marginTop: '24px' }}
+            className="error-page-reload-btn"
           >
             Reload Application
           </TactileButton>

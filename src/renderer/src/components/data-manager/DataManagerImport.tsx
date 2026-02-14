@@ -20,78 +20,39 @@ export const DataManagerImport: React.FC<Props> = ({
   lastImportResult,
   onClearResult,
 }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-    <div
-      style={{
-        fontSize: '18px',
-        fontWeight: 700,
-        color: 'var(--color-text-tertiary)',
-        textTransform: 'uppercase',
-        letterSpacing: '0.04em',
-      }}
-    >
-      Import Data
-    </div>
-    <div
-      style={{
-        fontSize: '18px',
-        color: 'var(--color-text-secondary)',
-        lineHeight: 1.55,
-      }}
-    >
+  <div className="data-manager-section">
+    <div className="data-manager-section-heading">Import Data</div>
+    <div className="data-manager-section-description">
       Import data from JSON or CSV files. Existing records will be updated by email (contacts), name
       (servers), or team+role+name (on-call).
     </div>
-    <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+    <div className="data-manager-controls-row">
       <CategorySelect value={importCategory} onChange={setImportCategory} excludeAll />
       <TactileButton
         onClick={onImport}
         variant="primary"
         disabled={importing}
-        style={{ minWidth: '170px', height: '56px', fontSize: '20px', justifyContent: 'center' }}
+        className="dm-big-btn"
+        style={{ minWidth: '170px', height: '56px' }}
       >
         {importing ? 'Importing...' : 'Import...'}
       </TactileButton>
     </div>
     {lastImportResult && (
       <div
-        style={{
-          padding: '14px 18px',
-          background: lastImportResult.success ? 'rgba(0, 180, 80, 0.1)' : 'rgba(255, 80, 80, 0.1)',
-          border: `1px solid ${
-            lastImportResult.success ? 'rgba(0, 180, 80, 0.3)' : 'rgba(255, 80, 80, 0.3)'
-          }`,
-          borderRadius: '10px',
-          fontSize: '18px',
-        }}
+        className={`data-manager-import-result ${lastImportResult.success ? 'data-manager-import-result--success' : 'data-manager-import-result--error'}`}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <div className="data-manager-import-result-header">
           <span>
             Imported: {lastImportResult.imported}, Updated: {lastImportResult.updated}, Skipped:{' '}
             {lastImportResult.skipped}
           </span>
-          <button
-            type="button"
-            onClick={onClearResult}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--color-text-tertiary)',
-              cursor: 'pointer',
-              padding: 0,
-            }}
-          >
+          <button type="button" onClick={onClearResult} className="data-manager-import-close-btn">
             &times;
           </button>
         </div>
         {lastImportResult.errors.length > 0 && (
-          <div
-            style={{
-              marginTop: '8px',
-              fontSize: '16px',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
+          <div className="data-manager-import-errors">
             Errors: {lastImportResult.errors.slice(0, 3).join(', ')}
             {lastImportResult.errors.length > 3 && ` +${lastImportResult.errors.length - 3} more`}
           </div>

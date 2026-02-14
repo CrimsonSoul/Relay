@@ -138,15 +138,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   return (
     <div
+      className="assembler-layout"
       style={{
-        display: 'grid',
         gridTemplateColumns: asm.isGroupSidebarCollapsed ? '24px 1fr' : '240px 1fr',
-        gap: '0px',
-        height: '100%',
-        minHeight: 0,
-        alignItems: 'start',
-        transition: 'grid-template-columns 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-        overflow: 'visible',
       }}
     >
       <AssemblerSidebar
@@ -161,19 +155,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         onImportFromCsv={importFromCsv}
         currentEmails={currentEmails}
       />
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          minHeight: 0,
-          padding: '24px 32px',
-          background: 'transparent',
-          overflow: 'hidden',
-          position: 'relative',
-          zIndex: 5,
-        }}
-      >
+      <div className="assembler-main-panel">
         <CollapsibleHeader
           title="Data Composition"
           subtitle="Assemble bridge recipients and manage emergency communications"
@@ -182,57 +164,38 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           {manualRemoves.length > 0 && (
             <TactileButton
               onClick={onUndoRemove}
-              style={{
-                height: '38px',
-                padding: '0 16px',
-                fontSize: '13px',
-                transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
+              className="assembler-header-btn"
+              style={{ height: '38px', padding: '0 16px' }}
             >
               UNDO
             </TactileButton>
           )}
           <TactileButton
             onClick={onResetManual}
-            style={{
-              height: '38px',
-              padding: '0 16px',
-              fontSize: '13px',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
+            className="assembler-header-btn"
+            style={{ height: '38px', padding: '0 16px' }}
           >
             RESET
           </TactileButton>
           <TactileButton
             onClick={() => setIsHistoryOpen(true)}
-            style={{
-              height: '38px',
-              padding: '0 16px',
-              fontSize: '13px',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
+            className="assembler-header-btn"
+            style={{ height: '38px', padding: '0 16px' }}
           >
             HISTORY
           </TactileButton>
           <TactileButton
             onClick={handleCopyWithHistory}
-            style={{
-              height: '38px',
-              padding: '0 16px',
-              fontSize: '13px',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
+            className="assembler-header-btn"
+            style={{ height: '38px', padding: '0 16px' }}
           >
             COPY
           </TactileButton>
           <TactileButton
             onClick={() => asm.setIsBridgeReminderOpen(true)}
             variant="primary"
-            style={{
-              height: '38px',
-              padding: '0 20px',
-              transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            }}
+            className="assembler-header-btn"
+            style={{ height: '38px', padding: '0 20px' }}
           >
             DRAFT BRIDGE
           </TactileButton>

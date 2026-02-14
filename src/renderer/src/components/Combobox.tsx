@@ -62,7 +62,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   };
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%', ...style }}>
+    <div ref={containerRef} className="combobox" style={style}>
       <Input
         ref={inputRef}
         value={value}
@@ -84,23 +84,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
       />
 
       {isOpen && (filteredOptions.length > 0 || !value) && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            marginTop: '4px',
-            background: 'var(--color-bg-chrome)',
-            border: 'var(--border-medium)',
-            borderRadius: '10px',
-            maxHeight: '200px',
-            overflowY: 'auto',
-            zIndex: 9999,
-            boxShadow: 'var(--shadow-lg)',
-            padding: '4px',
-          }}
-        >
+        <div className="combobox-dropdown">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((opt, idx) => (
               <div
@@ -115,45 +99,16 @@ export const Combobox: React.FC<ComboboxProps> = ({
                     handleSelect(opt.value);
                   }
                 }}
-                style={{
-                  padding: '8px 12px',
-                  fontSize: '13px',
-                  color: 'var(--color-text-primary)',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--color-bg-surface-elevated)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                }}
+                className="combobox-option"
               >
                 <span className="text-truncate">{opt.label}</span>
                 {opt.subLabel && (
-                  <span
-                    className="text-truncate"
-                    style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}
-                  >
-                    {opt.subLabel}
-                  </span>
+                  <span className="text-truncate combobox-option-sublabel">{opt.subLabel}</span>
                 )}
               </div>
             ))
           ) : (
-            <div
-              style={{
-                padding: '8px 12px',
-                fontSize: '13px',
-                color: 'var(--color-text-tertiary)',
-                fontStyle: 'italic',
-              }}
-            >
-              No matches
-            </div>
+            <div className="combobox-empty">No matches</div>
           )}
         </div>
       )}

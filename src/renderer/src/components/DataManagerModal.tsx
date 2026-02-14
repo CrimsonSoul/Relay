@@ -74,16 +74,8 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Data Manager" width="820px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
-        <div
-          role="tablist"
-          aria-label="Data Manager sections"
-          style={{
-            display: 'flex',
-            borderBottom: '1px solid var(--border-subtle)',
-            marginBottom: '10px',
-          }}
-        >
+      <div className="data-manager-body">
+        <div role="tablist" aria-label="Data Manager sections" className="data-manager-tablist">
           <TabButton active={activeTab === 'overview'} onClick={() => setActiveTab('overview')}>
             Overview
           </TabButton>

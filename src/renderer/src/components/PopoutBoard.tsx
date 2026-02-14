@@ -71,34 +71,10 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
         return (
           <Tooltip key={c.type} content="Alert from Main Window">
             <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '13px',
-                fontWeight: 700,
-                color: isDanger ? '#FCA5A5' : '#93C5FD',
-                padding: '8px 16px',
-                borderRadius: '14px',
-                marginLeft: '8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                userSelect: 'none',
-              }}
-              className="card-surface"
+              className={`card-surface popout-alert-chip ${isDanger ? 'popout-alert-chip--danger' : 'popout-alert-chip--info'}`}
             >
               <span
-                className="animate-active-indicator"
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  background: isDanger ? '#F87171' : '#60A5FA',
-                  boxShadow: isDanger
-                    ? '0 0 6px rgba(248, 113, 113, 0.6)'
-                    : '0 0 6px rgba(96, 165, 250, 0.6)',
-                  flexShrink: 0,
-                }}
+                className={`animate-active-indicator popout-alert-indicator ${isDanger ? 'popout-alert-indicator--danger' : 'popout-alert-indicator--info'}`}
               />
               {c.label}
             </div>
@@ -109,57 +85,12 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   return (
     <div
       ref={scrollContainerRef}
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: isKiosk ? '0' : '20px 24px 24px 24px',
-        background: 'var(--color-bg-app)',
-        overflowY: 'auto',
-        position: 'relative',
-      }}
+      className={`popout-board${isKiosk ? ' popout-board--kiosk' : ''}`}
     >
       {isRemoteDragging && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 9999,
-            background: 'rgba(11, 13, 18, 0.4)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            pointerEvents: 'all',
-            transition: 'all 0.3s ease',
-          }}
-        >
-          <div
-            style={{
-              background: 'var(--color-bg-chrome)',
-              padding: '20px 40px',
-              borderRadius: '16px',
-              border: 'var(--border-medium)',
-              color: '#fff',
-              fontSize: '18px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '16px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
-            }}
-          >
-            <span
-              className="animate-spin"
-              style={{
-                display: 'inline-block',
-                width: '20px',
-                height: '20px',
-                border: '3px solid rgba(255,255,255,0.1)',
-                borderTopColor: 'var(--color-accent-blue)',
-                borderRadius: '50%',
-              }}
-            />
+        <div className="popout-drag-overlay">
+          <div className="popout-drag-overlay-inner">
+            <span className="animate-spin popout-drag-spinner" />
             Board being updated...
           </div>
         </div>
@@ -170,11 +101,9 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
           title="On-Call Board"
           style={{ paddingLeft: isMac ? '80px' : '0px', transition: 'padding-left 0.25s ease' }}
           subtitle={
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="popout-subtitle-row">
               <span>{weekRange}</span>
-              <span
-                style={{ fontSize: '12px', color: 'var(--color-text-quaternary)', opacity: 0.8 }}
-              >
+              <span className="popout-subtitle-label">
                 Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
               {renderAlerts()}
@@ -185,7 +114,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
           <TactileButton
             onClick={() => setIsKiosk(true)}
             title="Kiosk Mode (Full Screen)"
-            style={{ marginRight: '8px' }}
+            className="header-btn-mr"
             icon={
               <svg
                 width="14"
@@ -226,44 +155,15 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       )}
 
       {isKiosk && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: '20px',
-            right: '20px',
-            zIndex: 1000,
-            display: 'flex',
-            gap: '8px',
-            opacity: 0.4,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0.4')}
-        >
-          <div
-            style={{
-              background: 'var(--color-bg-surface-elevated)',
-              padding: '4px 12px',
-              borderRadius: '10px',
-              fontSize: '11px',
-              color: '#fff',
-              backdropFilter: 'blur(10px)',
-              border: 'var(--border-medium)',
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
+        <div className="popout-kiosk-controls">
+          <div className="popout-kiosk-timestamp">
             Last Update: {lastUpdated.toLocaleTimeString()}
           </div>
           <TactileButton
             size="sm"
             onClick={() => setIsKiosk(false)}
             variant="ghost"
-            style={{
-              background: 'var(--color-bg-surface-elevated)',
-              border: 'var(--border-medium)',
-              backdropFilter: 'blur(10px)',
-              color: '#fff',
-            }}
+            className="popout-kiosk-exit-btn"
           >
             Exit Kiosk
           </TactileButton>
@@ -272,10 +172,9 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
       <div
         ref={animationParent}
-        className="oncall-grid"
+        className={`oncall-grid${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         role="list"
         aria-label="On-Call Teams"
-        style={{ padding: isKiosk ? '40px' : '0' }}
       >
         {teams.map((team, idx) => (
           <div key={team} className="oncall-grid-item" role="listitem">

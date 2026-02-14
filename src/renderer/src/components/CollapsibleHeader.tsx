@@ -27,51 +27,18 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
 }) => {
   return (
     <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: isCollapsed ? 'center' : 'flex-end',
-        marginBottom: isCollapsed ? '12px' : '24px',
-        gap: '12px',
-        flexWrap: 'wrap',
-        transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-        flexShrink: 0,
-        ...style,
-      }}
+      className={`collapsible-header ${isCollapsed ? 'collapsible-header--collapsed' : 'collapsible-header--expanded'}`}
+      style={style}
     >
-      <div style={{ minWidth: '200px', flex: 1 }}>
+      <div className="collapsible-header-left">
         <h1
-          style={{
-            fontSize: isCollapsed ? collapsedTitleSize : expandedTitleSize,
-            fontWeight: 700,
-            margin: '0 0 8px 0',
-            color: '#ffffff',
-            transition: 'font-size 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            lineHeight: 1.1,
-            letterSpacing: '-0.02em',
-            willChange: 'font-size',
-            whiteSpace: 'normal',
-            wordBreak: 'keep-all',
-            overflowWrap: 'normal',
-          }}
+          className="collapsible-header-title"
+          style={{ fontSize: isCollapsed ? collapsedTitleSize : expandedTitleSize }}
         >
           {title}
         </h1>
         <div
-          style={{
-            fontSize: 'clamp(14px, 2vw, 16px)',
-            color: 'var(--color-text-secondary)',
-            margin: 0,
-            fontWeight: 500,
-            maxHeight: isCollapsed ? '0px' : '150px',
-            opacity: isCollapsed ? 0 : 1,
-            overflow: 'hidden',
-            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            display: 'block',
-            lineHeight: 1.5,
-            willChange: 'opacity, max-height',
-            paddingBottom: isCollapsed ? 0 : '4px',
-          }}
+          className={`collapsible-header-subtitle ${isCollapsed ? 'collapsible-header-subtitle--collapsed' : 'collapsible-header-subtitle--expanded'}`}
         >
           {subtitle}
         </div>
@@ -79,33 +46,12 @@ export const CollapsibleHeader: React.FC<CollapsibleHeaderProps> = ({
 
       {(search || children) && (
         <div
-          style={{
-            display: 'flex',
-            gap: isCollapsed ? '12px' : '16px', // Reduced from 24px for tighter cohesion
-            alignItems: 'center',
-            flex: '0 1 auto',
-            justifyContent: 'flex-end',
-            transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+          className={`collapsible-header-right ${isCollapsed ? 'collapsible-header-right--collapsed' : 'collapsible-header-right--expanded'}`}
         >
-          {search && (
-            <div
-              style={{
-                flex: '0 1 420px',
-                minWidth: '180px',
-                transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-              }}
-            >
-              {search}
-            </div>
-          )}
+          {search && <div className="collapsible-header-search">{search}</div>}
           {children && (
             <div
-              style={{
-                display: 'flex',
-                gap: isCollapsed ? '8px' : '12px', // Increased from 8px for better touch targets
-                alignItems: 'center',
-              }}
+              className={`collapsible-header-actions ${isCollapsed ? 'collapsible-header-actions--collapsed' : 'collapsible-header-actions--expanded'}`}
             >
               {children}
             </div>

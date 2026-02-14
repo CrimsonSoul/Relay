@@ -25,24 +25,9 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title} width="400px">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div
-          style={{
-            fontSize: '15px',
-            color: 'var(--color-text-secondary)',
-            lineHeight: 1.5,
-          }}
-        >
-          {message}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: '12px',
-            marginTop: '8px',
-          }}
-        >
+      <div className="confirm-modal-body">
+        <div className="confirm-modal-message">{message}</div>
+        <div className="confirm-modal-actions">
           <TactileButton variant="secondary" onClick={onClose}>
             {cancelLabel}
           </TactileButton>
@@ -51,7 +36,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             style={
               isDanger
                 ? { background: 'var(--color-danger)', borderColor: 'rgba(255,0,0,0.2)' }
-                : {}
+                : undefined
             }
             onClick={() => {
               onConfirm();

@@ -44,37 +44,16 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
 
   return (
     <div ref={setNodeRef} style={style}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns:
-            '28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(100px, 130px) 28px',
-          gap: '10px',
-          alignItems: 'center',
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.05)',
-          padding: '10px 12px',
-          borderRadius: '12px',
-          transition: 'background 0.2s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.04)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
-      >
+      <div className="sortable-edit-row-grid">
         <div
           {...attributes}
           {...listeners}
-          style={{
-            cursor: isDragging ? 'grabbing' : 'grab',
-            opacity: 0.4,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '16px',
-          }}
+          className="sortable-edit-row-handle"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
         >
           ⋮⋮
         </div>
-        <div style={{ position: 'relative', minWidth: 0 }}>
+        <div className="sortable-edit-row-field">
           <Combobox
             value={row.role}
             onChange={(val) => onUpdate({ ...row, role: val })}
@@ -92,7 +71,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
             onOpenChange={setIsActive}
           />
         </div>
-        <div style={{ position: 'relative', minWidth: 0 }}>
+        <div className="sortable-edit-row-field">
           <Combobox
             value={row.name}
             onChange={handleNameChange}
@@ -115,38 +94,16 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
           placeholder="Time Window"
           style={{ fontSize: '12px', color: 'var(--color-text-secondary)', textAlign: 'center' }}
         />
-        <div
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           aria-label="Remove row"
-          style={{
-            cursor: 'pointer',
-            color: 'var(--color-danger)',
-            opacity: 0.6,
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '24px',
-            height: '24px',
-            borderRadius: '50%',
-            transition: 'all 0.2s',
-            flexShrink: 0,
-          }}
+          className="sortable-edit-row-remove"
           onClick={onRemove}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               onRemove();
             }
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = '1';
-            e.currentTarget.style.background = 'rgba(255, 92, 92, 0.1)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = '0.6';
-            e.currentTarget.style.background = 'transparent';
           }}
         >
           <svg
@@ -162,7 +119,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
-        </div>
+        </button>
       </div>
     </div>
   );

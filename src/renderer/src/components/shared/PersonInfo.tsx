@@ -48,19 +48,9 @@ interface PersonInfoProps {
 export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLookup }) => {
   if (!value || value === '-' || value === '0')
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', opacity: 0.3 }}>
-        <span
-          style={{
-            color: 'var(--color-text-tertiary)',
-            fontWeight: 600,
-            fontSize: '12px',
-            width: '80px',
-            letterSpacing: '0.05em',
-          }}
-        >
-          {label}
-        </span>
-        <span style={{ fontSize: '15px' }}>-</span>
+      <div className="person-info person-info--empty">
+        <span className="person-info-label">{label}</span>
+        <span className="person-info-empty-value">-</span>
       </div>
     );
 
@@ -80,60 +70,24 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
     .join('; ');
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '15px' }}>
-      <span
-        style={{
-          color: 'var(--color-text-tertiary)',
-          fontWeight: 800,
-          fontSize: '12px',
-          width: '80px',
-          letterSpacing: '0.08em',
-        }}
-      >
-        {label}
-      </span>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          overflow: 'hidden',
-          minWidth: 0,
-        }}
-      >
+    <div className="person-info">
+      <span className="person-info-label person-info-label--strong">{label}</span>
+      <div className="person-info-name-row">
         <div
+          className="person-info-avatar"
           style={{
-            width: '32px',
-            height: '32px',
-            borderRadius: '10px',
             background: colorScheme.bg,
             color: colorScheme.text,
             border: `1px solid ${colorScheme.border}`,
-            fontSize: '14px',
-            fontWeight: 800,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
           }}
         >
           {displayName.charAt(0).toUpperCase()}
         </div>
         <Tooltip content={allNames}>
-          <span
-            className="text-truncate"
-            style={{
-              color: 'var(--color-text-primary)',
-              fontWeight: 600,
-              display: 'block',
-              maxWidth: '100%',
-            }}
-          >
+          <span className="text-truncate person-info-name">
             {displayName}
             {parts.length > 1 && (
-              <span style={{ opacity: 0.5, marginLeft: '6px', fontSize: '12px' }}>
-                +{parts.length - 1}
-              </span>
+              <span className="person-info-overflow-count">+{parts.length - 1}</span>
             )}
           </span>
         </Tooltip>

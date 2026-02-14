@@ -51,16 +51,7 @@ export const TeamCard = React.memo(
           role="button"
           tabIndex={0}
           aria-label={`Team: ${team}, ${teamRows.length} members`}
-          className={`card-surface ${isReadOnly ? '' : 'lift-on-hover'}`}
-          style={{
-            padding: '18px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px',
-            height: '100%',
-            boxSizing: 'border-box',
-            cursor: isReadOnly ? 'default' : 'grab',
-          }}
+          className={`card-surface team-card-body ${isReadOnly ? 'team-card-body--readonly' : 'lift-on-hover'}`}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -141,42 +132,14 @@ export const TeamCard = React.memo(
           }}
         >
           <div className="accent-strip" style={{ background: colorScheme.text }} />
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingLeft: '8px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '20px',
-                fontWeight: 700,
-                color: colorScheme.text,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                overflowWrap: 'break-word',
-                wordBreak: 'keep-all',
-                whiteSpace: 'normal',
-                opacity: 0.9,
-              }}
-            >
+          <div className="team-card-header-row">
+            <div className="team-card-name" style={{ color: colorScheme.text }}>
               <Tooltip content={team}>
                 <span>{team}</span>
               </Tooltip>
             </div>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              paddingLeft: '4px',
-              flexGrow: 1,
-              justifyContent: 'center',
-            }}
-          >
+          <div className="team-card-rows">
             {isEmpty ? (
               <div
                 role={isReadOnly ? undefined : 'button'}
@@ -188,17 +151,7 @@ export const TeamCard = React.memo(
                     setIsEditing(true);
                   }
                 }}
-                style={{
-                  padding: '20px',
-                  textAlign: 'center',
-                  color: 'var(--color-text-quaternary)',
-                  fontSize: '14px',
-                  fontStyle: 'italic',
-                  border: '1px dashed rgba(255,255,255,0.06)',
-                  borderRadius: '12px',
-                  margin: '4px 0',
-                  cursor: isReadOnly ? 'default' : 'pointer',
-                }}
+                className={`team-card-empty${isReadOnly ? ' team-card-empty--readonly' : ''}`}
               >
                 {isReadOnly ? 'No personnel assigned' : 'Click to assign personnel'}
               </div>

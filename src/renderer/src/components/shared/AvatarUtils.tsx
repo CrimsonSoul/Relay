@@ -4,19 +4,7 @@ import { getColorForString } from '../../utils/colors';
 export const GroupPill = ({ group }: { group: string }) => {
   const c = getColorForString(group);
   return (
-    <span
-      className="card-surface"
-      style={{
-        fontSize: '13px',
-        color: c.text,
-        padding: '4px 12px',
-        borderRadius: '12px',
-        fontWeight: 600,
-        whiteSpace: 'nowrap',
-        display: 'inline-flex',
-        alignItems: 'center',
-      }}
-    >
+    <span className="card-surface group-pill" style={{ color: c.text }}>
       {group.toUpperCase()}
     </span>
   );
@@ -48,20 +36,14 @@ export const Avatar: React.FC<AvatarProps> = ({ name, email, size = 64, fontSize
   const colorScheme = getColorForString(name || email);
   return (
     <div
+      className="avatar"
       style={{
         width: `${size}px`,
         height: `${size}px`,
-        borderRadius: '18px',
         background: colorScheme.bg,
         border: `1px solid ${colorScheme.border}`,
         color: colorScheme.text,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         fontSize: `${fontSize}px`,
-        fontWeight: 800,
-        flexShrink: 0,
-        position: 'relative',
       }}
     >
       {getInitials(name, email)}

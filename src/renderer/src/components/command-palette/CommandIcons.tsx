@@ -1,41 +1,11 @@
 import React from 'react';
 
 export const ContactIcon: React.FC<{ name: string }> = ({ name }) => {
-  return (
-    <div
-      style={{
-        width: '30px',
-        height: '30px',
-        borderRadius: '8px',
-        background: 'rgba(59, 130, 246, 0.16)',
-        border: '1px solid rgba(96, 165, 250, 0.35)',
-        color: '#93C5FD',
-        fontSize: '13px',
-        fontWeight: 700,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {name[0]?.toUpperCase() || '?'}
-    </div>
-  );
+  return <div className="cmd-icon cmd-icon--contact">{name[0]?.toUpperCase() || '?'}</div>;
 };
 
 export const GroupIcon: React.FC = () => (
-  <div
-    style={{
-      width: '30px',
-      height: '30px',
-      borderRadius: '8px',
-      background: 'rgba(59, 130, 246, 0.14)',
-      border: '1px solid rgba(59, 130, 246, 0.35)',
-      color: '#60A5FA',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}
-  >
+  <div className="cmd-icon cmd-icon--group">
     <svg
       width="16"
       height="16"
@@ -55,19 +25,7 @@ export const GroupIcon: React.FC = () => (
 );
 
 export const ServerIcon: React.FC = () => (
-  <div
-    style={{
-      width: '30px',
-      height: '30px',
-      borderRadius: '8px',
-      background: 'rgba(20, 184, 166, 0.16)',
-      border: '1px solid rgba(45, 212, 191, 0.35)',
-      color: '#5EEAD4',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}
-  >
+  <div className="cmd-icon cmd-icon--server">
     <svg
       width="16"
       height="16"
@@ -183,21 +141,5 @@ export const ActionIcon: React.FC<{ type: string }> = ({ type }) => {
     ),
   };
 
-  return (
-    <div
-      style={{
-        width: '30px',
-        height: '30px',
-        borderRadius: '8px',
-        background: 'var(--color-bg-surface-elevated)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        color: 'var(--color-text-secondary)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {iconMap[type] || null}
-    </div>
-  );
+  return <div className="cmd-icon cmd-icon--action">{iconMap[type] || null}</div>;
 };
