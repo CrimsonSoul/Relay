@@ -243,6 +243,8 @@ Styles are in `src/renderer/src/styles/` — vanilla CSS with design tokens:
 
 No CSS modules. No Tailwind. Components reference class names directly.
 
+For the full visual language, component patterns, and rules for adding new UI, see [DESIGN.md](DESIGN.md).
+
 ## Testing
 
 ### Two Test Suites

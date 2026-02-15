@@ -27,7 +27,6 @@ const svgBuffer = readFileSync(svgPath);
 
 // All sizes needed across platforms
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
-const ICNS_SIZES = [16, 32, 64, 128, 256, 512, 1024];
 
 async function renderPng(size) {
   return sharp(svgBuffer, { density: Math.round((72 * size) / 512) })
