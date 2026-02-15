@@ -1,4 +1,5 @@
 import React from 'react';
+import { TactileButton } from '../../components/TactileButton';
 import type { Location } from './types';
 import { getRadarUrl } from './utils';
 import { useRadar } from './useRadar';
@@ -8,7 +9,7 @@ interface RadarPanelProps {
 }
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { webviewRef } = useRadar(location);
+  const { webviewRef, isLoading, handleRefresh } = useRadar(location);
   const isValidLocation =
     location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
 
@@ -17,6 +18,28 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
       <div className="radar-panel-container">
         {isValidLocation ? (
           <>
+            <TactileButton
+              onClick={handleRefresh}
+              title={isLoading ? 'Refreshing' : 'Refresh Radar'}
+              className="radar-refresh-btn"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className={isLoading ? 'animate-spin' : ''}
+                >
+                  <path d="M23 4v6h-6" />
+                  <path d="M1 20v-6h6" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              }
+            />
             <webview
               ref={webviewRef as React.RefObject<Electron.WebviewTag>}
               key={`${location.latitude.toFixed(2)}-${location.longitude.toFixed(2)}`}

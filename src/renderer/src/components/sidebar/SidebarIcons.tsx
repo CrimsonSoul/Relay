@@ -149,17 +149,33 @@ export const SettingsIcon = () => (
 
 export const AppIcon = () => (
   <svg
-    width="24"
-    height="24"
+    width="32"
+    height="32"
     viewBox="0 0 24 24"
     fill="none"
     stroke="none"
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5" stroke="#60A5FA" strokeWidth="2.5" />
-    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6" stroke="#60A5FA" strokeWidth="2.5" />
-    <path d="M7 12h10" stroke="#60A5FA" strokeWidth="2.5" />
-    <circle cx="12" cy="12" r="2" fill="#3B82F6" />
+    <defs>
+      <linearGradient id="appIconGrad" x1="4" y1="6" x2="20" y2="18" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#FCD34D" />
+        <stop offset="1" stopColor="#F59E0B" />
+      </linearGradient>
+    </defs>
+    <path
+      d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5"
+      stroke="url(#appIconGrad)"
+      strokeWidth="2.5"
+    />
+    <path
+      d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6"
+      stroke="url(#appIconGrad)"
+      strokeWidth="2.5"
+    />
+    <path d="M7 12h10" stroke="url(#appIconGrad)" strokeWidth="2.5" />
+    <circle cx="12" cy="12" r="2" fill="url(#appIconGrad)">
+      <animate attributeName="opacity" values="1;0.4;1" dur="2.5s" repeatCount="indefinite" />
+    </circle>
   </svg>
 );

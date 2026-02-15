@@ -6,13 +6,14 @@ import { Contact, BridgeGroup } from '@shared/ipc';
 
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
-import { SearchInput } from '../components/SearchInput';
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { ListToolbar } from '../components/ListToolbar';
 import { GroupSelector } from '../components/directory/GroupSelector';
 import { VirtualRow } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
 import { DirectoryContextMenu } from '../components/directory/DirectoryContextMenu';
+import { ContactDetailPanel } from '../components/ContactDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useDirectory } from '../hooks/useDirectory';
 import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
@@ -25,7 +26,7 @@ type Props = {
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
-const ROW_HEIGHT = 104;
+const ROW_HEIGHT = 80;
 
 const ScrollController = ({
   listRef,
@@ -69,14 +70,18 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   }, [contextMenu, setContextMenu]);
 
   const handleNotesClick = useCallback((contact: Contact) => setNotesContact(contact), []);
-  const { filtered, recentlyAdded, handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } =
-    dir;
+  const { filtered, handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
+
+  const selectedContact =
+    focusedIndex >= 0 && focusedIndex < filtered.length ? filtered[focusedIndex] : null;
+  const selectedGroups = selectedContact
+    ? groupMap.get(selectedContact.email.toLowerCase()) || []
+    : [];
+  const selectedNote = selectedContact ? getContactNote(selectedContact.email) : undefined;
+
   const itemData = useMemo(
     () => ({
       filtered,
-      recentlyAdded,
-      onAdd: handleAddWrapper,
-      groups,
       groupMap,
       onContextMenu: (e: React.MouseEvent, contact: Contact) => {
         e.preventDefault();
@@ -89,9 +94,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     }),
     [
       filtered,
-      recentlyAdded,
-      handleAddWrapper,
-      groups,
       groupMap,
       focusedIndex,
       setFocusedIndex,
@@ -103,106 +105,127 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
   return (
     <div className="tab-layout">
-      <CollapsibleHeader
-        title="Personnel Directory"
-        subtitle="Global search and management of organization contacts"
-        isCollapsed={dir.isHeaderCollapsed}
-        search={
-          <SearchInput
-            placeholder="Search people..."
-            value={dir.search}
-            onChange={(e) => dir.setSearch(e.target.value)}
-            autoFocus
+      <div className="tab-split-layout">
+        {selectedContact ? (
+          <ContactDetailPanel
+            contact={selectedContact}
+            groups={selectedGroups}
+            noteText={selectedNote?.note}
+            tags={selectedNote?.tags}
+            onEditNotes={() => setNotesContact(selectedContact)}
+            onEdit={() => dir.setEditingContact(selectedContact)}
+            onDelete={() => dir.setDeleteConfirmation(selectedContact)}
+            onAddToAssembler={() => handleAddWrapper(selectedContact)}
           />
-        }
-      >
-        {dir.filtered.length > 0 && (
-          <div className="match-count">{dir.filtered.length} matches</div>
-        )}
-        <TactileButton
-          onClick={() =>
-            dir.setSortConfig((prev) => ({
-              ...prev,
-              direction: prev.direction === 'asc' ? 'desc' : 'asc',
-            }))
-          }
-          title={`Sort: ${dir.sortConfig.direction === 'asc' ? 'Ascending' : 'Descending'}`}
-          icon={
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <polyline
-                points={dir.sortConfig.direction === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'}
-              ></polyline>
-            </svg>
-          }
-          className="sort-toggle-btn"
-          style={{ height: '44px', padding: 0 }}
-        />
-        <TactileButton
-          variant="primary"
-          className="btn-collapsible"
-          style={{ padding: dir.isHeaderCollapsed ? '8px 16px' : '12px 24px' }}
-          onClick={() => dir.setIsAddModalOpen(true)}
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="8.5" cy="7" r="4"></circle>
-              <line x1="20" y1="8" x2="20" y2="14"></line>
-              <line x1="23" y1="11" x2="17" y2="11"></line>
-            </svg>
-          }
-        >
-          ADD CONTACT
-        </TactileButton>
-      </CollapsibleHeader>
-
-      <div
-        ref={listContainerRef}
-        onKeyDown={handleListKeyDown}
-        role="toolbar"
-        aria-label="Contacts list"
-        tabIndex={0}
-        className="tab-list-container"
-      >
-        <AutoSizer
-          renderProp={({ height, width }) => (
-            <List
-              listRef={listRef}
-              rowCount={dir.filtered.length}
-              rowHeight={ROW_HEIGHT}
-              rowComponent={VirtualRow}
-              rowProps={itemData}
-              style={{ height: height ?? 0, width: width ?? 0, outline: 'none' }}
-              onScroll={(e) =>
-                dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
-              }
-            />
-          )}
-        />
-        {dir.filtered.length === 0 && (
-          <div className="tab-empty-state">
-            <div className="tab-empty-state-icon">∅</div>
-            <div>No contacts found</div>
+        ) : (
+          <div className="detail-panel detail-panel--empty">
+            <div className="detail-panel-placeholder">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.3"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <span>Select a contact</span>
+            </div>
           </div>
         )}
+        <div className="tab-main-content">
+          <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
+            {dir.filtered.length > 0 && (
+              <div className="match-count">{dir.filtered.length} contacts</div>
+            )}
+            <TactileButton
+              variant="primary"
+              className="btn-collapsible"
+              onClick={() => dir.setIsAddModalOpen(true)}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="8.5" cy="7" r="4" />
+                  <line x1="20" y1="8" x2="20" y2="14" />
+                  <line x1="23" y1="11" x2="17" y2="11" />
+                </svg>
+              }
+            >
+              ADD CONTACT
+            </TactileButton>
+          </CollapsibleHeader>
+
+          <ListToolbar
+            search={dir.search}
+            onSearchChange={dir.setSearch}
+            placeholder="Search Recipients"
+            sortDirection={dir.sortConfig.direction}
+            onToggleSortDirection={() =>
+              dir.setSortConfig((prev) => ({
+                ...prev,
+                direction: prev.direction === 'asc' ? 'desc' : 'asc',
+              }))
+            }
+            sortKey={dir.sortConfig.key}
+            sortOptions={[
+              { value: 'name', label: 'Name' },
+              { value: 'email', label: 'Email' },
+              { value: 'title', label: 'Title' },
+              { value: 'phone', label: 'Phone' },
+            ]}
+            onSortKeyChange={(key) =>
+              dir.setSortConfig((prev) => ({
+                ...prev,
+                key: key as 'name' | 'email' | 'title' | 'phone',
+              }))
+            }
+          />
+
+          <div
+            ref={listContainerRef}
+            onKeyDown={handleListKeyDown}
+            role="toolbar"
+            aria-label="Contacts list"
+            tabIndex={0}
+            className="tab-list-container"
+          >
+            <AutoSizer
+              renderProp={({ height, width }) => (
+                <List
+                  listRef={listRef}
+                  rowCount={dir.filtered.length}
+                  rowHeight={ROW_HEIGHT}
+                  rowComponent={VirtualRow}
+                  rowProps={itemData}
+                  style={{ height: height ?? 0, width: width ?? 0, outline: 'none' }}
+                  onScroll={(e) =>
+                    dir.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
+                  }
+                />
+              )}
+            />
+            {dir.filtered.length === 0 && (
+              <div className="tab-empty-state">
+                <div className="tab-empty-state-icon">∅</div>
+                <div>No contacts found</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <ScrollController listRef={listRef} focusedIndex={dir.focusedIndex} />

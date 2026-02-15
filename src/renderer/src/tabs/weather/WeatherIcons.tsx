@@ -67,7 +67,7 @@ export const getWeatherIcon = (code: number, size = 24) => {
   // Drizzle / Rain
   if ((code >= 51 && code <= 67) || (code >= 80 && code <= 82)) {
     return (
-      <svg {...props} stroke="#60A5FA">
+      <svg {...props} stroke="#67E8F9">
         <path d={cloudPath} stroke="#A1A1AA" fill="rgba(15, 15, 18, 0.4)" />
         <line x1="8" y1="21" x2="8" y2="24" />
         <line x1="12" y1="21" x2="12" y2="24" />

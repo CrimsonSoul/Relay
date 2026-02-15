@@ -1,38 +1,71 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
+    <!-- Background gradient matching app theme -->
     <linearGradient id="bg_gradient" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#27272A"/>
-      <stop offset="1" stop-color="#09090B"/>
+      <stop offset="0" stop-color="#0c0e14"/>
+      <stop offset="1" stop-color="#060608"/>
     </linearGradient>
+
+    <!-- Amber accent gradient -->
     <linearGradient id="accent_gradient" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#60A5FA"/>
-      <stop offset="1" stop-color="#3B82F6"/>
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
     </linearGradient>
+
+    <!-- Amber glow filter -->
     <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feGaussianBlur stdDeviation="10" result="blur"/>
       <feComposite in="SourceGraphic" in2="blur" operator="over"/>
     </filter>
+
+    <!-- Dot pattern layer 1: 23px grid, 0.12 opacity -->
+    <pattern id="dots1" x="0" y="0" width="23" height="23" patternUnits="userSpaceOnUse">
+      <circle cx="11.5" cy="11.5" r="1.2" fill="#f59e0b" opacity="0.12"/>
+    </pattern>
+
+    <!-- Dot pattern layer 2: 29px grid, offset, 0.09 opacity -->
+    <pattern id="dots2" x="13" y="19" width="29" height="29" patternUnits="userSpaceOnUse">
+      <circle cx="14.5" cy="14.5" r="1" fill="#f59e0b" opacity="0.09"/>
+    </pattern>
+
+    <!-- Dot pattern layer 3: 37px grid, offset, 0.07 opacity -->
+    <pattern id="dots3" x="7" y="31" width="37" height="37" patternUnits="userSpaceOnUse">
+      <circle cx="18.5" cy="18.5" r="0.8" fill="#f59e0b" opacity="0.07"/>
+    </pattern>
+
+    <!-- Clip to rounded rect shape -->
+    <clipPath id="shape">
+      <rect width="512" height="512" rx="115"/>
+    </clipPath>
   </defs>
 
-  <!-- Background Container -->
-  <rect x="0" y="0" width="512" height="512" rx="115" fill="url(#bg_gradient)"/>
-  
-  <!-- Subtle Border/Inner Shadow -->
-  <rect x="2" y="2" width="508" height="508" rx="113" stroke="rgba(255,255,255,0.08)" stroke-width="4"/>
+  <g clip-path="url(#shape)">
+    <!-- Background -->
+    <rect width="512" height="512" fill="url(#bg_gradient)"/>
 
-  <!-- Icon Graphics -->
+    <!-- Dot pattern layers -->
+    <rect width="512" height="512" fill="url(#dots1)"/>
+    <rect width="512" height="512" fill="url(#dots2)"/>
+    <rect width="512" height="512" fill="url(#dots3)"/>
+
+    <!-- Subtle inner border -->
+    <rect x="2" y="2" width="508" height="508" rx="113" stroke="rgba(255,255,255,0.08)" stroke-width="4" fill="none"/>
+  </g>
+
+  <!-- Icon: Chain-link / Relay brackets -->
   <g transform="translate(88, 88) scale(14)" stroke="url(#accent_gradient)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Outer Brackets/Links -->
-    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5" filter="url(#glow)" stroke-opacity="0.6" />
-    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5" />
-    
-    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6" filter="url(#glow)" stroke-opacity="0.6" />
-    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6" />
-    
-    <!-- Center Connection -->
-    <path d="M7 12h10" />
-    
-    <!-- Central Node -->
-    <circle cx="12" cy="12" r="1.5" fill="url(#accent_gradient)" stroke="none" />
+    <!-- Right bracket with glow -->
+    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5" filter="url(#glow)" stroke-opacity="0.5"/>
+    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5"/>
+
+    <!-- Left bracket with glow -->
+    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6" filter="url(#glow)" stroke-opacity="0.5"/>
+    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6"/>
+
+    <!-- Center connection line -->
+    <path d="M7 12h10"/>
+
+    <!-- Central node -->
+    <circle cx="12" cy="12" r="1.5" fill="url(#accent_gradient)" stroke="none"/>
   </g>
 </svg>

@@ -40,12 +40,7 @@ export const TactileButton: React.FC<Props> = ({
   return (
     <button
       type={props.type ?? 'button'}
-      style={{
-        width: block ? '100%' : undefined,
-        height: size === 'sm' ? '32px' : '40px',
-        padding: size === 'sm' ? '0 12px' : '0 20px',
-        ...style,
-      }}
+      style={style}
       className={classes}
       disabled={isDisabled}
       {...props}
@@ -53,8 +48,8 @@ export const TactileButton: React.FC<Props> = ({
       {loading ? (
         <span className="animate-spin tactile-button-spinner">
           <svg
-            width="14"
-            height="14"
+            width="16"
+            height="16"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

@@ -80,27 +80,87 @@ export const getWeatherOffsetMs = (weather?: {
 
 export const RADAR_INJECT_CSS = `
   html, body { margin: 0 !important; padding: 0 !important; overflow: hidden !important; height: 100% !important; }
-  body { position: relative !important; }
+  body { position: relative !important; font-family: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important; }
+
+  /* Map fills entire frame */
   #map, #map-container, .map-container, .maplibregl-map, .maplibregl-canvas-container, .maplibregl-canvas {
-    left: 0 !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100% !important;
-    height: 100% !important;
-    position: absolute !important;
+    left: 0 !important; top: 0 !important; right: 0 !important; bottom: 0 !important;
+    width: 100% !important; height: 100% !important; position: absolute !important;
   }
-  .map-controls-left, .map-panel-left, #map-controls, .map-controls { position: absolute !important; left: 12px !important; top: 12px !important; background: transparent !important; box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; z-index: 70 !important; display: flex !important; flex-direction: column !important; gap: 8px !important; }
-  .left-panel, .side-panel, .sidebar { background: transparent !important; box-shadow: none !important; border: none !important; padding: 0 !important; margin: 0 !important; }
-  .map-buttons-play { background: rgba(0, 0, 0, 0.65) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; padding: 6px 14px !important; border-radius: 12px !important; border: 1px solid rgba(255, 255, 255, 0.15) !important; display: inline-flex !important; align-items: center !important; gap: 10px !important; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35) !important; width: max-content !important; max-width: 90% !important; }
+
+  /* Control container reset */
+  .map-controls-left, .map-panel-left, #map-controls, .map-controls {
+    position: absolute !important; left: 12px !important; top: 12px !important;
+    background: transparent !important; box-shadow: none !important; border: none !important;
+    padding: 0 !important; margin: 0 !important; z-index: 70 !important;
+    display: flex !important; flex-direction: column !important; gap: 8px !important;
+  }
+  .left-panel, .side-panel, .sidebar {
+    background: transparent !important; box-shadow: none !important;
+    border: none !important; padding: 0 !important; margin: 0 !important;
+  }
+
+  /* Play/timeline bar — solid dark surface, matching app overlay controls */
+  .map-buttons-play {
+    background: #0c0e12 !important;
+    backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+    padding: 6px 10px !important; border-radius: 10px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    display: inline-flex !important; align-items: center !important; gap: 8px !important;
+    box-shadow: none !important; width: max-content !important; max-width: 90% !important;
+    transition: border-color 0.2s ease !important;
+  }
+  .map-buttons-play:hover { border-color: rgba(255, 255, 255, 0.12) !important; }
   .map-buttons-play .live, .map-buttons-play [class*="live"], .map-buttons-play [id*="live"] { display: none !important; }
-  .forecast-period { color: #ffffff !important; font-weight: 600 !important; font-size: 13px !important; margin-right: 4px !important; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important; }
-  .map-buttons-play svg { fill: #ffffff !important; width: 18px !important; height: 18px !important; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5)) !important; }
+  .forecast-period {
+    color: rgba(255, 255, 255, 0.7) !important; font-weight: 500 !important;
+    font-size: 12px !important; margin-right: 2px !important;
+    text-shadow: none !important; font-family: inherit !important;
+  }
+  .map-buttons-play svg {
+    fill: rgba(255, 255, 255, 0.7) !important; width: 16px !important; height: 16px !important;
+    filter: none !important; transition: fill 0.15s ease !important;
+  }
+  .map-buttons-play svg:hover { fill: #ffffff !important; }
+  .map-buttons-play button, .map-buttons-play a {
+    background: transparent !important; border: none !important; cursor: pointer !important;
+    padding: 4px !important; border-radius: 6px !important; transition: background 0.15s ease !important;
+  }
+  .map-buttons-play button:hover, .map-buttons-play a:hover { background: rgba(255, 255, 255, 0.06) !important; }
+
+  /* Hide zoom buttons */
   .map-buttons-zoom-in-out, .map-button-zoom-in, .map-button-zoom-out { display: none !important; }
-  #menu-bar { top: auto !important; bottom: 8px !important; left: 8px !important; right: auto !important; width: auto !important; background: transparent !important; border: none !important; box-shadow: none !important; }
-  #app-icon, .get-the-app { display: none !important; }
-  #app-icon .small-hide { display: none !important; }
+
+  /* Bottom menu bar — same solid dark surface */
+  #menu-bar {
+    top: auto !important; bottom: 12px !important; left: 12px !important;
+    right: auto !important; width: auto !important;
+    background: #0c0e12 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 10px !important; box-shadow: none !important;
+    padding: 4px !important; display: flex !important; gap: 2px !important;
+  }
+  #menu-bar button, #menu-bar a, #menu-bar .menu-item {
+    background: transparent !important; border: none !important; border-radius: 6px !important;
+    padding: 6px 8px !important; color: rgba(255, 255, 255, 0.7) !important;
+    font-size: 12px !important; font-family: inherit !important; cursor: pointer !important;
+    transition: background 0.15s ease, color 0.15s ease !important;
+  }
+  #menu-bar button:hover, #menu-bar a:hover, #menu-bar .menu-item:hover {
+    background: rgba(255, 255, 255, 0.06) !important; color: #ffffff !important;
+  }
+  #menu-bar svg { fill: rgba(255, 255, 255, 0.7) !important; width: 14px !important; height: 14px !important; }
+
+  /* Hide branding/search elements */
+  #app-icon, .get-the-app, #app-icon .small-hide { display: none !important; }
   .map-link, .map-link.small-hide, #search-icon, .search-box, .maplibregl-ctrl-logo { display: none !important; }
+
+  /* MapLibre attribution — match overlay style */
+  .maplibregl-ctrl-attrib {
+    background: #0c0e12 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 8px !important; padding: 4px 8px !important;
+    font-size: 10px !important; color: rgba(255, 255, 255, 0.4) !important;
+  }
+  .maplibregl-ctrl-attrib a { color: rgba(255, 255, 255, 0.5) !important; }
 `;
 
 export const RADAR_INJECT_JS = `
@@ -118,7 +178,8 @@ export const RADAR_INJECT_JS = `
       el.parentElement?.removeChild(el);
     });
   });
-  const menu = document.getElementById('menu-bar'); if (menu) { menu.style.top = 'auto'; menu.style.bottom = '8px'; menu.style.left = '8px'; menu.style.right = 'auto'; menu.style.width = 'auto'; }
+  const menu = document.getElementById('menu-bar');
+  if (menu) { menu.style.top = 'auto'; menu.style.bottom = '12px'; menu.style.left = '12px'; menu.style.right = 'auto'; menu.style.width = 'auto'; }
   const play = document.querySelector('.map-buttons-play');
   if (play) {
     play.querySelectorAll('*').forEach((el) => {
@@ -152,10 +213,10 @@ export const SEVERITY_COLORS: Record<
     icon: '#EAB308',
   },
   Minor: {
-    bg: 'rgba(59, 130, 246, 0.15)',
-    border: 'rgba(59, 130, 246, 0.5)',
-    text: '#93C5FD',
-    icon: '#3B82F6',
+    bg: 'rgba(6, 182, 212, 0.15)',
+    border: 'rgba(6, 182, 212, 0.5)',
+    text: '#67E8F9',
+    icon: '#06B6D4',
   },
   Unknown: {
     bg: 'rgba(107, 114, 128, 0.15)',

@@ -9,11 +9,11 @@ export const SearchInput: React.FC<SearchInputProps> = (props) => {
       className="tactile-input"
       icon={
         <svg
-          width="14"
-          height="14"
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="var(--color-accent-blue)"
+          stroke="var(--color-accent)"
           strokeWidth="3"
           strokeLinecap="round"
           strokeLinejoin="round"

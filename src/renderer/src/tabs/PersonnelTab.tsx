@@ -152,16 +152,11 @@ export const PersonnelTab: React.FC<{
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root">
-      <CollapsibleHeader
-        title="On-Call Board"
-        subtitle={
-          <>
-            {weekRange}
-            {renderAlerts()}
-          </>
-        }
-        isCollapsed={isCollapsed}
-      >
+      <CollapsibleHeader isCollapsed={isCollapsed}>
+        <div className="oncall-header-info">
+          <span className="oncall-header-date">{weekRange}</span>
+          {renderAlerts()}
+        </div>
         <TactileButton
           onClick={handleCopyAllOnCall}
           title="Copy All On-Call Info"
@@ -169,12 +164,12 @@ export const PersonnelTab: React.FC<{
           className="header-btn-mr"
           icon={
             <svg
-              width="14"
-              height="14"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.5"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -192,16 +187,16 @@ export const PersonnelTab: React.FC<{
           className="header-btn-mr"
           icon={
             <svg
-              width="14"
-              height="14"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.5"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
@@ -219,12 +214,12 @@ export const PersonnelTab: React.FC<{
             className="header-btn-mr"
             icon={
               <svg
-                width="14"
-                height="14"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.5"
+                strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
@@ -241,10 +236,24 @@ export const PersonnelTab: React.FC<{
           variant="primary"
           aria-label="Add Card"
           className="btn-collapsible"
-          style={{ padding: isCollapsed ? '8px 16px' : '15px 32px' }}
           onClick={() => setIsAddingTeam(true)}
+          icon={
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+          }
         >
-          + ADD CARD
+          ADD CARD
         </TactileButton>
       </CollapsibleHeader>
 
@@ -277,12 +286,12 @@ export const PersonnelTab: React.FC<{
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <div
             ref={animationParent}
-            className="oncall-grid"
+            className="oncall-grid stagger-children"
             role="list"
             aria-label="Sortable On-Call Teams"
           >
             {teams.map((team, idx) => (
-              <div key={team} className="oncall-grid-item" role="listitem">
+              <div key={team} className="oncall-grid-item animate-card-entrance" role="listitem">
                 <SortableTeamCard
                   team={team}
                   index={idx}

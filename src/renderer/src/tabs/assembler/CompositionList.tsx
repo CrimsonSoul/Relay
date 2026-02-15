@@ -27,7 +27,7 @@ export const CompositionList: React.FC<CompositionListProps> = ({ log, itemData,
           <List
             style={{ height: height ?? 0, width: width ?? 0 }}
             rowCount={log.length}
-            rowHeight={104}
+            rowHeight={80}
             rowComponent={VirtualRow}
             rowProps={itemData}
             onScroll={(e) => onScroll((e.target as HTMLDivElement).scrollTop)}

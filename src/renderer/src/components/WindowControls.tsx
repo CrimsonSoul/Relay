@@ -46,18 +46,7 @@ export const WindowControls = () => {
     return null;
 
   return (
-    <div
-      style={
-        {
-          display: 'flex',
-          height: '48px',
-          WebkitAppRegion: 'no-drag',
-          zIndex: 10000,
-          position: 'relative', // Ensure z-index works
-          pointerEvents: 'auto',
-        } as React.CSSProperties
-      }
-    >
+    <div className="window-controls-bar">
       <Tooltip content="Minimize" position="bottom">
         <button onClick={handleMinimize} className={btnClass} aria-label="Minimize">
           <svg width="10" height="1" viewBox="0 0 10 1">

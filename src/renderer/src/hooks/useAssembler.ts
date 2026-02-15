@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { secureStorage } from '../utils/secureStorage';
 import { BridgeGroup, Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
+import { useDebounce } from './useDebounce';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
 
@@ -35,41 +35,9 @@ export function useAssembler({
     email: string;
     isUnknown: boolean;
   } | null>(null);
-  const [isGroupSidebarCollapsed, setIsGroupSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return secureStorage.getItemSync<boolean>('assembler_sidebar_collapsed', false) ?? false;
-    } catch {
-      return false;
-    }
-  });
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-
-  useEffect(() => {
-    secureStorage.setItemSync('assembler_sidebar_collapsed', isGroupSidebarCollapsed);
-  }, [isGroupSidebarCollapsed]);
-
-  // Sync state across multiple instances
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'relay_assembler_sidebar_collapsed' && e.newValue !== null) {
-        try {
-          const newValue = JSON.parse(decodeURIComponent(atob(e.newValue)));
-          if (typeof newValue === 'boolean') {
-            setIsGroupSidebarCollapsed(newValue);
-          }
-        } catch (_err) {
-          // Ignore parse errors from other instances
-        }
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  const handleToggleSidebarCollapse = useCallback(
-    () => setIsGroupSidebarCollapsed((prev: boolean) => !prev),
-    [],
-  );
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
 
   const contactMap = useMemo(() => {
     const map = new Map<string, Contact>();
@@ -101,7 +69,7 @@ export function useAssembler({
     return map;
   }, [emailToGroupsMap]);
 
-  const log = useMemo(() => {
+  const allRecipients = useMemo(() => {
     // Get all emails from selected groups
     const fromGroups = selectedGroupIds.flatMap((id) => {
       const group = groups.find((g) => g.id === id);
@@ -143,6 +111,23 @@ export function useAssembler({
       return valA.localeCompare(valB) * dir;
     });
   }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
+
+  const log = useMemo(() => {
+    if (!debouncedSearch) return allRecipients;
+    const q = debouncedSearch.toLowerCase();
+    return allRecipients.filter((entry) => {
+      const contact = contactMap.get(entry.email.toLowerCase());
+      const searchStr = [
+        contact?.name || entry.email.split('@')[0],
+        entry.email,
+        contact?.title || '',
+        contact?.phone || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return searchStr.includes(q);
+    });
+  }, [allRecipients, debouncedSearch, contactMap]);
 
   const handleCopy = async () => {
     const success = await window.api?.writeClipboard(log.map((m) => m.email).join('; '));
@@ -236,12 +221,13 @@ export function useAssembler({
     pendingEmail,
     compositionContextMenu,
     setCompositionContextMenu,
-    isGroupSidebarCollapsed,
-    handleToggleSidebarCollapse,
     isHeaderCollapsed,
     setIsHeaderCollapsed,
+    search,
+    setSearch,
     contactMap,
     groupMap: emailToGroupsMap,
+    allRecipients,
     log,
     itemData,
     handleCopy,

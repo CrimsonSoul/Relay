@@ -4,7 +4,7 @@
     flex-direction: column-reverse !important;
     overflow-y: auto !important;
     padding-bottom: 40px !important;
-    gap: 24px !important;
+    gap: 32px !important;
   }
 
   .weather-tab-root > div:last-child {
@@ -26,11 +26,11 @@
 
 @media (max-width: 768px) {
   .world-clock-container {
-    gap: 8px !important;
+    gap: 12px !important;
   }
 
   .world-clock-secondary {
-    gap: 6px !important;
+    gap: 8px !important;
   }
 
   .world-clock-label {
@@ -38,15 +38,14 @@
   }
 }
 
-/* On-Call Board Grid - Smooth Responsive Layout */
+/* On-Call Board Grid */
 .oncall-grid {
   display: grid;
-  /* Increased minimum width to 550px to prevent text truncation on large displays */
-  grid-template-columns: repeat(auto-fill, minmax(550px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
   justify-content: center;
-  gap: 24px;
-  padding-bottom: 40px;
-  align-items: stretch; /* Cards stretch to match the tallest in the row */
+  gap: 16px;
+  padding-bottom: 48px;
+  align-items: stretch;
 }
 
 .oncall-grid-item {
@@ -55,7 +54,7 @@
 
 @media (max-width: 899px) {
   .oncall-grid {
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
     gap: 16px;
   }
 }
@@ -63,7 +62,22 @@
 @media (max-width: 599px) {
   .oncall-grid {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 16px;
+  }
+}
+
+/* Auto-hide sidebars when content area is narrow */
+@media (max-width: 900px) {
+  .assembler-sidebar {
+    display: none;
+  }
+
+  .assembler-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-panel {
+    display: none;
   }
 }
 
@@ -91,9 +105,9 @@
   border: 0;
 }
 
-/* High Visibility Focus for 55" Display */
+/* High Visibility Focus */
 :focus-visible {
-  outline: 2px solid rgba(96, 165, 250, 0.6) !important;
-  outline-offset: 2px !important;
+  outline: 3px solid rgba(245, 158, 11, 0.6) !important;
+  outline-offset: 3px !important;
   border-radius: 8px !important;
 }

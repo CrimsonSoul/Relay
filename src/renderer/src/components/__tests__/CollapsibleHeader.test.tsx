@@ -23,19 +23,15 @@ describe('CollapsibleHeader', () => {
     expect(screen.getByText('Action')).toBeInTheDocument();
   });
 
-  it('renders search slot', () => {
-    render(<CollapsibleHeader title="Title" search={<input placeholder="Search..." />} />);
-    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
-  });
-
-  it('renders both search and children together', () => {
+  it('renders multiple children', () => {
     render(
-      <CollapsibleHeader title="Title" search={<input placeholder="Search..." />}>
+      <CollapsibleHeader title="Title">
         <button>Add</button>
+        <button>Remove</button>
       </CollapsibleHeader>,
     );
-    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
     expect(screen.getByText('Add')).toBeInTheDocument();
+    expect(screen.getByText('Remove')).toBeInTheDocument();
   });
 
   it('renders subtitle as ReactNode', () => {

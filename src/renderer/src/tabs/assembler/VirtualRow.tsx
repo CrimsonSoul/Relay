@@ -22,7 +22,6 @@ export const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<Vir
         phone={phone}
         groups={membership}
         sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
-        style={{ height: '100%' }}
       />
     </div>
   );
