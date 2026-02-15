@@ -16,7 +16,7 @@ export function useDirectory(
   const debouncedSearch = useDebounce(search, 300);
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; contact: Contact } | null>(
@@ -72,6 +72,15 @@ export function useDirectory(
       return valA.localeCompare(valB) * dir;
     });
   }, [effectiveContacts, debouncedSearch, sortConfig, groupStringMap]);
+
+  // Clamp selection to valid range when list changes
+  useEffect(() => {
+    if (filtered.length === 0) {
+      setFocusedIndex(0);
+    } else if (focusedIndex >= filtered.length) {
+      setFocusedIndex(filtered.length - 1);
+    }
+  }, [filtered.length, focusedIndex]);
 
   // Track timeouts for cleanup to prevent memory leaks
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());

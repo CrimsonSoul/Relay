@@ -97,8 +97,7 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="weather-alert-expand-icon"
-            style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            className={`weather-alert-expand-icon${isExpanded ? ' weather-alert-expand-icon--open' : ''}`}
           >
             <polyline points="6 9 12 15 18 9" />
           </svg>

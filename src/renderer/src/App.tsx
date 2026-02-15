@@ -220,7 +220,16 @@ export function MainApp() {
         <header className="app-header" aria-label="Application navigation">
           <div className="header-title-container">
             <span className="header-breadcrumb">
-              Relay / {activeTab === 'Personnel' ? 'On-Call Board' : activeTab}
+              Relay /{' '}
+              {{
+                Compose: 'Compose',
+                Personnel: 'On-Call',
+                People: 'People',
+                Servers: 'Servers',
+                Radar: 'Radar',
+                Weather: 'Weather',
+                AI: 'AI Chat',
+              }[activeTab] ?? activeTab}
             </span>
           </div>
           <div className="header-actions">

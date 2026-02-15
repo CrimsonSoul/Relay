@@ -23,7 +23,7 @@ interface SidebarProps {
 // Moved outside component to avoid recreation every render
 const navItems: { label: string; tab: Tab; icon: React.ReactNode }[] = [
   { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
-  { label: 'On-Call Board', tab: 'Personnel', icon: <PersonnelIcon /> },
+  { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
   { label: 'AI Chat', tab: 'AI', icon: <AIIcon /> },
   { label: 'People', tab: 'People', icon: <PeopleIcon /> },
   { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
@@ -52,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         <div id="app-icon-inner" className="sidebar-app-icon-inner">
           <AppIcon />
         </div>
+        <span className="sidebar-app-icon-label">Relay</span>
       </div>
 
       <div className="sidebar-divider" />

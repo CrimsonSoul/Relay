@@ -69,7 +69,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                   onClear();
                 }
               }}
-              style={{ fontSize: '12px', padding: '6px 12px' }}
+              className="btn-sm"
             >
               Clear All
             </TactileButton>

@@ -44,7 +44,7 @@ describe('ContactCard Component', () => {
 
     const cardElement = container.querySelector('.card-surface');
     expect(cardElement).toHaveStyle({
-      background: 'rgba(59, 130, 246, 0.06)',
+      background: 'rgba(245, 158, 11, 0.06)',
     });
   });
 

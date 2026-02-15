@@ -1,33 +1,42 @@
 import React, { memo } from 'react';
-import { Server, Contact } from '@shared/ipc';
+import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
-import { getPlatformColor, PersonInfo } from './shared/PersonInfo';
+import { getPlatformColor } from './shared/PersonInfo';
 
 interface ServerCardProps {
   server: Server;
-  contactLookup: Map<string, Contact>;
   onContextMenu: (e: React.MouseEvent, server: Server) => void;
   style?: React.CSSProperties;
-  hasNotes?: boolean;
-  tags?: string[];
-  onNotesClick?: () => void;
+  selected?: boolean;
+  onRowClick?: () => void;
 }
 
 export const ServerCard = memo(
-  ({
-    server,
-    contactLookup,
-    onContextMenu,
-    style,
-    hasNotes,
-    tags = [],
-    onNotesClick,
-  }: ServerCardProps) => {
+  ({ server, onContextMenu, style, selected, onRowClick }: ServerCardProps) => {
     const osInfo = getPlatformColor(server.os);
 
     return (
-      <div onContextMenu={(e) => onContextMenu(e, server)} className="server-card" style={style}>
-        <div className="server-card-body card-surface">
+      <div
+        role={onRowClick ? 'button' : undefined}
+        tabIndex={onRowClick ? 0 : undefined}
+        onContextMenu={(e) => onContextMenu(e, server)}
+        onClick={onRowClick}
+        onKeyDown={
+          onRowClick
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onRowClick();
+                }
+              }
+            : undefined
+        }
+        className="server-card"
+        style={style}
+      >
+        <div
+          className={`server-card-body card-surface${selected ? ' server-card-body--selected' : ''}`}
+        >
           <div className="accent-strip" style={{ background: osInfo.text }} />
           <div
             className="server-card-os-badge"
@@ -38,12 +47,12 @@ export const ServerCard = memo(
             }}
           >
             <svg
-              width="24"
-              height="24"
+              width="20"
+              height="20"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.5"
+              strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
             >
@@ -54,85 +63,15 @@ export const ServerCard = memo(
             </svg>
           </div>
           <div className="server-card-info">
-            <div className="server-card-detail-row">
-              <div className="server-card-name-row">
-                <Tooltip content={server.name}>
-                  <span className="server-card-name text-balance break-word">{server.name}</span>
-                </Tooltip>
-                <span
-                  className="server-card-os-label"
-                  style={{
-                    background: osInfo.bg,
-                    border: `1px solid ${osInfo.border}`,
-                    color: osInfo.text,
-                  }}
-                >
-                  {osInfo.label}
-                </span>
-              </div>
-              <div className="server-card-meta">
-                <span className="server-card-meta-area">{server.businessArea}</span>
-                <span className="server-card-meta-separator">|</span>
-                <span className="server-card-meta-lob">{server.lob}</span>
-                {server.comment && server.comment !== '-' && (
-                  <>
-                    <span className="server-card-meta-separator">|</span>
-                    <Tooltip content={server.comment}>
-                      <span className="server-card-meta-comment text-clamp-1">
-                        {server.comment}
-                      </span>
-                    </Tooltip>
-                  </>
-                )}
-              </div>
+            <div className="server-card-name-row">
+              <Tooltip content={server.name}>
+                <span className="server-card-name text-balance break-word">{server.name}</span>
+              </Tooltip>
             </div>
-            <div className="server-card-actions">
-              {tags.length > 0 && (
-                <div className="server-card-tags">
-                  {tags.slice(0, 2).map((tag) => (
-                    <span key={tag} className="server-card-tag">
-                      #{tag}
-                    </span>
-                  ))}
-                  {tags.length > 2 && (
-                    <span className="server-card-tag-overflow">+{tags.length - 2}</span>
-                  )}
-                </div>
-              )}
-              {hasNotes && (
-                <Tooltip content="Click to view notes">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onNotesClick?.();
-                    }}
-                    className="server-card-notes-btn"
-                  >
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                      <line x1="16" y1="13" x2="8" y2="13"></line>
-                      <line x1="16" y1="17" x2="8" y2="17"></line>
-                    </svg>
-                  </button>
-                </Tooltip>
-              )}
-              <PersonInfo label="OWNER" value={server.owner || ''} contactLookup={contactLookup} />
-              <div className="server-card-divider" />
-              <PersonInfo
-                label="SUPPORT"
-                value={server.contact || ''}
-                contactLookup={contactLookup}
-              />
+            <div className="server-card-meta">
+              <span className="server-card-meta-area">{server.businessArea}</span>
+              <span className="server-card-meta-separator">|</span>
+              <span className="server-card-meta-lob">{server.lob}</span>
             </div>
           </div>
         </div>

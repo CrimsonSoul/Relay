@@ -51,15 +51,12 @@ function detectFormat(content: string): 'json' | 'csv' {
 /**
  * Parse contacts from JSON with validation
  */
-function parseContactsJson(
-  content: string,
+/**
+ * Validate and normalize an array of contact records
+ */
+function validateContactRecords(
+  records: unknown[],
 ): Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
-  const data = safeJsonParse(content, 'contacts');
-  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).contacts || [];
-
-  if (!Array.isArray(records)) {
-    throw new Error('Invalid contacts data: expected an array');
-  }
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
@@ -105,6 +102,19 @@ function parseContactsJson(
   }
 
   return validRecords;
+}
+
+function parseContactsJson(
+  content: string,
+): Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+  const data = safeJsonParse(content, 'contacts');
+  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).contacts || [];
+
+  if (!Array.isArray(records)) {
+    throw new Error('Invalid contacts data: expected an array');
+  }
+
+  return validateContactRecords(records);
 }
 
 /**
@@ -157,15 +167,11 @@ async function parseContactsCsv(
 }
 
 /**
- * Parse servers from JSON with validation
+ * Validate and normalize an array of server records
  */
-function parseServersJson(content: string): Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
-  const data = safeJsonParse(content, 'servers');
-  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).servers || [];
-
-  if (!Array.isArray(records)) {
-    throw new Error('Invalid servers data: expected an array');
-  }
+function validateServerRecords(
+  records: unknown[],
+): Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
@@ -181,6 +187,17 @@ function parseServersJson(content: string): Omit<ServerRecord, 'id' | 'createdAt
       os: String(r.os || ''),
     }))
     .filter((s) => s.name); // Must have name
+}
+
+function parseServersJson(content: string): Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+  const data = safeJsonParse(content, 'servers');
+  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).servers || [];
+
+  if (!Array.isArray(records)) {
+    throw new Error('Invalid servers data: expected an array');
+  }
+
+  return validateServerRecords(records);
 }
 
 /**
@@ -222,17 +239,11 @@ async function parseServersCsv(
 }
 
 /**
- * Parse on-call from JSON with validation
+ * Validate and normalize an array of on-call records
  */
-function parseOnCallJson(content: string): Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
-  const data = safeJsonParse(content, 'on-call');
-  const records = Array.isArray(data)
-    ? data
-    : (data as Record<string, unknown>).onCall || (data as Record<string, unknown>).oncall || [];
-
-  if (!Array.isArray(records)) {
-    throw new Error('Invalid on-call data: expected an array');
-  }
+function validateOnCallRecords(
+  records: unknown[],
+): Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
@@ -246,6 +257,19 @@ function parseOnCallJson(content: string): Omit<OnCallRecord, 'id' | 'createdAt'
       timeWindow: r.timeWindow ? String(r.timeWindow) : undefined,
     }))
     .filter((r) => r.team); // Must have team
+}
+
+function parseOnCallJson(content: string): Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+  const data = safeJsonParse(content, 'on-call');
+  const records = Array.isArray(data)
+    ? data
+    : (data as Record<string, unknown>).onCall || (data as Record<string, unknown>).oncall || [];
+
+  if (!Array.isArray(records)) {
+    throw new Error('Invalid on-call data: expected an array');
+  }
+
+  return validateOnCallRecords(records);
 }
 
 /**
@@ -445,21 +469,24 @@ async function processImportContent(
       const data = JSON.parse(content);
 
       if (data.contacts && Array.isArray(data.contacts)) {
-        const contactResult = await bulkUpsertContacts(rootDir, data.contacts);
+        const validated = validateContactRecords(data.contacts);
+        const contactResult = await bulkUpsertContacts(rootDir, validated);
         result.imported += contactResult.imported;
         result.updated += contactResult.updated;
         result.errors.push(...contactResult.errors.map((e: string) => `[contacts] ${e}`));
       }
 
       if (data.servers && Array.isArray(data.servers)) {
-        const serverResult = await bulkUpsertServers(rootDir, data.servers);
+        const validated = validateServerRecords(data.servers);
+        const serverResult = await bulkUpsertServers(rootDir, validated);
         result.imported += serverResult.imported;
         result.updated += serverResult.updated;
         result.errors.push(...serverResult.errors.map((e: string) => `[servers] ${e}`));
       }
 
       if (data.onCall && Array.isArray(data.onCall)) {
-        const onCallResult = await bulkUpsertOnCall(rootDir, data.onCall);
+        const validated = validateOnCallRecords(data.onCall);
+        const onCallResult = await bulkUpsertOnCall(rootDir, validated);
         result.imported += onCallResult.imported;
         result.updated += onCallResult.updated;
         result.errors.push(...onCallResult.errors.map((e: string) => `[oncall] ${e}`));

@@ -3,7 +3,3 @@
   opacity: 1;
   transition: all var(--transition-smooth);
 }
-
-#app-icon-container:hover #app-icon-inner {
-  transform: scale(1.05);
-}

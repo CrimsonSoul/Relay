@@ -14,6 +14,7 @@ interface ComboboxProps {
   options: ComboboxOption[];
   placeholder?: string;
   style?: React.CSSProperties;
+  className?: string;
   autoFocus?: boolean;
   onOpenChange?: (isOpen: boolean) => void;
 }
@@ -24,6 +25,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   options,
   placeholder,
   style,
+  className,
   autoFocus,
   onOpenChange,
 }) => {
@@ -62,7 +64,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   };
 
   return (
-    <div ref={containerRef} className="combobox" style={style}>
+    <div ref={containerRef} className={`combobox ${className || ''}`} style={style}>
       <Input
         ref={inputRef}
         value={value}
@@ -77,6 +79,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         onBlur={() => {}}
         placeholder={placeholder}
         autoFocus={autoFocus}
+        className={className}
         style={{
           ...style,
           width: '100%',

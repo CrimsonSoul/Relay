@@ -1,7 +1,6 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
-import { CollapsibleHeader } from '../components/CollapsibleHeader';
 
 const RADAR_URL = 'https://cw-intra-web/CWDashboard/Home/Radar';
 
@@ -29,15 +28,13 @@ export const RadarTab: React.FC = () => {
   }, []);
 
   return (
-    <div className="tab-layout">
-      <CollapsibleHeader
-        title="Dispatcher Radar"
-        subtitle="Live CW intra-web monitoring"
-        isCollapsed={true}
-      >
+    <div className="tab-layout tab-layout--flush">
+      <div className="webview-container">
+        <div className="webview-border-overlay" />
         <TactileButton
           onClick={handleRefresh}
           title={isLoading ? 'Refreshing' : 'Refresh'}
+          className="radar-refresh-btn"
           icon={
             <svg
               width="14"
@@ -56,10 +53,6 @@ export const RadarTab: React.FC = () => {
             </svg>
           }
         />
-      </CollapsibleHeader>
-
-      <div className="webview-container">
-        <div className="webview-border-overlay" />
         <webview
           ref={webviewRef}
           src={RADAR_URL}

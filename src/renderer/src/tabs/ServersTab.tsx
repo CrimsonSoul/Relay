@@ -1,14 +1,15 @@
-import React, { memo, useMemo, useState, useCallback } from 'react';
+import React, { memo, useMemo, useState, useEffect } from 'react';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
-import { Server, Contact, NoteEntry } from '@shared/ipc';
-import { SearchInput } from '../components/SearchInput';
+import { Server, Contact } from '@shared/ipc';
 import { ContextMenu } from '../components/ContextMenu';
 import { AddServerModal } from '../components/AddServerModal';
 import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { ListToolbar } from '../components/ListToolbar';
+import { ServerDetailPanel } from '../components/ServerDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useServers } from '../hooks/useServers';
 import { useNotesContext } from '../contexts';
@@ -20,26 +21,22 @@ interface ServersTabProps {
 
 interface ServerVirtualRowData {
   servers: Server[];
-  contactLookup: Map<string, Contact>;
   onContextMenu: (e: React.MouseEvent, server: Server) => void;
-  getServerNote: (name: string) => NoteEntry | undefined;
-  onNotesClick: (server: Server) => void;
+  selectedIndex: number;
+  onRowClick: (index: number) => void;
 }
 
 const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
-  const { servers, contactLookup, onContextMenu, getServerNote, onNotesClick } = data;
+  const { servers, onContextMenu, selectedIndex, onRowClick } = data;
   if (index >= servers.length) return null;
   const server = servers[index];
-  const noteEntry = getServerNote(server.name);
   return (
     <ServerCard
       style={style}
       server={server}
-      contactLookup={contactLookup}
       onContextMenu={onContextMenu}
-      hasNotes={!!noteEntry?.note}
-      tags={noteEntry?.tags}
-      onNotesClick={() => onNotesClick(server)}
+      selected={index === selectedIndex}
+      onRowClick={() => onRowClick(index)}
     />
   );
 });
@@ -48,103 +45,135 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const h = useServers(servers, contacts);
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
-  const handleNotesClick = useCallback((server: Server) => setNotesServer(server), []);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  // Clamp selection when list changes
+  useEffect(() => {
+    if (h.filteredServers.length === 0) {
+      setSelectedIndex(0);
+    } else if (selectedIndex >= h.filteredServers.length) {
+      setSelectedIndex(h.filteredServers.length - 1);
+    }
+  }, [h.filteredServers.length, selectedIndex]);
+
+  const selectedServer =
+    selectedIndex >= 0 && selectedIndex < h.filteredServers.length
+      ? h.filteredServers[selectedIndex]
+      : null;
+  const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
+
   const rowProps = useMemo(
     () => ({
       servers: h.filteredServers,
-      contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
-      getServerNote,
-      onNotesClick: handleNotesClick,
+      selectedIndex,
+      onRowClick: (i: number) => setSelectedIndex(i),
     }),
-    [h.filteredServers, h.contactLookup, h.handleContextMenu, getServerNote, handleNotesClick],
+    [h.filteredServers, h.handleContextMenu, selectedIndex],
   );
 
   return (
     <div className="tab-layout">
-      <CollapsibleHeader
-        title="Infrastructure Hub"
-        subtitle="Management and status of distributed node infrastructure"
-        isCollapsed={h.isHeaderCollapsed}
-        search={
-          <SearchInput
-            placeholder="Search infrastructure..."
-            value={h.search}
-            onChange={(e) => h.setSearch(e.target.value)}
-            autoFocus
+      <div className="tab-split-layout">
+        {selectedServer ? (
+          <ServerDetailPanel
+            server={selectedServer}
+            contactLookup={h.contactLookup}
+            noteText={selectedNote?.note}
+            tags={selectedNote?.tags}
+            onEditNotes={() => setNotesServer(selectedServer)}
+            onEdit={() => h.editServer(selectedServer)}
+            onDelete={() => {
+              void h.deleteServer(selectedServer);
+              setSelectedIndex(0);
+            }}
           />
-        }
-      >
-        {h.filteredServers.length > 0 && (
-          <div className="match-count">{h.filteredServers.length} matches</div>
-        )}
-        <TactileButton
-          onClick={() => h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
-          title={`Sort: ${h.sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}
-          icon={
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <polyline
-                points={h.sortOrder === 'asc' ? '19 12 12 19 5 12' : '19 12 12 5 5 12'}
-              ></polyline>
-            </svg>
-          }
-          className="sort-toggle-btn"
-          style={{ height: '44px', padding: 0 }}
-        />
-        <TactileButton
-          onClick={h.openAddModal}
-          variant="primary"
-          className="btn-collapsible"
-          style={{ padding: h.isHeaderCollapsed ? '8px 16px' : '15px 32px' }}
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          }
-        >
-          ADD SERVER
-        </TactileButton>
-      </CollapsibleHeader>
-
-      <div className="tab-list-container">
-        <AutoSizer
-          renderProp={({ height, width }) => (
-            <List
-              style={{ height: height ?? 0, width: width ?? 0 }}
-              rowCount={h.filteredServers.length}
-              rowHeight={104}
-              rowComponent={VirtualRow}
-              rowProps={rowProps}
-              onScroll={(e) => h.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)}
-            />
-          )}
-        />
-        {h.filteredServers.length === 0 && (
-          <div className="tab-empty-state">
-            <div className="tab-empty-state-icon">∅</div>
-            <div>No infrastructure found</div>
+        ) : (
+          <div className="detail-panel detail-panel--empty">
+            <div className="detail-panel-placeholder">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.3"
+              >
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                <line x1="6" y1="6" x2="6.01" y2="6" />
+                <line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+              <span>Select a server</span>
+            </div>
           </div>
         )}
+        <div className="tab-main-content">
+          <CollapsibleHeader isCollapsed={h.isHeaderCollapsed}>
+            {h.filteredServers.length > 0 && (
+              <div className="match-count">{h.filteredServers.length} servers</div>
+            )}
+            <TactileButton
+              onClick={h.openAddModal}
+              variant="primary"
+              className="btn-collapsible"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                  <line x1="12" y1="6" x2="12" y2="6.01" strokeWidth="3" />
+                  <line x1="12" y1="18" x2="12" y2="18.01" strokeWidth="3" />
+                </svg>
+              }
+            >
+              ADD SERVER
+            </TactileButton>
+          </CollapsibleHeader>
+
+          <ListToolbar
+            search={h.search}
+            onSearchChange={h.setSearch}
+            placeholder="Search Servers"
+            sortDirection={h.sortOrder}
+            onToggleSortDirection={() =>
+              h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+            }
+          />
+
+          <div className="tab-list-container">
+            <AutoSizer
+              renderProp={({ height, width }) => (
+                <List
+                  style={{ height: height ?? 0, width: width ?? 0 }}
+                  rowCount={h.filteredServers.length}
+                  rowHeight={80}
+                  rowComponent={VirtualRow}
+                  rowProps={rowProps}
+                  onScroll={(e) =>
+                    h.setIsHeaderCollapsed((e.target as HTMLDivElement).scrollTop > 30)
+                  }
+                />
+              )}
+            />
+            {h.filteredServers.length === 0 && (
+              <div className="tab-empty-state">
+                <div className="tab-empty-state-icon">∅</div>
+                <div>No infrastructure found</div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {h.contextMenu && (

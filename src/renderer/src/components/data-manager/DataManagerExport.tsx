@@ -43,13 +43,7 @@ export const DataManagerExport: React.FC<Props> = ({
       />
       Include IDs and timestamps
     </label>
-    <TactileButton
-      onClick={onExport}
-      variant="primary"
-      disabled={exporting}
-      className="dm-big-btn"
-      style={{ height: '56px' }}
-    >
+    <TactileButton onClick={onExport} variant="primary" disabled={exporting} className="dm-big-btn">
       {exporting ? 'Exporting...' : 'Export...'}
     </TactileButton>
   </div>

@@ -113,7 +113,6 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
             variant="ghost"
             block
             className="maintain-team-add-btn"
-            style={{ height: '48px' }}
             onClick={handleAddRow}
           >
             + Add Row

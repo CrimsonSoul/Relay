@@ -1,15 +1,14 @@
 import React from 'react';
 import { Contact } from '@shared/ipc';
-import { getColorForString } from '../../utils/colors';
 import { Tooltip } from '../Tooltip';
 
 export const getPlatformColor = (os: string = '') => {
   const lower = os.toLowerCase();
   if (lower.includes('win'))
     return {
-      bg: 'rgba(59, 130, 246, 0.1)',
-      border: 'rgba(59, 130, 246, 0.2)',
-      text: '#60A5FA',
+      bg: 'rgba(245, 158, 11, 0.1)',
+      border: 'rgba(245, 158, 11, 0.2)',
+      text: '#FBBF24',
       label: 'WINDOWS',
     };
   if (
@@ -61,7 +60,6 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
   const primaryStr = parts[0];
   const found = contactLookup.get(primaryStr.toLowerCase());
   const displayName = found ? found.name : primaryStr;
-  const colorScheme = getColorForString(displayName);
   const allNames = parts
     .map((p) => {
       const c = contactLookup.get(p.toLowerCase());
@@ -73,16 +71,7 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
     <div className="person-info">
       <span className="person-info-label person-info-label--strong">{label}</span>
       <div className="person-info-name-row">
-        <div
-          className="person-info-avatar"
-          style={{
-            background: colorScheme.bg,
-            color: colorScheme.text,
-            border: `1px solid ${colorScheme.border}`,
-          }}
-        >
-          {displayName.charAt(0).toUpperCase()}
-        </div>
+        <div className="person-info-avatar">{displayName.charAt(0).toUpperCase()}</div>
         <Tooltip content={allNames}>
           <span className="text-truncate person-info-name">
             {displayName}

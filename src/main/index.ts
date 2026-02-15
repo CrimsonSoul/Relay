@@ -61,7 +61,7 @@ if (!gotLock) {
       minWidth: 400,
       minHeight: 600,
       center: true,
-      backgroundColor: '#0B0D12',
+      backgroundColor: '#060608',
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 12, y: 12 },
       show: false,
@@ -210,7 +210,7 @@ if (!gotLock) {
     const auxWindow = new BrowserWindow({
       width: 960,
       height: 800,
-      backgroundColor: '#0B0D12',
+      backgroundColor: '#060608',
       title: 'Relay - On-Call Board',
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 12, y: 12 },

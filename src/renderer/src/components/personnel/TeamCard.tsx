@@ -52,6 +52,12 @@ export const TeamCard = React.memo(
           tabIndex={0}
           aria-label={`Team: ${team}, ${teamRows.length} members`}
           className={`card-surface team-card-body ${isReadOnly ? 'team-card-body--readonly' : 'lift-on-hover'}`}
+          style={
+            {
+              '--team-color': colorScheme.text,
+              '--team-color-fill': colorScheme.fill,
+            } as React.CSSProperties
+          }
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -131,7 +137,6 @@ export const TeamCard = React.memo(
             }
           }}
         >
-          <div className="accent-strip" style={{ background: colorScheme.text }} />
           <div className="team-card-header-row">
             <div className="team-card-name" style={{ color: colorScheme.text }}>
               <Tooltip content={team}>

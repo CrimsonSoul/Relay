@@ -33,7 +33,6 @@ export const DataManagerImport: React.FC<Props> = ({
         variant="primary"
         disabled={importing}
         className="dm-big-btn"
-        style={{ minWidth: '170px', height: '56px' }}
       >
         {importing ? 'Importing...' : 'Import...'}
       </TactileButton>

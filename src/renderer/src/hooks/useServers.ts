@@ -67,6 +67,17 @@ export function useServers(servers: Server[], contacts: Contact[]) {
       setContextMenu(null);
     }
   };
+  const editServer = (server: Server) => {
+    setEditingServer(server);
+    setIsAddModalOpen(true);
+  };
+  const deleteServer = async (server: Server) => {
+    try {
+      await window.api?.removeServer(server.name);
+    } catch {
+      // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
+    }
+  };
   const openAddModal = () => {
     setEditingServer(undefined);
     setIsAddModalOpen(true);
@@ -89,6 +100,8 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     handleContextMenu,
     handleDelete,
     handleEdit,
+    editServer,
+    deleteServer,
     openAddModal,
   };
 }

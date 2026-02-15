@@ -28,8 +28,6 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [isRemoteDragging, setIsRemoteDragging] = useState(false);
 
-  const isMac = window.api?.platform === 'darwin';
-
   useEffect(() => {
     return window.api?.onDragStateChange((isDragging) => {
       setIsRemoteDragging(isDragging);
@@ -97,32 +95,28 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       )}
 
       {!isKiosk && (
-        <CollapsibleHeader
-          title="On-Call Board"
-          style={{ paddingLeft: isMac ? '80px' : '0px', transition: 'padding-left 0.25s ease' }}
-          subtitle={
-            <div className="popout-subtitle-row">
-              <span>{weekRange}</span>
-              <span className="popout-subtitle-label">
-                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-              {renderAlerts()}
-            </div>
-          }
-          isCollapsed={isCollapsed}
-        >
+        <CollapsibleHeader isCollapsed={isCollapsed}>
+          <div className="oncall-header-info">
+            <span className="oncall-header-date">{weekRange}</span>
+            <span className="oncall-header-updated">
+              Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+            {renderAlerts()}
+          </div>
           <TactileButton
             onClick={() => setIsKiosk(true)}
             title="Kiosk Mode (Full Screen)"
             className="header-btn-mr"
             icon={
               <svg
-                width="14"
-                height="14"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.5"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
                 <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
               </svg>
@@ -135,12 +129,12 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             title="Copy All On-Call Info"
             icon={
               <svg
-                width="14"
-                height="14"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.5"
+                strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
@@ -172,12 +166,12 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
       <div
         ref={animationParent}
-        className={`oncall-grid${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        className={`oncall-grid stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         role="list"
         aria-label="On-Call Teams"
       >
         {teams.map((team, idx) => (
-          <div key={team} className="oncall-grid-item" role="listitem">
+          <div key={team} className="oncall-grid-item animate-card-entrance" role="listitem">
             <TeamCard
               team={team}
               index={idx}

@@ -1,21 +1,21 @@
 .toast-container {
   position: fixed;
-  bottom: var(--space-6);
-  right: var(--space-6);
+  bottom: 24px;
+  right: 24px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 10px;
   z-index: 20000;
   pointer-events: none;
 }
 
 .toast {
   pointer-events: auto;
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-lg);
+  padding: 12px 20px;
+  border-radius: 12px;
   font-family: var(--font-family-base);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--text-base);
+  font-weight: 600;
   box-shadow: var(--shadow-lg);
   background: var(--color-bg-surface-elevated);
   border: var(--border-medium);
@@ -29,43 +29,16 @@
   overflow: hidden;
 }
 
-/* Subtle gradient overlay for depth */
-.toast::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
-  pointer-events: none;
-}
-
 .toast-error {
-  border-left: 3px solid var(--color-danger);
-  background: linear-gradient(
-    90deg,
-    rgba(255, 92, 92, 0.08) 0%,
-    var(--color-bg-surface-elevated) 15%
-  );
+  border-left: 4px solid var(--color-danger);
 }
 
 .toast-success {
-  border-left: 3px solid var(--color-accent-green);
-  background: linear-gradient(
-    90deg,
-    rgba(16, 185, 129, 0.08) 0%,
-    var(--color-bg-surface-elevated) 15%
-  );
+  border-left: 4px solid var(--color-accent-green);
 }
 
 .toast-info {
-  border-left: 3px solid var(--color-accent-blue);
-  background: linear-gradient(
-    90deg,
-    rgba(59, 130, 246, 0.08) 0%,
-    var(--color-bg-surface-elevated) 15%
-  );
+  border-left: 4px solid var(--color-accent);
 }
 
 /* Toast-specific slide up with scale */
@@ -94,10 +67,10 @@
 .toast-close {
   background: transparent;
   border: none;
-  padding: 4px;
+  padding: 6px;
   cursor: pointer;
   color: var(--color-text-secondary);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;

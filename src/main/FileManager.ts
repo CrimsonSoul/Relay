@@ -474,10 +474,9 @@ export class FileManager {
   }
 
   public async generateDummyData() {
-    // Only allow in development mode
-    const isDev =
-      process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL !== undefined;
-    if (!isDev) {
+    // Only allow in development mode — must match the guard in dataHandlers.ts
+    const { app } = await import('electron');
+    if (app.isPackaged || process.env.NODE_ENV !== 'development') {
       loggers.fileManager.warn('generateDummyData blocked in production mode');
       return false;
     }

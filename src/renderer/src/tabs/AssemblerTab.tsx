@@ -4,6 +4,7 @@ import { AddContactModal } from '../components/AddContactModal';
 import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { ListToolbar } from '../components/ListToolbar';
 import {
   AssemblerTabProps,
   AssemblerSidebar,
@@ -84,11 +85,11 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     [saveGroup, historyContacts, showToast],
   );
 
-  // Handle copy with auto-save to history
+  // Handle copy with auto-save to history (always copies all recipients, not filtered)
   const handleCopyWithHistory = useCallback(() => {
     void asm.handleCopy();
     void saveToHistory(
-      asm.log.map((l) => l.email),
+      asm.allRecipients.map((l) => l.email),
       selectedGroupNames,
     );
   }, [asm, selectedGroupNames, saveToHistory]);
@@ -97,7 +98,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const handleDraftBridgeWithHistory = useCallback(() => {
     asm.executeDraftBridge();
     void saveToHistory(
-      asm.log.map((l) => l.email),
+      asm.allRecipients.map((l) => l.email),
       selectedGroupNames,
     );
   }, [asm, selectedGroupNames, saveToHistory]);
@@ -133,79 +134,168 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     setIsSaveGroupOpen(true);
   }, []);
 
-  // Current emails for the sidebar
-  const currentEmails = useMemo(() => asm.log.map((l) => l.email), [asm.log]);
+  // Current emails for the sidebar (all recipients, not search-filtered)
+  const currentEmails = useMemo(() => asm.allRecipients.map((l) => l.email), [asm.allRecipients]);
 
   return (
-    <div
-      className="assembler-layout"
-      style={{
-        gridTemplateColumns: asm.isGroupSidebarCollapsed ? '24px 1fr' : '240px 1fr',
-      }}
-    >
-      <AssemblerSidebar
-        groups={groups}
-        selectedGroupIds={selectedGroupIds}
-        onToggleGroup={onToggleGroup}
-        isCollapsed={asm.isGroupSidebarCollapsed}
-        onToggleCollapse={asm.handleToggleSidebarCollapse}
-        onSaveGroup={saveGroup}
-        onUpdateGroup={updateGroup}
-        onDeleteGroup={deleteGroup}
-        onImportFromCsv={importFromCsv}
-        currentEmails={currentEmails}
-      />
-      <div className="assembler-main-panel">
-        <CollapsibleHeader
-          title="Data Composition"
-          subtitle="Assemble bridge recipients and manage emergency communications"
-          isCollapsed={asm.isHeaderCollapsed}
-        >
-          {manualRemoves.length > 0 && (
-            <TactileButton
-              onClick={onUndoRemove}
-              className="assembler-header-btn"
-              style={{ height: '38px', padding: '0 16px' }}
-            >
-              UNDO
-            </TactileButton>
-          )}
-          <TactileButton
-            onClick={onResetManual}
-            className="assembler-header-btn"
-            style={{ height: '38px', padding: '0 16px' }}
-          >
-            RESET
-          </TactileButton>
-          <TactileButton
-            onClick={() => setIsHistoryOpen(true)}
-            className="assembler-header-btn"
-            style={{ height: '38px', padding: '0 16px' }}
-          >
-            HISTORY
-          </TactileButton>
-          <TactileButton
-            onClick={handleCopyWithHistory}
-            className="assembler-header-btn"
-            style={{ height: '38px', padding: '0 16px' }}
-          >
-            COPY
-          </TactileButton>
-          <TactileButton
-            onClick={() => asm.setIsBridgeReminderOpen(true)}
-            variant="primary"
-            className="assembler-header-btn"
-            style={{ height: '38px', padding: '0 20px' }}
-          >
-            DRAFT BRIDGE
-          </TactileButton>
-        </CollapsibleHeader>
-
-        <CompositionList
-          log={asm.log}
-          itemData={asm.itemData}
-          onScroll={(scrollOffset) => asm.setIsHeaderCollapsed(scrollOffset > 30)}
+    <div className="tab-layout">
+      <div className="assembler-layout">
+        <AssemblerSidebar
+          groups={groups}
+          selectedGroupIds={selectedGroupIds}
+          onToggleGroup={onToggleGroup}
+          onSaveGroup={saveGroup}
+          onUpdateGroup={updateGroup}
+          onDeleteGroup={deleteGroup}
+          onImportFromCsv={importFromCsv}
+          currentEmails={currentEmails}
         />
+        <div className="tab-main-content">
+          <CollapsibleHeader isCollapsed={asm.isHeaderCollapsed}>
+            {asm.allRecipients.length > 0 && (
+              <div className="match-count">{asm.allRecipients.length} recipients</div>
+            )}
+            {manualRemoves.length > 0 && (
+              <TactileButton
+                onClick={onUndoRemove}
+                icon={
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="1 4 1 10 7 10" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  </svg>
+                }
+              >
+                UNDO
+              </TactileButton>
+            )}
+            <TactileButton
+              onClick={onResetManual}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M23 4v6h-6" />
+                  <path d="M1 20v-6h6" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              }
+            >
+              RESET
+            </TactileButton>
+            <TactileButton
+              onClick={() => setIsHistoryOpen(true)}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              }
+            >
+              HISTORY
+            </TactileButton>
+            <TactileButton
+              onClick={handleCopyWithHistory}
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+              }
+            >
+              COPY
+            </TactileButton>
+            <TactileButton
+              onClick={() => asm.setIsBridgeReminderOpen(true)}
+              variant="primary"
+              className="btn-collapsible"
+              icon={
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              }
+            >
+              DRAFT BRIDGE
+            </TactileButton>
+          </CollapsibleHeader>
+
+          <ListToolbar
+            search={asm.search}
+            onSearchChange={asm.setSearch}
+            placeholder="Search Recipients"
+            sortDirection={asm.sortConfig.direction}
+            onToggleSortDirection={() =>
+              asm.setSortConfig((prev) => ({
+                ...prev,
+                direction: prev.direction === 'asc' ? 'desc' : 'asc',
+              }))
+            }
+            sortKey={asm.sortConfig.key}
+            sortOptions={[
+              { value: 'name', label: 'Name' },
+              { value: 'email', label: 'Email' },
+              { value: 'title', label: 'Title' },
+              { value: 'phone', label: 'Phone' },
+            ]}
+            onSortKeyChange={(key) =>
+              asm.setSortConfig((prev) => ({
+                ...prev,
+                key: key as 'name' | 'email' | 'title' | 'phone',
+              }))
+            }
+          />
+
+          <div className="tab-list-container">
+            <CompositionList
+              log={asm.log}
+              itemData={asm.itemData}
+              onScroll={(scrollOffset) => asm.setIsHeaderCollapsed(scrollOffset > 30)}
+            />
+          </div>
+        </div>
       </div>
 
       <AddContactModal

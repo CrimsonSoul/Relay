@@ -36,7 +36,15 @@ export const SidebarItem = memo(
           className={`sidebar-item${active ? ' sidebar-item--active' : ''}`}
         >
           <div className="sidebar-item-inner">
-            <span className="card-surface sidebar-item-label" style={{ color: color.text }}>
+            <span
+              className="sidebar-item-label"
+              style={{
+                color: color.text,
+                background: color.bg,
+                borderColor: color.border,
+              }}
+            >
+              <span className="sidebar-item-accent" style={{ background: color.fill }} />
               <span className="sidebar-item-name">{label}</span>
               {count !== undefined && (
                 <span className="sidebar-item-count" style={{ color: color.text }}>

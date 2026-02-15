@@ -31,11 +31,11 @@ const PALETTE: ColorScheme[] = [
     fill: '#10B981',
   }, // Emerald
   {
-    bg: 'rgba(59, 130, 246, 0.2)',
-    border: 'rgba(59, 130, 246, 0.4)',
-    text: '#93C5FD',
-    fill: '#3B82F6',
-  }, // Blue
+    bg: 'rgba(6, 182, 212, 0.2)',
+    border: 'rgba(6, 182, 212, 0.4)',
+    text: '#67E8F9',
+    fill: '#06B6D4',
+  }, // Cyan
   {
     bg: 'rgba(99, 102, 241, 0.2)',
     border: 'rgba(99, 102, 241, 0.4)',
@@ -91,6 +91,13 @@ const PALETTE: ColorScheme[] = [
     fill: '#A855F7',
   }, // Purple
 ];
+
+export const AMBER: ColorScheme = {
+  bg: 'rgba(245, 158, 11, 0.15)',
+  border: 'rgba(245, 158, 11, 0.3)',
+  text: '#FCD34D',
+  fill: '#F59E0B',
+};
 
 export const getColorForString = (str: string): ColorScheme => {
   let hash = 0;
