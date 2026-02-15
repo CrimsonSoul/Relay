@@ -166,7 +166,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
       <div
         ref={animationParent}
-        className={`oncall-grid stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        className={`oncall-grid-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         role="list"
         aria-label="On-Call Teams"
       >
