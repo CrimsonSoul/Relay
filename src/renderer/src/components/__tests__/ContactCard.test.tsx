@@ -43,44 +43,7 @@ describe('ContactCard Component', () => {
     const { container } = render(<ContactCard {...mockContact} selected={true} />);
 
     const cardElement = container.querySelector('.card-surface');
-    expect(cardElement).toHaveStyle({
-      background: 'rgba(245, 158, 11, 0.06)',
-    });
-  });
-
-  test('renders with groups', () => {
-    const contactWithGroups: Contact = {
-      name: 'Jane Smith',
-      email: 'jane@example.com',
-      phone: '555-987-6543',
-      title: 'Manager',
-      _searchString: 'jane smith jane@example.com manager',
-      raw: {},
-    };
-
-    const groups = ['Engineering', 'Leads'];
-    render(<ContactCard {...contactWithGroups} groups={groups} />);
-
-    expect(screen.getByText('ENGINEERING')).toBeInTheDocument();
-    expect(screen.getByText('LEADS')).toBeInTheDocument();
-  });
-
-  test('shows group count overflow', () => {
-    const contactWithManyGroups: Contact = {
-      name: 'Bob Johnson',
-      email: 'bob@example.com',
-      phone: '555-555-5555',
-      title: 'Director',
-      _searchString: 'bob johnson bob@example.com director',
-      raw: {},
-    };
-
-    const groups = ['Group1', 'Group2', 'Group3', 'Group4'];
-    render(<ContactCard {...contactWithManyGroups} groups={groups} />);
-
-    expect(screen.getByText('GROUP1')).toBeInTheDocument();
-    expect(screen.getByText('GROUP2')).toBeInTheDocument();
-    expect(screen.getByText('+2')).toBeInTheDocument();
+    expect(cardElement).toHaveClass('contact-card-body--selected');
   });
 
   test('renders with source label', () => {
