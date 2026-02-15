@@ -21,7 +21,7 @@ describe('Modal', () => {
   });
 
   afterEach(() => {
-    document.body.style.overflow = '';
+    document.body.classList.remove('modal-open');
   });
 
   it('renders nothing when closed', () => {
@@ -105,21 +105,19 @@ describe('Modal', () => {
         <p>Content</p>
       </Modal>,
     );
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.body.classList.contains('modal-open')).toBe(true);
   });
 
   it('restores body scroll when closed', () => {
-    document.body.style.overflow = 'auto';
-
     const { unmount } = render(
       <Modal isOpen={true} onClose={vi.fn()}>
         <p>Content</p>
       </Modal>,
     );
 
-    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.body.classList.contains('modal-open')).toBe(true);
     unmount();
-    expect(document.body.style.overflow).toBe('auto');
+    expect(document.body.classList.contains('modal-open')).toBe(false);
   });
 
   it('renders close button with aria-label', () => {
