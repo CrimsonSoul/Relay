@@ -52,22 +52,13 @@
   height: 100%;
 }
 
-/* Masonry Layout for Pop-out (View Only) */
+/* Fixed 2-Column Grid for Pop-out (View Only) */
 .oncall-grid-masonry {
-  column-count: 2;
-  column-gap: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
   padding-bottom: 40px;
-}
-
-.oncall-grid-masonry > .oncall-grid-item {
-  break-inside: avoid;
-  margin-bottom: 24px;
-}
-
-@media (min-width: 1800px) {
-  .oncall-grid-masonry {
-    column-count: 3;
-  }
+  align-items: stretch;
 }
 
 @media (max-width: 899px) {
@@ -76,7 +67,7 @@
     gap: 16px;
   }
   .oncall-grid-masonry {
-    column-count: 1;
+    grid-template-columns: 1fr;
   }
 }
 

@@ -12,6 +12,7 @@ import {
 } from '../dataUtils';
 import { validateDataPath } from '../pathValidation';
 import { loggers } from '../logger';
+import { getSecureOrigin, isTrustedGeolocationOrigin } from '../securityPolicy';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -97,24 +98,40 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
 }
 
 export function setupPermissions(sess: Electron.Session) {
-  sess.setPermissionRequestHandler((webContents, permission, callback) => {
-    // Only grant geolocation to any content; restrict media to main window only
+  sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
+
     if (permission === 'geolocation') {
-      callback(true);
+      const requestingOrigin = getSecureOrigin(details.requestingUrl);
+      const allowed = !!isMainWindow || isTrustedGeolocationOrigin(requestingOrigin);
+      if (!allowed) {
+        loggers.security.warn('Blocked geolocation permission request from untrusted origin', {
+          requestingUrl: details.requestingUrl,
+        });
+      }
+      callback(allowed);
       return;
     }
+
     if (permission === 'media') {
-      const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
       callback(!!isMainWindow);
       return;
     }
+
     callback(false);
   });
-  sess.setPermissionCheckHandler((webContents, permission) => {
-    if (permission === 'geolocation') return true;
-    if (permission === 'media') {
-      return !!(state.mainWindow && webContents === state.mainWindow.webContents);
+
+  sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
+
+    if (permission === 'geolocation') {
+      return !!isMainWindow || isTrustedGeolocationOrigin(requestingOrigin);
     }
+
+    if (permission === 'media') {
+      return !!isMainWindow;
+    }
+
     return false;
   });
 }

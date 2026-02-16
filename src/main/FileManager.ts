@@ -9,7 +9,6 @@ import {
   type Server,
   type OnCallRow,
   type DataError,
-  type ImportProgress,
   type ContactRecord,
   type ServerRecord,
   type OnCallRecord,
@@ -86,7 +85,6 @@ function onCallRecordToOnCallRow(record: OnCallRecord): OnCallRow {
 export class FileManager {
   private watcher: FSWatcher | null = null;
   private internalWriteCount = 0;
-  private fileLocks: Map<string, Promise<void>> = new Map();
 
   private fsService: FileSystemService;
   private cache: DataCacheManager;
@@ -123,10 +121,6 @@ export class FileManager {
 
   public getCachedData() {
     return this.cache.getCache();
-  }
-
-  public async resolveExistingFile(fileNames: string[]): Promise<string | null> {
-    return this.fsService.resolveExistingFile(fileNames);
   }
 
   private async loadContacts(): Promise<Contact[]> {
@@ -215,58 +209,8 @@ export class FileManager {
     }
   }
 
-  public async isDummyData(fileName: string): Promise<boolean> {
-    return this.fsService.isDummyData(fileName);
-  }
-
-  public async writeAndEmit(path: string, content: string) {
-    const existingLock = this.fileLocks.get(path) || Promise.resolve();
-    const newLock = existingLock
-      .then(async () => {
-        this.internalWriteCount++;
-        try {
-          await this.fsService.atomicWriteFullPath(path, content);
-          await this.readAndEmit();
-        } finally {
-          setTimeout(() => {
-            this.internalWriteCount--;
-          }, WRITE_GUARD_DELAY_MS);
-        }
-      })
-      .finally(() => {
-        if (this.fileLocks.get(path) === newLock) {
-          this.fileLocks.delete(path);
-        }
-      });
-    this.fileLocks.set(path, newLock);
-    return newLock;
-  }
-
-  public async rewriteFileDetached(path: string, content: string) {
-    const existingLock = this.fileLocks.get(path) || Promise.resolve();
-    const newLock = existingLock
-      .then(async () => {
-        this.internalWriteCount++;
-        try {
-          await this.fsService.atomicWriteFullPath(path, content);
-        } finally {
-          setTimeout(() => this.internalWriteCount--, WRITE_GUARD_DELAY_MS);
-        }
-      })
-      .finally(() => {
-        if (this.fileLocks.get(path) === newLock) {
-          this.fileLocks.delete(path);
-        }
-      });
-    this.fileLocks.set(path, newLock);
-    return newLock;
-  }
-
   public emitError(error: DataError) {
     this.cache.emitError(error);
-  }
-  public emitProgress(progress: ImportProgress) {
-    this.cache.emitProgress(progress);
   }
 
   // Delegated Operations

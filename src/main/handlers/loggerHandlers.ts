@@ -24,7 +24,7 @@ export function setupLoggerHandlers(): void {
   ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (_event, entry) => {
     try {
       // Rate-limit renderer logging to prevent log flooding
-      const rl = rateLimiters.dataMutation.tryConsume();
+      const rl = rateLimiters.rendererLogging.tryConsume();
       if (!rl.allowed) return;
 
       const validated = LogEntrySchema.safeParse(entry);

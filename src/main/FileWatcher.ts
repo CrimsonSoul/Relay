@@ -25,7 +25,7 @@ import { loggers } from './logger';
 
 export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks): FSWatcher {
   // Watch the root directory
-  // usePolling is enabled to ensure detection on network drives (OneDrive) where native events may be dropped
+  // Polling is disabled by default to reduce CPU use; native events are usually sufficient.
   const watcher = watch(rootDir, {
     ignoreInitial: true,
     depth: 0,

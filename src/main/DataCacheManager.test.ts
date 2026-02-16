@@ -6,7 +6,6 @@ const mockEmitter = {
   emitReloadStarted: vi.fn(),
   emitReloadCompleted: vi.fn(),
   emitError: vi.fn(),
-  emitProgress: vi.fn(),
 };
 
 vi.mock('./FileEmitter', () => ({
@@ -15,7 +14,6 @@ vi.mock('./FileEmitter', () => ({
     emitReloadStarted = mockEmitter.emitReloadStarted;
     emitReloadCompleted = mockEmitter.emitReloadCompleted;
     emitError = mockEmitter.emitError;
-    emitProgress = mockEmitter.emitProgress;
   },
 }));
 
@@ -96,17 +94,5 @@ describe('DataCacheManager', () => {
     const error = { type: 'parse' as const, message: 'bad csv' };
     manager.emitError(error);
     expect(mockEmitter.emitError).toHaveBeenCalledWith(error);
-  });
-
-  it('emitProgress delegates to emitter', () => {
-    const progress = {
-      stage: 'reading' as const,
-      totalRows: 100,
-      processedRows: 50,
-      percentage: 50,
-      message: 'halfway',
-    };
-    manager.emitProgress(progress);
-    expect(mockEmitter.emitProgress).toHaveBeenCalledWith(progress);
   });
 });

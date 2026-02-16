@@ -72,4 +72,11 @@ describe('validateDataPath', () => {
 
     spy.mockRestore();
   });
+
+  it('should reject sibling prefix paths outside home directory', async () => {
+    const outsideHomeWithPrefix = `${os.homedir()}-malicious`;
+    const result = await validateDataPath(outsideHomeWithPrefix);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('within user home directory');
+  });
 });

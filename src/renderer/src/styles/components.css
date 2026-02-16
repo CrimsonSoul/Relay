@@ -2724,6 +2724,25 @@ body.modal-open {
   padding: 0;
 }
 
+/* --- List Filters Bar --- */
+.list-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.list-filters-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
 .collapsible-header-actions {
   display: flex;
   align-items: center;

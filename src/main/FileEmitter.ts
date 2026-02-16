@@ -3,7 +3,6 @@ import {
   IPC_CHANNELS,
   type AppData,
   type DataError,
-  type ImportProgress,
   type Contact,
   type BridgeGroup,
   type Server,
@@ -46,9 +45,5 @@ export class FileEmitter {
   emitError(error: DataError) {
     this.broadcastToAll(IPC_CHANNELS.DATA_ERROR, error);
     loggers.fileManager.error(`Error: ${error.type} - ${error.message}`, error.details);
-  }
-
-  emitProgress(progress: ImportProgress) {
-    this.broadcastToAll(IPC_CHANNELS.IMPORT_PROGRESS, progress);
   }
 }

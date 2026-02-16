@@ -1,8 +1,7 @@
 import fs from 'fs/promises';
-import { join, resolve, relative, isAbsolute } from 'path';
+import { join } from 'path';
 import { atomicWriteWithLock } from './fileLock';
 import { validatePath } from './utils/pathSafety';
-import { loggers } from './logger';
 
 /**
  * FileSystemService - Handles low-level file system operations,
@@ -31,40 +30,6 @@ export class FileSystemService {
     }
   }
 
-  public async resolveExistingFile(fileNames: string[]): Promise<string | null> {
-    for (const fileName of fileNames) {
-      const isValid = await validatePath(fileName, this.rootDir);
-      if (!isValid) {
-        loggers.fileManager.warn(`Blocked potentially unsafe file resolution attempt: ${fileName}`);
-        continue;
-      }
-      const path = join(this.rootDir, fileName);
-      try {
-        await fs.access(path);
-        return path;
-      } catch {
-        // File doesn't exist, try next
-      }
-    }
-    return null;
-  }
-
-  public async isDummyData(fileName: string): Promise<boolean> {
-    try {
-      await this.assertSafePath(fileName, this.rootDir);
-      await this.assertSafePath(fileName, this.bundledDataPath);
-
-      const [current, bundled] = await Promise.all([
-        fs.readFile(join(this.rootDir, fileName), 'utf-8'),
-        fs.readFile(join(this.bundledDataPath, fileName), 'utf-8'),
-      ]);
-      return current.replace(/\r\n/g, '\n').trim() === bundled.replace(/\r\n/g, '\n').trim();
-    } catch (e) {
-      loggers.fileManager.debug('isDummyData check failed', { fileName, error: e });
-      return false;
-    }
-  }
-
   public async readFile(fileName: string): Promise<string | null> {
     await this.assertSafePath(fileName, this.rootDir);
     const path = join(this.rootDir, fileName);
@@ -87,21 +52,5 @@ export class FileSystemService {
     const path = join(this.rootDir, fileName);
     const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
     await atomicWriteWithLock(path, contentWithBom);
-  }
-
-  /**
-   * Write to an absolute path. The path MUST resolve inside rootDir.
-   * This prevents callers from writing to arbitrary locations.
-   */
-  public async atomicWriteFullPath(fullPath: string, content: string): Promise<void> {
-    // Validate that the full path is within rootDir
-    const resolved = resolve(fullPath);
-    const rel = relative(this.rootDir, resolved);
-    if (rel.startsWith('..') || isAbsolute(rel)) {
-      loggers.security.error(`Blocked write to path outside data root: ${fullPath}`);
-      throw new Error(`Path validation failed: "${fullPath}" is outside root "${this.rootDir}"`);
-    }
-    const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-    await atomicWriteWithLock(fullPath, contentWithBom);
   }
 }

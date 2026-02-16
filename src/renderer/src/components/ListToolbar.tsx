@@ -13,6 +13,7 @@ type ListToolbarProps = {
   sortKey?: string;
   sortOptions?: SortOption[];
   onSortKeyChange?: (key: string) => void;
+  children?: React.ReactNode;
 };
 
 export const ListToolbar: React.FC<ListToolbarProps> = ({
@@ -24,6 +25,7 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
   sortKey,
   sortOptions,
   onSortKeyChange,
+  children,
 }) => {
   return (
     <div className="list-toolbar">
@@ -32,6 +34,7 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
       />
+      {children}
       {sortOptions && sortOptions.length > 0 && onSortKeyChange ? (
         <div className="list-toolbar-sort">
           <span className="list-toolbar-sort-label">Sort By</span>

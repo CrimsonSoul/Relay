@@ -7,6 +7,7 @@
 
 import { LogData } from '@shared/types';
 import { LogLevel, ErrorCategory } from '@shared/logging';
+import { redactSensitiveData } from '@shared/logRedaction';
 
 interface ErrorContext {
   category?: ErrorCategory;
@@ -115,14 +116,14 @@ class RendererLogger {
     ];
 
     if (entry.data) {
-      const sanitizedData = { ...entry.data };
-      // Remove sensitive fields
-      delete sanitizedData.password;
-      delete sanitizedData.token;
-      delete sanitizedData.apiKey;
-      delete sanitizedData.secret;
+      const sanitizedData = redactSensitiveData(entry.data);
+      const isNonEmptyObject =
+        typeof sanitizedData === 'object' &&
+        sanitizedData !== null &&
+        !Array.isArray(sanitizedData) &&
+        Object.keys(sanitizedData).length > 0;
 
-      if (Object.keys(sanitizedData).length > 0) {
+      if (isNonEmptyObject || Array.isArray(sanitizedData) || typeof sanitizedData !== 'object') {
         parts.push(`| ${JSON.stringify(sanitizedData)}`);
       }
     }
@@ -161,13 +162,14 @@ class RendererLogger {
 
     const levelName = LogLevel[level];
     const errorContext = level >= LogLevel.WARN ? this.extractErrorContext(data) : undefined;
+    const sanitizedData = data ? redactSensitiveData(data) : undefined;
 
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
       level: levelName,
       module,
       message,
-      data,
+      data: sanitizedData,
       errorContext,
     };
 
@@ -199,10 +201,12 @@ class RendererLogger {
           level: levelName,
           module: `Renderer:${module}`,
           message,
-          data: {
-            ...data,
+          data: redactSensitiveData({
+            ...(typeof sanitizedData === 'object' && sanitizedData !== null
+              ? (sanitizedData as Record<string, unknown>)
+              : { value: sanitizedData }),
             errorContext,
-          },
+          }) as Record<string, unknown>,
         });
       } catch (_err) {
         // Silently fail if IPC isn't available
