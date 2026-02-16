@@ -101,14 +101,6 @@ export type DataError = {
   details?: unknown;
 };
 
-export type ImportProgress = {
-  stage: 'reading' | 'validating' | 'processing' | 'writing' | 'complete';
-  totalRows: number;
-  processedRows: number;
-  percentage: number;
-  message: string;
-};
-
 // Weather and Location Types
 export type WeatherData = {
   timezone?: string;
@@ -163,7 +155,6 @@ export type BridgeAPI = {
   onReloadStart: (callback: () => void) => () => void;
   onReloadComplete: (callback: (success: boolean) => void) => () => void;
   onDataError: (callback: (error: DataError) => void) => () => void;
-  onImportProgress: (callback: (progress: ImportProgress) => void) => () => void;
   getInitialData: () => Promise<AppData>;
   reloadData: () => Promise<void>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
@@ -313,7 +304,6 @@ export const IPC_CHANNELS = {
   DATA_RELOAD_STARTED: 'data:reload-started',
   DATA_RELOAD_COMPLETED: 'data:reload-completed',
   DATA_ERROR: 'data:error',
-  IMPORT_PROGRESS: 'data:importProgress',
   AUTH_REQUESTED: 'auth:requested',
   AUTH_SUBMIT: 'auth:submit',
   AUTH_CANCEL: 'auth:cancel',

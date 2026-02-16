@@ -9,6 +9,7 @@ import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ListToolbar } from '../components/ListToolbar';
+import { ListFilters } from '../components/ListFilters';
 import { GroupSelector } from '../components/directory/GroupSelector';
 import { VirtualRow } from '../components/directory/VirtualRow';
 import { DeleteConfirmationModal } from '../components/directory/DeleteConfirmationModal';
@@ -17,6 +18,7 @@ import { ContactDetailPanel } from '../components/ContactDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useDirectory } from '../hooks/useDirectory';
 import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
+import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 
 type Props = {
@@ -50,9 +52,83 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   const { getContactNote, setContactNote } = useNotesContext();
   const [notesContact, setNotesContact] = useState<Contact | null>(null);
 
+  const contactExtraFilters = useMemo<FilterDef<Contact>[]>(
+    () => [
+      {
+        key: 'hasEmail',
+        label: 'Has Email',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+            <polyline points="22,6 12,13 2,6" />
+          </svg>
+        ),
+        predicate: (c) => !!c.email?.trim(),
+      },
+      {
+        key: 'hasPhone',
+        label: 'Has Phone',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+          </svg>
+        ),
+        predicate: (c) => !!c.phone?.trim(),
+      },
+      {
+        key: 'hasTitle',
+        label: 'Has Title',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+          </svg>
+        ),
+        predicate: (c) => !!c.title?.trim(),
+      },
+    ],
+    [],
+  );
+
+  const filters = useListFilters({
+    items: dir.filtered,
+    tagSourceItems: contacts,
+    getNote: (c) => getContactNote(c.email),
+    extraFilters: contactExtraFilters,
+  });
+
+  const filtered = filters.filteredItems;
+
   const { handleListKeyDown } = useDirectoryKeyboard({
     listRef,
-    filtered: dir.filtered,
+    filtered,
     focusedIndex: dir.focusedIndex,
     setFocusedIndex: dir.setFocusedIndex,
     handleAddWrapper: dir.handleAddWrapper,
@@ -70,7 +146,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   }, [contextMenu, setContextMenu]);
 
   const handleNotesClick = useCallback((contact: Contact) => setNotesContact(contact), []);
-  const { filtered, handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
+  const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
 
   const selectedContact =
     focusedIndex >= 0 && focusedIndex < filtered.length ? filtered[focusedIndex] : null;
@@ -140,9 +216,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         )}
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
-            {dir.filtered.length > 0 && (
-              <div className="match-count">{dir.filtered.length} contacts</div>
-            )}
+            {filtered.length > 0 && <div className="match-count">{filtered.length} contacts</div>}
             <TactileButton
               variant="primary"
               className="btn-collapsible"
@@ -195,10 +269,25 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             }
           />
 
+          {(dir.filtered.length > 0 || filters.isAnyFilterActive) && (
+            <ListFilters
+              hasNotesFilter={filters.hasNotesFilter}
+              selectedTags={filters.selectedTags}
+              availableTags={filters.availableTags}
+              activeExtras={filters.activeExtras}
+              extraFilters={filters.extraFilters}
+              isAnyFilterActive={filters.isAnyFilterActive}
+              onToggleHasNotes={filters.toggleHasNotes}
+              onToggleTag={filters.toggleTag}
+              onToggleExtra={filters.toggleExtra}
+              onClearAll={filters.clearAll}
+            />
+          )}
+
           <div
             ref={listContainerRef}
             onKeyDown={handleListKeyDown}
-            role="toolbar"
+            role="listbox"
             aria-label="Contacts list"
             tabIndex={0}
             className="tab-list-container"
@@ -207,7 +296,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               renderProp={({ height, width }) => (
                 <List
                   listRef={listRef}
-                  rowCount={dir.filtered.length}
+                  rowCount={filtered.length}
                   rowHeight={ROW_HEIGHT}
                   rowComponent={VirtualRow}
                   rowProps={itemData}
@@ -218,7 +307,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
                 />
               )}
             />
-            {dir.filtered.length === 0 && (
+            {filtered.length === 0 && (
               <div className="tab-empty-state">
                 <div className="tab-empty-state-icon">∅</div>
                 <div>No contacts found</div>

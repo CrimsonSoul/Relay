@@ -1,5 +1,5 @@
 import fsPromises from 'fs/promises';
-import { join, normalize, resolve, isAbsolute } from 'path';
+import { join, normalize, resolve, relative, isAbsolute } from 'path';
 import { app } from 'electron';
 import { loggers } from './logger';
 import { ErrorCategory } from '@shared/logging';
@@ -8,6 +8,11 @@ import { isNodeError } from '@shared/types';
 export interface ValidationResult {
   success: boolean;
   error?: string;
+}
+
+function isWithinDirectory(parentDir: string, targetPath: string): boolean {
+  const relativePath = relative(resolve(parentDir), resolve(targetPath));
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
 }
 
 export async function validateDataPath(path: string): Promise<ValidationResult> {
@@ -30,7 +35,7 @@ export async function validateDataPath(path: string): Promise<ValidationResult> 
   const userDataDir = app.getPath('userData');
   const homeDir = app.getPath('home');
   const resolvedPath = resolve(normalized);
-  if (!resolvedPath.startsWith(homeDir) && !resolvedPath.startsWith(userDataDir)) {
+  if (!isWithinDirectory(homeDir, resolvedPath) && !isWithinDirectory(userDataDir, resolvedPath)) {
     return { success: false, error: 'Path must be within user home directory.' };
   }
 

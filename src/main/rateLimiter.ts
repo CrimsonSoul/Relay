@@ -16,6 +16,8 @@ const FS_OPERATIONS_MAX_TOKENS = 10;
 const FS_OPERATIONS_REFILL_RATE = 2; // 2 tokens per second
 const NETWORK_MAX_TOKENS = 10;
 const NETWORK_REFILL_RATE = 1; // 1 token per second
+const RENDERER_LOG_MAX_TOKENS = 60;
+const RENDERER_LOG_REFILL_RATE = 20; // 20 log events per second
 
 interface RateLimiterConfig {
   maxTokens: number; // Maximum number of tokens (burst capacity)
@@ -118,6 +120,13 @@ export const rateLimiters = {
     maxTokens: NETWORK_MAX_TOKENS,
     refillRate: NETWORK_REFILL_RATE,
     name: 'Network',
+  }),
+
+  // Renderer logging events
+  rendererLogging: new RateLimiter({
+    maxTokens: RENDERER_LOG_MAX_TOKENS,
+    refillRate: RENDERER_LOG_REFILL_RATE,
+    name: 'RendererLogging',
   }),
 };
 

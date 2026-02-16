@@ -1,7 +1,7 @@
 /**
  * GroupOperations - Bridge group CRUD operations
  * Groups are stored as JSON for flexibility with nested data
- * Uses cross-process file locking for multi-instance synchronization.
+ * Uses atomic write + in-process per-path locking for consistency.
  */
 
 import { join } from 'path';

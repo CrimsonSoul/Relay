@@ -1,5 +1,5 @@
 import { FileEmitter, CachedData } from './FileEmitter';
-import { type DataError, type ImportProgress } from '@shared/ipc';
+import { type DataError } from '@shared/ipc';
 
 /**
  * DataCacheManager - Manages the in-memory cache of application data
@@ -41,9 +41,5 @@ export class DataCacheManager {
 
   public emitError(error: DataError): void {
     this.emitter.emitError(error);
-  }
-
-  public emitProgress(progress: ImportProgress): void {
-    this.emitter.emitProgress(progress);
   }
 }

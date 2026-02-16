@@ -130,6 +130,7 @@ describe('rateLimiters', () => {
     expect(rateLimiters.dataMutation).toBeDefined();
     expect(rateLimiters.dataReload).toBeDefined();
     expect(rateLimiters.fsOperations).toBeDefined();
+    expect(rateLimiters.rendererLogging).toBeDefined();
 
     // File import should be very restrictive
     expect(rateLimiters.fileImport.getTokens()).toBe(5);
@@ -142,6 +143,9 @@ describe('rateLimiters', () => {
 
     // FS operations should have burst capacity
     expect(rateLimiters.fsOperations.getTokens()).toBe(10);
+
+    // Renderer logging should be independent from mutation quotas
+    expect(rateLimiters.rendererLogging.getTokens()).toBe(60);
   });
 
   it('should allow burst consumption up to max tokens', () => {

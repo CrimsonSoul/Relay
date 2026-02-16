@@ -9,9 +9,11 @@ import { TactileButton } from '../components/TactileButton';
 import { ServerCard } from '../components/ServerCard';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { ListToolbar } from '../components/ListToolbar';
+import { ListFilters } from '../components/ListFilters';
 import { ServerDetailPanel } from '../components/ServerDetailPanel';
 import { NotesModal } from '../components/NotesModal';
 import { useServers } from '../hooks/useServers';
+import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
 
 interface ServersTabProps {
@@ -25,6 +27,8 @@ interface ServerVirtualRowData {
   selectedIndex: number;
   onRowClick: (index: number) => void;
 }
+
+const ROW_HEIGHT = 80;
 
 const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
   const { servers, onContextMenu, selectedIndex, onRowClick } = data;
@@ -46,29 +50,84 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const { getServerNote, setServerNote } = useNotesContext();
   const [notesServer, setNotesServer] = useState<Server | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const serverExtraFilters = useMemo<FilterDef<Server>[]>(
+    () => [
+      {
+        key: 'hasOwner',
+        label: 'Has Owner',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        ),
+        predicate: (s) => !!s.owner?.trim(),
+      },
+      {
+        key: 'hasComment',
+        label: 'Has Comment',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        ),
+        predicate: (s) => !!s.comment?.trim(),
+      },
+    ],
+    [],
+  );
+
+  const filters = useListFilters({
+    items: h.filteredServers,
+    tagSourceItems: servers,
+    getNote: (s) => getServerNote(s.name),
+    extraFilters: serverExtraFilters,
+  });
+
+  const displayedServers = filters.filteredItems;
+
   // Clamp selection when list changes
   useEffect(() => {
-    if (h.filteredServers.length === 0) {
+    if (displayedServers.length === 0) {
       setSelectedIndex(0);
-    } else if (selectedIndex >= h.filteredServers.length) {
-      setSelectedIndex(h.filteredServers.length - 1);
+    } else if (selectedIndex >= displayedServers.length) {
+      setSelectedIndex(displayedServers.length - 1);
     }
-  }, [h.filteredServers.length, selectedIndex]);
+  }, [displayedServers.length, selectedIndex]);
 
   const selectedServer =
-    selectedIndex >= 0 && selectedIndex < h.filteredServers.length
-      ? h.filteredServers[selectedIndex]
+    selectedIndex >= 0 && selectedIndex < displayedServers.length
+      ? displayedServers[selectedIndex]
       : null;
   const selectedNote = selectedServer ? getServerNote(selectedServer.name) : undefined;
 
   const rowProps = useMemo(
     () => ({
-      servers: h.filteredServers,
+      servers: displayedServers,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
       onRowClick: (i: number) => setSelectedIndex(i),
     }),
-    [h.filteredServers, h.handleContextMenu, selectedIndex],
+    [displayedServers, h.handleContextMenu, selectedIndex],
   );
 
   return (
@@ -112,8 +171,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         )}
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={h.isHeaderCollapsed}>
-            {h.filteredServers.length > 0 && (
-              <div className="match-count">{h.filteredServers.length} servers</div>
+            {displayedServers.length > 0 && (
+              <div className="match-count">{displayedServers.length} servers</div>
             )}
             <TactileButton
               onClick={h.openAddModal}
@@ -149,15 +208,41 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             onToggleSortDirection={() =>
               h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
             }
+            sortKey={h.sortKey}
+            sortOptions={[
+              { value: 'name', label: 'Name' },
+              { value: 'businessArea', label: 'Business Area' },
+              { value: 'lob', label: 'LOB' },
+              { value: 'owner', label: 'Owner' },
+              { value: 'os', label: 'OS' },
+            ]}
+            onSortKeyChange={(key) =>
+              h.setSortKey(key as 'name' | 'businessArea' | 'lob' | 'owner' | 'os')
+            }
           />
 
-          <div className="tab-list-container">
+          {(h.filteredServers.length > 0 || filters.isAnyFilterActive) && (
+            <ListFilters
+              hasNotesFilter={filters.hasNotesFilter}
+              selectedTags={filters.selectedTags}
+              availableTags={filters.availableTags}
+              activeExtras={filters.activeExtras}
+              extraFilters={filters.extraFilters}
+              isAnyFilterActive={filters.isAnyFilterActive}
+              onToggleHasNotes={filters.toggleHasNotes}
+              onToggleTag={filters.toggleTag}
+              onToggleExtra={filters.toggleExtra}
+              onClearAll={filters.clearAll}
+            />
+          )}
+
+          <div className="tab-list-container" role="region" aria-label="Servers list">
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
                   style={{ height: height ?? 0, width: width ?? 0 }}
-                  rowCount={h.filteredServers.length}
-                  rowHeight={80}
+                  rowCount={displayedServers.length}
+                  rowHeight={ROW_HEIGHT}
                   rowComponent={VirtualRow}
                   rowProps={rowProps}
                   onScroll={(e) =>
@@ -166,7 +251,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
                 />
               )}
             />
-            {h.filteredServers.length === 0 && (
+            {displayedServers.length === 0 && (
               <div className="tab-empty-state">
                 <div className="tab-empty-state-icon">∅</div>
                 <div>No infrastructure found</div>

@@ -3,6 +3,7 @@ import path from 'path';
 import type { App } from 'electron';
 import { LogData } from '@shared/types';
 import { LogLevel, ErrorCategory } from '@shared/logging';
+import { redactSensitiveData } from '@shared/logRedaction';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
@@ -207,13 +208,14 @@ class Logger {
   private appendDataToParts(parts: string[], data?: LogData): void {
     if (!data) return;
 
-    const sanitizedData = { ...data };
-    const sensitiveFields = ['password', 'token', 'apiKey', 'secret'];
-    for (const field of sensitiveFields) {
-      delete sanitizedData[field];
-    }
+    const sanitizedData = redactSensitiveData(data);
+    const isNonEmptyObject =
+      typeof sanitizedData === 'object' &&
+      sanitizedData !== null &&
+      !Array.isArray(sanitizedData) &&
+      Object.keys(sanitizedData).length > 0;
 
-    if (Object.keys(sanitizedData).length > 0) {
+    if (isNonEmptyObject || Array.isArray(sanitizedData) || typeof sanitizedData !== 'object') {
       parts.push(`| Data: ${JSON.stringify(sanitizedData)}`);
     }
   }

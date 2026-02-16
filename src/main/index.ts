@@ -11,6 +11,7 @@ import { validateEnv } from './env';
 import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from './handlers/windowHandlers';
+import { isTrustedWebviewUrl } from './securityPolicy';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -53,6 +54,21 @@ if (!gotLock) {
   });
 
   loggers.main.info('Waiting for Electron ready...');
+
+  app.on('web-contents-created', (_event, contents) => {
+    if (contents.getType() !== 'webview') return;
+
+    contents.on('will-navigate', (event, url) => {
+      if (isTrustedWebviewUrl(url)) return;
+      loggers.security.warn(`Blocked webview navigation to non-allowlisted URL: ${url}`);
+      event.preventDefault();
+    });
+
+    contents.setWindowOpenHandler(({ url }) => {
+      loggers.security.warn(`Blocked webview window.open() attempt: ${url}`);
+      return { action: 'deny' };
+    });
+  });
 
   async function createWindow() {
     state.mainWindow = new BrowserWindow({
@@ -149,30 +165,15 @@ if (!gotLock) {
       });
     }
 
-    // Webview security: restrict to HTTPS allowlist only
-    const ALLOWED_WEBVIEW_ORIGINS = [
-      'https://www.rainviewer.com',
-      'https://your-intranet',
-      'https://chatgpt.com',
-      'https://claude.ai',
-      'https://copilot.microsoft.com',
-      'https://gemini.google.com',
-    ];
-
     state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
       delete webPreferences.preload;
       webPreferences.nodeIntegration = false;
       webPreferences.contextIsolation = true;
       webPreferences.sandbox = true;
+      webPreferences.webSecurity = true;
+      webPreferences.allowRunningInsecureContent = false;
 
-      if (!params.src || !params.src.startsWith('https://')) {
-        loggers.security.warn(`Blocked WebView with non-HTTPS URL: ${params.src}`);
-        event.preventDefault();
-        return;
-      }
-
-      const isAllowed = ALLOWED_WEBVIEW_ORIGINS.some((origin) => params.src.startsWith(origin));
-      if (!isAllowed) {
+      if (!isTrustedWebviewUrl(params.src)) {
         loggers.security.warn(`Blocked WebView navigation to non-allowlisted URL: ${params.src}`);
         event.preventDefault();
       }

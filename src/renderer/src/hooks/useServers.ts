@@ -6,6 +6,7 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortKey, setSortKey] = useState<'name' | 'businessArea' | 'lob' | 'owner' | 'os'>('name');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; server: Server } | null>(
     null,
   );
@@ -29,13 +30,13 @@ export function useServers(servers: Server[], contacts: Contact[]) {
       result = result.filter((s) => s._searchString.includes(q));
     }
     return result.sort((a, b) => {
-      const valA = (a.name || '').toLowerCase(),
-        valB = (b.name || '').toLowerCase();
+      const valA = (a[sortKey] || '').toLowerCase(),
+        valB = (b[sortKey] || '').toLowerCase();
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [servers, debouncedSearch, sortOrder]);
+  }, [servers, debouncedSearch, sortOrder, sortKey]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, server: Server) => {
     e.preventDefault();
@@ -88,6 +89,8 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     setSearch,
     sortOrder,
     setSortOrder,
+    sortKey,
+    setSortKey,
     contextMenu,
     setContextMenu,
     isAddModalOpen,

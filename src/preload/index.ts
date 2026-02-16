@@ -6,7 +6,6 @@ import {
   type AuthRequest,
   type RadarSnapshot,
   type DataError,
-  type ImportProgress,
 } from '@shared/ipc';
 
 const api: BridgeAPI = {
@@ -35,14 +34,6 @@ const api: BridgeAPI = {
     const handler = (_event: Electron.IpcRendererEvent, error: DataError) => callback(error);
     ipcRenderer.on(IPC_CHANNELS.DATA_ERROR, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_ERROR, handler);
-  },
-
-  onImportProgress: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, progress: ImportProgress) => {
-      callback(progress);
-    };
-    ipcRenderer.on(IPC_CHANNELS.IMPORT_PROGRESS, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.IMPORT_PROGRESS, handler);
   },
 
   getInitialData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_GET_INITIAL),
