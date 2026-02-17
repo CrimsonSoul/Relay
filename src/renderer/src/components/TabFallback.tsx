@@ -6,9 +6,12 @@ export const TabFallback = ({ error }: { error?: boolean }) => (
     {error ? (
       <>
         <div className="tab-fallback-error-icon">⚠️</div>
-        <div>Failed to load tab</div>
-        <TactileButton variant="secondary" size="small" onClick={() => window.location.reload()}>
-          Reload
+        <div className="tab-fallback-message">This tab failed to load</div>
+        <div className="tab-fallback-hint">
+          Try reloading. If it keeps failing, check data/config in Settings.
+        </div>
+        <TactileButton variant="secondary" size="sm" onClick={() => window.location.reload()}>
+          Reload Tab
         </TactileButton>
       </>
     ) : (

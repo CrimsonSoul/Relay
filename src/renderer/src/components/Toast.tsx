@@ -22,6 +22,70 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+const getToastMeta = (type: ToastType) => {
+  if (type === 'success') {
+    return {
+      title: 'Success',
+      icon: (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M20 6L9 17l-5-5" />
+        </svg>
+      ),
+    };
+  }
+
+  if (type === 'error') {
+    return {
+      title: 'Error',
+      icon: (
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      ),
+    };
+  }
+
+  return {
+    title: 'Notice',
+    icon: (
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="12" x2="12.01" y2="12" />
+        <path d="M12 8v2.5" />
+      </svg>
+    ),
+  };
+};
+
 export const useToast = () => {
   const context = useContext(ToastContext);
   if (!context) {
@@ -71,26 +135,31 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       {children}
       <div className="toast-container" aria-label="Notifications">
         {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            className={`toast toast-${toast.type} toast-slide-up`}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="toast-message">{toast.message}</span>
+          <div key={toast.id} className={`toast toast-${toast.type} toast-slide-up`}>
+            <div className="toast-icon" aria-hidden="true">
+              {getToastMeta(toast.type).icon}
+            </div>
+            <div
+              className="toast-content"
+              role={toast.type === 'error' ? 'alert' : 'status'}
+              aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+            >
+              <div className="toast-title">{getToastMeta(toast.type).title}</div>
+              <div className="toast-message">{toast.message}</div>
+            </div>
             <button
               type="button"
               className="toast-close"
               onClick={() => removeToast(toast.id)}
-              aria-label="Close notification"
+              aria-label="Dismiss notification"
             >
               <svg
-                width="14"
-                height="14"
+                width="12"
+                height="12"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="3"
+                strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >

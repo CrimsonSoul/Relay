@@ -129,6 +129,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
   }, [loc]);
 
   if (!location && loading) return <TabFallback />;
+  const hasForecastContent = Boolean(weather) || alerts.length > 0;
 
   return (
     <div className="weather-font-surface weather-scroll-container weather-tab-layout">
@@ -188,8 +189,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         />
       )}
 
-      <div className="weather-tab-root weather-scroll-container weather-tab-body">
-        <div className="weather-forecast-column weather-scroll-container weather-tab-forecast-column">
+      <div
+        className={`weather-tab-root weather-scroll-container weather-tab-body${!hasForecastContent ? ' weather-tab-body--radar-only' : ''}`}
+      >
+        <div
+          className={`weather-forecast-column weather-scroll-container weather-tab-forecast-column${!hasForecastContent ? ' weather-forecast-column--hidden' : ''}`}
+        >
           {alerts.length > 0 &&
             alerts.map((alert) => (
               <WeatherAlertCard

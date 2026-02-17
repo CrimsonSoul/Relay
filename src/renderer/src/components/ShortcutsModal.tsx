@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type ShortcutsModalProps = {
   isOpen: boolean;
@@ -42,14 +43,40 @@ const shortcuts = [
 ];
 
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose }) => {
+  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    },
+    [onClose],
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, handleKeyDown]);
+
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="shortcuts-modal-overlay animate-fade-in" role="presentation" onClick={onClose}>
+    <div className="shortcuts-modal-overlay animate-fade-in" role="presentation">
+      <button
+        type="button"
+        className="overlay-hitbox"
+        aria-label="Close shortcuts modal backdrop"
+        onClick={onClose}
+      />
       <div
+        ref={focusTrapRef}
         className="shortcuts-modal animate-scale-in"
-        role="presentation"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shortcuts-modal-title"
       >
         <div className="shortcuts-modal-header">
           <div className="shortcuts-modal-header-left">
@@ -75,9 +102,16 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
                 <path d="M7 16h10" />
               </svg>
             </div>
-            <div className="shortcuts-modal-title">Keyboard Shortcuts</div>
+            <div id="shortcuts-modal-title" className="shortcuts-modal-title">
+              Keyboard Shortcuts
+            </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="shortcuts-modal-close-btn">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="shortcuts-modal-close-btn"
+          >
             <svg
               width="20"
               height="20"

@@ -154,6 +154,34 @@ describe('useFocusTrap', () => {
     expect(document.activeElement).toBe(externalBtn);
   });
 
+  it('restores focus when trap deactivates without unmount', () => {
+    const externalBtn = document.createElement('button');
+    externalBtn.textContent = 'Trigger';
+    document.body.appendChild(externalBtn);
+    externalBtn.focus();
+    expect(document.activeElement).toBe(externalBtn);
+
+    const { result, rerender } = renderHook(({ active }) => useFocusTrap(active), {
+      initialProps: { active: true },
+    });
+
+    const container = document.createElement('div');
+    const insideBtn = document.createElement('button');
+    insideBtn.textContent = 'Inside';
+    container.appendChild(insideBtn);
+    document.body.appendChild(container);
+    Object.defineProperty(result.current, 'current', {
+      value: container,
+      writable: true,
+    });
+
+    insideBtn.focus();
+    expect(document.activeElement).toBe(insideBtn);
+
+    rerender({ active: false });
+    expect(document.activeElement).toBe(externalBtn);
+  });
+
   it('brings focus back when focus escapes the container', () => {
     const container = document.createElement('div');
     const btn1 = document.createElement('button');

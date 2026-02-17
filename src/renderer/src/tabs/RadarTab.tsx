@@ -7,6 +7,7 @@ const RADAR_URL = 'https://cw-intra-web/CWDashboard/Home/Radar';
 export const RadarTab: React.FC = () => {
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const supportsWebview = Boolean(window.api);
 
   const handleRefresh = () => {
     setIsLoading(true);
@@ -26,6 +27,17 @@ export const RadarTab: React.FC = () => {
       webview.removeEventListener('did-stop-loading', handleLoadStop);
     };
   }, []);
+
+  if (!supportsWebview) {
+    return (
+      <div className="tab-layout tab-layout--flush">
+        <div className="tab-fallback webview-unavailable">
+          <div className="tab-fallback-error-icon">ℹ️</div>
+          <div className="tab-fallback-message">Radar is available in the desktop app only</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="tab-layout tab-layout--flush">
