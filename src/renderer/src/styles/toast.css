@@ -11,13 +11,10 @@
 }
 
 .toast {
-  --toast-accent: var(--color-accent);
-  --toast-accent-bg: rgba(245, 158, 11, 0.14);
-
   pointer-events: auto;
   position: relative;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: start;
   width: 100%;
@@ -33,18 +30,6 @@
   overflow: clip;
 }
 
-.toast-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  color: var(--toast-accent);
-  background: var(--toast-accent-bg);
-  border: 1px solid color-mix(in oklab, var(--toast-accent) 40%, transparent);
-  margin-top: 1px;
-}
-
 .toast-content {
   min-width: 0;
   display: flex;
@@ -58,24 +43,6 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0.02em;
   line-height: 1.2;
-}
-
-.toast-error {
-  --toast-accent: var(--color-danger);
-  --toast-accent-bg: rgba(239, 68, 68, 0.14);
-  border-color: color-mix(in oklab, var(--color-danger) 35%, var(--color-border-subtle));
-}
-
-.toast-success {
-  --toast-accent: var(--color-accent-green);
-  --toast-accent-bg: rgba(34, 197, 94, 0.14);
-  border-color: color-mix(in oklab, var(--color-accent-green) 35%, var(--color-border-subtle));
-}
-
-.toast-info {
-  --toast-accent: var(--color-accent);
-  --toast-accent-bg: rgba(245, 158, 11, 0.14);
-  border-color: color-mix(in oklab, var(--color-accent) 35%, var(--color-border-subtle));
 }
 
 @keyframes toastSlideUp {
