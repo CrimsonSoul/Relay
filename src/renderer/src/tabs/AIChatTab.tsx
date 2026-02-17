@@ -16,6 +16,18 @@ export const AIChatTab: React.FC = () => {
     wakeUp,
     AI_SERVICES,
   } = useAIChat();
+  const supportsWebview = Boolean(window.api);
+
+  if (!supportsWebview) {
+    return (
+      <div className="tab-layout tab-layout--flush">
+        <div className="tab-fallback webview-unavailable">
+          <div className="tab-fallback-error-icon">ℹ️</div>
+          <div className="tab-fallback-message">AI Chat is available in the desktop app only</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="tab-layout tab-layout--flush">

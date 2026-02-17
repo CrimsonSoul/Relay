@@ -10,13 +10,14 @@ interface RadarPanelProps {
 
 export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
   const { webviewRef, isLoading, handleRefresh } = useRadar(location);
+  const supportsWebview = Boolean(window.api);
   const isValidLocation =
     location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
 
   return (
     <div className="radar-panel-wrapper">
       <div className="radar-panel-container">
-        {isValidLocation ? (
+        {supportsWebview && isValidLocation ? (
           <>
             <TactileButton
               onClick={handleRefresh}
@@ -66,7 +67,9 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               <circle cx="12" cy="10" r="3" />
             </svg>
             <div className="radar-empty-text">
-              Search for a city or enable location access to view radar
+              {supportsWebview
+                ? 'Search for a city or enable location access to view radar'
+                : 'Radar view is available only in the desktop app.'}
             </div>
           </div>
         )}

@@ -79,6 +79,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
   // Handle result selection (Moved before handleKeyDown to fix circular dependency)
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -144,18 +156,18 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <button
-      className="command-palette-overlay animate-fade-in"
-      onClick={onClose}
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
-      aria-label="Close command palette backdrop"
-      type="button"
-    >
+    <div className="command-palette-overlay animate-fade-in" role="presentation">
+      <button
+        type="button"
+        className="overlay-hitbox"
+        aria-label="Close command palette backdrop"
+        onClick={onClose}
+      />
       <div
         className="command-palette-container animate-slide-down"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-        role="presentation"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
       >
         {/* Search Input */}
         <div className="command-palette-search-wrapper">
@@ -244,7 +256,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           </span>
         </div>
       </div>
-    </button>,
+    </div>,
     document.body,
   );
 };

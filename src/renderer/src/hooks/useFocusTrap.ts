@@ -6,18 +6,26 @@ const FOCUSABLE_SELECTOR =
 export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: boolean = true) {
   const containerRef = useRef<T>(null);
   const previousActiveElement = useRef<Element | null>(null);
+  const focusRestored = useRef(false);
 
-  // Store the previously focused element when trap activates
+  // Store/restore focus as the trap toggles, not only on mount/unmount.
   useEffect(() => {
     if (isActive) {
       previousActiveElement.current = document.activeElement;
+      focusRestored.current = false;
+      return;
+    }
+
+    if (!focusRestored.current && previousActiveElement.current instanceof HTMLElement) {
+      previousActiveElement.current.focus();
+      focusRestored.current = true;
     }
   }, [isActive]);
 
-  // Restore focus when trap deactivates
+  // Fallback restoration for true unmount cases.
   useEffect(() => {
     return () => {
-      if (previousActiveElement.current instanceof HTMLElement) {
+      if (!focusRestored.current && previousActiveElement.current instanceof HTMLElement) {
         previousActiveElement.current.focus();
       }
     };

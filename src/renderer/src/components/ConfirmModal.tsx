@@ -32,8 +32,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
             {cancelLabel}
           </TactileButton>
           <TactileButton
-            variant="primary"
-            className={isDanger ? 'tactile-button--danger' : undefined}
+            variant={isDanger ? 'danger' : 'primary'}
             onClick={() => {
               onConfirm();
               onClose();

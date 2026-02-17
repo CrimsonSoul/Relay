@@ -224,12 +224,20 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
               {savedLocations.length > 0 ? (
                 <div className="weather-saved-list">
                   {savedLocations.map((saved) => (
-                    <button
+                    <div
                       key={saved.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Load ${saved.name}`}
                       className="weather-saved-location-item"
-                      onKeyDown={(e) => e.key === 'Enter' && handleSelectSavedLocation(saved)}
                       onClick={() => handleSelectSavedLocation(saved)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectSavedLocation(saved);
+                        }
+                      }}
                     >
                       <div className="weather-saved-item-info">
                         <div className="weather-saved-item-name">
@@ -338,7 +346,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
                           </svg>
                         </button>
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               ) : (

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import type { NoteEntry } from '@shared/ipc';
 import { TagBadge } from './notes/TagBadge';
 import { TagInput } from './notes/TagInput';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type NotesModalProps = {
   isOpen: boolean;
@@ -27,6 +28,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   const [tags, setTags] = useState<string[]>(existingNote?.tags || []);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -36,6 +38,20 @@ export const NotesModal: React.FC<NotesModalProps> = ({
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen, existingNote]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
   const handleAddTag = () => {
     const trimmed = tagInput.trim().toLowerCase();
@@ -71,18 +87,19 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <button
-      className="modal-overlay animate-fade-in"
-      onClick={onClose}
-      onKeyDown={(e) => e.key === 'Escape' && onClose()}
-      aria-label="Close modal backdrop"
-      type="button"
-    >
+    <div className="modal-overlay animate-fade-in" role="presentation">
+      <button
+        type="button"
+        className="overlay-hitbox"
+        aria-label="Close modal backdrop"
+        onClick={onClose}
+      />
       <div
+        ref={focusTrapRef}
         className="modal-container animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
-        role="presentation"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="notes-modal-title"
       >
         {/* Header */}
         <div className="modal-header">
@@ -187,7 +204,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
           </button>
         </div>
       </div>
-    </button>,
+    </div>,
     document.body,
   );
 };
