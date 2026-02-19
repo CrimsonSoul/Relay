@@ -28,43 +28,46 @@ export function useGroups() {
   const saveGroup = useCallback(
     async (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => {
       const result = await window.api?.saveGroup(group);
-      if (result) {
-        setGroups((prev) => [...prev, result]);
+      if (result && result.success && result.data) {
+        setGroups((prev) => [...prev, result.data!]);
         showToast(`Group "${group.name}" saved`, 'success');
+        return result.data;
       } else {
         showToast('Failed to save group', 'error');
+        return undefined;
       }
-      return result;
     },
     [showToast],
   );
 
   const updateGroup = useCallback(
     async (id: string, updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>) => {
-      const success = await window.api?.updateGroup(id, updates);
-      if (success) {
+      const result = await window.api?.updateGroup(id, updates);
+      if (result && result.success) {
         setGroups((prev) =>
           prev.map((g) => (g.id === id ? { ...g, ...updates, updatedAt: Date.now() } : g)),
         );
         showToast('Group updated', 'success');
+        return true;
       } else {
         showToast('Failed to update group', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );
 
   const deleteGroup = useCallback(
     async (id: string) => {
-      const success = await window.api?.deleteGroup(id);
-      if (success) {
+      const result = await window.api?.deleteGroup(id);
+      if (result && result.success) {
         setGroups((prev) => prev.filter((g) => g.id !== id));
         showToast('Group deleted', 'success');
+        return true;
       } else {
         showToast('Failed to delete group', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );
@@ -73,7 +76,7 @@ export function useGroups() {
     const result = await window.api?.importGroupsFromCsv();
     if (result && result.success) {
       await loadGroups();
-      showToast(`Imported ${result.count} groups`, 'success');
+      showToast('Import successful', 'success');
       return true;
     } else if (result) {
       showToast(result.error || 'Import failed', 'error');
