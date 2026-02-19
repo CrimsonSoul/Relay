@@ -63,7 +63,7 @@ describe('useGroups', () => {
       createdAt: 3000,
       updatedAt: 3000,
     };
-    mockApi.saveGroup.mockResolvedValue(newGroup);
+    mockApi.saveGroup.mockResolvedValue({ success: true, data: newGroup });
 
     const { result } = renderHook(() => useGroups(), { wrapper });
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -89,7 +89,7 @@ describe('useGroups', () => {
       saved = await result.current.saveGroup({ name: 'Fail', contacts: [] });
     });
 
-    expect(saved).toBeNull();
+    expect(saved).toBeUndefined();
     expect(result.current.groups).toHaveLength(2); // No new group added
   });
 
