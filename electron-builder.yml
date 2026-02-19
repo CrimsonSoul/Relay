@@ -1,5 +1,5 @@
 appId: com.operators.relay
-productName: "Relay"
+productName: 'Relay'
 asar: true
 electronLanguages:
   - en-US
@@ -7,18 +7,18 @@ files:
   - dist/**
   - package.json
   - resources/**
-  - "!node_modules/fsevents/**"
-  - "!**/*.{md,ts,map,log}"
-  - "!**/LICENSE"
-  - "!**/.{git,github,vscode,idea}"
-  - "!**/tsconfig*.json"
-  - "!**/.eslintrc*"
-  - "!**/.prettierrc*"
-  - "!**/*.{test,spec}.{js,jsx,ts,tsx}"
-  - "!**/tests/**"
-  - "!**/test-results/**"
-  - "!**/playwright*"
-  - "!**/vitest*"
+  - '!node_modules/fsevents/**'
+  - '!**/*.{md,ts,map,log}'
+  - '!**/LICENSE'
+  - '!**/.{git,github,vscode,idea}'
+  - '!**/tsconfig*.json'
+  - '!**/.eslintrc*'
+  - '!**/.prettierrc*'
+  - '!**/*.{test,spec}.{js,jsx,ts,tsx}'
+  - '!**/tests/**'
+  - '!**/test-results/**'
+  - '!**/playwright*'
+  - '!**/vitest*'
 directories:
   output: release
   buildResources: resources
@@ -32,12 +32,12 @@ win:
     - target: portable
       arch:
         - x64
-  artifactName: "Relay.exe"
+  artifactName: 'Relay.exe'
   icon: build/icon.ico
-  requestedExecutionLevel: "asInvoker"
-compression: "normal"
+  requestedExecutionLevel: 'asInvoker'
+compression: 'normal'
 electronDownload:
-  cache: ".electron"
+  cache: '.electron'
 
 mac:
   target:
@@ -45,7 +45,7 @@ mac:
       arch:
         - arm64
         - x64
-  artifactName: "Relay-${arch}.dmg"
+  artifactName: 'Relay-${arch}.dmg'
   category: public.app-category.developer-tools
   icon: build/icon.icns
   hardenedRuntime: true

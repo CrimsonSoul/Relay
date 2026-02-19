@@ -158,6 +158,7 @@ export const PersonnelTab: React.FC<{
           {renderAlerts()}
         </div>
         <TactileButton
+          variant="ghost"
           onClick={handleCopyAllOnCall}
           title="Copy All On-Call Info"
           aria-label="Copy All On-Call Info"
@@ -181,6 +182,7 @@ export const PersonnelTab: React.FC<{
           COPY ALL
         </TactileButton>
         <TactileButton
+          variant="ghost"
           onClick={handleExportCsv}
           title="Export to CSV (Excel)"
           aria-label="Export to CSV"
@@ -206,6 +208,7 @@ export const PersonnelTab: React.FC<{
         </TactileButton>
         {!isPopout && (
           <TactileButton
+            variant="ghost"
             onClick={() => {
               window.api?.openAuxWindow('popout/board');
             }}

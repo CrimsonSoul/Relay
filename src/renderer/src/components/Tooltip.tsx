@@ -2,11 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 interface TooltipProps {
-  content: string;
+  content: React.ReactNode;
   children: React.ReactElement;
   position?: 'top' | 'bottom' | 'left' | 'right';
   width?: string;
   block?: boolean;
+  delay?: number;
 }
 
 export const Tooltip: React.FC<TooltipProps> = ({
@@ -15,10 +16,12 @@ export const Tooltip: React.FC<TooltipProps> = ({
   position = 'top',
   width = 'max-content',
   block = false,
+  delay = 0,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isVisible && triggerRef.current) {
@@ -68,12 +71,25 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
   };
 
+  const handleMouseEnter = () => {
+    if (delay > 0) {
+      timerRef.current = setTimeout(() => setIsVisible(true), delay);
+    } else {
+      setIsVisible(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setIsVisible(false);
+  };
+
   return (
     <>
       <div
         ref={triggerRef}
-        onMouseEnter={() => setIsVisible(true)}
-        onMouseLeave={() => setIsVisible(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}
       >
         {children}

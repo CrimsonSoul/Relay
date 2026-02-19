@@ -44,6 +44,7 @@ export const RadarTab: React.FC = () => {
       <div className="webview-container">
         <div className="webview-border-overlay" />
         <TactileButton
+          variant="ghost"
           onClick={handleRefresh}
           title={isLoading ? 'Refreshing' : 'Refresh'}
           className="radar-refresh-btn"

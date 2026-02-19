@@ -20,7 +20,7 @@ async function ensurePlaceholder() {
   await fs.mkdir(fseventsPath, { recursive: true });
   await fs.writeFile(
     path.join(fseventsPath, 'README.txt'),
-    'Placeholder for optional macOS-only fsevents dependency created during Windows packaging.'
+    'Placeholder for optional macOS-only fsevents dependency created during Windows packaging.',
   );
   console.log('[fsevents] Created placeholder for macOS-only fsevents dependency.');
 }

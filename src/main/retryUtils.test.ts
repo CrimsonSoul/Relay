@@ -21,7 +21,8 @@ describe('retryUtils', () => {
     });
 
     it('should retry on failure and eventually succeed', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(new Error('EBUSY'))
         .mockRejectedValueOnce(new Error('EBUSY'))
         .mockResolvedValue('success');
@@ -33,9 +34,9 @@ describe('retryUtils', () => {
 
     it('should throw after max attempts', async () => {
       const operation = vi.fn().mockRejectedValue(new Error('persistent failure'));
-      await expect(
-        retryAsync(operation, { maxAttempts: 2, initialDelayMs: 1 })
-      ).rejects.toThrow('persistent failure');
+      await expect(retryAsync(operation, { maxAttempts: 2, initialDelayMs: 1 })).rejects.toThrow(
+        'persistent failure',
+      );
       expect(operation).toHaveBeenCalledTimes(2);
     });
 
@@ -45,13 +46,14 @@ describe('retryUtils', () => {
         retryAsync(operation, {
           maxAttempts: 3,
           shouldRetry: () => false,
-        })
+        }),
       ).rejects.toThrow('fatal error');
       expect(operation).toHaveBeenCalledTimes(1);
     });
 
     it('should call onRetry callback', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(new Error('fail'))
         .mockResolvedValue('success');
       const onRetry = vi.fn();
@@ -67,7 +69,8 @@ describe('retryUtils', () => {
     });
 
     it('should apply exponential backoff', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(new Error('fail'))
         .mockRejectedValueOnce(new Error('fail'))
         .mockResolvedValue('success');
@@ -143,7 +146,8 @@ describe('retryUtils', () => {
 
   describe('retryFileOperation', () => {
     it('should retry file operations with appropriate defaults', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(Object.assign(new Error('EBUSY'), { code: 'EBUSY' }))
         .mockResolvedValue('success');
 
@@ -153,19 +157,19 @@ describe('retryUtils', () => {
     });
 
     it('should not retry non-transient errors', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
-      await expect(
-        retryFileOperation(operation, 'testOperation')
-      ).rejects.toThrow('ENOENT');
+      await expect(retryFileOperation(operation, 'testOperation')).rejects.toThrow('ENOENT');
       expect(operation).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('retryNetworkOperation', () => {
     it('should retry network operations with appropriate defaults', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(new Error('ETIMEDOUT'))
         .mockResolvedValue('success');
 
@@ -175,7 +179,8 @@ describe('retryUtils', () => {
     });
 
     it('should retry on 5xx errors', async () => {
-      const operation = vi.fn()
+      const operation = vi
+        .fn()
         .mockRejectedValueOnce(new Error('HTTP 503 Service Unavailable'))
         .mockResolvedValue('success');
 
@@ -194,7 +199,8 @@ describe('retryUtils', () => {
       ];
 
       for (const errorMessage of testCases) {
-        const operation = vi.fn()
+        const operation = vi
+          .fn()
           .mockRejectedValueOnce(new Error(errorMessage))
           .mockResolvedValue('success');
 
@@ -204,22 +210,16 @@ describe('retryUtils', () => {
     });
 
     it('should not retry on client errors (4xx)', async () => {
-      const operation = vi.fn()
-        .mockRejectedValue(new Error('HTTP 404 Not Found'));
+      const operation = vi.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));
 
-      await expect(
-        retryNetworkOperation(operation, 'apiCall')
-      ).rejects.toThrow('404');
+      await expect(retryNetworkOperation(operation, 'apiCall')).rejects.toThrow('404');
       expect(operation).toHaveBeenCalledTimes(1);
     });
 
     it('should not retry on errors containing digit 5 in non-status contexts', async () => {
-      const operation = vi.fn()
-        .mockRejectedValue(new Error('Failed to connect to port 5432'));
+      const operation = vi.fn().mockRejectedValue(new Error('Failed to connect to port 5432'));
 
-      await expect(
-        retryNetworkOperation(operation, 'apiCall')
-      ).rejects.toThrow('5432');
+      await expect(retryNetworkOperation(operation, 'apiCall')).rejects.toThrow('5432');
       expect(operation).toHaveBeenCalledTimes(1);
     });
   });

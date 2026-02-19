@@ -150,7 +150,7 @@ type IpLocationResult = {
 export type BridgeAPI = {
   openPath: (path: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
-  importGroupsFromCsv: () => Promise<boolean>;
+  importGroupsFromCsv: () => Promise<IpcResult>;
   subscribeToData: (callback: (data: AppData) => void) => () => void;
   onReloadStart: (callback: () => void) => () => void;
   onReloadComplete: (callback: (success: boolean) => void) => () => void;

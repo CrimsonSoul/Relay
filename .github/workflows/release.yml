@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (e.g. 1.2.0). Leave blank to use package.json version."
+        description: 'Release version (e.g. 1.2.0). Leave blank to use package.json version.'
         required: false
         type: string
 
@@ -57,7 +57,7 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.name }}
-          body: "Automated release from workflow dispatch."
+          body: 'Automated release from workflow dispatch.'
           files: release/Relay.exe
           draft: false
           prerelease: false

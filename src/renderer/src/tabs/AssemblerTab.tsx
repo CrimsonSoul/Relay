@@ -1,9 +1,11 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { BridgeGroup, BridgeHistoryEntry } from '@shared/ipc';
+import { BridgeGroup, BridgeHistoryEntry, Contact } from '@shared/ipc';
 import { AddContactModal } from '../components/AddContactModal';
 import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
+import { Modal } from '../components/Modal';
+import { GroupSelector } from '../components/directory/GroupSelector';
 import { ListToolbar } from '../components/ListToolbar';
 import {
   AssemblerTabProps,
@@ -38,6 +40,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   // SaveGroupModal is only opened from bridge history "Save as Group" action
   const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
   const [historyContacts, setHistoryContacts] = useState<string[]>([]);
+  const [groupSelectorEmail, setGroupSelectorEmail] = useState<string | null>(null);
 
   // Create a map of group ID to group for quick lookups
   const groupMap = useMemo(() => {
@@ -157,6 +160,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             )}
             {manualRemoves.length > 0 && (
               <TactileButton
+                variant="ghost"
                 onClick={onUndoRemove}
                 icon={
                   <svg
@@ -178,6 +182,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               </TactileButton>
             )}
             <TactileButton
+              variant="ghost"
               onClick={onResetManual}
               icon={
                 <svg
@@ -199,6 +204,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               RESET
             </TactileButton>
             <TactileButton
+              variant="ghost"
               onClick={() => setIsHistoryOpen(true)}
               icon={
                 <svg
@@ -219,6 +225,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               HISTORY
             </TactileButton>
             <TactileButton
+              variant="ghost"
               onClick={handleCopyWithHistory}
               icon={
                 <svg
@@ -365,6 +372,30 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 ]
               : []),
             {
+              label: 'Manage Groups',
+              onClick: () => {
+                setGroupSelectorEmail(asm.compositionContextMenu!.email);
+                asm.setCompositionContextMenu(null);
+              },
+              icon: (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              ),
+            },
+            {
               label: 'Remove from List',
               onClick: () => {
                 onRemoveManual(asm.compositionContextMenu!.email);
@@ -390,6 +421,20 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             },
           ]}
         />
+      )}
+      {groupSelectorEmail && (
+        <Modal
+          isOpen={true}
+          onClose={() => setGroupSelectorEmail(null)}
+          title="Manage Groups"
+          width="400px"
+        >
+          <GroupSelector
+            contact={{ email: groupSelectorEmail } as unknown as Contact}
+            groups={groups}
+            onClose={() => setGroupSelectorEmail(null)}
+          />
+        </Modal>
       )}
     </div>
   );

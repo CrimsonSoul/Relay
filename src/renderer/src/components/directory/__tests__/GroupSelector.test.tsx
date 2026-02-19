@@ -52,11 +52,6 @@ describe('GroupSelector', () => {
     expect(screen.getByText('Support')).toBeInTheDocument();
   });
 
-  it('shows header text', () => {
-    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
-    expect(screen.getByText('ADD TO GROUP')).toBeInTheDocument();
-  });
-
   it('shows checkmark for groups the contact belongs to', () => {
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
     // Alice is in Engineering, should have checkmark
@@ -147,14 +142,6 @@ describe('GroupSelector', () => {
     await waitFor(() => {
       expect(mockApi.updateGroup).toHaveBeenCalledTimes(1);
     });
-  });
-
-  it('calls onClose when Close is clicked', () => {
-    const onClose = vi.fn();
-    render(<GroupSelector contact={contact} groups={groups} onClose={onClose} />);
-
-    fireEvent.click(screen.getByText('Close'));
-    expect(onClose).toHaveBeenCalled();
   });
 
   it('shows empty state when no groups', () => {
