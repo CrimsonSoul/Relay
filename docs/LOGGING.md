@@ -1,6 +1,7 @@
 # Comprehensive Error Logging Guide
 
 ## Overview
+
 The Relay application has a professional-grade logging system that captures errors, warnings, and debugging information throughout both the main and renderer processes. All logs are automatically saved to disk and can be used for troubleshooting.
 
 ## Log File Locations
@@ -8,6 +9,7 @@ The Relay application has a professional-grade logging system that captures erro
 Logs are stored in the application's user data directory, which varies by operating system:
 
 ### **Windows**
+
 ```
 C:\Users\<YourUsername>\AppData\Roaming\Relay\logs\
 ├── relay.log         (all logs)
@@ -17,6 +19,7 @@ C:\Users\<YourUsername>\AppData\Roaming\Relay\logs\
 ```
 
 ### **macOS**
+
 ```
 ~/Library/Application Support/Relay/logs/
 ├── relay.log         (all logs)
@@ -26,6 +29,7 @@ C:\Users\<YourUsername>\AppData\Roaming\Relay\logs\
 ```
 
 ### **Linux**
+
 ```
 ~/.config/Relay/logs/
 ├── relay.log         (all logs)
@@ -53,7 +57,7 @@ loggers.network.error('API call failed', {
   error: err.message,
   stack: err.stack,
   category: ErrorCategory.NETWORK,
-  url: 'https://api.example.com'
+  url: 'https://api.example.com',
 });
 ```
 
@@ -70,7 +74,7 @@ loggers.directory.error('Failed to add contact', {
   error: err.message,
   stack: err.stack,
   category: ErrorCategory.VALIDATION,
-  userAction: 'Clicked "Add Contact" button'
+  userAction: 'Clicked "Add Contact" button',
 });
 ```
 
@@ -79,7 +83,7 @@ loggers.directory.error('Failed to add contact', {
 ### ✅ DO's
 
 - **Use Structured Logging**: Always use the provided module loggers instead of `console`.
-- **Use Appropriate Log Levels**: 
+- **Use Appropriate Log Levels**:
   - `DEBUG`: Technical details for development.
   - `INFO`: Significant application milestones.
   - `WARN`: Issues that don't stop the app but need attention.
@@ -99,6 +103,7 @@ loggers.directory.error('Failed to add contact', {
 ### Automatic Error Capture
 
 The logger automatically captures:
+
 - **Uncaught exceptions** in both processes
 - **Unhandled promise rejections**
 - **React component errors** (via ErrorBoundary)
@@ -115,9 +120,11 @@ timer(); // Logs: "Fetch contacts completed | Duration: 245ms"
 ## Available Modules
 
 ### Main Process
+
 - `loggers.main`, `loggers.fileManager`, `loggers.ipc`, `loggers.security`, `loggers.auth`, `loggers.weather`, `loggers.location`, `loggers.config`, `loggers.network`
 
 ### Renderer Process
+
 - `loggers.app`, `loggers.weather`, `loggers.directory`, `loggers.ui`, `loggers.location`, `loggers.api`, `loggers.storage`, `loggers.network`
 
 ## Viewing Logs in Production

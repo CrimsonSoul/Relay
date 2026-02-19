@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import { join } from 'path';
 import { atomicWriteWithLock } from './fileLock';
 import { validatePath } from './utils/pathSafety';
+import { retryFileOperation } from './retryUtils';
 
 /**
  * FileSystemService - Handles low-level file system operations,
@@ -53,7 +54,7 @@ export class FileSystemService {
     const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
     await retryFileOperation(
       () => atomicWriteWithLock(path, contentWithBom),
-      `atomicWrite(${fileName})`
+      `atomicWrite(${fileName})`,
     );
   }
 }

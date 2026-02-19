@@ -114,17 +114,20 @@ export class FileManager {
 
   private startPeriodicCleanup() {
     // Run cleanup every 5 minutes to ensure no stale locks remain
-    this.cleanupInterval = setInterval(() => {
-      const lockCount = this.fileLocks.size;
-      if (lockCount > 0) {
-        loggers.fileManager.debug(`Periodic cleanup: ${lockCount} active file locks`);
-      }
-      // The locks should auto-cleanup via their finally() blocks,
-      // but log if we have an unusual number of locks
-      if (lockCount > 10) {
-        loggers.fileManager.warn(`High number of active file locks: ${lockCount}`);
-      }
-    }, 5 * 60 * 1000);
+    this.cleanupInterval = setInterval(
+      () => {
+        const lockCount = this.fileLocks.size;
+        if (lockCount > 0) {
+          loggers.fileManager.debug(`Periodic cleanup: ${lockCount} active file locks`);
+        }
+        // The locks should auto-cleanup via their finally() blocks,
+        // but log if we have an unusual number of locks
+        if (lockCount > 10) {
+          loggers.fileManager.warn(`High number of active file locks: ${lockCount}`);
+        }
+      },
+      5 * 60 * 1000,
+    );
   }
 
   private startWatching() {
