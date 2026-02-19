@@ -1,6 +1,6 @@
 /**
  * Retry utilities for handling transient failures
- * 
+ *
  * Provides exponential backoff and jitter for resilient operations
  */
 
@@ -31,7 +31,7 @@ const DEFAULT_OPTIONS: Required<RetryOptions> = {
  */
 export async function retryAsync<T>(
   operation: () => Promise<T>,
-  options: RetryOptions = {}
+  options: RetryOptions = {},
 ): Promise<T> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   let lastError: unknown;
@@ -55,13 +55,11 @@ export async function retryAsync<T>(
       // Calculate delay with exponential backoff
       const baseDelay = Math.min(
         opts.initialDelayMs * Math.pow(opts.backoffMultiplier, attempt - 1),
-        opts.maxDelayMs
+        opts.maxDelayMs,
       );
 
       // Add jitter to prevent thundering herd
-      const delay = opts.jitter
-        ? baseDelay * (0.5 + Math.random() * 0.5)
-        : baseDelay;
+      const delay = opts.jitter ? baseDelay * (0.5 + Math.random() * 0.5) : baseDelay;
 
       // Notify about retry
       opts.onRetry(attempt, error);
@@ -82,17 +80,17 @@ export function isTransientError(error: unknown): boolean {
   if (error instanceof Error) {
     const message = error.message.toLowerCase();
     const transientPatterns = [
-      'ebusy',      // File is busy
-      'eagain',     // Resource temporarily unavailable
-      'etimedout',  // Operation timed out
+      'ebusy', // File is busy
+      'eagain', // Resource temporarily unavailable
+      'etimedout', // Operation timed out
       'econnreset', // Connection reset
-      'enotfound',  // DNS lookup failed
-      'epipe',      // Broken pipe
-      'locked',     // File locked
-      'busy',       // Generic busy message
+      'enotfound', // DNS lookup failed
+      'epipe', // Broken pipe
+      'locked', // File locked
+      'busy', // Generic busy message
     ];
 
-    return transientPatterns.some(pattern => message.includes(pattern));
+    return transientPatterns.some((pattern) => message.includes(pattern));
   }
 
   return false;
@@ -105,12 +103,12 @@ export function isRetryableFileSystemError(error: unknown): boolean {
   if (error instanceof Error && 'code' in error) {
     const code = (error as NodeJS.ErrnoException).code;
     const retryableCodes = [
-      'EBUSY',    // File is busy
-      'EAGAIN',   // Resource temporarily unavailable
-      'EACCES',   // Permission denied (might be temporary)
-      'EPERM',    // Operation not permitted (might be temporary)
-      'EMFILE',   // Too many open files
-      'ENFILE',   // File table overflow
+      'EBUSY', // File is busy
+      'EAGAIN', // Resource temporarily unavailable
+      'EACCES', // Permission denied (might be temporary)
+      'EPERM', // Operation not permitted (might be temporary)
+      'EMFILE', // Too many open files
+      'ENFILE', // File table overflow
     ];
 
     return retryableCodes.includes(code || '');
@@ -123,7 +121,7 @@ export function isRetryableFileSystemError(error: unknown): boolean {
  * Sleep for a specified duration
  */
 function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -131,7 +129,7 @@ function sleep(ms: number): Promise<void> {
  */
 export async function retryFileOperation<T>(
   operation: () => Promise<T>,
-  operationName: string
+  operationName: string,
 ): Promise<T> {
   return retryAsync(operation, {
     maxAttempts: 3,
@@ -139,10 +137,7 @@ export async function retryFileOperation<T>(
     maxDelayMs: 1000,
     shouldRetry: isRetryableFileSystemError,
     onRetry: (attempt, error) => {
-      loggers.fileManager.warn(
-        `Retrying ${operationName} (attempt ${attempt}/3)`,
-        { error }
-      );
+      loggers.fileManager.warn(`Retrying ${operationName} (attempt ${attempt}/3)`, { error });
     },
   });
 }
@@ -152,7 +147,7 @@ export async function retryFileOperation<T>(
  */
 export async function retryNetworkOperation<T>(
   operation: () => Promise<T>,
-  operationName: string
+  operationName: string,
 ): Promise<T> {
   return retryAsync(operation, {
     maxAttempts: 3,
@@ -174,10 +169,7 @@ export async function retryNetworkOperation<T>(
       return false;
     },
     onRetry: (attempt, error) => {
-      loggers.main.warn(
-        `Retrying ${operationName} (attempt ${attempt}/3)`,
-        { error }
-      );
+      loggers.main.warn(`Retrying ${operationName} (attempt ${attempt}/3)`, { error });
     },
   });
 }

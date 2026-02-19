@@ -9,17 +9,20 @@ Relay is a desktop application built with Electron that handles sensitive operat
 ### Context Isolation & Sandboxing
 
 **Main Process:**
+
 - Runs with full Node.js access
 - Manages file system operations, IPC handlers, and system integrations
 - No direct exposure to untrusted content
 
 **Renderer Process:**
+
 - Context isolation enabled (`contextIsolation: true`)
 - Node integration disabled (`nodeIntegration: false`)
 - Sandbox mode enabled (`sandbox: true`)
 - Communication only via secure IPC bridge (preload script)
 
 **Preload Script:**
+
 - Acts as a secure bridge between main and renderer
 - Exposes only explicitly defined APIs via `contextBridge`
 - No direct access to Node.js or Electron APIs from renderer
@@ -29,6 +32,7 @@ Relay is a desktop application built with Electron that handles sensitive operat
 The application enforces a strict Content Security Policy:
 
 **Production:**
+
 ```
 default-src 'self';
 script-src 'self' 'sha256-[hash]';
@@ -40,10 +44,12 @@ frame-src 'self' [trusted domains];
 ```
 
 **Development:**
+
 - Relaxed script-src to allow HMR: `'unsafe-eval' 'unsafe-inline'`
 - All other restrictions remain in place
 
 **Additional Headers:**
+
 - `X-Content-Type-Options: nosniff` - Prevents MIME type sniffing
 - `X-Frame-Options: DENY` - Prevents clickjacking
 - `X-XSS-Protection: 1; mode=block` - Enables XSS filtering
@@ -52,6 +58,7 @@ frame-src 'self' [trusted domains];
 ### WebView Isolation
 
 **AI Chat Feature:**
+
 - Uses `<webview>` tags to embed external AI services (Gemini, ChatGPT)
 - **Partition Isolation:** All AI webviews use `partition="ai-chat-session"` for isolated storage/cookies
 - **Automatic Cleanup:** Session data is cleared when the tab is unmounted or app exits
@@ -60,6 +67,7 @@ frame-src 'self' [trusted domains];
 - **Suspended State:** Webviews are suspended when not active to reduce resource usage
 
 **Security Considerations:**
+
 - AI webviews are explicitly marked as untrusted content
 - No sensitive application data is shared with AI services
 - Users are warned that data clears on tab exit
@@ -68,6 +76,7 @@ frame-src 'self' [trusted domains];
 ### Credential Management
 
 **Storage:**
+
 - Sensitive credentials (proxy auth, API keys) use Electron's `safeStorage` API
 - Data is encrypted at rest using OS-level encryption:
   - **Windows:** Data Protection API (DPAPI)
@@ -76,6 +85,7 @@ frame-src 'self' [trusted domains];
 - Credentials are stored in app's userData directory with OS-level encryption
 
 **Authentication Flow:**
+
 1. HTTP 401 challenges are intercepted by the main process
 2. User is prompted securely via IPC
 3. Credentials can be optionally cached (encrypted)
@@ -84,18 +94,21 @@ frame-src 'self' [trusted domains];
 ### Input Validation
 
 **Path Validation:**
+
 - All file paths are validated against allowed directories
 - Path traversal attempts (`../`, `..\\`) are blocked
 - Absolute paths outside data directory are rejected
 - Implemented in: `src/main/pathValidation.ts`, `src/main/utils/pathSafety.ts`
 
 **IPC Validation:**
+
 - All IPC messages are validated using Zod schemas
 - Type-safe validation for all inputs
 - Rate limiting on sensitive operations
 - Implemented in: `src/shared/ipcValidation.ts`, `src/main/ipcHandlersValidation.ts`
 
 **Data Validation:**
+
 - CSV imports are validated for encoding, structure, and content
 - Phone numbers, emails, and other fields are sanitized
 - Size limits enforced on file uploads and imports
@@ -103,17 +116,20 @@ frame-src 'self' [trusted domains];
 ### File System Security
 
 **Atomic Writes:**
+
 - All file writes use atomic operations (write to temp, then rename)
 - Prevents data corruption from interrupted writes
 - Implemented in: `src/main/FileSystemService.ts`
 
 **File Locking:**
+
 - Concurrent write protection via file locks
 - Prevents race conditions and data corruption
 - Automatic cleanup of stale locks
 - Implemented in: `src/main/fileLock.ts`, `src/main/FileManager.ts`
 
 **Backup Strategy:**
+
 - Automatic backups before critical operations
 - Backups stored in `backups/` subdirectory
 - Retention policy can be configured
@@ -206,6 +222,7 @@ frame-src 'self' [trusted domains];
 ## Reporting Security Issues
 
 If you discover a security vulnerability, please report it to the project maintainers via:
+
 - GitHub Security Advisories (preferred)
 - Email to the maintainer (see repository)
 

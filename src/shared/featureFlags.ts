@@ -1,6 +1,6 @@
 /**
  * Feature Flag System
- * 
+ *
  * Provides a flexible system for controlling feature rollouts and A/B testing.
  * Features can be enabled/disabled based on:
  * - Environment variables
@@ -12,7 +12,6 @@
 // Safe access to process.env
 const getEnv = (key: string): string | undefined => {
   try {
-    // eslint-disable-next-line no-undef
     return typeof process !== 'undefined' ? process.env[key] : undefined;
   } catch {
     return undefined;
@@ -34,20 +33,20 @@ export type FeatureFlags = {
   enableDebugMode: FeatureFlagConfig;
   enablePerformanceMetrics: FeatureFlagConfig;
   enableVerboseLogging: FeatureFlagConfig;
-  
+
   // Feature Rollouts
   enableSQLiteMigration: FeatureFlagConfig;
   enableAdvancedStateManagement: FeatureFlagConfig;
   enableAIChat: FeatureFlagConfig;
   enableWeatherAlerts: FeatureFlagConfig;
   enableExperimentalFeatures: FeatureFlagConfig;
-  
+
   // Security & Performance
   enableStrictCSP: FeatureFlagConfig;
   enableWebviewSandbox: FeatureFlagConfig;
   enableAutomaticBackups: FeatureFlagConfig;
   enableRateLimiting: FeatureFlagConfig;
-  
+
   // UI Features
   enableDarkMode: FeatureFlagConfig;
   enableAnimations: FeatureFlagConfig;
@@ -74,7 +73,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
     description: 'Enable verbose logging for all modules',
     enabledForDevMode: true,
   },
-  
+
   // Feature Rollouts
   enableSQLiteMigration: {
     enabled: false,
@@ -103,7 +102,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
     description: 'Enable all experimental features',
     enabledForDevMode: true,
   },
-  
+
   // Security & Performance
   enableStrictCSP: {
     enabled: !isDevelopment,
@@ -125,7 +124,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
     description: 'Enable rate limiting on IPC operations',
     requiresRestart: false,
   },
-  
+
   // UI Features
   enableDarkMode: {
     enabled: true,
@@ -207,7 +206,7 @@ class FeatureFlagManager {
     // Use a hash of userId + flagName to consistently determine rollout
     const userId = this.userId || 'default';
     const hash = this.simpleHash(`${userId}-${flagName}`);
-    return (hash % 100) < percentage;
+    return hash % 100 < percentage;
   }
 
   /**
@@ -217,7 +216,7 @@ class FeatureFlagManager {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
       const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
+      hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash);
@@ -274,7 +273,7 @@ class FeatureFlagManager {
    */
   getFlagsRequiringRestart(): Array<keyof FeatureFlags> {
     return Object.keys(this.flags).filter(
-      (key) => this.flags[key as keyof FeatureFlags].requiresRestart
+      (key) => this.flags[key as keyof FeatureFlags].requiresRestart,
     ) as Array<keyof FeatureFlags>;
   }
 }
@@ -292,19 +291,19 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
 /**
  * HOC for React components that depend on feature flags
  * NOTE: This requires React to be available. Import React in your component file.
- * 
+ *
  * @example
  * ```tsx
  * import React from 'react';
  * import { withFeatureFlag } from '@shared/featureFlags';
- * 
+ *
  * const MyFeature = withFeatureFlag(MyComponent, 'enableNewFeature', <div>Coming soon!</div>);
  * ```
  */
 export function withFeatureFlag<P extends object>(
-  Component: (props: P) => any, // Function component type without React dependency
+  Component: (props: P) => unknown, // Function component type without React dependency
   flagName: keyof FeatureFlags,
-  fallback?: any
+  fallback?: unknown,
 ) {
   return function FeatureFlagWrapper(props: P) {
     if (isFeatureEnabled(flagName)) {
