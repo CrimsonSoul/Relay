@@ -90,7 +90,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
         <div className="weather-search-popover-anchor" ref={searchPopoverRef}>
           <TactileButton
             onClick={() => setShowSearchPopover(!showSearchPopover)}
-            variant={showSearchPopover ? 'primary' : undefined}
+            variant={showSearchPopover ? 'primary' : 'ghost'}
             title="Search"
             aria-label="Search city"
             disabled={isSearching}
@@ -149,6 +149,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
           )}
         </div>
         <TactileButton
+          variant="ghost"
           onClick={handleAutoLocate}
           title="Detect Location"
           aria-label="Detect current location"
@@ -172,6 +173,7 @@ export const WeatherHeader: React.FC<WeatherHeaderProps> = ({
 
         <div className="weather-location-menu-anchor" ref={locationMenuRef}>
           <TactileButton
+            variant="ghost"
             onClick={() => setShowLocationMenu(!showLocationMenu)}
             title="Saved Locations"
             aria-label="Toggle saved locations menu"

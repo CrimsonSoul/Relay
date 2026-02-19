@@ -73,14 +73,7 @@ export function useDirectory(
     });
   }, [effectiveContacts, debouncedSearch, sortConfig, groupStringMap]);
 
-  // Clamp selection to valid range when list changes
-  useEffect(() => {
-    if (filtered.length === 0) {
-      setFocusedIndex(0);
-    } else if (focusedIndex >= filtered.length) {
-      setFocusedIndex(filtered.length - 1);
-    }
-  }, [filtered.length, focusedIndex]);
+  // Clamp selection is handled in useDirectoryKeyboard
 
   // Track timeouts for cleanup to prevent memory leaks
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());

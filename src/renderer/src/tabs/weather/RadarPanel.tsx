@@ -48,9 +48,9 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               useragent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
               className="radar-webview"
               partition="persist:weather"
-              allowpopups="false"
+              allowpopups={false}
             />
-            <div className="radar-overlay-border" />
+            <div className="webview-border-overlay" />
           </>
         ) : (
           <div className="radar-empty">

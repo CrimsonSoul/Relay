@@ -9,7 +9,12 @@ interface GroupSelectorProps {
   onError?: (message: string) => void;
 }
 
-export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelectorProps) => {
+export const GroupSelector = ({
+  contact,
+  groups,
+  onClose: _onClose,
+  onError,
+}: GroupSelectorProps) => {
   const [membership, setMembership] = useState<Record<string, boolean>>({});
   const [updating, setUpdating] = useState<string | null>(null);
 
@@ -45,13 +50,13 @@ export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelect
           newContacts = [...group.contacts, contact.email];
         }
 
-        const success = await window.api.updateGroup(group.id, { contacts: newContacts });
-        if (!success) {
-          throw new Error('Failed to update group');
+        const result = await window.api.updateGroup(group.id, { contacts: newContacts });
+        if (!result || !result.success) {
+          throw new Error(result?.error || 'Failed to update group');
         }
       } catch (error) {
         // Rollback on failure
-        setMembership((prev) => ({ ...prev, [group.id]: previousState }));
+        setMembership((prev) => ({ ...prev, [group.id]: previousState ?? false }));
         const message = isMember
           ? `Failed to remove from ${group.name}`
           : `Failed to add to ${group.name}`;
@@ -66,7 +71,6 @@ export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelect
 
   return (
     <div role="presentation" className="group-selector" onClick={(e) => e.stopPropagation()}>
-      <div className="group-selector-title">ADD TO GROUP</div>
       <div className="group-selector-list">
         {groups.map((group) => {
           const isUpdating = updating === group.id;
@@ -76,11 +80,11 @@ export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelect
               role="checkbox"
               aria-checked={!!membership[group.id]}
               tabIndex={0}
-              onClick={() => !isUpdating && toggleGroup(group, membership[group.id])}
+              onClick={() => !isUpdating && toggleGroup(group, !!membership[group.id])}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  if (!isUpdating) void toggleGroup(group, membership[group.id]);
+                  if (!isUpdating) void toggleGroup(group, !!membership[group.id]);
                 }
               }}
               className={`group-selector-item${isUpdating ? ' group-selector-item--updating' : ''}`}
@@ -95,22 +99,6 @@ export const GroupSelector = ({ contact, groups, onClose, onError }: GroupSelect
           );
         })}
         {groups.length === 0 && <div className="group-selector-empty">No groups available</div>}
-      </div>
-      <div className="group-selector-footer">
-        <button
-          type="button"
-          tabIndex={0}
-          onClick={onClose}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onClose();
-            }
-          }}
-          className="group-selector-close"
-        >
-          Close
-        </button>
       </div>
     </div>
   );
