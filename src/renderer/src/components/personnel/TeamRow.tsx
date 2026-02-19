@@ -36,7 +36,7 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
 
     const isPrimary = useMemo(() => {
       const r = (row.role || '').toLowerCase();
-      return r.includes('primary') || r === 'pri';
+      return r.includes('primary') || r === 'pri' || r.includes('network') || r.includes('telecom');
     }, [row.role]);
 
     const handleCopyContact = async (e: React.MouseEvent) => {
