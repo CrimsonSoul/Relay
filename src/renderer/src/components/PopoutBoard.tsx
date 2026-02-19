@@ -104,6 +104,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             {renderAlerts()}
           </div>
           <TactileButton
+            variant="ghost"
             onClick={() => setIsKiosk(true)}
             title="Kiosk Mode (Full Screen)"
             className="header-btn-mr"
@@ -125,6 +126,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             KIOSK
           </TactileButton>
           <TactileButton
+            variant="ghost"
             onClick={handleCopyAllOnCall}
             title="Copy All On-Call Info"
             icon={

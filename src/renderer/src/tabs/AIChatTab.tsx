@@ -48,6 +48,7 @@ export const AIChatTab: React.FC = () => {
             ))}
           </div>
           <TactileButton
+            variant="ghost"
             onClick={handleRefresh}
             title={isLoading[activeService] ? 'Refreshing' : 'Refresh'}
             className="ai-chat-refresh-btn"

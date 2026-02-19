@@ -33,15 +33,17 @@ const ROW_HEIGHT = 80;
 const ScrollController = ({
   listRef,
   focusedIndex,
+  itemCount,
 }: {
   listRef: React.RefObject<ListImperativeAPI | null>;
   focusedIndex: number;
+  itemCount: number;
 }) => {
   useEffect(() => {
-    if (focusedIndex >= 0 && listRef.current) {
+    if (focusedIndex >= 0 && focusedIndex < itemCount && listRef.current) {
       listRef.current.scrollToRow({ index: focusedIndex, align: 'smart' });
     }
-  }, [focusedIndex, listRef]);
+  }, [focusedIndex, itemCount, listRef]);
   return null;
 };
 
@@ -317,7 +319,11 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         </div>
       </div>
 
-      <ScrollController listRef={listRef} focusedIndex={dir.focusedIndex} />
+      <ScrollController
+        listRef={listRef}
+        focusedIndex={dir.focusedIndex}
+        itemCount={filtered.length}
+      />
 
       <AddContactModal
         isOpen={dir.isAddModalOpen}

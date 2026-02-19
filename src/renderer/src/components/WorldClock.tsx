@@ -97,7 +97,6 @@ export const WorldClock: React.FC = () => {
   return (
     <div className="world-clock-container">
       <div className="world-clock-secondary">{secondaryZoneItems}</div>
-      <div className="world-clock-separator" />
       <div className="world-clock-primary">
         <div className="world-clock-primary-inner">
           <span className="world-clock-primary-time">{primaryTimeStr}</span>

@@ -408,6 +408,7 @@ input.tactile-input.tactile-input:focus {
     opacity: 0;
     transform: translateX(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -631,7 +632,12 @@ input.tactile-input.tactile-input:focus {
 }
 
 .webview-border-overlay {
-  display: none;
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  z-index: 50;
+  border-radius: inherit;
 }
 
 .webview-frame {
@@ -1797,17 +1803,9 @@ body.modal-open {
    Group Selector
    =========================== */
 .group-selector {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  width: 220px;
-  background: var(--color-bg-surface);
-  border: var(--border-subtle);
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  z-index: 100;
-  padding: 8px;
-  margin-top: 4px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .group-selector-title {
@@ -1901,9 +1899,10 @@ body.modal-open {
    =========================== */
 .sortable-edit-row-grid {
   display: grid;
-  grid-template-columns:
-    28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(100px, 130px)
-    28px;
+  grid-template-columns: 28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(
+      100px,
+      130px
+    ) 28px;
   gap: 10px;
   align-items: center;
   background: rgba(255, 255, 255, 0.02);
@@ -2570,12 +2569,6 @@ body.modal-open {
   margin-bottom: 12px;
 }
 
-.collapsible-header--expanded {
-}
-
-.collapsible-header--collapsed {
-}
-
 .collapsible-header-left {
   min-width: 120px;
   flex: 1;
@@ -3007,10 +3000,10 @@ body.modal-open {
 }
 
 .assembler-sidebar-groups-title {
-  font-size: var(--text-2xs);
+  font-size: var(--text-sm);
   font-weight: 700;
-  color: var(--color-text-tertiary);
-  letter-spacing: 0.08em;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -3865,15 +3858,6 @@ body.modal-open {
   width: 100%;
   height: 100%;
   background: black;
-}
-
-.radar-overlay-border {
-  position: absolute;
-  inset: 0;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  pointer-events: none;
-  z-index: 50;
 }
 
 .radar-empty {
