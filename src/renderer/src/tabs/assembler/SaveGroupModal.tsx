@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { Modal } from "../../components/Modal";
-import { TactileButton } from "../../components/TactileButton";
-import { Input } from "../../components/Input";
+import React, { useState, useEffect } from 'react';
+import { Modal } from '../../components/Modal';
+import { TactileButton } from '../../components/TactileButton';
+import { Input } from '../../components/Input';
 
 type SaveGroupModalProps = {
   isOpen: boolean;
@@ -11,6 +11,7 @@ type SaveGroupModalProps = {
   title?: string;
   description?: string;
   initialName?: string;
+  contacts?: string[];
 };
 
 export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
@@ -18,40 +19,41 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
   onClose,
   onSave,
   existingNames,
-  title = "Save Group",
-  description = "Save the current selection as a reusable group.",
-  initialName = "",
+  title = 'Save Group',
+  description = 'Save the current selection as a reusable group.',
+  initialName = '',
+  contacts,
 }) => {
   const [name, setName] = useState(initialName);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   // Reset name when initialName changes or modal opens
   useEffect(() => {
     if (isOpen) {
       setName(initialName);
-      setError("");
+      setError('');
     }
   }, [isOpen, initialName]);
 
   const handleSave = () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError("Please enter a name");
+      setError('Please enter a name');
       return;
     }
     if (existingNames.some((n) => n.toLowerCase() === trimmedName.toLowerCase())) {
-      setError("A group with this name already exists");
+      setError('A group with this name already exists');
       return;
     }
     void onSave(trimmedName);
-    setName("");
-    setError("");
+    setName('');
+    setError('');
     onClose();
   };
 
   const handleClose = () => {
-    setName("");
-    setError("");
+    setName('');
+    setError('');
     onClose();
   };
 
@@ -59,55 +61,41 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose}>
-      <div style={{ padding: "24px", minWidth: "360px" }}>
-        <h2
-          style={{
-            margin: "0 0 8px 0",
-            fontSize: "18px",
-            fontWeight: 600,
-            color: "var(--color-text-primary)",
-          }}
-        >
-          {title}
-        </h2>
-        <p
-          style={{
-            margin: "0 0 20px 0",
-            fontSize: "13px",
-            color: "var(--color-text-secondary)",
-          }}
-        >
-          {description}
-        </p>
+      <div className="save-group-content">
+        <h2 className="save-group-title">{title}</h2>
+        <p className="save-group-description">{description}</p>
 
-        <div style={{ marginBottom: "20px" }}>
+        {contacts && contacts.length > 0 && (
+          <div className="save-group-contacts">
+            <div className="save-group-contacts-header">
+              {contacts.length} {contacts.length === 1 ? 'recipient' : 'recipients'}
+            </div>
+            {contacts.map((email) => (
+              <div key={email} className="save-group-contacts-item">
+                {email}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="save-group-input-wrapper">
           <Input
             label="Group Name"
             value={name}
             onChange={(e) => {
               setName(e.target.value);
-              setError("");
+              setError('');
             }}
             placeholder="e.g., Network P1, Database Team"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleSave();
+              if (e.key === 'Enter') handleSave();
             }}
           />
-          {error && (
-            <p
-              style={{
-                margin: "8px 0 0 0",
-                fontSize: "12px",
-                color: "var(--color-danger)",
-              }}
-            >
-              {error}
-            </p>
-          )}
+          {error && <p className="save-group-error">{error}</p>}
         </div>
 
-        <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+        <div className="save-group-actions">
           <TactileButton variant="secondary" onClick={handleClose}>
             Cancel
           </TactileButton>

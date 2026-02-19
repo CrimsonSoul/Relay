@@ -1,17 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Contact } from "@shared/ipc";
+import { Contact } from '@shared/ipc';
 
-export type Tab =
-  | "Compose"
-  | "Personnel"
-  | "People"
-  | "Servers"
-  | "Radar"
-  | "Weather"
-  | "AI";
+export type Tab = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Radar' | 'Weather' | 'AI';
 
-export function useAppAssembler(isReloading: boolean) {
-  const [activeTab, setActiveTab] = useState<Tab>("Compose");
+export function useAppAssembler() {
+  const [activeTab, setActiveTab] = useState<Tab>('Compose');
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
@@ -19,9 +12,7 @@ export function useAppAssembler(isReloading: boolean) {
 
   const handleAddToAssembler = useCallback((contact: Contact) => {
     setManualRemoves((prev) => prev.filter((e) => e !== contact.email));
-    setManualAdds((prev) =>
-      prev.includes(contact.email) ? prev : [...prev, contact.email]
-    );
+    setManualAdds((prev) => (prev.includes(contact.email) ? prev : [...prev, contact.email]));
   }, []);
 
   const handleUndoRemove = useCallback(() => {
@@ -39,7 +30,10 @@ export function useAppAssembler(isReloading: boolean) {
   }, []);
 
   const handleAddManual = useCallback((email: string) => {
-    setManualAdds((p) => [...p, email]);
+    setManualAdds((p) => {
+      if (p.includes(email)) return p;
+      return [...p, email];
+    });
   }, []);
 
   const handleRemoveManual = useCallback((email: string) => {
@@ -56,9 +50,8 @@ export function useAppAssembler(isReloading: boolean) {
   }, []);
 
   const handleTabChange = useCallback((tab: Tab) => {
-    if (isReloading) return;
     setActiveTab(tab);
-  }, [isReloading]);
+  }, []);
 
   return {
     activeTab,
@@ -68,7 +61,6 @@ export function useAppAssembler(isReloading: boolean) {
     manualAdds,
     setManualAdds,
     manualRemoves,
-    setManualRemoves,
     settingsOpen,
     setSettingsOpen,
     handleAddToAssembler,

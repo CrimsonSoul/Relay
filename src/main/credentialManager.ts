@@ -11,18 +11,24 @@ import { ErrorCategory } from '@shared/logging';
 type AuthCallback = (_authParams: [username: string, password: string]) => void;
 
 // In-memory store for pending auth requests (nonce -> callback)
-const pendingAuthRequests = new Map<string, {
-  callback: AuthCallback;
-  host: string;
-  timestamp: number;
-}>();
+const pendingAuthRequests = new Map<
+  string,
+  {
+    callback: AuthCallback;
+    host: string;
+    timestamp: number;
+  }
+>();
 
 // Encrypted credential cache (in-memory, cleared on app close or timeout)
-const credentialCache = new Map<string, { 
-  username: string; 
-  encryptedPassword: Buffer;
-  timestamp: number;
-}>();
+const credentialCache = new Map<
+  string,
+  {
+    username: string;
+    encryptedPassword: Buffer;
+    timestamp: number;
+  }
+>();
 
 // Nonce expiry time (5 minutes)
 const NONCE_EXPIRY_MS = 5 * 60 * 1000;
@@ -39,18 +45,14 @@ export function generateAuthNonce(): string {
 /**
  * Register a pending auth request with a nonce
  */
-export function registerAuthRequest(
-  nonce: string,
-  host: string,
-  callback: AuthCallback
-): void {
+export function registerAuthRequest(nonce: string, host: string, callback: AuthCallback): void {
   // Clean up expired nonces first
   cleanupExpiredNonces();
 
   pendingAuthRequests.set(nonce, {
     callback,
     host,
-    timestamp: Date.now()
+    timestamp: Date.now(),
   });
 }
 
@@ -112,7 +114,7 @@ export function cancelAuthRequest(nonce: string): boolean {
 /**
  * Check if safeStorage is available and usable
  */
-export function isSafeStorageAvailable(): boolean {
+function isSafeStorageAvailable(): boolean {
   try {
     return safeStorage.isEncryptionAvailable();
   } catch {
@@ -129,7 +131,7 @@ export function cacheCredentials(host: string, username: string, password: strin
   if (!isSafeStorageAvailable()) {
     loggers.security.warn('safeStorage not available, credentials will not be cached', {
       host,
-      category: ErrorCategory.AUTH
+      category: ErrorCategory.AUTH,
     });
     return false;
   }
@@ -144,7 +146,7 @@ export function cacheCredentials(host: string, username: string, password: strin
       error: err.message,
       stack: err.stack,
       category: ErrorCategory.AUTH,
-      host
+      host,
     });
     return false;
   }
@@ -171,31 +173,10 @@ export function getCachedCredentials(host: string): { username: string; password
       error: err.message,
       stack: err.stack,
       category: ErrorCategory.AUTH,
-      host
+      host,
     });
     // Remove corrupted cache entry
     credentialCache.delete(host);
     return null;
   }
-}
-
-/**
- * Clear cached credentials for a host
- */
-export function clearCachedCredentials(host: string): boolean {
-  return credentialCache.delete(host);
-}
-
-/**
- * Clear all cached credentials
- */
-export function clearAllCachedCredentials(): void {
-  credentialCache.clear();
-}
-
-/**
- * Get list of hosts with cached credentials
- */
-export function getCachedHosts(): string[] {
-  return Array.from(credentialCache.keys());
 }

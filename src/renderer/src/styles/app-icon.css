@@ -1,9 +1,5 @@
 /* App Icon Hover State */
 #app-icon-container #app-icon-inner {
-  filter: grayscale(1) opacity(0.85);
+  opacity: 1;
   transition: all var(--transition-smooth);
-}
-
-#app-icon-container:hover #app-icon-inner {
-  filter: grayscale(0) opacity(1) !important;
 }

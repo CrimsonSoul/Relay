@@ -1,192 +1,89 @@
 # Relay
 
-Relay is a high-performance desktop application designed for operators to manage on-call schedules, monitor environment data, and leverage AI assistance in a unified, premium interface. Built with **Electron, Vite, and React**, it provides a "Matte Dark" environment that is both visually stunning and functionally robust.
+Relay is an Electron desktop command center for operations teams managing people, systems, and incident bridge communications.
+
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2040-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%205.9-2ea043)
+
+## Snapshot
+
+- Local-first data model with atomic JSON writes and live file-watcher sync
+- Typed IPC contracts with Zod validation and a context-isolated preload bridge
+- Scales to large directories via virtualization and lazy tab loading
+- Security-first desktop posture: CSP, webview allowlists, path validation, encrypted credentials
+- Full quality workflow: linting, tests, formatting, and release packaging
+
+## Preview
+
+![Relay icon](build/icon256.png)
 
 ## Core Features
 
-### 📅 On-Call Schedule
-- **Dynamic Scheduling**: Manage team rotations with a drag-and-drop grid interface.
-- **Auto-Positioning**: Cards automatically size and position themselves for optimal visibility.
-- **Smart Reminders**: Contextual alerts (Monday/Wednesday/Friday) ensure schedules are updated on time, with auto-refresh logic that updates even if the app is left running.
-- **Persistence**: Layouts and member data are saved locally and synced across sessions.
+- Compose bridge communication lists from contacts/groups and copy instantly
+- On-call board with drag-and-drop team/role scheduling and popout support
+- Searchable People and Servers directories with notes and quick actions
+- Weather dashboard with alerts, saved locations, and embedded live radar
+- Sandboxed AI chat webviews with isolated session behavior
+- Global productivity layer: command palette, shortcuts help, import/export manager, toasts
 
-### 🌤️ Weather & Environmental Monitoring
-- **Live Weather Dashboard**: Real-time updates based on auto-detected or manually set locations.
-- **Interactive Radar**: Live radar monitoring with specialized fixes for consistent rendering on Windows.
-- **Severe Weather Alerts**: Automatic toast notifications for extreme or severe conditions in your area.
+## Architecture
 
-### 🤖 AI Chat Tabs
-- **Integrated AI Services**: Quick access to Gemini and ChatGPT in a private, sandboxed environment.
-- **Secure Sessions**: Data is cleared when you leave the tab, ensuring privacy.
-- **Visual Excellence**: Robust SVG masking ensures clean, rounded corners on Windows without visual flickering.
+- `src/main/`: IPC handlers, file/data services, business operations
+- `src/preload/`: typed `window.api` bridge via context isolation
+- `src/renderer/`: React tabs, hooks, and shared UI components
+- `src/shared/`: IPC contracts, validation schemas, shared domain types
 
-### 🖥️ System & Management
-- **Server Monitoring**: Unified view of server health and contact points.
-- **Directory Services**: Bridging local contact data with external communication tools like Microsoft Teams.
-- **World Clock**: Keep track of global operations at a glance.
+Business logic stays in operations modules; handlers validate and delegate.
 
-## Design Philosophy: "Matte Dark"
+## Tech Stack
 
-Relay prioritized a premium, state-of-the-art aesthetic:
-- **Palette**: Deep charcoal background (#141414) with vibrant, harmonious accent colors.
-- **Typography**: Optimized with modern fonts (Inter, JetBrains Mono).
-- **Interactions**: Smooth micro-animations and tactile feedback (glassmorphism effects).
+| Layer          | Technology                                      |
+| -------------- | ----------------------------------------------- |
+| Desktop shell  | Electron 40                                     |
+| Frontend       | React 19 + TypeScript 5.9                       |
+| Build          | Vite 7 + electron-vite 5                        |
+| Validation     | Zod 4                                           |
+| Virtualization | react-window 2 + react-virtualized-auto-sizer 2 |
+| Drag and drop  | @dnd-kit/core + @dnd-kit/sortable               |
+| Testing        | Vitest 4 + Playwright                           |
 
-## Technical Overview
+## Quick Start
 
-- **Frontend**: React 18, Vite 5, CSS-in-JS (Vanilla CSS).
-- **Backend**: Electron Main process with secure IPC communication.
-- **Data**: Local-first architecture (JSON/CSV) for speed and privacy.
-- **Security**: Strict sandboxing and Context Isolation.
-
-## Getting Started
-
-1. **Install Dependencies**: `npm install`
-2. **Launch App**: `npm run dev`
-3. **Type Checking**: `npm run typecheck`
-4. **Build Production**: `npm run build`
-
-## Project Structure
-
-- `src/main`: Electron backend logic, IPC handlers, and window management.
-- `src/renderer`: React frontend components and tabs.
-- `src/preload`: Secure bridge for exposing APIs to the UI.
-- `src/shared`: TypeScript types and shared utility functions.
-
-## 📋 Comprehensive Error Logging
-
-Relay includes a production-ready logging system that captures all errors, warnings, and important events to disk.
-
-### Features
-- ✅ **Automatic error capture** - Uncaught exceptions, promise rejections, React errors
-- ✅ **Stack traces** - Full context for every error
-- ✅ **Performance tracking** - Built-in timers for optimization
-- ✅ **Categorization** - Network, File System, Auth, Validation, etc.
-- ✅ **Log rotation** - Automatic file rotation at 10MB
-- ✅ **Security** - Sensitive data automatically sanitized
-
-### Log Files
-Logs are automatically stored in platform-specific locations:
-- **Windows:** `%AppData%\Relay\logs\`
-- **macOS:** `~/Library/Application Support/Relay/logs/`
-- **Linux:** `~/.config/Relay/logs/`
-
-Files include:
-- `relay.log` - All application logs
-- `errors.log` - Errors only, for quick review
-- Rotated backups kept for historical reference
-
-### Documentation
-- **[Full Logging Guide](docs/LOGGING.md)** - Complete usage documentation
-- **[Examples](docs/LOGGING_EXAMPLES.ts)** - Common patterns and best practices
-- **[Architecture](docs/ARCHITECTURE.md)** - System design overview
-- **[Security Policy](docs/SECURITY.md)** - Security architecture and threat model
-
-## Testing
-
-Relay includes comprehensive testing infrastructure:
-
-### Unit Tests
 ```bash
-# Run all unit tests
-npm run test:unit
-
-# Run with coverage report
-npm run test:coverage
-
-# Run renderer tests
-npm run test:renderer
+npm install
+npm run dev
 ```
 
-**Current Coverage:** 37.71% (Target: 60%+)
+## Quality and Testing
 
-### E2E Tests
 ```bash
-# Run Playwright E2E tests
-npm run test
-
-# Run Electron-specific tests
+npm run typecheck
+npm run lint
+npm test
 npm run test:electron
 ```
 
-### Test Organization
-- **Main Process:** `src/main/**/*.test.ts`
-- **Shared Modules:** `src/shared/**/*.test.ts`
-- **Renderer:** `src/renderer/**/*.test.tsx`
-- **E2E:** `tests/e2e/**/*.spec.ts`
+Coverage thresholds are enforced:
 
-## Feature Flags
+- Main/shared: lines 52%, functions 52%, branches 38%, statements 52%
+- Renderer: lines 78%, functions 76%, branches 67%, statements 79%
 
-Relay includes a comprehensive feature flag system for gradual rollouts:
+## Security and Reliability
 
-### Usage
-```typescript
-import { isFeatureEnabled } from '@shared/featureFlags';
+- Context isolation and sandbox enabled
+- Renderer has no direct Node.js/Electron access
+- Strict CSP and allowlisted HTTPS webviews
+- Navigation and `window.open` interception
+- Path traversal checks on file operations
+- Credential handling in main process with Electron `safeStorage`
 
-if (isFeatureEnabled('enableSQLiteMigration')) {
-  // Use new feature
-}
-```
+## Project Layout
 
-### Environment Configuration
-```bash
-# Enable specific features
-FEATURE_FLAG_ENABLE_DEBUG_MODE=true
-FEATURE_FLAG_ENABLE_SQLITE_MIGRATION=true
-```
-
-See `src/shared/featureFlags.ts` for available flags.
-
-## Security
-
-Relay implements defense-in-depth security:
-
-- **Context Isolation:** Renderer process cannot access Node.js APIs
-- **Sandbox Mode:** Enabled for all web content
-- **CSP:** Strict Content Security Policy enforced
-- **Credential Encryption:** OS-level encryption for sensitive data
-- **Input Validation:** All IPC messages validated with Zod schemas
-- **Path Validation:** Protection against path traversal attacks
-- **Webview Isolation:** AI chat uses isolated sessions with automatic cleanup
-
-See [docs/SECURITY.md](docs/SECURITY.md) for detailed security documentation.
-
-## Performance
-
-### Optimizations
-- **Virtual Scrolling:** react-window for large lists
-- **Code Splitting:** Manual chunks for faster loads
-- **Lazy Loading:** React.lazy for route-based splitting
-- **Atomic Writes:** Prevent data corruption
-- **File Locking:** Concurrent write protection
-- **Memory Management:** Periodic cleanup and monitoring
-
-### Monitoring
-- Structured logging with performance metrics
-- Memory usage tracking
-- File operation duration tracking
-
-## Contributing
-
-### Development Workflow
-1. Create a feature branch
-2. Make changes with tests
-3. Run linting: `npm run lint`
-4. Run tests: `npm run test:unit`
-5. Type check: `npm run typecheck`
-6. Submit PR
-
-### Code Standards
-- TypeScript strict mode enabled
-- ESLint + Prettier for code formatting
-- Comprehensive test coverage required
-- Security review for IPC changes
+- `src/main/operations/`: core data and business logic
+- `src/main/handlers/`: IPC handler registration and validation
+- `src/renderer/src/tabs/`: feature tabs (Compose, On-Call, People, Servers, Weather, Radar, AI)
+- `src/renderer/src/hooks/`: feature-focused state and orchestration hooks
+- `docs/`: architecture, development, logging, troubleshooting, design notes
 
 ## License
 
 MIT
-
-## Acknowledgments
-
-Built with Electron, React, TypeScript, and Vite.
-

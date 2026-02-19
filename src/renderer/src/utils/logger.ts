@@ -1,12 +1,13 @@
 /**
  * Renderer Process Logger
- * 
+ *
  * Provides logging capabilities for the renderer process with automatic
  * forwarding to the main process logger for persistent storage.
  */
 
 import { LogData } from '@shared/types';
 import { LogLevel, ErrorCategory } from '@shared/logging';
+import { redactSensitiveData } from '@shared/logRedaction';
 
 interface ErrorContext {
   category?: ErrorCategory;
@@ -42,7 +43,7 @@ class RendererLogger {
     window.addEventListener('error', (event: ErrorEvent) => {
       // In production, don't include full stack traces for security
       const errorContext: Record<string, unknown> = {
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       };
 
       if (import.meta.env.DEV) {
@@ -62,7 +63,7 @@ class RendererLogger {
       this.error('Window', 'Unhandled Promise Rejection', {
         reason: event.reason?.message || event.reason,
         stack: event.reason?.stack,
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
     });
 
@@ -111,18 +112,18 @@ class RendererLogger {
       `[${entry.timestamp}]`,
       `[${entry.level.padEnd(5)}]`,
       `[Renderer:${entry.module.padEnd(12)}]`,
-      entry.message
+      entry.message,
     ];
 
     if (entry.data) {
-      const sanitizedData = { ...entry.data };
-      // Remove sensitive fields
-      delete sanitizedData.password;
-      delete sanitizedData.token;
-      delete sanitizedData.apiKey;
-      delete sanitizedData.secret;
+      const sanitizedData = redactSensitiveData(entry.data);
+      const isNonEmptyObject =
+        typeof sanitizedData === 'object' &&
+        sanitizedData !== null &&
+        !Array.isArray(sanitizedData) &&
+        Object.keys(sanitizedData).length > 0;
 
-      if (Object.keys(sanitizedData).length > 0) {
+      if (isNonEmptyObject || Array.isArray(sanitizedData) || typeof sanitizedData !== 'object') {
         parts.push(`| ${JSON.stringify(sanitizedData)}`);
       }
     }
@@ -160,15 +161,16 @@ class RendererLogger {
     if (level === LogLevel.WARN) this.warnCount++;
 
     const levelName = LogLevel[level];
-    const errorContext = (level >= LogLevel.WARN) ? this.extractErrorContext(data) : undefined;
+    const errorContext = level >= LogLevel.WARN ? this.extractErrorContext(data) : undefined;
+    const sanitizedData = data ? redactSensitiveData(data) : undefined;
 
     const entry: LogEntry = {
       timestamp: this.formatTimestamp(),
       level: levelName,
       module,
       message,
-      data,
-      errorContext
+      data: sanitizedData,
+      errorContext,
     };
 
     const formatted = this.formatLogEntry(entry);
@@ -199,10 +201,12 @@ class RendererLogger {
           level: levelName,
           module: `Renderer:${module}`,
           message,
-          data: {
-            ...data,
-            errorContext
-          }
+          data: redactSensitiveData({
+            ...(typeof sanitizedData === 'object' && sanitizedData !== null
+              ? (sanitizedData as Record<string, unknown>)
+              : { value: sanitizedData }),
+            errorContext,
+          }) as Record<string, unknown>,
         });
       } catch (_err) {
         // Silently fail if IPC isn't available
@@ -246,7 +250,7 @@ class RendererLogger {
     return {
       sessionDuration: Date.now() - this.sessionStartTime,
       errorCount: this.errorCount,
-      warnCount: this.warnCount
+      warnCount: this.warnCount,
     };
   }
 
@@ -256,7 +260,10 @@ class RendererLogger {
 }
 
 class ModuleLogger {
-  constructor(private parent: RendererLogger, private module: string) { }
+  constructor(
+    private parent: RendererLogger,
+    private module: string,
+  ) {}
 
   debug(message: string, data?: LogData): void {
     this.parent.debug(this.module, message, data);
@@ -288,7 +295,7 @@ class ModuleLogger {
 }
 
 // Global renderer logger instance
-export const logger = new RendererLogger();
+const logger = new RendererLogger();
 
 // Pre-configured module loggers
 export const loggers = {
@@ -299,5 +306,5 @@ export const loggers = {
   location: logger.createChild('Location'),
   api: logger.createChild('API'),
   storage: logger.createChild('Storage'),
-  network: logger.createChild('Network')
+  network: logger.createChild('Network'),
 };

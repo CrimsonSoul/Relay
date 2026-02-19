@@ -1,25 +1,15 @@
-import React from "react";
-import { StatCard } from "./SharedComponents";
-import type { DataStats } from "../hooks/useDataManager";
+import React from 'react';
+import { StatCard } from './SharedComponents';
+import type { DataStats } from '@shared/ipc';
 
 interface Props {
   stats: DataStats | null;
 }
 
 export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-    <div
-      style={{
-        fontSize: "13px",
-        fontWeight: 700,
-        color: "var(--color-text-tertiary)",
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
-      }}
-    >
-      Data Statistics
-    </div>
-    <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+  <div className="data-manager-section">
+    <div className="data-manager-section-heading">Data Statistics</div>
+    <div className="data-manager-stats-row">
       <StatCard
         label="Contacts"
         count={stats?.contacts.count || 0}
@@ -41,20 +31,5 @@ export const DataManagerOverview: React.FC<Props> = ({ stats }) => (
         lastUpdated={stats?.groups.lastUpdated}
       />
     </div>
-    {stats?.hasCsvFiles && (
-      <div
-        style={{
-          padding: "12px 16px",
-          background: "rgba(255, 180, 0, 0.1)",
-          border: "1px solid rgba(255, 180, 0, 0.3)",
-          borderRadius: "8px",
-          fontSize: "13px",
-          color: "var(--color-text-secondary)",
-        }}
-      >
-        <strong style={{ color: "var(--color-text-primary)" }}>CSV files detected.</strong>{" "}
-        Go to the Migrate tab to convert your data to the new JSON format.
-      </div>
-    )}
   </div>
 );

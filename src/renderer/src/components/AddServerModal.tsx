@@ -13,7 +13,7 @@ interface AddServerModalProps {
 export const AddServerModal: React.FC<AddServerModalProps> = ({
   isOpen,
   onClose,
-  serverToEdit
+  serverToEdit,
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -22,7 +22,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     comment: '',
     owner: '',
     contact: '',
-    os: ''
+    os: '',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -31,47 +31,61 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     if (isOpen) {
       if (serverToEdit) {
         setFormData({
-            name: serverToEdit.name || '',
-            businessArea: serverToEdit.businessArea || '',
-            lob: serverToEdit.lob || '',
-            comment: serverToEdit.comment || '',
-            owner: serverToEdit.owner || '',
-            contact: serverToEdit.contact || '',
-            os: serverToEdit.os || ''
+          name: serverToEdit.name || '',
+          businessArea: serverToEdit.businessArea || '',
+          lob: serverToEdit.lob || '',
+          comment: serverToEdit.comment || '',
+          owner: serverToEdit.owner || '',
+          contact: serverToEdit.contact || '',
+          os: serverToEdit.os || '',
         });
       } else {
         setFormData({
-            name: '',
-            businessArea: '',
-            lob: '',
-            comment: '',
-            owner: '',
-            contact: '',
-            os: ''
+          name: '',
+          businessArea: '',
+          lob: '',
+          comment: '',
+          owner: '',
+          contact: '',
+          os: '',
         });
       }
     }
   }, [isOpen, serverToEdit]);
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
+    if (!window.api) {
+      setSubmitError('API not available');
+      return;
+    }
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
-       await window.api.addServer(formData);
-       onClose();
+      const result = await window.api.addServer(formData);
+      if (result?.success) {
+        onClose();
+      } else {
+        setSubmitError(result?.error || 'Failed to save server');
+      }
+    } catch {
+      setSubmitError('Failed to save server');
     } finally {
-       setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleChange = (field: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement>) => {
-      setFormData(prev => ({ ...prev, [field]: e.target.value }));
-  };
+  const handleChange =
+    (field: keyof typeof formData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+    };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={serverToEdit ? 'Edit Server' : 'Add Server'}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      <div className="add-server-form">
         <Input
           label="Server Name (Required)"
           value={formData.name}
@@ -79,45 +93,45 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. SRV-001"
           autoFocus
         />
-        <div style={{ display: 'flex', gap: '24px' }}>
-             <Input
-               label="Business Area"
-               value={formData.businessArea}
-               onChange={handleChange('businessArea')}
-               placeholder="e.g. Finance"
-               containerStyle={{ flex: 1 }}
-             />
-             <Input
-               label="LOB"
-               value={formData.lob}
-               onChange={handleChange('lob')}
-               placeholder="Line of Business"
-               containerStyle={{ flex: 1 }}
-             />
+        <div className="add-server-row">
+          <Input
+            label="Business Area"
+            value={formData.businessArea}
+            onChange={handleChange('businessArea')}
+            placeholder="e.g. Finance"
+            containerStyle={{ flex: 1 }}
+          />
+          <Input
+            label="LOB"
+            value={formData.lob}
+            onChange={handleChange('lob')}
+            placeholder="Line of Business"
+            containerStyle={{ flex: 1 }}
+          />
         </div>
 
         <Input
-           label="Comment"
-           value={formData.comment}
-           onChange={handleChange('comment')}
-           placeholder="Notes..."
+          label="Comment"
+          value={formData.comment}
+          onChange={handleChange('comment')}
+          placeholder="Notes..."
         />
 
-        <div style={{ display: 'flex', gap: '24px' }}>
-            <Input
-              label="LOB Owner (Email)"
-              value={formData.owner}
-              onChange={handleChange('owner')}
-              placeholder="owner@example.com"
-              containerStyle={{ flex: 1 }}
-            />
-            <Input
-              label="IT Contact (Email)"
-              value={formData.contact}
-              onChange={handleChange('contact')}
-              placeholder="support@example.com"
-              containerStyle={{ flex: 1 }}
-            />
+        <div className="add-server-row">
+          <Input
+            label="LOB Owner (Email)"
+            value={formData.owner}
+            onChange={handleChange('owner')}
+            placeholder="owner@example.com"
+            containerStyle={{ flex: 1 }}
+          />
+          <Input
+            label="IT Contact (Email)"
+            value={formData.contact}
+            onChange={handleChange('contact')}
+            placeholder="support@example.com"
+            containerStyle={{ flex: 1 }}
+          />
         </div>
 
         <Input
@@ -127,7 +141,8 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
           placeholder="e.g. Windows"
         />
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+        {submitError && <div className="add-server-error">{submitError}</div>}
+        <div className="add-server-actions">
           <TactileButton onClick={handleSubmit} disabled={isSubmitting || !formData.name}>
             {isSubmitting ? 'Saving...' : 'Save Server'}
           </TactileButton>

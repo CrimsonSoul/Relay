@@ -5,67 +5,97 @@ import { useToast } from '../components/Toast';
 export function useDirectoryContacts(contacts: Contact[]) {
   const { showToast } = useToast();
   const [optimisticAdds, setOptimisticAdds] = useState<Contact[]>([]);
-  const [optimisticUpdates, setOptimisticUpdates] = useState<Map<string, Partial<Contact>>>(new Map());
+  const [optimisticUpdates, setOptimisticUpdates] = useState<Map<string, Partial<Contact>>>(
+    new Map(),
+  );
   const [optimisticDeletes, setOptimisticDeletes] = useState<Set<string>>(new Set());
   const [deleteConfirmation, setDeleteConfirmation] = useState<Contact | null>(null);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
 
-  useEffect(() => { setOptimisticAdds([]); setOptimisticUpdates(new Map()); setOptimisticDeletes(new Set()); }, [contacts]);
+  useEffect(() => {
+    setOptimisticAdds([]);
+    setOptimisticUpdates(new Map());
+    setOptimisticDeletes(new Set());
+  }, [contacts]);
 
   const getEffectiveContacts = useCallback(() => {
-    let result = contacts.filter(c => !optimisticDeletes.has(c.email)).map(c => optimisticUpdates.has(c.email) ? { ...c, ...optimisticUpdates.get(c.email) } : c);
+    let result = contacts
+      .filter((c) => !optimisticDeletes.has(c.email))
+      .map((c) =>
+        optimisticUpdates.has(c.email) ? { ...c, ...optimisticUpdates.get(c.email) } : c,
+      );
     result = [...optimisticAdds, ...result];
-    const seen = new Set<string>(); return result.filter(c => seen.has(c.email) ? false : (seen.add(c.email), true));
+    const seen = new Set<string>();
+    return result.filter((c) => (seen.has(c.email) ? false : (seen.add(c.email), true)));
   }, [contacts, optimisticAdds, optimisticUpdates, optimisticDeletes]);
 
   const handleCreateContact = async (contact: Partial<Contact>) => {
-    const newContact = { 
-      name: contact.name || '', 
-      email: contact.email || '', 
-      phone: contact.phone || '', 
-      title: contact.title || '', 
-      _searchString: (contact.name + (contact.email || '') + (contact.title || '') + (contact.phone || '')).toLowerCase(), 
-      avatar: undefined 
+    const newContact = {
+      name: contact.name || '',
+      email: contact.email || '',
+      phone: contact.phone || '',
+      title: contact.title || '',
+      _searchString: (
+        contact.name +
+        (contact.email || '') +
+        (contact.title || '') +
+        (contact.phone || '')
+      ).toLowerCase(),
+      avatar: undefined,
     } as Contact;
-    
-    setOptimisticAdds(prev => [newContact, ...prev]);
-    
-    try { 
-      const result = await window.api?.addContact(contact); 
-      if (!result?.success) { 
-        setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email)); 
+
+    setOptimisticAdds((prev) => [newContact, ...prev]);
+
+    try {
+      const result = await window.api?.addContact(contact);
+      if (!result?.success) {
+        setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
         const errorMsg = result?.error || 'Failed to create contact';
-        showToast(errorMsg, 'error'); 
+        showToast(errorMsg, 'error');
         throw new Error(errorMsg); // Throw so Modal doesn't close
-      } 
+      }
       showToast('Contact created successfully', 'success');
-    }
-    catch (error) { 
-      setOptimisticAdds(prev => prev.filter(c => c.email !== contact.email)); 
+    } catch (error) {
+      setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
       if (!(error instanceof Error && error.message.includes('Failed to create contact'))) {
-        showToast(`Failed to create contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        showToast(
+          `Failed to create contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'error',
+        );
       }
       throw error;
     }
   };
 
   const handleUpdateContact = async (updated: Partial<Contact>) => {
-    if (updated.email) setOptimisticUpdates(prev => new Map(prev).set(updated.email!, updated));
-    
-    try { 
-      const result = await window.api?.addContact(updated); 
-      if (!result?.success) { 
-        if (updated.email) setOptimisticUpdates(prev => { const next = new Map(prev); next.delete(updated.email!); return next; }); 
+    if (updated.email) setOptimisticUpdates((prev) => new Map(prev).set(updated.email!, updated));
+
+    try {
+      const result = await window.api?.addContact(updated);
+      if (!result?.success) {
+        if (updated.email)
+          setOptimisticUpdates((prev) => {
+            const next = new Map(prev);
+            next.delete(updated.email!);
+            return next;
+          });
         const errorMsg = result?.error || 'Failed to update contact';
-        showToast(errorMsg, 'error'); 
+        showToast(errorMsg, 'error');
         throw new Error(errorMsg);
-      } 
+      }
       showToast('Contact updated successfully', 'success');
-    }
-    catch (error) { 
-      if (updated.email) setOptimisticUpdates(prev => { const next = new Map(prev); next.delete(updated.email!); return next; }); 
+    } catch (error) {
+      if (updated.email)
+        setOptimisticUpdates((prev) => {
+          const next = new Map(prev);
+          next.delete(updated.email!);
+          return next;
+        });
       if (!(error instanceof Error && error.message.includes('Failed to update contact'))) {
-        showToast(`Failed to update contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+        showToast(
+          `Failed to update contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          'error',
+        );
       }
       throw error;
     }
@@ -74,17 +104,42 @@ export function useDirectoryContacts(contacts: Contact[]) {
   const handleDeleteContact = async () => {
     if (!deleteConfirmation) return;
     const email = deleteConfirmation.email;
-    setOptimisticDeletes(prev => new Set(prev).add(email));
+    setOptimisticDeletes((prev) => new Set(prev).add(email));
     setDeleteConfirmation(null);
-    try { 
-      const result = await window.api?.removeContact(email); 
-      if (!result?.success) { 
-        setOptimisticDeletes(prev => { const next = new Set(prev); next.delete(email); return next; }); 
-        showToast(result?.error || 'Failed to delete contact: Contact not found or file error', 'error'); 
-      } 
+    try {
+      const result = await window.api?.removeContact(email);
+      if (!result?.success) {
+        setOptimisticDeletes((prev) => {
+          const next = new Set(prev);
+          next.delete(email);
+          return next;
+        });
+        showToast(
+          result?.error || 'Failed to delete contact: Contact not found or file error',
+          'error',
+        );
+      }
+    } catch (error) {
+      setOptimisticDeletes((prev) => {
+        const next = new Set(prev);
+        next.delete(email);
+        return next;
+      });
+      showToast(
+        `Failed to delete contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'error',
+      );
     }
-    catch (error) { setOptimisticDeletes(prev => { const next = new Set(prev); next.delete(email); return next; }); showToast(`Failed to delete contact: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error'); }
   };
 
-  return { getEffectiveContacts, handleCreateContact, handleUpdateContact, handleDeleteContact, editingContact, setEditingContact, deleteConfirmation, setDeleteConfirmation };
+  return {
+    getEffectiveContacts,
+    handleCreateContact,
+    handleUpdateContact,
+    handleDeleteContact,
+    editingContact,
+    setEditingContact,
+    deleteConfirmation,
+    setDeleteConfirmation,
+  };
 }

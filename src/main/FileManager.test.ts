@@ -1,4 +1,3 @@
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FileManager } from './FileManager';
 import fs from 'fs/promises';
@@ -11,31 +10,31 @@ vi.mock('electron', () => {
   const mockWin = {
     isDestroyed: vi.fn(() => false),
     webContents: {
-      send: vi.fn()
-    }
+      send: vi.fn(),
+    },
   };
-  
+
   class MockBrowserWindow {
-    constructor() { return mockWin; }
+    constructor() {
+      return mockWin;
+    }
     static getAllWindows = vi.fn(() => [mockWin]);
   }
 
   return {
     BrowserWindow: MockBrowserWindow,
     app: {
-      getPath: vi.fn(() => '/tmp')
-    }
+      getPath: vi.fn(() => '/tmp'),
+    },
   };
 });
 
 // Mock chokidar
 vi.mock('chokidar', () => ({
-  default: {
-    watch: () => ({
-      on: vi.fn(),
-      close: vi.fn()
-    })
-  }
+  watch: () => ({
+    on: vi.fn(),
+    close: vi.fn(),
+  }),
 }));
 
 // Mock logger to prevent console noise during tests
@@ -45,66 +44,60 @@ vi.mock('./logger', () => ({
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
-      debug: vi.fn()
+      debug: vi.fn(),
     },
     ipc: {
       warn: vi.fn(),
-      error: vi.fn()
-    }
-  }
+      error: vi.fn(),
+    },
+  },
 }));
 
 // Mock fileLock
 vi.mock('./fileLock', () => {
   return {
-    withFileLock: vi.fn(async (_path, cb) => cb()),
-    isFileLocked: vi.fn(async () => false),
     atomicWriteWithLock: vi.fn(async (filePath, content) => {
-        // Just write directly in mock, but use a temp file + rename to be atomic
-        // and avoid race conditions where readFile might see an empty file
-        const fs = await import('fs/promises');
-        const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
-        try {
-            await fs.writeFile(tempPath, content, 'utf-8');
-            await fs.rename(tempPath, filePath);
-        } catch (e) {
-            try { await fs.unlink(tempPath); } catch { /* ignore */ }
-            throw e;
-        }
-    }),
-    readWithLock: vi.fn(async (filePath) => {
-        const fs = await import('fs/promises');
-        try {
-            return await fs.readFile(filePath, 'utf-8');
-        } catch (e) {
-            if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-            throw e;
-        }
-    }),
-    modifyWithLock: vi.fn(async (filePath, modifier) => {
-        const fs = await import('fs/promises');
-        let content = '';
-        try { content = await fs.readFile(filePath, 'utf-8'); } catch (_e) { /* ignore */ }
-        const newContent = await modifier(content);
-        
-        const tempPath = `${filePath}.${Date.now()}.tmp`;
-        await fs.writeFile(tempPath, newContent, 'utf-8');
-        await fs.rename(tempPath, filePath);
-    }),
-    modifyJsonWithLock: vi.fn(async (filePath, modifier, defaultValue) => {
-        const fs = await import('fs/promises');
-        let data = defaultValue;
-        try {
-            const content = await fs.readFile(filePath, 'utf-8');
-            data = JSON.parse(content);
-        } catch (_e) { /* ignore */ }
-        const newData = await modifier(data);
-        const content = JSON.stringify(newData, null, 2);
-        
-        const tempPath = `${filePath}.${Date.now()}.tmp`;
+      // Just write directly in mock, but use a temp file + rename to be atomic
+      // and avoid race conditions where readFile might see an empty file
+      const fs = await import('fs/promises');
+      const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+      try {
         await fs.writeFile(tempPath, content, 'utf-8');
         await fs.rename(tempPath, filePath);
-    })
+      } catch (e) {
+        try {
+          await fs.unlink(tempPath);
+        } catch {
+          /* ignore */
+        }
+        throw e;
+      }
+    }),
+    readWithLock: vi.fn(async (filePath) => {
+      const fs = await import('fs/promises');
+      try {
+        return await fs.readFile(filePath, 'utf-8');
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+        throw e;
+      }
+    }),
+    modifyJsonWithLock: vi.fn(async (filePath, modifier, defaultValue) => {
+      const fs = await import('fs/promises');
+      let data = defaultValue;
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        data = JSON.parse(content);
+      } catch (_e) {
+        /* ignore */
+      }
+      const newData = await modifier(data);
+      const content = JSON.stringify(newData, null, 2);
+
+      const tempPath = `${filePath}.${Date.now()}.tmp`;
+      await fs.writeFile(tempPath, content, 'utf-8');
+      await fs.rename(tempPath, filePath);
+    }),
   };
 });
 
@@ -119,7 +112,7 @@ describe('FileManager', () => {
     // Use the mocked class
     new BrowserWindow();
     fileManager = new FileManager(tmpDir, bundledDir);
-    
+
     // Mock performBackup to avoid race conditions with directory cleanup
     // We only want to test performBackup explicitly in the "Daily Backups" suite
     vi.spyOn(fileManager, 'performBackup').mockResolvedValue(null);
@@ -136,223 +129,73 @@ describe('FileManager', () => {
     }
   });
 
-  it('adds a contact to an empty directory (creates file)', async () => {
-    const contact = { name: 'Test User', email: 'test@example.com', phone: '555-123-4567' };
-    const success = await fileManager.addContact(contact);
-    expect(success).toBe(true);
+  describe('JSON Contact Operations', () => {
+    it('adds a contact to JSON storage', async () => {
+      const contact = { name: 'Test User', email: 'test@example.com', phone: '555-123-4567' };
+      const success = await fileManager.addContact(contact);
+      expect(success).toBe(true);
 
-    const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-    expect(content).toContain('\uFEFFName,Title,Email,Phone');
-    expect(content).toContain('Test User');
-    expect(content).toContain('test@example.com');
-  });
-
-  it('appends a contact to existing file', async () => {
-    const initialCsv = 'Name,Title,Email,Phone\nExisting,Role,exist@a.com,555';
-    await fs.writeFile(path.join(tmpDir, 'contacts.csv'), initialCsv);
-
-    const contact = { name: 'New User', email: 'new@example.com', phone: '555-987-6543' };
-    const success = await fileManager.addContact(contact);
-    expect(success).toBe(true);
-
-    const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-    expect(content).toContain('Existing');
-    expect(content).toContain('New User');
-  });
-
-  it('handles "Phone1" column scenario (user reported bug)', async () => {
-    // User has "Phone1" in the file, but we look for "Phone".
-    // This should Create a NEW "Phone" column if it doesn't match?
-    // Or if "Phone1" is NOT mapped, it adds "Phone".
-
-    const initialCsv = 'Name,Email,Phone1\nUser,u@a.com,(+1) 234';
-    await fs.writeFile(path.join(tmpDir, 'contacts.csv'), initialCsv);
-
-    const contact = { name: 'Fix User', email: 'fix@a.com', phone: '+1 555-123-4567' };
-    const success = await fileManager.addContact(contact);
-    expect(success).toBe(true);
-
-    const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-
-    // It will add "Phone" column because "Phone1" doesn't match ['phone', 'phone number']
-    expect(content).toContain('Phone');
-
-    // Check if new user is there
-    expect(content).toContain('Fix User');
-    // Phone gets stored (may be formatted or raw depending on length)
-    expect(content).toContain('123-4567');
-  });
-
-  describe('CSV Import and Phone Number Cleaning', () => {
-    const waitForContent = async (filePath: string, content: string, timeout = 2000) => {
-      const start = Date.now();
-      while (Date.now() - start < timeout) {
-        try {
-          const c = await fs.readFile(filePath, 'utf-8');
-          if (c.includes(content)) return c;
-        } catch {
-          // Ignore read errors during polling
-        }
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      return await fs.readFile(filePath, 'utf-8');
-    };
-
-    it('cleans messy phone numbers on contact load', async () => {
-      const messyCsv = 'Name,Email,Phone\nJohn,john@a.com,"Office:79984456 Ext:877-273-9002"';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), messyCsv);
-
-      await fileManager.readAndEmit();
-
-      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(7) 998-4456, (877) 273-9002');
-      expect(content).toContain('(7) 998-4456, (877) 273-9002');
+      const content = await fs.readFile(path.join(tmpDir, 'contacts.json'), 'utf-8');
+      const records = JSON.parse(content);
+      expect(records).toHaveLength(1);
+      expect(records[0].name).toBe('Test User');
+      expect(records[0].email).toBe('test@example.com');
     });
 
-    it('formats US phone numbers with parentheses', async () => {
-      const csv = 'Name,Email,Phone\nJane,jane@a.com,5551234567';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
-
-      await fileManager.readAndEmit();
-
-      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 123-4567');
-      expect(content).toContain('(555) 123-4567');
-    });
-
-    it('preserves international phone numbers', async () => {
-      const csv = 'Name,Email,Phone\nRaj,raj@a.com,+919904918167';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
-
-      await fileManager.readAndEmit();
-
-      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(91) 990 491 8167');
-      expect(content).toContain('(91) 990 491 8167');
-    });
-
-    it('cleans phone numbers when adding contacts', async () => {
-      const contact = {
-        name: 'Test User',
-        email: 'test@a.com',
-        phone: '555-123-4567 x999'
-      };
-
-      await fileManager.addContact(contact);
-
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      expect(content).toContain('(555) 123-4567');
-      expect(content).toContain('999');
-    });
-
-    it('handles legacy contact CSV with "Phone Number" column', async () => {
-      const legacyCsv = 'Name,Title,Email,Phone Number\nLegacy User,Manager,legacy@a.com,555-987-6543';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), legacyCsv);
-
-      await fileManager.readAndEmit();
-
-      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), '(555) 987-6543');
-      expect(content).toContain('Legacy User');
-      expect(content).toContain('(555) 987-6543');
-    });
-
-    it('preserves contact data with special characters and quotes', async () => {
-      const complexCsv = 'Name,Title,Email,Phone\n"Smith, John","VP of Sales & Marketing",john@example.com,"Office: 555-123-4567"';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), complexCsv);
-
-      await fileManager.readAndEmit();
-      
-      // Wait for content as it might be rewritten for cleaning/normalization
-      const content = await waitForContent(path.join(tmpDir, 'contacts.csv'), 'Smith, John');
-      expect(content).toContain('Smith, John');
-      expect(content).toContain('VP of Sales & Marketing');
-      expect(content).toContain('john@example.com');
-    });
-  });
-
-  describe('Server CSV Header Migration', () => {
-    it('keeps modern server headers unchanged', async () => {
-      const modernCsv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer2,IT,Infrastructure,Prod,owner2@a.com,tech2@a.com,Linux';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), modernCsv);
-
-      await fileManager.readAndEmit();
-
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      // Should remain unchanged (headers already standard)
-      expect(content).toContain('Server2');
-      expect(content).toContain('Name,Business Area,LOB');
-    });
-  });
-
-  describe('Dummy Data Detection and Import', () => {
-    it('detects and clears dummy data before import', async () => {
-      // Create dummy data in the working directory
-      const dummyContactsCsv = 'Name,Title,Email,Phone\nDummy User,Role,dummy@example.com,555-0000';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), dummyContactsCsv);
-      // Also create it in bundledDir so isDummyData returns true
-      await fs.writeFile(path.join(bundledDir, 'contacts.csv'), dummyContactsCsv);
-
-      // Create a source CSV for import
-      const sourceTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-import-'));
-      const sourceCsv = 'Name,Email,Phone\nReal User,real@example.com,555-1111';
-      const sourcePath = path.join(sourceTmpDir, 'import.csv');
-      await fs.writeFile(sourcePath, sourceCsv);
-
-      try {
-        // Import should detect if current data is dummy and clear it
-        await fileManager.importContactsWithMapping(sourcePath);
-
-        const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-        expect(content).toContain('Real User');
-        expect(content).not.toContain('Dummy User'); // verify dummy data is gone
-      } finally {
-        await fs.rm(sourceTmpDir, { recursive: true, force: true });
-      }
-    });
-
-    it('preserves existing data when importing non-dummy contacts', async () => {
-      const existingCsv = 'Name,Email,Phone\nExisting User,exist@example.com,555-2222';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), existingCsv);
-
-      const sourceTmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-import-'));
-      const sourceCsv = 'Name,Email,Phone\nNew User,new@example.com,555-3333';
-      const sourcePath = path.join(sourceTmpDir, 'import.csv');
-      await fs.writeFile(sourcePath, sourceCsv);
-
-      try {
-        await fileManager.importContactsWithMapping(sourcePath);
-
-        const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-        // Both should be present
-        expect(content).toContain('Existing User');
-        expect(content).toContain('New User');
-      } finally {
-        await fs.rm(sourceTmpDir, { recursive: true, force: true });
-      }
-    });
-  });
-
-  describe('Contact Management', () => {
     it('removes a contact by email', async () => {
-      const csv = 'Name,Email,Phone\nUser1,user1@a.com,111\nUser2,user2@a.com,222';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
+      // Create initial JSON data
+      const records = [
+        {
+          id: '1',
+          name: 'User1',
+          email: 'user1@a.com',
+          phone: '111',
+          title: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          id: '2',
+          name: 'User2',
+          email: 'user2@a.com',
+          phone: '222',
+          title: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+      await fs.writeFile(path.join(tmpDir, 'contacts.json'), JSON.stringify(records));
 
       const removed = await fileManager.removeContact('user1@a.com');
       expect(removed).toBe(true);
 
-      const content = await fs.readFile(path.join(tmpDir, 'contacts.csv'), 'utf-8');
-      expect(content).not.toContain('User1');
-      expect(content).toContain('User2');
+      const content = await fs.readFile(path.join(tmpDir, 'contacts.json'), 'utf-8');
+      const updated = JSON.parse(content);
+      expect(updated).toHaveLength(1);
+      expect(updated[0].email).toBe('user2@a.com');
     });
 
     it('returns false when removing non-existent contact', async () => {
-      const csv = 'Name,Email,Phone\nUser1,user1@a.com,111';
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), csv);
+      const records = [
+        {
+          id: '1',
+          name: 'User1',
+          email: 'user1@a.com',
+          phone: '111',
+          title: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+      await fs.writeFile(path.join(tmpDir, 'contacts.json'), JSON.stringify(records));
 
       const removed = await fileManager.removeContact('nonexistent@a.com');
       expect(removed).toBe(false);
     });
   });
 
-  describe('Server Management', () => {
-    it('adds a server to empty file', async () => {
+  describe('JSON Server Operations', () => {
+    it('adds a server to JSON storage', async () => {
       const server = {
         name: 'TestServer',
         businessArea: 'IT',
@@ -360,45 +203,66 @@ describe('FileManager', () => {
         comment: 'Test comment',
         owner: 'owner@example.com',
         contact: 'tech@example.com',
-        osType: 'Linux'
+        os: 'Linux',
       };
 
       const success = await fileManager.addServer(server);
       expect(success).toBe(true);
 
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      expect(content).toContain('TestServer');
-      expect(content).toContain('IT');
-      expect(content).toContain('Infrastructure');
+      const content = await fs.readFile(path.join(tmpDir, 'servers.json'), 'utf-8');
+      const records = JSON.parse(content);
+      expect(records).toHaveLength(1);
+      expect(records[0].name).toBe('TestServer');
     });
 
     it('removes a server by name', async () => {
-      const csv = 'Name,Business Area,LOB,Comment,Owner,IT Contact,OS\nServer1,Finance,Accounting,Note1,owner1@a.com,tech1@a.com,Windows\nServer2,IT,Infrastructure,Note2,owner2@a.com,tech2@a.com,Linux';
-      await fs.writeFile(path.join(tmpDir, 'servers.csv'), csv);
+      const records = [
+        {
+          id: '1',
+          name: 'Server1',
+          businessArea: 'Finance',
+          lob: 'Accounting',
+          comment: '',
+          owner: 'owner1@a.com',
+          contact: 'tech1@a.com',
+          os: 'Windows',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          id: '2',
+          name: 'Server2',
+          businessArea: 'IT',
+          lob: 'Infrastructure',
+          comment: '',
+          owner: 'owner2@a.com',
+          contact: 'tech2@a.com',
+          os: 'Linux',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+      await fs.writeFile(path.join(tmpDir, 'servers.json'), JSON.stringify(records));
 
       const removed = await fileManager.removeServer('Server1');
       expect(removed).toBe(true);
 
-      const content = await fs.readFile(path.join(tmpDir, 'servers.csv'), 'utf-8');
-      expect(content).not.toContain('Server1');
-      expect(content).toContain('Server2');
+      const content = await fs.readFile(path.join(tmpDir, 'servers.json'), 'utf-8');
+      const updated = JSON.parse(content);
+      expect(updated).toHaveLength(1);
+      expect(updated[0].name).toBe('Server2');
     });
   });
 
-  // Note: Group management tests removed - CSV-based groups.csv system was replaced
-  // by JSON-based bridgeGroups.json system. See PresetOperations.ts for the new
-  // group CRUD operations (getGroups, saveGroup, updateGroup, deleteGroup).
-  // New group operations are tested via integration/e2e tests.
   describe('Daily Backups', () => {
     it('creates a backup of current data', async () => {
       // Restore original implementation for this test
       vi.mocked(fileManager.performBackup).mockRestore();
 
       // Setup initial data
-      await fs.writeFile(path.join(tmpDir, 'contacts.csv'), 'test data');
+      await fs.writeFile(path.join(tmpDir, 'contacts.json'), '[]');
 
-      // Trigger backup (access method)
-      // Note: We access the private/protected method or the public one we just restored
+      // Trigger backup
       await fileManager.performBackup('test');
 
       // Check if backup folder exists
@@ -409,15 +273,18 @@ describe('FileManager', () => {
       // Get today's local date part manually to match implementation
       const now = new Date();
       const offset = now.getTimezoneOffset() * 60000;
-      const today = (new Date(now.getTime() - offset)).toISOString().slice(0, 10);
+      const today = new Date(now.getTime() - offset).toISOString().slice(0, 10);
 
       // Expect at least one folder starting with today's date
-      const backupFolder = backups.find(b => b.startsWith(today));
+      const backupFolder = backups.find((b) => b.startsWith(today));
       expect(backupFolder).toBeDefined();
 
       // Check file content
-      const backupContent = await fs.readFile(path.join(backupDir, backupFolder!, 'contacts.csv'), 'utf-8');
-      expect(backupContent).toBe('test data');
+      const backupContent = await fs.readFile(
+        path.join(backupDir, backupFolder!, 'contacts.json'),
+        'utf-8',
+      );
+      expect(backupContent).toBe('[]');
     });
 
     it('prunes old backups keeping only last 30 days', async () => {
@@ -454,7 +321,7 @@ describe('FileManager', () => {
 
       // Check that a new backup for today was created
       const todayStr = localToday.toISOString().slice(0, 10);
-      const newBackup = backups.find(b => b.startsWith(todayStr));
+      const newBackup = backups.find((b) => b.startsWith(todayStr));
       expect(newBackup).toBeDefined();
     });
   });

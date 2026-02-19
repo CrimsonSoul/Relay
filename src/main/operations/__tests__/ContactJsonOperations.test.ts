@@ -5,7 +5,7 @@ vi.mock('../../fileLock', () => {
   // Use a factory function to allow individual tests to override
   return {
     readWithLock: vi.fn(),
-    modifyJsonWithLock: vi.fn()
+    modifyJsonWithLock: vi.fn(),
   };
 });
 
@@ -17,9 +17,9 @@ vi.mock('../../logger', () => ({
       error: vi.fn(),
       info: vi.fn(),
       debug: vi.fn(),
-      warn: vi.fn()
-    }
-  }
+      warn: vi.fn(),
+    },
+  },
 }));
 
 import { readWithLock } from '../../fileLock';
@@ -48,7 +48,7 @@ describe('ContactJsonOperations Data Safety', () => {
     const error = new Error('ENOENT') as NodeJS.ErrnoException;
     error.code = 'ENOENT';
     vi.mocked(readWithLock).mockRejectedValue(error);
-    
+
     const { getContacts: getContactsReimported } = await import('../ContactJsonOperations');
     const result = await getContactsReimported(rootDir);
     expect(result).toEqual([]);

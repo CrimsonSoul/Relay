@@ -5,7 +5,7 @@ export default defineConfig({
   testMatch: '**/*.spec.ts',
   timeout: 60 * 1000,
   expect: {
-    timeout: 30 * 1000
+    timeout: 30 * 1000,
   },
   fullyParallel: true,
   reporter: [['html', { open: 'never' }], ['list']],
@@ -13,18 +13,18 @@ export default defineConfig({
     baseURL: 'http://localhost:4173',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure'
+    video: 'retain-on-failure',
   },
   webServer: {
     command: 'npm run dev:test',
     url: 'http://localhost:4173',
     reuseExistingServer: !process.env.CI,
-    timeout: 120 * 1000
+    timeout: 120 * 1000,
   },
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] }
-    }
-  ]
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
 });

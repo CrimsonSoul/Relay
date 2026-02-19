@@ -1,10 +1,9 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { secureStorage } from '../utils/secureStorage';
-import { BridgeGroup, Contact } from "@shared/ipc";
-import { useToast } from "../components/Toast";
-import { loggers } from "../utils/logger";
-
-export interface SortConfig { key: string; direction: 'asc' | 'desc'; }
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { BridgeGroup, Contact } from '@shared/ipc';
+import { useToast } from '../components/Toast';
+import { useDebounce } from './useDebounce';
+import { loggers } from '../utils/logger';
+import type { SortConfig } from '../tabs/assembler/types';
 
 interface AssemblerState {
   groups: BridgeGroup[];
@@ -16,43 +15,29 @@ interface AssemblerState {
   onRemoveManual: (email: string) => void;
 }
 
-export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, manualRemoves, onAddManual, onRemoveManual }: AssemblerState) {
+export function useAssembler({
+  groups,
+  contacts,
+  selectedGroupIds,
+  manualAdds,
+  manualRemoves,
+  onAddManual,
+  onRemoveManual,
+}: AssemblerState) {
   const { showToast } = useToast();
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'name', direction: 'asc' });
   const [isBridgeReminderOpen, setIsBridgeReminderOpen] = useState(false);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
-  const [pendingEmail, setPendingEmail] = useState("");
-  const [compositionContextMenu, setCompositionContextMenu] = useState<{ x: number; y: number; email: string; isUnknown: boolean } | null>(null);
-  const [isGroupSidebarCollapsed, setIsGroupSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return secureStorage.getItemSync<boolean>('assembler_sidebar_collapsed', false) ?? false;
-    } catch {
-      return false;
-    }
-  });
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [compositionContextMenu, setCompositionContextMenu] = useState<{
+    x: number;
+    y: number;
+    email: string;
+    isUnknown: boolean;
+  } | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-
-  useEffect(() => { secureStorage.setItemSync('assembler_sidebar_collapsed', isGroupSidebarCollapsed); }, [isGroupSidebarCollapsed]);
-
-  // Sync state across multiple instances
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'relay_assembler_sidebar_collapsed' && e.newValue !== null) {
-        try {
-          const newValue = JSON.parse(decodeURIComponent(atob(e.newValue)));
-          if (typeof newValue === 'boolean') {
-            setIsGroupSidebarCollapsed(newValue);
-          }
-        } catch (_err) {
-          // Ignore parse errors from other instances
-        }
-      }
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
-
-  const handleToggleSidebarCollapse = useCallback(() => setIsGroupSidebarCollapsed((prev: boolean) => !prev), []);
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
 
   const contactMap = useMemo(() => {
     const map = new Map<string, Contact>();
@@ -63,8 +48,8 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
   // Create a map of email -> group names for display
   const emailToGroupsMap = useMemo(() => {
     const map = new Map<string, string[]>();
-    groups.forEach(group => {
-      group.contacts.forEach(email => {
+    groups.forEach((group) => {
+      group.contacts.forEach((email) => {
         const lowerEmail = email.toLowerCase();
         if (!map.has(lowerEmail)) {
           map.set(lowerEmail, []);
@@ -79,91 +64,176 @@ export function useAssembler({ groups, contacts, selectedGroupIds, manualAdds, m
   const groupStringMap = useMemo(() => {
     const map = new Map<string, string>();
     emailToGroupsMap.forEach((groupNames, email) => {
-      map.set(email, groupNames.join(", "));
+      map.set(email, groupNames.join(', '));
     });
     return map;
   }, [emailToGroupsMap]);
 
-  // Create groupMap for VirtualRow (email -> array of group names)
-  const groupMap = useMemo(() => {
-    const map = new Map<string, string[]>();
-    emailToGroupsMap.forEach((groupNames, email) => {
-      map.set(email, groupNames);
-    });
-    return map;
-  }, [emailToGroupsMap]);
-
-  const log = useMemo(() => {
+  const allRecipients = useMemo(() => {
     // Get all emails from selected groups
-    const fromGroups = selectedGroupIds.flatMap(id => {
-      const group = groups.find(g => g.id === id);
+    const fromGroups = selectedGroupIds.flatMap((id) => {
+      const group = groups.find((g) => g.id === id);
       return group ? group.contacts : [];
     });
     // Create union without mutating in useMemo
     const unionSet = new Set([...fromGroups, ...manualAdds]);
-    const filtered = Array.from(unionSet).filter(email => !manualRemoves.includes(email));
-    const result = filtered.map((email) => ({ email, source: manualAdds.includes(email) ? "manual" : "group" }));
+    const filtered = Array.from(unionSet).filter((email) => !manualRemoves.includes(email));
+    const result = filtered.map((email) => ({
+      email,
+      source: manualAdds.includes(email) ? 'manual' : 'group',
+    }));
 
     return result.sort((a, b) => {
       const contactA = contactMap.get(a.email.toLowerCase());
       const contactB = contactMap.get(b.email.toLowerCase());
-      const dir = sortConfig.direction === "asc" ? 1 : -1;
-      if (sortConfig.key === "groups") return (groupStringMap.get(a.email.toLowerCase()) || "").localeCompare(groupStringMap.get(b.email.toLowerCase()) || "") * dir;
-      let valA = "", valB = "";
-      if (sortConfig.key === "name") { valA = (contactA?.name || a.email.split("@")[0]).toLowerCase(); valB = (contactB?.name || b.email.split("@")[0]).toLowerCase(); }
-      else if (sortConfig.key === "title") { valA = (contactA?.title || "").toLowerCase(); valB = (contactB?.title || "").toLowerCase(); }
-      else if (sortConfig.key === "email") { valA = a.email.toLowerCase(); valB = b.email.toLowerCase(); }
-      else if (sortConfig.key === "phone") { valA = (contactA?.phone || "").toLowerCase(); valB = (contactB?.phone || "").toLowerCase(); }
+      const dir = sortConfig.direction === 'asc' ? 1 : -1;
+      if (sortConfig.key === 'groups')
+        return (
+          (groupStringMap.get(a.email.toLowerCase()) || '').localeCompare(
+            groupStringMap.get(b.email.toLowerCase()) || '',
+          ) * dir
+        );
+      let valA = '',
+        valB = '';
+      if (sortConfig.key === 'name') {
+        valA = (contactA?.name || a.email.split('@')[0]).toLowerCase();
+        valB = (contactB?.name || b.email.split('@')[0]).toLowerCase();
+      } else if (sortConfig.key === 'title') {
+        valA = (contactA?.title || '').toLowerCase();
+        valB = (contactB?.title || '').toLowerCase();
+      } else if (sortConfig.key === 'email') {
+        valA = a.email.toLowerCase();
+        valB = b.email.toLowerCase();
+      } else if (sortConfig.key === 'phone') {
+        valA = (contactA?.phone || '').toLowerCase();
+        valB = (contactB?.phone || '').toLowerCase();
+      }
       return valA.localeCompare(valB) * dir;
     });
   }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
 
+  const log = useMemo(() => {
+    if (!debouncedSearch) return allRecipients;
+    const q = debouncedSearch.toLowerCase();
+    return allRecipients.filter((entry) => {
+      const contact = contactMap.get(entry.email.toLowerCase());
+      const searchStr = [
+        contact?.name || entry.email.split('@')[0],
+        entry.email,
+        contact?.title || '',
+        contact?.phone || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return searchStr.includes(q);
+    });
+  }, [allRecipients, debouncedSearch, contactMap]);
+
   const handleCopy = async () => {
-    const success = await window.api?.writeClipboard(log.map((m) => m.email).join("; "));
+    const success = await window.api?.writeClipboard(log.map((m) => m.email).join('; '));
     if (success) {
-      showToast("Copied to clipboard", "success");
+      showToast('Copied to clipboard', 'success');
     } else {
-      showToast("Failed to copy to clipboard", "error");
+      showToast('Failed to copy to clipboard', 'error');
     }
   };
   const executeDraftBridge = () => {
     const date = new Date();
-    const params = new URLSearchParams({ subject: `${date.getMonth() + 1}/${date.getDate()} -`, attendees: log.map((m) => m.email).join(",") });
+    const params = new URLSearchParams({
+      subject: `${date.getMonth() + 1}/${date.getDate()} -`,
+      attendees: log.map((m) => m.email).join(','),
+    });
     void window.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`);
-    showToast("Bridge drafted", "success");
+    showToast('Bridge drafted', 'success');
   };
-  const handleQuickAdd = useCallback((email: string) => { onAddManual(email); showToast(`Added ${email}`, "success"); }, [onAddManual, showToast]);
-  const handleAddToContacts = useCallback((email: string) => { setPendingEmail(email); setIsAddContactModalOpen(true); }, []);
-  const handleCompositionContextMenu = useCallback((e: React.MouseEvent, email: string, isUnknown: boolean) => { e.preventDefault(); setCompositionContextMenu({ x: e.clientX, y: e.clientY, email, isUnknown }); }, []);
+  const handleQuickAdd = useCallback(
+    (email: string) => {
+      onAddManual(email);
+      showToast(`Added ${email}`, 'success');
+    },
+    [onAddManual, showToast],
+  );
+  const handleAddToContacts = useCallback((email: string) => {
+    setPendingEmail(email);
+    setIsAddContactModalOpen(true);
+  }, []);
+  const handleCompositionContextMenu = useCallback(
+    (e: React.MouseEvent, email: string, isUnknown: boolean) => {
+      e.preventDefault();
+      setCompositionContextMenu({ x: e.clientX, y: e.clientY, email, isUnknown });
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (compositionContextMenu) { const handler = () => setCompositionContextMenu(null); window.addEventListener("click", handler); return () => window.removeEventListener("click", handler); }
+    if (compositionContextMenu) {
+      const handler = () => setCompositionContextMenu(null);
+      window.addEventListener('click', handler);
+      return () => window.removeEventListener('click', handler);
+    }
   }, [compositionContextMenu]);
 
-  const itemData = useMemo(() => ({ log, contactMap, groupMap, onRemoveManual, onAddToContacts: handleAddToContacts, onContextMenu: handleCompositionContextMenu }), [log, contactMap, groupMap, onRemoveManual, handleAddToContacts, handleCompositionContextMenu]);
+  const itemData = useMemo(
+    () => ({
+      log,
+      contactMap,
+      groupMap: emailToGroupsMap,
+      onRemoveManual,
+      onAddToContacts: handleAddToContacts,
+      onContextMenu: handleCompositionContextMenu,
+    }),
+    [
+      log,
+      contactMap,
+      emailToGroupsMap,
+      onRemoveManual,
+      handleAddToContacts,
+      handleCompositionContextMenu,
+    ],
+  );
 
   const handleContactSaved = async (contact: Partial<Contact>) => {
     if (!window.api) {
-      showToast("API not available", "error");
+      showToast('API not available', 'error');
       return;
     }
     try {
       const success = await window.api.addContact(contact);
       if (success) {
         if (contact.email) onAddManual(contact.email);
-        showToast("Contact created successfully", "success");
+        showToast('Contact created successfully', 'success');
       } else {
-        showToast("Failed to create contact", "error");
+        showToast('Failed to create contact', 'error');
       }
     } catch (e) {
-      loggers.app.error("[useAssembler] Failed to save contact", { error: e });
-      showToast("Failed to create contact", "error");
+      loggers.app.error('[useAssembler] Failed to save contact', { error: e });
+      showToast('Failed to create contact', 'error');
     }
   };
 
   return {
-    sortConfig, setSortConfig, isBridgeReminderOpen, setIsBridgeReminderOpen, isAddContactModalOpen, setIsAddContactModalOpen, pendingEmail,
-    compositionContextMenu, setCompositionContextMenu, isGroupSidebarCollapsed, handleToggleSidebarCollapse, isHeaderCollapsed, setIsHeaderCollapsed,
-    contactMap, groupMap, log, itemData, handleCopy, executeDraftBridge, handleQuickAdd, handleAddToContacts, handleContactSaved
+    sortConfig,
+    setSortConfig,
+    isBridgeReminderOpen,
+    setIsBridgeReminderOpen,
+    isAddContactModalOpen,
+    setIsAddContactModalOpen,
+    pendingEmail,
+    compositionContextMenu,
+    setCompositionContextMenu,
+    isHeaderCollapsed,
+    setIsHeaderCollapsed,
+    search,
+    setSearch,
+    contactMap,
+    groupMap: emailToGroupsMap,
+    allRecipients,
+    log,
+    itemData,
+    handleCopy,
+    executeDraftBridge,
+    handleQuickAdd,
+    handleAddToContacts,
+    handleContactSaved,
   };
 }

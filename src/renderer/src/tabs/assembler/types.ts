@@ -1,8 +1,8 @@
-import { BridgeGroup, Contact, OnCallEntry } from "@shared/ipc";
+import { BridgeGroup, Contact, OnCallEntry } from '@shared/ipc';
 
 export type SortConfig = {
-  key: "name" | "title" | "email" | "phone" | "groups";
-  direction: "asc" | "desc";
+  key: 'name' | 'title' | 'email' | 'phone' | 'groups';
+  direction: 'asc' | 'desc';
 };
 
 export type AssemblerTabProps = {
@@ -28,9 +28,5 @@ export type VirtualRowData = {
   groupMap: Map<string, string[]>;
   onRemoveManual: (email: string) => void;
   onAddToContacts: (email: string) => void;
-  onContextMenu: (
-    e: React.MouseEvent,
-    email: string,
-    isUnknown: boolean
-  ) => void;
+  onContextMenu: (e: React.MouseEvent, email: string, isUnknown: boolean) => void;
 };

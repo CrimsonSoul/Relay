@@ -1,105 +1,186 @@
 :root {
-  /* Colors - Solid Dark Mode */
-  --color-bg-app: #0B0D12;
-  /* Main panel body */
-  --color-bg-surface: #18181B;
-  --color-bg-surface-opaque: #18181B;
-  /* Secondary headers/surfaces */
-  --color-bg-surface-elevated: #1E1E21;
-  --color-bg-card: rgba(255, 255, 255, 0.015);
-  --color-bg-card-hover: rgba(255, 255, 255, 0.03);
-  --color-bg-sidebar: #0F1115;
+  /* === Relay Dark Theme === */
+  /* Minimal Dark UI with Amber Accent */
+
+  /* Background System */
+  --color-bg-app: #060608;
+  --color-bg-surface: #0c0e12;
+  --color-bg-surface-opaque: #0c0e12;
+  --color-bg-surface-elevated: #12161c;
+  --color-bg-card: #0e1016;
+  --color-bg-card-hover: #181d26;
+  --color-bg-sidebar: #080a0e;
+  --color-bg-chrome: #080a0e;
   color-scheme: dark;
 
-  /* Text */
-  --color-text-primary: #FFFFFF;
-  --color-text-secondary: #A1A1AA;
-  --color-text-tertiary: #71717A;
-  --color-text-quaternary: #52525B;
+  /* App-specific tokens for parity */
+  --app-bg: #060608;
+  --app-surface: #0c0e12;
+  --app-surface-2: #0c0e12;
+  --app-surface-3: #12161c;
+  --app-border: rgba(255, 255, 255, 0.07);
+  --app-text: #f0f2f7;
+  --app-muted: #94a3b8;
+  --app-accent: #f59e0b;
+  --app-accent-strong: #fbbf24;
+  --app-accent-soft: rgba(245, 158, 11, 0.2);
 
-  /* Accents */
-  --color-accent-blue: #3B82F6;
-  --color-accent-blue-hover: #60A5FA;
-  --color-accent-blue-dim: rgba(59, 130, 246, 0.5);
-  --color-accent-blue-subtle: rgba(59, 130, 246, 0.1);
-  --color-accent-green: #10B981;
-  --color-accent-green-subtle: rgba(16, 185, 129, 0.1);
-  --color-danger: #FF5C5C;
-  --color-danger-hover: #FF7A7A;
-  --color-danger-subtle: rgba(255, 92, 92, 0.1);
+  /* Text */
+  --color-text-primary: #f0f2f7;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #7487a2;
+  --color-text-quaternary: #6b7d96;
+
+  /* Accent - Amber */
+  --color-accent: #f59e0b;
+  --color-accent-hover: #fbbf24;
+  --color-accent-dim: rgba(245, 158, 11, 0.5);
+  --color-accent-subtle: rgba(245, 158, 11, 0.1);
+
+  /* Secondary Accent - Cyan (informational/navigational) */
+  --color-accent-secondary: #06b6d4;
+  --color-accent-secondary-subtle: rgba(6, 182, 212, 0.1);
+
+  --color-accent-primary: var(--color-accent);
+
+  /* Semantic Colors */
+  --color-accent-green: #22c55e;
+  --color-accent-green-subtle: rgba(34, 197, 94, 0.12);
+  --color-danger: #ef4444;
+  --color-danger-hover: #f87171;
+  --color-danger-subtle: rgba(239, 68, 68, 0.12);
+  --color-warning: #f59e0b;
+  --color-warning-subtle: rgba(245, 158, 11, 0.15);
 
   /* Borders */
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.07);
+  --color-border-medium: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+  --color-border-accent: rgba(245, 158, 11, 0.3);
+  --border-subtle: 1px solid rgba(255, 255, 255, 0.07);
+  --border-medium: 1px solid rgba(255, 255, 255, 0.1);
+  --border-strong: 1px solid rgba(255, 255, 255, 0.16);
 
-  --border-subtle: 1px solid rgba(255, 255, 255, 0.05);
-  --border-medium: 1px solid rgba(255, 255, 255, 0.08);
-  --border-strong: 1px solid rgba(255, 255, 255, 0.12);
-
-  /* Shadows - Elegant Design */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1),
-    0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15),
-    0 2px 4px rgba(0, 0, 0, 0.08);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.2),
-    0 4px 8px rgba(0, 0, 0, 0.1);
-  --shadow-xl: 0 12px 32px rgba(0, 0, 0, 0.25),
-    0 6px 12px rgba(0, 0, 0, 0.12);
-  --shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1);
-  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+  /* Shadows */
+  --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-sm: 0 4px 8px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35), 0 4px 8px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45), 0 8px 16px rgba(0, 0, 0, 0.25);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.55), 0 12px 24px rgba(0, 0, 0, 0.3);
+  --shadow-modal:
+    0 0 0 1px rgba(255, 255, 255, 0.08), 0 32px 80px rgba(0, 0, 0, 0.7),
+    0 16px 32px rgba(0, 0, 0, 0.4);
 
   /* Typography */
-  --font-family-base: 'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  --font-family-mono: 'SF Mono',
-    'Monaco',
-    'Inconsolata',
-    'Fira Code',
-    monospace;
+  --font-family-base: 'Space Grotesk Variable', 'Space Grotesk', sans-serif;
+  --font-family-mono: 'JetBrains Mono', monospace;
+  --font-family-weather: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 
-  /* Spacing Scale - Compact */
-  --space-1: 3px;
-  --space-2: 6px;
-  --space-3: 10px;
-  --space-4: 14px;
-  --space-5: 18px;
-  --space-6: 20px;
-  --space-8: 28px;
-  --space-10: 36px;
-  --space-12: 44px;
+  /* Font Size Scale — balanced for 10ft/55" and 1ft/24" at 1080p
+     At 1920px: 2xs≈13px, xs≈15px, sm≈17px, base≈20px, lg≈27px */
+  --text-2xs: clamp(11px, 0.7vw, 14px);
+  --text-xs: clamp(13px, 0.8vw, 16px);
+  --text-sm: clamp(14px, 0.9vw, 18px);
+  --text-base: clamp(16px, 1.05vw, 20px);
+  --text-md: clamp(18px, 1.2vw, 23px);
+  --text-lg: clamp(20px, 1.4vw, 27px);
+  --text-xl: clamp(24px, 1.6vw, 32px);
+  --text-2xl: clamp(28px, 2vw, 40px);
+  --text-3xl: clamp(34px, 2.6vw, 50px);
+  --text-4xl: clamp(42px, 3.2vw, 62px);
+
+  /* Line Heights */
+  --leading-tight: 1.15;
+  --leading-normal: 1.35;
+  --leading-relaxed: 1.5;
+  --leading-loose: 1.7;
+
+  /* Letter Spacing */
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.08em;
+  --tracking-widest: 0.12em;
+
+  /* Font Weights */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+  --weight-black: 900;
+
+  /* Spacing Scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-8: 40px;
+  --space-10: 52px;
+  --space-12: 64px;
 
   /* Border Radius */
-  --radius-sm: 3px;
-  --radius-md: 5px;
-  --radius-lg: 7px;
-  --radius-xl: 10px;
-  --radius-pill: 16px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-2xl: 28px;
+  --radius-pill: 9999px;
   --radius-round: 50%;
 
-  /* Transitions - Smooth Cubic Bezier Curves */
-  --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-smooth: 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-bouncy: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  --transition-premium: 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Z-Index Scale */
+  --z-base: 1;
+  --z-dropdown: 100;
+  --z-sticky: 500;
+  --z-overlay: 1000;
+  --z-popover: 5000;
+  --z-modal: 9999;
+  --z-window-controls: 10001;
+  --z-command-palette: 10002;
+  --z-critical: 20000;
+
+  /* Transitions */
+  --transition-fast: 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --transition-bouncy: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-premium: 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   --transition-micro: 0.1s ease-out;
 
-  /* Layout - Compact */
-  --sidebar-width-collapsed: 72px;
-  --header-height: 44px;
+  /* Layout */
+  --sidebar-width-collapsed: 110px;
+  --header-height: 56px;
+
+  /* Chrome Pattern — layered amber dot scatter for sidebar + header.
+     Large-prime grids push visible repeat distance far beyond viewport. */
+  --chrome-bg: #080a0e;
+  --chrome-pattern:
+    radial-gradient(circle, rgba(245, 158, 11, 0.08) 1px, transparent 1px),
+    radial-gradient(circle, rgba(245, 158, 11, 0.06) 0.8px, transparent 0.8px),
+    radial-gradient(circle, rgba(245, 158, 11, 0.05) 0.6px, transparent 0.6px);
+  --chrome-pattern-size: 29px 29px, 37px 37px, 47px 47px;
+  --chrome-pattern-position: 0 0, 13px 19px, 7px 31px;
+
+  /* Surface Pattern — same dot scatter at ~55% opacity for cards, toolbars, panels */
+  --surface-pattern:
+    radial-gradient(circle, rgba(245, 158, 11, 0.045) 1px, transparent 1px),
+    radial-gradient(circle, rgba(245, 158, 11, 0.035) 0.8px, transparent 0.8px),
+    radial-gradient(circle, rgba(245, 158, 11, 0.028) 0.6px, transparent 0.6px);
+  --surface-pattern-size: 29px 29px, 37px 37px, 47px 47px;
+  --surface-pattern-position: 0 0, 13px 19px, 7px 31px;
 }
 
 * {
   box-sizing: border-box;
 }
 
-/* Refined Minimalist Scrollbar - Auto Hide */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -114,10 +195,8 @@
   transition: background-color 0.2s ease;
 }
 
-*:hover > ::-webkit-scrollbar-thumb,
-*::-webkit-scrollbar-thumb:hover,
-.personnel-list:hover ::-webkit-scrollbar-thumb,
-.oncall-panel:hover ::-webkit-scrollbar-thumb {
+.weather-scroll-container:hover ::-webkit-scrollbar-thumb,
+.command-palette-results:hover ::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -129,6 +208,7 @@ body {
   margin: 0;
   padding: 0;
   font-family: var(--font-family-base);
+  font-size: var(--text-base);
   background-color: var(--color-bg-app);
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
@@ -136,29 +216,11 @@ body {
   height: 100vh;
 }
 
-.content-view {
-  flex: 1;
-  padding: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-app);
-  /* The darker content pane */
-
-  /* Precision Discord Rounding - Internal Pane only */
-  border-top-left-radius: 8px;
-  border-left: var(--border-subtle);
-  border-top: var(--border-subtle);
-  box-shadow: -2px -1px 4px rgba(0, 0, 0, 0.15);
-  /* Subtle inner depth */
-  position: relative;
-}
-
 .app-container {
   display: flex;
   height: 100vh;
   width: 100vw;
-  background-color: var(--color-bg-app);
+  background: var(--color-bg-app);
   overflow: hidden;
   position: relative;
 }
@@ -168,7 +230,19 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
   overflow: hidden;
+  position: relative;
+}
+
+.content-view {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-app);
   position: relative;
 }
 
@@ -177,35 +251,39 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  background: transparent;
+  padding: 0 32px;
+  background-color: var(--chrome-bg);
+  background-image: var(--chrome-pattern);
+  background-size: var(--chrome-pattern-size);
+  background-position: var(--chrome-pattern-position);
   -webkit-app-region: drag;
   flex-shrink: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 /* Reserve space for window controls on Windows/Linux */
 .platform-win32 .app-header {
-  padding-right: 168px; /* 144px for controls + 24px margin */
+  padding-right: 192px;
 }
 
 .header-title-container {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 16px;
 }
 
 .header-breadcrumb {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  font-weight: 800;
+  color: var(--color-accent);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
   -webkit-app-region: no-drag;
 }
 
@@ -213,6 +291,6 @@ body {
   position: absolute;
   top: 0;
   right: 0;
-  z-index: 10001;
+  z-index: var(--z-window-controls);
   pointer-events: none;
 }

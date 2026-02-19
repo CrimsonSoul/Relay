@@ -20,14 +20,9 @@ interface SortableTeamCardProps {
 }
 
 export const SortableTeamCard: React.FC<SortableTeamCardProps> = (props) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: props.team });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: props.team,
+  });
 
   const style = {
     transform: CSS.Translate.toString(transform),

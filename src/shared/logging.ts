@@ -8,7 +8,7 @@ export enum LogLevel {
   WARN = 2,
   ERROR = 3,
   FATAL = 4,
-  NONE = 5
+  NONE = 5,
 }
 
 export enum ErrorCategory {
@@ -16,10 +16,6 @@ export enum ErrorCategory {
   FILE_SYSTEM = 'FILE_SYSTEM',
   VALIDATION = 'VALIDATION',
   AUTH = 'AUTH',
-  DATABASE = 'DATABASE',
-  IPC = 'IPC',
   RENDERER = 'RENDERER',
-  UI = 'UI',
   COMPONENT = 'COMPONENT',
-  UNKNOWN = 'UNKNOWN'
 }

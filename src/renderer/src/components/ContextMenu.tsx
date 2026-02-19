@@ -17,7 +17,6 @@ type ContextMenuProps = {
 };
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }) => {
-  // Adjust position to prevent going off-screen
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on scroll/resize
@@ -34,95 +33,61 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
   return createPortal(
     <>
       <div
-        style={{ position: 'fixed', inset: 0, zIndex: 99998 }}
-        onClick={(e) => { e.stopPropagation(); onClose(); }}
-        onContextMenu={(e) => { e.preventDefault(); onClose(); }} // Close on right click elsewhere
+        role="presentation"
+        className="context-menu-backdrop"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onClose();
+        }}
       />
       <div
         ref={menuRef}
-        className="animate-scale-in"
-        style={{
-          position: 'fixed',
-          top: y,
-          left: x,
-          background: 'var(--color-bg-surface-elevated)',
-          border: 'var(--border-medium)',
-          borderRadius: 'var(--radius-lg)',
-          boxShadow: 'var(--shadow-xl)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
-          zIndex: 99999,
-          padding: 'var(--space-1)',
-          minWidth: '180px',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '1px'
+        className="context-menu animate-scale-in"
+        role="menu"
+        tabIndex={-1}
+        style={{ top: y, left: x }}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            onClose();
+          }
         }}
-        onClick={e => e.stopPropagation()}
       >
-        {/* Subtle gradient accent at top */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '1px',
-          background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%)'
-        }} />
+        <div className="context-menu-accent" />
 
         {items.map((item, i) => (
           <div
             key={i}
-            onClick={() => { if (!item.disabled) { item.onClick(); onClose(); } }}
-            style={{
-              padding: 'var(--space-2) var(--space-3)',
-              cursor: item.disabled ? 'not-allowed' : 'pointer',
-              fontSize: '13px',
-              color: item.disabled ? 'var(--color-text-tertiary)' : (item.danger ? 'var(--color-danger)' : 'var(--color-text-primary)'),
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              transition: 'all var(--transition-micro)',
-              fontWeight: 500,
-              letterSpacing: '-0.01em',
-              position: 'relative',
-              opacity: item.disabled ? 0.5 : 1,
-            }}
-            onMouseEnter={e => {
+            role="menuitem"
+            tabIndex={item.disabled ? -1 : 0}
+            onClick={() => {
               if (!item.disabled) {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                if (item.danger) {
-                  e.currentTarget.style.color = 'var(--color-danger-hover)';
-                  e.currentTarget.style.background = 'rgba(232, 17, 35, 0.1)';
+                item.onClick();
+                onClose();
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                if (!item.disabled) {
+                  item.onClick();
+                  onClose();
                 }
               }
             }}
-            onMouseLeave={e => {
-              if (!item.disabled) {
-                e.currentTarget.style.background = 'transparent';
-                if (item.danger) {
-                  e.currentTarget.style.color = 'var(--color-danger)';
-                }
-              }
-            }}
+            className={`context-menu-item${item.disabled ? ' context-menu-item--disabled' : ''}${item.danger ? ' context-menu-item--danger' : ''}`}
           >
-            {item.icon && (
-              <span style={{
-                opacity: 0.8,
-                display: 'flex',
-                alignItems: 'center',
-                fontSize: '14px'
-              }}>
-                {item.icon}
-              </span>
-            )}
-            <span className="text-truncate" style={{ flex: 1 }}>{item.label}</span>
+            {item.icon && <span className="context-menu-item-icon">{item.icon}</span>}
+            <span className="text-truncate context-menu-item-label">{item.label}</span>
           </div>
         ))}
       </div>
     </>,
-    document.body
+    document.body,
   );
 };

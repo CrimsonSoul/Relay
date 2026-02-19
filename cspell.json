@@ -25,11 +25,5 @@
     "NOSONAR",
     "servernum"
   ],
-  "ignorePaths": [
-    "node_modules",
-    "dist",
-    "build",
-    "*.lock",
-    "package-lock.json"
-  ]
+  "ignorePaths": ["node_modules", "dist", "build", "*.lock", "package-lock.json"]
 }

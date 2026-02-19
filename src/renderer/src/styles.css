@@ -1,9 +1,10 @@
 /* Global Styles Manifest */
 
-@import "./styles/theme.css";
-@import "./styles/animations.css";
-@import "./styles/components.css";
-@import "./styles/modals.css";
-@import "./styles/utilities.css";
-@import "./styles/responsive.css";
-@import "./styles/app-icon.css";
+@import './styles/theme.css';
+@import './styles/animations.css';
+@import './styles/components.css';
+@import './styles/modals.css';
+@import './styles/utilities.css';
+@import './styles/responsive.css';
+@import './styles/app-icon.css';
+@import './styles/toast.css';

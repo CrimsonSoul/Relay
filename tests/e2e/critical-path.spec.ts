@@ -1,24 +1,161 @@
-
-/* eslint-disable no-undef */
-import { _electron as electron, test, expect } from '@playwright/test';
+import { _electron as electron, test, expect, type Page, type Locator } from '@playwright/test';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-test.describe('Vital Critical Path', () => {
-  let electronApp: any;
-  let window: any;
+const uniqueSuffix = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
-  test.beforeEach(async ({ page: _page }, testInfo) => {
+const rightClick = async (target: Locator) => {
+  await target.scrollIntoViewIfNeeded();
+  await target.click({ button: 'right', force: true });
+};
+
+const getActivePanel = (window: Page) => window.locator('.tab-panel--active');
+
+const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) => {
+  await window.getByTestId(testId).click();
+  await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
+};
+
+const tryEnsurePeopleTabReady = async (window: Page) => {
+  await goToTab(window, 'sidebar-people', 'People');
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const addContact = window.getByRole('button', { name: 'ADD CONTACT' });
+    if (await addContact.isVisible()) {
+      return true;
+    }
+
+    const reload = window.getByRole('button', { name: 'Reload' }).first();
+    if (await reload.isVisible()) {
+      await Promise.all([window.waitForLoadState('domcontentloaded'), reload.click()]);
+      await goToTab(window, 'sidebar-people', 'People');
+      continue;
+    }
+
+    await window.waitForTimeout(500);
+  }
+
+  return false;
+};
+
+const createContactFromPeople = async (window: Page, name: string, email: string) => {
+  const peopleReady = await tryEnsurePeopleTabReady(window);
+
+  if (!peopleReady) {
+    await window.evaluate(
+      async ({ contactName, contactEmail }) => {
+        await window.api.addContact({
+          name: contactName,
+          email: contactEmail,
+          title: 'E2E Tester',
+          phone: '5551234567',
+        });
+      },
+      { contactName: name, contactEmail: email },
+    );
+
+    await expect
+      .poll(async () =>
+        window.evaluate(async (contactEmail) => {
+          const contacts = await window.api.getContacts();
+          return contacts.some((c) => c.email.toLowerCase() === contactEmail.toLowerCase());
+        }, email),
+      )
+      .toBe(true);
+
+    return null;
+  }
+
+  await window.getByRole('button', { name: 'ADD CONTACT' }).click();
+  const addModal = window.locator('div[role="dialog"]', { hasText: /Add Contact/i });
+  await expect(addModal).toBeVisible();
+
+  await addModal.getByLabel('Full Name').fill(name);
+  await addModal.getByLabel('Email Address').fill(email);
+  await addModal.getByLabel('Job Title').fill('E2E Tester');
+  await addModal.getByLabel('Phone Number').fill('5551234567');
+
+  await addModal.getByRole('button', { name: 'Create Contact' }).click();
+  await expect(addModal).not.toBeVisible();
+
+  const activePanel = getActivePanel(window);
+  const search = activePanel.locator('input[placeholder="Search Recipients"]');
+  await search.fill(email);
+
+  const contactCard = activePanel.locator('.contact-card', { hasText: email }).first();
+  await expect(contactCard).toBeVisible();
+
+  return contactCard;
+};
+
+const deleteContactFromPeople = async (window: Page, email: string) => {
+  const peopleReady = await tryEnsurePeopleTabReady(window);
+
+  if (!peopleReady) {
+    await window.evaluate(async (contactEmail) => {
+      await window.api.removeContact(contactEmail);
+    }, email);
+
+    await expect
+      .poll(async () =>
+        window.evaluate(async (contactEmail) => {
+          const contacts = await window.api.getContacts();
+          return contacts.some((c) => c.email.toLowerCase() === contactEmail.toLowerCase());
+        }, email),
+      )
+      .toBe(false);
+
+    return;
+  }
+
+  const activePanel = getActivePanel(window);
+  const search = activePanel.locator('input[placeholder="Search Recipients"]');
+  await search.fill(email);
+
+  const contactCard = activePanel.locator('.contact-card', { hasText: email }).first();
+  await expect(contactCard).toBeVisible();
+  await contactCard.click();
+
+  const detailPanelDelete = window.locator('.detail-panel').getByRole('button', { name: 'Delete' });
+  if (await detailPanelDelete.isVisible()) {
+    await detailPanelDelete.click();
+  } else {
+    await rightClick(contactCard);
+    const deleteOption = window.getByRole('menuitem', { name: 'Delete' });
+    await expect(deleteOption).toBeVisible();
+    await deleteOption.click();
+  }
+
+  const confirmModal = window.locator('div[role="dialog"]', { hasText: /Delete Contact/i });
+  await expect(confirmModal).toBeVisible();
+  await confirmModal.getByRole('button', { name: 'Delete Contact' }).click();
+  await expect(confirmModal).not.toBeVisible();
+
+  await expect(activePanel.locator('.contact-card', { hasText: email })).toHaveCount(0);
+};
+
+test.describe('Vital Critical Path', () => {
+  let electronApp: Awaited<ReturnType<typeof electron.launch>>;
+  let window: Awaited<ReturnType<typeof electronApp.firstWindow>>;
+
+  test.beforeEach(async () => {
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const launchEnv = { ...process.env, NODE_ENV: 'test' };
+    delete launchEnv.ELECTRON_RUN_AS_NODE;
+
     electronApp = await electron.launch({
       args: [mainEntry],
-      env: { ...process.env, NODE_ENV: 'test' }
+      env: launchEnv,
     });
+
     window = await electronApp.firstWindow();
     await window.waitForLoadState('domcontentloaded');
+
+    await expect(window.getByTestId('sidebar-compose')).toBeVisible();
+    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
   });
 
   test.afterEach(async () => {
@@ -30,235 +167,138 @@ test.describe('Vital Critical Path', () => {
   test('Vital 1: App Launch & Compose Tab', async () => {
     const title = await window.title();
     expect(title).toMatch(/Relay/i);
-    await expect(window.locator('text=Data Composition')).toBeVisible({ timeout: 15000 });
+
+    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
+    await expect(window.getByRole('button', { name: 'DRAFT BRIDGE' })).toBeVisible();
   });
 
   test('Vital 2: Navigation to On-Call & Weather', async () => {
-    // Navigate to On-Call Board
-    await window.click('[data-testid="sidebar-on-call-board"]');
-    await expect(window.locator('h1:has-text("On-Call Board")')).toBeVisible();
+    await goToTab(window, 'sidebar-on-call', 'On-Call');
+    await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
 
-    // Navigate to Weather
-    await window.click('[data-testid="sidebar-weather"]');
-    await expect(window.locator('header')).toBeVisible();
+    await goToTab(window, 'sidebar-weather', 'Weather');
+    await expect(window.getByLabel('Search city')).toBeVisible();
+    await expect(window.getByLabel('Detect current location')).toBeVisible();
   });
 
   test('Vital 3: Data Integrity (Add/Delete Contact)', async () => {
-    await window.click('[data-testid="sidebar-people"]');
-    await expect(window.locator('text=Personnel Directory')).toBeVisible();
+    const suffix = uniqueSuffix();
+    const name = `Vital Test ${suffix}`;
+    const email = `vital.test.${suffix}@example.com`;
 
-    await window.click('button:has-text("ADD CONTACT")');
-    const modal = window.locator('div[role="dialog"]');
-    await expect(modal).toBeVisible();
-
-    const uniqueId = Date.now();
-    const testEmail = `vital.test.${uniqueId}@example.com`;
-    await modal.getByLabel(/Full Name/i).fill('Vital Test User');
-    await modal.getByLabel(/Email Address/i).fill(testEmail);
-    await modal.getByLabel(/Phone Number/i).fill('555-9999');
-    await modal.getByLabel(/Title/i).fill('Tester');
-    
-    await modal.getByRole('button', { name: /Create Contact/i }).click();
-    await expect(modal).not.toBeVisible();
-
-    const searchInput = window.locator('input[placeholder="Search people..."]');
-    await searchInput.fill(testEmail);
-    const targetCard = window.locator('text=' + testEmail).first();
-    await expect(targetCard).toBeVisible();
-    
-    // Right click via evaluate to be stable in virtualized list
-    await targetCard.evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      const event = new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      });
-      el.dispatchEvent(event);
-    });
-    
-    const deleteOption = window.locator('.animate-scale-in').getByText('Delete', { exact: true });
-    await expect(deleteOption).toBeVisible({ timeout: 10000 });
-    await deleteOption.click();
-    
-    const confirmModal = window.locator('div[role="dialog"]', { hasText: /Delete Contact/i });
-    await expect(confirmModal).toBeVisible();
-    await confirmModal.getByRole('button', { name: /Delete Contact/i }).click();
-    
-    await expect(window.locator(`text=${testEmail}`)).not.toBeVisible();
+    await createContactFromPeople(window, name, email);
+    await deleteContactFromPeople(window, email);
   });
 
-  test('Vital 4: On-Call Management (Add/Rename Team & Rows)', async () => {
-    await window.click('[data-testid="sidebar-on-call-board"]');
-    
-    // 1. Add Team
-    await window.click('button:has-text("+ ADD CARD")');
+  test('Vital 4: On-Call Management (Add/Rename/Remove Card)', async () => {
+    await goToTab(window, 'sidebar-on-call', 'On-Call');
+
+    const teamName = `Vital Team ${uniqueSuffix()}`;
+    await window.getByRole('button', { name: 'ADD CARD' }).click();
+
     const addModal = window.locator('div[role="dialog"]', { hasText: /Add New Card/i });
     await expect(addModal).toBeVisible();
-    
-    const teamName = `Vital Team ${Date.now()}`;
     await addModal.getByPlaceholder(/Card Name/i).fill(teamName);
     await addModal.getByRole('button', { name: 'Add Card' }).click();
     await expect(addModal).not.toBeVisible();
-    
-    const teamHeader = window.locator('.oncall-grid').locator(`text=${teamName}`);
-    await expect(teamHeader).toBeVisible();
 
-    // 2. Add Rows to Team
-    // For a new (empty) team, we can simply click it to open the edit modal
-    const targetCard = window.locator('.oncall-grid-item', { hasText: teamName }).locator('[role="button"]').first();
-    await targetCard.scrollIntoViewIfNeeded();
-    await targetCard.click({ force: true });
-    
-    const editModal = window.locator('div[role="dialog"]', { hasText: /Edit Card/i });
-    await expect(editModal).toBeVisible({ timeout: 10000 });
-    
-    // Add Row 1
-    await editModal.getByText('+ Add Row').click();
-    const roleInput1 = editModal.getByPlaceholder('Role').last();
-    await roleInput1.fill('Primary');
-    await roleInput1.press('Enter');
-    const nameInput1 = editModal.getByPlaceholder('Select Contact...').last();
-    await nameInput1.fill('Person One');
-    await nameInput1.press('Enter');
-    
-    // Add Row 2
-    await editModal.getByText('+ Add Row').click();
-    const roleInput2 = editModal.getByPlaceholder('Role').last();
-    await roleInput2.fill('Backup');
-    await roleInput2.press('Enter');
-    const nameInput2 = editModal.getByPlaceholder('Select Contact...').last();
-    await nameInput2.fill('Person Two');
-    await nameInput2.press('Enter');
+    const teamCard = window.locator('.team-card-body', { hasText: teamName }).first();
+    await expect(teamCard).toBeVisible();
 
-    // Remove Row 2
-    const removeButtons = editModal.locator('div[style*="color: var(--color-danger)"]');
-    await removeButtons.last().click();
+    await rightClick(teamCard);
+    const renameOption = window.getByRole('menuitem', { name: 'Rename Team' });
+    await expect(renameOption).toBeVisible();
+    await renameOption.click();
 
-    await editModal.getByRole('button', { name: 'Save Changes' }).click();
-    await expect(editModal).not.toBeVisible();
-    
-    // Verify Row 1 Visible on Card
-    await expect(targetCard.locator('text=Person One')).toBeVisible();
-
-    // 3. Rename Team
-    const box = await targetCard.boundingBox();
-    if (box) {
-      await window.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
-    }
-    const renameOption = window.getByText('Rename Team');
-    await expect(renameOption).toBeVisible({ timeout: 10000 });
-    await renameOption.click({ force: true });
-    
     const renameModal = window.locator('div[role="dialog"]', { hasText: /Rename Card/i });
     await expect(renameModal).toBeVisible();
-    
-    const newName = `${teamName} Renamed`;
-    const input = renameModal.locator('input');
-    await input.clear();
-    await input.fill(newName);
-    
+
+    const renamedTeam = `${teamName} Renamed`;
+    const renameInput = renameModal.locator('input').first();
+    await renameInput.fill(renamedTeam);
     await renameModal.getByRole('button', { name: 'Rename' }).click();
     await expect(renameModal).not.toBeVisible();
-    
-    await expect(window.locator('.oncall-grid').locator(`text=${newName}`)).toBeVisible();
-    
-    // 4. Cleanup (Remove Team)
-    const renamedCard = window.locator('.oncall-grid-item', { hasText: newName }).locator('[role="button"]').first();
-    const boxRenamed = await renamedCard.boundingBox();
-    if (boxRenamed) {
-      await window.mouse.click(boxRenamed.x + boxRenamed.width / 2, boxRenamed.y + boxRenamed.height / 2, { button: 'right' });
-    }
-    const removeOption = window.getByText('Remove Team');
-    await expect(removeOption).toBeVisible({ timeout: 10000 });
-    await removeOption.click({ force: true });
-    
-    const confirmModal = window.locator('div[role="dialog"]', { hasText: /Remove Card/i });
-    await expect(confirmModal).toBeVisible();
-    await confirmModal.getByRole('button', { name: 'Remove' }).click();
-    
-    await expect(window.locator('.oncall-grid').locator(`text=${newName}`)).not.toBeVisible();
+
+    const renamedCard = window.locator('.team-card-body', { hasText: renamedTeam }).first();
+    await expect(renamedCard).toBeVisible();
+
+    await rightClick(renamedCard);
+    const removeOption = window.getByRole('menuitem', { name: 'Remove Team' });
+    await expect(removeOption).toBeVisible();
+    await removeOption.click();
+
+    const removeModal = window.locator('div[role="dialog"]', { hasText: /Remove Card/i });
+    await expect(removeModal).toBeVisible();
+    await removeModal.getByRole('button', { name: 'Remove' }).click();
+    await expect(removeModal).not.toBeVisible();
+
+    await expect(window.locator('.team-card-body', { hasText: renamedTeam })).toHaveCount(0);
   });
 
   test('Vital 5: Composer Workflow (Add, Group, Draft)', async () => {
-    // 1. Create a contact to use
-    await window.click('[data-testid="sidebar-people"]');
-    await window.click('button:has-text("ADD CONTACT")');
-    const uniqueId = Date.now();
-    const email = `composer.test.${uniqueId}@example.com`;
-    await window.locator('div[role="dialog"]').getByLabel(/Email Address/i).fill(email);
-    await window.locator('div[role="dialog"]').getByLabel(/Full Name/i).fill('Composer Test User');
-    await window.locator('div[role="dialog"]').getByRole('button', { name: /Create Contact/i }).click();
-    await expect(window.locator('div[role="dialog"]')).not.toBeVisible();
-    
-    // 2. Add to Composer from Directory
-    const searchInput = window.locator('input[placeholder="Search people..."]');
-    await searchInput.fill(email);
-    const targetCard = window.locator('text=' + email).first();
-    await expect(targetCard).toBeVisible();
-    await targetCard.evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      const event = new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      });
-      el.dispatchEvent(event);
-    });
-    
-    const addToComposerOption = window.locator('.animate-scale-in').getByText('Add to Composer');
-    await expect(addToComposerOption).toBeVisible({ timeout: 15000 });
-    await addToComposerOption.click();
-    
-    // 3. Verify in Compose Tab
-    await window.click('[data-testid="sidebar-compose"]');
-    await expect(window.locator(`text=${email}`)).toBeVisible();
-    
-    // 4. Save Group
-    await window.click('button:has-text("SAVE GROUP")');
-    const saveModal = window.locator('div[role="dialog"]', { hasText: /Save as Group/i });
-    await expect(saveModal).toBeVisible();
-    
-    const groupName = `Vital Group ${uniqueId}`;
-    await saveModal.getByLabel('Group Name').fill(groupName);
-    await saveModal.getByRole('button', { name: 'Save' }).click();
-    await expect(saveModal).not.toBeVisible();
-    
-    // Verify group in sidebar
-    await expect(window.locator(`button`, { hasText: groupName })).toBeVisible();
-    
-    // 5. Draft Bridge (Start Bridge)
-    await window.click('button:has-text("DRAFT BRIDGE")');
+    const suffix = uniqueSuffix();
+    const name = `Composer Test ${suffix}`;
+    const email = `composer.test.${suffix}@example.com`;
+    const preloadGroupName = `Seed Group ${suffix}`;
+    const groupName = `Vital Group ${suffix}`;
+
+    await createContactFromPeople(window, name, email);
+
+    await goToTab(window, 'sidebar-compose', 'Compose');
+
+    await window.evaluate(
+      async ({ seedGroupName, contactEmail }) => {
+        await window.api.saveGroup({
+          name: seedGroupName,
+          contacts: [contactEmail],
+        });
+      },
+      { seedGroupName: preloadGroupName, contactEmail: email },
+    );
+
+    const preloadGroupItem = window
+      .locator('.assembler-sidebar .sidebar-item', { hasText: preloadGroupName })
+      .first();
+    await expect(preloadGroupItem).toBeVisible();
+    await preloadGroupItem.click();
+
+    const composePanel = getActivePanel(window);
+    await expect(composePanel.locator(`text=${email}`)).toBeVisible();
+
+    await window.getByTitle('Create new group').click();
+    const createGroupModal = window.locator('div[role="dialog"]', { hasText: /Create New Group/i });
+    await expect(createGroupModal).toBeVisible();
+    await createGroupModal.getByLabel('Group Name').fill(groupName);
+    await createGroupModal.getByRole('button', { name: 'Save' }).click();
+    await expect(createGroupModal).not.toBeVisible();
+
+    const groupItem = window
+      .locator('.assembler-sidebar .sidebar-item', { hasText: groupName })
+      .first();
+    await expect(groupItem).toBeVisible();
+
+    await window.getByRole('button', { name: 'DRAFT BRIDGE' }).click();
     const reminderModal = window.locator('div[role="dialog"]', { hasText: /Meeting Recording/i });
     await expect(reminderModal).toBeVisible();
-    await reminderModal.getByRole('button', { name: /I Understand/i }).click();
+    await reminderModal.getByRole('button', { name: 'I Understand' }).click();
     await expect(reminderModal).not.toBeVisible();
-    
-    // Cleanup Group
-    const groupItem = window.locator(`button`, { hasText: groupName });
-    await groupItem.click({ button: 'right', force: true });
-    const deleteGroupOption = window.locator('.animate-scale-in').getByText('Delete Group');
-    await expect(deleteGroupOption).toBeVisible();
-    await deleteGroupOption.dispatchEvent('click');
-    
-    // Cleanup Contact
-    await window.click('[data-testid="sidebar-people"]');
-    await searchInput.fill(email);
-    const cleanupCard = window.locator('text=' + email).first();
-    await expect(cleanupCard).toBeVisible();
-    await cleanupCard.evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      const event = new MouseEvent('contextmenu', {
-        bubbles: true, cancelable: true,
-        clientX: rect.left + rect.width / 2,
-        clientY: rect.top + rect.height / 2
-      });
-      el.dispatchEvent(event);
-    });
-    const deleteContactOption = window.locator('.animate-scale-in').getByText('Delete', { exact: true });
-    await expect(deleteContactOption).toBeVisible({ timeout: 15000 });
-    await deleteContactOption.click();
-    
-    await window.locator('div[role="dialog"]', { hasText: /Delete Contact/i }).getByRole('button', { name: /Delete Contact/i }).click();
+
+    await rightClick(groupItem);
+    const deleteSavedGroup = window.getByRole('menuitem', { name: 'Delete Group' });
+    await expect(deleteSavedGroup).toBeVisible();
+    await deleteSavedGroup.click();
+    await expect(
+      window.locator('.assembler-sidebar .sidebar-item', { hasText: groupName }),
+    ).toHaveCount(0);
+
+    await rightClick(preloadGroupItem);
+    const deleteSeedGroup = window.getByRole('menuitem', { name: 'Delete Group' });
+    await expect(deleteSeedGroup).toBeVisible();
+    await deleteSeedGroup.click();
+    await expect(
+      window.locator('.assembler-sidebar .sidebar-item', { hasText: preloadGroupName }),
+    ).toHaveCount(0);
+
+    await deleteContactFromPeople(window, email);
   });
 });

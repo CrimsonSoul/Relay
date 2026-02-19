@@ -28,20 +28,26 @@ describe('LogEntrySchema', () => {
       level: 'INFO',
       module: 'App',
       message: 'Test message',
-      data: { key: 'value' }
+      data: { key: 'value' },
     };
     expect(LogEntrySchema.safeParse(valid).success).toBe(true);
   });
 
   it('rejects invalid log levels', () => {
-    expect(LogEntrySchema.safeParse({ level: 'VERBOSE', module: 'App', message: 'm' }).success).toBe(false);
+    expect(
+      LogEntrySchema.safeParse({ level: 'VERBOSE', module: 'App', message: 'm' }).success,
+    ).toBe(false);
   });
 
   it('rejects messages over 5000 chars', () => {
-    expect(LogEntrySchema.safeParse({ level: 'INFO', module: 'App', message: 'a'.repeat(5001) }).success).toBe(false);
+    expect(
+      LogEntrySchema.safeParse({ level: 'INFO', module: 'App', message: 'a'.repeat(5001) }).success,
+    ).toBe(false);
   });
 
   it('rejects modules over 100 chars', () => {
-    expect(LogEntrySchema.safeParse({ level: 'INFO', module: 'a'.repeat(101), message: 'm' }).success).toBe(false);
+    expect(
+      LogEntrySchema.safeParse({ level: 'INFO', module: 'a'.repeat(101), message: 'm' }).success,
+    ).toBe(false);
   });
 });

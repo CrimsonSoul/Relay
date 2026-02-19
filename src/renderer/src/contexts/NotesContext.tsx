@@ -1,6 +1,6 @@
-import React, { createContext, useContext, ReactNode } from "react";
-import { useNotes } from "../hooks/useNotes";
-import type { NotesData, NoteEntry } from "@shared/ipc";
+import React, { createContext, useContext, ReactNode } from 'react';
+import { useNotes } from '../hooks/useNotes';
+import type { NotesData, NoteEntry } from '@shared/ipc';
 
 type NotesContextType = {
   notes: NotesData;
@@ -16,17 +16,13 @@ const NotesContext = createContext<NotesContextType | null>(null);
 
 export function NotesProvider({ children }: { children: ReactNode }) {
   const notesState = useNotes();
-  return (
-    <NotesContext.Provider value={notesState}>
-      {children}
-    </NotesContext.Provider>
-  );
+  return <NotesContext.Provider value={notesState}>{children}</NotesContext.Provider>;
 }
 
 export function useNotesContext() {
   const context = useContext(NotesContext);
   if (!context) {
-    throw new Error("useNotesContext must be used within NotesProvider");
+    throw new Error('useNotesContext must be used within NotesProvider');
   }
   return context;
 }

@@ -1,11 +1,12 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, type IpcResult } from '../../shared/ipc';
+import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
+import { getErrorMessage } from '@shared/types';
 
 export function setupConfigHandlers(
   getMainWindow: () => BrowserWindow | null,
-  getDataRoot: () => string,
-  onDataPathChange: (newPath: string) => void,
-  getDefaultDataPath: () => string
+  getDataRoot: () => Promise<string>,
+  onDataPathChange: (newPath: string) => Promise<void>,
+  getDefaultDataPath: () => string,
 ) {
   ipcMain.handle(IPC_CHANNELS.GET_DATA_PATH, async () => {
     return getDataRoot();
@@ -17,28 +18,26 @@ export function setupConfigHandlers(
 
     const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
       title: 'Select New Data Folder',
-      properties: ['openDirectory']
+      properties: ['openDirectory'],
     });
 
     if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
 
     try {
-      onDataPathChange(filePaths[0]);
+      await onDataPathChange(filePaths[0]);
       return { success: true };
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      return { success: false, error: message };
+      return { success: false, error: getErrorMessage(e) };
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.RESET_DATA_FOLDER, async (): Promise<IpcResult> => {
     const defaultPath = getDefaultDataPath();
     try {
-      onDataPathChange(defaultPath);
+      await onDataPathChange(defaultPath);
       return { success: true };
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      return { success: false, error: message };
+      return { success: false, error: getErrorMessage(e) };
     }
   });
 }

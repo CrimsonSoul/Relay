@@ -1,27 +1,41 @@
-import React, { useState, useRef, useEffect } from "react";
-import { TabFallback } from "../components/TabFallback";
-import { ConfirmModal } from "../components/ConfirmModal";
-import { 
-  WeatherAlertCard, 
-  HourlyForecast, 
-  DailyForecast, 
-  RadarPanel, 
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { TabFallback } from '../components/TabFallback';
+import { ConfirmModal } from '../components/ConfirmModal';
+import {
+  WeatherAlertCard,
+  HourlyForecast,
+  DailyForecast,
+  RadarPanel,
   WeatherHeader,
   SaveLocationModal,
   RenameLocationModal,
-  type WeatherTabProps 
-} from "./weather";
-import { useWeatherLocation } from "../hooks/useWeatherLocation";
-import { useSavedLocations } from "../hooks/useSavedLocations";
-import type { SavedLocation } from "@shared/ipc";
+  type WeatherTabProps,
+} from './weather';
+import { useWeatherLocation } from '../hooks/useWeatherLocation';
+import { useSavedLocations } from '../hooks/useSavedLocations';
+import type { SavedLocation } from '@shared/ipc';
 
-export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, location, loading, onLocationChange, onManualRefresh }) => {
+export const WeatherTab: React.FC<WeatherTabProps> = ({
+  weather,
+  alerts,
+  location,
+  loading,
+  onLocationChange,
+  onManualRefresh,
+}) => {
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const loc = useWeatherLocation(location, loading, onLocationChange, onManualRefresh);
 
   // Saved locations state
-  const { locations: savedLocations, saveLocation, deleteLocation, setDefaultLocation, clearDefaultLocation, updateLocation } = useSavedLocations();
+  const {
+    locations: savedLocations,
+    saveLocation,
+    deleteLocation,
+    setDefaultLocation,
+    clearDefaultLocation,
+    updateLocation,
+  } = useSavedLocations();
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
   const [renameModal, setRenameModal] = useState<SavedLocation | null>(null);
@@ -37,55 +51,64 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         setShowLocationMenu(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [showLocationMenu]);
 
-  const handleSaveLocation = async (name: string, isDefault: boolean) => {
-    if (!name.trim() || !location) return;
-    await saveLocation({
-      name: name.trim(),
-      lat: location.latitude,
-      lon: location.longitude,
-      isDefault: isDefault,
-    });
-    setSaveModalOpen(false);
-  };
+  const handleSaveLocation = useCallback(
+    async (name: string, isDefault: boolean) => {
+      if (!name.trim() || !location) return;
+      await saveLocation({
+        name: name.trim(),
+        lat: location.latitude,
+        lon: location.longitude,
+        isDefault: isDefault,
+      });
+      setSaveModalOpen(false);
+    },
+    [location, saveLocation],
+  );
 
-  const handleSelectSavedLocation = async (saved: SavedLocation) => {
-    // Reverse geocode to get the city name
-    setIsSearching(true);
-    try {
-      if (!window.api) {
-        throw new Error("API not available");
+  const handleSelectSavedLocation = useCallback(
+    async (saved: SavedLocation) => {
+      // Reverse geocode to get the city name
+      setIsSearching(true);
+      try {
+        if (!window.api) {
+          throw new Error('API not available');
+        }
+        const data = await window.api.searchLocation(`${saved.lat},${saved.lon}`);
+        const cityName = data.results?.[0]
+          ? `${data.results[0].name}, ${data.results[0].admin1 || ''} ${data.results[0].country_code}`.trim()
+          : saved.name;
+        onLocationChange({ name: cityName, latitude: saved.lat, longitude: saved.lon });
+      } catch {
+        onLocationChange({ name: saved.name, latitude: saved.lat, longitude: saved.lon });
+      } finally {
+        setIsSearching(false);
       }
-      const data = await window.api.searchLocation(`${saved.lat},${saved.lon}`);
-      const cityName = data.results?.[0]
-        ? `${data.results[0].name}, ${data.results[0].admin1 || ''} ${data.results[0].country_code}`.trim()
-        : saved.name;
-      onLocationChange({ name: cityName, latitude: saved.lat, longitude: saved.lon });
-    } catch {
-      onLocationChange({ name: saved.name, latitude: saved.lat, longitude: saved.lon });
-    } finally {
-      setIsSearching(false);
-    }
-    setActiveSavedLocation(saved);
-    onManualRefresh(saved.lat, saved.lon);
-    setShowLocationMenu(false);
-  };
+      setActiveSavedLocation(saved);
+      onManualRefresh(saved.lat, saved.lon);
+      setShowLocationMenu(false);
+    },
+    [onLocationChange, onManualRefresh],
+  );
 
-  const handleOpenRename = (saved: SavedLocation) => {
+  const handleOpenRename = useCallback((saved: SavedLocation) => {
     setRenameModal(saved);
     setShowLocationMenu(false);
-  };
+  }, []);
 
-  const handleRename = async (newName: string) => {
-    if (!renameModal || !newName.trim()) return;
-    await updateLocation(renameModal.id, { name: newName.trim() });
-    setRenameModal(null);
-  };
+  const handleRename = useCallback(
+    async (newName: string) => {
+      if (!renameModal || !newName.trim()) return;
+      await updateLocation(renameModal.id, { name: newName.trim() });
+      setRenameModal(null);
+    },
+    [renameModal, updateLocation],
+  );
 
-  const handleManualSearch = async () => {
+  const handleManualSearch = useCallback(async () => {
     setActiveSavedLocation(null);
     setIsSearching(true);
     try {
@@ -93,9 +116,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [loc]);
 
-  const handleAutoLocate = async () => {
+  const handleAutoLocate = useCallback(async () => {
     setActiveSavedLocation(null);
     setIsSearching(true);
     try {
@@ -103,17 +126,17 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [loc]);
 
   if (!location && loading) return <TabFallback />;
+  const hasForecastContent = Boolean(weather) || alerts.length > 0;
 
   return (
-    <div className="weather-scroll-container" style={{ display: "flex", flexDirection: "column", height: "100%", width: "100%", background: "var(--color-bg-app)", padding: "20px 24px", gap: "12px", overflow: "hidden" }}>
+    <div className="weather-font-surface weather-scroll-container weather-tab-layout">
       <WeatherHeader
         location={location}
         activeSavedLocation={activeSavedLocation}
         weather={weather}
-        loading={loading}
         isSearching={isSearching}
         loc={loc}
         handleManualSearch={handleManualSearch}
@@ -132,9 +155,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
 
       {/* Confirmation Modals */}
       {locationToDelete && (
-        <ConfirmModal 
-          isOpen={!!locationToDelete} 
-          onClose={() => setLocationToDelete(null)} 
+        <ConfirmModal
+          isOpen={!!locationToDelete}
+          onClose={() => setLocationToDelete(null)}
           onConfirm={async () => {
             if (locationToDelete) {
               await deleteLocation(locationToDelete.id);
@@ -166,9 +189,21 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({ weather, alerts, locatio
         />
       )}
 
-      <div className="weather-tab-root weather-scroll-container" style={{ display: "flex", gap: "16px", flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <div className="weather-forecast-column weather-scroll-container" style={{ display: "flex", flexDirection: "column", gap: "16px", flex: "0 0 35%", minWidth: "300px", overflowY: "auto" }}>
-          {alerts.length > 0 && alerts.map((alert) => <WeatherAlertCard key={alert.id} alert={alert} isExpanded={expandedAlert === alert.id} onToggle={() => setExpandedAlert(expandedAlert === alert.id ? null : alert.id)} />)}
+      <div
+        className={`weather-tab-root weather-scroll-container weather-tab-body${!hasForecastContent ? ' weather-tab-body--radar-only' : ''}`}
+      >
+        <div
+          className={`weather-forecast-column weather-scroll-container weather-tab-forecast-column${!hasForecastContent ? ' weather-forecast-column--hidden' : ''}`}
+        >
+          {alerts.length > 0 &&
+            alerts.map((alert) => (
+              <WeatherAlertCard
+                key={alert.id}
+                alert={alert}
+                isExpanded={expandedAlert === alert.id}
+                onToggle={() => setExpandedAlert(expandedAlert === alert.id ? null : alert.id)}
+              />
+            ))}
           <HourlyForecast weather={weather} />
           <DailyForecast weather={weather} />
         </div>

@@ -1,144 +1,110 @@
 import React, { useMemo } from 'react';
-import { OnCallRow } from "@shared/ipc";
+import { OnCallRow } from '@shared/ipc';
 import { formatPhoneNumber } from '@shared/phoneUtils';
-import { Tooltip } from "../Tooltip";
+import { Tooltip } from '../Tooltip';
 import { useToast } from '../Toast';
 import { isTimeWindowActive } from '../../utils/timeParsing';
 
-interface TeamRowProps { row: OnCallRow; hasAnyTimeWindow: boolean; gridTemplate: string; tick?: number }
-const getRoleAbbrev = (role: string) => {
-  const r = (role || "").toLowerCase();
-  if (r.includes("primary")) { return "PRI"; }
-  if (r.includes("secondary")) { return "SEC"; }
-  if (r.includes("backup")) { return "BKP"; }
-  if (r.includes("shadow")) { return "SHD"; }
-  if (r.includes("escalation")) { return "ESC"; }
-  if (r.includes("network")) { return "NET"; }
-  if (r.includes("telecom")) { return "TEL"; }
-  if (!role || r === "member") { return "MBR"; }
-  return role.substring(0, 3).toUpperCase();
+interface TeamRowProps {
+  row: OnCallRow;
+  hasAnyTimeWindow: boolean;
+  gridTemplate: string;
+  tick?: number;
+}
+
+const getRoleLabel = (role: string) => {
+  const r = (role || '').toLowerCase();
+  if (r.includes('primary')) return 'Primary';
+  if (r.includes('secondary')) return 'Secondary';
+  if (r.includes('backup/weekend')) return 'Backup/Wknd';
+  if (r.includes('backup')) return 'Backup';
+  if (r.includes('shadow')) return 'Shadow';
+  if (r.includes('escalation')) return 'Escalation';
+  if (r.includes('network')) return 'Network';
+  if (r.includes('telecom')) return 'Telecom';
+  if (r.includes('weekend')) return 'Weekend';
+  if (!role || r === 'member') return 'Member';
+  return role;
 };
 
-export const TeamRow: React.FC<TeamRowProps> = ({ row, hasAnyTimeWindow, gridTemplate, tick }) => {
-  const { showToast } = useToast();
-  const isActive = useMemo(() => isTimeWindowActive(row.timeWindow || ""), [row.timeWindow, tick]);
+export const TeamRow: React.FC<TeamRowProps> = React.memo(
+  ({ row, hasAnyTimeWindow, gridTemplate, tick: _tick }) => {
+    const { showToast } = useToast();
+    // _tick is destructured to trigger re-render on interval ticks;
+    // isTimeWindowActive checks the current time so it needs to run each render.
+    const isActive = isTimeWindowActive(row.timeWindow || '');
 
-  const isPrimary = useMemo(() => {
-    const r = (row.role || "").toLowerCase();
-    return r.includes("primary") || r === "pri";
-  }, [row.role]);
+    const isPrimary = useMemo(() => {
+      const r = (row.role || '').toLowerCase();
+      return r.includes('primary') || r === 'pri';
+    }, [row.role]);
 
-  const handleCopyContact = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!row.contact) return;
-    
-    const success = await window.api?.writeClipboard(row.contact);
-    if (success) {
-      showToast(`Copied ${row.contact}`, 'success');
-    }
-  };
+    const handleCopyContact = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!row.contact) return;
+      const success = await window.api?.writeClipboard(row.contact);
+      if (success) {
+        showToast(`Copied ${row.contact}`, 'success');
+      }
+    };
 
-  const roleText = row.role || "Member";
+    const roleText = getRoleLabel(row.role);
 
-  return (
-    <div 
-      style={{ 
-        display: "grid", 
-        gridTemplateColumns: gridTemplate, 
-        gap: "12px", 
-        alignItems: "center", 
-        padding: "6px 10px",
-        borderRadius: "8px",
-        background: isActive ? "rgba(37, 99, 235, 0.04)" : "transparent",
-        border: isPrimary 
-          ? "1px solid rgba(245, 158, 11, 0.3)" 
-          : (isActive ? "1px solid rgba(37, 99, 235, 0.1)" : "1px solid transparent"),
-        boxShadow: (isActive && isPrimary)
-          ? "0 0 12px rgba(245, 158, 11, 0.15), 0 0 8px rgba(37, 99, 235, 0.05)"
-          : isActive 
-            ? "0 0 10px rgba(37, 99, 235, 0.05)" 
-            : (isPrimary ? "0 0 12px rgba(245, 158, 11, 0.12)" : "none"),
-        transition: "all 0.3s ease",
-        position: "relative"
-      }}
-      role="group"
-      aria-label={`${roleText}: ${row.name || 'Empty'} ${isActive ? '(Active now)' : ''} ${isPrimary ? '(Primary)' : ''}`}
-    >
-      <Tooltip content={roleText}>
-        <div 
-          aria-hidden="true"
-          style={{ color: isPrimary ? "#F59E0B" : (isActive ? "var(--color-accent-blue)" : "var(--color-text-tertiary)"), fontSize: "12px", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap", opacity: 0.8 }}
-        >
-          {getRoleAbbrev(row.role)}
-        </div>
-      </Tooltip>
-      <Tooltip content={row.name} block>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: "120px" }}>
-          {isActive && (
-            <div 
-              className="animate-active-indicator"
-              style={{ 
-                width: "8px", 
-                height: "8px", 
-                borderRadius: "50%", 
-                background: "var(--color-accent-blue)",
-                boxShadow: "0 0 10px var(--color-accent-blue)",
-                flexShrink: 0
-              }} 
-            />
-          )}
-          <div style={{ 
-            color: isActive ? "var(--color-accent-blue)" : (isPrimary ? "#F59E0B" : (row.name ? "var(--color-text-primary)" : "var(--color-text-quaternary)")), 
-            fontSize: "18px", 
-            fontWeight: 700, 
-            whiteSpace: "nowrap", 
-            overflow: "hidden", 
-            textOverflow: "ellipsis",
-            paddingRight: "12px"
-          }}>
-            {row.name || "—"}
-          </div>
-        </div>
-      </Tooltip>
-      <Tooltip content="Click to Copy Number">
-        <div 
-          onClick={handleCopyContact}
-          style={{ 
-            color: isActive ? "var(--color-accent-blue)" : "var(--color-text-primary)", 
-            fontSize: "18px", 
-            fontFamily: "var(--font-mono)", 
-            textAlign: "right", 
-            whiteSpace: "nowrap", 
-            fontWeight: 700, 
-            paddingLeft: "8px",
-            cursor: "pointer",
-            transition: "color 0.2s ease"
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-accent-blue)")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = isActive ? "var(--color-accent-blue)" : "var(--color-text-primary)")}
-        >
-          {formatPhoneNumber(row.contact)}
-        </div>
-      </Tooltip>
-      {hasAnyTimeWindow && (
-        <Tooltip content={row.timeWindow || ""}>
-          <div style={{ 
-            color: isActive ? "var(--color-accent-blue)" : "var(--color-text-tertiary)", 
-            fontSize: "12px", 
-            fontWeight: 600,
-            textAlign: "center", 
-            whiteSpace: "nowrap", 
-            padding: row.timeWindow ? "3px 8px" : "0", 
-            borderRadius: "4px", 
-            background: isActive ? "rgba(37, 99, 235, 0.1)" : (row.timeWindow ? "rgba(255,255,255,0.05)" : "transparent"), 
-            opacity: row.timeWindow ? 0.9 : 0, 
-            marginLeft: "8px" 
-          }}>
-            {row.timeWindow}
+    const rowClassName = `team-row${isActive ? ' team-row--active' : ''}${isPrimary ? ' team-row--primary' : ''}`;
+
+    return (
+      <div
+        className={rowClassName}
+        style={{ gridTemplateColumns: gridTemplate }}
+        role="group"
+        aria-label={`${roleText}: ${row.name || 'Empty'} ${isActive ? '(Active now)' : ''} ${isPrimary ? '(Primary)' : ''}`}
+      >
+        {/* Role pill */}
+        <Tooltip content={roleText}>
+          <div aria-hidden="true" className="team-row-role">
+            {roleText}
           </div>
         </Tooltip>
-      )}
-    </div>
-  );
-};
 
+        {/* Name + active indicator */}
+        <Tooltip content={row.name} block>
+          <div className="team-row-name-wrapper">
+            {isActive && <div className="animate-active-indicator team-row-active-indicator" />}
+            <div className={`team-row-name${!row.name ? ' team-row-name--empty' : ''}`}>
+              {row.name || '—'}
+            </div>
+          </div>
+        </Tooltip>
+
+        {/* Phone number */}
+        <Tooltip content="Click to copy">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleCopyContact}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                void handleCopyContact(e as unknown as React.MouseEvent);
+              }
+            }}
+            className={`team-row-phone${!row.contact ? ' team-row-phone--empty' : ''}`}
+          >
+            {formatPhoneNumber(row.contact)}
+          </div>
+        </Tooltip>
+
+        {/* Time window */}
+        {hasAnyTimeWindow && (
+          <Tooltip content={row.timeWindow || ''}>
+            <div
+              className={`team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${!row.timeWindow ? ' team-row-time-window--hidden' : ''}`}
+            >
+              {row.timeWindow || '\u00A0'}
+            </div>
+          </Tooltip>
+        )}
+      </div>
+    );
+  },
+);

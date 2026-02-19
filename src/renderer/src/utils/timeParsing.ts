@@ -6,7 +6,7 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   const tw = timeWindow.toLowerCase().trim();
 
   // Basic shortcuts
-  if (tw.includes("24/7") || tw.includes("always") || tw.includes("rotating")) return true;
+  if (tw.includes('24/7') || tw.includes('always') || tw.includes('rotating')) return true;
 
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const dayAbbrevs = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -15,20 +15,27 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   const currentDayAbbrev = dayAbbrevs[currentDay];
 
   // Business Hours Shortcut
-  if (tw.includes("business hours")) {
+  if (tw.includes('business hours')) {
     const hour = date.getHours();
-    return currentDay >= WEEKDAYS.MONDAY && currentDay <= WEEKDAYS.FRIDAY && 
-           hour >= BUSINESS_HOURS.START && hour < BUSINESS_HOURS.END;
+    return (
+      currentDay >= WEEKDAYS.MONDAY &&
+      currentDay <= WEEKDAYS.FRIDAY &&
+      hour >= BUSINESS_HOURS.START &&
+      hour < BUSINESS_HOURS.END
+    );
   }
 
   // Handle Day Constraints (e.g., "Mon-Fri", "Saturday")
   let dayMatch = true;
-  const hasDayMention = dayNames.some(d => tw.includes(d)) || dayAbbrevs.some(d => tw.includes(d));
-  
+  const hasDayMention =
+    dayNames.some((d) => tw.includes(d)) || dayAbbrevs.some((d) => tw.includes(d));
+
   if (hasDayMention) {
     dayMatch = false;
     // Check for ranges like "Mon-Fri"
-    const rangeMatch = tw.match(/(mon|tue|wed|thu|fri|sat|sun)\s*-\s*(mon|tue|wed|thu|fri|sat|sun)/);
+    const rangeMatch = tw.match(
+      /(mon|tue|wed|thu|fri|sat|sun)\s*-\s*(mon|tue|wed|thu|fri|sat|sun)/,
+    );
     if (rangeMatch) {
       const startDay = dayAbbrevs.indexOf(rangeMatch[1]);
       const endDay = dayAbbrevs.indexOf(rangeMatch[2]);
@@ -47,7 +54,7 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   }
 
   if (!dayMatch) return false;
-  
+
   const hasTimeMention = tw.match(/\d/);
   if (!hasTimeMention) {
     // If it's a day match but no numbers (time) mentioned, it's active for that day
@@ -55,12 +62,14 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
   }
 
   // Handle Time Constraints (e.g., "0800-1700", "8am-5pm", "08:00 - 17:00")
-  const timeRangeMatch = tw.match(/(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?\s*(?:-|to|through)\s*(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?/);
+  const timeRangeMatch = tw.match(
+    /(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?\s*(?:-|to|through)\s*(\d{1,2}[:.]?\d{0,2})\s*(am|pm)?/,
+  );
   if (timeRangeMatch) {
     const parseTime = (timeStr: string, meridiem?: string): number => {
       let hours = 0;
       let mins = 0;
-      
+
       const cleanTime = timeStr.replace(/[:.]/g, '');
       if (cleanTime.length <= 2) {
         hours = parseInt(cleanTime);
@@ -71,7 +80,7 @@ export const isTimeWindowActive = (timeWindow: string, date: Date = new Date()):
 
       if (meridiem === 'pm' && hours < 12) hours += 12;
       if (meridiem === 'am' && hours === 12) hours = 0;
-      
+
       return hours * 100 + mins;
     };
 
