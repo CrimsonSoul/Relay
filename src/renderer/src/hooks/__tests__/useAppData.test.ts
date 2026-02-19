@@ -9,7 +9,7 @@ const mockInitialData: AppData = {
   contacts: [],
   servers: [],
   onCall: [],
-  lastUpdated: 1000
+  lastUpdated: 1000,
 };
 
 const mockUpdateData: AppData = {
@@ -17,12 +17,12 @@ const mockUpdateData: AppData = {
   contacts: [],
   servers: [],
   onCall: [],
-  lastUpdated: 2000
+  lastUpdated: 2000,
 };
 
 describe('useAppData', () => {
   const showToast = vi.fn();
-  
+
   // Mock window.api
   const mockApi = {
     getInitialData: vi.fn(),
@@ -35,9 +35,8 @@ describe('useAppData', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // @ts-ignore
-    window.api = mockApi;
-    
+    (window as Window & { api: typeof mockApi }).api = mockApi;
+
     mockApi.getInitialData.mockResolvedValue(mockInitialData);
     mockApi.subscribeToData.mockReturnValue(vi.fn()); // Returns unsubscribe
     mockApi.onReloadStart.mockReturnValue(vi.fn());
@@ -47,7 +46,7 @@ describe('useAppData', () => {
 
   it('fetches initial data on mount', async () => {
     const { result } = renderHook(() => useAppData(showToast));
-    
+
     await waitFor(() => {
       expect(result.current.data).toEqual(mockInitialData);
     });
@@ -61,7 +60,7 @@ describe('useAppData', () => {
     });
 
     const { result } = renderHook(() => useAppData(showToast));
-    
+
     // Wait for initial load
     await waitFor(() => expect(result.current.data).toEqual(mockInitialData));
 
@@ -98,17 +97,21 @@ describe('useAppData', () => {
     await act(async () => {
       completeCallback(true);
     });
-    
+
     // Should still be true due to minimum duration
     expect(result.current.isReloading).toBe(true);
 
     // Wait for minimum duration (900ms)
-    await waitFor(() => {
-      expect(result.current.isReloading).toBe(false);
-    }, { timeout: 2000 });
+    await waitFor(
+      () => {
+        expect(result.current.isReloading).toBe(false);
+      },
+      { timeout: 2000 },
+    );
   });
 
   it('handles data errors and shows toast', async () => {
+    mockApi.getInitialData.mockResolvedValue(null);
     let errorCallback: (error: DataError) => void = () => {};
     mockApi.onDataError.mockImplementation((cb: (error: DataError) => void) => {
       errorCallback = cb;
@@ -116,11 +119,14 @@ describe('useAppData', () => {
     });
 
     renderHook(() => useAppData(showToast));
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     const mockError: DataError = {
       type: 'validation',
       message: 'Invalid data',
-      file: 'contacts.json'
+      file: 'contacts.json',
     };
 
     act(() => {
@@ -134,6 +140,7 @@ describe('useAppData', () => {
     // We'll use a shorter timeout for testing if we could, but here it's 5s.
     // Let's use fake timers JUST for this test and advance them.
     vi.useFakeTimers();
+    mockApi.getInitialData.mockResolvedValue(null);
     let startCallback: () => void = () => {};
     mockApi.onReloadStart.mockImplementation((cb: () => void) => {
       startCallback = cb;
@@ -141,6 +148,9 @@ describe('useAppData', () => {
     });
 
     const { result } = renderHook(() => useAppData(showToast));
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     act(() => {
       startCallback();

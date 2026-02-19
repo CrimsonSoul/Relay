@@ -9,13 +9,13 @@ describe('isTimeWindowActive', () => {
 
   it('handles business hours', () => {
     // Wednesday at 10am
-    const wed10am = new Date(2026, 0, 21, 10, 0); 
+    const wed10am = new Date(2026, 0, 21, 10, 0);
     expect(isTimeWindowActive('Business Hours', wed10am)).toBe(true);
-    
+
     // Saturday at 10am
     const sat10am = new Date(2026, 0, 24, 10, 0);
     expect(isTimeWindowActive('Business Hours', sat10am)).toBe(false);
-    
+
     // Wednesday at 8pm
     const wed8pm = new Date(2026, 0, 21, 20, 0);
     expect(isTimeWindowActive('Business Hours', wed8pm)).toBe(false);
@@ -36,7 +36,7 @@ describe('isTimeWindowActive', () => {
   });
 
   it('handles day-specific ranges', () => {
-    const wed10am = new Date(2026, 0, 21, 10, 0); 
+    const wed10am = new Date(2026, 0, 21, 10, 0);
     expect(isTimeWindowActive('Mon-Fri 0800-1700', wed10am)).toBe(true);
     expect(isTimeWindowActive('Sat-Sun 0800-1700', wed10am)).toBe(false);
     expect(isTimeWindowActive('Wednesday', wed10am)).toBe(true);
@@ -46,10 +46,10 @@ describe('isTimeWindowActive', () => {
   it('handles over-midnight ranges', () => {
     const midnight30 = new Date(2026, 0, 21, 0, 30);
     expect(isTimeWindowActive('2200-0200', midnight30)).toBe(true);
-    
+
     const night11 = new Date(2026, 0, 21, 23, 0);
     expect(isTimeWindowActive('2200-0200', night11)).toBe(true);
-    
+
     const noon = new Date(2026, 0, 21, 12, 0);
     expect(isTimeWindowActive('2200-0200', noon)).toBe(false);
   });

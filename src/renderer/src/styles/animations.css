@@ -13,22 +13,6 @@
   animation: fadeIn var(--transition-premium) forwards;
 }
 
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-slide-up {
-  animation: slideUp var(--transition-premium) forwards;
-}
-
 @keyframes slideDown {
   from {
     opacity: 0;
@@ -61,45 +45,6 @@
   animation: scaleIn var(--transition-premium) forwards;
 }
 
-@keyframes scaleInBouncy {
-  0% {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-
-  50% {
-    transform: scale(1.02);
-  }
-
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.animate-scale-in-bouncy {
-  animation: scaleInBouncy 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.animate-shimmer {
-  background: linear-gradient(90deg,
-      rgba(255, 255, 255, 0) 0%,
-      rgba(255, 255, 255, 0.03) 50%,
-      rgba(255, 255, 255, 0) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 2s ease-in-out infinite;
-}
-
 @keyframes spin {
   from {
     transform: rotate(0deg);
@@ -114,22 +59,70 @@
   animation: spin 1s linear infinite;
 }
 
-@keyframes pulse-glow {
-  0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(37, 99, 235, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
-}
-
 @keyframes active-indicator {
-  0% { opacity: 0.4; transform: scale(0.9); }
-  50% { opacity: 1; transform: scale(1.1); }
-  100% { opacity: 0.4; transform: scale(0.9); }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s infinite;
+  0% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
 }
 
 .animate-active-indicator {
   animation: active-indicator 2s infinite ease-in-out;
+}
+
+/* Card entrance — staggered reveal */
+@keyframes cardEntrance {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-card-entrance {
+  animation: cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Stagger children delays */
+.stagger-children > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger-children > *:nth-child(2) {
+  animation-delay: 50ms;
+}
+.stagger-children > *:nth-child(3) {
+  animation-delay: 100ms;
+}
+.stagger-children > *:nth-child(4) {
+  animation-delay: 150ms;
+}
+.stagger-children > *:nth-child(5) {
+  animation-delay: 200ms;
+}
+.stagger-children > *:nth-child(6) {
+  animation-delay: 250ms;
+}
+.stagger-children > *:nth-child(7) {
+  animation-delay: 300ms;
+}
+.stagger-children > *:nth-child(8) {
+  animation-delay: 350ms;
+}
+.stagger-children > *:nth-child(9) {
+  animation-delay: 400ms;
+}
+.stagger-children > *:nth-child(10) {
+  animation-delay: 450ms;
 }

@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
-import type { NoteEntry } from "@shared/ipc";
-import { TagBadge } from "./notes/TagBadge";
-import { TagInput } from "./notes/TagInput";
+import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import type { NoteEntry } from '@shared/ipc';
+import { TagBadge } from './notes/TagBadge';
+import { TagInput } from './notes/TagInput';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 type NotesModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  entityType: "contact" | "server";
+  entityType: 'contact' | 'server';
   entityId: string;
   entityName: string;
   existingNote?: NoteEntry;
@@ -22,27 +23,42 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   existingNote,
   onSave,
 }) => {
-  const [note, setNote] = useState(existingNote?.note || "");
-  const [tagInput, setTagInput] = useState("");
+  const [note, setNote] = useState(existingNote?.note || '');
+  const [tagInput, setTagInput] = useState('');
   const [tags, setTags] = useState<string[]>(existingNote?.tags || []);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
 
   useEffect(() => {
     if (isOpen) {
-      setNote(existingNote?.note || "");
+      setNote(existingNote?.note || '');
       setTags(existingNote?.tags || []);
-      setTagInput("");
+      setTagInput('');
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen, existingNote]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
   const handleAddTag = () => {
     const trimmed = tagInput.trim().toLowerCase();
     if (trimmed && !tags.includes(trimmed)) {
       setTags([...tags, trimmed]);
     }
-    setTagInput("");
+    setTagInput('');
   };
 
   const handleRemoveTag = (tag: string) => {
@@ -50,7 +66,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
+    if (e.key === 'Enter') {
       e.preventDefault();
       handleAddTag();
     }
@@ -71,21 +87,19 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <button
-      className="modal-overlay animate-fade-in"
-      onClick={onClose}
-      onKeyDown={(e) => e.key === "Escape" && onClose()}
-      aria-label="Close modal backdrop"
-      type="button"
-    >
+    <div className="modal-overlay animate-fade-in" role="presentation">
+      <button
+        type="button"
+        className="overlay-hitbox"
+        aria-label="Close modal backdrop"
+        onClick={onClose}
+      />
       <div
+        ref={focusTrapRef}
         className="modal-container animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="modal-title"
-        tabIndex={-1}
+        aria-labelledby="notes-modal-title"
       >
         {/* Header */}
         <div className="modal-header">
@@ -108,9 +122,9 @@ export const NotesModal: React.FC<NotesModalProps> = ({
               <polyline points="10 9 9 9 8 9" />
             </svg>
           </div>
-          <div style={{ flex: 1 }}>
-            <div id="modal-title" className="modal-title-main">
-              {entityType === "contact" ? "Contact Notes" : "Server Notes"}
+          <div className="notes-title-flex">
+            <div id="notes-modal-title" className="modal-title-main">
+              {entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
             </div>
             <div className="modal-title-sub">{entityName}</div>
           </div>
@@ -140,8 +154,10 @@ export const NotesModal: React.FC<NotesModalProps> = ({
         {/* Content */}
         <div className="modal-content">
           {/* Note textarea */}
-          <div style={{ marginBottom: "16px" }}>
-            <label className="modal-label" htmlFor="note-textarea">Note</label>
+          <div className="notes-textarea-wrapper">
+            <label className="modal-label" htmlFor="note-textarea">
+              Note
+            </label>
             <textarea
               id="note-textarea"
               ref={textareaRef}
@@ -154,7 +170,9 @@ export const NotesModal: React.FC<NotesModalProps> = ({
 
           {/* Tags */}
           <div>
-            <label className="modal-label" htmlFor="tag-input-field">Tags</label>
+            <label className="modal-label" htmlFor="tag-input-field">
+              Tags
+            </label>
 
             {/* Tag list */}
             {tags.length > 0 && (
@@ -181,17 +199,12 @@ export const NotesModal: React.FC<NotesModalProps> = ({
           <button type="button" onClick={onClose} className="btn-cancel">
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            className="btn-save"
-          >
-            {saving ? "Saving..." : "Save Notes"}
+          <button type="button" onClick={handleSave} disabled={saving} className="btn-save">
+            {saving ? 'Saving...' : 'Save Notes'}
           </button>
         </div>
       </div>
-    </button>,
-    document.body
+    </div>,
+    document.body,
   );
 };

@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 
 type TagInputProps = {
   id?: string;
@@ -8,13 +8,7 @@ type TagInputProps = {
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
 };
 
-export const TagInput: React.FC<TagInputProps> = ({
-  id,
-  value,
-  onChange,
-  onAdd,
-  onKeyDown,
-}) => {
+export const TagInput: React.FC<TagInputProps> = ({ id, value, onChange, onAdd, onKeyDown }) => {
   return (
     <div className="tag-input-group">
       <input
@@ -26,12 +20,7 @@ export const TagInput: React.FC<TagInputProps> = ({
         placeholder="Add a tag..."
         className="tag-input"
       />
-      <button
-        type="button"
-        onClick={onAdd}
-        disabled={!value.trim()}
-        className="tag-add-btn"
-      >
+      <button type="button" onClick={onAdd} disabled={!value.trim()} className="tag-add-btn">
         Add
       </button>
     </div>

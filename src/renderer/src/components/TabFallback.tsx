@@ -1,39 +1,21 @@
-
 import React from 'react';
 import { TactileButton } from './TactileButton';
 
 export const TabFallback = ({ error }: { error?: boolean }) => (
-  <div style={{
-    height: '100%',
-    width: '100%',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--color-text-tertiary)',
-    fontSize: '13px',
-    gap: '12px'
-  }}>
+  <div className="tab-fallback">
     {error ? (
       <>
-        <div style={{ fontSize: '24px', opacity: 0.5 }}>⚠️</div>
-        <div>Failed to load tab</div>
-        <TactileButton 
-          variant="secondary" 
-          size="small" 
-          onClick={() => window.location.reload()}
-        >
-          Reload
+        <div className="tab-fallback-error-icon">⚠️</div>
+        <div className="tab-fallback-message">This tab failed to load</div>
+        <div className="tab-fallback-hint">
+          Try reloading. If it keeps failing, check data/config in Settings.
+        </div>
+        <TactileButton variant="secondary" size="sm" onClick={() => window.location.reload()}>
+          Reload Tab
         </TactileButton>
       </>
     ) : (
-      <div className="animate-spin" style={{
-        width: '24px',
-        height: '24px',
-        border: '2px solid rgba(255, 255, 255, 0.1)',
-        borderTopColor: 'var(--color-accent-blue)',
-        borderRadius: '50%'
-      }} />
+      <div className="animate-spin tab-fallback-spinner" />
     )}
   </div>
 );

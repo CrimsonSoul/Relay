@@ -1,5 +1,4 @@
-import React, { useState } from "react";
-import { Tooltip } from "../Tooltip";
+import React from 'react';
 
 interface SidebarButtonProps {
   icon: React.ReactNode;
@@ -8,74 +7,23 @@ interface SidebarButtonProps {
   onClick: () => void;
 }
 
-export const SidebarButton: React.FC<SidebarButtonProps> = ({
-  icon,
-  label,
-  isActive,
-  onClick,
-}) => {
-  const [isHovered, setIsHovered] = useState(false);
-
-  const background = isActive || isHovered ? "var(--color-accent-blue)" : "rgba(255, 255, 255, 0.03)";
-  const getTransform = () => {
-    if (!isHovered) return "scale(1)";
-    return isActive ? "scale(1.05)" : "translateY(-1px) scale(1.05)";
-  };
-
-  return (
-    <Tooltip content={label} position="right">
+export const SidebarButton: React.FC<SidebarButtonProps> = React.memo(
+  ({ icon, label, isActive, onClick }) => {
+    return (
       <button
+        type="button"
+        aria-label={label}
+        aria-pressed={isActive}
         data-testid={`sidebar-${label.toLowerCase().replaceAll(/\s+/g, '-')}`}
         data-active={isActive}
         onClick={onClick}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "40px",
-          height: "40px",
-          background,
-          border: "none",
-          cursor: "pointer",
-          position: "relative",
-          color: isActive || isHovered ? "white" : "var(--color-text-tertiary)",
-          transition: "all var(--transition-smooth)",
-          borderRadius: "20px",
-          outline: "none",
-          transform: getTransform(),
-          boxShadow: isHovered ? "0 4px 12px rgba(0, 0, 0, 0.2)" : "none",
-        }}
+        className={`sidebar-button${isActive ? ' sidebar-button--active' : ''}`}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            transition: "all var(--transition-smooth)",
-            filter: isActive || isHovered ? "grayscale(0) opacity(1)" : "grayscale(1) opacity(0.85)",
-          }}
-        >
-          {icon}
-        </div>
+        <div className="sidebar-button-icon">{icon}</div>
+        <span className="sidebar-button-label">{label}</span>
 
-        {isActive && (
-          <div
-            style={{
-              position: "absolute",
-              left: "-12px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              height: "24px",
-              width: "4px",
-              background: "white",
-              borderRadius: "0 4px 4px 0",
-              boxShadow: "0 0 10px rgba(255, 255, 255, 0.5)",
-            }}
-          />
-        )}
+        {isActive && <div className="sidebar-button-indicator" />}
       </button>
-    </Tooltip>
-  );
-};
+    );
+  },
+);

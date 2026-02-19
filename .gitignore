@@ -27,7 +27,13 @@ playwright-report/
 *.xlsx
 resources/*.xlsx
 data/*.json
-*.lock
+
+# Environment files (prevent accidental secret commits)
+.env*
+
+# Lock files (data locks, NOT package-lock.json)
+# package-lock.json is intentionally tracked for reproducible builds
+*.data.lock
 
 
 # Enigma Virtual Box

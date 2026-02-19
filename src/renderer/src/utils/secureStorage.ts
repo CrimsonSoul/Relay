@@ -55,7 +55,7 @@ class SecureStorage {
       this.initializeEncryption().catch((error: unknown) => {
         loggers.storage.warn('Failed to initialize encryption, falling back to obfuscation', {
           error: error instanceof Error ? error.message : String(error),
-          category: ErrorCategory.RENDERER
+          category: ErrorCategory.RENDERER,
         });
       });
     }
@@ -79,7 +79,7 @@ class SecureStorage {
         new TextEncoder().encode(navigator.userAgent.substring(0, 32).padEnd(32, '0')),
         { name: 'PBKDF2' },
         false,
-        ['deriveBits', 'deriveKey']
+        ['deriveBits', 'deriveKey'],
       );
 
       this.encryptionKey = await crypto.subtle.deriveKey(
@@ -87,17 +87,17 @@ class SecureStorage {
           name: 'PBKDF2',
           salt: new TextEncoder().encode('relay-salt-2026'),
           iterations: 10000, // Reduced: this is obfuscation, not security-critical encryption
-          hash: 'SHA-256'
+          hash: 'SHA-256',
         },
         keyMaterial,
         { name: 'AES-GCM', length: 256 },
         false,
-        ['encrypt', 'decrypt']
+        ['encrypt', 'decrypt'],
       );
     } catch (error: unknown) {
       loggers.storage.error('Encryption initialization failed', {
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
     }
   }
@@ -117,7 +117,7 @@ class SecureStorage {
       const encryptedData = await crypto.subtle.encrypt(
         { name: 'AES-GCM', iv },
         this.encryptionKey,
-        encodedData
+        encodedData,
       );
 
       // Combine IV and encrypted data
@@ -130,7 +130,7 @@ class SecureStorage {
     } catch (error: unknown) {
       loggers.storage.warn('Encryption failed, using obfuscation', {
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       return simpleObfuscate(data);
     }
@@ -146,7 +146,7 @@ class SecureStorage {
 
     try {
       // Convert from base64
-      const combined = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+      const combined = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
 
       // Extract IV and encrypted data
       const iv = combined.slice(0, 12);
@@ -155,7 +155,7 @@ class SecureStorage {
       const decryptedData = await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv },
         this.encryptionKey,
-        encryptedData
+        encryptedData,
       );
 
       return new TextDecoder().decode(decryptedData);
@@ -163,7 +163,7 @@ class SecureStorage {
       // Fallback to simple deobfuscation if decryption fails
       loggers.storage.warn('Decryption failed, trying deobfuscation', {
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       return simpleDeobfuscate(data);
     }
@@ -181,7 +181,7 @@ class SecureStorage {
       loggers.storage.error('Failed to store item', {
         key,
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       throw error;
     }
@@ -201,7 +201,7 @@ class SecureStorage {
       loggers.storage.error('Failed to retrieve item', {
         key,
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       return defaultValue;
     }
@@ -222,7 +222,7 @@ class SecureStorage {
       loggers.storage.error('Failed to store item (sync)', {
         key,
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       // Do not throw, just log. Throwing breaks the app loop.
     }
@@ -242,17 +242,12 @@ class SecureStorage {
       // We catch this here to prevent JSON.parse from exploding.
       const deobfuscated = simpleDeobfuscate(stored);
 
-      // Basic JSON structure validation before parsing
-      if (!deobfuscated || (!deobfuscated.startsWith('{') && !deobfuscated.startsWith('['))) {
-        throw new Error('Stored data does not appear to be valid JSON after deobfuscation');
-      }
-
       return JSON.parse(deobfuscated) as T;
     } catch (error: unknown) {
       loggers.storage.warn('Failed to retrieve item (sync), clearing corrupted data', {
         key,
         error: error instanceof Error ? error.message : String(error),
-        category: ErrorCategory.RENDERER
+        category: ErrorCategory.RENDERER,
       });
       // Clear the corrupted key so we don't spam errors every frame/mount
       localStorage.removeItem(storageKey);
@@ -282,4 +277,3 @@ class SecureStorage {
 
 // Export singleton instance
 export const secureStorage = new SecureStorage();
-

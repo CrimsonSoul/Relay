@@ -1,8 +1,20 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { validateDataPath } from './pathValidation';
 import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { join } from 'path';
 import os from 'os';
+
+// Mock electron app
+vi.mock('electron', () => ({
+  app: {
+    getPath: vi.fn((name: string) => {
+      if (name === 'userData') return join(os.homedir(), 'Library', 'Application Support', 'Relay');
+      if (name === 'home') return os.homedir();
+      return os.tmpdir();
+    }),
+  },
+}));
 
 // Mock logger
 vi.mock('./logger', async (importOriginal) => {
@@ -13,54 +25,58 @@ vi.mock('./logger', async (importOriginal) => {
       fileManager: {
         error: vi.fn(),
         info: vi.fn(),
-        warn: vi.fn()
-      }
-    }
+        warn: vi.fn(),
+      },
+    },
   };
 });
 
 describe('validateDataPath', () => {
-    const tmpDir = os.tmpdir();
-    const testDir = join(tmpDir, 'relay-test-data');
+  // Use a path within home dir since validation now requires it
+  const testDir = join(os.homedir(), '.relay-test-data');
 
-    beforeEach(() => {
-        if (fs.existsSync(testDir)) {
-            fs.rmSync(testDir, { recursive: true, force: true });
-        }
-    });
+  beforeEach(() => {
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  });
 
-    afterEach(() => {
-        if (fs.existsSync(testDir)) {
-            fs.rmSync(testDir, { recursive: true, force: true });
-        }
-    });
+  afterEach(() => {
+    if (fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  });
 
-    it('should return success for a valid writeable directory', () => {
-        fs.mkdirSync(testDir);
-        const result = validateDataPath(testDir);
-        expect(result.success).toBe(true);
-        expect(result.error).toBeUndefined();
-    });
+  it('should return success for a valid writeable directory', async () => {
+    fs.mkdirSync(testDir);
+    const result = await validateDataPath(testDir);
+    expect(result.success).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
 
-    it('should create directory if it does not exist', () => {
-        const result = validateDataPath(testDir);
-        expect(result.success).toBe(true);
-        expect(fs.existsSync(testDir)).toBe(true);
-    });
+  it('should create directory if it does not exist', async () => {
+    const result = await validateDataPath(testDir);
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(testDir)).toBe(true);
+  });
 
-    it('should return error for invalid path (mocked failure)', () => {
-         // It's hard to simulate permission errors on actual OS tmp dirs without root/chmod
-         // So we will spy on fs.writeFileSync to throw EACCES
-         const spy = vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
-             const err = new Error('Permission denied');
-             err.code = 'EACCES';
-             throw err;
-         });
+  it('should return error for invalid path (mocked failure)', async () => {
+    // Spy on fsPromises.writeFile to throw EACCES
+    const spy = vi
+      .spyOn(fsPromises, 'writeFile')
+      .mockRejectedValue(Object.assign(new Error('Permission denied'), { code: 'EACCES' }));
 
-         const result = validateDataPath(testDir);
-         expect(result.success).toBe(false);
-         expect(result.error).toContain('Write permission denied');
+    const result = await validateDataPath(testDir);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Write permission denied');
 
-         spy.mockRestore();
-    });
+    spy.mockRestore();
+  });
+
+  it('should reject sibling prefix paths outside home directory', async () => {
+    const outsideHomeWithPrefix = `${os.homedir()}-malicious`;
+    const result = await validateDataPath(outsideHomeWithPrefix);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('within user home directory');
+  });
 });

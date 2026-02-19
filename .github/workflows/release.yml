@@ -1,19 +1,20 @@
-name: Build on Release
+name: Build and Release
+
 on:
-  pull_request:
-    branches:
-      - main
-    types: 
-      - closed
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (e.g. 1.2.0). Leave blank to use package.json version."
+        required: false
+        type: string
 
 jobs:
-  release:
-    if: github.event.pull_request.merged == true
+  release-windows:
     runs-on: windows-latest
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -26,31 +27,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run Tests
-        run: npm run test:all
+      - name: Type check
+        run: npm run typecheck
 
-      - name: Build and Release
+      - name: Lint
+        run: npm run lint
 
-        run: npm run build:release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run tests
+        run: npm test
 
-      - name: Prepare Release Body
+      - name: Build and package
+        run: npm run build:win
+
+      - name: Determine version
+        id: version
         shell: bash
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
         run: |
-          echo "Automatically generated release from PR #$PR_NUMBER" > release_body.txt
-          echo "Merged branch: $BRANCH_NAME" >> release_body.txt
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "name=Release v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+            echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "name=Release v${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
+      - name: Create release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: Release v${{ github.run_number }}
-          body_path: release_body.txt
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.name }}
+          body: "Automated release from workflow dispatch."
           files: release/Relay.exe
           draft: false
           prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

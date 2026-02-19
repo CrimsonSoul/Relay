@@ -1,9 +1,10 @@
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
-import { SearchQuerySchema } from '../../shared/ipcValidation';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { SearchQuerySchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
+import { getErrorMessage } from '@shared/types';
 
 // NWS API Response Types (for type safety)
 interface NWSAlertProperties {
@@ -43,19 +44,20 @@ export function setupWeatherHandlers() {
       }
 
       const res = await fetch(
-        `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16`
+        `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16&timezone=auto`,
+        { cache: 'no-store' },
       );
       if (!res.ok) throw new Error('Failed to fetch weather data');
       return await res.json();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       loggers.weather.error('Failed to fetch weather data', {
         error: message,
         category: ErrorCategory.NETWORK,
         lat,
-        lon
+        lon,
       });
-      throw err;
+      return { error: 'Weather service unavailable' };
     }
   });
 
@@ -68,39 +70,49 @@ export function setupWeatherHandlers() {
         return { results: [] };
       }
       const trimmedQuery = validated.data.trim();
-      
+
       // Handle Zip Code (US 5-digit)
       if (/^\d{5}$/.test(trimmedQuery)) {
         try {
           const zipRes = await fetch(`https://api.zippopotam.us/us/${trimmedQuery}`);
           if (zipRes.ok) {
-            const zipData = await zipRes.json() as {
+            const zipData = (await zipRes.json()) as {
               'post code': string;
               country: string;
-              places: Array<{ 'place name': string; longitude: string; state: string; 'state abbreviation': string; latitude: string }>;
+              places: Array<{
+                'place name': string;
+                longitude: string;
+                state: string;
+                'state abbreviation': string;
+                latitude: string;
+              }>;
             };
             if (zipData.places?.[0]) {
               const place = zipData.places[0];
               return {
-                results: [{
-                  name: place['place name'],
-                  lat: parseFloat(place.latitude),
-                  lon: parseFloat(place.longitude),
-                  admin1: place.state,
-                  country_code: 'US'
-                }]
+                results: [
+                  {
+                    name: place['place name'],
+                    lat: parseFloat(place.latitude),
+                    lon: parseFloat(place.longitude),
+                    admin1: place.state,
+                    country_code: 'US',
+                  },
+                ],
               };
             }
           }
         } catch (_err) {
-          loggers.weather.warn('Zip code search failed, falling back to general search', { query: trimmedQuery });
+          loggers.weather.warn('Zip code search failed, falling back to general search', {
+            query: trimmedQuery,
+          });
         }
       }
 
       // General Search
       const fetchResults = async (q: string) => {
         const res = await fetch(
-          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`,
         );
         if (!res.ok) throw new Error('Geocoding failed');
         return await res.json();
@@ -112,20 +124,23 @@ export function setupWeatherHandlers() {
       if ((!data.results || data.results.length === 0) && trimmedQuery.includes(',')) {
         const cityPart = trimmedQuery.split(',')[0].trim();
         if (cityPart) {
-          loggers.weather.info('Retrying search with city part only', { original: trimmedQuery, cityPart });
+          loggers.weather.info('Retrying search with city part only', {
+            original: trimmedQuery,
+            cityPart,
+          });
           data = await fetchResults(cityPart);
         }
       }
 
       return data;
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       loggers.weather.error('Location search failed', {
         error: message,
         category: ErrorCategory.NETWORK,
-        query
+        query,
       });
-      throw err;
+      return { error: 'Location search unavailable' };
     }
   });
 
@@ -135,7 +150,7 @@ export function setupWeatherHandlers() {
     try {
       const nLat = Number(lat);
       const nLon = Number(lon);
-      
+
       if (isNaN(nLat) || isNaN(nLon) || nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) {
         loggers.weather.warn('Invalid coordinates for alerts fetch', { lat, lon });
         return [];
@@ -145,7 +160,7 @@ export function setupWeatherHandlers() {
       // Point lookup is good for verifying it's in a supported area
       const alertRes = await fetch(
         `https://api.weather.gov/alerts/active?point=${nLat.toFixed(4)},${nLon.toFixed(4)}`,
-        { headers: { 'User-Agent': 'Relay-Weather-App', 'Accept': 'application/geo+json' } }
+        { headers: { 'User-Agent': 'Relay-Weather-App', Accept: 'application/geo+json' } },
       );
 
       if (!alertRes.ok) {
@@ -153,7 +168,7 @@ export function setupWeatherHandlers() {
         throw new Error('Failed to fetch weather alerts');
       }
 
-      const alertData = await alertRes.json() as NWSAlertsResponse;
+      const alertData = (await alertRes.json()) as NWSAlertsResponse;
       const features = alertData.features || [];
 
       // Map to our WeatherAlert type
@@ -177,16 +192,16 @@ export function setupWeatherHandlers() {
           effective: props?.effective || '',
           expires: props?.expires || '',
           senderName: props?.senderName || 'National Weather Service',
-          areaDesc: props?.areaDesc || ''
+          areaDesc: props?.areaDesc || '',
         };
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = getErrorMessage(err);
       loggers.weather.error('Failed to fetch weather alerts', {
         error: message,
         category: ErrorCategory.NETWORK,
         lat,
-        lon
+        lon,
       });
       return []; // Return empty array on error to not break the UI
     }
