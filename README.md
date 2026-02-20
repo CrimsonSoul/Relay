@@ -12,6 +12,12 @@ Relay is an Electron desktop command center for operations teams managing people
 - Security-first desktop posture: CSP, webview allowlists, path validation, encrypted credentials
 - Full quality workflow: linting, type checking, tests, and CI release packaging
 
+## Preview
+
+| Compose                                      | On-Call Board                               |
+| -------------------------------------------- | ------------------------------------------- |
+| ![Compose tab](docs/screenshots/compose.png) | ![On-Call tab](docs/screenshots/oncall.png) |
+
 ## Core Features
 
 - **Compose** — Build bridge communication lists from contacts and groups, copy to clipboard instantly
