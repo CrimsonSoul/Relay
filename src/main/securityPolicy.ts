@@ -2,17 +2,30 @@ const HTTPS_PROTOCOL = 'https:';
 
 export const ALLOWED_WEBVIEW_ORIGINS = new Set([
   'https://www.rainviewer.com',
-  'https://your-intranet',
   'https://chatgpt.com',
   'https://claude.ai',
   'https://copilot.microsoft.com',
   'https://gemini.google.com',
 ]);
 
-export const ALLOWED_GEOLOCATION_ORIGINS = new Set([
-  'https://www.rainviewer.com',
-  'https://your-intranet',
-]);
+// The user-configured radar URL is validated separately at runtime; it is not
+// included here because it is not known at build time.
+export const ALLOWED_GEOLOCATION_ORIGINS = new Set(['https://www.rainviewer.com']);
+
+/**
+ * Runtime-registered origins (e.g. user-configured radar URL).
+ * Populated at startup from persisted user settings via IPC.
+ */
+const trustedRuntimeOrigins = new Set<string>();
+
+export function registerTrustedWebviewOrigin(url: string | null | undefined): void {
+  const origin = getSecureOrigin(url);
+  if (origin) trustedRuntimeOrigins.add(origin);
+}
+
+export function clearTrustedRuntimeOrigins(): void {
+  trustedRuntimeOrigins.clear();
+}
 
 export function getSecureOrigin(urlOrOrigin: string | null | undefined): string | null {
   if (!urlOrOrigin) return null;
@@ -27,7 +40,9 @@ export function getSecureOrigin(urlOrOrigin: string | null | undefined): string 
 
 export function isTrustedWebviewUrl(url: string | null | undefined): boolean {
   const origin = getSecureOrigin(url);
-  return origin !== null && ALLOWED_WEBVIEW_ORIGINS.has(origin);
+  return (
+    origin !== null && (ALLOWED_WEBVIEW_ORIGINS.has(origin) || trustedRuntimeOrigins.has(origin))
+  );
 }
 
 export function isTrustedGeolocationOrigin(urlOrOrigin: string | null | undefined): boolean {

@@ -178,6 +178,7 @@ export type BridgeAPI = {
   changeDataFolder: () => Promise<boolean>;
   resetDataFolder: () => Promise<boolean>;
   getDataPath: () => Promise<string>;
+  registerRadarUrl: (url: string) => Promise<void>;
   updateOnCallTeam: (team: string, rows: OnCallRow[]) => Promise<IpcResult>;
   removeOnCallTeam: (team: string) => Promise<IpcResult>;
   renameOnCallTeam: (oldName: string, newName: string) => Promise<IpcResult>;
@@ -309,6 +310,7 @@ export const IPC_CHANNELS = {
   AUTH_CANCEL: 'auth:cancel',
   AUTH_USE_CACHED: 'auth:useCached',
   RADAR_DATA: 'radar:data',
+  REGISTER_RADAR_URL: 'config:registerRadarUrl',
   LOG_BRIDGE: 'metrics:logBridge',
   GET_WEATHER: 'weather:get',
   SEARCH_LOCATION: 'weather:search',

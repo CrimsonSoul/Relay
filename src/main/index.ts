@@ -120,7 +120,7 @@ if (!gotLock) {
               "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
               "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
               "font-src 'self' data:; " +
-              "frame-src 'self' https://www.rainviewer.com https://your-intranet; " +
+              "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
               "object-src 'none'; " +
               "base-uri 'self'; " +
               "form-action 'self';",
@@ -153,7 +153,7 @@ if (!gotLock) {
     });
 
     if (isDev) {
-      await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+      await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
     } else {
       const indexPath = join(__dirname, '../renderer/index.html');
       void state.mainWindow.loadFile(indexPath).catch((err) => {

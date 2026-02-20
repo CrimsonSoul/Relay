@@ -1,6 +1,7 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
+import { registerTrustedWebviewOrigin, clearTrustedRuntimeOrigins } from '../securityPolicy';
 
 export function setupConfigHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -21,7 +22,7 @@ export function setupConfigHandlers(
       properties: ['openDirectory'],
     });
 
-    if (canceled || filePaths.length === 0) return { success: false, error: 'Cancelled' };
+    if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
 
     try {
       await onDataPathChange(filePaths[0]);
@@ -39,5 +40,10 @@ export function setupConfigHandlers(
     } catch (e: unknown) {
       return { success: false, error: getErrorMessage(e) };
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REGISTER_RADAR_URL, (_event, url: string) => {
+    clearTrustedRuntimeOrigins();
+    if (url) registerTrustedWebviewOrigin(url);
   });
 }
