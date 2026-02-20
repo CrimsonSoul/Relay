@@ -1899,10 +1899,9 @@ body.modal-open {
    =========================== */
 .sortable-edit-row-grid {
   display: grid;
-  grid-template-columns: 28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(
-      100px,
-      130px
-    ) 28px;
+  grid-template-columns:
+    28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(100px, 130px)
+    28px;
   gap: 10px;
   align-items: center;
   background: rgba(255, 255, 255, 0.02);
@@ -3559,6 +3558,34 @@ body.modal-open {
 .settings-button-row {
   display: flex;
   gap: 8px;
+}
+
+.settings-description {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+}
+
+.settings-text-input {
+  width: 100%;
+  padding: 9px 14px;
+  background: var(--color-bg-surface-elevated);
+  border: var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-family: var(--font-family-mono);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.settings-text-input:focus {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.settings-text-input::placeholder {
+  color: var(--color-text-tertiary);
 }
 
 /* ============================================================================

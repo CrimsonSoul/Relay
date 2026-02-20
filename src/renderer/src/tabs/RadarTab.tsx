@@ -1,13 +1,15 @@
 import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
+import { secureStorage } from '../utils/secureStorage';
 
-const RADAR_URL = 'https://your-intranet/dashboard';
+export const RADAR_URL_KEY = 'radar_url';
 
 export const RadarTab: React.FC = () => {
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
   const supportsWebview = Boolean(window.api);
+  const radarUrl = secureStorage.getItemSync<string>(RADAR_URL_KEY, '');
 
   const handleRefresh = () => {
     setIsLoading(true);
@@ -28,12 +30,30 @@ export const RadarTab: React.FC = () => {
     };
   }, []);
 
+  // Register the stored radar URL with the main process security allowlist on mount.
+  React.useEffect(() => {
+    if (radarUrl) void window.api?.registerRadarUrl(radarUrl);
+  }, [radarUrl]);
+
   if (!supportsWebview) {
     return (
       <div className="tab-layout tab-layout--flush">
         <div className="tab-fallback webview-unavailable">
           <div className="tab-fallback-error-icon">ℹ️</div>
           <div className="tab-fallback-message">Radar is available in the desktop app only</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!radarUrl) {
+    return (
+      <div className="tab-layout tab-layout--flush">
+        <div className="tab-fallback webview-unavailable">
+          <div className="tab-fallback-error-icon">⚙️</div>
+          <div className="tab-fallback-message">
+            No Radar URL configured. Add one in Settings to enable this tab.
+          </div>
         </div>
       </div>
     );
@@ -68,7 +88,7 @@ export const RadarTab: React.FC = () => {
         />
         <webview
           ref={webviewRef}
-          src={RADAR_URL}
+          src={radarUrl}
           partition="persist:dispatcher-radar"
           title="Dispatcher Radar"
           webpreferences="contextIsolation=yes, nodeIntegration=no"
