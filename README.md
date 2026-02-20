@@ -10,29 +10,25 @@ Relay is an Electron desktop command center for operations teams managing people
 - Typed IPC contracts with Zod validation and a context-isolated preload bridge
 - Scales to large directories via virtualization and lazy tab loading
 - Security-first desktop posture: CSP, webview allowlists, path validation, encrypted credentials
-- Full quality workflow: linting, tests, formatting, and release packaging
-
-## Preview
-
-![Relay icon](build/icon256.png)
+- Full quality workflow: linting, type checking, tests, and CI release packaging
 
 ## Core Features
 
-- Compose bridge communication lists from contacts/groups and copy instantly
-- On-call board with drag-and-drop team/role scheduling and popout support
-- Searchable People and Servers directories with notes and quick actions
-- Weather dashboard with alerts, saved locations, and embedded live radar
-- Sandboxed AI chat webviews with isolated session behavior
-- Global productivity layer: command palette, shortcuts help, import/export manager, toasts
+- **Compose** — Build bridge communication lists from contacts and groups, copy to clipboard instantly
+- **On-Call Board** — Drag-and-drop team/role scheduling with week navigation and popout display mode
+- **People & Servers** — Searchable directories with inline notes, tags, and quick-action menus
+- **Weather** — Live conditions, NWS alerts, saved locations, and an embedded radar tab
+- **AI Chat** — Sandboxed webviews for Gemini, ChatGPT, Claude, and Copilot with isolated sessions
+- **Global Layer** — Command palette, keyboard shortcuts modal, import/export manager, toast notifications
 
 ## Architecture
 
-- `src/main/`: IPC handlers, file/data services, business operations
-- `src/preload/`: typed `window.api` bridge via context isolation
-- `src/renderer/`: React tabs, hooks, and shared UI components
-- `src/shared/`: IPC contracts, validation schemas, shared domain types
+- `src/main/`: IPC handlers, file/data services, and business-logic operations modules
+- `src/preload/`: typed `window.api` bridge via Electron context isolation
+- `src/renderer/`: React tabs, feature-focused hooks, and shared UI components
+- `src/shared/`: IPC channel contracts, Zod validation schemas, and domain types
 
-Business logic stays in operations modules; handlers validate and delegate.
+Business logic stays in operations modules; handlers validate inputs and delegate — no logic in handlers.
 
 ## Tech Stack
 
@@ -56,33 +52,33 @@ npm run dev
 ## Quality and Testing
 
 ```bash
-npm run typecheck
-npm run lint
-npm test
-npm run test:electron
+npm run typecheck   # TypeScript strict mode
+npm run lint        # ESLint
+npm test            # Vitest unit tests
+npm run test:electron  # Playwright integration tests
 ```
 
 Coverage thresholds are enforced:
 
-- Main/shared: lines 52%, functions 52%, branches 38%, statements 52%
-- Renderer: lines 78%, functions 76%, branches 67%, statements 79%
+- Main/shared: lines 52%, functions 52%, branches 38%
+- Renderer: lines 78%, functions 76%, branches 67%
 
-## Security and Reliability
+## Security
 
-- Context isolation and sandbox enabled
-- Renderer has no direct Node.js/Electron access
-- Strict CSP and allowlisted HTTPS webviews
-- Navigation and `window.open` interception
-- Path traversal checks on file operations
-- Credential handling in main process with Electron `safeStorage`
+- Context isolation and OS-level sandbox enabled on all renderer processes
+- Renderer has no direct Node.js or Electron API access
+- Strict CSP headers and HTTPS-only webview allowlists
+- Navigation and `window.open()` interception on all windows
+- Path traversal checks on all file system operations
+- Credential handling delegated to main process via Electron `safeStorage`
 
 ## Project Layout
 
 - `src/main/operations/`: core data and business logic
-- `src/main/handlers/`: IPC handler registration and validation
+- `src/main/handlers/`: IPC handler registration and input validation
 - `src/renderer/src/tabs/`: feature tabs (Compose, On-Call, People, Servers, Weather, Radar, AI)
-- `src/renderer/src/hooks/`: feature-focused state and orchestration hooks
-- `docs/`: architecture, development, logging, troubleshooting, design notes
+- `src/renderer/src/hooks/`: feature-focused state and side-effect hooks
+- `docs/`: architecture decisions, logging guide, security notes, troubleshooting
 
 ## License
 
