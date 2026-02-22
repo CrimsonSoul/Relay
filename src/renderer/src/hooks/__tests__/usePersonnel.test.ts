@@ -34,7 +34,7 @@ describe('usePersonnel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis.window as unknown as { api: typeof mockApi }).api = mockApi;
     localStorage.clear();
   });
 
@@ -77,7 +77,7 @@ describe('usePersonnel', () => {
 
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');
     expect(networkRows).toHaveLength(2);
-    expect(networkRows[1].name).toBe('Eve');
+    expect(networkRows[1]!.name).toBe('Eve');
   });
 
   it('preserves team order when updating rows', async () => {
@@ -211,7 +211,7 @@ describe('usePersonnel', () => {
   it('provides a weekRange string with date range and year', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
     // Format: "Month Day - Month Day, Year" e.g. "February 2 - February 8, 2026"
-    expect(result.current.weekRange).toMatch(/\w+ \d+ - \w+ \d+, \d{4}/);
+    expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} - [A-Za-z]+ \d{1,2}, \d{4}$/);
   });
 
   it('dismisses alerts and persists to localStorage', () => {
@@ -255,7 +255,7 @@ describe('usePersonnel', () => {
     // Optimistic update should remain (no rollback in the code)
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');
     expect(networkRows).toHaveLength(1);
-    expect(networkRows[0].name).toBe('Zara');
+    expect(networkRows[0]!.name).toBe('Zara');
   });
 
   it('getAlertKey generates date-based key', () => {

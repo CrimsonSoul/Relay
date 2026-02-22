@@ -7,6 +7,7 @@ import { TabButton } from './data-manager/SharedComponents';
 import { DataManagerOverview } from './data-manager/DataManagerOverview';
 import { DataManagerImport } from './data-manager/DataManagerImport';
 import { DataManagerExport } from './data-manager/DataManagerExport';
+import { loggers } from '../utils/logger';
 
 type Props = {
   isOpen: boolean;
@@ -36,9 +37,12 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
-      void loadStats();
+      loadStats().catch((error_) => {
+        loggers.app.error('[DataManagerModal] Failed to load stats', { error: error_ });
+        showToast('Failed to load data manager stats.', 'error');
+      });
     }
-  }, [isOpen, loadStats]);
+  }, [isOpen, loadStats, showToast]);
 
   const handleExport = async () => {
     try {

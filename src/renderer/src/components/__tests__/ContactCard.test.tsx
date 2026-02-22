@@ -122,4 +122,28 @@ describe('ContactCard Component', () => {
     const cardElement = container.firstChild as HTMLElement;
     expect(cardElement).toHaveStyle(customStyle);
   });
+
+  test('shows "Notes" label when hasNotes is true without tags', () => {
+    render(<ContactCard {...mockContact} hasNotes={true} onNotesClick={vi.fn()} />);
+    expect(screen.getByText('Notes')).toBeInTheDocument();
+  });
+
+  test('shows notes count label when hasNotes is true with tags', () => {
+    render(
+      <ContactCard
+        {...mockContact}
+        hasNotes={true}
+        tags={['alpha', 'beta']}
+        onNotesClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Notes (2)')).toBeInTheDocument();
+  });
+
+  test('calls onNotesClick when notes button is clicked', () => {
+    const onNotesClick = vi.fn();
+    render(<ContactCard {...mockContact} onNotesClick={onNotesClick} />);
+    fireEvent.click(screen.getByText('Add Note'));
+    expect(onNotesClick).toHaveBeenCalled();
+  });
 });

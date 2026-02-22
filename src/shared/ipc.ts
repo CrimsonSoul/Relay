@@ -58,6 +58,8 @@ export type OnCallEntry = {
   backupLabel?: string;
 };
 
+export type TabName = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Radar' | 'Weather' | 'AI';
+
 export type TeamLayout = {
   [teamName: string]: { x: number; y: number; w?: number; h?: number; static?: boolean };
 };

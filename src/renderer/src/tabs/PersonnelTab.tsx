@@ -85,11 +85,11 @@ export const PersonnelTab: React.FC<{
   // Ensure drag state is cleared on unmount
   useEffect(() => {
     return () => {
-      window.api?.notifyDragStop();
+      globalThis.api?.notifyDragStop();
     };
   }, []);
 
-  const isPopout = new URLSearchParams(window.location.search).has('popout');
+  const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -106,7 +106,7 @@ export const PersonnelTab: React.FC<{
   };
 
   const handleExportCsv = useCallback(async () => {
-    const result = await window.api?.exportData({
+    const result = await globalThis.api?.exportData({
       format: 'csv',
       category: 'oncall',
       includeMetadata: false,
@@ -210,7 +210,7 @@ export const PersonnelTab: React.FC<{
           <TactileButton
             variant="ghost"
             onClick={() => {
-              window.api?.openAuxWindow('popout/board');
+              globalThis.api?.openAuxWindow('popout/board');
             }}
             title="Pop Out Board"
             aria-label="Pop Out Board"
@@ -269,32 +269,31 @@ export const PersonnelTab: React.FC<{
           const { active } = event;
           if (teams.includes(active.id as string)) {
             setIsDragging(true);
-            window.api?.notifyDragStart();
+            globalThis.api?.notifyDragStart();
           }
         }}
         onDragEnd={(event) => {
           if (isDragging) {
             handleDragEnd(event);
             setTimeout(() => setIsDragging(false), 50);
-            window.api?.notifyDragStop();
+            globalThis.api?.notifyDragStop();
           }
         }}
         onDragCancel={() => {
           if (isDragging) {
             setIsDragging(false);
-            window.api?.notifyDragStop();
+            globalThis.api?.notifyDragStop();
           }
         }}
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
-          <div
+          <ul
             ref={animationParent}
             className="oncall-grid stagger-children"
-            role="list"
             aria-label="Sortable On-Call Teams"
           >
             {teams.map((team, idx) => (
-              <div key={team} className="oncall-grid-item animate-card-entrance" role="listitem">
+              <li key={team} className="oncall-grid-item animate-card-entrance">
                 <SortableTeamCard
                   team={team}
                   index={idx}
@@ -308,9 +307,9 @@ export const PersonnelTab: React.FC<{
                   onCopyTeamInfo={handleCopyTeamInfo}
                   tick={tick}
                 />
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </SortableContext>
         <div aria-live="polite" className="sr-only">
           {isDragging ? `Dragging team ${isDragging}` : ''}

@@ -7,6 +7,15 @@ type SortConfig = { key: keyof Contact | 'groups'; direction: 'asc' | 'desc' };
 
 const RECENTLY_ADDED_RESET_MS = 2000;
 
+const toSortableText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return value.toString();
+  }
+  if (value === null || value === undefined) return '';
+  return '';
+};
+
 export function useDirectory(
   contacts: Contact[],
   groups: BridgeGroup[],
@@ -67,8 +76,8 @@ export function useDirectory(
           strB = groupStringMap.get(b.email.toLowerCase()) || '';
         return strA.localeCompare(strB) * dir;
       }
-      const valA = (a[sortConfig.key as keyof Contact] || '').toString().toLowerCase();
-      const valB = (b[sortConfig.key as keyof Contact] || '').toString().toLowerCase();
+      const valA = toSortableText(a[sortConfig.key]).toLowerCase();
+      const valB = toSortableText(b[sortConfig.key]).toLowerCase();
       return valA.localeCompare(valB) * dir;
     });
   }, [effectiveContacts, debouncedSearch, sortConfig, groupStringMap]);

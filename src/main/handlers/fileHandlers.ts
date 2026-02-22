@@ -1,5 +1,5 @@
 import { ipcMain, shell } from 'electron';
-import { extname } from 'path';
+import { extname } from 'node:path';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';

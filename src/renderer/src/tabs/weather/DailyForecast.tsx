@@ -36,13 +36,16 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
               className={`daily-forecast-item${isToday ? ' daily-forecast-item--today' : ''}`}
             >
               <span className="daily-forecast-day">{dayLabel}</span>
-              <Tooltip content={getWeatherDescription(weather.daily.weathercode[i])} position="top">
+              <Tooltip
+                content={getWeatherDescription(weather.daily.weathercode[i] ?? 0)}
+                position="top"
+              >
                 <div className="daily-forecast-icon-wrap">
-                  {getWeatherIcon(weather.daily.weathercode[i], 20)}
+                  {getWeatherIcon(weather.daily.weathercode[i] ?? 0, 20)}
                 </div>
               </Tooltip>
               <div className="daily-forecast-meta">
-                {weather.daily.wind_speed_10m_max[i] > 8 && (
+                {(weather.daily.wind_speed_10m_max[i] ?? 0) > 8 && (
                   <Tooltip content="Max Wind Speed" position="top">
                     <div className="daily-forecast-wind-badge">
                       <svg
@@ -57,24 +60,24 @@ export const DailyForecast: React.FC<DailyForecastProps> = ({ weather }) => {
                       >
                         <path d="M5 12h14M12 5l7 7-7 7" />
                       </svg>
-                      <span>{Math.round(weather.daily.wind_speed_10m_max[i])}</span>
+                      <span>{Math.round(weather.daily.wind_speed_10m_max[i] ?? 0)}</span>
                     </div>
                   </Tooltip>
                 )}
-                {weather.daily.precipitation_probability_max[i] > 0 && (
+                {(weather.daily.precipitation_probability_max[i] ?? 0) > 0 && (
                   <Tooltip content="Precipitation Probability" position="top">
                     <div className="daily-forecast-precip-badge">
-                      <span>{weather.daily.precipitation_probability_max[i]}%</span>
+                      <span>{weather.daily.precipitation_probability_max[i] ?? 0}%</span>
                     </div>
                   </Tooltip>
                 )}
               </div>
               <div className="daily-forecast-temps">
                 <span className="daily-forecast-temp-high">
-                  {Math.round(weather.daily.temperature_2m_max[i])}°
+                  {Math.round(weather.daily.temperature_2m_max[i] ?? 0)}°
                 </span>
                 <span className="daily-forecast-temp-low">
-                  {Math.round(weather.daily.temperature_2m_min[i])}°
+                  {Math.round(weather.daily.temperature_2m_min[i] ?? 0)}°
                 </span>
               </div>
             </div>

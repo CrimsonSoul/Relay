@@ -1,8 +1,16 @@
-import fsPromises from 'fs/promises';
-import path from 'path';
+import fsPromises from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import type { App } from 'electron';
 import { LogData } from '@shared/types';
-import { LogLevel, ErrorCategory } from '@shared/logging';
+import {
+  LogLevel,
+  ErrorCategory,
+  ErrorContext,
+  LogEntry,
+  ILogger,
+  ModuleLogger,
+} from '@shared/logging';
 import { redactSensitiveData } from '@shared/logRedaction';
 
 // Constants
@@ -10,31 +18,6 @@ const LOG_BATCH_SIZE = 100;
 const SESSION_START_BORDER_LENGTH = 80;
 const MEMORY_SAMPLE_INTERVAL_MS = 5000; // Sample memory every 5 seconds
 const MB_DIVISOR = 1024 * 1024;
-
-interface ErrorContext {
-  category?: ErrorCategory;
-  errorCode?: string;
-  stack?: string;
-  userAction?: string;
-  appState?: Record<string, unknown>;
-  performance?: PerformanceMetrics;
-  memoryUsage?: NodeJS.MemoryUsage;
-  correlationId?: string;
-}
-
-interface PerformanceMetrics {
-  duration?: number;
-  timestamp: number;
-}
-
-interface LogEntry {
-  timestamp: string;
-  level: string;
-  module: string;
-  message: string;
-  data?: LogData;
-  errorContext?: ErrorContext;
-}
 
 interface LoggerConfig {
   level: LogLevel;
@@ -56,7 +39,7 @@ const DEFAULT_CONFIG: LoggerConfig = {
   includeMemoryUsage: true,
 };
 
-class Logger {
+class Logger implements ILogger {
   private readonly config: LoggerConfig;
   private logPath!: string;
   private currentLogFile!: string;
@@ -104,7 +87,7 @@ class Logger {
   }
 
   private setupFallback(): void {
-    const tempDir = process.platform === 'win32' ? process.env.TEMP || 'C:\\Windows\\Temp' : '/tmp';
+    const tempDir = os.tmpdir();
     this.logPath = path.join(tempDir, 'relay-logs');
     this.currentLogFile = path.join(this.logPath, 'relay.log');
     this.errorLogFile = path.join(this.logPath, 'errors.log');
@@ -121,7 +104,8 @@ class Logger {
       this.errorLogFile = path.join(this.logPath, 'errors.log');
       this.initialized = true;
       this.ensureLogDirectory();
-    } catch (_e) {
+    } catch (error_) {
+      console.error('[Logger] Failed to initialize with app, using fallback.', error_);
       this.setupFallback();
     }
   }
@@ -138,9 +122,9 @@ class Logger {
       // Write session start marker
       const sessionMarker = `\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\nSESSION START: ${new Date().toISOString()}\nPlatform: ${process.platform} | Node: ${process.version} | Electron: ${process.versions.electron || 'None'}\n${'='.repeat(SESSION_START_BORDER_LENGTH)}\n`;
       await fsPromises.appendFile(this.currentLogFile, sessionMarker);
-    } catch (_e) {
+    } catch (error_) {
       // Don't use logger.error here or we might recurse
-      console.error('[Logger] Failed to create log directory:', _e);
+      console.error('[Logger] Failed to create log directory:', error_);
     }
   }
 
@@ -148,28 +132,38 @@ class Logger {
     return new Date().toISOString();
   }
 
+  private extractStack(d: Record<string, unknown> | null): string | undefined {
+    if (d?.error instanceof Error) {
+      return d.error.stack;
+    }
+    if (typeof d?.error === 'object' && (d.error as Error)?.stack) {
+      return (d.error as Error).stack;
+    }
+    if (d?.stack) {
+      return d.stack as string;
+    }
+    return undefined;
+  }
+
   private extractErrorContext(data: LogData): ErrorContext {
     const context: ErrorContext = {};
+    const d = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : null;
 
-    if (data?.category) context.category = data.category;
-    if (data?.errorCode) context.errorCode = data.errorCode;
-    if (data?.stack) context.stack = data.stack;
-    if (data?.userAction) context.userAction = data.userAction;
-    if (data?.appState) context.appState = data.appState;
-    if (data?.correlationId) context.correlationId = data.correlationId;
+    if (d?.category) context.category = d.category as ErrorCategory;
+    if (d?.errorCode) context.errorCode = d.errorCode as string;
 
-    // Extract stack trace from Error objects or objects with a stack property
-    if (data?.error?.stack) {
-      context.stack = data.error.stack;
-    } else if (data?.stack) {
-      context.stack = data.stack;
-    }
+    const stack = this.extractStack(d);
+    if (stack) context.stack = stack;
+
+    if (d?.userAction) context.userAction = d.userAction as string;
+    if (d?.appState) context.appState = d.appState as Record<string, unknown>;
+    if (d?.correlationId) context.correlationId = d.correlationId as string;
 
     // Add performance metrics if enabled
     if (this.config.includePerformanceMetrics) {
       context.performance = {
         timestamp: Date.now(),
-        duration: data?.duration,
+        duration: d?.duration as number | undefined,
       };
     }
 
@@ -413,53 +407,6 @@ class Logger {
 
   setLevel(level: LogLevel): void {
     this.config.level = level;
-  }
-}
-
-/**
- * Child logger with a fixed module name for cleaner API
- */
-class ModuleLogger {
-  private readonly parent: Logger;
-  private readonly module: string;
-
-  constructor(parent: Logger, module: string) {
-    this.parent = parent;
-    this.module = module;
-  }
-
-  debug(message: string, data?: LogData): void {
-    this.parent.debug(this.module, message, data);
-  }
-
-  info(message: string, data?: LogData): void {
-    this.parent.info(this.module, message, data);
-  }
-
-  warn(message: string, data?: LogData): void {
-    this.parent.warn(this.module, message, data);
-  }
-
-  error(message: string, data?: LogData): void {
-    this.parent.error(this.module, message, data);
-  }
-
-  fatal(message: string, data?: LogData): void {
-    this.parent.fatal(this.module, message, data);
-  }
-
-  /**
-   * Create a performance timer
-   */
-  startTimer(label: string): () => void {
-    return this.parent.startTimer(this.module, label);
-  }
-
-  /**
-   * Log with error category
-   */
-  errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
-    this.parent.error(this.module, message, { ...data, category });
   }
 }
 

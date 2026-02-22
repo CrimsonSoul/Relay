@@ -1,6 +1,6 @@
 import { app, BrowserWindow, session, dialog } from 'electron';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FileManager } from './FileManager';
 import { loggers } from './logger';
 
@@ -25,9 +25,7 @@ if (process.platform === 'win32') {
 validateEnv();
 
 const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
+if (gotLock) {
   app.on('second-instance', () => {
     // Someone tried to run a second instance, we should focus our window.
     if (state.mainWindow) {
@@ -156,7 +154,7 @@ if (!gotLock) {
       await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
     } else {
       const indexPath = join(__dirname, '../renderer/index.html');
-      void state.mainWindow.loadFile(indexPath).catch((err) => {
+      state.mainWindow.loadFile(indexPath).catch((err) => {
         loggers.main.error('Failed to load local index.html', {
           path: indexPath,
           error: err.message,
@@ -256,11 +254,11 @@ if (!gotLock) {
 
     // Emit current data to the new window
     if (state.fileManager) {
-      void state.fileManager.readAndEmit();
+      await state.fileManager.readAndEmit();
     }
   }
 
-  void (async () => {
+  const bootstrap = async () => {
     try {
       if (!app.isReady()) {
         await app.whenReady();
@@ -287,7 +285,11 @@ if (!gotLock) {
       });
 
       app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) void createWindow();
+        if (BrowserWindow.getAllWindows().length === 0) {
+          createWindow().catch((error_) => {
+            loggers.main.error('Failed to create window on app activate', { error: error_ });
+          });
+        }
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
@@ -295,7 +297,14 @@ if (!gotLock) {
       dialog.showErrorBox('Critical Startup Error', errorMessage);
       app.quit();
     }
-  })();
+  };
+
+  try {
+    await bootstrap();
+  } catch (error_) {
+    loggers.main.error('Unexpected bootstrap failure', { error: error_ });
+    app.quit();
+  }
 
   // Global Exception Handlers
   process.on('uncaughtException', (error) => {
@@ -309,4 +318,6 @@ if (!gotLock) {
       reason: reason instanceof Error ? reason.message : String(reason),
     });
   });
+} else {
+  app.quit();
 }

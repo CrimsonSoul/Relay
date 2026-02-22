@@ -7,7 +7,7 @@ type ShortcutsModalProps = {
   onClose: () => void;
 };
 
-const isMac = typeof window !== 'undefined' && window.api?.platform === 'darwin';
+const isMac = globalThis.window?.api?.platform === 'darwin';
 const modKey = isMac ? '⌘' : 'Ctrl';
 
 const shortcuts = [
@@ -43,7 +43,7 @@ const shortcuts = [
 ];
 
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose }) => {
-  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
+  const focusTrapRef = useFocusTrap<HTMLDialogElement>(isOpen);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -64,17 +64,17 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="shortcuts-modal-overlay animate-fade-in" role="presentation">
+    <div className="shortcuts-modal-overlay animate-fade-in">
       <button
         type="button"
         className="overlay-hitbox"
         aria-label="Close shortcuts modal backdrop"
         onClick={onClose}
       />
-      <div
+      <dialog
         ref={focusTrapRef}
+        open
         className="shortcuts-modal animate-scale-in"
-        role="dialog"
         aria-modal="true"
         aria-labelledby="shortcuts-modal-title"
       >
@@ -147,7 +147,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         <div className="shortcuts-modal-footer">
           Press <kbd className="shortcuts-modal-kbd">Esc</kbd> to close
         </div>
-      </div>
+      </dialog>
     </div>,
     document.body,
   );

@@ -13,17 +13,17 @@ export const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<Vir
   const membership = groupMap.get(email.toLowerCase()) || [];
 
   return (
-    <div style={style} onContextMenu={(e) => onContextMenu(e, email, !contact)}>
-      <ContactCard
-        key={email}
-        name={name}
-        email={email}
-        title={title}
-        phone={phone}
-        groups={membership}
-        sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
-      />
-    </div>
+    <ContactCard
+      key={email}
+      style={style}
+      name={name}
+      email={email}
+      title={title}
+      phone={phone}
+      groups={membership}
+      onContextMenu={(e) => onContextMenu(e, email, !contact)}
+      sourceLabel={source === 'manual' ? 'MANUAL' : undefined}
+    />
   );
 });
 

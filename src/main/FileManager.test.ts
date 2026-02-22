@@ -1,25 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FileManager } from './FileManager';
-import fs from 'fs/promises';
-import path from 'path';
-import os from 'os';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import { BrowserWindow } from 'electron';
 
 // Mock Electron
 vi.mock('electron', () => {
-  const mockWin = {
-    isDestroyed: vi.fn(() => false),
-    webContents: {
-      send: vi.fn(),
-    },
-  };
-
   class MockBrowserWindow {
-    constructor() {
-      return mockWin;
-    }
-    static getAllWindows = vi.fn(() => [mockWin]);
+    public readonly isDestroyed = vi.fn(() => false);
+    public readonly webContents = {
+      send: vi.fn(),
+    };
+
+    public static readonly getAllWindows = vi.fn(() => [mockWin]);
   }
+  const mockWin = new MockBrowserWindow();
 
   return {
     BrowserWindow: MockBrowserWindow,
@@ -59,8 +55,8 @@ vi.mock('./fileLock', () => {
     atomicWriteWithLock: vi.fn(async (filePath, content) => {
       // Just write directly in mock, but use a temp file + rename to be atomic
       // and avoid race conditions where readFile might see an empty file
-      const fs = await import('fs/promises');
-      const tempPath = `${filePath}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`;
+      const fs = await import('node:fs/promises');
+      const tempPath = `${filePath}.${Date.now()}.${crypto.randomUUID()}.tmp`;
       try {
         await fs.writeFile(tempPath, content, 'utf-8');
         await fs.rename(tempPath, filePath);
@@ -74,7 +70,7 @@ vi.mock('./fileLock', () => {
       }
     }),
     readWithLock: vi.fn(async (filePath) => {
-      const fs = await import('fs/promises');
+      const fs = await import('node:fs/promises');
       try {
         return await fs.readFile(filePath, 'utf-8');
       } catch (e) {
@@ -83,12 +79,13 @@ vi.mock('./fileLock', () => {
       }
     }),
     modifyJsonWithLock: vi.fn(async (filePath, modifier, defaultValue) => {
-      const fs = await import('fs/promises');
+      const fs = await import('node:fs/promises');
       let data = defaultValue;
       try {
         const content = await fs.readFile(filePath, 'utf-8');
         data = JSON.parse(content);
-      } catch (_e) {
+        // eslint-disable-next-line sonarjs/no-ignored-exceptions
+      } catch (_error) {
         /* ignore */
       }
       const newData = await modifier(data);
@@ -109,8 +106,9 @@ describe('FileManager', () => {
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-test-'));
     bundledDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-bundled-'));
-    // Use the mocked class
-    new BrowserWindow();
+    // Mock BrowserWindow instantiation
+    const browserWindow = new BrowserWindow();
+    expect(browserWindow).toBeDefined();
     fileManager = new FileManager(tmpDir, bundledDir);
 
     // Mock performBackup to avoid race conditions with directory cleanup
@@ -218,7 +216,7 @@ describe('FileManager', () => {
     it('removes a server by name', async () => {
       const records = [
         {
-          id: '1',
+          id: 'server-1',
           name: 'Server1',
           businessArea: 'Finance',
           lob: 'Accounting',
@@ -230,7 +228,7 @@ describe('FileManager', () => {
           updatedAt: Date.now(),
         },
         {
-          id: '2',
+          id: 'server-2',
           name: 'Server2',
           businessArea: 'IT',
           lob: 'Infrastructure',
@@ -251,6 +249,206 @@ describe('FileManager', () => {
       const updated = JSON.parse(content);
       expect(updated).toHaveLength(1);
       expect(updated[0].name).toBe('Server2');
+    });
+
+    it('returns false when removing non-existent server', async () => {
+      await fs.writeFile(path.join(tmpDir, 'servers.json'), '[]');
+      const removed = await fileManager.removeServer('Missing');
+      expect(removed).toBe(false);
+    });
+  });
+
+  describe('On-call JSON Operations', () => {
+    it('updates an existing team and preserves other teams', async () => {
+      const initialRows = [
+        {
+          id: 'a1',
+          team: 'Team A',
+          role: 'Primary',
+          name: 'Alice',
+          contact: 'alice@test.com',
+          timeWindow: '24/7',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          id: 'b1',
+          team: 'Team B',
+          role: 'Primary',
+          name: 'Bob',
+          contact: 'bob@test.com',
+          timeWindow: 'Weekdays',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      await fs.writeFile(path.join(tmpDir, 'oncall.json'), JSON.stringify(initialRows));
+      await fileManager.readAndEmit();
+
+      const success = await fileManager.updateOnCallTeam('Team A', [
+        {
+          id: 'a2',
+          team: 'Team A',
+          role: 'Secondary',
+          name: 'Avery',
+          contact: 'avery@test.com',
+          timeWindow: 'Weekends',
+        },
+      ]);
+
+      expect(success).toBe(true);
+
+      const content = await fs.readFile(path.join(tmpDir, 'oncall.json'), 'utf-8');
+      const updated = JSON.parse(content);
+      expect(
+        updated.some((r: { team: string; id: string }) => r.team === 'Team A' && r.id === 'a2'),
+      ).toBe(true);
+      expect(
+        updated.some((r: { team: string; id: string }) => r.team === 'Team B' && r.id === 'b1'),
+      ).toBe(true);
+    });
+
+    it('renames and removes teams in oncall.json', async () => {
+      const rows = [
+        {
+          id: 'r1',
+          team: 'Old Team',
+          role: 'Primary',
+          name: 'Op One',
+          contact: 'op1@test.com',
+          timeWindow: '24/7',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      await fs.writeFile(path.join(tmpDir, 'oncall.json'), JSON.stringify(rows));
+      await fileManager.readAndEmit();
+
+      const renamed = await fileManager.renameOnCallTeam('Old Team', 'New Team');
+      expect(renamed).toBe(true);
+
+      const afterRename = JSON.parse(await fs.readFile(path.join(tmpDir, 'oncall.json'), 'utf-8'));
+      expect(afterRename[0].team).toBe('New Team');
+
+      const removed = await fileManager.removeOnCallTeam('New Team');
+      expect(removed).toBe(true);
+
+      const afterRemove = JSON.parse(await fs.readFile(path.join(tmpDir, 'oncall.json'), 'utf-8'));
+      expect(afterRemove).toEqual([]);
+    });
+
+    it('reorders teams and writes team layout', async () => {
+      const rows = [
+        {
+          id: 'a1',
+          team: 'Team A',
+          role: 'Primary',
+          name: 'A',
+          contact: 'a@test.com',
+          timeWindow: '24/7',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        {
+          id: 'b1',
+          team: 'Team B',
+          role: 'Primary',
+          name: 'B',
+          contact: 'b@test.com',
+          timeWindow: '24/7',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ];
+
+      await fs.writeFile(path.join(tmpDir, 'oncall.json'), JSON.stringify(rows));
+      await fileManager.readAndEmit();
+
+      const layout = {
+        'Team B': { x: 0, y: 0, w: 6, h: 4 },
+        'Team A': { x: 6, y: 0, w: 6, h: 4 },
+      };
+
+      const success = await fileManager.reorderOnCallTeams(['Team B', 'Team A'], layout);
+      expect(success).toBe(true);
+
+      const onCallContent = JSON.parse(
+        await fs.readFile(path.join(tmpDir, 'oncall.json'), 'utf-8'),
+      );
+      expect(onCallContent[0].team).toBe('Team B');
+
+      const rawLayout = await fs.readFile(path.join(tmpDir, 'oncall_layout.json'), 'utf-8');
+      const layoutContent = JSON.parse(rawLayout.replace(/^\uFEFF/u, ''));
+      expect(layoutContent).toEqual(layout);
+    });
+
+    it('saves all on-call rows', async () => {
+      const rows = [
+        {
+          id: 'x1',
+          team: 'X',
+          role: 'Primary',
+          name: 'Xena',
+          contact: 'x@test.com',
+          timeWindow: '24/7',
+        },
+      ];
+
+      const success = await fileManager.saveAllOnCall(rows);
+      expect(success).toBe(true);
+
+      const content = JSON.parse(await fs.readFile(path.join(tmpDir, 'oncall.json'), 'utf-8'));
+      expect(content).toHaveLength(1);
+      expect(content[0].team).toBe('X');
+    });
+  });
+
+  describe('getCachedData and bundledDataPath', () => {
+    it('exposes bundledDataPath from the underlying service', () => {
+      expect(fileManager.bundledDataPath).toBe(bundledDir);
+    });
+
+    it('getCachedData returns the current cache snapshot', async () => {
+      const cache = fileManager.getCachedData();
+      expect(cache).toBeDefined();
+      // After readAndEmit with no data files the cache should have empty arrays
+      await fileManager.readAndEmit();
+      const afterCache = fileManager.getCachedData();
+      expect(afterCache).toBeDefined();
+    });
+  });
+
+  describe('loadLayout edge cases', () => {
+    it('reads a valid oncall_layout.json from disk', async () => {
+      const layout = { 'Team A': { x: 0, y: 0, w: 6, h: 4 } };
+      await fs.writeFile(path.join(tmpDir, 'oncall_layout.json'), JSON.stringify(layout));
+      await fileManager.readAndEmit();
+      // No error thrown is sufficient — the layout was read
+      const cache = fileManager.getCachedData();
+      expect(cache).toBeDefined();
+    });
+
+    it('handles oncall_layout.json with invalid JSON gracefully', async () => {
+      await fs.writeFile(path.join(tmpDir, 'oncall_layout.json'), 'NOT_JSON!!!');
+      // Should not throw — falls back to empty layout
+      await expect(fileManager.readAndEmit()).resolves.toBeUndefined();
+    });
+
+    it('handles oncall_layout.json with content that fails schema validation', async () => {
+      // Valid JSON but not a valid TeamLayout (not a plain object of widgets)
+      await fs.writeFile(path.join(tmpDir, 'oncall_layout.json'), JSON.stringify([1, 2, 3]));
+      await expect(fileManager.readAndEmit()).resolves.toBeUndefined();
+    });
+  });
+
+  describe('readAndEmit error path', () => {
+    it('does not throw when a data file read fails', async () => {
+      // Write invalid JSON to contacts.json to trigger a parse error inside loadContacts
+      await fs.writeFile(path.join(tmpDir, 'contacts.json'), 'INVALID_JSON');
+      // readAndEmit catches the error internally and should not propagate
+      await expect(fileManager.readAndEmit()).resolves.toBeUndefined();
     });
   });
 

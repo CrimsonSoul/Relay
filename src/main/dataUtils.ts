@@ -1,5 +1,5 @@
-import fsPromises from 'fs/promises';
-import { join } from 'path';
+import fsPromises from 'node:fs/promises';
+import { join } from 'node:path';
 import { app } from 'electron';
 import { loggers } from './logger';
 import { JSON_DATA_FILES } from './operations/FileContext';
@@ -40,7 +40,7 @@ export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string)
     }),
   );
 
-  return results.some((copied) => copied);
+  return results.some(Boolean);
 }
 
 export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {

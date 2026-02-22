@@ -23,9 +23,9 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null):
         external: `${Math.round(memory.external / 1024 / 1024)}MB`,
       });
 
-      if ((global as GlobalWithGC).gc) {
+      if ((globalThis as GlobalWithGC).gc) {
         try {
-          (global as GlobalWithGC).gc();
+          (globalThis as GlobalWithGC).gc();
           loggers.main.info('Triggered manual garbage collection');
         } catch (e) {
           loggers.main.warn('Failed to trigger manual GC', { error: e });

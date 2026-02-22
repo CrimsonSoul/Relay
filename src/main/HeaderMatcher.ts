@@ -3,8 +3,8 @@
  */
 
 export class HeaderMatcher {
-  private headers: string[];
-  private lowerHeaders: string[];
+  private readonly headers: string[];
+  private readonly lowerHeaders: string[];
 
   constructor(headers: string[]) {
     this.headers = headers;

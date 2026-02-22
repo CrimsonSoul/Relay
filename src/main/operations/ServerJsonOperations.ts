@@ -4,7 +4,7 @@
  * Uses cross-process file locking for multi-instance synchronization.
  */
 
-import { join } from 'path';
+import { join } from 'node:path';
 import type { ServerRecord } from '@shared/ipc';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';
@@ -59,19 +59,7 @@ export async function addServerRecord(
           (s) => s.name.toLowerCase() === server.name.toLowerCase(),
         );
 
-        if (existingIndex !== -1) {
-          // Update existing server instead of adding duplicate
-          const now = Date.now();
-          servers[existingIndex] = {
-            ...servers[existingIndex],
-            ...server,
-            updatedAt: now,
-          };
-          result = servers[existingIndex];
-          loggers.fileManager.info(
-            `[ServerJsonOperations] Updated existing server: ${server.name}`,
-          );
-        } else {
+        if (existingIndex === -1) {
           const now = Date.now();
           const newServer: ServerRecord = {
             id: generateId('server'),
@@ -88,7 +76,18 @@ export async function addServerRecord(
           servers.push(newServer);
           result = newServer;
           loggers.fileManager.info(`[ServerJsonOperations] Added server: ${newServer.name}`);
+          return servers;
         }
+
+        // Update existing server instead of adding duplicate
+        const now = Date.now();
+        servers[existingIndex] = {
+          ...servers[existingIndex],
+          ...server,
+          updatedAt: now,
+        };
+        result = servers[existingIndex];
+        loggers.fileManager.info(`[ServerJsonOperations] Updated existing server: ${server.name}`);
         return servers;
       },
       [],

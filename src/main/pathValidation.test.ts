@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { validateDataPath } from './pathValidation';
-import fs from 'fs';
-import fsPromises from 'fs/promises';
-import { join } from 'path';
-import os from 'os';
+import fs from 'node:fs';
+import fsPromises from 'node:fs/promises';
+import { join } from 'node:path';
+import os from 'node:os';
 
 // Mock electron app
 vi.mock('electron', () => ({

@@ -7,6 +7,7 @@
  * a potentially compromised renderer process.
  */
 
+/* eslint-disable sonarjs/deprecation */
 import { z } from 'zod';
 
 // ==================== Size Limits ====================

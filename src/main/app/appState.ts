@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron';
-import { join } from 'path';
+import { join } from 'node:path';
 import { FileManager } from '../FileManager';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
@@ -33,6 +33,11 @@ export const getBundledDataPath = () =>
  */
 let dataRootPromise: Promise<string> | null = null;
 
+/** Reset the cached data root promise (for testing). */
+export function resetDataRootCache() {
+  dataRootPromise = null;
+}
+
 /**
  * Returns the data root path. On the first call, resolves the path from
  * config (async), ensures directories exist, and caches the result in
@@ -44,16 +49,14 @@ export async function getDataRoot(): Promise<string> {
   if (state.currentDataRoot) return state.currentDataRoot;
 
   // Coalesce concurrent callers behind a single promise
-  if (!dataRootPromise) {
-    dataRootPromise = (async () => {
-      const config = await loadConfigAsync();
-      const root = config.dataRoot || getDefaultDataPath();
-      await ensureDataFilesAsync(root);
-      state.currentDataRoot = root;
-      loggers.main.info('Data root resolved', { path: root });
-      return root;
-    })();
-  }
+  dataRootPromise ??= (async () => {
+    const config = await loadConfigAsync();
+    const root = config.dataRoot || getDefaultDataPath();
+    await ensureDataFilesAsync(root);
+    state.currentDataRoot = root;
+    loggers.main.info('Data root resolved', { path: root });
+    return root;
+  })();
 
   return dataRootPromise;
 }
@@ -99,7 +102,7 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
 
 export function setupPermissions(sess: Electron.Session) {
   sess.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
+    const isMainWindow = state.mainWindow?.webContents === webContents;
 
     if (permission === 'geolocation') {
       const requestingOrigin = getSecureOrigin(details.requestingUrl);
@@ -122,7 +125,11 @@ export function setupPermissions(sess: Electron.Session) {
   });
 
   sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    const isMainWindow = state.mainWindow && webContents === state.mainWindow.webContents;
+    const mainWindowOrigin = state.mainWindow
+      ? getSecureOrigin(state.mainWindow.webContents.getURL())
+      : '';
+    const isMainWindow =
+      mainWindowOrigin.length > 0 && getSecureOrigin(requestingOrigin) === mainWindowOrigin;
 
     if (permission === 'geolocation') {
       return !!isMainWindow || isTrustedGeolocationOrigin(requestingOrigin);

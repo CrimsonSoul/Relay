@@ -1,3 +1,4 @@
+export type { WeatherAlert, WeatherData } from '@shared/ipc';
 import type { WeatherAlert, WeatherData } from '@shared/ipc';
 
 export interface Location {
@@ -14,6 +15,3 @@ export interface WeatherTabProps {
   onLocationChange: (loc: Location) => void;
   onManualRefresh: (lat: number, lon: number) => void;
 }
-
-// Re-export for convenience
-export type { WeatherAlert, WeatherData };

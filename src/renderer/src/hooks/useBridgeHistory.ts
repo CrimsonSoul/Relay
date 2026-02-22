@@ -11,7 +11,7 @@ export function useBridgeHistory() {
   const loadHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await window.api?.getBridgeHistory();
+      const data = await globalThis.api?.getBridgeHistory();
       setHistory(data || []);
     } catch (e) {
       loggers.app.error('Failed to load bridge history', { error: e });
@@ -22,12 +22,14 @@ export function useBridgeHistory() {
   }, [showToast]);
 
   useEffect(() => {
-    void loadHistory();
+    loadHistory().catch((error_) => {
+      loggers.app.error('Failed to run initial history load', { error: error_ });
+    });
   }, [loadHistory]);
 
   const addHistory = useCallback(
     async (entry: Omit<BridgeHistoryEntry, 'id' | 'timestamp'>) => {
-      const result = await window.api?.addBridgeHistory(entry);
+      const result = await globalThis.api?.addBridgeHistory(entry);
       if (result) {
         setHistory((prev) => [result, ...prev]);
       } else {
@@ -40,7 +42,7 @@ export function useBridgeHistory() {
 
   const deleteHistory = useCallback(
     async (id: string) => {
-      const success = await window.api?.deleteBridgeHistory(id);
+      const success = await globalThis.api?.deleteBridgeHistory(id);
       if (success) {
         setHistory((prev) => prev.filter((h) => h.id !== id));
         showToast('History entry deleted', 'success');
@@ -53,7 +55,7 @@ export function useBridgeHistory() {
   );
 
   const clearHistory = useCallback(async () => {
-    const success = await window.api?.clearBridgeHistory();
+    const success = await globalThis.api?.clearBridgeHistory();
     if (success) {
       setHistory([]);
       showToast('Bridge history cleared', 'success');

@@ -27,7 +27,7 @@ import { readWithLock } from '../../fileLock';
 // ...
 
 describe('ContactJsonOperations Data Safety', () => {
-  const rootDir = '/tmp/relay-data';
+  const rootDir = require('node:path').join(require('node:os').homedir(), 'relay-data');
 
   beforeEach(() => {
     vi.clearAllMocks();

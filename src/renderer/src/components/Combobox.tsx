@@ -86,29 +86,21 @@ export const Combobox: React.FC<ComboboxProps> = ({
         }}
       />
 
-      {isOpen && (filteredOptions.length > 0 || !value) && (
+      {isOpen && (filteredOptions.length > 0 || value) && (
         <div className="combobox-dropdown">
           {filteredOptions.length > 0 ? (
             filteredOptions.map((opt, idx) => (
-              <div
+              <button
+                type="button"
                 key={`${opt.value}-${idx}`}
-                role="option"
-                aria-selected={false}
-                tabIndex={0}
                 onClick={() => handleSelect(opt.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleSelect(opt.value);
-                  }
-                }}
                 className="combobox-option"
               >
                 <span className="text-truncate">{opt.label}</span>
                 {opt.subLabel && (
                   <span className="text-truncate combobox-option-sublabel">{opt.subLabel}</span>
                 )}
-              </div>
+              </button>
             ))
           ) : (
             <div className="combobox-empty">No matches</div>

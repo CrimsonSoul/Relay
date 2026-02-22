@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-nested-functions */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Location } from '../tabs/weather/types';
 import { getErrorMessage } from '@shared/types';
@@ -18,8 +19,8 @@ export function useWeatherLocation(
 
   const reverseGeocode = useCallback(async (lat: number, lon: number): Promise<string> => {
     try {
-      if (!window.api) return 'Current Location';
-      const data = await window.api.searchLocation(`${lat},${lon}`);
+      if (!globalThis.api) return 'Current Location';
+      const data = await globalThis.api.searchLocation(`${lat},${lon}`);
       if (data.results?.[0]) {
         const { name, admin1, country_code } = data.results[0];
         return `${name}, ${admin1 || ''} ${country_code}`.trim();
@@ -41,7 +42,7 @@ export function useWeatherLocation(
     // 1. Try IP Location (Fast/Reliable)
     const tryIp = async (): Promise<boolean> => {
       try {
-        const data = await window.api?.getIpLocation();
+        const data = await globalThis.api?.getIpLocation();
         if (data?.lat && data?.lon && !foundAny) {
           const lat = Number(Number(data.lat).toFixed(4));
           const lon = Number(Number(data.lon).toFixed(4));
@@ -70,21 +71,26 @@ export function useWeatherLocation(
           return;
         }
 
+        // eslint-disable-next-line sonarjs/no-intrusive-permissions
         navigator.geolocation.getCurrentPosition(
           async (position) => {
             const { latitude, longitude } = position.coords;
             const lat = Number(latitude.toFixed(4));
             const lon = Number(longitude.toFixed(4));
 
-            // GPS is usually more accurate, so we always update if it succeeds
-            const name = await reverseGeocode(lat, lon);
-            const newLoc: Location = { latitude: lat, longitude: lon, name };
-            if (mounted.current) {
-              onLocationChange(newLoc);
-              onManualRefresh(lat, lon);
+            try {
+              const name = await reverseGeocode(lat, lon);
+              const newLoc: Location = { latitude: lat, longitude: lon, name };
+              if (mounted.current) {
+                onLocationChange(newLoc);
+                onManualRefresh(lat, lon);
+              }
+              foundAny = true;
+              resolve(true);
+              // eslint-disable-next-line sonarjs/no-ignored-exceptions
+            } catch (_error) {
+              /* ignore */
             }
-            foundAny = true;
-            resolve(true);
           },
           (err) => {
             loggers.weather.warn('[Weather] GPS location failed', { error: err.message });
@@ -106,19 +112,21 @@ export function useWeatherLocation(
   useEffect(() => {
     if (!location && !loading && !autoLocateAttemptedRef.current) {
       autoLocateAttemptedRef.current = true;
-      void handleAutoLocate();
+      handleAutoLocate().catch((error_) => {
+        loggers.weather.error('[Weather] Auto-locate failed unexpectedly', { error: error_ });
+      });
     }
   }, [location, loading, handleAutoLocate]);
 
   const handleManualSearch = async () => {
     if (!manualInput.trim()) return;
     if (mounted.current) setError(null);
-    if (!window.api) {
+    if (!globalThis.api) {
       if (mounted.current) setError('API not available');
       return;
     }
     try {
-      const data = await window.api.searchLocation(manualInput);
+      const data = await globalThis.api.searchLocation(manualInput);
       if (data.results?.[0]) {
         const { lat, lon, name, admin1, country_code } = data.results[0];
         const label = `${name}, ${admin1 || ''} ${country_code}`.trim();
@@ -132,8 +140,8 @@ export function useWeatherLocation(
           onManualRefresh(newLoc.latitude, newLoc.longitude);
           setManualInput('');
         }
-      } else {
-        if (mounted.current) setError('Location not found. Try a different search term.');
+      } else if (mounted.current) {
+        setError('Location not found. Try a different search term.');
       }
     } catch (err: unknown) {
       if (mounted.current) {

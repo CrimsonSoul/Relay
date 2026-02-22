@@ -5,6 +5,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import globals from 'globals';
+import sonarjs from 'eslint-plugin-sonarjs';
 
 // Shared parser options for all TypeScript files
 const sharedParserOptions = {
@@ -70,6 +71,7 @@ export default [
     ],
   },
   js.configs.recommended,
+  sonarjs.configs.recommended,
 
   // Main process
   {

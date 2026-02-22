@@ -44,7 +44,7 @@ export const SaveLocationModal: React.FC<SaveLocationModalProps> = ({
             onChange={(e) => setSaveAsDefault(e.target.checked)}
             className="weather-mini-modal-checkbox"
           />
-          Set as default location
+          <span>Set as default location</span>
         </label>
         <div className="weather-mini-modal-footer">
           <TactileButton onClick={onClose}>Cancel</TactileButton>

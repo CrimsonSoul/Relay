@@ -19,6 +19,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   isOpen,
   onClose,
   entityType,
+  entityId,
   entityName,
   existingNote,
   onSave,
@@ -28,7 +29,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   const [tags, setTags] = useState<string[]>(existingNote?.tags || []);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const focusTrapRef = useFocusTrap<HTMLDivElement>(isOpen);
+  const focusTrapRef = useFocusTrap<HTMLDialogElement>(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -87,17 +88,18 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="modal-overlay animate-fade-in" role="presentation">
+    <div className="modal-overlay animate-fade-in">
       <button
         type="button"
         className="overlay-hitbox"
         aria-label="Close modal backdrop"
         onClick={onClose}
       />
-      <div
+      <dialog
         ref={focusTrapRef}
+        open
+        data-entity-id={entityId}
         className="modal-container animate-scale-in"
-        role="dialog"
         aria-modal="true"
         aria-labelledby="notes-modal-title"
       >
@@ -203,7 +205,7 @@ export const NotesModal: React.FC<NotesModalProps> = ({
             {saving ? 'Saving...' : 'Save Notes'}
           </button>
         </div>
-      </div>
+      </dialog>
     </div>,
     document.body,
   );

@@ -67,7 +67,7 @@ export function useCommandSearch(
     const lower = query.toLowerCase();
     const results: SearchResult[] = [];
 
-    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.trim());
+    const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s.]{2,}$/.test(query.trim());
     const emailExists = contacts.some((c) => c.email.toLowerCase() === lower);
 
     if (isEmail) {
@@ -98,7 +98,7 @@ export function useCommandSearch(
           id: `group-${group.id}`,
           type: 'group',
           title: group.name,
-          subtitle: `${group.contacts.length} member${group.contacts.length !== 1 ? 's' : ''}`,
+          subtitle: `${group.contacts.length} member${group.contacts.length === 1 ? '' : 's'}`,
           iconType: 'group',
           data: group,
         });

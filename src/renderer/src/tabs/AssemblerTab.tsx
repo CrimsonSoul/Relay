@@ -90,21 +90,36 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Handle copy with auto-save to history (always copies all recipients, not filtered)
   const handleCopyWithHistory = useCallback(() => {
-    void asm.handleCopy();
-    void saveToHistory(
+    asm.handleCopy().catch((error_) => {
+      showToast(
+        `Copy failed: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
+        'error',
+      );
+    });
+    saveToHistory(
       asm.allRecipients.map((l) => l.email),
       selectedGroupNames,
-    );
-  }, [asm, selectedGroupNames, saveToHistory]);
+    ).catch((error_) => {
+      showToast(
+        `Could not save bridge history: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
+        'error',
+      );
+    });
+  }, [asm, selectedGroupNames, saveToHistory, showToast]);
 
   // Handle draft bridge with auto-save to history
   const handleDraftBridgeWithHistory = useCallback(() => {
     asm.executeDraftBridge();
-    void saveToHistory(
+    saveToHistory(
       asm.allRecipients.map((l) => l.email),
       selectedGroupNames,
-    );
-  }, [asm, selectedGroupNames, saveToHistory]);
+    ).catch((error_) => {
+      showToast(
+        `Could not save bridge history: ${error_ instanceof Error ? error_.message : 'unknown error'}`,
+        'error',
+      );
+    });
+  }, [asm, selectedGroupNames, saveToHistory, showToast]);
 
   // Handle loading from history
   const handleLoadFromHistory = useCallback(

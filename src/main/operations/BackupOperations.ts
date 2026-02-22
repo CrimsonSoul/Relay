@@ -1,5 +1,5 @@
-import { join } from 'path';
-import fs from 'fs/promises';
+import { join } from 'node:path';
+import fs from 'node:fs/promises';
 import { loggers } from '../logger';
 import { JSON_DATA_FILES } from './FileContext';
 
@@ -22,6 +22,34 @@ function formatLocalDate(date: Date): string {
  */
 function formatLocalTime(date: Date): string {
   return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+}
+
+/**
+ * Prune backups older than 30 days
+ */
+async function pruneOldBackups(backupDir: string, now: Date): Promise<void> {
+  try {
+    const backups = await fs.readdir(backupDir);
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+
+    for (const dirName of backups) {
+      const match = /^(\d{4}-\d{2}-\d{2})/.exec(dirName);
+      if (match?.[1]) {
+        const [year, month, day] = match[1].split('-').map(Number);
+        if (year !== undefined && month !== undefined && day !== undefined) {
+          const folderDateMs = new Date(year, month - 1, day).getTime();
+          if (todayStart - folderDateMs > THIRTY_DAYS_MS) {
+            const dirPath = join(backupDir, dirName);
+            await fs.rm(dirPath, { recursive: true, force: true });
+            loggers.fileManager.debug(`Pruned old backup: ${dirName}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    loggers.fileManager.error('Failed to prune old backups', { error: err });
+  }
 }
 
 /**
@@ -69,25 +97,7 @@ export async function performBackup(
     }
 
     // Retention Policy: Keep last 30 DAYS worth of data
-    const backups = await fs.readdir(backupDir);
-    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-    for (const dirName of backups) {
-      // Match YYYY-MM-DD_...
-      const match = dirName.match(/^(\d{4}-\d{2}-\d{2})/);
-      if (match) {
-        // Parse folder date as local midnight for consistent comparison
-        const [year, month, day] = match[1].split('-').map(Number);
-        const folderDateMs = new Date(year, month - 1, day).getTime();
-        // Delete if older than 30 days from start of today
-        if (todayStart - folderDateMs > THIRTY_DAYS_MS) {
-          const dirPath = join(backupDir, dirName);
-          await fs.rm(dirPath, { recursive: true, force: true });
-          loggers.fileManager.debug(`Pruned old backup: ${dirName}`);
-        }
-      }
-    }
+    await pruneOldBackups(backupDir, now);
 
     loggers.fileManager.info(`Backup created: ${backupFolderName} (${reason})`);
     return backupPath;

@@ -103,24 +103,20 @@ export function usePersonnel(onCall: OnCallRow[]) {
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
 
     pendingMutationsRef.current++;
-    setLocalOnCall((prev) => {
+
+    const buildReorderedList = (prev: OnCallRow[]) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
-      if (!teamOrder.includes(team)) {
-        return [...prev, ...rows];
-      }
+      if (!teamOrder.includes(team)) return [...prev, ...rows];
       const newFlatList: OnCallRow[] = [];
-      teamOrder.forEach((t) => {
-        if (t === team) {
-          newFlatList.push(...rows);
-        } else {
-          newFlatList.push(...prev.filter((r) => r.team === t));
-        }
-      });
+      for (const t of teamOrder) {
+        newFlatList.push(...(t === team ? rows : prev.filter((r) => r.team === t)));
+      }
       return newFlatList;
-    });
+    };
+    setLocalOnCall(buildReorderedList);
 
     try {
-      const success = await window.api?.updateOnCallTeam(team, rows);
+      const success = await globalThis.api!.updateOnCallTeam(team, rows);
       if (!success) {
         showToast('Failed to save changes', 'error');
       }
@@ -132,7 +128,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
   const handleRemoveTeam = async (team: string) => {
     pendingMutationsRef.current++;
     try {
-      const success = await window.api?.removeOnCallTeam(team);
+      const success = await globalThis.api!.removeOnCallTeam(team);
       if (success) {
         setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
         showToast(`Removed ${team}`, 'success');
@@ -147,7 +143,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
   const handleRenameTeam = async (oldName: string, newName: string) => {
     pendingMutationsRef.current++;
     try {
-      const success = await window.api?.renameOnCallTeam(oldName, newName);
+      const success = await globalThis.api!.renameOnCallTeam(oldName, newName);
       if (success) {
         setLocalOnCall((prev) =>
           prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
@@ -178,18 +174,21 @@ export function usePersonnel(onCall: OnCallRow[]) {
 
     // 2. Perform API calls outside the setter
     try {
-      const success = await window.api?.updateOnCallTeam(name, [initialRow]);
+      const success = await globalThis.api!.updateOnCallTeam(name, [initialRow]);
       if (success) {
         const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
-        await window.api?.reorderOnCallTeams(currentTeams, {});
+        await globalThis.api!.reorderOnCallTeams(currentTeams, {});
         showToast(`Added team ${name}`, 'success');
       } else {
         throw new Error('API call failed');
       }
-    } catch (_err) {
+    } catch (err: unknown) {
       // Rollback local state
       setLocalOnCall((p) => p.filter((r) => r.id !== initialRow.id));
       showToast('Failed to add team', 'error');
+      // Log for diagnostics
+
+      console.warn('[usePersonnel] Failed to add team:', err);
     } finally {
       pendingMutationsRef.current--;
     }
@@ -200,6 +199,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
 
     const currentTeams = [...teams];
     const [movedTeam] = currentTeams.splice(oldIndex, 1);
+    if (movedTeam === undefined) return;
     currentTeams.splice(newIndex, 0, movedTeam);
 
     const newFlatList: OnCallRow[] = [];
@@ -212,7 +212,7 @@ export function usePersonnel(onCall: OnCallRow[]) {
     setLocalOnCall(newFlatList);
 
     try {
-      const success = await window.api?.reorderOnCallTeams(currentTeams, {});
+      const success = await globalThis.api!.reorderOnCallTeams(currentTeams, {});
       if (success) {
         showToast('Teams reordered', 'success');
       } else {

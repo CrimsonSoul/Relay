@@ -81,9 +81,7 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    // The overlay has role="presentation" and class "modal-overlay-generic"
-    const overlay = document.querySelector('.modal-overlay-generic') as HTMLElement;
-    fireEvent.click(overlay);
+    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
     expect(onClose).toHaveBeenCalled();
   });
 

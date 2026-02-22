@@ -45,11 +45,52 @@ export const TeamCard = React.memo(
     const isEmpty =
       teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
 
+    const getMenuItems = (): ContextMenuItem[] => {
+      const copyItems = onCopyTeamInfo
+        ? [
+            {
+              label: 'Copy On-Call Info',
+              onClick: () => onCopyTeamInfo(team, teamRows),
+              icon: (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              ),
+            },
+          ]
+        : [];
+
+      if (isReadOnly) return copyItems;
+
+      return [
+        ...copyItems,
+        { label: 'Edit Team', onClick: () => setIsEditing(true) },
+        { label: 'Rename Team', onClick: () => onRenameTeam(team, team) },
+        {
+          label: 'Remove Team',
+          danger: true,
+          onClick: () => setConfirm({ team, onConfirm: () => onRemoveTeam(team) }),
+        },
+      ];
+    };
+
+    const openMenu = (x: number, y: number) => {
+      setMenu({ x, y, items: getMenuItems() });
+    };
+
     return (
       <>
         <div
-          role="button"
-          tabIndex={0}
           aria-label={`Team: ${team}, ${teamRows.length} members`}
           className={`card-surface team-card-body ${isReadOnly ? 'team-card-body--readonly' : 'lift-on-hover'}`}
           style={
@@ -58,84 +99,6 @@ export const TeamCard = React.memo(
               '--team-color-fill': colorScheme.fill,
             } as React.CSSProperties
           }
-          onContextMenu={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (isReadOnly) {
-              setMenu({
-                x: e.clientX,
-                y: e.clientY,
-                items: [
-                  ...(onCopyTeamInfo
-                    ? [
-                        {
-                          label: 'Copy On-Call Info',
-                          onClick: () => onCopyTeamInfo(team, teamRows),
-                          icon: (
-                            <svg
-                              width="14"
-                              height="14"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                            </svg>
-                          ),
-                        },
-                      ]
-                    : []),
-                ],
-              });
-              return;
-            }
-            setMenu({
-              x: e.clientX,
-              y: e.clientY,
-              items: [
-                ...(onCopyTeamInfo
-                  ? [
-                      {
-                        label: 'Copy On-Call Info',
-                        onClick: () => onCopyTeamInfo(team, teamRows),
-                        icon: (
-                          <svg
-                            width="14"
-                            height="14"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                          </svg>
-                        ),
-                      },
-                    ]
-                  : []),
-                { label: 'Edit Team', onClick: () => setIsEditing(true) },
-                { label: 'Rename Team', onClick: () => onRenameTeam(team, team) },
-                {
-                  label: 'Remove Team',
-                  danger: true,
-                  onClick: () => setConfirm({ team, onConfirm: () => onRemoveTeam(team) }),
-                },
-              ],
-            });
-          }}
-          onKeyDown={(e) => {
-            if (!isReadOnly && (e.key === 'Enter' || e.key === ' ')) {
-              e.preventDefault();
-              setIsEditing(true);
-            }
-          }}
         >
           <div className="team-card-header-row">
             <div className="team-card-name" style={{ color: colorScheme.text }}>
@@ -143,23 +106,28 @@ export const TeamCard = React.memo(
                 <span>{team}</span>
               </Tooltip>
             </div>
+            <button
+              type="button"
+              className="team-card-menu-btn"
+              aria-label={`Open actions for ${team}`}
+              onClick={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                openMenu(rect.left, rect.bottom + 4);
+              }}
+            >
+              ⋮
+            </button>
           </div>
           <div className="team-card-rows">
             {isEmpty ? (
-              <div
-                role={isReadOnly ? undefined : 'button'}
-                tabIndex={isReadOnly ? undefined : 0}
+              <button
+                type="button"
+                disabled={isReadOnly}
                 onClick={() => !isReadOnly && setIsEditing(true)}
-                onKeyDown={(e) => {
-                  if (!isReadOnly && (e.key === 'Enter' || e.key === ' ')) {
-                    e.preventDefault();
-                    setIsEditing(true);
-                  }
-                }}
                 className={`team-card-empty${isReadOnly ? ' team-card-empty--readonly' : ''}`}
               >
                 {isReadOnly ? 'No personnel assigned' : 'Click to assign personnel'}
-              </div>
+              </button>
             ) : (
               teamRows.map((row) => (
                 <TeamRow

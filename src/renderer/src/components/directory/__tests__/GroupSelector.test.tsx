@@ -42,7 +42,7 @@ describe('GroupSelector', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
   });
 
   it('renders group names', () => {

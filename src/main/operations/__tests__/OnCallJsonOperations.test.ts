@@ -37,7 +37,10 @@ import {
 const mockRead = vi.mocked(readWithLock);
 const mockModify = vi.mocked(modifyJsonWithLock);
 
-const rootDir = '/tmp/relay-data';
+import os from 'node:os';
+import path from 'node:path';
+
+const rootDir = path.join(os.homedir(), 'relay-data');
 
 function makeRecord(overrides: Partial<OnCallRecord> = {}): OnCallRecord {
   return {
@@ -97,7 +100,7 @@ describe('OnCallJsonOperations', () => {
 
   describe('addOnCallRecord', () => {
     it('creates record with generated id', async () => {
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([]) as OnCallRecord[];
@@ -115,7 +118,7 @@ describe('OnCallJsonOperations', () => {
       expect(result!.id).toBe('test-id-123');
       expect(result!.team).toBe('TeamB');
       expect(result!.role).toBe('Secondary');
-      expect(captured!).toHaveLength(1);
+      expect(captured).toHaveLength(1);
     });
 
     it('returns null on error', async () => {
@@ -137,7 +140,7 @@ describe('OnCallJsonOperations', () => {
   describe('updateOnCallRecord', () => {
     it('updates by id', async () => {
       const existing = [makeRecord({ id: 'oc1', name: 'Alice' })];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...existing]) as OnCallRecord[];
@@ -146,7 +149,7 @@ describe('OnCallJsonOperations', () => {
       const result = await updateOnCallRecord(rootDir, 'oc1', { name: 'Alicia' });
 
       expect(result).toBe(true);
-      expect(captured![0].name).toBe('Alicia');
+      expect(captured[0]?.name).toBe('Alicia');
     });
 
     it('returns false if not found', async () => {
@@ -164,7 +167,7 @@ describe('OnCallJsonOperations', () => {
   describe('deleteOnCallRecord', () => {
     it('filters by id', async () => {
       const records = [makeRecord({ id: 'oc1' }), makeRecord({ id: 'oc2' })];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -173,8 +176,8 @@ describe('OnCallJsonOperations', () => {
       const result = await deleteOnCallRecord(rootDir, 'oc1');
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('oc2');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('oc2');
     });
 
     it('returns false when id not found', async () => {
@@ -196,7 +199,7 @@ describe('OnCallJsonOperations', () => {
         makeRecord({ id: 'oc2', team: 'TeamA' }),
         makeRecord({ id: 'oc3', team: 'TeamB' }),
       ];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -205,8 +208,8 @@ describe('OnCallJsonOperations', () => {
       const result = await deleteOnCallByTeam(rootDir, 'TeamA');
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('oc3');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('oc3');
     });
 
     it('returns false when team not found', async () => {
@@ -228,7 +231,7 @@ describe('OnCallJsonOperations', () => {
         makeRecord({ id: 'oc2', team: 'TeamB' }),
         makeRecord({ id: 'oc3', team: 'TeamC' }),
       ];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -240,16 +243,16 @@ describe('OnCallJsonOperations', () => {
 
       expect(result).toBe(true);
       // TeamA should still be first, new TeamB record at position 1, TeamC last
-      expect(captured!).toHaveLength(3);
-      expect(captured![0].team).toBe('TeamA');
-      expect(captured![1].team).toBe('TeamB');
-      expect(captured![1].name).toBe('NewBob');
-      expect(captured![2].team).toBe('TeamC');
+      expect(captured).toHaveLength(3);
+      expect(captured[0]?.team).toBe('TeamA');
+      expect(captured[1]?.team).toBe('TeamB');
+      expect(captured[1]?.name).toBe('NewBob');
+      expect(captured[2]?.team).toBe('TeamC');
     });
 
     it('appends to end if team did not exist', async () => {
       const records = [makeRecord({ id: 'oc1', team: 'TeamA' })];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -260,9 +263,9 @@ describe('OnCallJsonOperations', () => {
       ]);
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(2);
-      expect(captured![0].team).toBe('TeamA');
-      expect(captured![1].team).toBe('NewTeam');
+      expect(captured).toHaveLength(2);
+      expect(captured[0]?.team).toBe('TeamA');
+      expect(captured[1]?.team).toBe('NewTeam');
     });
   });
 
@@ -275,7 +278,7 @@ describe('OnCallJsonOperations', () => {
         makeRecord({ id: 'oc2', team: 'OldName' }),
         makeRecord({ id: 'oc3', team: 'Other' }),
       ];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -284,9 +287,9 @@ describe('OnCallJsonOperations', () => {
       const result = await renameOnCallTeamJson(rootDir, 'OldName', 'NewName');
 
       expect(result).toBe(true);
-      expect(captured![0].team).toBe('NewName');
-      expect(captured![1].team).toBe('NewName');
-      expect(captured![2].team).toBe('Other');
+      expect(captured[0]?.team).toBe('NewName');
+      expect(captured[1]?.team).toBe('NewName');
+      expect(captured[2]?.team).toBe('Other');
     });
 
     it('returns false when old name not found', async () => {
@@ -309,7 +312,7 @@ describe('OnCallJsonOperations', () => {
         makeRecord({ id: 'b2', team: 'Bravo' }),
         makeRecord({ id: 'c1', team: 'Charlie' }),
       ];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -318,7 +321,7 @@ describe('OnCallJsonOperations', () => {
       const result = await reorderOnCallTeamsJson(rootDir, ['Charlie', 'Alpha', 'Bravo']);
 
       expect(result).toBe(true);
-      expect(captured!.map((r) => r.id)).toEqual(['c1', 'a1', 'b1', 'b2']);
+      expect(captured.map((r) => r.id)).toEqual(['c1', 'a1', 'b1', 'b2']);
     });
 
     it('appends teams not in order list at the end', async () => {
@@ -327,7 +330,7 @@ describe('OnCallJsonOperations', () => {
         makeRecord({ id: 'b1', team: 'Bravo' }),
         makeRecord({ id: 'c1', team: 'Charlie' }),
       ];
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...records]) as OnCallRecord[];
@@ -336,9 +339,9 @@ describe('OnCallJsonOperations', () => {
       // Only specify Alpha; Bravo and Charlie should be appended
       await reorderOnCallTeamsJson(rootDir, ['Alpha']);
 
-      expect(captured![0].team).toBe('Alpha');
+      expect(captured[0]?.team).toBe('Alpha');
       // Remaining teams appended in their original iteration order
-      expect(captured!).toHaveLength(3);
+      expect(captured).toHaveLength(3);
     });
   });
 
@@ -346,7 +349,7 @@ describe('OnCallJsonOperations', () => {
 
   describe('saveAllOnCallJson', () => {
     it('replaces all records', async () => {
-      let captured: OnCallRecord[] | undefined;
+      let captured: OnCallRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([makeRecord()]) as OnCallRecord[];
@@ -358,10 +361,10 @@ describe('OnCallJsonOperations', () => {
       ]);
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(2);
-      expect(captured![0].team).toBe('X');
-      expect(captured![0].id).toBe('test-id-123');
-      expect(captured![1].team).toBe('Y');
+      expect(captured).toHaveLength(2);
+      expect(captured[0]?.team).toBe('X');
+      expect(captured[0]?.id).toBe('test-id-123');
+      expect(captured[1]?.team).toBe('Y');
     });
 
     it('returns false on error', async () => {

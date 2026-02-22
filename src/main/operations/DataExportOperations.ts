@@ -2,7 +2,7 @@
  * DataExportOperations - Export data to JSON or CSV format
  */
 
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 import { dialog } from 'electron';
 import type {
   ContactRecord,
@@ -151,10 +151,10 @@ function escapeCSV(field: string | number | undefined): string {
   // Prevent formula injection - prefix with single quote inside quotes
   // Guards against =, +, -, @, Tab (0x09), and Carriage Return (0x0D)
   if (/^[=+\-@\t\r]/.test(str)) {
-    return `"'${str.replace(/"/g, '""')}"`;
+    return `"'${str.replaceAll('"', '""')}"`;
   }
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
+    return `"${str.replaceAll('"', '""')}"`;
   }
   return str;
 }
@@ -176,6 +176,60 @@ function getDefaultFilename(category: DataCategory, format: 'json' | 'csv'): str
   return `relay-${category}-${timestamp}.${format}`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ExportHandler<T = any> = {
+  get: (rootDir: string) => Promise<T[]>;
+  toCsv: (data: T[], includeMeta: boolean) => string;
+};
+
+const EXPORT_HANDLERS: Record<string, ExportHandler> = {
+  contacts: { get: getContacts, toCsv: contactsToCsv },
+  servers: { get: getServers, toCsv: serversToCsv },
+  oncall: { get: getOnCall, toCsv: onCallToCsv },
+  groups: { get: getGroups, toCsv: groupsToCsv },
+};
+
+async function generateAllExportContent(
+  rootDir: string,
+  format: 'json' | 'csv',
+  includeMetadata: boolean,
+): Promise<string> {
+  const [contacts, servers, onCall, groups] = await Promise.all([
+    getContacts(rootDir),
+    getServers(rootDir),
+    getOnCall(rootDir),
+    getGroups(rootDir),
+  ]);
+
+  if (format === 'json') {
+    const allData = includeMetadata
+      ? { contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }
+      : {
+          contacts: contacts.map(removeMetadata),
+          servers: servers.map(removeMetadata),
+          onCall: onCall.map(removeMetadata),
+          groups: groups.map(removeMetadata),
+          exportedAt: new Date().toISOString(),
+        };
+
+    return JSON.stringify(allData, null, 2);
+  }
+
+  return [
+    '# CONTACTS',
+    contactsToCsv(contacts, includeMetadata),
+    '',
+    '# SERVERS',
+    serversToCsv(servers, includeMetadata),
+    '',
+    '# ONCALL',
+    onCallToCsv(onCall, includeMetadata),
+    '',
+    '# GROUPS',
+    groupsToCsv(groups, includeMetadata),
+  ].join('\n');
+}
+
 /**
  * Generate export content for a given category and format.
  * Shared logic used by both exportData and exportToPath.
@@ -189,78 +243,18 @@ async function generateExportContent(
   let content: string;
 
   if (category === 'all') {
-    const [contacts, servers, onCall, groups] = await Promise.all([
-      getContacts(rootDir),
-      getServers(rootDir),
-      getOnCall(rootDir),
-      getGroups(rootDir),
-    ]);
-
-    if (format === 'json') {
-      const allData = includeMetadata
-        ? { contacts, servers, onCall, groups, exportedAt: new Date().toISOString() }
-        : {
-            contacts: contacts.map(removeMetadata),
-            servers: servers.map(removeMetadata),
-            onCall: onCall.map(removeMetadata),
-            groups: groups.map(removeMetadata),
-            exportedAt: new Date().toISOString(),
-          };
-
-      content = JSON.stringify(allData, null, 2);
-    } else {
-      // For CSV, create a combined file with sections
-      content = [
-        '# CONTACTS',
-        contactsToCsv(contacts, includeMetadata),
-        '',
-        '# SERVERS',
-        serversToCsv(servers, includeMetadata),
-        '',
-        '# ONCALL',
-        onCallToCsv(onCall, includeMetadata),
-        '',
-        '# GROUPS',
-        groupsToCsv(groups, includeMetadata),
-      ].join('\n');
-    }
+    content = await generateAllExportContent(rootDir, format, includeMetadata);
   } else {
     // Export single category
-    switch (category) {
-      case 'contacts': {
-        const contacts = await getContacts(rootDir);
-        content =
-          format === 'json'
-            ? JSON.stringify(includeMetadata ? contacts : contacts.map(removeMetadata), null, 2)
-            : contactsToCsv(contacts, includeMetadata);
-        break;
-      }
-      case 'servers': {
-        const servers = await getServers(rootDir);
-        content =
-          format === 'json'
-            ? JSON.stringify(includeMetadata ? servers : servers.map(removeMetadata), null, 2)
-            : serversToCsv(servers, includeMetadata);
-        break;
-      }
-      case 'oncall': {
-        const onCall = await getOnCall(rootDir);
-        content =
-          format === 'json'
-            ? JSON.stringify(includeMetadata ? onCall : onCall.map(removeMetadata), null, 2)
-            : onCallToCsv(onCall, includeMetadata);
-        break;
-      }
-      case 'groups': {
-        const groups = await getGroups(rootDir);
-        content =
-          format === 'json'
-            ? JSON.stringify(includeMetadata ? groups : groups.map(removeMetadata), null, 2)
-            : groupsToCsv(groups, includeMetadata);
-        break;
-      }
-      default:
-        throw new Error(`Unknown category: ${category}`);
+    const handler = EXPORT_HANDLERS[category as string];
+    if (!handler) throw new Error(`Unknown category: ${category}`);
+
+    const records = await handler.get(rootDir);
+    if (format === 'json') {
+      const processed = includeMetadata ? records : records.map(removeMetadata);
+      content = JSON.stringify(processed, null, 2);
+    } else {
+      content = handler.toCsv(records, includeMetadata);
     }
   }
 

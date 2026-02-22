@@ -13,6 +13,7 @@ describe('securityPolicy', () => {
   });
 
   it('rejects non-https origins for geolocation trust', () => {
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols
     expect(isTrustedGeolocationOrigin('http://www.rainviewer.com')).toBe(false);
     expect(isTrustedGeolocationOrigin('file:///index.html')).toBe(false);
   });

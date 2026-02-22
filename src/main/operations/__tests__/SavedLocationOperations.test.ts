@@ -34,7 +34,10 @@ import {
 const mockRead = vi.mocked(readWithLock);
 const mockModify = vi.mocked(modifyJsonWithLock);
 
-const rootDir = '/tmp/relay-test';
+import os from 'node:os';
+import path from 'node:path';
+
+const rootDir = path.join(os.homedir(), 'relay-data');
 
 const sampleLocations: SavedLocation[] = [
   { id: 'loc1', name: 'New York', lat: 40.7128, lon: -74.006, isDefault: true },

@@ -186,9 +186,9 @@ describe('BridgeHistoryModal', () => {
     expect(screen.getByText('Clear All')).toBeInTheDocument();
   });
 
-  it('calls onClear after window.confirm for Clear All', () => {
+  it('calls onClear after globalThis.confirm for Clear All', () => {
     const onClear = vi.fn();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
@@ -198,7 +198,7 @@ describe('BridgeHistoryModal', () => {
 
   it('does not call onClear when confirm is cancelled', () => {
     const onClear = vi.fn();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 

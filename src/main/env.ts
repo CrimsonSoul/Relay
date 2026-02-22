@@ -34,6 +34,47 @@ const SCHEMA: EnvSchema = {
   },
 };
 
+function validateTypeAndPattern(
+  key: string,
+  config: EnvSchema[string],
+  value: string,
+  errors: string[],
+) {
+  if (config.type === 'number' && Number.isNaN(Number(value))) {
+    errors.push(`Environment variable ${key} must be a number, got: ${value}`);
+  } else if (
+    config.type === 'boolean' &&
+    !['true', 'false', '1', '0'].includes(value.toLowerCase())
+  ) {
+    errors.push(`Environment variable ${key} must be a boolean, got: ${value}`);
+  }
+  if (config.pattern && !config.pattern.test(value)) {
+    errors.push(`Environment variable ${key} does not match required pattern`);
+  }
+  if (config.validate && !config.validate(value)) {
+    errors.push(`Environment variable ${key} failed custom validation`);
+  }
+}
+
+function validateSingleEnv(
+  key: string,
+  config: EnvSchema[string],
+  value: string | undefined,
+  errors: string[],
+): void {
+  if (config.required && value === undefined) {
+    errors.push(`Missing required environment variable: ${key}`);
+    return;
+  }
+  if (value === undefined && config.defaultValue !== undefined) {
+    process.env[key] = String(config.defaultValue);
+    return;
+  }
+  if (value !== undefined) {
+    validateTypeAndPattern(key, config, value, errors);
+  }
+}
+
 /**
  * Validates process.env against the defined schema.
  * Sets default values for missing variables and logs warnings for invalid ones.
@@ -42,41 +83,7 @@ export function validateEnv(): void {
   const errors: string[] = [];
 
   for (const [key, config] of Object.entries(SCHEMA)) {
-    let value = process.env[key];
-
-    // Check if required
-    if (config.required && value === undefined) {
-      errors.push(`Missing required environment variable: ${key}`);
-      continue;
-    }
-
-    // Set default value if missing
-    if (value === undefined && config.defaultValue !== undefined) {
-      process.env[key] = String(config.defaultValue);
-      continue;
-    }
-
-    if (value !== undefined) {
-      // Type validation
-      if (config.type === 'number' && isNaN(Number(value))) {
-        errors.push(`Environment variable ${key} must be a number, got: ${value}`);
-      } else if (
-        config.type === 'boolean' &&
-        !['true', 'false', '1', '0'].includes(value.toLowerCase())
-      ) {
-        errors.push(`Environment variable ${key} must be a boolean, got: ${value}`);
-      }
-
-      // Pattern validation
-      if (config.pattern && !config.pattern.test(value)) {
-        errors.push(`Environment variable ${key} does not match required pattern`);
-      }
-
-      // Custom validation
-      if (config.validate && !config.validate(value)) {
-        errors.push(`Environment variable ${key} failed custom validation`);
-      }
-    }
+    validateSingleEnv(key, config, process.env[key], errors);
   }
 
   if (errors.length > 0) {

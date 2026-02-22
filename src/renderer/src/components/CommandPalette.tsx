@@ -46,7 +46,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLUListElement>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -156,16 +156,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="command-palette-overlay animate-fade-in" role="presentation">
+    <div className="command-palette-overlay animate-fade-in">
       <button
         type="button"
         className="overlay-hitbox"
         aria-label="Close command palette backdrop"
         onClick={onClose}
       />
-      <div
+      <dialog
+        open
         className="command-palette-container animate-slide-down"
-        role="dialog"
         aria-modal="true"
         aria-label="Command palette"
       >
@@ -196,52 +196,44 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               placeholder="Search contacts, groups..."
               className="command-palette-input"
               aria-label="Search command palette"
-              aria-controls="command-palette-listbox"
-              aria-activedescendant={
-                results.length > 0 ? `command-result-${selectedIndex}` : undefined
-              }
             />
             <div className="command-palette-esc-badge">ESC</div>
           </div>
         </div>
 
         {/* Results */}
-        <div
-          ref={resultsRef}
-          className="command-palette-results"
-          role="listbox"
-          id="command-palette-listbox"
-        >
+        <ul ref={resultsRef} className="command-palette-results">
           {results.length === 0 ? (
-            <div className="command-palette-empty">No results found</div>
+            <li className="command-palette-empty">No results found</li>
           ) : (
             results.map((result, index) => (
-              <div
+              <li
                 key={result.id}
                 data-index={index}
                 id={`command-result-${index}`}
-                onClick={() => handleSelect(result)}
-                onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && handleSelect(result)}
                 className={`command-palette-result-item ${index === selectedIndex ? 'is-selected' : ''}`}
                 onMouseEnter={() => setSelectedIndex(index)}
-                role="option"
-                aria-selected={index === selectedIndex}
-                tabIndex={0}
               >
-                <div className="command-palette-result-icon">
-                  <RenderIcon result={result} />
-                </div>
-                <div className="command-palette-result-info">
-                  <div className="command-palette-result-title">{result.title}</div>
-                  {result.subtitle && (
-                    <div className="command-palette-result-subtitle">{result.subtitle}</div>
-                  )}
-                </div>
-                <div className="command-palette-result-type">{result.type}</div>
-              </div>
+                <button
+                  type="button"
+                  onClick={() => handleSelect(result)}
+                  className="command-palette-result-button"
+                >
+                  <div className="command-palette-result-icon">
+                    <RenderIcon result={result} />
+                  </div>
+                  <div className="command-palette-result-info">
+                    <div className="command-palette-result-title">{result.title}</div>
+                    {result.subtitle && (
+                      <div className="command-palette-result-subtitle">{result.subtitle}</div>
+                    )}
+                  </div>
+                  <div className="command-palette-result-type">{result.type}</div>
+                </button>
+              </li>
             ))
           )}
-        </div>
+        </ul>
 
         {/* Footer */}
         <div className="command-palette-footer">
@@ -255,7 +247,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <kbd className="kbd-key">esc</kbd> Close
           </span>
         </div>
-      </div>
+      </dialog>
     </div>,
     document.body,
   );

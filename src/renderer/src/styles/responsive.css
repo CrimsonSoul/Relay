@@ -52,10 +52,6 @@
   }
 
   .world-clock-secondary {
-    gap: 8px !important;
-  }
-
-  .world-clock-secondary {
     display: none !important;
   }
 }

@@ -33,19 +33,19 @@ export function useRadar(location: Location | null) {
       timeouts.add(timeout);
     };
 
+    const injectJs = () =>
+      webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {
+        /* webview may be destroyed */
+      });
+
     const applyCustomizations = () => {
       // Webview injection can fail if the webview is destroyed or navigating -- safe to ignore
       webview.insertCSS(RADAR_INJECT_CSS).catch(() => {
         /* webview may be destroyed */
       });
-      webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {
-        /* webview may be destroyed */
-      });
-      schedule(() => {
-        webview.executeJavaScript(RADAR_INJECT_JS).catch(() => {
-          /* webview may be destroyed */
-        });
-      }, 500);
+      void injectJs();
+      // Second pass after navigation settles
+      schedule(injectJs, 500);
     };
 
     const handleDidFailLoad = (e: Electron.DidFailLoadEvent) => {
@@ -68,8 +68,8 @@ export function useRadar(location: Location | null) {
             loggers.weather.info(`Retrying radar load (attempt ${retries + 1})...`);
             try {
               webview.reload();
-            } catch (_error) {
-              /* noop */
+            } catch (reloadError) {
+              loggers.weather.debug('Radar reload failed', { error: reloadError });
             }
           },
           1500 * (retries + 1),

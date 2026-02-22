@@ -24,12 +24,16 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   });
   const [isActive, setIsActive] = useState(false);
 
+  let computeZIndex: number | 'auto' = 'auto';
+  if (isDragging) computeZIndex = 1000;
+  else if (isActive) computeZIndex = 100;
+
   const style = {
     transform: CSS.Translate.toString(transform),
     transition,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative' as const,
-    zIndex: isDragging ? 1000 : isActive ? 100 : 'auto',
+    zIndex: computeZIndex,
     scale: isDragging ? '1.02' : '1',
     boxShadow: isDragging ? 'var(--shadow-xl)' : 'none',
     marginBottom: '8px',
@@ -38,7 +42,7 @@ export const SortableEditRow: React.FC<SortableEditRowProps> = ({
   const handleNameChange = (val: string) => {
     const nextRow = { ...row, name: val };
     const match = contacts.find((c) => c.name.toLowerCase() === val.toLowerCase());
-    if (match && match.phone) nextRow.contact = formatPhoneNumber(match.phone);
+    if (match?.phone) nextRow.contact = formatPhoneNumber(match.phone);
     onUpdate(nextRow);
   };
 

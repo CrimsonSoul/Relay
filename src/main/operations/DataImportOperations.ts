@@ -3,7 +3,7 @@
  */
 
 import { dialog } from 'electron';
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 import type {
   ContactRecord,
   ServerRecord,
@@ -22,6 +22,11 @@ import { parseCsvAsync, desanitizeField } from '../csvUtils';
 import { HeaderMatcher } from '../HeaderMatcher';
 import { CONTACT_COLUMN_ALIASES, SERVER_COLUMN_ALIASES } from '@shared/csvTypes';
 import { loggers } from '../logger';
+
+export type ImportedContact = Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>;
+export type ImportedServer = Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>;
+export type ImportedOnCall = Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>;
+export type ImportedBridgeGroup = Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>;
 
 // Maximum number of records allowed in a single import
 const MAX_IMPORT_RECORDS = 100000;
@@ -48,27 +53,31 @@ function detectFormat(content: string): 'json' | 'csv' {
   return 'csv';
 }
 
+/** Safely coerce an unknown field to string, avoiding [object Object] stringification. */
+function strVal(val: unknown): string {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+  return '';
+}
+
 /**
  * Parse contacts from JSON with validation
  */
 /**
  * Validate and normalize an array of contact records
  */
-function validateContactRecords(
-  records: unknown[],
-): Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function validateContactRecords(records: unknown[]): ImportedContact[] {
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
 
-  const validRecords: Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+  const validRecords: ImportedContact[] = [];
   const invalidEmails: string[] = [];
   const invalidPhones: string[] = [];
 
   for (const r of records as Record<string, unknown>[]) {
-    const email = String(r.email || '')
-      .toLowerCase()
-      .trim();
+    const email = strVal(r.email).toLowerCase().trim();
     if (!email) continue; // Skip records without email
 
     if (!isValidEmail(email)) {
@@ -76,17 +85,17 @@ function validateContactRecords(
       continue;
     }
 
-    const rawPhone = String(r.phone || '');
+    const rawPhone = strVal(r.phone);
     const phone = rawPhone && !isValidPhone(rawPhone) ? '' : rawPhone;
     if (rawPhone && !phone) {
       invalidPhones.push(rawPhone);
     }
 
     validRecords.push({
-      name: String(r.name || ''),
+      name: strVal(r.name),
       email,
       phone,
-      title: String(r.title || ''),
+      title: strVal(r.title),
     });
   }
 
@@ -104,14 +113,12 @@ function validateContactRecords(
   return validRecords;
 }
 
-function parseContactsJson(
-  content: string,
-): Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function parseContactsJson(content: string): ImportedContact[] {
   const data = safeJsonParse(content, 'contacts');
   const records = Array.isArray(data) ? data : (data as Record<string, unknown>).contacts || [];
 
   if (!Array.isArray(records)) {
-    throw new Error('Invalid contacts data: expected an array');
+    throw new TypeError('Invalid contacts data: expected an array');
   }
 
   return validateContactRecords(records);
@@ -120,13 +127,11 @@ function parseContactsJson(
 /**
  * Parse contacts from CSV
  */
-async function parseContactsCsv(
-  content: string,
-): Promise<Omit<ContactRecord, 'id' | 'createdAt' | 'updatedAt'>[]> {
+async function parseContactsCsv(content: string): Promise<ImportedContact[]> {
   const data = await parseCsvAsync(content);
   if (data.length < 2) return [];
 
-  const header = data[0].map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
+  const header = data[0]!.map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
   const rows = data.slice(1);
   const matcher = new HeaderMatcher(header);
 
@@ -169,32 +174,30 @@ async function parseContactsCsv(
 /**
  * Validate and normalize an array of server records
  */
-function validateServerRecords(
-  records: unknown[],
-): Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function validateServerRecords(records: unknown[]): ImportedServer[] {
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
 
   return (records as Record<string, unknown>[])
     .map((r) => ({
-      name: String(r.name || '').trim(),
-      businessArea: String(r.businessArea || r['business area'] || ''),
-      lob: String(r.lob || ''),
-      comment: String(r.comment || ''),
-      owner: String(r.owner || ''),
-      contact: String(r.contact || ''),
-      os: String(r.os || ''),
+      name: strVal(r.name).trim(),
+      businessArea: strVal(r.businessArea || r['business area']),
+      lob: strVal(r.lob),
+      comment: strVal(r.comment),
+      owner: strVal(r.owner),
+      contact: strVal(r.contact),
+      os: strVal(r.os),
     }))
     .filter((s) => s.name); // Must have name
 }
 
-function parseServersJson(content: string): Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function parseServersJson(content: string): ImportedServer[] {
   const data = safeJsonParse(content, 'servers');
   const records = Array.isArray(data) ? data : (data as Record<string, unknown>).servers || [];
 
   if (!Array.isArray(records)) {
-    throw new Error('Invalid servers data: expected an array');
+    throw new TypeError('Invalid servers data: expected an array');
   }
 
   return validateServerRecords(records);
@@ -203,13 +206,11 @@ function parseServersJson(content: string): Omit<ServerRecord, 'id' | 'createdAt
 /**
  * Parse servers from CSV
  */
-async function parseServersCsv(
-  content: string,
-): Promise<Omit<ServerRecord, 'id' | 'createdAt' | 'updatedAt'>[]> {
+async function parseServersCsv(content: string): Promise<ImportedServer[]> {
   const data = await parseCsvAsync(content);
   if (data.length < 2) return [];
 
-  const header = data[0].map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
+  const header = data[0]!.map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
   const rows = data.slice(1);
   const matcher = new HeaderMatcher(header);
 
@@ -241,32 +242,33 @@ async function parseServersCsv(
 /**
  * Validate and normalize an array of on-call records
  */
-function validateOnCallRecords(
-  records: unknown[],
-): Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function validateOnCallRecords(records: unknown[]): ImportedOnCall[] {
   if (records.length > MAX_IMPORT_RECORDS) {
     throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
 
   return (records as Record<string, unknown>[])
     .map((r) => ({
-      team: String(r.team || '').trim(),
-      role: String(r.role || ''),
-      name: String(r.name || ''),
-      contact: String(r.contact || ''),
-      timeWindow: r.timeWindow ? String(r.timeWindow) : undefined,
+      team: strVal(r.team).trim(),
+      role: strVal(r.role),
+      name: strVal(r.name),
+      contact: strVal(r.contact),
+      timeWindow:
+        r.timeWindow !== undefined && r.timeWindow !== null
+          ? strVal(r.timeWindow) || undefined
+          : undefined,
     }))
     .filter((r) => r.team); // Must have team
 }
 
-function parseOnCallJson(content: string): Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[] {
+function parseOnCallJson(content: string): ImportedOnCall[] {
   const data = safeJsonParse(content, 'on-call');
   const records = Array.isArray(data)
     ? data
     : (data as Record<string, unknown>).onCall || (data as Record<string, unknown>).oncall || [];
 
   if (!Array.isArray(records)) {
-    throw new Error('Invalid on-call data: expected an array');
+    throw new TypeError('Invalid on-call data: expected an array');
   }
 
   return validateOnCallRecords(records);
@@ -275,13 +277,11 @@ function parseOnCallJson(content: string): Omit<OnCallRecord, 'id' | 'createdAt'
 /**
  * Parse on-call from CSV
  */
-async function parseOnCallCsv(
-  content: string,
-): Promise<Omit<OnCallRecord, 'id' | 'createdAt' | 'updatedAt'>[]> {
+async function parseOnCallCsv(content: string): Promise<ImportedOnCall[]> {
   const data = await parseCsvAsync(content);
   if (data.length < 2) return [];
 
-  const header = data[0].map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
+  const header = data[0]!.map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
   const rows = data.slice(1);
 
   const teamIdx = header.indexOf('team');
@@ -310,22 +310,22 @@ async function parseOnCallCsv(
 /**
  * Parse groups from JSON with validation
  */
-function parseGroupsJson(content: string): Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>[] {
+function parseGroupsJson(content: string): ImportedBridgeGroup[] {
   const data = safeJsonParse(content, 'groups');
   const records = Array.isArray(data) ? data : (data as Record<string, unknown>).groups || [];
 
   if (!Array.isArray(records)) {
-    throw new Error('Invalid groups data: expected an array');
+    throw new TypeError('Invalid groups data: expected an array');
   }
   if (records.length > MAX_IMPORT_RECORDS) {
-    throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
+    throw new TypeError(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
 
   return (records as Record<string, unknown>[])
     .map((r) => ({
-      name: String(r.name || '').trim(),
+      name: strVal(r.name).trim(),
       contacts: Array.isArray(r.contacts)
-        ? r.contacts.map((c) => String(c).toLowerCase().trim()).filter(Boolean)
+        ? r.contacts.map((c) => strVal(c).toLowerCase().trim()).filter(Boolean)
         : [],
     }))
     .filter((g) => g.name); // Must have name
@@ -334,13 +334,11 @@ function parseGroupsJson(content: string): Omit<BridgeGroup, 'id' | 'createdAt' 
 /**
  * Parse groups from CSV
  */
-async function parseGroupsCsv(
-  content: string,
-): Promise<Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>[]> {
+async function parseGroupsCsv(content: string): Promise<ImportedBridgeGroup[]> {
   const data = await parseCsvAsync(content);
   if (data.length < 2) return [];
 
-  const header = data[0].map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
+  const header = data[0]!.map((h: string) => desanitizeField(String(h).trim().toLowerCase()));
   const rows = data.slice(1);
 
   const nameIdx = header.findIndex((h) => h === 'name' || h === 'group' || h === 'group_name');
@@ -379,8 +377,9 @@ async function parseGroupsCsv(
   // Standard format: name, contacts (semicolon-separated)
   return rows
     .map((row: string[]) => {
-      const name = nameIdx !== -1 ? desanitizeField(row[nameIdx] || '').trim() : '';
-      const contactsStr = contactsIdx !== -1 ? desanitizeField(row[contactsIdx] || '') : '';
+      const name = nameIdx >= 0 ? desanitizeField(row[nameIdx] ?? '').trim() : '';
+      const contactsStr =
+        nameIdx >= 0 && contactsIdx >= 0 ? desanitizeField(row[contactsIdx] ?? '') : '';
       const contacts = contactsStr
         .split(/[;,]/)
         .map((c) => c.trim().toLowerCase())
@@ -388,6 +387,77 @@ async function parseGroupsCsv(
       return { name, contacts };
     })
     .filter((g) => g.name && g.contacts.length > 0);
+}
+
+/**
+ * Merge a upsert result into the aggregated import result.
+ */
+function mergeUpsertResult(
+  target: ImportResult,
+  source: { imported: number; updated: number; errors: string[] },
+  prefix: string,
+) {
+  target.imported += source.imported;
+  target.updated += source.updated;
+  target.errors.push(...source.errors.map((e) => `[${prefix}] ${e}`));
+}
+
+/**
+ * Save groups, skipping ones that already exist by name.
+ */
+async function processGroups(
+  rootDir: string,
+  groups: ImportedBridgeGroup[],
+  result: ImportResult,
+): Promise<void> {
+  const existing = await getGroups(rootDir);
+  const existingNames = new Set(existing.map((g) => g.name.toLowerCase()));
+  for (const record of groups) {
+    if (existingNames.has(record.name.toLowerCase())) {
+      result.skipped++;
+    } else {
+      const saved = await saveGroup(rootDir, record);
+      if (saved) result.imported++;
+      else result.errors.push(`Failed to save group: ${record.name}`);
+    }
+  }
+}
+
+/**
+ * Handle 'all' category imports to reduce processImportContent complexity.
+ */
+async function processImportAll(
+  rootDir: string,
+  content: string,
+  result: ImportResult,
+): Promise<void> {
+  const data = JSON.parse(content);
+
+  if (data.contacts && Array.isArray(data.contacts)) {
+    mergeUpsertResult(
+      result,
+      await bulkUpsertContacts(rootDir, validateContactRecords(data.contacts)),
+      'contacts',
+    );
+  }
+  if (data.servers && Array.isArray(data.servers)) {
+    mergeUpsertResult(
+      result,
+      await bulkUpsertServers(rootDir, validateServerRecords(data.servers)),
+      'servers',
+    );
+  }
+  if (data.onCall && Array.isArray(data.onCall)) {
+    mergeUpsertResult(
+      result,
+      await bulkUpsertOnCall(rootDir, validateOnCallRecords(data.onCall)),
+      'oncall',
+    );
+  }
+  if (data.groups && Array.isArray(data.groups)) {
+    const validatedGroups = data.groups as ImportedBridgeGroup[];
+    await processGroups(rootDir, validatedGroups, result);
+  }
 }
 
 /**
@@ -441,74 +511,15 @@ async function processImportContent(
     }
     case 'groups': {
       const records = format === 'json' ? parseGroupsJson(content) : await parseGroupsCsv(content);
-
-      const existingGroups = await getGroups(rootDir);
-      const existingNames = new Set(existingGroups.map((g) => g.name.toLowerCase()));
-
-      for (const record of records) {
-        if (existingNames.has(record.name.toLowerCase())) {
-          result.skipped++;
-        } else {
-          const saved = await saveGroup(rootDir, record);
-          if (saved) {
-            result.imported++;
-          } else {
-            result.errors.push(`Failed to save group: ${record.name}`);
-          }
-        }
-      }
+      await processGroups(rootDir, records, result);
       break;
     }
     case 'all': {
-      // For "all", we expect a JSON file with all categories
       if (format !== 'json') {
         result.errors.push('Import all requires a JSON file');
         return result;
       }
-
-      const data = JSON.parse(content);
-
-      if (data.contacts && Array.isArray(data.contacts)) {
-        const validated = validateContactRecords(data.contacts);
-        const contactResult = await bulkUpsertContacts(rootDir, validated);
-        result.imported += contactResult.imported;
-        result.updated += contactResult.updated;
-        result.errors.push(...contactResult.errors.map((e: string) => `[contacts] ${e}`));
-      }
-
-      if (data.servers && Array.isArray(data.servers)) {
-        const validated = validateServerRecords(data.servers);
-        const serverResult = await bulkUpsertServers(rootDir, validated);
-        result.imported += serverResult.imported;
-        result.updated += serverResult.updated;
-        result.errors.push(...serverResult.errors.map((e: string) => `[servers] ${e}`));
-      }
-
-      if (data.onCall && Array.isArray(data.onCall)) {
-        const validated = validateOnCallRecords(data.onCall);
-        const onCallResult = await bulkUpsertOnCall(rootDir, validated);
-        result.imported += onCallResult.imported;
-        result.updated += onCallResult.updated;
-        result.errors.push(...onCallResult.errors.map((e: string) => `[oncall] ${e}`));
-      }
-
-      if (data.groups && Array.isArray(data.groups)) {
-        const existingGroups = await getGroups(rootDir);
-        const existingNames = new Set(existingGroups.map((g: BridgeGroup) => g.name.toLowerCase()));
-
-        for (const record of data.groups) {
-          if (existingNames.has(record.name.toLowerCase())) {
-            result.skipped++;
-          } else {
-            const saved = await saveGroup(rootDir, record);
-            if (saved) {
-              result.imported++;
-            } else {
-              result.errors.push(`[groups] Failed to save group: ${record.name}`);
-            }
-          }
-        }
-      }
+      await processImportAll(rootDir, content, result);
       break;
     }
     default:

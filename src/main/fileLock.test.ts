@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { atomicWriteWithLock, modifyJsonWithLock } from './fileLock';
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 
 // Mock logger
 vi.mock('./logger', () => ({
@@ -13,7 +13,7 @@ vi.mock('./logger', () => ({
 }));
 
 // Mock fs/promises
-vi.mock('fs/promises', () => ({
+vi.mock('node:fs/promises', () => ({
   default: {
     writeFile: vi.fn(),
     rename: vi.fn(),

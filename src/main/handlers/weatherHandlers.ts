@@ -1,3 +1,4 @@
+/* global RequestInit */
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { SearchQuerySchema } from '@shared/ipcValidation';
@@ -38,14 +39,21 @@ export function setupWeatherHandlers() {
       const nLat = Number(lat);
       const nLon = Number(lon);
 
-      if (isNaN(nLat) || isNaN(nLon) || nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) {
+      if (
+        Number.isNaN(nLat) ||
+        Number.isNaN(nLon) ||
+        nLat < -90 ||
+        nLat > 90 ||
+        nLon < -180 ||
+        nLon > 180
+      ) {
         loggers.weather.warn('Invalid coordinates for weather fetch', { lat, lon });
         throw new Error('Invalid coordinates');
       }
 
       const res = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16&timezone=auto`,
-        { cache: 'no-store' },
+        { cache: 'no-store' } as RequestInit,
       );
       if (!res.ok) throw new Error('Failed to fetch weather data');
       return await res.json();
@@ -93,8 +101,8 @@ export function setupWeatherHandlers() {
                 results: [
                   {
                     name: place['place name'],
-                    lat: parseFloat(place.latitude),
-                    lon: parseFloat(place.longitude),
+                    lat: Number.parseFloat(place.latitude),
+                    lon: Number.parseFloat(place.longitude),
                     admin1: place.state,
                     country_code: 'US',
                   },
@@ -102,9 +110,10 @@ export function setupWeatherHandlers() {
               };
             }
           }
-        } catch (_err) {
+        } catch (error_) {
           loggers.weather.warn('Zip code search failed, falling back to general search', {
             query: trimmedQuery,
+            error: error_,
           });
         }
       }
@@ -118,17 +127,22 @@ export function setupWeatherHandlers() {
         return await res.json();
       };
 
-      let data = await fetchResults(trimmedQuery);
+      let data = (await fetchResults(trimmedQuery)) as {
+        results?: Array<{ name: string; latitude: number; longitude: number }>;
+      };
 
       // Fallback for "City, State" format if no results
-      if ((!data.results || data.results.length === 0) && trimmedQuery.includes(',')) {
-        const cityPart = trimmedQuery.split(',')[0].trim();
+      if ((!data?.results || data?.results?.length === 0) && trimmedQuery.includes(',')) {
+        const cityPart = trimmedQuery.split(',')[0]?.trim();
         if (cityPart) {
           loggers.weather.info('Retrying search with city part only', {
             original: trimmedQuery,
             cityPart,
           });
-          data = await fetchResults(cityPart);
+          let cityData = await fetchResults(cityPart);
+          data = cityData as {
+            results?: Array<{ name: string; latitude: number; longitude: number }>;
+          };
         }
       }
 
@@ -151,7 +165,14 @@ export function setupWeatherHandlers() {
       const nLat = Number(lat);
       const nLon = Number(lon);
 
-      if (isNaN(nLat) || isNaN(nLon) || nLat < -90 || nLat > 90 || nLon < -180 || nLon > 180) {
+      if (
+        Number.isNaN(nLat) ||
+        Number.isNaN(nLon) ||
+        nLat < -90 ||
+        nLat > 90 ||
+        nLon < -180 ||
+        nLon > 180
+      ) {
         loggers.weather.warn('Invalid coordinates for alerts fetch', { lat, lon });
         return [];
       }

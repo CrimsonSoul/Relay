@@ -50,7 +50,7 @@ export const Input: React.FC<InputProps> = ({
     e.stopPropagation();
     if (innerRef.current) {
       const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
+        globalThis.HTMLInputElement.prototype,
         'value',
       )?.set;
       nativeInputValueSetter?.call(innerRef.current, '');

@@ -128,7 +128,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
   const filtered = filters.filteredItems;
 
-  const { handleListKeyDown } = useDirectoryKeyboard({
+  useDirectoryKeyboard({
     listRef,
     filtered,
     focusedIndex: dir.focusedIndex,
@@ -142,8 +142,8 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   useEffect(() => {
     if (contextMenu) {
       const handler = () => setContextMenu(null);
-      window.addEventListener('click', handler);
-      return () => window.removeEventListener('click', handler);
+      globalThis.addEventListener('click', handler);
+      return () => globalThis.removeEventListener('click', handler);
     }
   }, [contextMenu, setContextMenu]);
 
@@ -286,14 +286,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             />
           )}
 
-          <div
-            ref={listContainerRef}
-            onKeyDown={handleListKeyDown}
-            role="listbox"
-            aria-label="Contacts list"
-            tabIndex={0}
-            className="tab-list-container"
-          >
+          <div ref={listContainerRef} aria-label="Contacts list" className="tab-list-container">
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List

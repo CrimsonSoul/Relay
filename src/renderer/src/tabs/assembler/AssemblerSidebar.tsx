@@ -29,7 +29,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   onSaveGroup,
   onUpdateGroup,
   onDeleteGroup,
-  onImportFromCsv,
+  onImportFromCsv: _onImportFromCsv,
   currentEmails = [],
 }) => {
   const [groupContextMenu, setGroupContextMenu] = useState<{
@@ -37,9 +37,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     y: number;
     group: BridgeGroup;
   } | null>(null);
-  const [sidebarContextMenu, setSidebarContextMenu] = useState<{ x: number; y: number } | null>(
-    null,
-  );
   const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
   const [groupToRename, setGroupToRename] = useState<BridgeGroup | null>(null);
 
@@ -59,13 +56,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
     },
     [groups],
   );
-
-  const handleSidebarContextMenu = useCallback((e: React.MouseEvent) => {
-    // Only trigger if clicking on the sidebar background, not on items
-    if ((e.target as HTMLElement).closest('button')) return;
-    e.preventDefault();
-    setSidebarContextMenu({ x: e.clientX, y: e.clientY });
-  }, []);
 
   const handleSaveNewGroup = useCallback(
     async (name: string) => {
@@ -131,7 +121,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
 
   return (
     <>
-      <div onContextMenu={handleSidebarContextMenu} className="assembler-sidebar">
+      <div className="assembler-sidebar">
         <div className="assembler-sidebar-inner">
           <div className="assembler-sidebar-panel">
             <div className="assembler-sidebar-groups">
@@ -210,7 +200,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             {
               label: 'Update with Current',
               onClick: () => {
-                void handleUpdateGroupWithCurrent(groupContextMenu.group);
+                handleUpdateGroupWithCurrent(groupContextMenu.group).catch((error_) => {
+                  loggers.app.error('[AssemblerSidebar] Failed to update group with current', {
+                    error: error_,
+                  });
+                });
                 setGroupContextMenu(null);
               },
               icon: (
@@ -256,7 +250,9 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             {
               label: 'Delete Group',
               onClick: () => {
-                void handleDeleteGroup(groupContextMenu.group);
+                handleDeleteGroup(groupContextMenu.group).catch((error_) => {
+                  loggers.app.error('[AssemblerSidebar] Failed to delete group', { error: error_ });
+                });
                 setGroupContextMenu(null);
               },
               danger: true,
@@ -273,62 +269,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                 >
                   <polyline points="3 6 5 6 21 6"></polyline>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-              ),
-            },
-          ]}
-        />
-      )}
-
-      {/* Sidebar context menu */}
-      {sidebarContextMenu && (
-        <ContextMenu
-          x={sidebarContextMenu.x}
-          y={sidebarContextMenu.y}
-          onClose={() => setSidebarContextMenu(null)}
-          items={[
-            {
-              label: 'Create New Group',
-              onClick: () => {
-                setIsSaveGroupOpen(true);
-                setSidebarContextMenu(null);
-              },
-              icon: (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19"></line>
-                  <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-              ),
-            },
-            {
-              label: 'Import from CSV',
-              onClick: () => {
-                void onImportFromCsv();
-                setSidebarContextMenu(null);
-              },
-              icon: (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="7 10 12 15 17 10" />
-                  <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
               ),
             },

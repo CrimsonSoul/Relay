@@ -11,7 +11,7 @@ export function useGroups() {
   const loadGroups = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await window.api?.getGroups();
+      const data = await globalThis.api?.getGroups();
       setGroups(data || []);
     } catch (e) {
       loggers.directory.error('Failed to load groups', { error: e });
@@ -22,13 +22,15 @@ export function useGroups() {
   }, [showToast]);
 
   useEffect(() => {
-    void loadGroups();
+    loadGroups().catch((error_) => {
+      loggers.directory.error('Failed to run initial group load', { error: error_ });
+    });
   }, [loadGroups]);
 
   const saveGroup = useCallback(
     async (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => {
-      const result = await window.api?.saveGroup(group);
-      if (result && result.success && result.data) {
+      const result = await globalThis.api?.saveGroup(group);
+      if (result?.success && result.data) {
         setGroups((prev) => [...prev, result.data!]);
         showToast(`Group "${group.name}" saved`, 'success');
         return result.data;
@@ -42,8 +44,8 @@ export function useGroups() {
 
   const updateGroup = useCallback(
     async (id: string, updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>) => {
-      const result = await window.api?.updateGroup(id, updates);
-      if (result && result.success) {
+      const result = await globalThis.api?.updateGroup(id, updates);
+      if (result?.success) {
         setGroups((prev) =>
           prev.map((g) => (g.id === id ? { ...g, ...updates, updatedAt: Date.now() } : g)),
         );
@@ -59,8 +61,8 @@ export function useGroups() {
 
   const deleteGroup = useCallback(
     async (id: string) => {
-      const result = await window.api?.deleteGroup(id);
-      if (result && result.success) {
+      const result = await globalThis.api?.deleteGroup(id);
+      if (result?.success) {
         setGroups((prev) => prev.filter((g) => g.id !== id));
         showToast('Group deleted', 'success');
         return true;
@@ -73,8 +75,8 @@ export function useGroups() {
   );
 
   const importFromCsv = useCallback(async () => {
-    const result = await window.api?.importGroupsFromCsv();
-    if (result && result.success) {
+    const result = await globalThis.api?.importGroupsFromCsv();
+    if (result?.success) {
       await loadGroups();
       showToast('Import successful', 'success');
       return true;

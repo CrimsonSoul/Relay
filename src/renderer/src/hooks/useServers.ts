@@ -46,15 +46,15 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   useEffect(() => {
     if (contextMenu) {
       const handler = () => setContextMenu(null);
-      window.addEventListener('click', handler);
-      return () => window.removeEventListener('click', handler);
+      globalThis.addEventListener('click', handler);
+      return () => globalThis.removeEventListener('click', handler);
     }
   }, [contextMenu]);
 
   const handleDelete = async () => {
     if (contextMenu) {
       try {
-        await window.api?.removeServer(contextMenu.server.name);
+        await globalThis.api?.removeServer(contextMenu.server.name);
       } catch {
         // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
       }
@@ -74,7 +74,7 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   };
   const deleteServer = async (server: Server) => {
     try {
-      await window.api?.removeServer(server.name);
+      await globalThis.api?.removeServer(server.name);
     } catch {
       // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
     }

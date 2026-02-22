@@ -13,10 +13,10 @@
  * Usage: node scripts/generate-icons.mjs
  */
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execSync } from 'node:child_process';
 import sharp from 'sharp';
 import pngToIco from 'png-to-ico';
 
@@ -87,6 +87,7 @@ async function generateIcns() {
   );
 
   try {
+    // eslint-disable-next-line sonarjs/os-command
     execSync(`iconutil -c icns "${iconsetDir}" -o "${join(buildDir, 'icon.icns')}"`, {
       stdio: 'pipe',
     });
@@ -110,7 +111,9 @@ async function main() {
   console.log('\nDone!');
 }
 
-main().catch((err) => {
+try {
+  await main();
+} catch (err) {
   console.error('Error:', err);
   process.exit(1);
-});
+}

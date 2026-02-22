@@ -32,7 +32,10 @@ import {
 const mockRead = vi.mocked(readWithLock);
 const mockModify = vi.mocked(modifyJsonWithLock);
 
-const rootDir = '/tmp/relay-data';
+import os from 'node:os';
+import path from 'node:path';
+
+const rootDir = path.join(os.homedir(), 'relay-data');
 
 function makeEntry(overrides: Partial<BridgeHistoryEntry> = {}): BridgeHistoryEntry {
   return {
@@ -80,8 +83,9 @@ describe('BridgeHistoryOperations', () => {
       mockRead.mockResolvedValue(JSON.stringify([recent, old]));
 
       const result = await getBridgeHistory(rootDir);
+      expect(result).toBeDefined();
       expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('recent');
+      expect(result[0]?.id).toBe('recent');
     });
 
     it('returns empty array for invalid JSON', async () => {
@@ -111,7 +115,7 @@ describe('BridgeHistoryOperations', () => {
   describe('addBridgeHistory', () => {
     it('prepends new entry', async () => {
       const existing = [makeEntry({ id: 'existing' })];
-      let captured: BridgeHistoryEntry[] | undefined;
+      let captured: BridgeHistoryEntry[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...existing]) as BridgeHistoryEntry[];
@@ -128,14 +132,15 @@ describe('BridgeHistoryOperations', () => {
       expect(result!.id).toBe('test-id-123');
       expect(result!.note).toBe('new note');
       // The new entry should be first in the returned array
-      expect(captured![0].id).toBe('test-id-123');
-      expect(captured![1].id).toBe('existing');
+      expect(captured).toBeDefined();
+      expect(captured[0]?.id).toBe('test-id-123');
+      expect(captured[1]?.id).toBe('existing');
     });
 
     it('prunes old entries', async () => {
       const oldTimestamp = Date.now() - 31 * 24 * 60 * 60 * 1000;
       const oldEntry = makeEntry({ id: 'old', timestamp: oldTimestamp });
-      let captured: BridgeHistoryEntry[] | undefined;
+      let captured: BridgeHistoryEntry[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([oldEntry]) as BridgeHistoryEntry[];
@@ -149,8 +154,8 @@ describe('BridgeHistoryOperations', () => {
       });
 
       // Old entry should be pruned, only new entry remains
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('test-id-123');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('test-id-123');
     });
 
     it('returns null on error', async () => {
@@ -172,7 +177,7 @@ describe('BridgeHistoryOperations', () => {
   describe('deleteBridgeHistory', () => {
     it('removes entry by id', async () => {
       const entries = [makeEntry({ id: 'h1' }), makeEntry({ id: 'h2' })];
-      let captured: BridgeHistoryEntry[] | undefined;
+      let captured: BridgeHistoryEntry[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...entries]) as BridgeHistoryEntry[];
@@ -181,8 +186,8 @@ describe('BridgeHistoryOperations', () => {
       const result = await deleteBridgeHistory(rootDir, 'h1');
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('h2');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('h2');
     });
 
     it('returns false when id not found', async () => {

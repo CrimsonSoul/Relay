@@ -22,19 +22,20 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
   // Close on scroll/resize
   useEffect(() => {
     const handler = () => onClose();
-    window.addEventListener('resize', handler);
-    window.addEventListener('scroll', handler, true);
+    globalThis.addEventListener('resize', handler);
+    globalThis.addEventListener('scroll', handler, true);
     return () => {
-      window.removeEventListener('resize', handler);
-      window.removeEventListener('scroll', handler, true);
+      globalThis.removeEventListener('resize', handler);
+      globalThis.removeEventListener('scroll', handler, true);
     };
   }, [onClose]);
 
   return createPortal(
     <>
-      <div
-        role="presentation"
+      <button
+        type="button"
         className="context-menu-backdrop"
+        aria-label="Close context menu"
         onClick={(e) => {
           e.stopPropagation();
           onClose();
@@ -60,31 +61,23 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ x, y, onClose, items }
       >
         <div className="context-menu-accent" />
 
-        {items.map((item, i) => (
-          <div
-            key={i}
+        {items.map((item) => (
+          <button
+            type="button"
+            key={item.label}
             role="menuitem"
-            tabIndex={item.disabled ? -1 : 0}
+            disabled={item.disabled}
             onClick={() => {
               if (!item.disabled) {
                 item.onClick();
                 onClose();
               }
             }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                if (!item.disabled) {
-                  item.onClick();
-                  onClose();
-                }
-              }
-            }}
             className={`context-menu-item${item.disabled ? ' context-menu-item--disabled' : ''}${item.danger ? ' context-menu-item--danger' : ''}`}
           >
             {item.icon && <span className="context-menu-item-icon">{item.icon}</span>}
             <span className="text-truncate context-menu-item-label">{item.label}</span>
-          </div>
+          </button>
         ))}
       </div>
     </>,

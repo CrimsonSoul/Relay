@@ -4,7 +4,7 @@
  */
 
 import { safeStorage } from 'electron';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import { loggers } from './logger';
 import { ErrorCategory } from '@shared/logging';
 

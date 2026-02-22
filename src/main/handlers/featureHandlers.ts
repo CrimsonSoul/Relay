@@ -45,7 +45,7 @@ export function setupFeatureHandlers(getDataRoot: () => Promise<string>) {
   // ==================== Groups ====================
   ipcMain.handle(IPC_CHANNELS.GET_GROUPS, async () => {
     try {
-      return getGroups(await getDataRoot());
+      return await getGroups(await getDataRoot());
     } catch (e) {
       loggers.ipc.error('GET_GROUPS failed', { error: getErrorMessage(e) });
       return [];
@@ -101,7 +101,7 @@ export function setupFeatureHandlers(getDataRoot: () => Promise<string>) {
   // ==================== Bridge History ====================
   ipcMain.handle(IPC_CHANNELS.GET_BRIDGE_HISTORY, async () => {
     try {
-      return getBridgeHistory(await getDataRoot());
+      return await getBridgeHistory(await getDataRoot());
     } catch (e) {
       loggers.ipc.error('GET_BRIDGE_HISTORY failed', {
         error: getErrorMessage(e),
@@ -148,7 +148,7 @@ export function setupFeatureHandlers(getDataRoot: () => Promise<string>) {
   // ==================== Notes ====================
   ipcMain.handle(IPC_CHANNELS.GET_NOTES, async () => {
     try {
-      return getNotes(await getDataRoot());
+      return await getNotes(await getDataRoot());
     } catch (e) {
       loggers.ipc.error('GET_NOTES failed', { error: getErrorMessage(e) });
       return { contacts: {}, servers: {} };
@@ -190,7 +190,7 @@ export function setupFeatureHandlers(getDataRoot: () => Promise<string>) {
   // ==================== Saved Locations ====================
   ipcMain.handle(IPC_CHANNELS.GET_SAVED_LOCATIONS, async () => {
     try {
-      return getSavedLocations(await getDataRoot());
+      return await getSavedLocations(await getDataRoot());
     } catch (e) {
       loggers.ipc.error('GET_SAVED_LOCATIONS failed', {
         error: getErrorMessage(e),

@@ -10,7 +10,7 @@ import { TabFallback } from './components/TabFallback';
 import { CommandPalette } from './components/CommandPalette';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
-import { Contact } from '@shared/ipc';
+import { Contact, TabName } from '@shared/ipc';
 import { loggers } from './utils/logger';
 // Hooks
 import { useAppWeather } from './hooks/useAppWeather';
@@ -42,7 +42,7 @@ export function MainApp() {
   const { showToast } = useToast();
   const deviceLocation = useLocation();
 
-  const searchParams = new URLSearchParams(window.location.search);
+  const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
 
@@ -96,12 +96,12 @@ export function MainApp() {
 
   // Handler for saving contact
   const handleContactSaved = async (contact: Partial<Contact>) => {
-    if (!window.api) {
+    if (!globalThis.api) {
       showToast('API not available', 'error');
       return;
     }
     try {
-      const result = await window.api.addContact(contact);
+      const result = await globalThis.api.addContact(contact);
       if (result.success) {
         showToast('Contact created successfully', 'success');
       } else {
@@ -127,7 +127,7 @@ export function MainApp() {
 
   // Platform and Global Interaction Logic
   useEffect(() => {
-    const platform = window.api?.platform || 'win32';
+    const platform = globalThis.api?.platform || 'win32';
     document.body.classList.add(`platform-${platform}`);
     if (isPopout) {
       document.body.classList.add('is-popout');
@@ -173,13 +173,12 @@ export function MainApp() {
       // Cmd/Ctrl+1-7 for tab navigation
       if (mod && !e.shiftKey && tabMap[e.key]) {
         e.preventDefault();
-        setActiveTab(tabMap[e.key]);
-        return;
+        setActiveTab(tabMap[e.key] as TabName);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => globalThis.removeEventListener('keydown', handleKeyDown);
   }, [setActiveTab, setSettingsOpen]); // Removed setIsCommandPaletteOpen, setIsShortcutsOpen
 
   if (isPopout) {
@@ -381,7 +380,7 @@ export function MainApp() {
             setActiveTab('Compose');
           }}
           onToggleGroup={handleLoadGroupFromPalette}
-          onNavigateToTab={setActiveTab}
+          onNavigateToTab={(tab) => setActiveTab(tab as TabName)}
           onOpenAddContact={(email) => {
             setInitialContactEmail(email || '');
             setIsAddContactModalOpen(true);
@@ -406,7 +405,7 @@ export function MainApp() {
 }
 
 export default function App() {
-  const isPopout = new URLSearchParams(window.location.search).has('popout');
+  const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
 
   return (

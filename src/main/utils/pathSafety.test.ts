@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { isUncPath, validatePath } from './pathSafety';
-import fsPromises from 'fs/promises';
-import { resolve } from 'path';
+import fsPromises from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 // Mock logger
 vi.mock('../logger', () => ({
@@ -14,7 +14,7 @@ vi.mock('../logger', () => ({
 }));
 
 // Mock fs/promises
-vi.mock('fs/promises', () => ({
+vi.mock('node:fs/promises', () => ({
   default: {
     realpath: vi.fn(),
   },
@@ -23,13 +23,13 @@ vi.mock('fs/promises', () => ({
 describe('pathSafety', () => {
   describe('isUncPath', () => {
     it('should identify Windows UNC paths', () => {
-      expect(isUncPath('\\\\server\\share')).toBe(true);
+      expect(isUncPath(String.raw`\\server\share`)).toBe(true);
       expect(isUncPath('//server/share')).toBe(true);
       expect(isUncPath('\\\\?\\C:\\')).toBe(true);
     });
 
     it('should identify non-UNC paths', () => {
-      expect(isUncPath('C:\\Windows')).toBe(false);
+      expect(isUncPath(String.raw`C:\Windows`)).toBe(false);
       expect(isUncPath('/usr/local/bin')).toBe(false);
       expect(isUncPath('./relative')).toBe(false);
       expect(isUncPath('relative/path')).toBe(false);
@@ -60,7 +60,7 @@ describe('pathSafety', () => {
     });
 
     it('should block UNC paths', async () => {
-      expect(await validatePath('\\\\server\\share', root)).toBe(false);
+      expect(await validatePath(String.raw`\\server\share`, root)).toBe(false);
     });
 
     it('should block symlink escapes', async () => {

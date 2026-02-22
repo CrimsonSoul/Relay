@@ -31,7 +31,7 @@ export const sanitizePhoneNumber = (phone: string): string => {
 
   // Remove all non-numeric characters, except the leading +
   const hasPlus = processed.startsWith('+');
-  const digits = processed.replace(/[^0-9]/g, '');
+  const digits = processed.replaceAll(/\D/g, '');
 
   if (!digits) return '';
 
@@ -44,15 +44,8 @@ export const sanitizePhoneNumber = (phone: string): string => {
  * Extensions: 1234
  * International: +91...
  */
-const formatSingleNumber = (phone: string): string => {
-  if (!phone) return '';
-
-  // Handle international prefix
-  const hasPlus = phone.trim().startsWith('+');
-  let clean = phone.replace(/[^0-9]/g, '');
-
+const formatUSOrExtension = (clean: string, hasPlus: boolean, phone: string): string | null => {
   // Normalize US with 1 prefix
-  // Only strip 1 if it's strictly a 10-digit number following it (standard US)
   if (!hasPlus && clean.length === 11 && clean.startsWith('1')) {
     clean = clean.slice(1);
   }
@@ -63,30 +56,8 @@ const formatSingleNumber = (phone: string): string => {
   }
 
   // Format US 10-digit: (XXX) XXX-XXXX
-  if (clean.length === 10 && (!hasPlus || (hasPlus && phone.startsWith('+1')))) {
+  if (clean.length === 10 && (!hasPlus || phone.startsWith('+1'))) {
     return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
-  }
-
-  // International / Long numbers
-  if (hasPlus || clean.length > 10) {
-    // If 11 digits and starts with 1 -> +1 (US) -> (1) ...
-    if (clean.length === 11 && clean.startsWith('1')) {
-      const rest = clean.slice(1);
-      return `(1) (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6)}`;
-    }
-
-    if (clean.length > 10) {
-      if (hasPlus) {
-        // Just wrap the prefix in brackets if it exceeds 10 digits.
-        const excess = clean.length - 10;
-        if (excess > 0 && excess < 4) {
-          const code = clean.slice(0, excess);
-          const rest = clean.slice(excess);
-          const formattedRest = `${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
-          return `(${code}) ${formattedRest}`;
-        }
-      }
-    }
   }
 
   // Format US 7-digit (local)
@@ -99,7 +70,48 @@ const formatSingleNumber = (phone: string): string => {
     return clean;
   }
 
-  // Fallback
+  return null;
+};
+
+const formatInternational = (clean: string, hasPlus: boolean): string | null => {
+  if (hasPlus || clean.length > 10) {
+    if (clean.length === 11 && clean.startsWith('1')) {
+      const rest = clean.slice(1);
+      return `(1) (${rest.slice(0, 3)}) ${rest.slice(3, 6)}-${rest.slice(6)}`;
+    }
+
+    if (clean.length > 10 && hasPlus) {
+      const excess = clean.length - 10;
+      if (excess > 0 && excess < 4) {
+        const code = clean.slice(0, excess);
+        const rest = clean.slice(excess);
+        const formattedRest = `${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
+        return `(${code}) ${formattedRest}`;
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Formats a single sanitized phone number for UI display.
+ * US numbers: 123-456-7890
+ * Extensions: 1234
+ * International: +91...
+ */
+const formatSingleNumber = (phone: string): string => {
+  if (!phone) return '';
+
+  const hasPlus = phone.trim().startsWith('+');
+  const clean = phone.replaceAll(/\D/g, '');
+
+  const intl = formatInternational(clean, hasPlus);
+  if (intl) return intl;
+
+  const usOrExt = formatUSOrExtension(clean, hasPlus, phone);
+  if (usOrExt) return usOrExt;
+
   return hasPlus ? '+' + clean : clean;
 };
 
@@ -124,7 +136,7 @@ export const formatPhoneNumber = (phone: string): string => {
   }
 
   const input = phone.trim();
-  const digitOnly = input.replace(/[^0-9]/g, '');
+  const digitOnly = input.replaceAll(/\D/g, '');
 
   // Handle "Run-on" numbers (concatenated 10-digit numbers) without separators
   // e.g. 55555555551111111111 -> split

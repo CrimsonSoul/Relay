@@ -74,10 +74,10 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
       // Reverse geocode to get the city name
       setIsSearching(true);
       try {
-        if (!window.api) {
+        if (!globalThis.api) {
           throw new Error('API not available');
         }
-        const data = await window.api.searchLocation(`${saved.lat},${saved.lon}`);
+        const data = await globalThis.api.searchLocation(`${saved.lat},${saved.lon}`);
         const cityName = data.results?.[0]
           ? `${data.results[0].name}, ${data.results[0].admin1 || ''} ${data.results[0].country_code}`.trim()
           : saved.name;
@@ -130,6 +130,12 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
 
   if (!location && loading) return <TabFallback />;
   const hasForecastContent = Boolean(weather) || alerts.length > 0;
+  const tabBodyClass = hasForecastContent
+    ? 'weather-tab-root weather-scroll-container weather-tab-body'
+    : 'weather-tab-root weather-scroll-container weather-tab-body weather-tab-body--radar-only';
+  const forecastColumnClass = hasForecastContent
+    ? 'weather-forecast-column weather-scroll-container weather-tab-forecast-column'
+    : 'weather-forecast-column weather-scroll-container weather-tab-forecast-column weather-forecast-column--hidden';
 
   return (
     <div className="weather-font-surface weather-scroll-container weather-tab-layout">
@@ -189,12 +195,8 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         />
       )}
 
-      <div
-        className={`weather-tab-root weather-scroll-container weather-tab-body${!hasForecastContent ? ' weather-tab-body--radar-only' : ''}`}
-      >
-        <div
-          className={`weather-forecast-column weather-scroll-container weather-tab-forecast-column${!hasForecastContent ? ' weather-forecast-column--hidden' : ''}`}
-        >
+      <div className={tabBodyClass}>
+        <div className={forecastColumnClass}>
           {alerts.length > 0 &&
             alerts.map((alert) => (
               <WeatherAlertCard

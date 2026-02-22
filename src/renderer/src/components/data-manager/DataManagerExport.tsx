@@ -41,7 +41,7 @@ export const DataManagerExport: React.FC<Props> = ({
         onChange={(e) => setIncludeMetadata(e.target.checked)}
         className="data-manager-checkbox"
       />
-      Include IDs and timestamps
+      <span>Include IDs and timestamps</span>
     </label>
     <TactileButton onClick={onExport} variant="primary" disabled={exporting} className="dm-big-btn">
       {exporting ? 'Exporting...' : 'Export...'}

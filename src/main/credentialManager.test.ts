@@ -73,6 +73,7 @@ describe('CredentialManager', () => {
       cacheCredentials('host1', 'user1', 'password123');
       const retrieved = getCachedCredentials('host1');
 
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
       expect(retrieved).toEqual({ username: 'user1', password: 'password123' });
     });
 

@@ -57,7 +57,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
-    if (!window.api) {
+    if (!globalThis.api) {
       setSubmitError('API not available');
       return;
     }
@@ -65,7 +65,7 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await window.api.addServer(formData);
+      const result = await globalThis.api.addServer(formData);
       if (result?.success) {
         onClose();
       } else {

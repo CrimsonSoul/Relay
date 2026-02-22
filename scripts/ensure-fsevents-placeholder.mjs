@@ -1,6 +1,6 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,7 +25,9 @@ async function ensurePlaceholder() {
   console.log('[fsevents] Created placeholder for macOS-only fsevents dependency.');
 }
 
-ensurePlaceholder().catch((error) => {
+try {
+  await ensurePlaceholder();
+} catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
-});
+}

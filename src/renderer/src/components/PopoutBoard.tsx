@@ -29,7 +29,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   const [isRemoteDragging, setIsRemoteDragging] = useState(false);
 
   useEffect(() => {
-    return window.api?.onDragStateChange((isDragging) => {
+    return globalThis.api?.onDragStateChange((isDragging) => {
       setIsRemoteDragging(isDragging);
     });
   }, []);
@@ -88,8 +88,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       {isRemoteDragging && (
         <div className="popout-drag-overlay">
           <div className="popout-drag-overlay-inner">
-            <span className="animate-spin popout-drag-spinner" />
-            Board being updated...
+            <span className="animate-spin popout-drag-spinner" /> Board being updated...
           </div>
         </div>
       )}
@@ -166,14 +165,13 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
         </div>
       )}
 
-      <div
+      <ul
         ref={animationParent}
         className={`oncall-grid-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
-        role="list"
         aria-label="On-Call Teams"
       >
         {teams.map((team, idx) => (
-          <div key={team} className="oncall-grid-item animate-card-entrance" role="listitem">
+          <li key={team} className="oncall-grid-item animate-card-entrance">
             <TeamCard
               team={team}
               index={idx}
@@ -188,9 +186,9 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
               isReadOnly={true}
               tick={tick}
             />
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />

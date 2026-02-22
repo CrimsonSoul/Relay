@@ -86,8 +86,8 @@ export class FileManager {
   private watcher: FSWatcher | null = null;
   private internalWriteCount = 0;
 
-  private fsService: FileSystemService;
-  private cache: DataCacheManager;
+  private readonly fsService: FileSystemService;
+  private readonly cache: DataCacheManager;
 
   public get rootDir(): string {
     return this.fsService.rootDir;
@@ -104,35 +104,21 @@ export class FileManager {
 
   public init(): void {
     this.startWatching();
-    void this.readAndEmit().catch((e) =>
+    this.readAndEmit().catch((e) =>
       loggers.fileManager.error('Init readAndEmit failed', { error: e }),
     );
-    void this.performBackup('init').catch((e) =>
+    this.performBackup('init').catch((e) =>
       loggers.fileManager.error('Init backup failed', { error: e }),
-    );
-  }
-
-  private startPeriodicCleanup() {
-    // Run cleanup every 5 minutes to ensure no stale locks remain
-    this.cleanupInterval = setInterval(
-      () => {
-        const lockCount = this.fileLocks.size;
-        if (lockCount > 0) {
-          loggers.fileManager.debug(`Periodic cleanup: ${lockCount} active file locks`);
-        }
-        // The locks should auto-cleanup via their finally() blocks,
-        // but log if we have an unusual number of locks
-        if (lockCount > 10) {
-          loggers.fileManager.warn(`High number of active file locks: ${lockCount}`);
-        }
-      },
-      5 * 60 * 1000,
     );
   }
 
   private startWatching() {
     this.watcher = createFileWatcher(this.rootDir, {
-      onFileChange: (types) => this.readAndEmitIncremental(types),
+      onFileChange: (types) => {
+        this.readAndEmitIncremental(types).catch((e) =>
+          loggers.fileManager.error('Incremental update failed', { error: e }),
+        );
+      },
       shouldIgnore: () => this.internalWriteCount > 0,
     });
   }
@@ -167,9 +153,9 @@ export class FileManager {
             return result.data;
           }
           loggers.fileManager.warn('oncall_layout.json failed schema validation, ignoring');
-        } catch (jsonErr) {
+        } catch (error_) {
           loggers.fileManager.warn('oncall_layout.json contains invalid JSON, treating as empty', {
-            error: jsonErr,
+            error: error_,
           });
         }
       }
@@ -193,7 +179,12 @@ export class FileManager {
         filesToUpdate.has('oncall') ? this.loadOnCall() : null,
       ]);
 
-      const updates: Partial<ReturnType<typeof this.cache.getCache>> = {};
+      const updates: {
+        groups?: ReturnType<typeof getGroups> extends Promise<infer T> ? T : never;
+        contacts?: Contact[];
+        servers?: Server[];
+        onCall?: OnCallRow[];
+      } = {};
       if (g) updates.groups = g;
       if (c) updates.contacts = c;
       if (s) updates.servers = s;
@@ -466,7 +457,9 @@ export class FileManager {
       // before closing. Chokidar v5 does not emit a 'close' event.
       const cleanup = (this.watcher as FSWatcher & { _cleanup?: () => void })._cleanup;
       if (cleanup) cleanup();
-      void this.watcher.close();
+      this.watcher.close().catch((error_) => {
+        loggers.fileManager.warn('Failed to close file watcher cleanly', { error: error_ });
+      });
       this.watcher = null;
     }
   }

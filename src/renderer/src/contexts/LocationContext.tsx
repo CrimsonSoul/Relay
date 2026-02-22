@@ -1,3 +1,4 @@
+/* eslint-disable sonarjs/no-intrusive-permissions, sonarjs/no-nested-functions */
 import React, {
   createContext,
   useContext,
@@ -119,7 +120,9 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
   }, []);
 
   useEffect(() => {
-    void fetchLocation();
+    fetchLocation().catch((error_) => {
+      loggers.location.error('Failed initial location fetch', { error: error_ });
+    });
   }, [fetchLocation]);
 
   const value = useMemo(() => ({ ...state, refresh: fetchLocation }), [state, fetchLocation]);

@@ -35,7 +35,7 @@ export const GroupSelector = ({
       setUpdating(group.id);
 
       try {
-        if (!window.api) {
+        if (!globalThis.api) {
           throw new Error('API not available');
         }
 
@@ -50,8 +50,8 @@ export const GroupSelector = ({
           newContacts = [...group.contacts, contact.email];
         }
 
-        const result = await window.api.updateGroup(group.id, { contacts: newContacts });
-        if (!result || !result.success) {
+        const result = await globalThis.api.updateGroup(group.id, { contacts: newContacts });
+        if (!result?.success) {
           throw new Error(result?.error || 'Failed to update group');
         }
       } catch (error) {
@@ -70,21 +70,22 @@ export const GroupSelector = ({
   );
 
   return (
-    <div role="presentation" className="group-selector" onClick={(e) => e.stopPropagation()}>
+    <div className="group-selector">
       <div className="group-selector-list">
         {groups.map((group) => {
           const isUpdating = updating === group.id;
           return (
-            <div
+            <button
+              type="button"
               key={group.id}
-              role="checkbox"
-              aria-checked={!!membership[group.id]}
-              tabIndex={0}
-              onClick={() => !isUpdating && toggleGroup(group, !!membership[group.id])}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  if (!isUpdating) void toggleGroup(group, !!membership[group.id]);
+              aria-pressed={!!membership[group.id]}
+              onClick={() => {
+                if (!isUpdating) {
+                  toggleGroup(group, !!membership[group.id]).catch((error_) => {
+                    loggers.directory.error('[GroupSelector] Failed toggling group on click', {
+                      error: error_,
+                    });
+                  });
                 }
               }}
               className={`group-selector-item${isUpdating ? ' group-selector-item--updating' : ''}`}
@@ -95,7 +96,7 @@ export const GroupSelector = ({
                 {membership[group.id] && <span className="group-selector-checkbox-mark">✓</span>}
               </div>
               {group.name}
-            </div>
+            </button>
           );
         })}
         {groups.length === 0 && <div className="group-selector-empty">No groups available</div>}

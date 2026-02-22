@@ -6,33 +6,21 @@
  */
 
 import { LogData } from '@shared/types';
-import { LogLevel, ErrorCategory } from '@shared/logging';
+import {
+  LogLevel,
+  ErrorCategory,
+  ErrorContext,
+  LogEntry,
+  ILogger,
+  ModuleLogger,
+} from '@shared/logging';
 import { redactSensitiveData } from '@shared/logRedaction';
 
-interface ErrorContext {
-  category?: ErrorCategory;
-  errorCode?: string;
-  stack?: string;
-  userAction?: string;
-  componentStack?: string;
-  url?: string;
-  correlationId?: string;
-}
-
-interface LogEntry {
-  timestamp: string;
-  level: string;
-  module: string;
-  message: string;
-  data?: LogData;
-  errorContext?: ErrorContext;
-}
-
-class RendererLogger {
+class RendererLogger implements ILogger {
   private level: LogLevel = LogLevel.INFO;
   private errorCount = 0;
   private warnCount = 0;
-  private sessionStartTime = Date.now();
+  private readonly sessionStartTime = Date.now();
 
   constructor() {
     this.setupGlobalErrorHandlers();
@@ -40,7 +28,7 @@ class RendererLogger {
 
   private setupGlobalErrorHandlers(): void {
     // Catch global errors
-    window.addEventListener('error', (event: ErrorEvent) => {
+    globalThis.addEventListener('error', (event: ErrorEvent) => {
       // In production, don't include full stack traces for security
       const errorContext: Record<string, unknown> = {
         category: ErrorCategory.RENDERER,
@@ -59,7 +47,7 @@ class RendererLogger {
     });
 
     // Catch unhandled promise rejections
-    window.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+    globalThis.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
       this.error('Window', 'Unhandled Promise Rejection', {
         reason: event.reason?.message || event.reason,
         stack: event.reason?.stack,
@@ -73,7 +61,7 @@ class RendererLogger {
       console.error = (...args: unknown[]) => {
         originalConsoleError.apply(console, args);
         // Only forward native errors, not our formatted logs
-        if (args[0] && !args[0].toString().startsWith('[')) {
+        if (typeof args[0] === 'string' && !args[0].startsWith('[')) {
           this.error('Console', args.join(' '));
         }
       };
@@ -86,23 +74,24 @@ class RendererLogger {
 
   private extractErrorContext(data: LogData): ErrorContext {
     const context: ErrorContext = {};
+    const d = typeof data === 'object' && data !== null ? (data as Record<string, unknown>) : null;
 
-    if (data?.category) context.category = data.category;
-    if (data?.errorCode) context.errorCode = data.errorCode;
-    if (data?.stack) context.stack = data.stack;
-    if (data?.userAction) context.userAction = data.userAction;
-    if (data?.componentStack) context.componentStack = data.componentStack;
-    if (data?.correlationId) context.correlationId = data.correlationId;
+    if (d?.category) context.category = d.category as ErrorCategory;
+    if (d?.errorCode) context.errorCode = d.errorCode as string;
+    if (d?.stack) context.stack = d.stack as string;
+    if (d?.userAction) context.userAction = d.userAction as string;
+    if (d?.componentStack) context.componentStack = d.componentStack as string;
+    if (d?.correlationId) context.correlationId = d.correlationId as string;
 
     // Extract stack trace from Error objects
-    if (data?.error instanceof Error) {
-      context.stack = data.error.stack;
-    } else if (typeof data?.error === 'object' && data.error?.stack) {
-      context.stack = data.error.stack;
+    if (d?.error instanceof Error) {
+      context.stack = d.error.stack;
+    } else if (typeof d?.error === 'object' && (d.error as Error)?.stack) {
+      context.stack = (d.error as Error).stack;
     }
 
     // Add current URL for context
-    context.url = window.location.href;
+    context.url = globalThis.location.href;
 
     return context;
   }
@@ -195,10 +184,10 @@ class RendererLogger {
     }
 
     // Forward to main process for persistent logging
-    if (level >= LogLevel.INFO && window.api?.logToMain) {
+    if (level >= LogLevel.INFO && globalThis.api?.logToMain) {
       try {
-        window.api.logToMain({
-          level: levelName,
+        globalThis.api.logToMain({
+          level: levelName as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL',
           module: `Renderer:${module}`,
           message,
           data: redactSensitiveData({
@@ -208,8 +197,9 @@ class RendererLogger {
             errorContext,
           }) as Record<string, unknown>,
         });
-      } catch (_err) {
-        // Silently fail if IPC isn't available
+      } catch (error) {
+        // Fallback or silently fail if IPC isn't available
+        console.warn('Failed to send log to main process:', error);
       }
     }
   }
@@ -256,41 +246,6 @@ class RendererLogger {
 
   setLevel(level: LogLevel): void {
     this.level = level;
-  }
-}
-
-class ModuleLogger {
-  constructor(
-    private parent: RendererLogger,
-    private module: string,
-  ) {}
-
-  debug(message: string, data?: LogData): void {
-    this.parent.debug(this.module, message, data);
-  }
-
-  info(message: string, data?: LogData): void {
-    this.parent.info(this.module, message, data);
-  }
-
-  warn(message: string, data?: LogData): void {
-    this.parent.warn(this.module, message, data);
-  }
-
-  error(message: string, data?: LogData): void {
-    this.parent.error(this.module, message, data);
-  }
-
-  fatal(message: string, data?: LogData): void {
-    this.parent.fatal(this.module, message, data);
-  }
-
-  startTimer(label: string): () => void {
-    return this.parent.startTimer(this.module, label);
-  }
-
-  errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
-    this.parent.error(this.module, message, { ...data, category });
   }
 }
 

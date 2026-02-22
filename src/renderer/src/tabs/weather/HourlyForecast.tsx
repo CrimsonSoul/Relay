@@ -25,9 +25,9 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
     const utcNow = new Date();
     const utcKey = `${utcNow.getUTCFullYear()}-${String(utcNow.getUTCMonth() + 1).padStart(2, '0')}-${String(utcNow.getUTCDate()).padStart(2, '0')}T${String(utcNow.getUTCHours()).padStart(2, '0')}:00`;
 
-    let startIndex = times.findIndex((t) => t === locationKey);
+    let startIndex = times.indexOf(locationKey);
     if (startIndex === -1) {
-      startIndex = times.findIndex((t) => t === utcKey);
+      startIndex = times.indexOf(utcKey);
     }
     if (startIndex === -1) {
       startIndex = times.findIndex((t) => t > locationKey);
@@ -40,9 +40,9 @@ export const HourlyForecast: React.FC<HourlyForecastProps> = ({ weather }) => {
       const index = startIndex + offset;
       return {
         time: t,
-        temp: weather.hourly.temperature_2m[index],
-        code: weather.hourly.weathercode[index],
-        precip: weather.hourly.precipitation_probability[index],
+        temp: weather.hourly.temperature_2m[index] ?? 0,
+        code: weather.hourly.weathercode[index] ?? 0,
+        precip: weather.hourly.precipitation_probability[index] ?? 0,
         index,
         isNow: index === startIndex,
       };

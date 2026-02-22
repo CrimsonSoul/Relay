@@ -5,6 +5,7 @@ import type { WebviewTag } from 'electron';
 import type React from 'react';
 
 declare global {
+  var api: BridgeAPI | undefined;
   interface Window {
     api?: BridgeAPI;
   }

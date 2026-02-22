@@ -13,16 +13,20 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
   isExpanded,
   onToggle,
 }) => {
-  const colors = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS['Unknown'];
+  const colors = SEVERITY_COLORS[alert.severity] || SEVERITY_COLORS['Unknown']!;
+
+  let badgeText: string = alert.severity;
+  if (alert.severity === 'Unknown') {
+    badgeText = alert.event.toLowerCase().includes('outlook') ? 'Outlook' : 'Advisory';
+  }
 
   return (
     <Tooltip
       content={isExpanded ? 'Click to collapse' : 'Click to view full alert details'}
       position="top"
     >
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
         aria-expanded={isExpanded}
         aria-label={`Weather alert: ${alert.event}`}
         className="weather-alert-card"
@@ -31,12 +35,6 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
           border: `1px solid ${colors.border}`,
         }}
         onClick={onToggle}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onToggle();
-          }
-        }}
       >
         <div className="weather-alert-content">
           <svg
@@ -60,11 +58,7 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
                 {alert.event}
               </span>
               <span className="weather-alert-badge" style={{ color: colors.text }}>
-                {alert.severity === 'Unknown'
-                  ? alert.event.toLowerCase().includes('outlook')
-                    ? 'Outlook'
-                    : 'Advisory'
-                  : alert.severity}
+                {badgeText}
               </span>
               {alert.urgency === 'Immediate' && (
                 <span className="weather-alert-urgent-badge">🚨 Immediate</span>
@@ -102,7 +96,7 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
             <polyline points="6 9 12 15 18 9" />
           </svg>
         </div>
-      </div>
+      </button>
     </Tooltip>
   );
 };

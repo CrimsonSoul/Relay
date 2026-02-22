@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { TactileButton } from '../components/TactileButton';
 import { Tooltip } from '../components/Tooltip';
 import { useAIChat, CHROME_USER_AGENT } from '../hooks/useAIChat';
@@ -16,7 +16,19 @@ export const AIChatTab: React.FC = () => {
     wakeUp,
     AI_SERVICES,
   } = useAIChat();
-  const supportsWebview = Boolean(window.api);
+  const supportsWebview = Boolean(globalThis.api);
+
+  useEffect(() => {
+    const applyWebviewAttributes = (webview: Electron.WebviewTag | null) => {
+      if (!webview) return;
+      webview.setAttribute('partition', 'ai-chat-session');
+      webview.setAttribute('useragent', CHROME_USER_AGENT);
+      webview.setAttribute('webpreferences', 'contextIsolation=yes, nodeIntegration=no');
+    };
+
+    applyWebviewAttributes(geminiRef.current);
+    applyWebviewAttributes(chatgptRef.current);
+  }, [geminiRef, chatgptRef, isSuspended.gemini, isSuspended.chatgpt]);
 
   if (!supportsWebview) {
     return (
@@ -71,35 +83,29 @@ export const AIChatTab: React.FC = () => {
             }
           />
         </div>
-        {!isSuspended.gemini ? (
-          <webview
-            ref={geminiRef}
-            src={AI_SERVICES[0].url}
-            partition="ai-chat-session"
-            useragent={CHROME_USER_AGENT}
-            title="Gemini AI Chat"
-            webpreferences="contextIsolation=yes, nodeIntegration=no"
-            className={`webview-frame webview-frame--absolute${activeService !== 'gemini' ? ' webview-frame--hidden' : ''}`}
-          />
-        ) : (
+        {isSuspended.gemini ? (
           activeService === 'gemini' && (
             <SuspendedPlaceholder service="Gemini" onWakeUp={() => wakeUp('gemini')} />
           )
-        )}
-        {!isSuspended.chatgpt ? (
-          <webview
-            ref={chatgptRef}
-            src={AI_SERVICES[1].url}
-            partition="ai-chat-session"
-            useragent={CHROME_USER_AGENT}
-            title="ChatGPT AI Chat"
-            webpreferences="contextIsolation=yes, nodeIntegration=no"
-            className={`webview-frame webview-frame--absolute${activeService !== 'chatgpt' ? ' webview-frame--hidden' : ''}`}
-          />
         ) : (
+          <webview
+            ref={geminiRef}
+            src={AI_SERVICES[0].url}
+            title="Gemini AI Chat"
+            className={`webview-frame webview-frame--absolute${activeService === 'gemini' ? '' : ' webview-frame--hidden'}`}
+          />
+        )}
+        {isSuspended.chatgpt ? (
           activeService === 'chatgpt' && (
             <SuspendedPlaceholder service="ChatGPT" onWakeUp={() => wakeUp('chatgpt')} />
           )
+        ) : (
+          <webview
+            ref={chatgptRef}
+            src={AI_SERVICES[1].url}
+            title="ChatGPT AI Chat"
+            className={`webview-frame webview-frame--absolute${activeService === 'chatgpt' ? '' : ' webview-frame--hidden'}`}
+          />
         )}
       </div>
     </div>

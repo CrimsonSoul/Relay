@@ -263,7 +263,7 @@ describe('useAssembler', () => {
   it('handleCopy writes semicolon-separated emails to clipboard', async () => {
     const mockWriteClipboard = vi.fn().mockResolvedValue(true);
     const mockApi = { writeClipboard: mockWriteClipboard };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -284,7 +284,7 @@ describe('useAssembler', () => {
   it('handleCopy shows error toast on clipboard failure', async () => {
     const mockWriteClipboard = vi.fn().mockResolvedValue(false);
     const mockApi = { writeClipboard: mockWriteClipboard };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(
       () => useAssembler({ ...baseProps, manualAdds: ['a@test.com'] }),
@@ -301,7 +301,7 @@ describe('useAssembler', () => {
   it('executeDraftBridge opens Teams URL with correct parameters', () => {
     const mockOpenExternal = vi.fn();
     const mockApi = { openExternal: mockOpenExternal };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
       wrapper,
@@ -325,7 +325,7 @@ describe('useAssembler', () => {
     const mockAddContact = vi.fn().mockResolvedValue(true);
     const onAddManual = vi.fn();
     const mockApi = { addContact: mockAddContact };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
@@ -341,7 +341,7 @@ describe('useAssembler', () => {
     const mockAddContact = vi.fn().mockResolvedValue(false);
     const onAddManual = vi.fn();
     const mockApi = { addContact: mockAddContact };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
@@ -358,7 +358,7 @@ describe('useAssembler', () => {
     const mockAddContact = vi.fn().mockRejectedValue(new Error('Network error'));
     const onAddManual = vi.fn();
     const mockApi = { addContact: mockAddContact };
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
@@ -389,5 +389,111 @@ describe('useAssembler', () => {
 
     expect(result.current.pendingEmail).toBe('new@test.com');
     expect(result.current.isAddContactModalOpen).toBe(true);
+  });
+
+  it('handleContactSaved shows error toast when api is not available', async () => {
+    // Remove api from globalThis
+    (globalThis as Window & { api?: unknown }).api = undefined;
+
+    const onAddManual = vi.fn();
+    const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
+
+    await act(async () => {
+      await result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' });
+    });
+
+    // Should not add manual since api is unavailable
+    expect(onAddManual).not.toHaveBeenCalled();
+  });
+
+  it('handleContactSaved does not call onAddManual when contact has no email', async () => {
+    const mockAddContact = vi.fn().mockResolvedValue(true);
+    const onAddManual = vi.fn();
+    const mockApi = { addContact: mockAddContact };
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+
+    const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
+
+    await act(async () => {
+      await result.current.handleContactSaved({ name: 'Dave' }); // no email
+    });
+
+    expect(mockAddContact).toHaveBeenCalled();
+    // No email provided, so onAddManual should NOT be called
+    expect(onAddManual).not.toHaveBeenCalled();
+  });
+
+  it('executeDraftBridge works when api is undefined', () => {
+    (globalThis as Window & { api?: unknown }).api = undefined;
+
+    const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
+      wrapper,
+    });
+
+    // Should not throw when api is missing
+    expect(() => {
+      act(() => {
+        result.current.executeDraftBridge();
+      });
+    }).not.toThrow();
+  });
+
+  it('executeDraftBridge shows error toast when openExternal rejects', async () => {
+    const mockOpenExternal = vi.fn().mockReturnValue(Promise.reject(new Error('blocked')));
+    const mockApi = { openExternal: mockOpenExternal };
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+
+    const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.executeDraftBridge();
+      // Give the rejected promise a chance to settle
+      await Promise.resolve();
+    });
+
+    expect(mockOpenExternal).toHaveBeenCalled();
+  });
+
+  it('handleCompositionContextMenu sets context menu state', () => {
+    const { result } = renderHook(() => useAssembler(baseProps), { wrapper });
+
+    act(() => {
+      const mockEvent = {
+        preventDefault: vi.fn(),
+        clientX: 100,
+        clientY: 200,
+      } as unknown as React.MouseEvent;
+      result.current.itemData.onContextMenu(mockEvent, 'test@test.com', true);
+    });
+
+    expect(result.current.compositionContextMenu).toEqual({
+      x: 100,
+      y: 200,
+      email: 'test@test.com',
+      isUnknown: true,
+    });
+  });
+
+  it('setCompositionContextMenu to null clears context menu', () => {
+    const { result } = renderHook(() => useAssembler(baseProps), { wrapper });
+
+    act(() => {
+      const mockEvent = {
+        preventDefault: vi.fn(),
+        clientX: 50,
+        clientY: 60,
+      } as unknown as React.MouseEvent;
+      result.current.itemData.onContextMenu(mockEvent, 'a@b.com', false);
+    });
+
+    expect(result.current.compositionContextMenu).not.toBeNull();
+
+    act(() => {
+      result.current.setCompositionContextMenu(null);
+    });
+
+    expect(result.current.compositionContextMenu).toBeNull();
   });
 });

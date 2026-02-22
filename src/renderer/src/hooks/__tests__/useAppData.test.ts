@@ -23,7 +23,7 @@ const mockUpdateData: AppData = {
 describe('useAppData', () => {
   const showToast = vi.fn();
 
-  // Mock window.api
+  // Mock globalThis.api
   const mockApi = {
     getInitialData: vi.fn(),
     subscribeToData: vi.fn(),
@@ -35,7 +35,7 @@ describe('useAppData', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (window as Window & { api: typeof mockApi }).api = mockApi;
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi;
 
     mockApi.getInitialData.mockResolvedValue(mockInitialData);
     mockApi.subscribeToData.mockReturnValue(vi.fn()); // Returns unsubscribe

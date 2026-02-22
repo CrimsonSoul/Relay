@@ -77,7 +77,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
   }, [isReloading]);
 
   useEffect(() => {
-    if (!window.api) return;
+    if (!globalThis.api) return;
 
     let cancelled = false;
 
@@ -85,7 +85,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
     const fetchInitialData = async () => {
       for (let attempt = 0; attempt < INITIAL_DATA_RETRY_ATTEMPTS; attempt++) {
-        const initialData = await window.api?.getInitialData();
+        const initialData = await globalThis.api?.getInitialData();
         if (initialData) {
           loggers.app.info('Initial data received', {
             groups: initialData.groups.length,
@@ -104,7 +104,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     // Fetch initial data with retries to handle startup race with main process init
     void fetchInitialData();
 
-    const unsubscribeData = window.api.subscribeToData((newData: AppData) => {
+    const unsubscribeData = globalThis.api.subscribeToData((newData: AppData) => {
       loggers.app.info('Data update received', {
         groups: newData.groups.length,
         contacts: newData.contacts.length,
@@ -114,14 +114,14 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       setData(newData);
       settleReloadIndicator();
     });
-    const unsubscribeReloadStart = window.api.onReloadStart(() => {
+    const unsubscribeReloadStart = globalThis.api.onReloadStart(() => {
       reloadStartRef.current = performance.now();
       setIsReloading(true);
     });
-    const unsubscribeReloadComplete = window.api.onReloadComplete(() => {
+    const unsubscribeReloadComplete = globalThis.api.onReloadComplete(() => {
       settleReloadIndicator();
     });
-    const unsubscribeDataError = window.api.onDataError((error: DataError) => {
+    const unsubscribeDataError = globalThis.api.onDataError((error: DataError) => {
       loggers.app.error('Data error received', { error });
       const errorMessage = formatDataError(error);
       showToast(errorMessage, 'error');
@@ -129,7 +129,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
     // Ensure at least one reload event after subscriptions are attached.
     // This prevents a startup race where DATA_UPDATED is emitted before renderer subscribes.
-    void window.api.reloadData();
+    void globalThis.api.reloadData();
 
     return () => {
       cancelled = true;
@@ -143,7 +143,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
   const handleSync = useCallback(async () => {
     if (isReloading) return;
-    await window.api?.reloadData();
+    await globalThis.api?.reloadData();
   }, [isReloading]);
 
   return {
