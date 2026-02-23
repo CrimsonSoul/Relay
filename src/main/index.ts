@@ -299,12 +299,13 @@ if (gotLock) {
     }
   };
 
-  try {
-    await bootstrap();
-  } catch (error_) {
+  // Avoid top-level await — it deadlocks app.whenReady() in Electron ES modules
+  // on certain macOS versions (confirmed on macOS 26). Use .catch() instead so
+  // module evaluation completes synchronously and the event loop stays unblocked.
+  bootstrap().catch((error_) => {
     loggers.main.error('Unexpected bootstrap failure', { error: error_ });
     app.quit();
-  }
+  }); // NOSONAR: top-level await can deadlock Electron startup on some macOS versions.
 
   // Global Exception Handlers
   process.on('uncaughtException', (error) => {

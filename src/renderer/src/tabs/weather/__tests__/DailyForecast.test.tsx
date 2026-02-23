@@ -36,6 +36,15 @@ const makeWeather = (overrides: Partial<WeatherData> = {}): WeatherData => ({
   ...overrides,
 });
 
+const toDateKey = (date: Date) =>
+  `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+
+const addUtcDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next;
+};
+
 describe('DailyForecast', () => {
   it('renders null when weather is null', () => {
     const { container } = render(<DailyForecast weather={null} />);
@@ -56,10 +65,12 @@ describe('DailyForecast', () => {
 
   it('labels the first day as Today when it matches today', () => {
     const now = new Date();
-    const todayKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const todayKey = toDateKey(now);
+    const tomorrowKey = toDateKey(addUtcDays(now, 1));
+    const dayAfterTomorrowKey = toDateKey(addUtcDays(now, 2));
     const weather = makeWeather({
       daily: {
-        time: [todayKey, '2026-02-23', '2026-02-24'],
+        time: [todayKey, tomorrowKey, dayAfterTomorrowKey],
         weathercode: [0, 2, 61],
         temperature_2m_max: [75, 70, 65],
         temperature_2m_min: [55, 50, 45],
@@ -72,10 +83,14 @@ describe('DailyForecast', () => {
   });
 
   it('shows weekday labels for non-today dates', () => {
-    // 2026-02-23 is a Monday
+    const now = new Date();
+    const firstFutureDate = addUtcDays(now, 1);
+    const secondFutureDate = addUtcDays(now, 2);
+    const thirdFutureDate = addUtcDays(now, 3);
+
     const weather = makeWeather({
       daily: {
-        time: ['2026-02-23', '2026-02-24', '2026-02-25'],
+        time: [toDateKey(firstFutureDate), toDateKey(secondFutureDate), toDateKey(thirdFutureDate)],
         weathercode: [0, 2, 61],
         temperature_2m_max: [75, 70, 65],
         temperature_2m_min: [55, 50, 45],
@@ -84,8 +99,10 @@ describe('DailyForecast', () => {
       },
     });
     render(<DailyForecast weather={weather} />);
-    // Mon Feb 23 2026 is a Monday
-    expect(screen.getByText('Mon')).toBeInTheDocument();
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const expectedLabel = weekdays[firstFutureDate.getUTCDay()]!;
+    expect(screen.getByText(expectedLabel)).toBeInTheDocument();
+    expect(screen.queryByText('Today')).toBeNull();
   });
 
   it('shows wind badge when wind speed > 8', () => {

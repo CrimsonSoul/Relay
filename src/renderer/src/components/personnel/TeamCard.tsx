@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { getColorForString } from '../../utils/colors';
 import { Tooltip } from '../Tooltip';
@@ -44,54 +44,117 @@ export const TeamCard = React.memo(
 
     const isEmpty =
       teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
+    const emptyStateContent = isReadOnly ? (
+      <div className="team-card-empty team-card-empty--readonly">No personnel assigned</div>
+    ) : (
+      <button
+        type="button"
+        onClick={() => setIsEditing(true)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsEditing(true);
+          }
+        }}
+        className="team-card-empty team-card-empty--action"
+      >
+        Click to assign personnel
+      </button>
+    );
+    const cardRef = useRef<HTMLDivElement>(null);
+    const openContextMenu = useCallback(
+      (x: number, y: number) => {
+        if (isReadOnly) {
+          setMenu({
+            x,
+            y,
+            items: [
+              ...(onCopyTeamInfo
+                ? [
+                    {
+                      label: 'Copy On-Call Info',
+                      onClick: () => onCopyTeamInfo(team, teamRows),
+                      icon: (
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      ),
+                    },
+                  ]
+                : []),
+            ],
+          });
+          return;
+        }
 
-    const getMenuItems = (): ContextMenuItem[] => {
-      const copyItems = onCopyTeamInfo
-        ? [
+        setMenu({
+          x,
+          y,
+          items: [
+            ...(onCopyTeamInfo
+              ? [
+                  {
+                    label: 'Copy On-Call Info',
+                    onClick: () => onCopyTeamInfo(team, teamRows),
+                    icon: (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    ),
+                  },
+                ]
+              : []),
+            { label: 'Edit Team', onClick: () => setIsEditing(true) },
+            { label: 'Rename Team', onClick: () => onRenameTeam(team, team) },
             {
-              label: 'Copy On-Call Info',
-              onClick: () => onCopyTeamInfo(team, teamRows),
-              icon: (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                </svg>
-              ),
+              label: 'Remove Team',
+              danger: true,
+              onClick: () => setConfirm({ team, onConfirm: () => onRemoveTeam(team) }),
             },
-          ]
-        : [];
+          ],
+        });
+      },
+      [isReadOnly, onCopyTeamInfo, onRemoveTeam, onRenameTeam, setConfirm, setMenu, team, teamRows],
+    );
 
-      if (isReadOnly) return copyItems;
+    useEffect(() => {
+      const cardNode = cardRef.current;
+      if (!cardNode) return;
 
-      return [
-        ...copyItems,
-        { label: 'Edit Team', onClick: () => setIsEditing(true) },
-        { label: 'Rename Team', onClick: () => onRenameTeam(team, team) },
-        {
-          label: 'Remove Team',
-          danger: true,
-          onClick: () => setConfirm({ team, onConfirm: () => onRemoveTeam(team) }),
-        },
-      ];
-    };
+      const handleContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openContextMenu(event.clientX, event.clientY);
+      };
 
-    const openMenu = (x: number, y: number) => {
-      setMenu({ x, y, items: getMenuItems() });
-    };
+      cardNode.addEventListener('contextmenu', handleContextMenu);
+      return () => cardNode.removeEventListener('contextmenu', handleContextMenu);
+    }, [openContextMenu]);
 
     return (
       <>
         <div
-          aria-label={`Team: ${team}, ${teamRows.length} members`}
+          ref={cardRef}
           className={`card-surface team-card-body ${isReadOnly ? 'team-card-body--readonly' : 'lift-on-hover'}`}
           style={
             {
@@ -106,39 +169,19 @@ export const TeamCard = React.memo(
                 <span>{team}</span>
               </Tooltip>
             </div>
-            <button
-              type="button"
-              className="team-card-menu-btn"
-              aria-label={`Open actions for ${team}`}
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                openMenu(rect.left, rect.bottom + 4);
-              }}
-            >
-              ⋮
-            </button>
           </div>
           <div className="team-card-rows">
-            {isEmpty ? (
-              <button
-                type="button"
-                disabled={isReadOnly}
-                onClick={() => !isReadOnly && setIsEditing(true)}
-                className={`team-card-empty${isReadOnly ? ' team-card-empty--readonly' : ''}`}
-              >
-                {isReadOnly ? 'No personnel assigned' : 'Click to assign personnel'}
-              </button>
-            ) : (
-              teamRows.map((row) => (
-                <TeamRow
-                  key={row.id}
-                  row={row}
-                  hasAnyTimeWindow={hasAnyTimeWindow}
-                  gridTemplate={rowGridTemplate}
-                  tick={tick}
-                />
-              ))
-            )}
+            {isEmpty
+              ? emptyStateContent
+              : teamRows.map((row) => (
+                  <TeamRow
+                    key={row.id}
+                    row={row}
+                    hasAnyTimeWindow={hasAnyTimeWindow}
+                    gridTemplate={rowGridTemplate}
+                    tick={tick}
+                  />
+                ))}
           </div>
         </div>
         <MaintainTeamModal
@@ -153,26 +196,27 @@ export const TeamCard = React.memo(
     );
   },
   (prev, next) => {
-    // Custom comparison to avoid re-render if rows content is same, even if array ref changed
     if (prev.tick !== next.tick) return false;
-    if (prev.index !== next.index) return false; // Color depends on index — must re-render when position changes
+    if (prev.index !== next.index) return false;
     if (prev.team !== next.team) return false;
     if (prev.isReadOnly !== next.isReadOnly) return false;
     if (prev.contacts !== next.contacts) return false;
     if (prev.rows.length !== next.rows.length) return false;
-    // Deep check rows - expensive? Max ~10 rows per team usually.
+
     for (let i = 0; i < prev.rows.length; i++) {
-      const r1 = prev.rows[i],
-        r2 = next.rows[i];
+      const r1 = prev.rows[i];
+      const r2 = next.rows[i];
       if (
         r1.id !== r2.id ||
         r1.name !== r2.name ||
         r1.role !== r2.role ||
         r1.contact !== r2.contact ||
         r1.timeWindow !== r2.timeWindow
-      )
+      ) {
         return false;
+      }
     }
+
     return true;
   },
 );

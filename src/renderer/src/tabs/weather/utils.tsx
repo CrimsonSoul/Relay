@@ -164,30 +164,40 @@ export const RADAR_INJECT_CSS = `
 `;
 
 export const RADAR_INJECT_JS = `
-  const selectorsToRemove = [
-    '#app-icon',
-    '.get-the-app',
-    '.map-link',
-    '.map-link.small-hide',
-    '#search-icon',
-    '.search-box',
-    '.maplibregl-ctrl-logo'
-  ];
-  selectorsToRemove.forEach((selector) => {
-    document.querySelectorAll(selector).forEach((el) => {
-      el.parentElement?.removeChild(el);
+  (() => {
+    const selectorsToRemove = [
+      '#app-icon',
+      '.get-the-app',
+      '.map-link',
+      '.map-link.small-hide',
+      '#search-icon',
+      '.search-box',
+      '.maplibregl-ctrl-logo'
+    ];
+    selectorsToRemove.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        el.parentElement?.removeChild(el);
+      });
     });
-  });
-  const menu = document.getElementById('menu-bar');
-  if (menu) { menu.style.top = 'auto'; menu.style.bottom = '12px'; menu.style.left = '12px'; menu.style.right = 'auto'; menu.style.width = 'auto'; }
-  const play = document.querySelector('.map-buttons-play');
-  if (play) {
-    play.querySelectorAll('*').forEach((el) => {
-      if (el.textContent && el.textContent.trim().toUpperCase() === 'LIVE') {
-        (el as HTMLElement).style.display = 'none';
-      }
-    });
-  }
+    const menu = document.getElementById('menu-bar');
+    if (menu) {
+      menu.style.top = 'auto';
+      menu.style.bottom = '12px';
+      menu.style.left = '12px';
+      menu.style.right = 'auto';
+      menu.style.width = 'auto';
+    }
+    const play = document.querySelector('.map-buttons-play');
+    if (play) {
+      play.querySelectorAll('*').forEach((el) => {
+        if (el.textContent && el.textContent.trim().toUpperCase() === 'LIVE') {
+          if (el instanceof HTMLElement) {
+            el.style.display = 'none';
+          }
+        }
+      });
+    }
+  })();
 `;
 
 export const SEVERITY_COLORS: Record<

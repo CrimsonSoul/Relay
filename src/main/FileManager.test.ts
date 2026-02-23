@@ -430,6 +430,15 @@ describe('FileManager', () => {
       expect(cache).toBeDefined();
     });
 
+    it('reads oncall_layout.json with UTF-8 BOM', async () => {
+      const layout = { 'Team B': { x: 1, y: 1, w: 4, h: 3 } };
+      await fs.writeFile(
+        path.join(tmpDir, 'oncall_layout.json'),
+        `\uFEFF${JSON.stringify(layout)}`,
+      );
+      await expect(fileManager.readAndEmit()).resolves.toBeUndefined();
+    });
+
     it('handles oncall_layout.json with invalid JSON gracefully', async () => {
       await fs.writeFile(path.join(tmpDir, 'oncall_layout.json'), 'NOT_JSON!!!');
       // Should not throw — falls back to empty layout

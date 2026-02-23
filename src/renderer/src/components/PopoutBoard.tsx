@@ -88,7 +88,8 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       {isRemoteDragging && (
         <div className="popout-drag-overlay">
           <div className="popout-drag-overlay-inner">
-            <span className="animate-spin popout-drag-spinner" /> Board being updated...
+            <span className="animate-spin popout-drag-spinner" />
+            <span>Board being updated...</span>
           </div>
         </div>
       )}

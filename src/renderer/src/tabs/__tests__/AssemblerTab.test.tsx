@@ -73,6 +73,20 @@ vi.mock('../assembler', () => ({
         </button>
         <button
           onClick={() =>
+            onLoad({
+              id: 'h-manual',
+              note: '',
+              groups: ['Alpha'],
+              contacts: ['a@example.com', 'manual@example.com'],
+              recipientCount: 2,
+              createdAt: Date.now(),
+            })
+          }
+        >
+          load-history-manual
+        </button>
+        <button
+          onClick={() =>
             onSaveAsGroup({
               id: 'h1',
               note: '',
@@ -87,7 +101,11 @@ vi.mock('../assembler', () => ({
         </button>
       </div>
     ) : null,
-  CompositionList: () => <div data-testid="composition-list" />,
+  CompositionList: ({ onScroll }: { onScroll: (offset: number) => void }) => (
+    <div data-testid="composition-list">
+      <button onClick={() => onScroll(100)}>scroll-list</button>
+    </div>
+  ),
 }));
 
 vi.mock('../../components/CollapsibleHeader', () => ({
@@ -97,7 +115,18 @@ vi.mock('../../components/CollapsibleHeader', () => ({
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
-  ListToolbar: () => <div data-testid="list-toolbar" />,
+  ListToolbar: ({
+    onToggleSortDirection,
+    onSortKeyChange,
+  }: {
+    onToggleSortDirection: () => void;
+    onSortKeyChange: (key: string) => void;
+  }) => (
+    <div data-testid="list-toolbar">
+      <button onClick={onToggleSortDirection}>toggle-sort-dir</button>
+      <button onClick={() => onSortKeyChange('email')}>sort-by-email</button>
+    </div>
+  ),
 }));
 
 vi.mock('../../components/AddContactModal', () => ({
@@ -152,7 +181,11 @@ vi.mock('../../components/Modal', () => ({
 }));
 
 vi.mock('../../components/directory/GroupSelector', () => ({
-  GroupSelector: () => <div data-testid="group-selector" />,
+  GroupSelector: ({ onClose }: { onClose: () => void }) => (
+    <div data-testid="group-selector">
+      <button onClick={onClose}>close-group-selector</button>
+    </div>
+  ),
 }));
 
 // ── mock hooks ───────────────────────────────────────────────────────────────
@@ -417,5 +450,142 @@ describe('AssemblerTab', () => {
     fireEvent.click(screen.getByText('Manage Groups'));
     expect(screen.getByTestId('modal')).toBeInTheDocument();
     expect(screen.getByTestId('group-selector')).toBeInTheDocument();
+  });
+
+  it('handles copy and history save failures with error toasts', async () => {
+    const error = new Error('copy failed');
+    mockHandleCopy.mockRejectedValueOnce(error);
+    mockAddHistory.mockRejectedValueOnce(new Error('history failed'));
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
+
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1', 'missing-group']} />);
+    fireEvent.click(screen.getByText('COPY'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Copy failed: copy failed', 'error');
+    });
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Could not save bridge history: history failed',
+        'error',
+      );
+    });
+  });
+
+  it('shows history save error when confirming draft bridge', async () => {
+    mockAddHistory.mockRejectedValueOnce(new Error('draft history failed'));
+    asmState = {
+      ...baseAsm,
+      isBridgeReminderOpen: true,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
+
+    render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1']} />);
+    fireEvent.click(screen.getByText('confirm-reminder'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Could not save bridge history: draft history failed',
+        'error',
+      );
+    });
+  });
+
+  it('applies manual contacts from history entries not in selected groups', () => {
+    const setManualAdds = vi.fn();
+    render(<AssemblerTab {...defaultProps} setManualAdds={setManualAdds} />);
+
+    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('load-history-manual'));
+
+    expect(setManualAdds).toHaveBeenCalledWith(['manual@example.com']);
+  });
+
+  it('updates sort config from toolbar controls', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('toggle-sort-dir'));
+    fireEvent.click(screen.getByText('sort-by-email'));
+
+    expect(mockSetSortConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it('collapses header on composition list scroll', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('scroll-list'));
+    expect(mockSetIsHeaderCollapsed).toHaveBeenCalledWith(true);
+  });
+
+  it('closes add contact modal when close callback fires', () => {
+    asmState = { ...baseAsm, isAddContactModalOpen: true };
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('close-add-contact'));
+    expect(mockSetIsAddContactModalOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('closes bridge reminder modal when close callback fires', () => {
+    asmState = { ...baseAsm, isBridgeReminderOpen: true };
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('close-reminder'));
+    expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('closes save-group modal from history action', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('save-as-group'));
+    expect(screen.getByTestId('save-group-modal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('close-save'));
+    expect(screen.queryByTestId('save-group-modal')).not.toBeInTheDocument();
+  });
+
+  it('handles context menu close and save-to-contacts action', () => {
+    asmState = {
+      ...baseAsm,
+      compositionContextMenu: { x: 10, y: 10, email: 'unknown@example.com', isUnknown: true },
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('Save to Contacts'));
+    expect(mockHandleAddToContacts).toHaveBeenCalledWith('unknown@example.com');
+    expect(mockSetCompositionContextMenu).toHaveBeenCalledWith(null);
+
+    fireEvent.click(screen.getByText('close-ctx'));
+    expect(mockSetCompositionContextMenu).toHaveBeenCalledWith(null);
+  });
+
+  it('closes manage groups modal from modal close handler', () => {
+    asmState = {
+      ...baseAsm,
+      compositionContextMenu: { x: 10, y: 10, email: 'a@example.com', isUnknown: false },
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('Manage Groups'));
+    expect(screen.getByTestId('group-selector')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('close-modal'));
+    expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
+  });
+
+  it('closes manage groups modal from group selector close handler', () => {
+    asmState = {
+      ...baseAsm,
+      compositionContextMenu: { x: 10, y: 10, email: 'a@example.com', isUnknown: false },
+    };
+    render(<AssemblerTab {...defaultProps} />);
+    fireEvent.click(screen.getByText('Manage Groups'));
+    fireEvent.click(screen.getByText('close-group-selector'));
+    expect(screen.queryByTestId('modal')).not.toBeInTheDocument();
   });
 });

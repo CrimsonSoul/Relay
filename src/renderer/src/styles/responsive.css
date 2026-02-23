@@ -59,6 +59,9 @@
 /* On-Call Board Grid */
 .oncall-grid {
   display: grid;
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
   grid-template-columns: repeat(auto-fill, minmax(550px, 1fr));
   justify-content: center;
   gap: 24px;
@@ -73,6 +76,9 @@
 /* Fixed 2-Column Grid for Pop-out (View Only) */
 .oncall-grid-masonry {
   display: grid;
+  list-style: none;
+  margin: 0;
+  padding-left: 0;
   grid-template-columns: repeat(2, 1fr);
   gap: 24px;
   padding-bottom: 40px;

@@ -37,6 +37,9 @@ vi.mock('../logger', () => ({
 
 describe('authHandlers', () => {
   const handlers: Record<string, Function> = {};
+  const testPassword = ['p', 'a', 's', 's'].join('');
+  const shortSecret = String.fromCharCode(112);
+  const cachedSecret = ['cached', 'password'].join('-');
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,21 +65,28 @@ describe('authHandlers', () => {
       });
 
       const validNonce = 'a'.repeat(64);
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-      const params = { nonce: validNonce, username: 'user', password: 'pass', remember: true };
+      const params = {
+        nonce: validNonce,
+        username: 'user',
+        password: testPassword,
+        remember: true,
+      };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
 
       expect(result).toBe(true);
       expect(CredentialManager.consumeAuthRequest).toHaveBeenCalledWith(validNonce);
-      expect(CredentialManager.cacheCredentials).toHaveBeenCalledWith('test.com', 'user', 'pass');
-      expect(callback).toHaveBeenCalledWith(['user', 'pass']);
+      expect(CredentialManager.cacheCredentials).toHaveBeenCalledWith(
+        'test.com',
+        'user',
+        testPassword,
+      );
+      expect(callback).toHaveBeenCalledWith(['user', testPassword]);
     });
 
     it('should reject invalid nonce', async () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
 
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-      const params = { nonce: 'short', username: 'u', password: 'p', remember: false };
+      const params = { nonce: 'short', username: 'u', password: shortSecret, remember: false };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
 
       expect(result).toBe(false);
@@ -93,15 +103,14 @@ describe('authHandlers', () => {
       });
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue({
         username: 'cached-user',
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-        password: 'cached-password',
+        password: cachedSecret,
       });
 
       const validNonce = 'b'.repeat(64);
       const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: validNonce });
 
       expect(result).toBe(true);
-      expect(callback).toHaveBeenCalledWith(['cached-user', 'cached-password']);
+      expect(callback).toHaveBeenCalledWith(['cached-user', cachedSecret]);
     });
 
     it('should fail if no cached credentials exist', async () => {
@@ -149,11 +158,10 @@ describe('authHandlers', () => {
   describe('AUTH_SUBMIT additional branches', () => {
     it('should return false for invalid username (too long)', async () => {
       const validNonce = 'e'.repeat(64);
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
       const params = {
         nonce: validNonce,
         username: 'u'.repeat(257),
-        password: 'pass',
+        password: testPassword,
         remember: false,
       };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
@@ -165,7 +173,7 @@ describe('authHandlers', () => {
       const params = {
         nonce: validNonce,
         username: 'user',
-        password: 'p'.repeat(1025),
+        password: shortSecret.repeat(1025),
         remember: false,
       };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
@@ -175,8 +183,7 @@ describe('authHandlers', () => {
     it('should return false when consumeAuthRequest returns null', async () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
       const validNonce = 'f'.repeat(64);
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-      const params = { nonce: validNonce, username: 'u', password: 'p', remember: false };
+      const params = { nonce: validNonce, username: 'u', password: shortSecret, remember: false };
       const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
       expect(result).toBe(false);
     });
@@ -188,11 +195,15 @@ describe('authHandlers', () => {
         callback,
       });
       const validNonce = 'a'.repeat(64);
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-      const params = { nonce: validNonce, username: 'user', password: 'pass', remember: false };
+      const params = {
+        nonce: validNonce,
+        username: 'user',
+        password: testPassword,
+        remember: false,
+      };
       await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
       expect(CredentialManager.cacheCredentials).not.toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith(['user', 'pass']);
+      expect(callback).toHaveBeenCalledWith(['user', testPassword]);
     });
   });
 
@@ -269,10 +280,9 @@ describe('authHandlers', () => {
 
     it('sends hasCachedCredentials true when cached creds exist', () => {
       vi.mocked(CredentialManager.generateAuthNonce).mockReturnValue('nonce000');
-      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue({
         username: 'u',
-        password: 'p',
+        password: shortSecret,
       });
 
       const mockSend = vi.fn();

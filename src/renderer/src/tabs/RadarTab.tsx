@@ -11,6 +11,10 @@ export const RadarTab: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const supportsWebview = Boolean(globalThis.api);
   const radarUrl = secureStorage.getItemSync<string>(RADAR_URL_KEY, '');
+  const webviewAttributes: Record<string, string> = {
+    partition: 'persist:dispatcher-radar',
+    webpreferences: 'contextIsolation=yes, nodeIntegration=no',
+  };
 
   const handleRefresh = () => {
     setIsLoading(true);
@@ -96,6 +100,7 @@ export const RadarTab: React.FC = () => {
           ref={webviewRef}
           src={radarUrl}
           title="Dispatcher Radar"
+          {...webviewAttributes}
           className="webview-frame"
         />
       </div>

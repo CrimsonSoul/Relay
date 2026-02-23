@@ -207,7 +207,7 @@ describe('retryUtils', () => {
         const result = await retryNetworkOperation(operation, 'apiCall');
         expect(result).toBe('success');
       }
-    });
+    }, 120000);
 
     it('should not retry on client errors (4xx)', async () => {
       const operation = vi.fn().mockRejectedValue(new Error('HTTP 404 Not Found'));

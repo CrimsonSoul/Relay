@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { List, useListRef } from 'react-window';
 import type { ListImperativeAPI } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
@@ -147,7 +147,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     }
   }, [contextMenu, setContextMenu]);
 
-  const handleNotesClick = useCallback((contact: Contact) => setNotesContact(contact), []);
   const { handleAddWrapper, groupMap, focusedIndex, setFocusedIndex } = dir;
 
   const selectedContact =
@@ -167,18 +166,8 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       },
       focusedIndex,
       onRowClick: (i: number) => setFocusedIndex(i),
-      getContactNote,
-      onNotesClick: handleNotesClick,
     }),
-    [
-      filtered,
-      groupMap,
-      focusedIndex,
-      setFocusedIndex,
-      setContextMenu,
-      getContactNote,
-      handleNotesClick,
-    ],
+    [filtered, groupMap, focusedIndex, setFocusedIndex, setContextMenu],
   );
 
   return (

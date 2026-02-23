@@ -74,6 +74,20 @@ describe('GroupSelector', () => {
     });
   });
 
+  it('toggles contact into a group from keyboard', async () => {
+    mockApi.updateGroup.mockResolvedValue({ success: true });
+
+    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
+
+    fireEvent.keyDown(screen.getByText('Leadership'), { key: 'Enter' });
+
+    await waitFor(() => {
+      expect(mockApi.updateGroup).toHaveBeenCalledWith('g2', {
+        contacts: ['charlie@test.com', 'alice@test.com'],
+      });
+    });
+  });
+
   it('toggles contact out of a group (remove)', async () => {
     mockApi.updateGroup.mockResolvedValue({ success: true });
 
@@ -114,6 +128,19 @@ describe('GroupSelector', () => {
 
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith('Failed to remove from Engineering');
+    });
+  });
+
+  it('handles missing API and surfaces add failure message', async () => {
+    delete (globalThis as Window & { api?: typeof mockApi }).api;
+    const onError = vi.fn();
+
+    render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
+
+    fireEvent.keyDown(screen.getByText('Leadership'), { key: ' ' });
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith('Failed to add to Leadership');
     });
   });
 

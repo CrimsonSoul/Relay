@@ -93,6 +93,13 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                   onLoad(entry);
                   onClose();
                 }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onLoad(entry);
+                    onClose();
+                  }
+                }}
                 onContextMenu={(e) => handleContextMenu(e, entry)}
                 className="bridge-history-entry"
               >

@@ -94,6 +94,33 @@ describe('useBridgeHistory', () => {
     expect(result.current.history[0]).toEqual(newEntry); // Prepended
   });
 
+  it('adds a history entry when API returns an IpcResult wrapper', async () => {
+    const newEntry: BridgeHistoryEntry = {
+      id: 'h4',
+      timestamp: 4000,
+      note: 'Wrapped bridge',
+      groups: ['SRE'],
+      contacts: ['ops@test.com'],
+      recipientCount: 1,
+    };
+    mockApi.addBridgeHistory.mockResolvedValue({ success: true, data: newEntry });
+
+    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await result.current.addHistory({
+        note: 'Wrapped bridge',
+        groups: ['SRE'],
+        contacts: ['ops@test.com'],
+        recipientCount: 1,
+      });
+    });
+
+    expect(result.current.history).toHaveLength(3);
+    expect(result.current.history[0]).toEqual(newEntry);
+  });
+
   it('handles add history failure', async () => {
     mockApi.addBridgeHistory.mockResolvedValue(null);
 

@@ -57,6 +57,7 @@ import {
   state,
   getDataRoot,
   handleDataPathChange,
+  setupIpc,
   setupPermissions,
   getDefaultDataPath,
   getBundledDataPath,
@@ -70,6 +71,9 @@ import {
 } from '../dataUtils';
 import { validateDataPath } from '../pathValidation';
 import { FileManager } from '../FileManager';
+import { setupIpcHandlers } from '../ipcHandlers';
+import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
+import { setupLoggerHandlers } from '../handlers/loggerHandlers';
 import * as securityPolicy from '../securityPolicy';
 
 describe('appState', () => {
@@ -297,6 +301,53 @@ describe('appState', () => {
       setupPermissions(mockSession as never);
       const result = checkHandler!({}, 'media', 'https://other.com');
       expect(result).toBe(false);
+    });
+
+    it('setPermissionCheckHandler denies unknown permissions', () => {
+      state.mainWindow = {
+        webContents: { getURL: vi.fn(() => 'http://localhost') },
+      } as never;
+
+      let checkHandler: ((wc: { id: number }, perm: string, origin: string) => boolean) | undefined;
+      const mockSession = {
+        setPermissionRequestHandler: vi.fn(),
+        setPermissionCheckHandler: vi.fn((handler) => {
+          checkHandler = handler;
+        }),
+      };
+
+      setupPermissions(mockSession as never);
+      const result = checkHandler!({ id: 200 }, 'notifications', 'https://other.com');
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('setupIpc', () => {
+    it('wires IPC, auth handlers, and logger handlers', () => {
+      const createAuxWindow = vi.fn();
+      state.mainWindow = { webContents: { getURL: vi.fn(() => 'http://localhost') } } as never;
+      state.fileManager = { destroy: vi.fn(), init: vi.fn() } as never;
+
+      setupIpc(createAuxWindow);
+
+      expect(setupIpcHandlers).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.any(Function),
+        expect.any(Function),
+        expect.any(Function),
+        expect.any(Function),
+        createAuxWindow,
+      );
+      expect(setupAuthHandlers).toHaveBeenCalled();
+      expect(setupAuthInterception).toHaveBeenCalledWith(expect.any(Function));
+      expect(setupLoggerHandlers).toHaveBeenCalled();
+
+      const [getMainWindow, getFileManager] = vi.mocked(setupIpcHandlers).mock.calls[0] as [
+        () => unknown,
+        () => unknown,
+      ];
+      expect(getMainWindow()).toBe(state.mainWindow);
+      expect(getFileManager()).toBe(state.fileManager);
     });
   });
 });

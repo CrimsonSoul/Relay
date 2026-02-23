@@ -87,6 +87,18 @@ describe('TeamRow', () => {
     ).toHaveBeenCalledWith('5551234567');
   });
 
+  it('copies contact when phone is activated from keyboard', () => {
+    render(<TeamRow row={makeRow()} hasAnyTimeWindow={false} gridTemplate="auto 1fr auto" />);
+    const phone = screen.getByText('(555) 123-4567');
+
+    fireEvent.keyDown(phone, { key: 'Enter' });
+
+    expect(
+      (globalThis as unknown as { api: { writeClipboard: ReturnType<typeof vi.fn> } }).api
+        .writeClipboard,
+    ).toHaveBeenCalledWith('5551234567');
+  });
+
   it('shows Member label for unknown role', () => {
     render(
       <TeamRow
@@ -107,5 +119,16 @@ describe('TeamRow', () => {
       />,
     );
     expect(screen.getAllByText('Secondary').length).toBeGreaterThan(0);
+  });
+
+  it('keeps custom role labels when no mapping exists', () => {
+    render(
+      <TeamRow
+        row={makeRow({ role: 'Incident Commander' })}
+        hasAnyTimeWindow={false}
+        gridTemplate="auto 1fr auto"
+      />,
+    );
+    expect(screen.getAllByText('Incident Commander').length).toBeGreaterThan(0);
   });
 });

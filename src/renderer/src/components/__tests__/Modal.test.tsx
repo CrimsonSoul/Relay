@@ -97,6 +97,34 @@ describe('Modal', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('does not close when pointerdown happens inside dialog', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose}>
+        <p>Content</p>
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.pointerDown(dialog);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not close when mousedown happens inside dialog', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose}>
+        <p>Content</p>
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.mouseDown(dialog);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('prevents body scroll when open', () => {
     render(
       <Modal isOpen={true} onClose={vi.fn()}>

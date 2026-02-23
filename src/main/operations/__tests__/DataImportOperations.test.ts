@@ -54,15 +54,13 @@ vi.mock('../../logger', () => ({
 }));
 
 describe('DataImportOperations', () => {
-  // eslint-disable-next-line sonarjs/publicly-writable-directories
-  const rootDir = '/tmp/data';
+  const rootDir = '/var/relay-data';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // eslint-disable-next-line sonarjs/publicly-writable-directories
     vi.mocked(dialog.showOpenDialog).mockResolvedValue({
       canceled: false,
-      filePaths: ['/tmp/in.json'],
+      filePaths: ['/var/relay-imports/in.json'],
     });
     vi.mocked(fs.stat).mockResolvedValue({ size: 100 } as never);
     vi.mocked(fs.readFile).mockResolvedValue('[]');

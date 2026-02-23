@@ -45,15 +45,13 @@ vi.mock('../../logger', () => ({
 }));
 
 describe('DataExportOperations', () => {
-  // eslint-disable-next-line sonarjs/publicly-writable-directories
-  const rootDir = '/tmp/data';
+  const rootDir = '/var/relay-data';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // eslint-disable-next-line sonarjs/publicly-writable-directories
     vi.mocked(dialog.showSaveDialog).mockResolvedValue({
       canceled: false,
-      filePath: '/tmp/out.txt',
+      filePath: '/var/relay-exports/out.txt',
     });
     vi.mocked(getContacts).mockResolvedValue([
       {

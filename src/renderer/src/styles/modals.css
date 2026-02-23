@@ -30,6 +30,8 @@
   background-position: var(--surface-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
+  padding: 0;
+  margin: 0;
   box-shadow: var(--shadow-modal);
   overflow: hidden;
   position: relative;
@@ -44,6 +46,8 @@
   align-items: center;
   gap: 16px;
   background: var(--color-bg-chrome);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
 }
 
 .modal-icon-wrapper {
@@ -273,6 +277,8 @@
 }
 
 .modal-dialog-generic {
+  margin: 0;
+  padding: 0;
   background-color: var(--color-bg-surface-opaque);
   background-image: var(--surface-pattern);
   background-size: var(--surface-pattern-size);
@@ -357,6 +363,8 @@
 }
 
 .command-palette-container {
+  margin: 0;
+  padding: 0;
   width: 100%;
   max-width: 720px;
   background-color: var(--color-bg-chrome);
@@ -409,10 +417,17 @@
 .command-palette-results {
   flex: 1;
   overflow-y: auto;
+  list-style: none;
+  margin: 0;
   padding: 12px;
 }
 
 .command-palette-result-item {
+  list-style: none;
+}
+
+.command-palette-result-hitbox {
+  width: 100%;
   padding: 12px 16px;
   border-radius: var(--radius-md);
   min-height: 56px;
@@ -421,17 +436,21 @@
   align-items: center;
   gap: 20px;
   border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   transition:
     background 0.1s ease,
     border-color 0.1s ease;
 }
 
-.command-palette-result-item:hover {
+.command-palette-result-hitbox:hover {
   background: rgba(255, 255, 255, 0.025);
   border-color: rgba(255, 255, 255, 0.05);
 }
 
-.command-palette-result-item.is-selected {
+.command-palette-result-item.is-selected .command-palette-result-hitbox {
   background: rgba(245, 158, 11, 0.08);
   border-color: rgba(245, 158, 11, 0.25);
 }

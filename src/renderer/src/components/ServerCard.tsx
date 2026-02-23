@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { getPlatformColor } from './shared/PersonInfo';
@@ -14,7 +14,23 @@ interface ServerCardProps {
 export const ServerCard = memo(
   ({ server, onContextMenu, style, selected, onRowClick }: ServerCardProps) => {
     const osInfo = getPlatformColor(server.os);
-    const body = (
+    const staticCardRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+      if (onRowClick) return;
+
+      const node = staticCardRef.current;
+      if (!node) return;
+
+      const handleContextMenu = (event: MouseEvent) => {
+        event.preventDefault();
+        onContextMenu(event as unknown as React.MouseEvent, server);
+      };
+
+      node.addEventListener('contextmenu', handleContextMenu);
+      return () => node.removeEventListener('contextmenu', handleContextMenu);
+    }, [onContextMenu, onRowClick, server]);
+    const cardContent = (
       <div
         className={`server-card-body card-surface${selected ? ' server-card-body--selected' : ''}`}
       >
@@ -58,16 +74,24 @@ export const ServerCard = memo(
       </div>
     );
 
+    if (onRowClick) {
+      return (
+        <button
+          type="button"
+          onContextMenu={(e) => onContextMenu(e, server)}
+          onClick={onRowClick}
+          className="server-card server-card--interactive"
+          style={style}
+        >
+          {cardContent}
+        </button>
+      );
+    }
+
     return (
-      <button
-        type="button"
-        onContextMenu={(e) => onContextMenu(e, server)}
-        onClick={onRowClick}
-        className="server-card"
-        style={style}
-      >
-        {body}
-      </button>
+      <div ref={staticCardRef} className="server-card" style={style}>
+        {cardContent}
+      </div>
     );
   },
 );

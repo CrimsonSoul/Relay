@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CommandPalette } from '../CommandPalette';
 import type { SearchResult } from '../../hooks/useCommandSearch';
@@ -62,6 +62,27 @@ describe('CommandPalette', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(baseProps.onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('updates query with debounce and closes on input Escape', async () => {
+    useCommandSearchMock.mockReturnValue([]);
+
+    render(<CommandPalette {...baseProps} />);
+    const input = screen.getByLabelText('Search command palette');
+
+    fireEvent.change(input, { target: { value: 'alpha' } });
+
+    await waitFor(() => {
+      expect(useCommandSearchMock).toHaveBeenCalledWith(
+        'alpha',
+        baseProps.contacts,
+        baseProps.servers,
+        baseProps.groups,
+      );
+    });
+
+    fireEvent.keyDown(input, { key: 'Escape' });
+    expect(baseProps.onClose).toHaveBeenCalled();
   });
 
   it('supports keyboard navigation and selects a contact', () => {
@@ -143,16 +164,56 @@ describe('CommandPalette', () => {
 
     render(<CommandPalette {...baseProps} />);
 
-    fireEvent.click(screen.getByText('Go Weather').closest('button')!);
-    fireEvent.click(screen.getByText('Create Contact').closest('button')!);
-    fireEvent.click(screen.getByText('Add Manual').closest('button')!);
-    fireEvent.click(screen.getByText('Server A').closest('button')!);
-    fireEvent.click(screen.getByText('Group A').closest('button')!);
+    fireEvent.click(screen.getByText('Go Weather').closest('.command-palette-result-hitbox')!);
+    fireEvent.click(screen.getByText('Create Contact').closest('.command-palette-result-hitbox')!);
+    fireEvent.click(screen.getByText('Add Manual').closest('.command-palette-result-hitbox')!);
+    fireEvent.click(screen.getByText('Server A').closest('.command-palette-result-hitbox')!);
+    fireEvent.click(screen.getByText('Group A').closest('.command-palette-result-hitbox')!);
 
     expect(baseProps.onNavigateToTab).toHaveBeenCalledWith('Weather');
     expect(baseProps.onOpenAddContact).toHaveBeenCalledWith('new@test.com');
     expect(baseProps.onAddContactToBridge).toHaveBeenCalledWith('manual@test.com');
     expect(baseProps.onNavigateToTab).toHaveBeenCalledWith('Servers');
     expect(baseProps.onToggleGroup).toHaveBeenCalledWith('g1');
+  });
+
+  it('handles option hover and keyboard select on result rows', () => {
+    const results: SearchResult[] = [
+      {
+        id: 'c1',
+        type: 'contact',
+        title: 'Alpha',
+        subtitle: 'alpha@test.com',
+        iconType: 'contact',
+        data: baseProps.contacts[0],
+      },
+    ];
+    useCommandSearchMock.mockReturnValue(results);
+
+    render(<CommandPalette {...baseProps} />);
+    const option = screen.getByText('Alpha').closest('.command-palette-result-hitbox');
+    expect(option).not.toBeNull();
+
+    fireEvent.mouseEnter(option!);
+    fireEvent.keyDown(option!, { key: ' ' });
+
+    expect(baseProps.onAddContactToBridge).toHaveBeenCalledWith('alpha@test.com');
+  });
+
+  it('renders unknown result types without an icon', () => {
+    const results = [
+      {
+        id: 'u1',
+        type: 'unknown',
+        title: 'Mystery',
+        subtitle: '',
+        iconType: 'contact',
+        data: {},
+      } as unknown as SearchResult,
+    ];
+    useCommandSearchMock.mockReturnValue(results);
+
+    render(<CommandPalette {...baseProps} />);
+    expect(screen.getByText('Mystery')).toBeInTheDocument();
   });
 });

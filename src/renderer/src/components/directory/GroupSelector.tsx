@@ -29,7 +29,7 @@ export const GroupSelector = ({
 
   const toggleGroup = useCallback(
     async (group: BridgeGroup, isMember: boolean) => {
-      if (updating) return; // Prevent concurrent updates
+      if (updating) return;
       const previousState = membership[group.id];
       setMembership((prev) => ({ ...prev, [group.id]: !isMember }));
       setUpdating(group.id);
@@ -43,10 +43,8 @@ export const GroupSelector = ({
         let newContacts: string[];
 
         if (isMember) {
-          // Remove contact from group
           newContacts = group.contacts.filter((e) => e.toLowerCase() !== contactEmail);
         } else {
-          // Add contact to group
           newContacts = [...group.contacts, contact.email];
         }
 
@@ -55,7 +53,6 @@ export const GroupSelector = ({
           throw new Error(result?.error || 'Failed to update group');
         }
       } catch (error) {
-        // Rollback on failure
         setMembership((prev) => ({ ...prev, [group.id]: previousState ?? false }));
         const message = isMember
           ? `Failed to remove from ${group.name}`
@@ -79,13 +76,16 @@ export const GroupSelector = ({
               type="button"
               key={group.id}
               aria-pressed={!!membership[group.id]}
-              onClick={() => {
-                if (!isUpdating) {
-                  toggleGroup(group, !!membership[group.id]).catch((error_) => {
-                    loggers.directory.error('[GroupSelector] Failed toggling group on click', {
-                      error: error_,
-                    });
-                  });
+              disabled={isUpdating}
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleGroup(group, !!membership[group.id]);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.currentTarget.click();
                 }
               }}
               className={`group-selector-item${isUpdating ? ' group-selector-item--updating' : ''}`}

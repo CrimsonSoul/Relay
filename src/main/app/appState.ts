@@ -125,14 +125,19 @@ export function setupPermissions(sess: Electron.Session) {
   });
 
   sess.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    const mainWindowWebContents = state.mainWindow?.webContents;
+    const canCompareById =
+      typeof mainWindowWebContents?.id === 'number' && typeof webContents.id === 'number';
+    const isMainWindowById = canCompareById && mainWindowWebContents.id === webContents.id;
+    const isMainWindow = isMainWindowById;
     const mainWindowOrigin = state.mainWindow
       ? getSecureOrigin(state.mainWindow.webContents.getURL())
-      : '';
-    const isMainWindow =
-      mainWindowOrigin.length > 0 && getSecureOrigin(requestingOrigin) === mainWindowOrigin;
+      : null;
+    const isMainWindowOrigin =
+      mainWindowOrigin !== null && getSecureOrigin(requestingOrigin) === mainWindowOrigin;
 
     if (permission === 'geolocation') {
-      return !!isMainWindow || isTrustedGeolocationOrigin(requestingOrigin);
+      return !!isMainWindow || isMainWindowOrigin || isTrustedGeolocationOrigin(requestingOrigin);
     }
 
     if (permission === 'media') {

@@ -147,7 +147,7 @@ export class FileManager {
       const content = await this.fsService.readFile('oncall_layout.json');
       if (content) {
         try {
-          const parsed: unknown = JSON.parse(content);
+          const parsed: unknown = JSON.parse(content.replace(/^\uFEFF/, ''));
           const result = TeamLayoutSchema.safeParse(parsed);
           if (result.success && result.data) {
             return result.data;

@@ -196,28 +196,38 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               placeholder="Search contacts, groups..."
               className="command-palette-input"
               aria-label="Search command palette"
+              aria-controls="command-palette-results"
+              aria-activedescendant={
+                results.length > 0 ? `command-result-${selectedIndex}` : undefined
+              }
             />
             <div className="command-palette-esc-badge">ESC</div>
           </div>
         </div>
 
         {/* Results */}
-        <ul ref={resultsRef} className="command-palette-results">
+        <ul ref={resultsRef} className="command-palette-results" id="command-palette-results">
           {results.length === 0 ? (
             <li className="command-palette-empty">No results found</li>
           ) : (
             results.map((result, index) => (
               <li
                 key={result.id}
-                data-index={index}
-                id={`command-result-${index}`}
                 className={`command-palette-result-item ${index === selectedIndex ? 'is-selected' : ''}`}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
                 <button
                   type="button"
+                  data-index={index}
+                  id={`command-result-${index}`}
                   onClick={() => handleSelect(result)}
-                  className="command-palette-result-button"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSelect(result);
+                    }
+                  }}
+                  className="command-palette-result-hitbox"
                 >
                   <div className="command-palette-result-icon">
                     <RenderIcon result={result} />

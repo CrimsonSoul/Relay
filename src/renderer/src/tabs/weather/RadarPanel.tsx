@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { TactileButton } from '../../components/TactileButton';
 import type { Location } from './types';
 import { getRadarUrl } from './utils';
@@ -13,17 +13,11 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
   const supportsWebview = Boolean(globalThis.api);
   const isValidLocation =
     location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
-
-  useEffect(() => {
-    const webview = webviewRef.current;
-    if (!webview) return;
-    webview.setAttribute(
-      'useragent',
+  const radarWebviewAttributes: Record<string, string> = {
+    useragent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    );
-    webview.setAttribute('partition', 'persist:weather');
-    webview.setAttribute('allowpopups', 'false');
-  }, [webviewRef, location]);
+    partition: 'persist:weather',
+  };
 
   return (
     <div className="radar-panel-wrapper">
@@ -56,6 +50,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
               ref={webviewRef as React.RefObject<Electron.WebviewTag>}
               key={`${location.latitude.toFixed(2)}-${location.longitude.toFixed(2)}`}
               src={getRadarUrl(location.latitude, location.longitude)}
+              {...radarWebviewAttributes}
               className="radar-webview"
             />
             <div className="webview-border-overlay" />

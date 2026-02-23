@@ -53,17 +53,15 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
         onClick={onClose}
       />
       <dialog
-        ref={focusTrapRef}
         open
+        ref={focusTrapRef}
         className="modal-dialog-generic animate-scale-in"
         style={{ width }}
         aria-modal="true"
         aria-labelledby={title ? 'generic-modal-title' : undefined}
       >
-        {/* Subtle gradient accent at top */}
         <div className="modal-accent-line" />
 
-        {/* Header */}
         <div className="modal-header-generic">
           <h2 id="generic-modal-title" className="modal-title-generic">
             {title}
@@ -92,7 +90,6 @@ export const Modal: React.FC<Props> = ({ isOpen, onClose, children, title, width
           </Tooltip>
         </div>
 
-        {/* Content */}
         <div className="modal-body-generic">{children}</div>
       </dialog>
     </div>,

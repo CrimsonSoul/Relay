@@ -220,7 +220,11 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             </TactileButton>
             <TactileButton
               variant="ghost"
-              onClick={() => setIsHistoryOpen(true)}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                setIsHistoryOpen(true);
+              }}
               icon={
                 <svg
                   width="20"
