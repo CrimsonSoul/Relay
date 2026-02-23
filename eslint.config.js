@@ -5,6 +5,7 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import globals from 'globals';
+import sonarjs from 'eslint-plugin-sonarjs';
 
 // Shared parser options for all TypeScript files
 const sharedParserOptions = {
@@ -66,10 +67,14 @@ export default [
       'playwright-report',
       'test-results',
       'docs',
+      'src/renderer/dist/**',
+      '.scannerwork/**',
+      '.sonar-local/**',
       'src/renderer/test/setup.ts',
     ],
   },
   js.configs.recommended,
+  sonarjs.configs.recommended,
 
   // Main process
   {

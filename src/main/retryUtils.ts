@@ -59,6 +59,7 @@ export async function retryAsync<T>(
       );
 
       // Add jitter to prevent thundering herd
+      // eslint-disable-next-line sonarjs/pseudo-random
       const delay = opts.jitter ? baseDelay * (0.5 + Math.random() * 0.5) : baseDelay;
 
       // Notify about retry

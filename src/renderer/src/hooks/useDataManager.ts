@@ -10,7 +10,7 @@ export function useDataManager() {
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await window.api?.getDataStats();
+      const data = await globalThis.api?.getDataStats();
       if (data) {
         setStats(data);
       }
@@ -24,7 +24,7 @@ export function useDataManager() {
   const exportData = useCallback(async (options: ExportOptions) => {
     setExporting(true);
     try {
-      const result = await window.api?.exportData(options);
+      const result = await globalThis.api?.exportData(options);
       return result?.success || false;
     } catch (e) {
       loggers.storage.error('Export failed', { error: e });
@@ -38,7 +38,7 @@ export function useDataManager() {
     async (category: DataCategory) => {
       setImporting(true);
       try {
-        const result = await window.api?.importData(category);
+        const result = await globalThis.api?.importData(category);
         if (result?.success && result.data) {
           setLastImportResult(result.data);
           // Refresh stats after import

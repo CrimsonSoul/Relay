@@ -11,17 +11,10 @@ export const SidebarToggleHandle: React.FC<SidebarToggleHandleProps> = ({
   onToggle,
 }) => (
   <Tooltip content={isCollapsed ? 'Expand Groups' : 'Collapse Groups'}>
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       aria-label={isCollapsed ? 'Expand Groups' : 'Collapse Groups'}
       onClick={onToggle}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onToggle();
-        }
-      }}
       className="sidebar-toggle-handle"
     >
       <svg
@@ -37,6 +30,6 @@ export const SidebarToggleHandle: React.FC<SidebarToggleHandleProps> = ({
       >
         <polyline points="15 18 9 12 15 6" />
       </svg>
-    </div>
+    </button>
   </Tooltip>
 );

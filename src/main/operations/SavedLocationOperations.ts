@@ -3,7 +3,7 @@
  * Uses cross-process file locking for multi-instance synchronization.
  */
 
-import { join } from 'path';
+import { join } from 'node:path';
 import type { SavedLocation } from '@shared/ipc';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';
@@ -63,7 +63,7 @@ export async function saveLocation(
         locations.push(newLocation);
         result = newLocation;
         loggers.fileManager.info(`[SavedLocationOperations] Saved location: ${newLocation.name}`);
-        return locations;
+        return [...locations];
       },
       [],
     );
@@ -116,7 +116,7 @@ export async function setDefaultLocation(rootDir: string, id: string): Promise<b
         locations.forEach((loc) => (loc.isDefault = loc.id === id));
         success = true;
         loggers.fileManager.info(`[SavedLocationOperations] Set default location: ${target.name}`);
-        return locations;
+        return [...locations];
       },
       [],
     );
@@ -131,23 +131,33 @@ export async function setDefaultLocation(rootDir: string, id: string): Promise<b
 export async function clearDefaultLocation(rootDir: string, id: string): Promise<boolean> {
   try {
     let success = false;
+    let locationName = id;
     const path = LOCATIONS_FILE_PATH(rootDir);
 
     await modifyJsonWithLock<SavedLocation[]>(
       path,
       (locations) => {
-        const target = locations.find((l) => l.id === id);
-        if (!target || !target.isDefault) return locations;
+        const target = locations.find((location) => location.id === id);
+        if (!target?.isDefault) {
+          return locations;
+        }
 
         target.isDefault = false;
+        locationName = target.name;
         success = true;
         loggers.fileManager.info(
           `[SavedLocationOperations] Cleared default from location: ${target.name}`,
         );
-        return locations;
+        return [...locations];
       },
       [],
     );
+
+    if (!success) {
+      loggers.fileManager.debug(
+        `[SavedLocationOperations] No default location cleared for id: ${locationName}`,
+      );
+    }
 
     return success;
   } catch (e) {
@@ -188,7 +198,7 @@ export async function updateLocation(
 
         success = true;
         loggers.fileManager.info(`[SavedLocationOperations] Updated location: ${target.name}`);
-        return locations;
+        return [...locations];
       },
       [],
     );

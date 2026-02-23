@@ -60,9 +60,9 @@ export function useOnCallBoard({ teams, getTeamRows, toastMessages }: UseOnCallB
         enableAnimations(true);
       }, 150);
     };
-    window.addEventListener('resize', handleResize);
+    globalThis.addEventListener('resize', handleResize);
     return () => {
-      window.removeEventListener('resize', handleResize);
+      globalThis.removeEventListener('resize', handleResize);
       clearTimeout(resizeTimeout);
     };
   }, [enableAnimations]);
@@ -71,7 +71,7 @@ export function useOnCallBoard({ teams, getTeamRows, toastMessages }: UseOnCallB
   const handleCopyTeamInfo = useCallback(
     async (team: string, rows: OnCallRow[]) => {
       const text = formatTeamOnCall(team, rows);
-      const success = await window.api?.writeClipboard(text);
+      const success = await globalThis.api?.writeClipboard(text);
       if (success) {
         showToast(
           toastMessages?.copyTeamSuccess
@@ -88,7 +88,7 @@ export function useOnCallBoard({ teams, getTeamRows, toastMessages }: UseOnCallB
 
   const handleCopyAllOnCall = useCallback(async () => {
     const allText = teams.map((team) => formatTeamOnCall(team, getTeamRows(team))).join('\n');
-    const success = await window.api?.writeClipboard(allText);
+    const success = await globalThis.api?.writeClipboard(allText);
     if (success) {
       showToast(toastMessages?.copyAllSuccess ?? 'Copied all info', 'success');
     } else {

@@ -96,12 +96,12 @@ describe('useOnCallBoard', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (window as Window & { api: typeof mockApi }).api = mockApi as Window['api'];
+    (globalThis.window as unknown as { api: typeof mockApi }).api = mockApi;
   });
 
   const defaultOpts = {
     teams: ['Network', 'Database'],
-    getTeamRows: (team: string) => teamRows[team] || [],
+    getTeamRows: (team: string) => teamRows[team] ?? [],
   };
 
   it('handleCopyTeamInfo writes formatted team text to clipboard', async () => {
@@ -110,7 +110,7 @@ describe('useOnCallBoard', () => {
     const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
 
     await act(async () => {
-      await result.current.handleCopyTeamInfo('Network', teamRows.Network);
+      await result.current.handleCopyTeamInfo('Network', teamRows.Network!);
     });
 
     expect(mockApi.writeClipboard).toHaveBeenCalledWith(
@@ -124,7 +124,7 @@ describe('useOnCallBoard', () => {
     const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
 
     await act(async () => {
-      await result.current.handleCopyTeamInfo('Network', teamRows.Network);
+      await result.current.handleCopyTeamInfo('Network', teamRows.Network!);
     });
 
     expect(mockApi.writeClipboard).toHaveBeenCalled();
@@ -139,7 +139,7 @@ describe('useOnCallBoard', () => {
       await result.current.handleCopyAllOnCall();
     });
 
-    const clipText = mockApi.writeClipboard.mock.calls[0][0];
+    const clipText = mockApi.writeClipboard.mock.calls[0]?.[0] as string;
     expect(clipText).toContain('Network:');
     expect(clipText).toContain('Database:');
     expect(clipText).toContain('\n');
@@ -161,7 +161,7 @@ describe('useOnCallBoard', () => {
     );
 
     await act(async () => {
-      await result.current.handleCopyTeamInfo('Network', teamRows.Network);
+      await result.current.handleCopyTeamInfo('Network', teamRows.Network!);
     });
 
     // The toast is shown internally — we verify the clipboard call happened
@@ -171,18 +171,18 @@ describe('useOnCallBoard', () => {
   it('disables animations during window resize', async () => {
     vi.useFakeTimers();
 
-    renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
+    const { result } = renderHook(() => useOnCallBoard(defaultOpts), { wrapper: hookWrapper });
 
     // Trigger resize
-    window.dispatchEvent(new Event('resize'));
+    globalThis.window.dispatchEvent(new Event('resize'));
 
     // Advance past the 150ms debounce
-    act(() => {
+    await act(async () => {
       vi.advanceTimersByTime(200);
     });
 
-    // No assertion needed beyond "doesn't crash" — the key behavior is
-    // that enableAnimations(false) then enableAnimations(true) are called
+    // Verify the hook returned a stable API after resize
+    expect(result.current.handleCopyAllOnCall).toBeDefined();
     vi.useRealTimers();
   });
 });

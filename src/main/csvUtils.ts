@@ -5,7 +5,7 @@ import { loggers } from './logger';
 /**
  * Characters that trigger formula injection in spreadsheet applications
  */
-const FORMULA_CHARS = ['=', '+', '-', '@', '\t', '\r', '|', '\\'];
+const FORMULA_CHARS = new Set(['=', '+', '-', '@', '\t', '\r', '|', '\\']);
 
 /**
  * Desanitizes a field read from CSV.
@@ -14,7 +14,7 @@ const FORMULA_CHARS = ['=', '+', '-', '@', '\t', '\r', '|', '\\'];
 export function desanitizeField(value: string | null | undefined): string {
   if (!value) return '';
   const str = String(value);
-  if (str.startsWith("'") && FORMULA_CHARS.includes(str.charAt(1))) {
+  if (str.startsWith("'") && FORMULA_CHARS.has(str.charAt(1))) {
     return str.slice(1);
   }
   return str;
@@ -54,10 +54,11 @@ export function sanitizeCsvContent(content: string): string {
   let cleaned = content.replace(/^\uFEFF/, '');
 
   // Normalize line endings
-  cleaned = cleaned.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  cleaned = cleaned.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
   // Remove null bytes
-  cleaned = cleaned.replace(/\x00/g, ''); // eslint-disable-line no-control-regex
+
+  cleaned = cleaned.replaceAll('\0', '');
 
   return cleaned;
 }

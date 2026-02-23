@@ -30,8 +30,6 @@ const getRoleLabel = (role: string) => {
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
   ({ row, hasAnyTimeWindow, gridTemplate, tick: _tick }) => {
     const { showToast } = useToast();
-    // _tick is destructured to trigger re-render on interval ticks;
-    // isTimeWindowActive checks the current time so it needs to run each render.
     const isActive = isTimeWindowActive(row.timeWindow || '');
 
     const isPrimary = useMemo(() => {
@@ -39,66 +37,58 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
       return r.includes('primary') || r === 'pri' || r.includes('network') || r.includes('telecom');
     }, [row.role]);
 
-    const handleCopyContact = async (e: React.MouseEvent) => {
-      e.stopPropagation();
+    const handleCopyContact = async () => {
       if (!row.contact) return;
-      const success = await window.api?.writeClipboard(row.contact);
+      const success = await globalThis.api?.writeClipboard(row.contact);
       if (success) {
         showToast(`Copied ${row.contact}`, 'success');
       }
     };
 
     const roleText = getRoleLabel(row.role);
-
     const rowClassName = `team-row${isActive ? ' team-row--active' : ''}${isPrimary ? ' team-row--primary' : ''}`;
 
     return (
-      <div
-        className={rowClassName}
-        style={{ gridTemplateColumns: gridTemplate }}
-        role="group"
-        aria-label={`${roleText}: ${row.name || 'Empty'} ${isActive ? '(Active now)' : ''} ${isPrimary ? '(Primary)' : ''}`}
-      >
-        {/* Role pill */}
+      <div className={rowClassName} style={{ gridTemplateColumns: gridTemplate }}>
         <Tooltip content={roleText}>
           <div aria-hidden="true" className="team-row-role">
             {roleText}
           </div>
         </Tooltip>
 
-        {/* Name + active indicator */}
         <Tooltip content={row.name} block>
           <div className="team-row-name-wrapper">
             {isActive && <div className="animate-active-indicator team-row-active-indicator" />}
-            <div className={`team-row-name${!row.name ? ' team-row-name--empty' : ''}`}>
+            <div className={`team-row-name${row.name ? '' : ' team-row-name--empty'}`}>
               {row.name || '—'}
             </div>
           </div>
         </Tooltip>
 
-        {/* Phone number */}
         <Tooltip content="Click to copy">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={handleCopyContact}
+          <button
+            type="button"
+            onClick={() => {
+              void handleCopyContact();
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                void handleCopyContact(e as unknown as React.MouseEvent);
+                void handleCopyContact();
               }
             }}
-            className={`team-row-phone${!row.contact ? ' team-row-phone--empty' : ''}`}
+            className={`team-row-phone${row.contact ? '' : ' team-row-phone--empty'}`}
+            disabled={!row.contact}
+            aria-label={row.contact ? `Copy contact ${row.contact}` : 'No contact available'}
           >
             {formatPhoneNumber(row.contact)}
-          </div>
+          </button>
         </Tooltip>
 
-        {/* Time window */}
         {hasAnyTimeWindow && (
           <Tooltip content={row.timeWindow || ''}>
             <div
-              className={`team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${!row.timeWindow ? ' team-row-time-window--hidden' : ''}`}
+              className={`team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${row.timeWindow ? '' : ' team-row-time-window--hidden'}`}
             >
               {row.timeWindow || '\u00A0'}
             </div>

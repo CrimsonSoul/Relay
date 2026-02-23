@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 
 describe('ErrorBoundary Component', () => {
   beforeEach(() => {
-    // Mock window.location.reload using Object.defineProperty
+    // Mock globalThis.location.reload using Object.defineProperty
     vi.stubGlobal('location', {
       reload: vi.fn(),
     });
@@ -73,7 +73,7 @@ describe('ErrorBoundary Component', () => {
     const reloadButton = screen.getByText('Reload Application');
     reloadButton.click();
 
-    expect(window.location.reload).toHaveBeenCalled();
+    expect(globalThis.location.reload).toHaveBeenCalled();
   });
 
   it('logs error to console', () => {

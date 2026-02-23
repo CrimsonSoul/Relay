@@ -154,7 +154,7 @@ export function setupDataHandlers(
   ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) return { success: false, rateLimited: true };
-    void getFileManager()?.readAndEmit();
+    await getFileManager()?.readAndEmit();
     return { success: true };
   });
 

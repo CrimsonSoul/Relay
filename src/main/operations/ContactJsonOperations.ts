@@ -4,7 +4,7 @@
  * Uses cross-process file locking for multi-instance synchronization.
  */
 
-import { join } from 'path';
+import { join } from 'node:path';
 import type { ContactRecord } from '@shared/ipc';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';
@@ -59,19 +59,7 @@ export async function addContactRecord(
           (c) => c.email.toLowerCase() === contact.email.toLowerCase(),
         );
 
-        if (existingIndex !== -1) {
-          // Update existing contact instead of adding duplicate
-          const now = Date.now();
-          contacts[existingIndex] = {
-            ...contacts[existingIndex],
-            ...contact,
-            updatedAt: now,
-          };
-          result = contacts[existingIndex];
-          loggers.fileManager.info(
-            `[ContactJsonOperations] Updated existing contact: ${contact.email}`,
-          );
-        } else {
+        if (existingIndex === -1) {
           const now = Date.now();
           const newContact: ContactRecord = {
             id: generateId('contact'),
@@ -85,7 +73,20 @@ export async function addContactRecord(
           contacts.push(newContact);
           result = newContact;
           loggers.fileManager.info(`[ContactJsonOperations] Added contact: ${newContact.email}`);
+          return contacts;
         }
+
+        // Update existing contact instead of adding duplicate
+        const now = Date.now();
+        contacts[existingIndex] = {
+          ...contacts[existingIndex],
+          ...contact,
+          updatedAt: now,
+        };
+        result = contacts[existingIndex];
+        loggers.fileManager.info(
+          `[ContactJsonOperations] Updated existing contact: ${contact.email}`,
+        );
         return contacts;
       },
       [],

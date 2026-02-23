@@ -23,7 +23,10 @@ import { getNotes, setContactNote, setServerNote } from '../NotesOperations';
 const mockRead = vi.mocked(readWithLock);
 const mockModify = vi.mocked(modifyJsonWithLock);
 
-const rootDir = '/tmp/relay-data';
+import os from 'node:os';
+import path from 'node:path';
+
+const rootDir = path.join(os.homedir(), 'relay-data');
 
 const emptyNotes: NotesData = { contacts: {}, servers: {} };
 
@@ -88,7 +91,7 @@ describe('NotesOperations', () => {
 
   describe('setContactNote', () => {
     it('adds note and tags', async () => {
-      let captured: NotesData | undefined;
+      let captured: NotesData = { contacts: {}, servers: {} };
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback({ contacts: {}, servers: {} }) as NotesData;
@@ -98,13 +101,13 @@ describe('NotesOperations', () => {
 
       expect(result).toBe(true);
       // Key should be lowercased
-      expect(captured!.contacts['alice@co.com']).toBeDefined();
-      expect(captured!.contacts['alice@co.com'].note).toBe('VIP client');
-      expect(captured!.contacts['alice@co.com'].tags).toEqual(['important']);
+      expect(captured.contacts['alice@co.com']).toBeDefined();
+      expect(captured.contacts['alice@co.com']?.note).toBe('VIP client');
+      expect(captured.contacts['alice@co.com']?.tags).toEqual(['important']);
     });
 
     it('removes entry when both note and tags are empty', async () => {
-      let captured: NotesData | undefined;
+      let captured: NotesData = { contacts: {}, servers: {} };
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback({
@@ -118,7 +121,7 @@ describe('NotesOperations', () => {
       const result = await setContactNote(rootDir, 'alice@co.com', '', []);
 
       expect(result).toBe(true);
-      expect(captured!.contacts['alice@co.com']).toBeUndefined();
+      expect(captured.contacts['alice@co.com']).toBeUndefined();
     });
 
     it('returns false on error', async () => {
@@ -133,7 +136,7 @@ describe('NotesOperations', () => {
 
   describe('setServerNote', () => {
     it('adds note and tags for server', async () => {
-      let captured: NotesData | undefined;
+      let captured: NotesData = { contacts: {}, servers: {} };
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback({ contacts: {}, servers: {} }) as NotesData;
@@ -142,13 +145,13 @@ describe('NotesOperations', () => {
       const result = await setServerNote(rootDir, 'Web-01', 'production', ['prod']);
 
       expect(result).toBe(true);
-      expect(captured!.servers['web-01']).toBeDefined();
-      expect(captured!.servers['web-01'].note).toBe('production');
-      expect(captured!.servers['web-01'].tags).toEqual(['prod']);
+      expect(captured.servers['web-01']).toBeDefined();
+      expect(captured.servers['web-01']?.note).toBe('production');
+      expect(captured.servers['web-01']?.tags).toEqual(['prod']);
     });
 
     it('removes entry when both note and tags are empty', async () => {
-      let captured: NotesData | undefined;
+      let captured: NotesData = { contacts: {}, servers: {} };
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback({
@@ -162,11 +165,11 @@ describe('NotesOperations', () => {
       const result = await setServerNote(rootDir, 'web-01', '', []);
 
       expect(result).toBe(true);
-      expect(captured!.servers['web-01']).toBeUndefined();
+      expect(captured.servers['web-01']).toBeUndefined();
     });
 
     it('ensures structure when notes object is missing keys', async () => {
-      let captured: NotesData | undefined;
+      let captured: NotesData = { contacts: {}, servers: {} };
 
       mockModify.mockImplementation(async (_path, callback) => {
         // Simulate data with missing keys
@@ -179,7 +182,7 @@ describe('NotesOperations', () => {
       const result = await setServerNote(rootDir, 'db-01', 'staging', ['stg']);
 
       expect(result).toBe(true);
-      expect(captured!.servers['db-01'].note).toBe('staging');
+      expect(captured.servers['db-01']?.note).toBe('staging');
     });
   });
 });

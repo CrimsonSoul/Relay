@@ -84,12 +84,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={`Edit Card: ${teamName}`} width="960px">
-      <div
-        role="presentation"
-        className="maintain-team-body"
-        onPointerDown={(e) => e.stopPropagation()}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+      <div className="maintain-team-body">
         <div className="maintain-team-scroll">
           <DndContext
             id={`modal-dnd-${teamName}`}

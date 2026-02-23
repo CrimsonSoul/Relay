@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
+import { getErrorMessage } from '@shared/types';
 import { useToast } from '../components/Toast';
 import { useDebounce } from './useDebounce';
 import { loggers } from '../utils/logger';
@@ -130,7 +131,7 @@ export function useAssembler({
   }, [allRecipients, debouncedSearch, contactMap]);
 
   const handleCopy = async () => {
-    const success = await window.api?.writeClipboard(log.map((m) => m.email).join('; '));
+    const success = await globalThis.api?.writeClipboard(log.map((m) => m.email).join('; '));
     if (success) {
       showToast('Copied to clipboard', 'success');
     } else {
@@ -143,7 +144,11 @@ export function useAssembler({
       subject: `${date.getMonth() + 1}/${date.getDate()} -`,
       attendees: log.map((m) => m.email).join(','),
     });
-    void window.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`);
+    globalThis.api
+      ?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`)
+      ?.catch((error_) => {
+        showToast(`Failed to open Teams draft: ${getErrorMessage(error_)}`, 'error');
+      });
     showToast('Bridge drafted', 'success');
   };
   const handleQuickAdd = useCallback(
@@ -168,8 +173,8 @@ export function useAssembler({
   useEffect(() => {
     if (compositionContextMenu) {
       const handler = () => setCompositionContextMenu(null);
-      window.addEventListener('click', handler);
-      return () => window.removeEventListener('click', handler);
+      globalThis.addEventListener('click', handler);
+      return () => globalThis.removeEventListener('click', handler);
     }
   }, [compositionContextMenu]);
 
@@ -193,12 +198,12 @@ export function useAssembler({
   );
 
   const handleContactSaved = async (contact: Partial<Contact>) => {
-    if (!window.api) {
+    if (!globalThis.api) {
       showToast('API not available', 'error');
       return;
     }
     try {
-      const success = await window.api.addContact(contact);
+      const success = await globalThis.api.addContact(contact);
       if (success) {
         if (contact.email) onAddManual(contact.email);
         showToast('Contact created successfully', 'success');

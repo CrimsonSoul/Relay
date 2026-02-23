@@ -6,7 +6,7 @@ import { type DataError } from '@shared/ipc';
  * and coordinates broadcasting updates to the renderer windows.
  */
 export class DataCacheManager {
-  private emitter: FileEmitter;
+  private readonly emitter: FileEmitter;
   private cachedData: CachedData = {
     groups: [],
     contacts: [],

@@ -32,9 +32,9 @@ vi.mock('../../utils/logger', () => ({
 
 // Mock phoneUtils
 vi.mock('@shared/phoneUtils', () => ({
-  sanitizePhoneNumber: (phone: string) => phone.replace(/\D/g, ''),
+  sanitizePhoneNumber: (phone: string) => phone.replaceAll(/\D/g, ''),
   formatPhoneNumber: (phone: string) => {
-    const digits = phone.replace(/\D/g, '');
+    const digits = phone.replaceAll(/\D/g, '');
     if (digits.length === 10) {
       return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
     }

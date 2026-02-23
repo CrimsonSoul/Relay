@@ -65,7 +65,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
             <TactileButton
               variant="secondary"
               onClick={() => {
-                if (window.confirm('Clear all bridge history?')) {
+                if (globalThis.confirm('Clear all bridge history?')) {
                   onClear();
                 }
               }}
@@ -86,10 +86,9 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
         ) : (
           <div className="bridge-history-list">
             {history.map((entry) => (
-              <div
+              <button
+                type="button"
                 key={entry.id}
-                role="button"
-                tabIndex={0}
                 onClick={() => {
                   onLoad(entry);
                   onClose();
@@ -107,7 +106,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                 <div className="bridge-history-entry-header">
                   <span className="bridge-history-entry-date">{formatDate(entry.timestamp)}</span>
                   <span className="bridge-history-entry-count">
-                    {entry.recipientCount} recipient{entry.recipientCount !== 1 ? 's' : ''}
+                    {entry.recipientCount} recipient{entry.recipientCount === 1 ? '' : 's'}
                   </span>
                 </div>
                 {entry.note && <div className="bridge-history-entry-note">{entry.note}</div>}
@@ -120,7 +119,7 @@ export const BridgeHistoryModal: React.FC<BridgeHistoryModalProps> = ({
                     ))}
                   </div>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         )}

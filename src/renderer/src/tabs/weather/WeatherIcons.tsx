@@ -6,10 +6,10 @@ const commonProps = {
   viewBox: '0 0 24 24',
   fill: 'none',
   strokeWidth: 2,
-  strokeLinecap: 'round' as 'round',
-  strokeLinejoin: 'round' as 'round',
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
   style: { overflow: 'visible' as const },
-};
+} as const;
 
 const cloudPath =
   'M17.5 19c2.5 0 4.5-2 4.5-4.5 0-2.3-1.7-4.2-3.9-4.5-1.1-2.9-3.9-4.9-7.1-4.9-3.3 0-6.2 2.1-7.1 5.2C1.7 10.8 0 12.8 0 15.2c0 2.6 2.1 4.8 4.7 4.8h12.8';

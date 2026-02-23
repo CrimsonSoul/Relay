@@ -26,7 +26,7 @@ type ContactRowProps = {
   onNotesClick?: () => void;
 };
 
-const isValidName = (name: string) => name && name.replace(/[.\s\-_]/g, '').length > 0;
+const isValidName = (name: string) => name && name.replaceAll(/[.\s\-_]/g, '').length > 0;
 
 export const ContactCard = memo(
   ({
@@ -37,31 +37,30 @@ export const ContactCard = memo(
     avatarColor,
     action,
     style,
+    className,
     sourceLabel,
     groups = [],
     selected,
     onContextMenu,
     onRowClick,
+    hasNotes,
+    tags,
+    onNotesClick,
   }: ContactRowProps) => {
     const color = avatarColor || AMBER.fill;
     const displayName = isValidName(name) ? name : email;
+    const rootClassName = ['contact-card', className].filter(Boolean).join(' ');
+    let notesLabel = 'Add Note';
+    if (hasNotes) {
+      notesLabel = tags?.length ? `Notes (${tags.length})` : 'Notes';
+    }
 
     return (
-      <div
-        role="button"
-        tabIndex={0}
-        onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
-        onClick={onRowClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onRowClick?.();
-          }
-        }}
-        className="contact-card"
-        style={style}
-      >
-        <div
+      <div className={rootClassName} style={style}>
+        <button
+          type="button"
+          onClick={onRowClick}
+          onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
           className={`card-surface contact-card-body${selected ? ' contact-card-body--selected' : ''}`}
         >
           <div className="accent-strip" style={{ background: color }} />
@@ -90,8 +89,24 @@ export const ContactCard = memo(
               <span className="contact-card-phone">{formatPhoneNumber(phone)}</span>
             </div>
           )}
-        </div>
-        {action && <div className="row-actions contact-card-actions">{action}</div>}
+        </button>
+        {(action || onNotesClick) && (
+          <div className="row-actions contact-card-actions">
+            {onNotesClick && (
+              <button
+                type="button"
+                className="contact-card-notes-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onNotesClick();
+                }}
+              >
+                {notesLabel}
+              </button>
+            )}
+            {action}
+          </div>
+        )}
       </div>
     );
   },

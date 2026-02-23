@@ -40,7 +40,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
     if (focusableElements.length > 0) {
       // Small delay to ensure modal content is rendered
       requestAnimationFrame(() => {
-        focusableElements[0].focus();
+        focusableElements[0]!.focus();
       });
     }
   }, [isActive]);
@@ -55,18 +55,18 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(isActive: bool
         containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
       if (focusableElements.length === 0) return;
 
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
+      const firstElement = focusableElements[0]!;
+      const lastElement = focusableElements[focusableElements.length - 1]!;
 
       // Shift+Tab on first element -> go to last
-      if (e.shiftKey && document.activeElement === firstElement) {
+      if (e.shiftKey && document.activeElement === (firstElement as Element)) {
         e.preventDefault();
         lastElement.focus();
         return;
       }
 
       // Tab on last element -> go to first
-      if (!e.shiftKey && document.activeElement === lastElement) {
+      if (!e.shiftKey && document.activeElement === (lastElement as Element)) {
         e.preventDefault();
         firstElement.focus();
         return;

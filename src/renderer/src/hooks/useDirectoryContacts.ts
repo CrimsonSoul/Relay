@@ -47,7 +47,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
     setOptimisticAdds((prev) => [newContact, ...prev]);
 
     try {
-      const result = await window.api?.addContact(contact);
+      const result = await globalThis.api?.addContact(contact);
       if (!result?.success) {
         setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
         const errorMsg = result?.error || 'Failed to create contact';
@@ -71,7 +71,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
     if (updated.email) setOptimisticUpdates((prev) => new Map(prev).set(updated.email!, updated));
 
     try {
-      const result = await window.api?.addContact(updated);
+      const result = await globalThis.api?.addContact(updated);
       if (!result?.success) {
         if (updated.email)
           setOptimisticUpdates((prev) => {
@@ -107,7 +107,7 @@ export function useDirectoryContacts(contacts: Contact[]) {
     setOptimisticDeletes((prev) => new Set(prev).add(email));
     setDeleteConfirmation(null);
     try {
-      const result = await window.api?.removeContact(email);
+      const result = await globalThis.api?.removeContact(email);
       if (!result?.success) {
         setOptimisticDeletes((prev) => {
           const next = new Set(prev);

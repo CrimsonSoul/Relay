@@ -4,7 +4,7 @@
  * Uses cross-process file locking for multi-instance synchronization.
  */
 
-import { join } from 'path';
+import { join } from 'node:path';
 import type { BridgeHistoryEntry } from '@shared/ipc';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';

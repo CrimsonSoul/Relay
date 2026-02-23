@@ -1,12 +1,20 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useNotes } from '../hooks/useNotes';
-import type { NotesData, NoteEntry } from '@shared/ipc';
+import type { NotesData, NoteEntry, IpcResult } from '@shared/ipc';
 
 type NotesContextType = {
   notes: NotesData;
   loading: boolean;
-  setContactNote: (email: string, note: string, tags: string[]) => Promise<boolean | undefined>;
-  setServerNote: (name: string, note: string, tags: string[]) => Promise<boolean | undefined>;
+  setContactNote: (
+    email: string,
+    note: string,
+    tags: string[],
+  ) => Promise<IpcResult<void> | undefined>;
+  setServerNote: (
+    name: string,
+    note: string,
+    tags: string[],
+  ) => Promise<IpcResult<void> | undefined>;
   getContactNote: (email: string) => NoteEntry | undefined;
   getServerNote: (name: string) => NoteEntry | undefined;
   reloadNotes: () => Promise<void>;
@@ -14,7 +22,7 @@ type NotesContextType = {
 
 const NotesContext = createContext<NotesContextType | null>(null);
 
-export function NotesProvider({ children }: { children: ReactNode }) {
+export function NotesProvider({ children }: { readonly children: ReactNode }) {
   const notesState = useNotes();
   return <NotesContext.Provider value={notesState}>{children}</NotesContext.Provider>;
 }

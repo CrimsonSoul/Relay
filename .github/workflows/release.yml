@@ -2,11 +2,6 @@ name: Build and Release
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g. 1.2.0). Leave blank to use package.json version.'
-        required: false
-        type: string
 
 jobs:
   release-windows:
@@ -15,10 +10,10 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: npm
@@ -41,19 +36,15 @@ jobs:
 
       - name: Determine version
         id: version
-        shell: bash
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "tag=v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "name=Release v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            VERSION=$(node -p "require('./package.json').version")
-            echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "name=Release v${VERSION}" >> "$GITHUB_OUTPUT"
-          fi
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const version = require('./package.json').version;
+            core.setOutput('tag', `v${version}`);
+            core.setOutput('name', `Release v${version}`);
 
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.name }}

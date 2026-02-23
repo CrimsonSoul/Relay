@@ -45,7 +45,7 @@ export const TactileButton: React.FC<Props> = ({
       disabled={isDisabled}
       {...props}
     >
-      {loading ? (
+      {loading && (
         <span className="animate-spin tactile-button-spinner">
           <svg
             width="16"
@@ -62,9 +62,8 @@ export const TactileButton: React.FC<Props> = ({
             <path d="M12 2v4" />
           </svg>
         </span>
-      ) : icon ? (
-        <span className="tactile-button-icon">{icon}</span>
-      ) : null}
+      )}
+      {!loading && icon && <span className="tactile-button-icon">{icon}</span>}
 
       {children && <span className="tactile-button-label">{children}</span>}
     </button>

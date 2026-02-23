@@ -3,7 +3,7 @@
  * All entity IDs follow the pattern: {prefix}_{timestamp}_{uuid}
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Generate a unique ID with a given prefix.

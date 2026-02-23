@@ -33,9 +33,9 @@ interface RateLimitResult {
 export class RateLimiter {
   private tokens: number;
   private lastRefill: number;
-  private maxTokens: number;
-  private refillRate: number;
-  private name: string;
+  private readonly maxTokens: number;
+  private readonly refillRate: number;
+  private readonly name: string;
 
   constructor(config: RateLimiterConfig) {
     this.maxTokens = config.maxTokens;

@@ -81,9 +81,7 @@ describe('Modal', () => {
       </Modal>,
     );
 
-    // The overlay has role="presentation" and class "modal-overlay-generic"
-    const overlay = document.querySelector('.modal-overlay-generic') as HTMLElement;
-    fireEvent.click(overlay);
+    fireEvent.click(screen.getByLabelText('Close modal backdrop'));
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -96,6 +94,34 @@ describe('Modal', () => {
     );
 
     fireEvent.click(screen.getByText('Content'));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not close when pointerdown happens inside dialog', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose}>
+        <p>Content</p>
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.pointerDown(dialog);
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('does not close when mousedown happens inside dialog', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose}>
+        <p>Content</p>
+      </Modal>,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    fireEvent.mouseDown(dialog);
+
     expect(onClose).not.toHaveBeenCalled();
   });
 

@@ -33,7 +33,10 @@ import {
 const mockRead = vi.mocked(readWithLock);
 const mockModify = vi.mocked(modifyJsonWithLock);
 
-const rootDir = '/tmp/relay-data';
+import os from 'node:os';
+import path from 'node:path';
+
+const rootDir = path.join(os.homedir(), 'relay-data');
 
 function makeServer(overrides: Partial<ServerRecord> = {}): ServerRecord {
   return {
@@ -95,7 +98,7 @@ describe('ServerJsonOperations', () => {
 
   describe('addServerRecord', () => {
     it('creates new server', async () => {
-      let captured: ServerRecord[] | undefined;
+      let captured: ServerRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([]) as ServerRecord[];
@@ -114,12 +117,12 @@ describe('ServerJsonOperations', () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe('test-id-123');
       expect(result!.name).toBe('new-server');
-      expect(captured!).toHaveLength(1);
+      expect(captured).toHaveLength(1);
     });
 
     it('updates existing server with same name (dedup)', async () => {
       const existing = [makeServer({ id: 'srv1', name: 'Web-Server-01' })];
-      let captured: ServerRecord[] | undefined;
+      let captured: ServerRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...existing]) as ServerRecord[];
@@ -137,9 +140,9 @@ describe('ServerJsonOperations', () => {
 
       expect(result).not.toBeNull();
       // Should still have only 1 record (updated, not added)
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('srv1'); // preserved original id
-      expect(captured![0].businessArea).toBe('NewArea');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('srv1'); // preserved original id
+      expect(captured[0]?.businessArea).toBe('NewArea');
     });
 
     it('returns null on error', async () => {
@@ -164,7 +167,7 @@ describe('ServerJsonOperations', () => {
   describe('updateServerRecord', () => {
     it('updates by id', async () => {
       const existing = [makeServer({ id: 'srv1', comment: 'old' })];
-      let captured: ServerRecord[] | undefined;
+      let captured: ServerRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...existing]) as ServerRecord[];
@@ -173,7 +176,7 @@ describe('ServerJsonOperations', () => {
       const result = await updateServerRecord(rootDir, 'srv1', { comment: 'new' });
 
       expect(result).toBe(true);
-      expect(captured![0].comment).toBe('new');
+      expect(captured[0]?.comment).toBe('new');
     });
 
     it('returns false when id not found', async () => {
@@ -191,7 +194,7 @@ describe('ServerJsonOperations', () => {
   describe('deleteServerRecord', () => {
     it('removes by id', async () => {
       const servers = [makeServer({ id: 'srv1' }), makeServer({ id: 'srv2' })];
-      let captured: ServerRecord[] | undefined;
+      let captured: ServerRecord[] = [];
 
       mockModify.mockImplementation(async (_path, callback) => {
         captured = callback([...servers]) as ServerRecord[];
@@ -200,8 +203,8 @@ describe('ServerJsonOperations', () => {
       const result = await deleteServerRecord(rootDir, 'srv1');
 
       expect(result).toBe(true);
-      expect(captured!).toHaveLength(1);
-      expect(captured![0].id).toBe('srv2');
+      expect(captured).toHaveLength(1);
+      expect(captured[0]?.id).toBe('srv2');
     });
 
     it('returns false when id not found', async () => {

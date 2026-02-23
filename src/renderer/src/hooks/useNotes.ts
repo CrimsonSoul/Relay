@@ -8,7 +8,7 @@ export function useNotes() {
 
   const loadNotes = useCallback(async () => {
     try {
-      const data = await window.api?.getNotes();
+      const data = await globalThis.api?.getNotes();
       setNotes(data || { contacts: {}, servers: {} });
     } catch (e) {
       loggers.app.error('Failed to load notes', { error: e });
@@ -18,11 +18,13 @@ export function useNotes() {
   }, []);
 
   useEffect(() => {
-    void loadNotes();
+    loadNotes().catch((error_) => {
+      loggers.app.error('Failed to run initial notes load', { error: error_ });
+    });
   }, [loadNotes]);
 
   const setContactNote = useCallback(async (email: string, note: string, tags: string[]) => {
-    const success = await window.api?.setContactNote(email, note, tags);
+    const success = await globalThis.api?.setContactNote(email, note, tags);
     if (success) {
       const key = email.toLowerCase();
       setNotes((prev) => {
@@ -39,7 +41,7 @@ export function useNotes() {
   }, []);
 
   const setServerNote = useCallback(async (name: string, note: string, tags: string[]) => {
-    const success = await window.api?.setServerNote(name, note, tags);
+    const success = await globalThis.api?.setServerNote(name, note, tags);
     if (success) {
       const key = name.toLowerCase();
       setNotes((prev) => {

@@ -1,5 +1,5 @@
-import { normalize, resolve, relative, isAbsolute } from 'path';
-import fsPromises from 'fs/promises';
+import { normalize, resolve, relative, isAbsolute } from 'node:path';
+import fsPromises from 'node:fs/promises';
 import { loggers } from '../logger';
 
 /**

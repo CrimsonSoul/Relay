@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from '../../components/Modal';
 import { TactileButton } from '../../components/TactileButton';
 import { Input } from '../../components/Input';
+import { loggers } from '../../utils/logger';
 
 type SaveGroupModalProps = {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
     }
   }, [isOpen, initialName]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError('Please enter a name');
@@ -45,7 +46,7 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
       setError('A group with this name already exists');
       return;
     }
-    void onSave(trimmedName);
+    await onSave(trimmedName);
     setName('');
     setError('');
     onClose();
@@ -89,7 +90,13 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
             placeholder="e.g., Network P1, Database Team"
             autoFocus
             onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
+              if (e.key === 'Enter') {
+                handleSave().catch((error_) => {
+                  loggers.app.error('[SaveGroupModal] Failed to save group on Enter', {
+                    error: error_,
+                  });
+                });
+              }
             }}
           />
           {error && <p className="save-group-error">{error}</p>}
@@ -99,7 +106,16 @@ export const SaveGroupModal: React.FC<SaveGroupModalProps> = ({
           <TactileButton variant="secondary" onClick={handleClose}>
             Cancel
           </TactileButton>
-          <TactileButton variant="primary" onClick={handleSave}>
+          <TactileButton
+            variant="primary"
+            onClick={() => {
+              handleSave().catch((error_) => {
+                loggers.app.error('[SaveGroupModal] Failed to save group on click', {
+                  error: error_,
+                });
+              });
+            }}
+          >
             Save
           </TactileButton>
         </div>

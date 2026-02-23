@@ -20,15 +20,15 @@ export const Tooltip: React.FC<TooltipProps> = ({
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
-  const triggerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (isVisible && triggerRef.current) {
       const target = triggerRef.current.firstElementChild || triggerRef.current;
       const rect = target.getBoundingClientRect();
-      const scrollY = window.scrollY;
-      const scrollX = window.scrollX;
+      const scrollY = globalThis.scrollY;
+      const scrollX = globalThis.scrollX;
 
       let t = 0;
       let l = 0;
@@ -84,16 +84,18 @@ export const Tooltip: React.FC<TooltipProps> = ({
     setIsVisible(false);
   };
 
+  const trigger = React.cloneElement(children, {
+    onMouseEnter: handleMouseEnter,
+    onMouseLeave: handleMouseLeave,
+    onFocus: handleMouseEnter,
+    onBlur: handleMouseLeave,
+  });
+
   return (
     <>
-      <div
-        ref={triggerRef}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}
-      >
-        {children}
-      </div>
+      <span ref={triggerRef} className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}>
+        {trigger}
+      </span>
       {isVisible &&
         content &&
         createPortal(

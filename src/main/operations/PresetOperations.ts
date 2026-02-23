@@ -4,8 +4,8 @@
  * Uses atomic write + in-process per-path locking for consistency.
  */
 
-import { join } from 'path';
-import fs from 'fs/promises';
+import { join } from 'node:path';
+import fs from 'node:fs/promises';
 import { dialog } from 'electron';
 import type { BridgeGroup } from '@shared/ipc';
 import { isNodeError } from '@shared/types';

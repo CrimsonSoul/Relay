@@ -32,7 +32,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     });
   }
 
-  render() {
+  // eslint-disable-next-line sonarjs/function-return-type
+  render(): ReactNode {
     if (this.state.hasError) {
       if (this.props.fallback) {
         return this.props.fallback;
@@ -46,7 +47,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </p>
           <pre className="error-page-stack">{this.state.error?.message || 'Unknown error'}</pre>
           <TactileButton
-            onClick={() => window.location.reload()}
+            onClick={() => globalThis.location.reload()}
             variant="primary"
             className="error-page-reload-btn"
           >

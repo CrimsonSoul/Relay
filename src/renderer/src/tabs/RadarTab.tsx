@@ -2,14 +2,19 @@ import React, { useRef, useState } from 'react';
 import type { WebviewTag } from 'electron';
 import { TactileButton } from '../components/TactileButton';
 import { secureStorage } from '../utils/secureStorage';
+import { loggers } from '../utils/logger';
 
 export const RADAR_URL_KEY = 'radar_url';
 
 export const RadarTab: React.FC = () => {
   const webviewRef = useRef<WebviewTag>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const supportsWebview = Boolean(window.api);
+  const supportsWebview = Boolean(globalThis.api);
   const radarUrl = secureStorage.getItemSync<string>(RADAR_URL_KEY, '');
+  const webviewAttributes: Record<string, string> = {
+    partition: 'persist:dispatcher-radar',
+    webpreferences: 'contextIsolation=yes, nodeIntegration=no',
+  };
 
   const handleRefresh = () => {
     setIsLoading(true);
@@ -32,7 +37,12 @@ export const RadarTab: React.FC = () => {
 
   // Register the stored radar URL with the main process security allowlist on mount.
   React.useEffect(() => {
-    if (radarUrl) void window.api?.registerRadarUrl(radarUrl);
+    if (radarUrl) {
+      globalThis.api?.registerRadarUrl(radarUrl)?.catch((error_) => {
+        // Non-fatal: radar webview still renders; allowlist sync can retry later.
+        loggers.weather.warn('[RadarTab] Failed to register radar URL', { error: error_ });
+      });
+    }
   }, [radarUrl]);
 
   if (!supportsWebview) {
@@ -89,9 +99,8 @@ export const RadarTab: React.FC = () => {
         <webview
           ref={webviewRef}
           src={radarUrl}
-          partition="persist:dispatcher-radar"
           title="Dispatcher Radar"
-          webpreferences="contextIsolation=yes, nodeIntegration=no"
+          {...webviewAttributes}
           className="webview-frame"
         />
       </div>

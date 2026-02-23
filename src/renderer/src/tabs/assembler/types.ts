@@ -1,4 +1,4 @@
-import { BridgeGroup, Contact, OnCallEntry } from '@shared/ipc';
+import { BridgeGroup, Contact, OnCallRow } from '@shared/ipc';
 
 export type SortConfig = {
   key: 'name' | 'title' | 'email' | 'phone' | 'groups';
@@ -8,7 +8,7 @@ export type SortConfig = {
 export type AssemblerTabProps = {
   groups: BridgeGroup[];
   contacts: Contact[];
-  onCall: OnCallEntry[];
+  onCall: OnCallRow[];
   selectedGroupIds: string[];
   manualAdds: string[];
   manualRemoves: string[];

@@ -20,7 +20,7 @@ export const GroupPill = ({ group }: { group: string }) => {
 
 const isValidName = (name: string) => {
   if (!name) return false;
-  const stripped = name.replace(/[.\s\-_]/g, '');
+  const stripped = name.replaceAll(/[.\s\-_]/g, '');
   return stripped.length > 0;
 };
 

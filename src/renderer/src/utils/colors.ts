@@ -5,91 +5,28 @@ type ColorScheme = {
   fill: string;
 };
 
+const makeColorScheme = (rgb: string, text: string, fill: string): ColorScheme => ({
+  bg: `rgba(${rgb}, 0.2)`,
+  border: `rgba(${rgb}, 0.4)`,
+  text,
+  fill,
+});
+
 const PALETTE: ColorScheme[] = [
-  {
-    bg: 'rgba(239, 68, 68, 0.2)',
-    border: 'rgba(239, 68, 68, 0.4)',
-    text: '#FCA5A5',
-    fill: '#EF4444',
-  }, // Red
-  {
-    bg: 'rgba(249, 115, 22, 0.2)',
-    border: 'rgba(249, 115, 22, 0.4)',
-    text: '#FDBA74',
-    fill: '#F97316',
-  }, // Orange
-  {
-    bg: 'rgba(245, 158, 11, 0.2)',
-    border: 'rgba(245, 158, 11, 0.4)',
-    text: '#FCD34D',
-    fill: '#F59E0B',
-  }, // Amber
-  {
-    bg: 'rgba(16, 185, 129, 0.2)',
-    border: 'rgba(16, 185, 129, 0.4)',
-    text: '#6EE7B7',
-    fill: '#10B981',
-  }, // Emerald
-  {
-    bg: 'rgba(6, 182, 212, 0.2)',
-    border: 'rgba(6, 182, 212, 0.4)',
-    text: '#67E8F9',
-    fill: '#06B6D4',
-  }, // Cyan
-  {
-    bg: 'rgba(99, 102, 241, 0.2)',
-    border: 'rgba(99, 102, 241, 0.4)',
-    text: '#A5B4FC',
-    fill: '#6366F1',
-  }, // Indigo
-  {
-    bg: 'rgba(139, 92, 246, 0.2)',
-    border: 'rgba(139, 92, 246, 0.4)',
-    text: '#C4B5FD',
-    fill: '#8B5CF6',
-  }, // Violet
-  {
-    bg: 'rgba(236, 72, 153, 0.2)',
-    border: 'rgba(236, 72, 153, 0.4)',
-    text: '#F9A8D4',
-    fill: '#EC4899',
-  }, // Pink
-  {
-    bg: 'rgba(6, 182, 212, 0.2)',
-    border: 'rgba(6, 182, 212, 0.4)',
-    text: '#67E8F9',
-    fill: '#06B6D4',
-  }, // Cyan
-  {
-    bg: 'rgba(132, 204, 22, 0.2)',
-    border: 'rgba(132, 204, 22, 0.4)',
-    text: '#BEF264',
-    fill: '#84CC16',
-  }, // Lime
-  {
-    bg: 'rgba(244, 63, 94, 0.2)',
-    border: 'rgba(244, 63, 94, 0.4)',
-    text: '#FDA4AF',
-    fill: '#F43F5E',
-  }, // Rose
-  {
-    bg: 'rgba(20, 184, 166, 0.2)',
-    border: 'rgba(20, 184, 166, 0.4)',
-    text: '#5EEAD4',
-    fill: '#14B8A6',
-  }, // Teal
-  {
-    bg: 'rgba(251, 191, 36, 0.2)',
-    border: 'rgba(251, 191, 36, 0.4)',
-    text: '#FDE68A',
-    fill: '#FBBF24',
-  }, // Gold
-  {
-    bg: 'rgba(168, 85, 247, 0.2)',
-    border: 'rgba(168, 85, 247, 0.4)',
-    text: '#D8B4FE',
-    fill: '#A855F7',
-  }, // Purple
+  makeColorScheme('239, 68, 68', '#FCA5A5', '#EF4444'),
+  makeColorScheme('249, 115, 22', '#FDBA74', '#F97316'),
+  makeColorScheme('245, 158, 11', '#FCD34D', '#F59E0B'),
+  makeColorScheme('16, 185, 129', '#6EE7B7', '#10B981'),
+  makeColorScheme('6, 182, 212', '#67E8F9', '#06B6D4'),
+  makeColorScheme('99, 102, 241', '#A5B4FC', '#6366F1'),
+  makeColorScheme('139, 92, 246', '#C4B5FD', '#8B5CF6'),
+  makeColorScheme('236, 72, 153', '#F9A8D4', '#EC4899'),
+  makeColorScheme('6, 182, 212', '#67E8F9', '#06B6D4'),
+  makeColorScheme('132, 204, 22', '#BEF264', '#84CC16'),
+  makeColorScheme('244, 63, 94', '#FDA4AF', '#F43F5E'),
+  makeColorScheme('20, 184, 166', '#5EEAD4', '#14B8A6'),
+  makeColorScheme('251, 191, 36', '#FDE68A', '#FBBF24'),
+  makeColorScheme('168, 85, 247', '#D8B4FE', '#A855F7'),
 ];
 
 export const AMBER: ColorScheme = {
@@ -102,7 +39,7 @@ export const AMBER: ColorScheme = {
 export const getColorForString = (str: string): ColorScheme => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = (str.codePointAt(i) ?? 0) + ((hash << 5) - hash);
   }
   return PALETTE[Math.abs(hash) % PALETTE.length];
 };

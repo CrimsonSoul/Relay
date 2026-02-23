@@ -69,7 +69,7 @@ export function useAppWeather(
   useEffect(() => {
     // 1. Restore Location from standard secure storage
     const savedLocation = secureStorage.getItemSync<unknown>('weather_location');
-    if (savedLocation && typeof savedLocation === 'object' && savedLocation !== null) {
+    if (savedLocation && typeof savedLocation === 'object') {
       // Defensively handle both 'latitude' (new) and 'lat' (legacy) keys
       const loc = savedLocation as Record<string, unknown>;
       const sanitized: Location = {
@@ -77,9 +77,8 @@ export function useAppWeather(
         longitude: Number(loc.longitude ?? loc.lon),
         name: (typeof loc.name === 'string' ? loc.name : undefined) || 'Saved Location',
       };
-      if (!isNaN(sanitized.latitude) && !isNaN(sanitized.longitude)) {
-        if (mounted.current) setWeatherLocation(sanitized);
-      }
+      if (Number.isNaN(sanitized.latitude) || Number.isNaN(sanitized.longitude)) return;
+      if (mounted.current) setWeatherLocation(sanitized);
     }
 
     // 2. Restore cached weather data and alerts for SWR
@@ -136,16 +135,36 @@ export function useAppWeather(
    * @param lon - Longitude
    * @param silent - If true, doesn't trigger loading state (background refresh)
    */
+  const processAlerts = useCallback(
+    (aData: WeatherAlert[]) => {
+      const newAlerts = aData.filter((a) => !lastAlertIdsRef.current.has(a.id));
+      if (newAlerts.length > 0) {
+        const severe =
+          newAlerts.find((a) => a.severity === 'Extreme' || a.severity === 'Severe') ??
+          newAlerts[0];
+        if (severe?.event) showToast(`Weather Alert: ${severe.event}`, 'error');
+        for (const a of newAlerts) lastAlertIdsRef.current.add(a.id);
+      }
+      // Prune IDs no longer active
+      const currentIds = new Set(aData.map((a) => a.id));
+      for (const id of lastAlertIdsRef.current) {
+        if (!currentIds.has(id)) lastAlertIdsRef.current.delete(id);
+      }
+    },
+    [showToast],
+  );
+
   const fetchWeather = useCallback(
     async (lat: number, lon: number, silent = false) => {
       if (!silent && mounted.current) setWeatherLoading(true);
       try {
-        if (!globalThis.window.api) {
-          throw new Error('window.api is not available');
+        const api = globalThis.api;
+        if (!api) {
+          throw new Error('api is not available on globalThis');
         }
         const [wData, aData] = await Promise.all([
-          globalThis.window.api.getWeather(lat, lon),
-          globalThis.window.api.getWeatherAlerts(lat, lon).catch(() => []),
+          api.getWeather(lat, lon),
+          api.getWeatherAlerts(lat, lon).catch(() => []),
         ]);
 
         if (!mounted.current) return;
@@ -155,40 +174,17 @@ export function useAppWeather(
 
         // Cache for SWR
         if (wData) {
-          const cache: WeatherCache = {
+          secureStorage.setItemSync(WEATHER_CACHE_KEY, {
             version: WEATHER_CACHE_VERSION,
             fetchedAt: Date.now(),
             data: wData,
-          };
-          secureStorage.setItemSync(WEATHER_CACHE_KEY, cache);
+          } satisfies WeatherCache);
         } else {
           secureStorage.removeItem(WEATHER_CACHE_KEY);
         }
         secureStorage.setItemSync(WEATHER_ALERTS_CACHE_KEY, aData);
 
-        // Handle Realtime Alerts
-        if (aData.length > 0) {
-          const newAlerts = aData.filter((a: WeatherAlert) => !lastAlertIdsRef.current.has(a.id));
-          if (newAlerts.length > 0) {
-            const severe =
-              newAlerts.find(
-                (a: WeatherAlert) => a.severity === 'Extreme' || a.severity === 'Severe',
-              ) || newAlerts[0];
-            showToast(`Weather Alert: ${severe.event}`, 'error');
-
-            newAlerts.forEach((a: WeatherAlert) => {
-              lastAlertIdsRef.current.add(a.id);
-            });
-          }
-
-          // Prune IDs that are no longer active to prevent unbound growth
-          const currentIds = new Set(aData.map((a) => a.id));
-          for (const id of lastAlertIdsRef.current) {
-            if (!currentIds.has(id)) {
-              lastAlertIdsRef.current.delete(id);
-            }
-          }
-        }
+        if (aData.length > 0) processAlerts(aData);
       } catch (err: unknown) {
         loggers.weather.error('Weather fetch failed', {
           error: getErrorMessage(err),
@@ -199,7 +195,7 @@ export function useAppWeather(
         if (!silent && mounted.current) setWeatherLoading(false);
       }
     },
-    [showToast, mounted],
+    [mounted, processAlerts],
   );
 
   // Persistence of weather location
@@ -223,16 +219,22 @@ export function useAppWeather(
         setWeatherData(null);
         setWeatherAlerts([]);
       }
-      void fetchWeather(
+      fetchWeather(
         weatherLocation.latitude,
         weatherLocation.longitude,
         false, // Not silent for new location
-      );
+      ).catch((error_) => {
+        loggers.weather.error('[Weather] Failed to fetch weather for new location', {
+          error: error_,
+        });
+      });
       lastFetchedLocationRef.current = locKey;
     }
 
     const interval = setInterval(() => {
-      void fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true);
+      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
+        loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+      });
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);

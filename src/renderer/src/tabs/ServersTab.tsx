@@ -236,7 +236,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             />
           )}
 
-          <div className="tab-list-container" role="region" aria-label="Servers list">
+          <section className="tab-list-container" aria-label="Servers list">
             <AutoSizer
               renderProp={({ height, width }) => (
                 <List
@@ -257,7 +257,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
                 <div>No infrastructure found</div>
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
 
@@ -308,7 +308,9 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             },
             {
               label: 'Delete Server',
-              onClick: h.handleDelete,
+              onClick: () => {
+                void h.handleDelete();
+              },
               danger: true,
               icon: (
                 <svg

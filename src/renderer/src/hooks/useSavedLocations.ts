@@ -8,7 +8,7 @@ export function useSavedLocations() {
 
   const loadLocations = useCallback(async () => {
     try {
-      const data = await window.api?.getSavedLocations();
+      const data = await globalThis.api?.getSavedLocations();
       setLocations(data || []);
     } catch (e) {
       loggers.location.error('Failed to load saved locations', { error: e });
@@ -18,16 +18,18 @@ export function useSavedLocations() {
   }, []);
 
   useEffect(() => {
-    void loadLocations();
+    loadLocations().catch((error_) => {
+      loggers.location.error('Failed to run initial saved-locations load', { error: error_ });
+    });
   }, [loadLocations]);
 
   const saveLocation = useCallback(async (location: Omit<SavedLocation, 'id'>) => {
     try {
-      if (!window.api) {
+      if (!globalThis.api) {
         loggers.api.error('[useSavedLocations] API not available');
         return null;
       }
-      const result = await window.api.saveLocation(location);
+      const result = await globalThis.api.saveLocation(location);
       if (result) {
         // If new location is default, update existing
         if (result.isDefault) {
@@ -45,11 +47,11 @@ export function useSavedLocations() {
 
   const deleteLocation = useCallback(async (id: string) => {
     try {
-      if (!window.api) {
+      if (!globalThis.api) {
         loggers.api.error('[useSavedLocations] API not available');
         return false;
       }
-      const success = await window.api.deleteLocation(id);
+      const success = await globalThis.api.deleteLocation(id);
       if (success) {
         setLocations((prev) => prev.filter((l) => l.id !== id));
       }
@@ -62,11 +64,11 @@ export function useSavedLocations() {
 
   const setDefaultLocation = useCallback(async (id: string) => {
     try {
-      if (!window.api) {
+      if (!globalThis.api) {
         loggers.api.error('[useSavedLocations] API not available');
         return false;
       }
-      const success = await window.api.setDefaultLocation(id);
+      const success = await globalThis.api.setDefaultLocation(id);
       if (success) {
         setLocations((prev) => prev.map((l) => ({ ...l, isDefault: l.id === id })));
       }
@@ -79,11 +81,11 @@ export function useSavedLocations() {
 
   const clearDefaultLocation = useCallback(async (id: string) => {
     try {
-      if (!window.api) {
+      if (!globalThis.api) {
         loggers.api.error('[useSavedLocations] API not available');
         return false;
       }
-      const success = await window.api.clearDefaultLocation(id);
+      const success = await globalThis.api.clearDefaultLocation(id);
       if (success) {
         setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, isDefault: false } : l)));
       }
@@ -97,11 +99,11 @@ export function useSavedLocations() {
   const updateLocation = useCallback(
     async (id: string, updates: Partial<Omit<SavedLocation, 'id'>>) => {
       try {
-        if (!window.api) {
+        if (!globalThis.api) {
           loggers.api.error('[useSavedLocations] API not available');
           return false;
         }
-        const success = await window.api.updateLocation(id, updates);
+        const success = await globalThis.api.updateLocation(id, updates);
         if (success) {
           setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
         }

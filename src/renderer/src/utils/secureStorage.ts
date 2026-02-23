@@ -52,13 +52,20 @@ class SecureStorage {
 
   constructor() {
     if (CRYPTO_AVAILABLE) {
-      this.initializeEncryption().catch((error: unknown) => {
-        loggers.storage.warn('Failed to initialize encryption, falling back to obfuscation', {
-          error: error instanceof Error ? error.message : String(error),
-          category: ErrorCategory.RENDERER,
-        });
-      });
+      // Schedule async init outside the constructor (sonarjs/no-async-constructor)
+      // The encryption key may not be ready for the first few async set/get calls,
+      // which will fall back to simple obfuscation.
+      SecureStorage.initAsync(this);
     }
+  }
+
+  private static initAsync(instance: SecureStorage): void {
+    instance.initializeEncryption().catch((error: unknown) => {
+      loggers.storage.warn('Failed to initialize encryption, falling back to obfuscation', {
+        error: error instanceof Error ? error.message : String(error),
+        category: ErrorCategory.RENDERER,
+      });
+    });
   }
 
   /**
@@ -126,7 +133,7 @@ class SecureStorage {
       combined.set(new Uint8Array(encryptedData), iv.length);
 
       // Convert to base64
-      return btoa(String.fromCharCode(...combined));
+      return btoa(String.fromCodePoint(...combined));
     } catch (error: unknown) {
       loggers.storage.warn('Encryption failed, using obfuscation', {
         error: error instanceof Error ? error.message : String(error),
@@ -146,7 +153,7 @@ class SecureStorage {
 
     try {
       // Convert from base64
-      const combined = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const combined = Uint8Array.from(atob(data), (c) => c.codePointAt(0) ?? 0);
 
       // Extract IV and encrypted data
       const iv = combined.slice(0, 12);

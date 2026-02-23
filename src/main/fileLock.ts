@@ -22,8 +22,8 @@
  * environments and legacy file handling.
  */
 
-import fs from 'fs/promises';
-import { randomUUID } from 'crypto';
+import fs from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { loggers } from './logger';
 
 async function fileExists(filePath: string): Promise<boolean> {
@@ -70,8 +70,10 @@ export async function atomicWriteWithLock(filePath: string, content: string): Pr
     // Try to clean up temp file if rename failed
     try {
       if (await fileExists(tempPath)) await fs.unlink(tempPath);
-    } catch (_e) {
-      loggers.fileManager.debug(`Temp file cleanup failed (likely already gone): ${tempPath}`);
+    } catch (error_) {
+      loggers.fileManager.debug(`Temp file cleanup failed (likely already gone): ${tempPath}`, {
+        error: error_,
+      });
     }
     throw error;
   }

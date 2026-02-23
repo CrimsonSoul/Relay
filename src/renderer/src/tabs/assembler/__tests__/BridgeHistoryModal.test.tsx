@@ -12,16 +12,27 @@ vi.mock('../../../components/Modal', () => ({
 
 // Mock ContextMenu
 vi.mock('../../../components/ContextMenu', () => ({
-  ContextMenu: ({ items }: { items: Array<{ label: string; onClick: () => void }> }) =>
+  ContextMenu: ({
+    items,
+    onClose,
+  }: {
+    items: Array<{ label: string; onClick: () => void }>;
+    onClose: () => void;
+  }) =>
     React.createElement(
       'div',
       { 'data-testid': 'context-menu' },
-      items.map((item) =>
+      ...items.map((item) =>
         React.createElement(
           'button',
           { key: item.label, onClick: item.onClick, 'data-testid': `menu-${item.label}` },
           item.label,
         ),
+      ),
+      React.createElement(
+        'button',
+        { onClick: onClose, 'data-testid': 'menu-close' },
+        'Close Menu',
       ),
     ),
 }));
@@ -141,6 +152,32 @@ describe('BridgeHistoryModal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('loads entry on Enter key and closes modal', () => {
+    const onLoad = vi.fn();
+    const onClose = vi.fn();
+    render(<BridgeHistoryModal {...defaultProps} onLoad={onLoad} onClose={onClose} />);
+
+    const entry = screen.getByText('Today bridge').closest('.bridge-history-entry');
+    expect(entry).not.toBeNull();
+    fireEvent.keyDown(entry!, { key: 'Enter' });
+
+    expect(onLoad).toHaveBeenCalledWith(mockHistory[0]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('loads entry on Space key and closes modal', () => {
+    const onLoad = vi.fn();
+    const onClose = vi.fn();
+    render(<BridgeHistoryModal {...defaultProps} onLoad={onLoad} onClose={onClose} />);
+
+    const entry = screen.getByText('Today bridge').closest('.bridge-history-entry');
+    expect(entry).not.toBeNull();
+    fireEvent.keyDown(entry!, { key: ' ' });
+
+    expect(onLoad).toHaveBeenCalledWith(mockHistory[0]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('shows context menu on right-click', () => {
     render(<BridgeHistoryModal {...defaultProps} />);
 
@@ -173,6 +210,28 @@ describe('BridgeHistoryModal', () => {
     expect(onDelete).toHaveBeenCalledWith('h1');
   });
 
+  it('closes context menu via onClose callback', () => {
+    render(<BridgeHistoryModal {...defaultProps} />);
+
+    fireEvent.contextMenu(screen.getByText('Today bridge'));
+    expect(screen.getByTestId('context-menu')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('menu-close'));
+    expect(screen.queryByTestId('context-menu')).not.toBeInTheDocument();
+  });
+
+  it('context menu Load Bridge calls onLoad and onClose', () => {
+    const onLoad = vi.fn();
+    const onClose = vi.fn();
+    render(<BridgeHistoryModal {...defaultProps} onLoad={onLoad} onClose={onClose} />);
+
+    fireEvent.contextMenu(screen.getByText('Today bridge'));
+    fireEvent.click(screen.getByTestId('menu-Load Bridge'));
+
+    expect(onLoad).toHaveBeenCalledWith(mockHistory[0]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it('calls onClose when Close button is clicked', () => {
     const onClose = vi.fn();
     render(<BridgeHistoryModal {...defaultProps} onClose={onClose} />);
@@ -186,9 +245,9 @@ describe('BridgeHistoryModal', () => {
     expect(screen.getByText('Clear All')).toBeInTheDocument();
   });
 
-  it('calls onClear after window.confirm for Clear All', () => {
+  it('calls onClear after globalThis.confirm for Clear All', () => {
     const onClear = vi.fn();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
@@ -198,7 +257,7 @@ describe('BridgeHistoryModal', () => {
 
   it('does not call onClear when confirm is cancelled', () => {
     const onClear = vi.fn();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 

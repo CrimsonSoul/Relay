@@ -12,7 +12,8 @@
 // Safe access to process.env
 const getEnv = (key: string): string | undefined => {
   try {
-    return typeof process !== 'undefined' ? process.env[key] : undefined;
+    if (typeof process === 'undefined') return undefined;
+    return process.env[key];
   } catch {
     return undefined;
   }
@@ -215,7 +216,7 @@ class FeatureFlagManager {
   private simpleHash(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
+      const char = str.codePointAt(i) ?? 0;
       hash = (hash << 5) - hash + char;
       hash = hash & hash; // Convert to 32-bit integer
     }
@@ -226,7 +227,7 @@ class FeatureFlagManager {
    * Convert camelCase to snake_case
    */
   private toSnakeCase(str: string): string {
-    return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    return str.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
   }
 
   /**

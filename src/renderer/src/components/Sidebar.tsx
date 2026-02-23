@@ -35,25 +35,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
   return (
     <div className="sidebar">
       {/* App Icon / Branding Block */}
-      <div
+      <button
+        type="button"
         onClick={() => onTabChange('Compose')}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onTabChange('Compose');
-          }
-        }}
         id="app-icon-container"
         className="sidebar-app-icon interactive"
-        role="button"
-        tabIndex={0}
         aria-label="Go to Compose tab"
       >
-        <div id="app-icon-inner" className="sidebar-app-icon-inner">
+        <span id="app-icon-inner" className="sidebar-app-icon-inner">
           <AppIcon />
-        </div>
+        </span>
         <span className="sidebar-app-icon-label">Relay</span>
-      </div>
+      </button>
 
       <div className="sidebar-divider" />
 

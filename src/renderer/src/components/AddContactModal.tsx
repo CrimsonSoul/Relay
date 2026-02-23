@@ -45,7 +45,7 @@ export const AddContactModal: React.FC<Props> = ({
     }
   }, [isOpen, initialEmail, editContact]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!name || !email) return;
 
@@ -119,7 +119,9 @@ export const AddContactModal: React.FC<Props> = ({
             Cancel
           </TactileButton>
           <TactileButton type="submit" disabled={isSubmitting} variant="primary">
-            {isSubmitting ? 'Saving...' : editContact ? 'Update Contact' : 'Create Contact'}
+            {isSubmitting && 'Saving...'}
+            {!isSubmitting && editContact && 'Update Contact'}
+            {!isSubmitting && !editContact && 'Create Contact'}
           </TactileButton>
         </div>
       </form>

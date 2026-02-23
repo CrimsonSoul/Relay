@@ -10,7 +10,7 @@ export const TabFallback = ({ error }: { error?: boolean }) => (
         <div className="tab-fallback-hint">
           Try reloading. If it keeps failing, check data/config in Settings.
         </div>
-        <TactileButton variant="secondary" size="sm" onClick={() => window.location.reload()}>
+        <TactileButton variant="secondary" size="sm" onClick={() => globalThis.location.reload()}>
           Reload Tab
         </TactileButton>
       </>

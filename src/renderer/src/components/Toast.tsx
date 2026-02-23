@@ -3,6 +3,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useMemo,
   ReactNode,
   useRef,
   useEffect,
@@ -63,7 +64,7 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const showToast = useCallback(
     (message: string, type: ToastType) => {
-      const id = window.crypto.randomUUID();
+      const id = globalThis.crypto.randomUUID();
       setToasts((prev) => [...prev, { id, message, type }]);
 
       const timeout = setTimeout(() => {
@@ -84,20 +85,25 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, []);
 
+  const toastContextValue = useMemo(() => ({ showToast }), [showToast]);
+
   return (
-    <ToastContext.Provider value={{ showToast }}>
+    <ToastContext.Provider value={toastContextValue}>
       {children}
       <div className="toast-container" aria-label="Notifications">
         {toasts.map((toast) => (
           <div key={toast.id} className={`toast toast-${toast.type} toast-slide-up`}>
-            <div
-              className="toast-content"
-              role={toast.type === 'error' ? 'alert' : 'status'}
-              aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
-            >
-              <div className="toast-title">{getToastMeta(toast.type).title}</div>
-              <div className="toast-message">{toast.message}</div>
-            </div>
+            {toast.type === 'error' ? (
+              <div className="toast-content" role="alert" aria-live="assertive">
+                <div className="toast-title">{getToastMeta(toast.type).title}</div>
+                <div className="toast-message">{toast.message}</div>
+              </div>
+            ) : (
+              <output className="toast-content" aria-live="polite">
+                <div className="toast-title">{getToastMeta(toast.type).title}</div>
+                <div className="toast-message">{toast.message}</div>
+              </output>
+            )}
             <button
               type="button"
               className="toast-close"
@@ -127,5 +133,6 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
 export const NoopToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const showToast = useCallback(() => {}, []);
-  return <ToastContext.Provider value={{ showToast }}>{children}</ToastContext.Provider>;
+  const noopContextValue = useMemo(() => ({ showToast }), [showToast]);
+  return <ToastContext.Provider value={noopContextValue}>{children}</ToastContext.Provider>;
 };

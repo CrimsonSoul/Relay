@@ -48,4 +48,74 @@ describe('formatPhoneNumber', () => {
   it('handles international numbers', () => {
     expect(formatPhoneNumber('+919904918167')).toBe('(91) 990 491 8167');
   });
+
+  it('handles empty string', () => {
+    expect(formatPhoneNumber('')).toBe('');
+  });
+
+  it('formats 11-digit US number with leading 1 as international', () => {
+    // The international formatter catches 11-digit numbers starting with 1 before
+    // the US formatter strips the leading 1
+    expect(formatPhoneNumber('15551234567')).toBe('(1) (555) 123-4567');
+  });
+
+  it('formats 11-digit international number starting with 1 (with +)', () => {
+    expect(formatPhoneNumber('+15551234567')).toBe('(1) (555) 123-4567');
+  });
+
+  it('formats 8-digit internal extension starting with 7', () => {
+    expect(formatPhoneNumber('72705555')).toBe('(7) 270-5555');
+  });
+
+  it('formats 2-6 digit short extensions as-is', () => {
+    expect(formatPhoneNumber('12')).toBe('12');
+    expect(formatPhoneNumber('12345')).toBe('12345');
+    expect(formatPhoneNumber('123456')).toBe('123456');
+  });
+
+  it('handles multiple numbers separated by commas', () => {
+    const result = formatPhoneNumber('5551234567,5559876543');
+    expect(result).toBe('(555) 123-4567, (555) 987-6543');
+  });
+
+  it('handles multiple numbers separated by semicolons', () => {
+    const result = formatPhoneNumber('5551234567;5559876543');
+    expect(result).toBe('(555) 123-4567, (555) 987-6543');
+  });
+
+  it('handles multiple numbers separated by slashes', () => {
+    const result = formatPhoneNumber('5551234567/5559876543');
+    expect(result).toBe('(555) 123-4567, (555) 987-6543');
+  });
+
+  it('handles multiple numbers separated by pipes', () => {
+    const result = formatPhoneNumber('5551234567|5559876543');
+    expect(result).toBe('(555) 123-4567, (555) 987-6543');
+  });
+
+  it('handles run-on numbers (20+ digits divisible by 10)', () => {
+    const runOn = '55512345675559876543';
+    const result = formatPhoneNumber(runOn);
+    expect(result).toBe('(555) 123-4567, (555) 987-6543');
+  });
+
+  it('handles run-on numbers (30 digits)', () => {
+    const runOn = '555123456755598765431112223333';
+    const result = formatPhoneNumber(runOn);
+    expect(result).toContain('(555) 123-4567');
+    expect(result).toContain('(555) 987-6543');
+    expect(result).toContain('(111) 222-3333');
+  });
+
+  it('falls back to raw digits for unrecognized format', () => {
+    // 9-digit number that doesn't fit known formats
+    const result = formatPhoneNumber('123456789');
+    expect(result).toBe('123456789');
+  });
+
+  it('falls back to short extension for short international-prefixed number', () => {
+    // +12345 → clean='12345' (5 digits) matches the 2-6 digit extension rule
+    const result = formatPhoneNumber('+12345');
+    expect(result).toBe('12345');
+  });
 });

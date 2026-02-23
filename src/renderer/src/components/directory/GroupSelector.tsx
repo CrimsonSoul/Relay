@@ -29,13 +29,13 @@ export const GroupSelector = ({
 
   const toggleGroup = useCallback(
     async (group: BridgeGroup, isMember: boolean) => {
-      if (updating) return; // Prevent concurrent updates
+      if (updating) return;
       const previousState = membership[group.id];
       setMembership((prev) => ({ ...prev, [group.id]: !isMember }));
       setUpdating(group.id);
 
       try {
-        if (!window.api) {
+        if (!globalThis.api) {
           throw new Error('API not available');
         }
 
@@ -43,19 +43,16 @@ export const GroupSelector = ({
         let newContacts: string[];
 
         if (isMember) {
-          // Remove contact from group
           newContacts = group.contacts.filter((e) => e.toLowerCase() !== contactEmail);
         } else {
-          // Add contact to group
           newContacts = [...group.contacts, contact.email];
         }
 
-        const result = await window.api.updateGroup(group.id, { contacts: newContacts });
-        if (!result || !result.success) {
+        const result = await globalThis.api.updateGroup(group.id, { contacts: newContacts });
+        if (!result?.success) {
           throw new Error(result?.error || 'Failed to update group');
         }
       } catch (error) {
-        // Rollback on failure
         setMembership((prev) => ({ ...prev, [group.id]: previousState ?? false }));
         const message = isMember
           ? `Failed to remove from ${group.name}`
@@ -70,21 +67,25 @@ export const GroupSelector = ({
   );
 
   return (
-    <div role="presentation" className="group-selector" onClick={(e) => e.stopPropagation()}>
+    <div className="group-selector">
       <div className="group-selector-list">
         {groups.map((group) => {
           const isUpdating = updating === group.id;
           return (
-            <div
+            <button
+              type="button"
               key={group.id}
-              role="checkbox"
-              aria-checked={!!membership[group.id]}
-              tabIndex={0}
-              onClick={() => !isUpdating && toggleGroup(group, !!membership[group.id])}
+              aria-pressed={!!membership[group.id]}
+              disabled={isUpdating}
+              onClick={(e) => {
+                e.stopPropagation();
+                void toggleGroup(group, !!membership[group.id]);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  if (!isUpdating) void toggleGroup(group, !!membership[group.id]);
+                  e.stopPropagation();
+                  e.currentTarget.click();
                 }
               }}
               className={`group-selector-item${isUpdating ? ' group-selector-item--updating' : ''}`}
@@ -95,7 +96,7 @@ export const GroupSelector = ({
                 {membership[group.id] && <span className="group-selector-checkbox-mark">✓</span>}
               </div>
               {group.name}
-            </div>
+            </button>
           );
         })}
         {groups.length === 0 && <div className="group-selector-empty">No groups available</div>}

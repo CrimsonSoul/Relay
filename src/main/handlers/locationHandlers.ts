@@ -34,7 +34,71 @@ function validateLocationResponse(data: {
 }): boolean {
   const lat = Number(data.lat);
   const lon = Number(data.lon);
-  return !isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  return (
+    !Number.isNaN(lat) && !Number.isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
+  );
+}
+
+async function fetchIpInfoIo() {
+  loggers.ipc.debug('Trying ipinfo.io...');
+  const res = await fetch('https://ipinfo.io/json', {
+    headers: { 'User-Agent': 'Relay-App' },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (res.ok) {
+    const data = (await res.json()) as IpInfoIoResponse;
+    const [lat, lon] = (data.loc || '').split(',').map(Number);
+    const result = {
+      lat,
+      lon,
+      city: data.city,
+      region: data.region,
+      country: data.country,
+      timezone: data.timezone,
+    };
+    if (validateLocationResponse(result)) {
+      loggers.ipc.info('Location found via ipinfo.io', { city: data.city });
+      return result;
+    }
+    loggers.ipc.warn('ipinfo.io returned invalid location data');
+  } else {
+    loggers.ipc.warn('ipinfo.io returned non-OK status', { status: res.status });
+  }
+  return null;
+}
+
+async function fetchIpWhoIs() {
+  loggers.ipc.debug('Trying ipwho.is...');
+  const res = await fetch('https://ipwho.is/', {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (res.ok) {
+    const data = (await res.json()) as {
+      success: boolean;
+      latitude?: number;
+      longitude?: number;
+      city?: string;
+      region?: string;
+      country?: string;
+      timezone?: { id?: string };
+    };
+    if (data.success) {
+      const result = {
+        lat: data.latitude,
+        lon: data.longitude,
+        city: data.city,
+        region: data.region,
+        country: data.country,
+        timezone: data.timezone?.id,
+      };
+      if (validateLocationResponse(result)) {
+        loggers.ipc.info('Location found via ipwho.is', { city: data.city });
+        return result;
+      }
+      loggers.ipc.warn('ipwho.is returned invalid location data');
+    }
+  }
+  return null;
 }
 
 export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null) {
@@ -73,32 +137,9 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       });
     }
 
-    // Provider 2: ipinfo.io (HTTPS only — replaced insecure ip-api.com)
     try {
-      loggers.ipc.debug('Trying ipinfo.io...');
-      const res = await fetch('https://ipinfo.io/json', {
-        headers: { 'User-Agent': 'Relay-App' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as IpInfoIoResponse;
-        const [lat, lon] = (data.loc || '').split(',').map(Number);
-        const result = {
-          lat,
-          lon,
-          city: data.city,
-          region: data.region,
-          country: data.country,
-          timezone: data.timezone,
-        };
-        if (validateLocationResponse(result)) {
-          loggers.ipc.info('Location found via ipinfo.io', { city: data.city });
-          return result;
-        }
-        loggers.ipc.warn('ipinfo.io returned invalid location data');
-      } else {
-        loggers.ipc.warn('ipinfo.io returned non-OK status', { status: res.status });
-      }
+      const result = await fetchIpInfoIo();
+      if (result) return result;
     } catch (err) {
       loggers.ipc.warn('ipinfo.io failed', {
         error: getErrorMessage(err),
@@ -107,36 +148,8 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
 
     // Provider 3: ipwho.is (HTTPS)
     try {
-      loggers.ipc.debug('Trying ipwho.is...');
-      const res = await fetch('https://ipwho.is/', {
-        signal: AbortSignal.timeout(5000),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          success: boolean;
-          latitude?: number;
-          longitude?: number;
-          city?: string;
-          region?: string;
-          country?: string;
-          timezone?: { id?: string };
-        };
-        if (data.success) {
-          const result = {
-            lat: data.latitude,
-            lon: data.longitude,
-            city: data.city,
-            region: data.region,
-            country: data.country,
-            timezone: data.timezone?.id,
-          };
-          if (validateLocationResponse(result)) {
-            loggers.ipc.info('Location found via ipwho.is', { city: data.city });
-            return result;
-          }
-          loggers.ipc.warn('ipwho.is returned invalid location data');
-        }
-      }
+      const result = await fetchIpWhoIs();
+      if (result) return result;
     } catch (err) {
       loggers.ipc.error('All location providers failed', {
         error: getErrorMessage(err),

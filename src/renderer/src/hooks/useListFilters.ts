@@ -36,7 +36,7 @@ export function useListFilters<T>({
         for (const tag of note.tags) tags.add(tag);
       }
     }
-    return Array.from(tags).sort();
+    return Array.from(tags).sort((a, b) => a.localeCompare(b));
   }, [items, tagSourceItems, getNote]);
 
   // Auto-prune selected tags that no longer exist in the data

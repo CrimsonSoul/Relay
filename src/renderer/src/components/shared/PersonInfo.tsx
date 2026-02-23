@@ -56,7 +56,7 @@ export const PersonInfo: React.FC<PersonInfoProps> = ({ label, value, contactLoo
   const parts = value
     .split(';')
     .map((p) => p.trim())
-    .filter((p) => p);
+    .filter(Boolean);
   const primaryStr = parts[0];
   const found = contactLookup.get(primaryStr.toLowerCase());
   const displayName = found ? found.name : primaryStr;

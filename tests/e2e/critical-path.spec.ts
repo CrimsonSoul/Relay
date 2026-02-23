@@ -1,11 +1,21 @@
 import { _electron as electron, test, expect, type Page, type Locator } from '@playwright/test';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const uniqueSuffix = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+import crypto from 'node:crypto';
+
+const uniqueSuffix = () => crypto.randomUUID().slice(0, 8);
+
+type RelayContact = { email: string };
+type RelayWindowApi = {
+  addContact(contact: { name: string; email: string; title: string; phone: string }): Promise<void>;
+  getContacts(): Promise<RelayContact[]>;
+  removeContact(email: string): Promise<void>;
+  saveGroup(group: { name: string; contacts: string[] }): Promise<void>;
+};
 
 const rightClick = async (target: Locator) => {
   await target.scrollIntoViewIfNeeded();
@@ -47,7 +57,8 @@ const createContactFromPeople = async (window: Page, name: string, email: string
   if (!peopleReady) {
     await window.evaluate(
       async ({ contactName, contactEmail }) => {
-        await window.api.addContact({
+        const appWindow = window as unknown as { api: RelayWindowApi };
+        await appWindow.api.addContact({
           name: contactName,
           email: contactEmail,
           title: 'E2E Tester',
@@ -60,7 +71,8 @@ const createContactFromPeople = async (window: Page, name: string, email: string
     await expect
       .poll(async () =>
         window.evaluate(async (contactEmail) => {
-          const contacts = await window.api.getContacts();
+          const appWindow = window as unknown as { api: RelayWindowApi };
+          const contacts = await appWindow.api.getContacts();
           return contacts.some((c) => c.email.toLowerCase() === contactEmail.toLowerCase());
         }, email),
       )
@@ -96,13 +108,15 @@ const deleteContactFromPeople = async (window: Page, email: string) => {
 
   if (!peopleReady) {
     await window.evaluate(async (contactEmail) => {
-      await window.api.removeContact(contactEmail);
+      const appWindow = window as unknown as { api: RelayWindowApi };
+      await appWindow.api.removeContact(contactEmail);
     }, email);
 
     await expect
       .poll(async () =>
         window.evaluate(async (contactEmail) => {
-          const contacts = await window.api.getContacts();
+          const appWindow = window as unknown as { api: RelayWindowApi };
+          const contacts = await appWindow.api.getContacts();
           return contacts.some((c) => c.email.toLowerCase() === contactEmail.toLowerCase());
         }, email),
       )
@@ -144,7 +158,7 @@ test.describe('Vital Critical Path', () => {
   test.beforeEach(async () => {
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
     const launchEnv = { ...process.env, NODE_ENV: 'test' };
-    delete launchEnv.ELECTRON_RUN_AS_NODE;
+    delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
 
     electronApp = await electron.launch({
       args: [mainEntry],
@@ -248,7 +262,8 @@ test.describe('Vital Critical Path', () => {
 
     await window.evaluate(
       async ({ seedGroupName, contactEmail }) => {
-        await window.api.saveGroup({
+        const appWindow = window as unknown as { api: RelayWindowApi };
+        await appWindow.api.saveGroup({
           name: seedGroupName,
           contacts: [contactEmail],
         });

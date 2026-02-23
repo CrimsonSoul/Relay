@@ -17,7 +17,10 @@ type Props = {
 const DataPathDisplay = () => {
   const [path, setPath] = useState('');
   useEffect(() => {
-    void window.api?.getDataPath().then(setPath);
+    globalThis.api
+      ?.getDataPath()
+      .then(setPath)
+      .catch(() => setPath(''));
   }, []);
   return <>{path || 'Loading...'}</>;
 };
@@ -49,13 +52,15 @@ export const SettingsModal: React.FC<Props> = ({
       return;
     }
     secureStorage.setItemSync(RADAR_URL_KEY, trimmed);
-    void window.api?.registerRadarUrl(trimmed);
+    globalThis.api?.registerRadarUrl(trimmed)?.catch((error_) => {
+      showToast(`Failed to register radar URL: ${getErrorMessage(error_)}`, 'error');
+    });
     showToast(trimmed ? 'Radar URL saved' : 'Radar URL cleared', 'success');
   };
 
   const handleChangeFolder = async () => {
     try {
-      const result = await window.api?.changeDataFolder();
+      const result = await globalThis.api?.changeDataFolder();
       if (!result || typeof result !== 'object') return;
 
       const resultObj = result as { success?: boolean; error?: string };
@@ -72,7 +77,7 @@ export const SettingsModal: React.FC<Props> = ({
 
   const handleResetFolder = async () => {
     try {
-      const result = await window.api?.resetDataFolder();
+      const result = await globalThis.api?.resetDataFolder();
       if (result === true) {
         showToast('Data folder reset to default', 'success');
       } else if (result && typeof result === 'object') {
@@ -96,7 +101,7 @@ export const SettingsModal: React.FC<Props> = ({
             {isSyncing ? (
               <>
                 <span className="animate-spin settings-spinner" />
-                Syncing...
+                <span>Syncing...</span>
               </>
             ) : (
               'Sync Data Now'
@@ -166,7 +171,9 @@ export const SettingsModal: React.FC<Props> = ({
               onClick={() => {
                 setRadarUrl('');
                 secureStorage.setItemSync(RADAR_URL_KEY, '');
-                void window.api?.registerRadarUrl('');
+                globalThis.api?.registerRadarUrl('')?.catch((error_) => {
+                  showToast(`Failed to clear radar URL: ${getErrorMessage(error_)}`, 'error');
+                });
                 showToast('Radar URL cleared', 'success');
               }}
               className="btn-flex-center"
@@ -183,7 +190,7 @@ export const SettingsModal: React.FC<Props> = ({
             <div className="settings-section-heading">Diagnostics & Demo</div>
             <TactileButton
               onClick={async () => {
-                const result = await window.api?.generateDummyData();
+                const result = await globalThis.api?.generateDummyData();
                 if (result) {
                   showToast('Dummy data loaded successfully', 'success');
                   onClose();

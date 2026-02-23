@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { join } from 'path';
+import { join } from 'node:path';
 
 // Mock dependencies
-vi.mock('fs/promises', () => ({
+vi.mock('node:fs/promises', () => ({
   default: {
     access: vi.fn(),
     readFile: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock('./logger', () => ({
   },
 }));
 
-import fs from 'fs/promises';
+import fs from 'node:fs/promises';
 import { atomicWriteWithLock } from './fileLock';
 import { validatePath } from './utils/pathSafety';
 import { FileSystemService } from './FileSystemService';

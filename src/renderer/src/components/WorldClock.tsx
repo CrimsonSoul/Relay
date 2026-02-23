@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation } from '../contexts';
 
+const logInvalidTimezone = (tz: string, error: unknown) =>
+  console.warn(`[WorldClock] Invalid timezone "${tz}":`, error);
+
 const OFFICE_ZONES = [
   { label: 'PST', timeZone: 'America/Los_Angeles' },
   { label: 'MST', timeZone: 'America/Denver' },
@@ -16,7 +19,9 @@ const getFormatter = (timeZone: string, options: Intl.DateTimeFormatOptions) => 
   if (!formatter) {
     try {
       formatter = new Intl.DateTimeFormat('en-US', { timeZone, ...options });
-    } catch (_e) {
+    } catch (error_) {
+      // Timezone not recognised by Intl — fall back to local time
+      logInvalidTimezone(timeZone, error_);
       formatter = new Intl.DateTimeFormat('en-US', { ...options });
     }
     formatterCache.set(key, formatter);
