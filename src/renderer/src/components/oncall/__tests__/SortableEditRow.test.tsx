@@ -1,7 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import type { ChangeEvent, ChangeEventHandler, FocusEventHandler } from 'react';
 import { SortableEditRow } from '../SortableEditRow';
 import { formatPhoneNumber } from '@shared/phoneUtils';
+
+type MockTransform = { x: number; y: number } | null | undefined;
+
+type MockInputProps = {
+  value?: string;
+  onChange?: ChangeEventHandler<HTMLInputElement>;
+  onBlur?: FocusEventHandler<HTMLInputElement>;
+  placeholder?: string;
+  className?: string;
+};
+
+type MockComboboxOption = {
+  value: string;
+  label: string;
+};
+
+type MockComboboxProps = {
+  value?: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  options?: MockComboboxOption[];
+  onOpenChange?: (isOpen: boolean) => void;
+};
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -15,15 +39,19 @@ const mockUseSortable = vi.fn().mockReturnValue({
 });
 
 vi.mock('@dnd-kit/sortable', () => ({
-  useSortable: (...args: any[]) => mockUseSortable(...args),
+  useSortable: (...args: unknown[]) => mockUseSortable(...args),
 }));
 
 vi.mock('@dnd-kit/utilities', () => ({
-  CSS: { Translate: { toString: (t: any) => (t ? `translate(${t.x}px, ${t.y}px)` : undefined) } },
+  CSS: {
+    Translate: {
+      toString: (t: MockTransform) => (t ? `translate(${t.x}px, ${t.y}px)` : undefined),
+    },
+  },
 }));
 
 vi.mock('../../../components/Input', () => ({
-  Input: ({ value, onChange, onBlur, placeholder, className }: any) => (
+  Input: ({ value, onChange, onBlur, placeholder, className }: MockInputProps) => (
     <input
       value={value || ''}
       onChange={onChange}
@@ -36,10 +64,10 @@ vi.mock('../../../components/Input', () => ({
 }));
 
 vi.mock('../../../components/Combobox', () => ({
-  Combobox: ({ value, onChange, placeholder, options, onOpenChange }: any) => (
+  Combobox: ({ value, onChange, placeholder, options, onOpenChange }: MockComboboxProps) => (
     <select
       value={value || ''}
-      onChange={(e: any) => onChange(e.target.value)}
+      onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
       data-testid={`combobox-${placeholder
         ?.toLowerCase()
         .split(/[\s.]+/)
@@ -49,7 +77,7 @@ vi.mock('../../../components/Combobox', () => ({
       onBlur={() => onOpenChange?.(false)}
     >
       <option value="">-- {placeholder} --</option>
-      {options?.map((opt: any) => (
+      {options?.map((opt: MockComboboxOption) => (
         <option key={opt.value} value={opt.value}>
           {opt.label}
         </option>

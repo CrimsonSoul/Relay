@@ -3,8 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 import type { NoteSort, FontSize } from '../types';
 
+type MockTactileButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  children?: React.ReactNode;
+};
+
 vi.mock('../../../../components/TactileButton', () => ({
-  TactileButton: ({ children, onClick, ...props }: any) => (
+  TactileButton: ({ children, onClick, ...props }: MockTactileButtonProps) => (
     <button onClick={onClick} {...props}>
       {children}
     </button>

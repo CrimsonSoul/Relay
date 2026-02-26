@@ -4,13 +4,18 @@ import React from 'react';
 import { NoteEditor } from '../NoteEditor';
 import type { StandaloneNote, NoteColor } from '@shared/ipc';
 
+type MockTactileButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  children?: React.ReactNode;
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+};
+
 vi.mock('react-dom', async () => {
-  const actual = await vi.importActual('react-dom');
-  return { ...actual, createPortal: (node: any) => node };
+  const actual = await vi.importActual<typeof import('react-dom')>('react-dom');
+  return { ...actual, createPortal: (node: React.ReactNode) => node };
 });
 
 vi.mock('../../../components/TactileButton', () => ({
-  TactileButton: ({ children, onClick, disabled, ...props }: any) => (
+  TactileButton: ({ children, onClick, disabled, ...props }: MockTactileButtonProps) => (
     <button onClick={onClick} disabled={disabled} data-variant={props.variant}>
       {children}
     </button>

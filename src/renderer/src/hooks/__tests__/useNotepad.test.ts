@@ -1,9 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
+function createSearchContextValue(debouncedQuery = '') {
+  return {
+    query: debouncedQuery,
+    setQuery: vi.fn(),
+    debouncedQuery,
+    isSearchFocused: false,
+    setIsSearchFocused: vi.fn(),
+    searchInputRef: { current: null },
+    focusSearch: vi.fn(),
+    clearSearch: vi.fn(),
+  };
+}
+
 // Mock SearchContext before importing the hook
 vi.mock('../../contexts/SearchContext', () => ({
-  useSearchContext: vi.fn(() => ({ debouncedQuery: '' })),
+  useSearchContext: vi.fn(() => createSearchContextValue()),
 }));
 import { useSearchContext } from '../../contexts/SearchContext';
 
@@ -34,7 +47,7 @@ function makeNote(overrides: Record<string, unknown> = {}) {
 }
 
 function setSearchQuery(query: string) {
-  vi.mocked(useSearchContext).mockReturnValue({ debouncedQuery: query } as any);
+  vi.mocked(useSearchContext).mockReturnValue(createSearchContextValue(query));
 }
 
 // ---------------------------------------------------------------------------

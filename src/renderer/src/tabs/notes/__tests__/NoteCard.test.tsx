@@ -4,6 +4,12 @@ import React from 'react';
 import { NoteCard } from '../NoteCard';
 import type { StandaloneNote } from '@shared/ipc';
 
+type MockTransform = { x: number; y: number } | null | undefined;
+type MockNoteContentRendererProps = {
+  content: string;
+  className?: string;
+};
+
 const mockUseSortable = vi.fn().mockReturnValue({
   attributes: { role: 'button' },
   listeners: {},
@@ -14,19 +20,21 @@ const mockUseSortable = vi.fn().mockReturnValue({
 });
 
 vi.mock('@dnd-kit/sortable', () => ({
-  useSortable: (...args: any[]) => mockUseSortable(...args),
+  useSortable: (...args: unknown[]) => mockUseSortable(...args),
 }));
 
 vi.mock('@dnd-kit/utilities', () => ({
   CSS: {
     Transform: {
-      toString: (t: any) => (t ? `translate(${t.x}px, ${t.y}px)` : undefined),
+      toString: (t: MockTransform) => (t ? `translate(${t.x}px, ${t.y}px)` : undefined),
     },
   },
 }));
 
 vi.mock('../NoteContentRenderer', () => ({
-  NoteContentRenderer: ({ content, className }: any) => <div className={className}>{content}</div>,
+  NoteContentRenderer: ({ content, className }: MockNoteContentRendererProps) => (
+    <div className={className}>{content}</div>
+  ),
 }));
 
 Object.assign(navigator, {

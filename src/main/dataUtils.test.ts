@@ -6,6 +6,7 @@ import {
   saveConfigAsync,
 } from './dataUtils';
 import fsPromises from 'node:fs/promises';
+import { join } from 'node:path';
 import { app } from 'electron';
 
 vi.mock('node:fs/promises', () => ({
@@ -160,7 +161,7 @@ describe('dataUtils', () => {
       await saveConfigAsync({ dataRoot: '/my/path' });
       expect(fsPromises.writeFile).toHaveBeenCalledWith(
         // eslint-disable-next-line sonarjs/publicly-writable-directories
-        '/tmp/user-data/config.json',
+        join('/tmp/user-data', 'config.json'),
         '{\n  "dataRoot": "/my/path"\n}',
         'utf-8',
       );
