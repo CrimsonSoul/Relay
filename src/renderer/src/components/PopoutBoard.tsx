@@ -168,11 +168,11 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
       <ul
         ref={animationParent}
-        className={`oncall-grid-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        className={`relay-grid relay-grid--masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         aria-label="On-Call Teams"
       >
         {teams.map((team, idx) => (
-          <li key={team} className="oncall-grid-item animate-card-entrance">
+          <li key={team} className="relay-grid-item animate-card-entrance">
             <TeamCard
               team={team}
               index={idx}

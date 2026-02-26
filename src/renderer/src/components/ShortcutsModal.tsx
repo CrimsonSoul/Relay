@@ -26,7 +26,7 @@ const shortcuts = [
   {
     category: 'Actions',
     items: [
-      { keys: `${modKey} + K`, description: 'Open Command Palette' },
+      { keys: `${modKey} + K`, description: 'Focus Search' },
       { keys: `${modKey} + Shift + C`, description: 'Copy Bridge (in Compose)' },
       { keys: `${modKey} + ,`, description: 'Open Settings' },
       { keys: `${modKey} + ?`, description: 'Show Shortcuts' },

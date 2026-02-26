@@ -174,6 +174,23 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             {displayedServers.length > 0 && (
               <div className="match-count">{displayedServers.length} servers</div>
             )}
+            <ListToolbar
+              sortDirection={h.sortOrder}
+              onToggleSortDirection={() =>
+                h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+              }
+              sortKey={h.sortKey}
+              sortOptions={[
+                { value: 'name', label: 'Name' },
+                { value: 'businessArea', label: 'Business Area' },
+                { value: 'lob', label: 'LOB' },
+                { value: 'owner', label: 'Owner' },
+                { value: 'os', label: 'OS' },
+              ]}
+              onSortKeyChange={(key) =>
+                h.setSortKey(key as 'name' | 'businessArea' | 'lob' | 'owner' | 'os')
+              }
+            />
             <TactileButton
               onClick={h.openAddModal}
               variant="primary"
@@ -199,27 +216,6 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               ADD SERVER
             </TactileButton>
           </CollapsibleHeader>
-
-          <ListToolbar
-            search={h.search}
-            onSearchChange={h.setSearch}
-            placeholder="Search Servers"
-            sortDirection={h.sortOrder}
-            onToggleSortDirection={() =>
-              h.setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-            }
-            sortKey={h.sortKey}
-            sortOptions={[
-              { value: 'name', label: 'Name' },
-              { value: 'businessArea', label: 'Business Area' },
-              { value: 'lob', label: 'LOB' },
-              { value: 'owner', label: 'Owner' },
-              { value: 'os', label: 'OS' },
-            ]}
-            onSortKeyChange={(key) =>
-              h.setSortKey(key as 'name' | 'businessArea' | 'lob' | 'owner' | 'os')
-            }
-          />
 
           {(h.filteredServers.length > 0 || filters.isAnyFilterActive) && (
             <ListFilters

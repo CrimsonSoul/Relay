@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { useToast } from '../components/Toast';
-import { useDebounce } from './useDebounce';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
 
@@ -37,8 +36,6 @@ export function useAssembler({
     isUnknown: boolean;
   } | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
 
   const contactMap = useMemo(() => {
     const map = new Map<string, Contact>();
@@ -113,22 +110,7 @@ export function useAssembler({
     });
   }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
 
-  const log = useMemo(() => {
-    if (!debouncedSearch) return allRecipients;
-    const q = debouncedSearch.toLowerCase();
-    return allRecipients.filter((entry) => {
-      const contact = contactMap.get(entry.email.toLowerCase());
-      const searchStr = [
-        contact?.name || entry.email.split('@')[0],
-        entry.email,
-        contact?.title || '',
-        contact?.phone || '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return searchStr.includes(q);
-    });
-  }, [allRecipients, debouncedSearch, contactMap]);
+  const log = allRecipients;
 
   const handleCopy = async () => {
     const success = await globalThis.api?.writeClipboard(log.map((m) => m.email).join('; '));
@@ -203,8 +185,8 @@ export function useAssembler({
       return;
     }
     try {
-      const success = await globalThis.api.addContact(contact);
-      if (success) {
+      const result = await globalThis.api.addContact(contact);
+      if (result.success) {
         if (contact.email) onAddManual(contact.email);
         showToast('Contact created successfully', 'success');
       } else {
@@ -228,8 +210,6 @@ export function useAssembler({
     setCompositionContextMenu,
     isHeaderCollapsed,
     setIsHeaderCollapsed,
-    search,
-    setSearch,
     contactMap,
     groupMap: emailToGroupsMap,
     allRecipients,

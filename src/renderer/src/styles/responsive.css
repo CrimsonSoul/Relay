@@ -28,77 +28,67 @@
   .app-header {
     padding: 0 20px !important;
   }
-
-  .world-clock-container {
-    gap: 16px !important;
-  }
-
-  .world-clock-secondary {
-    gap: 10px !important;
-  }
-
-  .world-clock-label {
-    display: none !important;
-  }
-
-  .world-clock-details {
-    font-size: var(--text-xs) !important;
-  }
 }
 
-@media (max-width: 768px) {
-  .world-clock-container {
-    gap: 12px !important;
-  }
-
-  .world-clock-secondary {
-    display: none !important;
-  }
-}
-
-/* On-Call Board Grid */
-.oncall-grid {
+/* Shared Responsive Grid */
+.relay-grid {
   display: grid;
   list-style: none;
   margin: 0;
   padding-left: 0;
-  grid-template-columns: repeat(auto-fill, minmax(550px, 1fr));
-  justify-content: center;
-  gap: 24px;
-  padding-bottom: 40px;
-  align-items: stretch;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-min-col, 280px), 1fr));
+  gap: var(--grid-gap, 16px);
+  padding-bottom: var(--grid-pb, 0);
+  align-items: var(--grid-align, start);
 }
 
-.oncall-grid-item {
+.relay-grid-item {
   height: 100%;
 }
 
+/* On-Call Board variant */
+.relay-grid--oncall {
+  --grid-min-col: 550px;
+  --grid-gap: 24px;
+  --grid-pb: 40px;
+  --grid-align: stretch;
+  justify-content: center;
+}
+
+/* Notes variant */
+.relay-grid--notes {
+  --grid-min-col: 280px;
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px;
+  align-content: start;
+}
+
 /* Fixed 2-Column Grid for Pop-out (View Only) */
-.oncall-grid-masonry {
-  display: grid;
-  list-style: none;
-  margin: 0;
-  padding-left: 0;
+.relay-grid--masonry {
+  --grid-gap: 24px;
+  --grid-pb: 40px;
+  --grid-align: stretch;
   grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-  padding-bottom: 40px;
-  align-items: stretch;
 }
 
 @media (max-width: 899px) {
-  .oncall-grid {
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 16px;
+  .relay-grid--oncall {
+    --grid-min-col: 350px;
+    --grid-gap: 16px;
   }
-  .oncall-grid-masonry {
+  .relay-grid--masonry {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 599px) {
-  .oncall-grid {
+  .relay-grid--oncall {
     grid-template-columns: 1fr;
-    gap: 12px;
+    --grid-gap: 12px;
+  }
+  .relay-grid--notes {
+    grid-template-columns: 1fr;
   }
 }
 

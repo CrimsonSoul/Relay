@@ -264,6 +264,28 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             >
               COPY
             </TactileButton>
+            <ListToolbar
+              sortDirection={asm.sortConfig.direction}
+              onToggleSortDirection={() =>
+                asm.setSortConfig((prev) => ({
+                  ...prev,
+                  direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                }))
+              }
+              sortKey={asm.sortConfig.key}
+              sortOptions={[
+                { value: 'name', label: 'Name' },
+                { value: 'email', label: 'Email' },
+                { value: 'title', label: 'Title' },
+                { value: 'phone', label: 'Phone' },
+              ]}
+              onSortKeyChange={(key) =>
+                asm.setSortConfig((prev) => ({
+                  ...prev,
+                  key: key as 'name' | 'email' | 'title' | 'phone',
+                }))
+              }
+            />
             <TactileButton
               onClick={() => asm.setIsBridgeReminderOpen(true)}
               variant="primary"
@@ -287,32 +309,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               DRAFT BRIDGE
             </TactileButton>
           </CollapsibleHeader>
-
-          <ListToolbar
-            search={asm.search}
-            onSearchChange={asm.setSearch}
-            placeholder="Search Recipients"
-            sortDirection={asm.sortConfig.direction}
-            onToggleSortDirection={() =>
-              asm.setSortConfig((prev) => ({
-                ...prev,
-                direction: prev.direction === 'asc' ? 'desc' : 'asc',
-              }))
-            }
-            sortKey={asm.sortConfig.key}
-            sortOptions={[
-              { value: 'name', label: 'Name' },
-              { value: 'email', label: 'Email' },
-              { value: 'title', label: 'Title' },
-              { value: 'phone', label: 'Phone' },
-            ]}
-            onSortKeyChange={(key) =>
-              asm.setSortConfig((prev) => ({
-                ...prev,
-                key: key as 'name' | 'email' | 'title' | 'phone',
-              }))
-            }
-          />
 
           <div className="tab-list-container">
             <CompositionList

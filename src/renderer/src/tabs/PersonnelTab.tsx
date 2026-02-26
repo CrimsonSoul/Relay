@@ -289,11 +289,11 @@ export const PersonnelTab: React.FC<{
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <ul
             ref={animationParent}
-            className="oncall-grid stagger-children"
+            className="relay-grid relay-grid--oncall stagger-children"
             aria-label="Sortable On-Call Teams"
           >
             {teams.map((team, idx) => (
-              <li key={team} className="oncall-grid-item animate-card-entrance">
+              <li key={team} className="relay-grid-item animate-card-entrance">
                 <SortableTeamCard
                   team={team}
                   index={idx}

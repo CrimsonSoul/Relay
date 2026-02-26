@@ -58,7 +58,28 @@ export type OnCallEntry = {
   backupLabel?: string;
 };
 
-export type TabName = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Radar' | 'Weather' | 'AI';
+export type TabName =
+  | 'Compose'
+  | 'Personnel'
+  | 'People'
+  | 'Servers'
+  | 'Radar'
+  | 'Weather'
+  | 'AI'
+  | 'Notes';
+
+export type NoteColor = 'amber' | 'blue' | 'green' | 'red' | 'purple' | 'slate';
+
+export type StandaloneNote = {
+  id: string;
+  title: string;
+  content: string;
+  color: NoteColor;
+  tags: string[];
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
 
 export type TeamLayout = {
   [teamName: string]: { x: number; y: number; w?: number; h?: number; static?: boolean };

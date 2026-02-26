@@ -7,6 +7,7 @@ import { MainApp } from '../App';
 vi.mock('../contexts', () => ({
   LocationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useLocation: () => null,
 }));
 
@@ -62,16 +63,13 @@ vi.mock('../components/TabFallback', () => ({
   ),
 }));
 
-vi.mock('../components/CommandPalette', () => ({
-  CommandPalette: ({
-    isOpen,
-    onClose,
+vi.mock('../components/HeaderSearch', () => ({
+  HeaderSearch: ({
     onNavigateToTab,
     onAddContactToBridge,
     onOpenAddContact,
   }: {
-    isOpen: boolean;
-    onClose: () => void;
+    activeTab: string;
     contacts: unknown[];
     servers: unknown[];
     groups: unknown[];
@@ -79,15 +77,13 @@ vi.mock('../components/CommandPalette', () => ({
     onToggleGroup: (id: string) => void;
     onNavigateToTab: (tab: string) => void;
     onOpenAddContact: (email?: string) => void;
-  }) =>
-    isOpen ? (
-      <div data-testid="command-palette">
-        <button onClick={onClose}>close-palette</button>
-        <button onClick={() => onNavigateToTab('Personnel')}>go-personnel</button>
-        <button onClick={() => onAddContactToBridge('test@example.com')}>add-to-bridge</button>
-        <button onClick={() => onOpenAddContact('new@example.com')}>open-add-contact</button>
-      </div>
-    ) : null,
+  }) => (
+    <div data-testid="header-search">
+      <button onClick={() => onNavigateToTab('Personnel')}>go-personnel</button>
+      <button onClick={() => onAddContactToBridge('test@example.com')}>add-to-bridge</button>
+      <button onClick={() => onOpenAddContact('new@example.com')}>open-add-contact</button>
+    </div>
+  ),
 }));
 
 vi.mock('../components/ShortcutsModal', () => ({
@@ -294,12 +290,9 @@ describe('MainApp', () => {
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
   });
 
-  it('opens command palette on Cmd+K keydown', () => {
+  it('renders header search bar', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
-    expect(screen.getByTestId('command-palette')).toBeInTheDocument();
+    expect(screen.getByTestId('header-search')).toBeInTheDocument();
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -351,21 +344,15 @@ describe('MainApp', () => {
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
 
-  it('navigates to Compose tab and adds contact when CommandPalette add-to-bridge is used', () => {
+  it('adds contact to bridge when HeaderSearch add-to-bridge is used', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
     fireEvent.click(screen.getByText('add-to-bridge'));
     expect(mockHandleAddManual).toHaveBeenCalledWith('test@example.com');
     expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
   });
 
-  it('opens AddContactModal when CommandPalette open-add-contact is used', () => {
+  it('opens AddContactModal when HeaderSearch open-add-contact is used', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
     fireEvent.click(screen.getByText('open-add-contact'));
     expect(screen.getByTestId('add-contact-modal')).toBeInTheDocument();
   });

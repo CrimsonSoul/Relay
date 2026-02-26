@@ -4,6 +4,12 @@ import { useServers } from '../useServers';
 import type { Contact, Server } from '@shared/ipc';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
+// Mock SearchContext
+const mockServerDebouncedQuery = { value: '' };
+vi.mock('../../contexts/SearchContext', () => ({
+  useSearchContext: () => ({ debouncedQuery: mockServerDebouncedQuery.value }),
+}));
+
 describe('useServers', () => {
   const servers: Server[] = [
     {
@@ -49,34 +55,25 @@ describe('useServers', () => {
   });
 
   it('builds contact lookup and filters/sorts servers', () => {
-    vi.useFakeTimers();
-    const { result } = renderHook(() => useServers(servers, contacts));
+    const { result, rerender } = renderHook(() => useServers(servers, contacts));
 
     expect(result.current.contactLookup.get('alpha@test.com')?.name).toBe('Alice');
     expect(result.current.contactLookup.get('alice')?.email).toBe('alpha@test.com');
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Alpha', 'Bravo']);
 
-    act(() => {
-      result.current.setSearch('bravo');
-    });
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
+    // Test filtering via search context mock
+    mockServerDebouncedQuery.value = 'bravo';
+    rerender();
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo']);
 
-    act(() => {
-      result.current.setSearch('');
-    });
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
+    // Reset search and test sorting
+    mockServerDebouncedQuery.value = '';
+    rerender();
     act(() => {
       result.current.setSortKey('name');
       result.current.setSortOrder('desc');
     });
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo', 'Alpha']);
-
-    vi.useRealTimers();
   });
 
   it('opens context menu and clears it on global click', () => {

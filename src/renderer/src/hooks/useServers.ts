@@ -1,10 +1,9 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Server, Contact } from '@shared/ipc';
-import { useDebounce } from './useDebounce';
+import { useSearchContext } from '../contexts/SearchContext';
 
 export function useServers(servers: Server[], contacts: Contact[]) {
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const { debouncedQuery: debouncedSearch } = useSearchContext();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortKey, setSortKey] = useState<'name' | 'businessArea' | 'lob' | 'owner' | 'os'>('name');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; server: Server } | null>(
@@ -85,8 +84,6 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   };
 
   return {
-    search,
-    setSearch,
     sortOrder,
     setSortOrder,
     sortKey,

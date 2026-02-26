@@ -4,32 +4,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { ListToolbar } from '../ListToolbar';
 
 const defaultProps = {
-  search: '',
-  onSearchChange: vi.fn(),
   sortDirection: 'asc' as const,
   onToggleSortDirection: vi.fn(),
 };
 
 describe('ListToolbar', () => {
-  it('renders search input with default placeholder', () => {
-    render(<ListToolbar {...defaultProps} />);
-    expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
-  });
-
-  it('renders search input with custom placeholder', () => {
-    render(<ListToolbar {...defaultProps} placeholder="Find contact..." />);
-    expect(screen.getByPlaceholderText('Find contact...')).toBeInTheDocument();
-  });
-
-  it('calls onSearchChange when search input changes', () => {
-    const onSearchChange = vi.fn();
-    render(<ListToolbar {...defaultProps} onSearchChange={onSearchChange} />);
-    fireEvent.change(screen.getByPlaceholderText('Search...'), {
-      target: { value: 'hello' },
-    });
-    expect(onSearchChange).toHaveBeenCalledWith('hello');
-  });
-
   it('renders sort direction button', () => {
     const onToggleSortDirection = vi.fn();
     render(<ListToolbar {...defaultProps} onToggleSortDirection={onToggleSortDirection} />);

@@ -196,7 +196,7 @@
 }
 
 .weather-scroll-container:hover ::-webkit-scrollbar-thumb,
-.command-palette-results:hover ::-webkit-scrollbar-thumb {
+.search-dropdown-results:hover ::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.12);
 }
 
@@ -278,6 +278,13 @@ body {
   color: var(--color-accent);
   text-transform: uppercase;
   letter-spacing: 0.12em;
+}
+
+.header-search-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 0 20px;
 }
 
 .header-actions {

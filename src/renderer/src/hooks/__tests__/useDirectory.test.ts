@@ -5,6 +5,12 @@ import { useDirectory } from '../useDirectory';
 import { NoopToastProvider } from '../../components/Toast';
 import type { Contact, BridgeGroup } from '@shared/ipc';
 
+// Mock SearchContext
+const mockDebouncedQuery = { value: '' };
+vi.mock('../../contexts/SearchContext', () => ({
+  useSearchContext: () => ({ debouncedQuery: mockDebouncedQuery.value }),
+}));
+
 // Mock logger
 vi.mock('../../utils/logger', () => ({
   loggers: {
@@ -69,42 +75,26 @@ describe('useDirectory', () => {
     expect(result.current.filtered).toHaveLength(3);
   });
 
-  it('filters contacts by search after debounce', () => {
+  it('filters contacts by debounced search query', () => {
+    mockDebouncedQuery.value = 'alice';
     const { result } = renderHook(() => useDirectory(contacts, groups, onAddToAssembler), {
       wrapper,
-    });
-
-    act(() => {
-      result.current.setSearch('alice');
-    });
-
-    // Before debounce, still shows all
-    expect(result.current.filtered).toHaveLength(3);
-
-    // Advance past debounce delay (300ms)
-    act(() => {
-      vi.advanceTimersByTime(350);
     });
 
     expect(result.current.filtered).toHaveLength(1);
     expect(result.current.filtered[0].email).toBe('alice@test.com');
+    mockDebouncedQuery.value = '';
   });
 
   it('search is case insensitive', () => {
+    mockDebouncedQuery.value = 'BOB';
     const { result } = renderHook(() => useDirectory(contacts, groups, onAddToAssembler), {
       wrapper,
     });
 
-    act(() => {
-      result.current.setSearch('BOB');
-    });
-
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
-
     expect(result.current.filtered).toHaveLength(1);
     expect(result.current.filtered[0].email).toBe('bob@test.com');
+    mockDebouncedQuery.value = '';
   });
 
   it('sorts by name ascending by default', () => {

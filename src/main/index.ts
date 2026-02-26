@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, dialog } from 'electron';
+import { app, BrowserWindow, session, dialog, Menu } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FileManager } from './FileManager';
@@ -88,14 +88,17 @@ if (gotLock) {
         webSecurity: true,
         allowRunningInsecureContent: false,
         experimentalFeatures: false,
+        spellcheck: true,
         ...(process.platform === 'win32' && {
-          spellcheck: false,
           enableWebSQL: false,
         }),
       },
     });
 
     setupWindowListeners(state.mainWindow);
+
+    // Configure spellchecker languages
+    state.mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);
 
     state.mainWindow.on('close', () => {
       // Close all other windows when the main window is closed
@@ -190,6 +193,31 @@ if (gotLock) {
     state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
       loggers.security.warn(`Blocked window.open() attempt: ${url}`);
       return { action: 'deny' };
+    });
+
+    // Spellcheck context menu — show suggestions on right-click
+    state.mainWindow.webContents.on('context-menu', (_event, params) => {
+      if (!params.misspelledWord) return;
+      const menuItems: Electron.MenuItemConstructorOptions[] = params.dictionarySuggestions.map(
+        (suggestion) => ({
+          label: suggestion,
+          click: () => state.mainWindow?.webContents.replaceMisspelling(suggestion),
+        }),
+      );
+      if (menuItems.length === 0) {
+        menuItems.push({ label: 'No suggestions', enabled: false });
+      }
+      menuItems.push(
+        { type: 'separator' },
+        {
+          label: 'Add to Dictionary',
+          click: () =>
+            state.mainWindow?.webContents.session.addWordToSpellCheckerDictionary(
+              params.misspelledWord,
+            ),
+        },
+      );
+      Menu.buildFromTemplate(menuItems).popup();
     });
 
     state.mainWindow.on('closed', () => {

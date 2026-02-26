@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from '../contexts';
 
 const logInvalidTimezone = (tz: string, error: unknown) =>
@@ -36,6 +37,10 @@ export const WorldClock: React.FC = () => {
   const [time, setTime] = useState(new Date());
   const { timezone } = useLocation();
   const minuteKeyRef = useRef(getMinuteKey(time));
+  const [isOpen, setIsOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [popoverPos, setPopoverPos] = useState({ top: 0, right: 0 });
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -48,6 +53,44 @@ export const WorldClock: React.FC = () => {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Position the popover when opening
+  useEffect(() => {
+    if (isOpen && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setPopoverPos({
+        top: rect.bottom + 8,
+        right: window.innerWidth - rect.right,
+      });
+    }
+  }, [isOpen]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (
+        triggerRef.current?.contains(e.target as Node) ||
+        popoverRef.current?.contains(e.target as Node)
+      )
+        return;
+      setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen]);
+
+  const toggle = useCallback(() => setIsOpen((v) => !v), []);
 
   const { primaryZone, secondaryZones } = useMemo(() => {
     const currentTz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -91,9 +134,9 @@ export const WorldClock: React.FC = () => {
           .find((p) => p.type === 'timeZoneName')?.value || z.label;
 
       return (
-        <div key={z.timeZone} className="world-clock-item">
-          <span className="world-clock-label">{zoneName}</span>
-          <span className="world-clock-time">{timeStr}</span>
+        <div key={z.timeZone} className="world-clock-popover-item">
+          <span className="world-clock-popover-label">{zoneName}</span>
+          <span className="world-clock-popover-time">{timeStr}</span>
         </div>
       );
     });
@@ -101,8 +144,13 @@ export const WorldClock: React.FC = () => {
 
   return (
     <div className="world-clock-container">
-      <div className="world-clock-secondary">{secondaryZoneItems}</div>
-      <div className="world-clock-primary">
+      <button
+        ref={triggerRef}
+        className={`world-clock-trigger${isOpen ? ' world-clock-trigger--active' : ''}`}
+        onClick={toggle}
+        aria-expanded={isOpen}
+        aria-haspopup="true"
+      >
         <div className="world-clock-primary-inner">
           <span className="world-clock-primary-time">{primaryTimeStr}</span>
           <div className="world-clock-details">
@@ -111,7 +159,19 @@ export const WorldClock: React.FC = () => {
             <span>{primaryDateStr}</span>
           </div>
         </div>
-      </div>
+      </button>
+
+      {isOpen &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="world-clock-popover"
+            style={{ top: popoverPos.top, right: popoverPos.right }}
+          >
+            {secondaryZoneItems}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 };

@@ -20,10 +20,10 @@ export default defineConfig({
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: 'coverage/unit',
       thresholds: {
-        lines: 52,
-        functions: 52,
-        branches: 38,
-        statements: 52,
+        lines: 80,
+        functions: 80,
+        branches: 75,
+        statements: 80,
       },
       exclude: [
         'node_modules/**',
@@ -31,6 +31,7 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.test.tsx',
         'src/main/index.ts',
+        'src/main/operations/index.ts',
         'src/renderer/**',
       ],
     },

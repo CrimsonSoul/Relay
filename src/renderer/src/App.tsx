@@ -1,5 +1,5 @@
-import { LocationProvider, useLocation, NotesProvider } from './contexts';
-import { useEffect, useState, useCallback, Suspense, lazy } from 'react';
+import { LocationProvider, useLocation, NotesProvider, SearchProvider } from './contexts';
+import { useEffect, useState, useCallback, useRef, Suspense, lazy } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
@@ -7,7 +7,7 @@ import { WindowControls } from './components/WindowControls';
 import { ToastProvider, NoopToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabFallback } from './components/TabFallback';
-import { CommandPalette } from './components/CommandPalette';
+import { HeaderSearch } from './components/HeaderSearch';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { Contact, TabName } from '@shared/ipc';
@@ -34,6 +34,7 @@ const DataManagerModal = lazy(() =>
   import('./components/DataManagerModal').then((m) => ({ default: m.DataManagerModal })),
 );
 const AIChatTab = lazy(() => import('./tabs/AIChatTab').then((m) => ({ default: m.AIChatTab })));
+const NotesTab = lazy(() => import('./tabs/NotesTab').then((m) => ({ default: m.NotesTab })));
 const PopoutBoard = lazy(() =>
   import('./components/PopoutBoard').then((m) => ({ default: m.PopoutBoard })),
 );
@@ -87,8 +88,10 @@ export function MainApp() {
     });
   }, [activeTab]);
 
-  // Command Palette and Shortcuts modal state
-  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  // Header search ref (for Cmd+K focus)
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Shortcuts modal state
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isDataManagerOpen, setIsDataManagerOpen] = useState(false);
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
@@ -144,15 +147,16 @@ export function MainApp() {
       '5': 'Servers',
       '6': 'Radar',
       '7': 'AI',
+      '8': 'Notes',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
 
-      // Cmd/Ctrl+K for Command Palette
+      // Cmd/Ctrl+K to focus header search bar
       if (mod && e.key === 'k') {
         e.preventDefault();
-        setIsCommandPaletteOpen(true);
+        searchInputRef.current?.focus();
         return;
       }
 
@@ -179,7 +183,7 @@ export function MainApp() {
 
     globalThis.addEventListener('keydown', handleKeyDown);
     return () => globalThis.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveTab, setSettingsOpen]); // Removed setIsCommandPaletteOpen, setIsShortcutsOpen
+  }, [setActiveTab, setSettingsOpen]);
 
   if (isPopout) {
     return (
@@ -208,199 +212,211 @@ export function MainApp() {
   }
 
   return (
-    <div className="app-container">
-      <Sidebar
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+    <SearchProvider activeTab={activeTab} searchInputRef={searchInputRef}>
+      <div className="app-container">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
 
-      <main className="main-content" aria-label="Application content">
-        <header className="app-header" aria-label="Application navigation">
-          <div className="header-title-container">
-            <span className="header-breadcrumb">
-              Relay /{' '}
-              {{
-                Compose: 'Compose',
-                Personnel: 'On-Call',
-                People: 'People',
-                Servers: 'Servers',
-                Radar: 'Radar',
-                Weather: 'Weather',
-                AI: 'AI Chat',
-              }[activeTab] ?? activeTab}
-            </span>
-          </div>
-          <div className="header-actions">
-            <WorldClock />
-          </div>
-        </header>
+        <main className="main-content" aria-label="Application content">
+          <header className="app-header" aria-label="Application navigation">
+            <div className="header-title-container">
+              <span className="header-breadcrumb">
+                Relay /{' '}
+                {{
+                  Compose: 'Compose',
+                  Personnel: 'On-Call',
+                  People: 'People',
+                  Servers: 'Servers',
+                  Radar: 'Radar',
+                  Weather: 'Weather',
+                  AI: 'AI Chat',
+                  Notes: 'Notes',
+                }[activeTab] ?? activeTab}
+              </span>
+            </div>
+            <div className="header-search-container">
+              <HeaderSearch
+                activeTab={activeTab}
+                contacts={data.contacts}
+                servers={data.servers}
+                groups={data.groups}
+                onAddContactToBridge={(email) => {
+                  handleAddManual(email);
+                  setActiveTab('Compose');
+                }}
+                onToggleGroup={handleLoadGroupFromPalette}
+                onNavigateToTab={(tab) => setActiveTab(tab as TabName)}
+                onOpenAddContact={(email) => {
+                  setInitialContactEmail(email || '');
+                  setIsAddContactModalOpen(true);
+                }}
+              />
+            </div>
+            <div className="header-actions">
+              <WorldClock />
+            </div>
+          </header>
 
-        <div className="content-view">
-          {mountedTabs.has('Compose') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <AssemblerTab
-                  groups={data.groups}
-                  contacts={data.contacts}
-                  onCall={data.onCall}
-                  selectedGroupIds={selectedGroupIds}
-                  manualAdds={manualAdds}
-                  manualRemoves={manualRemoves}
-                  onToggleGroup={handleToggleGroup}
-                  onAddManual={handleAddManual}
-                  onRemoveManual={handleRemoveManual}
-                  onUndoRemove={handleUndoRemove}
-                  onResetManual={handleReset}
-                  setSelectedGroupIds={setSelectedGroupIds}
-                  setManualAdds={setManualAdds}
-                />
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('Personnel') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <PersonnelTab
-                    onCall={data.onCall}
-                    contacts={data.contacts}
-                    teamLayout={data.teamLayout}
-                  />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('People') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'People' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <DirectoryTab
-                    contacts={data.contacts}
+          <div className="content-view">
+            {mountedTabs.has('Compose') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <AssemblerTab
                     groups={data.groups}
-                    onAddToAssembler={handleAddToAssembler}
+                    contacts={data.contacts}
+                    onCall={data.onCall}
+                    selectedGroupIds={selectedGroupIds}
+                    manualAdds={manualAdds}
+                    manualRemoves={manualRemoves}
+                    onToggleGroup={handleToggleGroup}
+                    onAddManual={handleAddManual}
+                    onRemoveManual={handleRemoveManual}
+                    onUndoRemove={handleUndoRemove}
+                    onResetManual={handleReset}
+                    setSelectedGroupIds={setSelectedGroupIds}
+                    setManualAdds={setManualAdds}
                   />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('Weather') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'Weather' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <WeatherTab
-                    weather={weatherData}
-                    alerts={weatherAlerts}
-                    location={weatherLocation}
-                    loading={weatherLoading}
-                    onLocationChange={setWeatherLocation}
-                    onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
-                  />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('Servers') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <ServersTab servers={data.servers} contacts={data.contacts} />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('Radar') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'Radar' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <RadarTab />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
-          {mountedTabs.has('AI') && (
-            <div
-              className={`tab-panel animate-fade-in${activeTab === 'AI' ? ' tab-panel--active' : ''}`}
-            >
-              <ErrorBoundary fallback={<TabFallback error />}>
-                <Suspense fallback={<TabFallback />}>
-                  <AIChatTab />
-                </Suspense>
-              </ErrorBoundary>
-            </div>
-          )}
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Personnel') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <PersonnelTab
+                      onCall={data.onCall}
+                      contacts={data.contacts}
+                      teamLayout={data.teamLayout}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('People') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'People' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <DirectoryTab
+                      contacts={data.contacts}
+                      groups={data.groups}
+                      onAddToAssembler={handleAddToAssembler}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Weather') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Weather' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <WeatherTab
+                      weather={weatherData}
+                      alerts={weatherAlerts}
+                      location={weatherLocation}
+                      loading={weatherLoading}
+                      onLocationChange={setWeatherLocation}
+                      onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Servers') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <ServersTab servers={data.servers} contacts={data.contacts} />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Radar') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Radar' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <RadarTab />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('AI') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'AI' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <AIChatTab />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Notes') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <NotesTab />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+          </div>
+        </main>
+
+        <div className="window-controls-container">
+          <WindowControls />
         </div>
-      </main>
 
-      <div className="window-controls-container">
-        <WindowControls />
+        <ErrorBoundary fallback={<TabFallback error />}>
+          <Suspense fallback={null}>
+            {settingsOpen && (
+              <SettingsModal
+                isOpen={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                isSyncing={isReloading}
+                onSync={handleSync}
+                onOpenDataManager={() => setIsDataManagerOpen(true)}
+              />
+            )}
+            {isDataManagerOpen && (
+              <DataManagerModal
+                isOpen={isDataManagerOpen}
+                onClose={() => setIsDataManagerOpen(false)}
+              />
+            )}
+          </Suspense>
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={null}>
+          <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={null}>
+          <AddContactModal
+            isOpen={isAddContactModalOpen}
+            onClose={() => setIsAddContactModalOpen(false)}
+            onSave={handleContactSaved}
+            initialEmail={initialContactEmail}
+          />
+        </ErrorBoundary>
       </div>
-
-      <ErrorBoundary fallback={<TabFallback error />}>
-        <Suspense fallback={null}>
-          {settingsOpen && (
-            <SettingsModal
-              isOpen={settingsOpen}
-              onClose={() => setSettingsOpen(false)}
-              isSyncing={isReloading}
-              onSync={handleSync}
-              onOpenDataManager={() => setIsDataManagerOpen(true)}
-            />
-          )}
-          {isDataManagerOpen && (
-            <DataManagerModal
-              isOpen={isDataManagerOpen}
-              onClose={() => setIsDataManagerOpen(false)}
-            />
-          )}
-        </Suspense>
-      </ErrorBoundary>
-
-      <ErrorBoundary fallback={null}>
-        <CommandPalette
-          isOpen={isCommandPaletteOpen}
-          onClose={() => setIsCommandPaletteOpen(false)}
-          contacts={data.contacts}
-          servers={data.servers}
-          groups={data.groups}
-          onAddContactToBridge={(email) => {
-            handleAddManual(email);
-            setActiveTab('Compose');
-          }}
-          onToggleGroup={handleLoadGroupFromPalette}
-          onNavigateToTab={(tab) => setActiveTab(tab as TabName)}
-          onOpenAddContact={(email) => {
-            setInitialContactEmail(email || '');
-            setIsAddContactModalOpen(true);
-          }}
-        />
-      </ErrorBoundary>
-
-      <ErrorBoundary fallback={null}>
-        <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
-      </ErrorBoundary>
-
-      <ErrorBoundary fallback={null}>
-        <AddContactModal
-          isOpen={isAddContactModalOpen}
-          onClose={() => setIsAddContactModalOpen(false)}
-          onSave={handleContactSaved}
-          initialEmail={initialContactEmail}
-        />
-      </ErrorBoundary>
-    </div>
+    </SearchProvider>
   );
 }
 

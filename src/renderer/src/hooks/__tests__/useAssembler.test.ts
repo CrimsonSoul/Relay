@@ -5,6 +5,11 @@ import { useAssembler } from '../useAssembler';
 import { NoopToastProvider } from '../../components/Toast';
 import type { BridgeGroup, Contact } from '@shared/ipc';
 
+// Mock SearchContext
+vi.mock('../../contexts/SearchContext', () => ({
+  useSearchContext: () => ({ debouncedQuery: '' }),
+}));
+
 // Mock secureStorage
 vi.mock('../../utils/secureStorage', () => ({
   secureStorage: {
@@ -322,7 +327,7 @@ describe('useAssembler', () => {
   });
 
   it('handleContactSaved creates contact and adds email to manual list', async () => {
-    const mockAddContact = vi.fn().mockResolvedValue(true);
+    const mockAddContact = vi.fn().mockResolvedValue({ success: true });
     const onAddManual = vi.fn();
     const mockApi = { addContact: mockAddContact };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
@@ -338,7 +343,7 @@ describe('useAssembler', () => {
   });
 
   it('handleContactSaved shows error toast on API failure', async () => {
-    const mockAddContact = vi.fn().mockResolvedValue(false);
+    const mockAddContact = vi.fn().mockResolvedValue({ success: false, error: 'Failed' });
     const onAddManual = vi.fn();
     const mockApi = { addContact: mockAddContact };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
