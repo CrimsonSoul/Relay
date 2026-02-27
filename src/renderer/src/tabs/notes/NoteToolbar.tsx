@@ -1,25 +1,16 @@
 import React from 'react';
 import { TactileButton } from '../../components/TactileButton';
-import type { NoteSort, SortKey, FontSize } from './types';
+import type { FontSize } from './types';
 
 interface NoteToolbarProps {
   allTags: string[];
   activeTag: string | null;
   onTagClick: (tag: string | null) => void;
-  sort: NoteSort;
-  onSortChange: (sort: NoteSort) => void;
   fontSize: FontSize;
   onFontSizeChange: (size: FontSize) => void;
   onNewNote: () => void;
   noteCount: number;
 }
-
-const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'updatedAt', label: 'Updated' },
-  { value: 'createdAt', label: 'Created' },
-  { value: 'title', label: 'Title' },
-  { value: 'color', label: 'Color' },
-];
 
 const FONT_SIZES: { value: FontSize; label: string }[] = [
   { value: 'sm', label: 'S' },
@@ -31,8 +22,6 @@ export const NoteToolbar: React.FC<NoteToolbarProps> = ({
   allTags,
   activeTag,
   onTagClick,
-  sort,
-  onSortChange,
   fontSize,
   onFontSizeChange,
   onNewNote,
@@ -59,50 +48,13 @@ export const NoteToolbar: React.FC<NoteToolbarProps> = ({
           </div>
         </div>
 
-        {/* Sort */}
-        <div className="note-toolbar-sort">
-          <span className="note-toolbar-sort-label">SORT BY</span>
-          <select
-            className="note-toolbar-sort-select"
-            value={sort.key}
-            onChange={(e) => onSortChange({ ...sort, key: e.target.value as SortKey })}
-            aria-label="Sort notes by"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <button
-            className="note-toolbar-sort-dir"
-            onClick={() =>
-              onSortChange({ ...sort, direction: sort.direction === 'asc' ? 'desc' : 'asc' })
-            }
-            aria-label={sort.direction === 'asc' ? 'Sort descending' : 'Sort ascending'}
-            title={sort.direction === 'asc' ? 'Ascending' : 'Descending'}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {sort.direction === 'asc' ? (
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              ) : (
-                <path d="M12 5v14M19 12l-7 7-7-7" />
-              )}
-            </svg>
-          </button>
-        </div>
-
         {/* New Note */}
-        <TactileButton variant="primary" size="sm" onClick={onNewNote}>
+        <TactileButton
+          variant="primary"
+          size="sm"
+          onClick={onNewNote}
+          className="note-toolbar-new-btn"
+        >
           <svg
             width="14"
             height="14"

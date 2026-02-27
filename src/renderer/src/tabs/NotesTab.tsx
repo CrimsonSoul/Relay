@@ -1,17 +1,33 @@
 import React, { useState, useCallback } from 'react';
-import { DndContext, closestCenter, PointerSensor, useSensors, useSensor } from '@dnd-kit/core';
-import type { DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, rectSortingStrategy } from '@dnd-kit/sortable';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  useSensors,
+  useSensor,
+} from '@dnd-kit/core';
+import type {
+  DragEndEvent,
+  DragStartEvent,
+  DragOverEvent,
+  CollisionDetection,
+} from '@dnd-kit/core';
 import type { StandaloneNote, NoteColor } from '@shared/ipc';
 import { useNotepad } from '../hooks/useNotepad';
 import { useToast } from '../components/Toast';
 import { ContextMenu } from '../components/ContextMenu';
-import { NoteCard, NoteEditor, NoteToolbar } from './notes';
+import { NoteCard, NoteCardOverlay, NoteEditor, NoteToolbar } from './notes';
 import { TactileButton } from '../components/TactileButton';
 
 export const NotesTab: React.FC = () => {
   const pad = useNotepad();
   const { showToast } = useToast();
+  const gridRef = React.useRef<HTMLDivElement | null>(null);
+  const [columnCount, setColumnCount] = useState(1);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  const [overlayWidth, setOverlayWidth] = useState<number | undefined>();
 
   // Editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -26,6 +42,31 @@ export const NotesTab: React.FC = () => {
 
   // Drag sensors with activation constraint to distinguish clicks from drags
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const noteIds = pad.notes.map((n) => n.id);
+
+  const notesById = React.useMemo(() => {
+    const map = new Map<string, StandaloneNote>();
+    pad.notes.forEach((note) => map.set(note.id, note));
+    return map;
+  }, [pad.notes]);
+
+  // Collision detection: closest center, filter out self
+  const notesCollisionDetection = useCallback<CollisionDetection>(
+    (args) => closestCenter(args).filter((c) => c.id !== args.active.id),
+    [],
+  );
+
+  const updateColumnCount = useCallback(() => {
+    const node = gridRef.current;
+    if (!node) return;
+
+    const minColumnWidth = 280;
+    const gap = 16;
+    const width = node.clientWidth;
+    const nextCount = Math.max(1, Math.floor((width + gap) / (minColumnWidth + gap)));
+    setColumnCount((prev) => (prev === nextCount ? prev : nextCount));
+  }, []);
 
   const handleNewNote = useCallback(() => {
     setEditingNote(undefined);
@@ -43,7 +84,7 @@ export const NotesTab: React.FC = () => {
         pad.updateNote(editingNote.id, data);
         showToast('Note updated', 'success');
       } else {
-        pad.addNote({ ...data, pinned: false });
+        pad.addNote(data);
         showToast('Note created', 'success');
       }
       setEditorOpen(false);
@@ -72,15 +113,49 @@ export const NotesTab: React.FC = () => {
     [pad, showToast],
   );
 
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (over && active.id !== over.id) {
-        pad.reorderNotes(active.id as string, over.id as string);
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+    setOverId(null);
+    const width = event.active.rect.current.initial?.width;
+    setOverlayWidth(typeof width === 'number' && Number.isFinite(width) ? width : undefined);
+  }, []);
+
+  const handleDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const newOverId = event.over?.id ? String(event.over.id) : null;
+      // Only highlight a different card as drop target
+      if (newOverId && newOverId !== activeId) {
+        setOverId(newOverId);
+      } else {
+        setOverId(null);
       }
     },
-    [pad],
+    [activeId],
   );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const draggedId = activeId;
+      const droppedOnId = event.over?.id ? String(event.over.id) : null;
+
+      // Reset drag state
+      setActiveId(null);
+      setOverId(null);
+      setOverlayWidth(undefined);
+
+      // Commit the swap
+      if (draggedId && droppedOnId && draggedId !== droppedOnId) {
+        pad.reorderNotes(draggedId, droppedOnId, noteIds);
+      }
+    },
+    [activeId, noteIds, pad],
+  );
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+    setOverId(null);
+    setOverlayWidth(undefined);
+  }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, note: StandaloneNote) => {
     e.preventDefault();
@@ -97,7 +172,35 @@ export const NotesTab: React.FC = () => {
     }
   }, [contextMenu]);
 
-  const noteIds = pad.notes.map((n) => n.id);
+  React.useEffect(() => {
+    updateColumnCount();
+
+    const node = gridRef.current;
+    if (!node) return;
+
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateColumnCount) : null;
+    observer?.observe(node);
+    globalThis.addEventListener('resize', updateColumnCount);
+
+    return () => {
+      observer?.disconnect();
+      globalThis.removeEventListener('resize', updateColumnCount);
+    };
+  }, [updateColumnCount]);
+
+  const noteColumns = React.useMemo(() => {
+    const normalizedCount = Math.max(1, columnCount);
+    const columns: StandaloneNote[][] = Array.from({ length: normalizedCount }, () => []);
+
+    pad.notes.forEach((note, index) => {
+      columns[index % normalizedCount].push(note);
+    });
+
+    return columns;
+  }, [columnCount, pad.notes]);
+
+  const activeNote = activeId ? (notesById.get(activeId) ?? null) : null;
 
   let contentSection: React.ReactNode;
   if (pad.notes.length === 0 && pad.totalCount === 0) {
@@ -151,23 +254,36 @@ export const NotesTab: React.FC = () => {
     );
   } else {
     contentSection = (
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={noteIds} strategy={rectSortingStrategy}>
-          <div
-            className="relay-grid relay-grid--notes stagger-children"
-            data-font-size={pad.fontSize}
-          >
-            {pad.notes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onClick={() => handleEditNote(note)}
-                onContextMenu={(e) => handleContextMenu(e, note)}
-                onTogglePin={() => pad.togglePin(note.id)}
-              />
+      <DndContext
+        sensors={sensors}
+        collisionDetection={notesCollisionDetection}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div ref={gridRef} className="relay-grid--notes" data-font-size={pad.fontSize}>
+          <div className="notes-masonry-columns stagger-children">
+            {noteColumns.map((column, columnIndex) => (
+              <div className="notes-masonry-column" key={`notes-column-${columnIndex}`}>
+                {column.map((note) => (
+                  <NoteCard
+                    key={note.id}
+                    note={note}
+                    isDragActive={activeId === note.id}
+                    isDropTarget={overId === note.id}
+                    onClick={() => handleEditNote(note)}
+                    onContextMenu={(e) => handleContextMenu(e, note)}
+                  />
+                ))}
+              </div>
             ))}
           </div>
-        </SortableContext>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeNote ? <NoteCardOverlay note={activeNote} width={overlayWidth} /> : null}
+        </DragOverlay>
       </DndContext>
     );
   }
@@ -178,8 +294,6 @@ export const NotesTab: React.FC = () => {
         allTags={pad.allTags}
         activeTag={pad.activeTag}
         onTagClick={pad.setActiveTag}
-        sort={pad.sort}
-        onSortChange={pad.setSort}
         fontSize={pad.fontSize}
         onFontSizeChange={pad.setFontSize}
         onNewNote={handleNewNote}
@@ -216,13 +330,6 @@ export const NotesTab: React.FC = () => {
             {
               label: 'Duplicate',
               onClick: () => handleDuplicate(contextMenu.note.id),
-            },
-            {
-              label: contextMenu.note.pinned ? 'Unpin' : 'Pin to top',
-              onClick: () => {
-                pad.togglePin(contextMenu.note.id);
-                setContextMenu(null);
-              },
             },
             {
               label: 'Delete',

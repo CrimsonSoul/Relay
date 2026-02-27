@@ -28,6 +28,10 @@
   .app-header {
     padding: 0 20px !important;
   }
+
+  .platform-win32 .app-header {
+    padding-right: 156px !important;
+  }
 }
 
 /* Shared Responsive Grid */
@@ -57,11 +61,23 @@
 
 /* Notes variant */
 .relay-grid--notes {
-  --grid-min-col: 280px;
   overflow-y: auto;
   flex: 1;
   padding: 8px;
-  align-content: start;
+}
+
+.notes-masonry-columns {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.notes-masonry-column {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 /* Fixed 2-Column Grid for Pop-out (View Only) */
@@ -87,13 +103,14 @@
     grid-template-columns: 1fr;
     --grid-gap: 12px;
   }
-  .relay-grid--notes {
-    grid-template-columns: 1fr;
+
+  .notes-masonry-columns {
+    flex-direction: column;
   }
 }
 
-/* Auto-hide sidebars when content area is narrow */
-@media (max-width: 900px) {
+/* Auto-hide sidebars earlier when content area gets cramped */
+@media (max-width: 1120px) {
   .assembler-sidebar {
     display: none;
   }
@@ -104,6 +121,41 @@
 
   .detail-panel {
     display: none;
+  }
+
+  .tab-split-layout {
+    display: block;
+  }
+}
+
+/* Keep tab header button rows usable on narrower widths */
+@media (max-width: 1280px) {
+  .collapsible-header {
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .collapsible-header-left {
+    min-width: 0;
+  }
+
+  .collapsible-header-right {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .collapsible-header-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .collapsible-header .list-toolbar {
+    width: auto;
+  }
+
+  .collapsible-header .tactile-button {
+    padding: 0 12px;
   }
 }
 

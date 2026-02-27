@@ -4,31 +4,23 @@ import React from 'react';
 import { NoteCard } from '../NoteCard';
 import type { StandaloneNote } from '@shared/ipc';
 
-type MockTransform = { x: number; y: number } | null | undefined;
 type MockNoteContentRendererProps = {
   content: string;
   className?: string;
 };
 
-const mockUseSortable = vi.fn().mockReturnValue({
-  attributes: { role: 'button' },
-  listeners: {},
-  setNodeRef: vi.fn(),
-  transform: null,
-  transition: undefined,
-  isDragging: false,
-});
-
-vi.mock('@dnd-kit/sortable', () => ({
-  useSortable: (...args: unknown[]) => mockUseSortable(...args),
-}));
-
-vi.mock('@dnd-kit/utilities', () => ({
-  CSS: {
-    Transform: {
-      toString: (t: MockTransform) => (t ? `translate(${t.x}px, ${t.y}px)` : undefined),
-    },
-  },
+vi.mock('@dnd-kit/core', () => ({
+  useDraggable: () => ({
+    attributes: { role: 'button' },
+    listeners: {},
+    setNodeRef: vi.fn(),
+    transform: null,
+    isDragging: false,
+  }),
+  useDroppable: () => ({
+    setNodeRef: vi.fn(),
+    isOver: false,
+  }),
 }));
 
 vi.mock('../NoteContentRenderer', () => ({
@@ -47,16 +39,16 @@ const mockNote: StandaloneNote = {
   content: 'Some content',
   color: 'amber' as const,
   tags: ['tag1', 'tag2'],
-  pinned: false,
   createdAt: Date.now() - 60000,
   updatedAt: Date.now() - 60000,
 };
 
 const defaultProps = () => ({
   note: { ...mockNote, tags: [...mockNote.tags] },
+  isDragActive: false,
+  isDropTarget: false,
   onClick: vi.fn(),
   onContextMenu: vi.fn(),
-  onTogglePin: vi.fn(),
 });
 
 describe('NoteCard', () => {
@@ -178,27 +170,7 @@ describe('NoteCard', () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Some content');
   });
 
-  // 6. Pin button visible only when pinned, clicking calls onTogglePin
-  it('does not show pin button when note is not pinned', () => {
-    const props = defaultProps();
-    props.note.pinned = false;
-    render(<NoteCard {...props} />);
-    expect(screen.queryByLabelText('Unpin note')).toBeNull();
-  });
-
-  it('shows pin button when note is pinned and calls onTogglePin', () => {
-    const props = defaultProps();
-    props.note.pinned = true;
-    render(<NoteCard {...props} />);
-    const pinBtn = screen.getByLabelText('Unpin note');
-    expect(pinBtn).toBeTruthy();
-    fireEvent.click(pinBtn);
-    expect(props.onTogglePin).toHaveBeenCalledTimes(1);
-    // Should not propagate to card onClick
-    expect(props.onClick).not.toHaveBeenCalled();
-  });
-
-  // 7. timeAgo function: test all 5 branches
+  // 6. timeAgo function: test all 5 branches
   it('shows "just now" for notes updated less than 1 minute ago', () => {
     const props = defaultProps();
     props.note.updatedAt = Date.now() - 30_000; // 30 seconds
@@ -239,7 +211,7 @@ describe('NoteCard', () => {
     expect(screen.getByText(expected)).toBeTruthy();
   });
 
-  // 8. Note without title shows "Untitled"
+  // 7. Note without title shows "Untitled"
   it('shows "Untitled" when note has no title', () => {
     const props = defaultProps();
     props.note.title = '';
@@ -254,7 +226,7 @@ describe('NoteCard', () => {
     expect(screen.getByLabelText('Note: Untitled')).toBeTruthy();
   });
 
-  // 9. Note without content does not render NoteContentRenderer
+  // 8. Note without content does not render NoteContentRenderer
   it('does not render NoteContentRenderer when content is empty', () => {
     const props = defaultProps();
     props.note.content = '';
@@ -265,41 +237,31 @@ describe('NoteCard', () => {
     expect(body?.querySelector('.note-card-content')).toBeNull();
   });
 
-  // 10. isDragging state (opacity changes)
-  it('applies opacity 0.5 and zIndex when isDragging is true', () => {
-    mockUseSortable.mockReturnValueOnce({
-      attributes: { role: 'button' },
-      listeners: {},
-      setNodeRef: vi.fn(),
-      transform: null,
-      transition: undefined,
-      isDragging: true,
-    });
-
+  // 9. isDragActive state (source card dimmed via CSS class)
+  it('adds dragging class and CSS handles visibility', () => {
     const props = defaultProps();
+    props.isDragActive = true;
     render(<NoteCard {...props} />);
     const card = screen.getByRole('button', { name: /Note: Test Note/ });
-    expect(card.style.opacity).toBe('0.5');
-    expect(card.style.zIndex).toBe('10');
+    expect(card.classList.contains('note-card--dragging')).toBe(true);
   });
 
-  // 11. Drag handle stops click propagation
-  it('drag handle click does not trigger card onClick', () => {
+  // 10. isDropTarget adds drop target class
+  it('adds drop-target class when card is drop target', () => {
+    const props = defaultProps();
+    props.isDropTarget = true;
+    render(<NoteCard {...props} />);
+    const card = screen.getByRole('button', { name: /Note: Test Note/ });
+    expect(card.classList.contains('note-card--drop-target')).toBe(true);
+  });
+
+  // 11. Drag handle is rendered as visual indicator
+  it('renders drag handle as visual indicator', () => {
     const props = defaultProps();
     render(<NoteCard {...props} />);
     const handle = document.querySelector('.note-card-drag-handle');
     expect(handle).toBeTruthy();
-    fireEvent.click(handle!);
-    expect(props.onClick).not.toHaveBeenCalled();
-  });
-
-  // Additional: pinned card has the correct class
-  it('applies pinned class when note is pinned', () => {
-    const props = defaultProps();
-    props.note.pinned = true;
-    render(<NoteCard {...props} />);
-    const card = screen.getByRole('button', { name: /Note: Test Note/ });
-    expect(card.classList.contains('note-card--pinned')).toBe(true);
+    expect(handle?.getAttribute('role')).toBe('presentation');
   });
 
   it('applies color class based on note color', () => {

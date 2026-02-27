@@ -1,9 +1,41 @@
 import { useState, useCallback, useMemo } from 'react';
 import type { StandaloneNote, NoteColor } from '@shared/ipc';
-import type { NoteSort, FontSize } from '../tabs/notes/types';
+import type { FontSize } from '../tabs/notes/types';
 import { useSearchContext } from '../contexts/SearchContext';
 
 const STORAGE_KEY = 'relay-notepad';
+const NOTE_COLOR_SET = new Set<NoteColor>(['amber', 'blue', 'green', 'red', 'purple', 'slate']);
+
+function normalizeStoredNotes(raw: unknown): StandaloneNote[] {
+  if (!Array.isArray(raw)) return [];
+
+  const now = Date.now();
+  return raw.flatMap((candidate, index) => {
+    if (!candidate || typeof candidate !== 'object') return [];
+
+    const note = candidate as Partial<StandaloneNote>;
+
+    const id = typeof note.id === 'string' && note.id.trim() ? note.id : crypto.randomUUID();
+    const title = typeof note.title === 'string' ? note.title : '';
+    const content = typeof note.content === 'string' ? note.content : '';
+    const color = NOTE_COLOR_SET.has(note.color as NoteColor) ? (note.color as NoteColor) : 'amber';
+    const tags = Array.isArray(note.tags)
+      ? note.tags.filter((tag): tag is string => typeof tag === 'string')
+      : [];
+
+    const fallbackTime = now - index;
+    const createdAt =
+      typeof note.createdAt === 'number' && Number.isFinite(note.createdAt)
+        ? note.createdAt
+        : fallbackTime;
+    const updatedAt =
+      typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt)
+        ? note.updatedAt
+        : createdAt;
+
+    return [{ id, title, content, color, tags, createdAt, updatedAt }];
+  });
+}
 
 function getSampleNotes(): StandaloneNote[] {
   const now = Date.now();
@@ -15,7 +47,6 @@ function getSampleNotes(): StandaloneNote[] {
         '- Confirm all required participants\n- Verify Teams link is active\n- Prepare incident timeline\n- Assign note-taker\n- Send summary within 30 min',
       color: 'amber',
       tags: ['process', 'bridge'],
-      pinned: true,
       createdAt: now - 86_400_000 * 3,
       updatedAt: now - 3_600_000,
     },
@@ -26,7 +57,6 @@ function getSampleNotes(): StandaloneNote[] {
         'Primary: db-prod-east-01\nSecondary: db-prod-west-02\n\nSteps:\n- Check replication lag\n- Notify on-call DBA\n- Initiate failover via orchestrator\n- Verify application connectivity\n- Update DNS if needed',
       color: 'red',
       tags: ['runbook', 'database'],
-      pinned: false,
       createdAt: now - 86_400_000 * 7,
       updatedAt: now - 86_400_000 * 2,
     },
@@ -37,7 +67,6 @@ function getSampleNotes(): StandaloneNote[] {
         'Topics to cover:\n- Open incidents from last week\n- SLA compliance metrics\n- Upcoming maintenance windows\n- Team capacity and on-call rotations',
       color: 'blue',
       tags: ['meeting', 'weekly'],
-      pinned: false,
       createdAt: now - 86_400_000 * 5,
       updatedAt: now - 86_400_000,
     },
@@ -48,7 +77,6 @@ function getSampleNotes(): StandaloneNote[] {
         'Ideas:\n- Add latency percentile alerts (p95, p99)\n- Set up synthetic monitoring for login flow\n- Create dashboard for API error rates by endpoint\n- Review alert fatigue — consolidate noisy alerts',
       color: 'green',
       tags: ['ideas', 'monitoring'],
-      pinned: false,
       createdAt: now - 86_400_000 * 10,
       updatedAt: now - 86_400_000 * 4,
     },
@@ -59,7 +87,6 @@ function getSampleNotes(): StandaloneNote[] {
         'CloudFlare: support@cloudflare.com (Enterprise)\nDatadog: am-team@datadoghq.com\nPagerDuty: enterprise-support@pagerduty.com',
       color: 'purple',
       tags: ['contacts', 'vendor'],
-      pinned: false,
       createdAt: now - 86_400_000 * 14,
       updatedAt: now - 86_400_000 * 6,
     },
@@ -69,7 +96,20 @@ function getSampleNotes(): StandaloneNote[] {
 function loadFromStorage(): StandaloneNote[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as StandaloneNote[];
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      const normalized = normalizeStoredNotes(parsed);
+
+      if (Array.isArray(parsed)) {
+        if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+          saveToStorage(normalized);
+        }
+        return normalized;
+      }
+
+      return [];
+    }
+
     // Seed with sample notes on first load
     const samples = getSampleNotes();
     saveToStorage(samples);
@@ -99,11 +139,19 @@ function loadFontSize(): FontSize {
   return 'md';
 }
 
+function swapInList(list: StandaloneNote[], fromId: string, toId: string): StandaloneNote[] {
+  const oldIndex = list.findIndex((n) => n.id === fromId);
+  const newIndex = list.findIndex((n) => n.id === toId);
+  if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return list;
+  const updated = [...list];
+  [updated[oldIndex], updated[newIndex]] = [updated[newIndex], updated[oldIndex]];
+  return updated;
+}
+
 export function useNotepad() {
   const { debouncedQuery } = useSearchContext();
   const [notes, setNotes] = useState<StandaloneNote[]>(loadFromStorage);
   const [activeTag, setActiveTag] = useState<string | null>(null);
-  const [sort, setSort] = useState<NoteSort>({ key: 'updatedAt', direction: 'desc' });
   const [fontSize, setFontSizeState] = useState<FontSize>(loadFontSize);
 
   const setFontSize = useCallback((size: FontSize) => {
@@ -164,7 +212,6 @@ export function useNotepad() {
           ...source,
           id: crypto.randomUUID(),
           title: `${source.title} (copy)`,
-          pinned: false,
           createdAt: now,
           updatedAt: now,
         };
@@ -177,25 +224,60 @@ export function useNotepad() {
     [persistUpdate],
   );
 
-  const togglePin = useCallback(
-    (id: string) => {
-      persistUpdate((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, pinned: !n.pinned, updatedAt: Date.now() } : n)),
-      );
+  const reorderNotes = useCallback(
+    (activeId: string, overId: string, visibleIds?: string[]) => {
+      persistUpdate((prev) => {
+        if (activeId === overId) return prev;
+
+        if (!visibleIds || visibleIds.length === 0) {
+          return swapInList(prev, activeId, overId);
+        }
+
+        const visibleIdSet = new Set(visibleIds);
+        if (!visibleIdSet.has(activeId) || !visibleIdSet.has(overId)) {
+          return swapInList(prev, activeId, overId);
+        }
+
+        const visibleNotes = prev.filter((note) => visibleIdSet.has(note.id));
+        const reorderedVisible = swapInList(visibleNotes, activeId, overId);
+        if (reorderedVisible === visibleNotes) return prev;
+
+        let visibleCursor = 0;
+        return prev.map((note) =>
+          visibleIdSet.has(note.id) ? reorderedVisible[visibleCursor++] : note,
+        );
+      });
     },
     [persistUpdate],
   );
 
-  const reorderNotes = useCallback(
-    (activeId: string, overId: string) => {
+  const setVisibleOrder = useCallback(
+    (orderedVisibleIds: string[], visibleIds?: string[]) => {
+      if (orderedVisibleIds.length === 0) return;
+
       persistUpdate((prev) => {
-        const oldIndex = prev.findIndex((n) => n.id === activeId);
-        const newIndex = prev.findIndex((n) => n.id === overId);
-        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
-        const updated = [...prev];
-        const [moved] = updated.splice(oldIndex, 1);
-        updated.splice(newIndex, 0, moved);
-        return updated;
+        const targetIds = visibleIds && visibleIds.length > 0 ? visibleIds : orderedVisibleIds;
+        const targetSet = new Set(targetIds);
+        const currentVisibleIds = prev
+          .filter((note) => targetSet.has(note.id))
+          .map((note) => note.id);
+
+        if (currentVisibleIds.length !== orderedVisibleIds.length) return prev;
+        if (new Set(currentVisibleIds).size !== currentVisibleIds.length) return prev;
+
+        const orderedSet = new Set(orderedVisibleIds);
+        if (orderedSet.size !== orderedVisibleIds.length) return prev;
+        for (const id of currentVisibleIds) {
+          if (!orderedSet.has(id)) return prev;
+        }
+
+        const byId = new Map(prev.map((note) => [note.id, note]));
+        let cursor = 0;
+        return prev.map((note) => {
+          if (!targetSet.has(note.id)) return note;
+          const nextId = orderedVisibleIds[cursor++];
+          return byId.get(nextId) ?? note;
+        });
       });
     },
     [persistUpdate],
@@ -207,7 +289,7 @@ export function useNotepad() {
     return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
   }, [notes]);
 
-  const sortedAndFiltered = useMemo(() => {
+  const filteredNotes = useMemo(() => {
     let result = [...notes];
 
     // Filter by global search
@@ -226,48 +308,23 @@ export function useNotepad() {
       result = result.filter((n) => n.tags.includes(activeTag));
     }
 
-    // Partition pinned and unpinned
-    const pinned = result.filter((n) => n.pinned);
-    const unpinned = result.filter((n) => !n.pinned);
-
-    // Sort each partition
-    const compareFn = (a: StandaloneNote, b: StandaloneNote) => {
-      const dir = sort.direction === 'asc' ? 1 : -1;
-      switch (sort.key) {
-        case 'title':
-          return a.title.localeCompare(b.title) * dir;
-        case 'createdAt':
-          return (a.createdAt - b.createdAt) * dir;
-        case 'color':
-          return a.color.localeCompare(b.color) * dir;
-        case 'updatedAt':
-        default:
-          return (a.updatedAt - b.updatedAt) * dir;
-      }
-    };
-
-    pinned.sort(compareFn);
-    unpinned.sort(compareFn);
-
-    return [...pinned, ...unpinned];
-  }, [notes, debouncedQuery, activeTag, sort]);
+    return result;
+  }, [notes, debouncedQuery, activeTag]);
 
   return {
-    notes: sortedAndFiltered,
+    notes: filteredNotes,
     totalCount: notes.length,
     allTags,
     activeTag,
     setActiveTag,
-    sort,
-    setSort,
     fontSize,
     setFontSize,
     addNote,
     updateNote,
     deleteNote,
     duplicateNote,
-    togglePin,
     reorderNotes,
+    setVisibleOrder,
   };
 }
 

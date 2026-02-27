@@ -76,7 +76,6 @@ export type StandaloneNote = {
   content: string;
   color: NoteColor;
   tags: string[];
-  pinned: boolean;
   createdAt: number;
   updatedAt: number;
 };

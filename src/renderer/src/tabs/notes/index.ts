@@ -1,5 +1,5 @@
-export { NoteCard } from './NoteCard';
+export { NoteCard, NoteCardOverlay } from './NoteCard';
 export { NoteEditor } from './NoteEditor';
 export { NoteToolbar } from './NoteToolbar';
 export { NoteContentRenderer } from './NoteContentRenderer';
-export type { NoteSort, SortKey, SortDirection, FontSize } from './types';
+export type { FontSize } from './types';

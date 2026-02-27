@@ -35,7 +35,6 @@ const mockNote: StandaloneNote = {
   content: 'Existing content',
   color: 'blue' as NoteColor,
   tags: ['react', 'testing'],
-  pinned: false,
   createdAt: Date.now() - 120000,
   updatedAt: Date.now() - 60000,
 };

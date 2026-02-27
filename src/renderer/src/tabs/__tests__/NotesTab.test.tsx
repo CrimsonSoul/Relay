@@ -2,34 +2,29 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NotesTab } from '../NotesTab';
 
-// Mock @dnd-kit
+// Mock @dnd-kit/core
 vi.mock('@dnd-kit/core', () => ({
   DndContext: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="dnd-context">{children}</div>
   ),
-  closestCenter: vi.fn(),
+  DragOverlay: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="drag-overlay">{children}</div>
+  ),
+  closestCenter: vi.fn(() => []),
   PointerSensor: vi.fn(),
   useSensors: () => [],
   useSensor: () => ({}),
-}));
-
-vi.mock('@dnd-kit/sortable', () => ({
-  SortableContext: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="sortable-context">{children}</div>
-  ),
-  rectSortingStrategy: {},
-  useSortable: () => ({
+  useDraggable: () => ({
     attributes: {},
     listeners: {},
     setNodeRef: vi.fn(),
     transform: null,
-    transition: null,
     isDragging: false,
   }),
-}));
-
-vi.mock('@dnd-kit/utilities', () => ({
-  CSS: { Transform: { toString: () => '' } },
+  useDroppable: () => ({
+    setNodeRef: vi.fn(),
+    isOver: false,
+  }),
 }));
 
 // Mock Toast

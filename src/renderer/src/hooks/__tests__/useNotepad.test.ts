@@ -39,7 +39,6 @@ function makeNote(overrides: Record<string, unknown> = {}) {
     content: 'Some content',
     color: 'blue' as const,
     tags: [] as string[],
-    pinned: false,
     createdAt: 1000,
     updatedAt: 2000,
     ...overrides,
@@ -99,6 +98,32 @@ describe('useNotepad', () => {
       expect(result.current.notes).toEqual([]);
       expect(result.current.totalCount).toBe(0);
     });
+
+    it('migrates legacy pinned notes on load', () => {
+      localStorage.setItem(
+        'relay-notepad',
+        JSON.stringify([
+          {
+            id: 'legacy-1',
+            title: 'Legacy note',
+            content: 'legacy content',
+            color: 'amber',
+            tags: ['legacy'],
+            pinned: true,
+            createdAt: 100,
+            updatedAt: 200,
+          },
+        ]),
+      );
+
+      const { result } = renderHook(() => useNotepad());
+
+      expect(result.current.notes).toHaveLength(1);
+      expect('pinned' in result.current.notes[0]).toBe(false);
+
+      const stored = JSON.parse(localStorage.getItem('relay-notepad') || '[]');
+      expect(stored[0]).not.toHaveProperty('pinned');
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -117,7 +142,6 @@ describe('useNotepad', () => {
           content: 'Body',
           color: 'green',
           tags: ['tag1'],
-          pinned: false,
         });
       });
 
@@ -139,7 +163,6 @@ describe('useNotepad', () => {
           content: '',
           color: 'amber',
           tags: [],
-          pinned: false,
         });
       });
 
@@ -200,7 +223,6 @@ describe('useNotepad', () => {
       expect(result.current.totalCount).toBe(2);
       const copy = result.current.notes.find((n) => n.id !== 'dup1');
       expect(copy!.title).toBe('Original (copy)');
-      expect(copy!.pinned).toBe(false);
       expect(copy!.color).toBe('red');
       expect(copy!.tags).toEqual(['x']);
     });
@@ -218,37 +240,14 @@ describe('useNotepad', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. togglePin
-  // -------------------------------------------------------------------------
-  describe('togglePin', () => {
-    it('toggles the pinned state of a note', () => {
-      const notes = [makeNote({ id: 'pin1', pinned: false })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.togglePin('pin1');
-      });
-
-      expect(result.current.notes.find((n) => n.id === 'pin1')!.pinned).toBe(true);
-
-      act(() => {
-        result.current.togglePin('pin1');
-      });
-
-      expect(result.current.notes.find((n) => n.id === 'pin1')!.pinned).toBe(false);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // 7. reorderNotes
+  // 6. reorderNotes
   // -------------------------------------------------------------------------
   describe('reorderNotes', () => {
-    it('swaps note positions for valid ids', () => {
+    it('swaps notes for valid ids', () => {
       const notes = [
-        makeNote({ id: 'r1', title: 'First', updatedAt: 3000 }),
-        makeNote({ id: 'r2', title: 'Second', updatedAt: 2000 }),
-        makeNote({ id: 'r3', title: 'Third', updatedAt: 1000 }),
+        makeNote({ id: 'r1', title: 'First' }),
+        makeNote({ id: 'r2', title: 'Second' }),
+        makeNote({ id: 'r3', title: 'Third' }),
       ];
       localStorage.setItem('relay-notepad', JSON.stringify(notes));
       const { result } = renderHook(() => useNotepad());
@@ -257,9 +256,7 @@ describe('useNotepad', () => {
         result.current.reorderNotes('r1', 'r3');
       });
 
-      // After reorder the internal array should have moved r1 to where r3 was.
-      // We verify via totalCount staying the same (structural correctness).
-      expect(result.current.totalCount).toBe(3);
+      expect(result.current.notes.map((n) => n.id)).toEqual(['r3', 'r2', 'r1']);
     });
 
     it('does nothing when activeId equals overId (same index)', () => {
@@ -288,133 +285,61 @@ describe('useNotepad', () => {
 
       expect(result.current.totalCount).toBe(1);
     });
-  });
 
-  // -------------------------------------------------------------------------
-  // 8. Sorting
-  // -------------------------------------------------------------------------
-  describe('sorting', () => {
-    function setupSortNotes() {
+    it('reorders only visible notes when visibleIds are provided', () => {
       const notes = [
-        makeNote({ id: 'a', title: 'Banana', color: 'green', createdAt: 300, updatedAt: 100 }),
-        makeNote({ id: 'b', title: 'Apple', color: 'amber', createdAt: 100, updatedAt: 300 }),
-        makeNote({ id: 'c', title: 'Cherry', color: 'red', createdAt: 200, updatedAt: 200 }),
-      ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
-    }
-
-    it('sorts by updatedAt desc (default)', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      const titles = result.current.notes.map((n) => n.title);
-      // desc: highest updatedAt first => Apple(300), Cherry(200), Banana(100)
-      expect(titles).toEqual(['Apple', 'Cherry', 'Banana']);
-    });
-
-    it('sorts by updatedAt asc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'updatedAt', direction: 'asc' });
-      });
-
-      const titles = result.current.notes.map((n) => n.title);
-      expect(titles).toEqual(['Banana', 'Cherry', 'Apple']);
-    });
-
-    it('sorts by createdAt desc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'createdAt', direction: 'desc' });
-      });
-
-      const titles = result.current.notes.map((n) => n.title);
-      // desc: highest createdAt first => Banana(300), Cherry(200), Apple(100)
-      expect(titles).toEqual(['Banana', 'Cherry', 'Apple']);
-    });
-
-    it('sorts by createdAt asc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'createdAt', direction: 'asc' });
-      });
-
-      const titles = result.current.notes.map((n) => n.title);
-      expect(titles).toEqual(['Apple', 'Cherry', 'Banana']);
-    });
-
-    it('sorts by title desc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'title', direction: 'desc' });
-      });
-
-      const titles = result.current.notes.map((n) => n.title);
-      expect(titles).toEqual(['Cherry', 'Banana', 'Apple']);
-    });
-
-    it('sorts by title asc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'title', direction: 'asc' });
-      });
-
-      const titles = result.current.notes.map((n) => n.title);
-      expect(titles).toEqual(['Apple', 'Banana', 'Cherry']);
-    });
-
-    it('sorts by color desc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'color', direction: 'desc' });
-      });
-
-      const colors = result.current.notes.map((n) => n.color);
-      // desc localeCompare: red, green, amber
-      expect(colors).toEqual(['red', 'green', 'amber']);
-    });
-
-    it('sorts by color asc', () => {
-      setupSortNotes();
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.setSort({ key: 'color', direction: 'asc' });
-      });
-
-      const colors = result.current.notes.map((n) => n.color);
-      // asc localeCompare: amber, green, red
-      expect(colors).toEqual(['amber', 'green', 'red']);
-    });
-
-    it('pinned notes always appear before unpinned', () => {
-      const notes = [
-        makeNote({ id: 'p1', title: 'Unpinned', pinned: false, updatedAt: 9999 }),
-        makeNote({ id: 'p2', title: 'Pinned', pinned: true, updatedAt: 1 }),
+        makeNote({ id: 'a', tags: ['ops'] }),
+        makeNote({ id: 'b', tags: ['infra'] }),
+        makeNote({ id: 'c', tags: ['ops'] }),
+        makeNote({ id: 'd', tags: ['infra'] }),
       ];
       localStorage.setItem('relay-notepad', JSON.stringify(notes));
       const { result } = renderHook(() => useNotepad());
 
-      // Even though Unpinned has a higher updatedAt, Pinned should come first
-      expect(result.current.notes[0].title).toBe('Pinned');
-      expect(result.current.notes[1].title).toBe('Unpinned');
+      act(() => {
+        result.current.reorderNotes('c', 'a', ['a', 'c']);
+      });
+
+      expect(result.current.notes.map((n) => n.id)).toEqual(['c', 'b', 'a', 'd']);
     });
   });
 
   // -------------------------------------------------------------------------
-  // 9. Filtering
+  // 7. setVisibleOrder
+  // -------------------------------------------------------------------------
+  describe('setVisibleOrder', () => {
+    it('applies full visible order when all notes are visible', () => {
+      const notes = [makeNote({ id: 'a' }), makeNote({ id: 'b' }), makeNote({ id: 'c' })];
+      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      const { result } = renderHook(() => useNotepad());
+
+      act(() => {
+        result.current.setVisibleOrder(['b', 'c', 'a']);
+      });
+
+      expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'c', 'a']);
+    });
+
+    it('applies ordered visible subset while keeping hidden notes in place', () => {
+      const notes = [
+        makeNote({ id: 'a', tags: ['ops'] }),
+        makeNote({ id: 'b', tags: ['infra'] }),
+        makeNote({ id: 'c', tags: ['ops'] }),
+        makeNote({ id: 'd', tags: ['infra'] }),
+      ];
+      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      const { result } = renderHook(() => useNotepad());
+
+      act(() => {
+        result.current.setVisibleOrder(['c', 'a'], ['a', 'c']);
+      });
+
+      expect(result.current.notes.map((n) => n.id)).toEqual(['c', 'b', 'a', 'd']);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 8. Filtering
   // -------------------------------------------------------------------------
   describe('filtering', () => {
     function setupFilterNotes() {

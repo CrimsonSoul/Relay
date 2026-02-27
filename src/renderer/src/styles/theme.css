@@ -263,7 +263,7 @@ body {
 
 /* Reserve space for window controls on Windows/Linux */
 .platform-win32 .app-header {
-  padding-right: 192px;
+  padding-right: 160px;
 }
 
 .header-title-container {
