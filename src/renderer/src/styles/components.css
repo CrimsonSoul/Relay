@@ -5493,14 +5493,18 @@ body.modal-open {
 
 .cloud-status__filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
 
 .cloud-status__filter {
-  height: 40px;
-  padding: 0 16px;
-  font-size: var(--text-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: var(--color-bg-chrome);
@@ -5525,34 +5529,58 @@ body.modal-open {
 /* Provider summary cards */
 .cloud-status__summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 16px;
 }
 
 .cloud-status-provider {
   background: var(--color-bg-card);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
-  padding: 24px 28px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
   transition:
     border-color 0.15s,
     background 0.15s;
+}
+
+.cloud-status-provider:hover {
+  border-color: var(--color-border);
+  background: var(--color-bg-card-hover, var(--color-bg-card));
 }
 
 .cloud-status-provider__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
 
 .cloud-status-provider__name {
-  font-size: var(--text-lg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-base);
   font-weight: 600;
   color: var(--color-text-primary);
   letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-status-provider__icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
 }
 
 .cloud-status-provider__indicator {
@@ -5767,6 +5795,7 @@ body.modal-open {
 .cloud-status__footer-links {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
+  line-height: 2;
 }
 
 .cloud-status__ext-link {

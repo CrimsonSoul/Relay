@@ -1,10 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { TabFallback } from '../components/TabFallback';
-import type {
-  CloudStatusData,
-  CloudStatusItem,
-  CloudStatusProvider,
-  CloudStatusSeverity,
+import { ProviderIcon } from '../components/icons/ProviderIcons';
+import {
+  CLOUD_STATUS_PROVIDER_ORDER,
+  CLOUD_STATUS_PROVIDERS,
+  type CloudStatusData,
+  type CloudStatusItem,
+  type CloudStatusProvider,
+  type CloudStatusSeverity,
 } from '@shared/ipc';
 
 type FilterMode = 'all' | CloudStatusProvider;
@@ -43,25 +46,31 @@ function severityLabel(severity: CloudStatusSeverity): string {
 }
 
 function providerLabel(provider: CloudStatusProvider): string {
-  switch (provider) {
-    case 'aws':
-      return 'AWS';
-    case 'azure':
-      return 'Azure';
-    case 'm365':
-      return 'Microsoft 365';
-  }
+  return CLOUD_STATUS_PROVIDERS[provider]?.label ?? provider;
 }
 
-function filterLabel(mode: FilterMode): string {
-  if (mode === 'all') return 'All';
-  if (mode === 'm365') return 'M365';
-  return providerLabel(mode);
+function providerShortLabel(provider: CloudStatusProvider): string {
+  const cfg = CLOUD_STATUS_PROVIDERS[provider];
+  return cfg?.shortLabel ?? cfg?.label ?? provider;
+}
+
+function formatLocalTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 }
 
 function stripHtml(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  return doc.body.textContent ?? '';
+  // First pass: decode HTML entities (handles double-encoded content like &lt;div&gt;)
+  const decoded = new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '';
+  // Second pass: strip any actual HTML tags from the decoded content
+  return new DOMParser().parseFromString(decoded, 'text/html').body.textContent ?? '';
 }
 
 // --- Subcomponents ---
@@ -105,15 +114,24 @@ const ProviderCard: React.FC<{
   };
 
   return (
-    <div className={`cloud-status-provider cloud-status-provider--${provider}`}>
+    <button
+      type="button"
+      className={`cloud-status-provider cloud-status-provider--${provider}`}
+      onClick={() => void globalThis.api?.openExternal(CLOUD_STATUS_PROVIDERS[provider].statusUrl)}
+    >
       <div className="cloud-status-provider__header">
-        <span className="cloud-status-provider__name">{providerLabel(provider)}</span>
+        <span className="cloud-status-provider__name">
+          <span className="cloud-status-provider__icon">
+            <ProviderIcon provider={provider} size={16} />
+          </span>
+          {providerLabel(provider)}
+        </span>
         <span
           className={`cloud-status-provider__indicator cloud-status-provider__indicator--${getIndicatorVariant()}`}
         />
       </div>
       <div className="cloud-status-provider__body">{renderStatus()}</div>
-    </div>
+    </button>
   );
 };
 
@@ -139,7 +157,7 @@ const StatusItemCard: React.FC<{
         </span>
         <span className="cloud-status-item__provider-tag">{providerLabel(item.provider)}</span>
         <span className="cloud-status-item__title">{item.title}</span>
-        <span className="cloud-status-item__time">{timeAgo(item.pubDate)}</span>
+        <span className="cloud-status-item__time">{formatLocalTime(item.pubDate)}</span>
         <svg
           className={`cloud-status-item__chevron ${isExpanded ? 'cloud-status-item__chevron--open' : ''}`}
           width="24"
@@ -184,11 +202,7 @@ export const CloudStatusTab: React.FC<{
 
   const items = useMemo(() => {
     if (!statusData) return [];
-    const all = [
-      ...(statusData.aws ?? []),
-      ...(statusData.azure ?? []),
-      ...(statusData.m365 ?? []),
-    ];
+    const all = Object.values(statusData.providers).flat();
     const filtered = filter === 'all' ? all : all.filter((i) => i.provider === filter);
     // Sort by date descending
     return filtered.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
@@ -196,9 +210,7 @@ export const CloudStatusTab: React.FC<{
 
   if (!statusData && loading) return <TabFallback />;
 
-  const awsError = statusData?.errors.some((e) => e.provider === 'aws') ?? false;
-  const azureError = statusData?.errors.some((e) => e.provider === 'azure') ?? false;
-  const m365Error = statusData?.errors.some((e) => e.provider === 'm365') ?? false;
+  const errorProviders = new Set(statusData?.errors.map((e) => e.provider) ?? []);
 
   return (
     <div className="cloud-status">
@@ -232,23 +244,36 @@ export const CloudStatusTab: React.FC<{
           </button>
         </div>
         <div className="cloud-status__filters">
-          {(['all', 'aws', 'azure', 'm365'] as FilterMode[]).map((f) => (
+          <button
+            type="button"
+            className={`cloud-status__filter ${filter === 'all' ? 'cloud-status__filter--active' : ''}`}
+            onClick={() => setFilter('all')}
+          >
+            All
+          </button>
+          {CLOUD_STATUS_PROVIDER_ORDER.map((p) => (
             <button
-              key={f}
+              key={p}
               type="button"
-              className={`cloud-status__filter ${filter === f ? 'cloud-status__filter--active' : ''}`}
-              onClick={() => setFilter(f)}
+              className={`cloud-status__filter ${filter === p ? 'cloud-status__filter--active' : ''}`}
+              onClick={() => setFilter(p)}
             >
-              {filterLabel(f)}
+              <ProviderIcon provider={p} size={14} />
+              {providerShortLabel(p)}
             </button>
           ))}
         </div>
       </div>
 
       <div className="cloud-status__summary">
-        <ProviderCard provider="aws" items={statusData?.aws ?? []} hasError={awsError} />
-        <ProviderCard provider="azure" items={statusData?.azure ?? []} hasError={azureError} />
-        <ProviderCard provider="m365" items={statusData?.m365 ?? []} hasError={m365Error} />
+        {CLOUD_STATUS_PROVIDER_ORDER.map((p) => (
+          <ProviderCard
+            key={p}
+            provider={p}
+            items={statusData?.providers[p] ?? []}
+            hasError={errorProviders.has(p)}
+          />
+        ))}
       </div>
 
       <div className="cloud-status__feed">
@@ -285,38 +310,25 @@ export const CloudStatusTab: React.FC<{
 
       <div className="cloud-status__footer">
         <span className="cloud-status__footer-links">
-          External:{' '}
-          <button
-            type="button"
-            className="cloud-status__ext-link"
-            onClick={() => void globalThis.api?.openExternal('https://x.com/AWSCloud')}
-          >
-            @AWSCloud
-          </button>
-          {' · '}
-          <button
-            type="button"
-            className="cloud-status__ext-link"
-            onClick={() => void globalThis.api?.openExternal('https://x.com/AzureSupport')}
-          >
-            @AzureSupport
-          </button>
-          {' · '}
-          <button
-            type="button"
-            className="cloud-status__ext-link"
-            onClick={() => void globalThis.api?.openExternal('https://x.com/MSFT365Status')}
-          >
-            @MSFT365Status
-          </button>
-          {' · '}
-          <button
-            type="button"
-            className="cloud-status__ext-link"
-            onClick={() => void globalThis.api?.openExternal('https://status.cloud.microsoft')}
-          >
-            M365 Status Page
-          </button>
+          𝕏{' '}
+          {CLOUD_STATUS_PROVIDER_ORDER.filter((p) => CLOUD_STATUS_PROVIDERS[p].twitterHandle).map(
+            (p, i) => (
+              <React.Fragment key={p}>
+                {i > 0 && ' · '}
+                <button
+                  type="button"
+                  className="cloud-status__ext-link"
+                  onClick={() =>
+                    void globalThis.api?.openExternal(
+                      `https://x.com/${CLOUD_STATUS_PROVIDERS[p].twitterHandle}`,
+                    )
+                  }
+                >
+                  @{CLOUD_STATUS_PROVIDERS[p].twitterHandle}
+                </button>
+              </React.Fragment>
+            ),
+          )}
         </span>
       </div>
     </div>

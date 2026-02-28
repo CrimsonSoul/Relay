@@ -69,7 +69,16 @@ export type TabName =
   | 'Status';
 
 // Cloud Status Types
-export type CloudStatusProvider = 'aws' | 'azure' | 'm365';
+export type CloudStatusProvider =
+  | 'aws'
+  | 'azure'
+  | 'm365'
+  | 'github'
+  | 'cloudflare'
+  | 'google'
+  | 'anthropic'
+  | 'openai'
+  | 'salesforce';
 
 export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
 
@@ -84,11 +93,74 @@ export type CloudStatusItem = {
 };
 
 export type CloudStatusData = {
-  aws: CloudStatusItem[];
-  azure: CloudStatusItem[];
-  m365: CloudStatusItem[];
+  providers: Record<CloudStatusProvider, CloudStatusItem[]>;
   lastUpdated: number;
   errors: { provider: CloudStatusProvider; message: string }[];
+};
+
+/** Display order for provider cards and filters. */
+export const CLOUD_STATUS_PROVIDER_ORDER: CloudStatusProvider[] = [
+  'aws',
+  'azure',
+  'm365',
+  'github',
+  'cloudflare',
+  'google',
+  'anthropic',
+  'openai',
+  'salesforce',
+];
+
+export const CLOUD_STATUS_PROVIDERS: Record<
+  CloudStatusProvider,
+  { label: string; shortLabel?: string; statusUrl: string; twitterHandle?: string }
+> = {
+  aws: {
+    label: 'AWS',
+    statusUrl: 'https://status.aws.amazon.com/',
+    twitterHandle: 'AWSCloud',
+  },
+  azure: {
+    label: 'Azure',
+    statusUrl: 'https://status.azure.com/',
+    twitterHandle: 'AzureSupport',
+  },
+  m365: {
+    label: 'Microsoft 365',
+    shortLabel: 'M365',
+    statusUrl: 'https://status.cloud.microsoft',
+    twitterHandle: 'MSFT365Status',
+  },
+  github: {
+    label: 'GitHub',
+    statusUrl: 'https://www.githubstatus.com/',
+    twitterHandle: 'githubstatus',
+  },
+  cloudflare: {
+    label: 'Cloudflare',
+    statusUrl: 'https://www.cloudflarestatus.com/',
+    twitterHandle: 'CloudflareHelp',
+  },
+  google: {
+    label: 'Google Cloud',
+    shortLabel: 'Google',
+    statusUrl: 'https://status.cloud.google.com/',
+    twitterHandle: 'googlecloud',
+  },
+  anthropic: {
+    label: 'Claude',
+    statusUrl: 'https://status.anthropic.com/',
+  },
+  openai: {
+    label: 'ChatGPT',
+    statusUrl: 'https://status.openai.com/',
+    twitterHandle: 'OpenAIDevs',
+  },
+  salesforce: {
+    label: 'Salesforce',
+    shortLabel: 'SFDC',
+    statusUrl: 'https://status.salesforce.com/',
+  },
 };
 
 export type NoteColor = 'amber' | 'blue' | 'green' | 'red' | 'purple' | 'slate';

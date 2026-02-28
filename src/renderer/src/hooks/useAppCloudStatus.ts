@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CloudStatusData, CloudStatusItem, CloudStatusSeverity } from '@shared/ipc';
+import { CLOUD_STATUS_PROVIDERS } from '@shared/ipc';
 import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
 import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { useMounted } from './useMounted';
 
-const POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+const POLLING_INTERVAL_MS = 60 * 1000; // 1 minute
 const CACHE_KEY = 'cached_cloud_status';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -18,16 +19,7 @@ type CacheEntry = {
 const TOAST_SEVERITIES: Set<CloudStatusSeverity> = new Set(['error', 'warning']);
 
 function providerLabel(provider: string): string {
-  switch (provider) {
-    case 'aws':
-      return 'AWS';
-    case 'azure':
-      return 'Azure';
-    case 'm365':
-      return 'M365';
-    default:
-      return provider;
-  }
+  return CLOUD_STATUS_PROVIDERS[provider as keyof typeof CLOUD_STATUS_PROVIDERS]?.label ?? provider;
 }
 
 function severityLabel(severity: CloudStatusSeverity): string {
@@ -42,7 +34,7 @@ function severityLabel(severity: CloudStatusSeverity): string {
 }
 
 function getAllItems(data: CloudStatusData): CloudStatusItem[] {
-  return [...(data.aws ?? []), ...(data.azure ?? []), ...(data.m365 ?? [])];
+  return Object.values(data.providers).flat();
 }
 
 /**
@@ -60,7 +52,7 @@ export function useAppCloudStatus(
   // Restore from cache on mount (stale-while-revalidate) and seed seen IDs
   useEffect(() => {
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS && cached.data?.providers) {
       if (mounted.current) setStatusData(cached.data);
       // Seed seen IDs so we don't toast stale events on first fresh fetch
       for (const item of getAllItems(cached.data)) {

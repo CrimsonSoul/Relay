@@ -2,6 +2,8 @@
 import { ipcMain } from 'electron';
 import {
   IPC_CHANNELS,
+  CLOUD_STATUS_PROVIDER_ORDER,
+  CLOUD_STATUS_PROVIDERS,
   type CloudStatusData,
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -12,12 +14,30 @@ import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
 import { getErrorMessage } from '@shared/types';
 
-const AWS_RSS_URL = 'https://status.aws.amazon.com/rss/all.rss';
-const AZURE_RSS_URL = 'https://azurestatuscdn.azureedge.net/en-us/status/feed/';
-const M365_RSS_URL = 'https://status.cloud.microsoft/api/feed/mac';
+// --- Feed URLs ---
+
+const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
+  aws: 'https://status.aws.amazon.com/rss/all.rss',
+  azure: 'https://azurestatuscdn.azureedge.net/en-us/status/feed/',
+  m365: 'https://status.cloud.microsoft/api/feed/mac',
+};
+
+const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
+  github: 'https://www.githubstatus.com/api/v2/summary.json',
+  cloudflare: 'https://www.cloudflarestatus.com/api/v2/summary.json',
+  anthropic: 'https://status.anthropic.com/api/v2/summary.json',
+  openai: 'https://status.openai.com/api/v2/summary.json',
+};
+
+const GOOGLE_CLOUD_INCIDENTS_URL = 'https://status.cloud.google.com/incidents.json';
+const SALESFORCE_ACTIVE_URL = 'https://api.status.salesforce.com/v1/incidents/active';
+
+// --- Cache ---
 
 const CACHE_TTL_MS = 60_000; // 1-minute server-side cache
 let cache: { data: CloudStatusData; fetchedAt: number } | null = null;
+
+// --- RSS helpers (AWS, Azure, M365) ---
 
 /** Extract text content from an XML tag, handling CDATA sections. */
 function extractTag(xml: string, tag: string): string {
@@ -59,7 +79,6 @@ function parseRssItems(xml: string): RssItem[] {
 
 /** Infer severity from RSS item text content and optional status tag. */
 function inferSeverity(title: string, description: string, status?: string): CloudStatusSeverity {
-  // M365 feed uses an explicit <status> tag
   if (status) {
     const s = status.toLowerCase();
     if (s === 'available') return 'info';
@@ -75,7 +94,7 @@ function inferSeverity(title: string, description: string, status?: string): Clo
 }
 
 /** Fetch and parse a single RSS feed into CloudStatusItems. */
-async function fetchAndParseRss(
+async function fetchRssProvider(
   url: string,
   provider: CloudStatusProvider,
 ): Promise<CloudStatusItem[]> {
@@ -87,7 +106,9 @@ async function fetchAndParseRss(
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 
   const xml = await res.text();
-  const rawItems = parseRssItems(xml);
+  const rawItems = parseRssItems(xml).filter(
+    (item) => !item.description.includes('This site is updated when service issues are preventing'),
+  );
 
   return rawItems.map((item) => ({
     id: item.guid || `${provider}-${item.pubDate}-${item.title.slice(0, 40)}`,
@@ -100,11 +121,197 @@ async function fetchAndParseRss(
   }));
 }
 
+// --- Atlassian Statuspage helpers (GitHub, Cloudflare, Anthropic, OpenAI) ---
+
+type StatuspageIncident = {
+  id: string;
+  name: string;
+  status: string;
+  impact: string;
+  shortlink: string;
+  created_at: string;
+  updated_at: string;
+  incident_updates: { body: string; created_at: string }[];
+};
+
+function statuspageImpactToSeverity(impact: string, status: string): CloudStatusSeverity {
+  if (status === 'resolved' || status === 'postmortem') return 'resolved';
+  switch (impact) {
+    case 'critical':
+    case 'major':
+      return 'error';
+    case 'minor':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
+/** Fetch from an Atlassian Statuspage summary endpoint. */
+async function fetchStatuspageProvider(
+  url: string,
+  provider: CloudStatusProvider,
+): Promise<CloudStatusItem[]> {
+  const res = await fetch(url, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    redirect: 'follow',
+  } as RequestInit);
+
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+
+  const json = (await res.json()) as {
+    incidents: StatuspageIncident[];
+  };
+
+  return (json.incidents ?? []).map((inc) => ({
+    id: inc.id,
+    provider,
+    title: inc.name,
+    description: inc.incident_updates?.[0]?.body ?? '',
+    pubDate: inc.incident_updates?.[0]?.created_at ?? inc.updated_at ?? inc.created_at,
+    link: inc.shortlink ?? '',
+    severity: statuspageImpactToSeverity(inc.impact, inc.status),
+  }));
+}
+
+// --- Google Cloud helpers ---
+
+type GoogleCloudIncident = {
+  id: string;
+  external_desc: string;
+  begin: string;
+  end?: string;
+  modified: string;
+  status_impact: string;
+  uri: string;
+  most_recent_update?: { text: string; when: string };
+};
+
+function googleImpactToSeverity(impact: string, ended: boolean): CloudStatusSeverity {
+  if (ended) return 'resolved';
+  switch (impact) {
+    case 'SERVICE_OUTAGE':
+      return 'error';
+    case 'SERVICE_DISRUPTION':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
+/** Fetch from Google Cloud status incidents JSON. */
+async function fetchGoogleCloudProvider(): Promise<CloudStatusItem[]> {
+  const res = await fetch(GOOGLE_CLOUD_INCIDENTS_URL, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  } as RequestInit);
+
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${GOOGLE_CLOUD_INCIDENTS_URL}`);
+
+  const incidents = (await res.json()) as GoogleCloudIncident[];
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  return incidents
+    .filter((inc) => {
+      const start = new Date(inc.begin).getTime();
+      return !inc.end || start > sevenDaysAgo;
+    })
+    .map((inc) => ({
+      id: inc.id,
+      provider: 'google' as CloudStatusProvider,
+      title: inc.external_desc,
+      description: inc.most_recent_update?.text ?? '',
+      pubDate: inc.most_recent_update?.when ?? inc.modified ?? inc.begin,
+      link: `https://status.cloud.google.com${inc.uri}`,
+      severity: googleImpactToSeverity(inc.status_impact, !!inc.end),
+    }));
+}
+
+// --- Salesforce Trust API helpers ---
+
+type SalesforceIncident = {
+  id: number;
+  status: string;
+  type: string;
+  createdAt: string;
+  updatedAt?: string;
+  serviceKeys: string[];
+  IncidentEvents?: { message: string; createdAt: string }[];
+  timeline?: { content: string; createdAt?: string }[];
+};
+
+function salesforceTypeToSeverity(type: string, status: string): CloudStatusSeverity {
+  if (status !== 'Active') return 'resolved';
+  const t = type.toLowerCase();
+  if (t.includes('major') || t.includes('disruption') || t.includes('outage')) return 'error';
+  if (t.includes('degradation') || t.includes('maintenance')) return 'warning';
+  return 'info';
+}
+
+/** Fetch from Salesforce Trust API active incidents. */
+async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
+  const res = await fetch(SALESFORCE_ACTIVE_URL, {
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  } as RequestInit);
+
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${SALESFORCE_ACTIVE_URL}`);
+
+  const incidents = (await res.json()) as SalesforceIncident[];
+
+  return incidents.map((inc) => {
+    const services = inc.serviceKeys?.join(', ') ?? '';
+    const description = inc.timeline?.[0]?.content ?? inc.IncidentEvents?.[0]?.message ?? '';
+
+    return {
+      id: `sf-${inc.id}`,
+      provider: 'salesforce' as CloudStatusProvider,
+      title: services ? `${inc.type} — ${services}` : inc.type,
+      description,
+      pubDate:
+        inc.timeline?.[0]?.createdAt ??
+        inc.IncidentEvents?.[0]?.createdAt ??
+        inc.updatedAt ??
+        inc.createdAt,
+      link: `https://status.salesforce.com/generalmessages/${inc.id}`,
+      severity: salesforceTypeToSeverity(inc.type, inc.status),
+    };
+  });
+}
+
+// --- Provider fetch dispatcher ---
+
+function fetchProvider(provider: CloudStatusProvider): Promise<CloudStatusItem[]> {
+  const rssUrl = RSS_FEEDS[provider];
+  if (rssUrl) return fetchRssProvider(rssUrl, provider);
+
+  const statuspageUrl = STATUSPAGE_FEEDS[provider];
+  if (statuspageUrl) return fetchStatuspageProvider(statuspageUrl, provider);
+
+  if (provider === 'google') return fetchGoogleCloudProvider();
+  if (provider === 'salesforce') return fetchSalesforceProvider();
+
+  return Promise.resolve([]);
+}
+
+// --- Empty response helper ---
+
+function emptyProviders(): CloudStatusData['providers'] {
+  const providers = {} as CloudStatusData['providers'];
+  for (const p of CLOUD_STATUS_PROVIDER_ORDER) {
+    providers[p] = [];
+  }
+  return providers;
+}
+
 /** Return cached data or an empty response. */
 function cachedOrEmpty(): CloudStatusData {
   if (cache) return cache.data;
-  return { aws: [], azure: [], m365: [], lastUpdated: 0, errors: [] };
+  return { providers: emptyProviders(), lastUpdated: 0, errors: [] };
 }
+
+// --- IPC handler ---
 
 export function setupCloudStatusHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_CLOUD_STATUS, async () => {
@@ -116,44 +323,29 @@ export function setupCloudStatusHandlers() {
     }
 
     try {
-      const [awsResult, azureResult, m365Result] = await Promise.allSettled([
-        fetchAndParseRss(AWS_RSS_URL, 'aws'),
-        fetchAndParseRss(AZURE_RSS_URL, 'azure'),
-        fetchAndParseRss(M365_RSS_URL, 'm365'),
-      ]);
+      const results = await Promise.allSettled(
+        CLOUD_STATUS_PROVIDER_ORDER.map((p) => fetchProvider(p)),
+      );
 
       const errors: CloudStatusData['errors'] = [];
+      const providers = { ...(cache?.data.providers ?? emptyProviders()) };
 
-      if (awsResult.status === 'rejected') {
-        errors.push({ provider: 'aws', message: getErrorMessage(awsResult.reason) });
-        loggers.cloudStatus.warn('AWS status feed failed', {
-          error: getErrorMessage(awsResult.reason),
-          category: ErrorCategory.NETWORK,
-        });
-      }
-      if (azureResult.status === 'rejected') {
-        errors.push({ provider: 'azure', message: getErrorMessage(azureResult.reason) });
-        loggers.cloudStatus.warn('Azure status feed failed', {
-          error: getErrorMessage(azureResult.reason),
-          category: ErrorCategory.NETWORK,
-        });
-      }
-      if (m365Result.status === 'rejected') {
-        errors.push({ provider: 'm365', message: getErrorMessage(m365Result.reason) });
-        loggers.cloudStatus.warn('M365 status feed failed', {
-          error: getErrorMessage(m365Result.reason),
-          category: ErrorCategory.NETWORK,
-        });
+      for (let i = 0; i < CLOUD_STATUS_PROVIDER_ORDER.length; i++) {
+        const provider = CLOUD_STATUS_PROVIDER_ORDER[i]!;
+        const result = results[i]!;
+
+        if (result.status === 'fulfilled') {
+          providers[provider] = result.value;
+        } else {
+          errors.push({ provider, message: getErrorMessage(result.reason) });
+          loggers.cloudStatus.warn(`${CLOUD_STATUS_PROVIDERS[provider].label} status feed failed`, {
+            error: getErrorMessage(result.reason),
+            category: ErrorCategory.NETWORK,
+          });
+        }
       }
 
-      const data: CloudStatusData = {
-        aws: awsResult.status === 'fulfilled' ? awsResult.value : (cache?.data.aws ?? []),
-        azure: azureResult.status === 'fulfilled' ? azureResult.value : (cache?.data.azure ?? []),
-        m365: m365Result.status === 'fulfilled' ? m365Result.value : (cache?.data.m365 ?? []),
-        lastUpdated: Date.now(),
-        errors,
-      };
-
+      const data: CloudStatusData = { providers, lastUpdated: Date.now(), errors };
       cache = { data, fetchedAt: Date.now() };
       return data;
     } catch (err) {
