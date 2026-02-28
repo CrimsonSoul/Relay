@@ -24,7 +24,7 @@ describe('featureFlags', () => {
   it('returns expected default values in production', async () => {
     const mod = await loadModule({ NODE_ENV: 'production', VERBOSE_LOGGING: undefined });
 
-    expect(mod.isFeatureEnabled('enableAIChat')).toBe(true);
+    expect(mod.isFeatureEnabled('enableWeatherAlerts')).toBe(true);
     expect(mod.isFeatureEnabled('enablePerformanceMetrics')).toBe(false);
     expect(mod.featureFlags.getFlag('enableStrictCSP')?.enabled).toBe(true);
   });
@@ -51,7 +51,6 @@ describe('featureFlags', () => {
 
     const requiresRestart = mod.featureFlags.getFlagsRequiringRestart();
     expect(requiresRestart).toContain('enableStrictCSP');
-    expect(requiresRestart).toContain('enableWebviewSandbox');
   });
 
   it('evaluates rollout percentages consistently by user id', async () => {

@@ -3,17 +3,25 @@ import { SidebarButton } from './sidebar/SidebarButton';
 import {
   ComposeIcon,
   PersonnelIcon,
-  AIIcon,
   PeopleIcon,
   ServersIcon,
   RadarIcon,
   WeatherIcon,
   NotesIcon,
+  StatusIcon,
   SettingsIcon,
   AppIcon,
 } from './sidebar/SidebarIcons';
 
-type Tab = 'Compose' | 'Personnel' | 'People' | 'Radar' | 'Servers' | 'Weather' | 'AI' | 'Notes';
+type Tab =
+  | 'Compose'
+  | 'Personnel'
+  | 'People'
+  | 'Radar'
+  | 'Servers'
+  | 'Weather'
+  | 'Notes'
+  | 'Status';
 
 interface SidebarProps {
   activeTab: Tab;
@@ -26,7 +34,7 @@ const navItems: { label: string; tab: Tab; icon: React.ReactNode }[] = [
   { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
   { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
   { label: 'Notes', tab: 'Notes', icon: <NotesIcon /> },
-  { label: 'AI Chat', tab: 'AI', icon: <AIIcon /> },
+  { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
   { label: 'People', tab: 'People', icon: <PeopleIcon /> },
   { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
   { label: 'Radar', tab: 'Radar', icon: <RadarIcon /> },

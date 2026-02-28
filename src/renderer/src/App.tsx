@@ -33,8 +33,10 @@ const SettingsModal = lazy(() =>
 const DataManagerModal = lazy(() =>
   import('./components/DataManagerModal').then((m) => ({ default: m.DataManagerModal })),
 );
-const AIChatTab = lazy(() => import('./tabs/AIChatTab').then((m) => ({ default: m.AIChatTab })));
 const NotesTab = lazy(() => import('./tabs/NotesTab').then((m) => ({ default: m.NotesTab })));
+const CloudStatusTab = lazy(() =>
+  import('./tabs/CloudStatusTab').then((m) => ({ default: m.CloudStatusTab })),
+);
 const PopoutBoard = lazy(() =>
   import('./components/PopoutBoard').then((m) => ({ default: m.PopoutBoard })),
 );
@@ -146,7 +148,7 @@ export function MainApp() {
       '4': 'Weather',
       '5': 'Servers',
       '6': 'Radar',
-      '7': 'AI',
+      '7': 'Status',
       '8': 'Notes',
     };
 
@@ -232,8 +234,8 @@ export function MainApp() {
                   Servers: 'Servers',
                   Radar: 'Radar',
                   Weather: 'Weather',
-                  AI: 'AI Chat',
                   Notes: 'Notes',
+                  Status: 'Service Status',
                 }[activeTab] ?? activeTab}
               </span>
             </div>
@@ -354,17 +356,6 @@ export function MainApp() {
                 </ErrorBoundary>
               </div>
             )}
-            {mountedTabs.has('AI') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'AI' ? ' tab-panel--active' : ''}`}
-              >
-                <ErrorBoundary fallback={<TabFallback error />}>
-                  <Suspense fallback={<TabFallback />}>
-                    <AIChatTab />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
-            )}
             {mountedTabs.has('Notes') && (
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}
@@ -372,6 +363,17 @@ export function MainApp() {
                 <ErrorBoundary fallback={<TabFallback error />}>
                   <Suspense fallback={<TabFallback />}>
                     <NotesTab />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Status') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Status' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <CloudStatusTab />
                   </Suspense>
                 </ErrorBoundary>
               </div>

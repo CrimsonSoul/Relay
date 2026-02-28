@@ -20,7 +20,8 @@ const shortcuts = [
       { keys: `${modKey} + 4`, description: 'Go to Weather' },
       { keys: `${modKey} + 5`, description: 'Go to Servers' },
       { keys: `${modKey} + 6`, description: 'Go to Radar' },
-      { keys: `${modKey} + 7`, description: 'Go to AI Chat' },
+      { keys: `${modKey} + 7`, description: 'Go to Service Status' },
+      { keys: `${modKey} + 8`, description: 'Go to Notes' },
     ],
   },
   {

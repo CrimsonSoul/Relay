@@ -4,11 +4,12 @@ import { describe, it, expect } from 'vitest';
 import {
   ComposeIcon,
   PersonnelIcon,
-  AIIcon,
   PeopleIcon,
   ServersIcon,
   RadarIcon,
   WeatherIcon,
+  NotesIcon,
+  StatusIcon,
   SettingsIcon,
   AppIcon,
 } from '../../sidebar/SidebarIcons';
@@ -17,11 +18,12 @@ describe('SidebarIcons', () => {
   const icons20 = [
     { name: 'ComposeIcon', Component: ComposeIcon },
     { name: 'PersonnelIcon', Component: PersonnelIcon },
-    { name: 'AIIcon', Component: AIIcon },
     { name: 'PeopleIcon', Component: PeopleIcon },
     { name: 'ServersIcon', Component: ServersIcon },
     { name: 'RadarIcon', Component: RadarIcon },
     { name: 'WeatherIcon', Component: WeatherIcon },
+    { name: 'NotesIcon', Component: NotesIcon },
+    { name: 'StatusIcon', Component: StatusIcon },
     { name: 'SettingsIcon', Component: SettingsIcon },
   ];
 

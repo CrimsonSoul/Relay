@@ -430,4 +430,5 @@ export const loggers = {
   location: logger.createChild('Location'),
   config: logger.createChild('Config'),
   network: logger.createChild('Network'),
+  cloudStatus: logger.createChild('CloudStatus'),
 };

@@ -61,12 +61,12 @@ export const NotesTab: React.FC = () => {
     const node = gridRef.current;
     if (!node) return;
 
-    const minColumnWidth = 280;
-    const gap = 16;
+    const minColumnWidth = pad.fontSize === 'lg' ? 340 : 280;
+    const gap = pad.fontSize === 'lg' ? 20 : 16;
     const width = node.clientWidth;
     const nextCount = Math.max(1, Math.floor((width + gap) / (minColumnWidth + gap)));
     setColumnCount((prev) => (prev === nextCount ? prev : nextCount));
-  }, []);
+  }, [pad.fontSize]);
 
   const handleNewNote = useCallback(() => {
     setEditingNote(undefined);

@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { FileManager } from './FileManager';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
+import { setupCloudStatusHandlers } from './handlers/cloudStatusHandlers';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupDataHandlers } from './handlers/dataHandlers';
@@ -60,6 +61,7 @@ export function setupIpcHandlers(
   // Location & Weather
   safeSetup('location', () => setupLocationHandlers(getMainWindow));
   safeSetup('weather', () => setupWeatherHandlers());
+  safeSetup('cloudStatus', () => setupCloudStatusHandlers());
 
   // Window Management
   safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow));

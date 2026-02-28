@@ -80,6 +80,15 @@
   gap: 16px;
 }
 
+/* Wider gaps for large font mode (10ft viewing) */
+.relay-grid--notes[data-font-size='lg'] .notes-masonry-columns {
+  gap: 20px;
+}
+
+.relay-grid--notes[data-font-size='lg'] .notes-masonry-column {
+  gap: 20px;
+}
+
 /* Fixed 2-Column Grid for Pop-out (View Only) */
 .relay-grid--masonry {
   --grid-gap: 24px;

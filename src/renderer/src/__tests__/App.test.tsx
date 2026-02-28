@@ -37,7 +37,6 @@ vi.mock('../components/Sidebar', () => ({
       <button onClick={() => onTabChange('Weather')}>nav-weather</button>
       <button onClick={() => onTabChange('Servers')}>nav-servers</button>
       <button onClick={() => onTabChange('Radar')}>nav-radar</button>
-      <button onClick={() => onTabChange('AI')}>nav-ai</button>
       <button onClick={onOpenSettings}>open-settings</button>
     </div>
   ),
@@ -139,10 +138,6 @@ vi.mock('../tabs/WeatherTab', () => ({
 
 vi.mock('../tabs/PersonnelTab', () => ({
   PersonnelTab: () => <div data-testid="personnel-tab" />,
-}));
-
-vi.mock('../tabs/AIChatTab', () => ({
-  AIChatTab: () => <div data-testid="ai-tab" />,
 }));
 
 vi.mock('../components/SettingsModal', () => ({
@@ -319,12 +314,12 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
 
-  it('navigates tab on Cmd+7 (AI)', () => {
+  it('navigates tab on Cmd+7 (Status)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('AI');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {

@@ -65,8 +65,31 @@ export type TabName =
   | 'Servers'
   | 'Radar'
   | 'Weather'
-  | 'AI'
-  | 'Notes';
+  | 'Notes'
+  | 'Status';
+
+// Cloud Status Types
+export type CloudStatusProvider = 'aws' | 'azure' | 'm365';
+
+export type CloudStatusSeverity = 'info' | 'warning' | 'error' | 'resolved';
+
+export type CloudStatusItem = {
+  id: string;
+  provider: CloudStatusProvider;
+  title: string;
+  description: string;
+  pubDate: string;
+  link: string;
+  severity: CloudStatusSeverity;
+};
+
+export type CloudStatusData = {
+  aws: CloudStatusItem[];
+  azure: CloudStatusItem[];
+  m365: CloudStatusItem[];
+  lastUpdated: number;
+  errors: { provider: CloudStatusProvider; message: string }[];
+};
 
 export type NoteColor = 'amber' | 'blue' | 'green' | 'red' | 'purple' | 'slate';
 
@@ -190,6 +213,7 @@ export type BridgeAPI = {
   useCachedAuth: (nonce: string) => Promise<boolean>;
   subscribeToRadar: (callback: (data: RadarSnapshot) => void) => () => void;
   logBridge: (groups: string[]) => void;
+  getCloudStatus: () => Promise<CloudStatusData>;
   getWeather: (lat: number, lon: number) => Promise<WeatherData | null>;
   searchLocation: (query: string) => Promise<LocationSearchResult>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
@@ -334,6 +358,7 @@ export const IPC_CHANNELS = {
   RADAR_DATA: 'radar:data',
   REGISTER_RADAR_URL: 'config:registerRadarUrl',
   LOG_BRIDGE: 'metrics:logBridge',
+  GET_CLOUD_STATUS: 'cloudstatus:get',
   GET_WEATHER: 'weather:get',
   SEARCH_LOCATION: 'weather:search',
   GET_WEATHER_ALERTS: 'weather:alerts',

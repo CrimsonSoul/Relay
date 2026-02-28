@@ -38,13 +38,11 @@ export type FeatureFlags = {
   // Feature Rollouts
   enableSQLiteMigration: FeatureFlagConfig;
   enableAdvancedStateManagement: FeatureFlagConfig;
-  enableAIChat: FeatureFlagConfig;
   enableWeatherAlerts: FeatureFlagConfig;
   enableExperimentalFeatures: FeatureFlagConfig;
 
   // Security & Performance
   enableStrictCSP: FeatureFlagConfig;
-  enableWebviewSandbox: FeatureFlagConfig;
   enableAutomaticBackups: FeatureFlagConfig;
   enableRateLimiting: FeatureFlagConfig;
 
@@ -88,11 +86,6 @@ const DEFAULT_FLAGS: FeatureFlags = {
     requiresRestart: true,
     rolloutPercentage: 0,
   },
-  enableAIChat: {
-    enabled: true,
-    description: 'Enable AI Chat integration (Gemini, ChatGPT)',
-    requiresRestart: false,
-  },
   enableWeatherAlerts: {
     enabled: true,
     description: 'Enable severe weather alerts in Weather tab',
@@ -108,11 +101,6 @@ const DEFAULT_FLAGS: FeatureFlags = {
   enableStrictCSP: {
     enabled: !isDevelopment,
     description: 'Enforce strict Content Security Policy',
-    requiresRestart: true,
-  },
-  enableWebviewSandbox: {
-    enabled: true,
-    description: 'Enable webview sandboxing for AI Chat',
     requiresRestart: true,
   },
   enableAutomaticBackups: {
