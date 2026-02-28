@@ -95,55 +95,41 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
         }}
         aria-label={`Note: ${note.title || 'Untitled'}`}
       >
-        <div className="note-card-header">
-          <div className="note-card-drag-handle" role="presentation">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.3">
-              <circle cx="9" cy="5" r="2" />
-              <circle cx="15" cy="5" r="2" />
-              <circle cx="9" cy="12" r="2" />
-              <circle cx="15" cy="12" r="2" />
-              <circle cx="9" cy="19" r="2" />
-              <circle cx="15" cy="19" r="2" />
-            </svg>
-          </div>
-          <div className="note-card-actions">
-            <button
-              className={`note-card-copy${copied ? ' is-copied' : ''}`}
-              onClick={handleCopy}
-              aria-label="Copy note contents"
-              title={copied ? 'Copied!' : 'Copy'}
+        <button
+          className={`note-card-copy${copied ? ' is-copied' : ''}`}
+          onClick={handleCopy}
+          aria-label="Copy note contents"
+          title={copied ? 'Copied!' : 'Copy'}
+        >
+          {copied ? (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             >
-              {copied ? (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              ) : (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          )}
+        </button>
 
         <div className="note-card-body">
           <h3 className="note-card-title">{note.title || 'Untitled'}</h3>
@@ -179,19 +165,6 @@ export const NoteCardOverlay: React.FC<NoteCardOverlayProps> = ({ note, width })
 
   return (
     <div style={style} className={`note-card note-card--${note.color} note-card--overlay`}>
-      <div className="note-card-header">
-        <div className="note-card-drag-handle" role="presentation" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" opacity="0.3">
-            <circle cx="9" cy="5" r="2" />
-            <circle cx="15" cy="5" r="2" />
-            <circle cx="9" cy="12" r="2" />
-            <circle cx="15" cy="12" r="2" />
-            <circle cx="9" cy="19" r="2" />
-            <circle cx="15" cy="19" r="2" />
-          </svg>
-        </div>
-      </div>
-
       <div className="note-card-body">
         <h3 className="note-card-title">{note.title || 'Untitled'}</h3>
         {note.content && (

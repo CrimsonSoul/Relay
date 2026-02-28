@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { useCloudStatus } from '../hooks/useCloudStatus';
 import { TabFallback } from '../components/TabFallback';
-import type { CloudStatusItem, CloudStatusProvider, CloudStatusSeverity } from '@shared/ipc';
+import type {
+  CloudStatusData,
+  CloudStatusItem,
+  CloudStatusProvider,
+  CloudStatusSeverity,
+} from '@shared/ipc';
 
 type FilterMode = 'all' | CloudStatusProvider;
 
@@ -170,8 +174,11 @@ const StatusItemCard: React.FC<{
 
 // --- Main Tab ---
 
-export const CloudStatusTab: React.FC = () => {
-  const { statusData, loading, refetch } = useCloudStatus();
+export const CloudStatusTab: React.FC<{
+  statusData: CloudStatusData | null;
+  loading: boolean;
+  refetch: () => void;
+}> = ({ statusData, loading, refetch }) => {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 

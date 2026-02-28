@@ -16,6 +16,7 @@ import { loggers } from './utils/logger';
 import { useAppWeather } from './hooks/useAppWeather';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
+import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 
 // Lazy load non-default tabs and settings modal
 const DirectoryTab = lazy(() =>
@@ -59,6 +60,12 @@ export function MainApp() {
     weatherLoading,
     fetchWeather,
   } = useAppWeather(deviceLocation, showToast);
+
+  const {
+    statusData: cloudStatusData,
+    loading: cloudStatusLoading,
+    refetch: cloudStatusRefetch,
+  } = useAppCloudStatus(showToast);
 
   const {
     activeTab,
@@ -373,7 +380,11 @@ export function MainApp() {
               >
                 <ErrorBoundary fallback={<TabFallback error />}>
                   <Suspense fallback={<TabFallback />}>
-                    <CloudStatusTab />
+                    <CloudStatusTab
+                      statusData={cloudStatusData}
+                      loading={cloudStatusLoading}
+                      refetch={cloudStatusRefetch}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </div>

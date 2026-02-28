@@ -17,58 +17,50 @@ vi.mock('./operations', () => ({
   renameOnCallTeamJson: vi.fn().mockResolvedValue(true),
   reorderOnCallTeamsJson: vi.fn().mockResolvedValue(true),
   saveAllOnCallJson: vi.fn().mockResolvedValue(true),
-  addContactRecord: vi
-    .fn()
-    .mockResolvedValue({
-      id: 'new-id',
-      name: '',
-      email: '',
-      phone: '',
-      title: '',
-      createdAt: 0,
-      updatedAt: 0,
-    }),
+  addContactRecord: vi.fn().mockResolvedValue({
+    id: 'new-id',
+    name: '',
+    email: '',
+    phone: '',
+    title: '',
+    createdAt: 0,
+    updatedAt: 0,
+  }),
   deleteContactRecord: vi.fn().mockResolvedValue(true),
-  findContactByEmail: vi
-    .fn()
-    .mockResolvedValue({
-      id: 'c1',
-      name: 'Test',
-      email: 'test@example.com',
-      phone: '',
-      title: '',
-      createdAt: 0,
-      updatedAt: 0,
-    }),
-  addServerRecord: vi
-    .fn()
-    .mockResolvedValue({
-      id: 'new-srv',
-      name: 'srv',
-      businessArea: '',
-      lob: '',
-      comment: '',
-      owner: '',
-      contact: '',
-      os: '',
-      createdAt: 0,
-      updatedAt: 0,
-    }),
+  findContactByEmail: vi.fn().mockResolvedValue({
+    id: 'c1',
+    name: 'Test',
+    email: 'test@example.com',
+    phone: '',
+    title: '',
+    createdAt: 0,
+    updatedAt: 0,
+  }),
+  addServerRecord: vi.fn().mockResolvedValue({
+    id: 'new-srv',
+    name: 'srv',
+    businessArea: '',
+    lob: '',
+    comment: '',
+    owner: '',
+    contact: '',
+    os: '',
+    createdAt: 0,
+    updatedAt: 0,
+  }),
   deleteServerRecord: vi.fn().mockResolvedValue(true),
-  findServerByName: vi
-    .fn()
-    .mockResolvedValue({
-      id: 's1',
-      name: 'Server1',
-      businessArea: '',
-      lob: '',
-      comment: '',
-      owner: '',
-      contact: '',
-      os: '',
-      createdAt: 0,
-      updatedAt: 0,
-    }),
+  findServerByName: vi.fn().mockResolvedValue({
+    id: 's1',
+    name: 'Server1',
+    businessArea: '',
+    lob: '',
+    comment: '',
+    owner: '',
+    contact: '',
+    os: '',
+    createdAt: 0,
+    updatedAt: 0,
+  }),
 }));
 
 vi.mock('electron', () => ({

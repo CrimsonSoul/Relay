@@ -255,13 +255,13 @@ describe('NoteCard', () => {
     expect(card.classList.contains('note-card--drop-target')).toBe(true);
   });
 
-  // 11. Drag handle is rendered as visual indicator
-  it('renders drag handle as visual indicator', () => {
+  // 11. Entire card is the drag surface (attributes applied directly)
+  it('renders card as draggable surface', () => {
     const props = defaultProps();
     render(<NoteCard {...props} />);
-    const handle = document.querySelector('.note-card-drag-handle');
-    expect(handle).toBeTruthy();
-    expect(handle?.getAttribute('role')).toBe('presentation');
+    const card = screen.getByRole('button', { name: /Note: Test Note/ });
+    expect(card).toBeTruthy();
+    expect(card.getAttribute('tabindex')).toBe('0');
   });
 
   it('applies color class based on note color', () => {
