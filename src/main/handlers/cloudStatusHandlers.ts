@@ -108,7 +108,6 @@ function cachedOrEmpty(): CloudStatusData {
 
 export function setupCloudStatusHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_CLOUD_STATUS, async () => {
-    loggers.cloudStatus.info('Handler called'); // DEBUG
     if (!checkNetworkRateLimit()) return cachedOrEmpty();
 
     // Return cached if fresh
@@ -147,116 +146,14 @@ export function setupCloudStatusHandlers() {
         });
       }
 
-      // ── START DUMMY DATA (remove after testing) ──
-      const now = Date.now();
-      const dummyAws: CloudStatusItem[] = [
-        {
-          id: 'demo-aws-1',
-          provider: 'aws',
-          title: 'EC2 — Elevated API Error Rates',
-          description:
-            'We are investigating increased API error rates and instance launch failures in the US-EAST-1 Region. Provisioning new instances may experience delays. We have identified the root cause and are working to resolve the issue.',
-          pubDate: new Date(now - 2 * 3600_000).toISOString(),
-          link: 'https://status.aws.amazon.com',
-          severity: 'error',
-        },
-        {
-          id: 'demo-aws-2',
-          provider: 'aws',
-          title: 'S3 — Intermittent Request Timeouts',
-          description:
-            'Some customers may experience intermittent timeouts when making S3 API requests in EU-WEST-1. GET and PUT operations are affected. We are actively investigating.',
-          pubDate: new Date(now - 5 * 3600_000).toISOString(),
-          link: 'https://status.aws.amazon.com',
-          severity: 'warning',
-        },
-        {
-          id: 'demo-aws-3',
-          provider: 'aws',
-          title: 'CloudFront — Increased Origin Latency (Resolved)',
-          description:
-            'The issue with increased origin fetch latency for CloudFront distributions has been fully resolved. All edge locations are operating normally.',
-          pubDate: new Date(now - 12 * 3600_000).toISOString(),
-          link: 'https://status.aws.amazon.com',
-          severity: 'resolved',
-        },
-      ];
-      const dummyAzure: CloudStatusItem[] = [
-        {
-          id: 'demo-azure-1',
-          provider: 'azure',
-          title: 'Azure DevOps — Degraded Pipeline Performance',
-          description:
-            'Customers using Azure Pipelines in South Central US may experience longer queue times and slower build execution. Our engineering team has identified the issue and a mitigation is in progress.',
-          pubDate: new Date(now - 1 * 3600_000).toISOString(),
-          link: 'https://status.azure.com',
-          severity: 'warning',
-        },
-        {
-          id: 'demo-azure-2',
-          provider: 'azure',
-          title: 'Azure SQL Database — Connectivity Issues (Resolved)',
-          description:
-            'The connectivity issues affecting Azure SQL Database in West Europe have been mitigated. Customers should no longer experience intermittent connection drops. We are monitoring the service for stability.',
-          pubDate: new Date(now - 8 * 3600_000).toISOString(),
-          link: 'https://status.azure.com',
-          severity: 'resolved',
-        },
-      ];
-      const dummyM365: CloudStatusItem[] = [
-        {
-          id: 'demo-m365-1',
-          provider: 'm365',
-          title: 'Microsoft Teams — Message Delivery Delays',
-          description:
-            'Some users may experience delays in sending and receiving chat messages in Microsoft Teams. Meeting functionality is not affected. We are working on a fix and expect resolution within the next two hours.',
-          pubDate: new Date(now - 30 * 60_000).toISOString(),
-          link: 'https://status.cloud.microsoft',
-          severity: 'warning',
-        },
-        {
-          id: 'demo-m365-2',
-          provider: 'm365',
-          title: 'Exchange Online — Service Restored',
-          description:
-            'The issue preventing some users from accessing Exchange Online mailboxes via Outlook has been resolved. All services are operating normally.',
-          pubDate: new Date(now - 18 * 3600_000).toISOString(),
-          link: 'https://status.cloud.microsoft',
-          severity: 'resolved',
-        },
-        {
-          id: 'demo-m365-3',
-          provider: 'm365',
-          title: 'SharePoint Online — Scheduled Maintenance Complete',
-          description:
-            'Planned maintenance for SharePoint Online storage infrastructure has been completed successfully. No user impact was reported during the maintenance window.',
-          pubDate: new Date(now - 24 * 3600_000).toISOString(),
-          link: 'https://status.cloud.microsoft',
-          severity: 'info',
-        },
-      ];
-      // ── END DUMMY DATA ──
-
       const data: CloudStatusData = {
-        aws: [
-          ...(awsResult.status === 'fulfilled' ? awsResult.value : (cache?.data.aws ?? [])),
-          ...dummyAws,
-        ],
-        azure: [
-          ...(azureResult.status === 'fulfilled' ? azureResult.value : (cache?.data.azure ?? [])),
-          ...dummyAzure,
-        ],
-        m365: [
-          ...(m365Result.status === 'fulfilled' ? m365Result.value : (cache?.data.m365 ?? [])),
-          ...dummyM365,
-        ],
+        aws: awsResult.status === 'fulfilled' ? awsResult.value : (cache?.data.aws ?? []),
+        azure: azureResult.status === 'fulfilled' ? azureResult.value : (cache?.data.azure ?? []),
+        m365: m365Result.status === 'fulfilled' ? m365Result.value : (cache?.data.m365 ?? []),
         lastUpdated: Date.now(),
         errors,
       };
 
-      loggers.cloudStatus.info(
-        `Returning ${data.aws.length} AWS, ${data.azure.length} Azure, ${data.m365.length} M365 items, ${data.errors.length} errors`,
-      ); // DEBUG
       cache = { data, fetchedAt: Date.now() };
       return data;
     } catch (err) {
