@@ -4,26 +4,30 @@ on:
   workflow_dispatch:
 
 jobs:
-  release-windows:
-    runs-on: windows-latest
+  quality:
+    runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      ELECTRON_SKIP_BINARY_DOWNLOAD: 1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Type check
         run: npm run typecheck
+
+      - name: Check formatting
+        run: npm run format:check
 
       - name: Lint
         run: npm run lint
@@ -31,20 +35,72 @@ jobs:
       - name: Run tests
         run: npm test
 
+  package-windows:
+    runs-on: windows-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Get Electron version
+        id: electron-version
+        shell: bash
+        run: |
+          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/AppData/Local/electron/Cache
+            .electron
+          key: electron-win-x64-${{ steps.electron-version.outputs.version }}
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
       - name: Build and package
         run: npm run build:win
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-windows
+          path: release/*.exe
+
+  release:
+    needs: [quality, package-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Determine version
         id: version
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@v7
         with:
           script: |
             const version = require('./package.json').version;
             core.setOutput('tag', `v${version}`);
             core.setOutput('name', `Release v${version}`);
 
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: relay-windows
+          path: release/
+
       - name: Create release
-        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
           name: ${{ steps.version.outputs.name }}
