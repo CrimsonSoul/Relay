@@ -175,15 +175,17 @@ const StatusItemCard: React.FC<{
       {isExpanded && (
         <div className="cloud-status-item__body">
           <p className="cloud-status-item__description">{cleanDescription}</p>
-          {item.link && (
-            <button
-              type="button"
-              className="cloud-status-item__link"
-              onClick={() => void globalThis.api?.openExternal(item.link)}
-            >
-              View details
-            </button>
-          )}
+          <button
+            type="button"
+            className="cloud-status-item__link"
+            onClick={() =>
+              void globalThis.api?.openExternal(
+                item.link || CLOUD_STATUS_PROVIDERS[item.provider].statusUrl,
+              )
+            }
+          >
+            View details
+          </button>
         </div>
       )}
     </div>

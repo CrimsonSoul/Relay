@@ -25,7 +25,7 @@ const RSS_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
 const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
   github: 'https://www.githubstatus.com/api/v2/summary.json',
   cloudflare: 'https://www.cloudflarestatus.com/api/v2/summary.json',
-  anthropic: 'https://status.anthropic.com/api/v2/summary.json',
+  anthropic: 'https://status.claude.com/api/v2/summary.json',
   openai: 'https://status.openai.com/api/v2/summary.json',
 };
 
@@ -49,6 +49,23 @@ function extractTag(xml: string, tag: string): string {
   return match?.[1]?.trim() ?? '';
 }
 
+/** Extract href attribute from a self-closing or open tag (Atom-style <link href="..."/>). */
+function extractHref(xml: string, tag: string): string {
+  const regex = new RegExp(`<${tag}[^>]+href=["']([^"']+)["'][^>]*/?>`, 'i');
+  const match = regex.exec(xml);
+  return match?.[1]?.trim() ?? '';
+}
+
+/** Decode common XML/HTML entities in a string. */
+function decodeXmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
 type RssItem = {
   title: string;
   description: string;
@@ -58,19 +75,27 @@ type RssItem = {
   status: string;
 };
 
-/** Parse RSS XML into an array of raw items. */
+/** Parse RSS/Atom XML into an array of raw items. Handles both <item> (RSS) and <entry> (Atom). */
 function parseRssItems(xml: string): RssItem[] {
   const items: RssItem[] = [];
-  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  // Match both RSS <item> and Atom <entry> blocks
+  const itemRegex = /<(?:item|entry)[\s>]([\s\S]*?)<\/(?:item|entry)>/g;
   let match;
   while ((match = itemRegex.exec(xml)) !== null) {
     const block = match[1];
+    const link = decodeXmlEntities(extractTag(block, 'link') || extractHref(block, 'link'));
     items.push({
       title: extractTag(block, 'title'),
-      description: extractTag(block, 'description'),
-      pubDate: extractTag(block, 'pubDate'),
-      link: extractTag(block, 'link'),
-      guid: extractTag(block, 'guid') || extractTag(block, 'link'),
+      description:
+        extractTag(block, 'description') ||
+        extractTag(block, 'summary') ||
+        extractTag(block, 'content'),
+      pubDate:
+        extractTag(block, 'pubDate') ||
+        extractTag(block, 'updated') ||
+        extractTag(block, 'published'),
+      link,
+      guid: extractTag(block, 'guid') || extractTag(block, 'id') || link,
       status: extractTag(block, 'status'),
     });
   }
@@ -164,13 +189,16 @@ async function fetchStatuspageProvider(
     incidents: StatuspageIncident[];
   };
 
+  // Derive base URL for fallback incident links (strip /api/v2/summary.json)
+  const baseUrl = url.replace(/\/api\/v2\/summary\.json$/, '');
+
   return (json.incidents ?? []).map((inc) => ({
     id: inc.id,
     provider,
     title: inc.name,
     description: inc.incident_updates?.[0]?.body ?? '',
     pubDate: inc.incident_updates?.[0]?.created_at ?? inc.updated_at ?? inc.created_at,
-    link: inc.shortlink ?? '',
+    link: inc.shortlink || `${baseUrl}/incidents/${inc.id}`,
     severity: statuspageImpactToSeverity(inc.impact, inc.status),
   }));
 }
@@ -223,7 +251,7 @@ async function fetchGoogleCloudProvider(): Promise<CloudStatusItem[]> {
       title: inc.external_desc,
       description: inc.most_recent_update?.text ?? '',
       pubDate: inc.most_recent_update?.when ?? inc.modified ?? inc.begin,
-      link: `https://status.cloud.google.com${inc.uri}`,
+      link: `https://status.cloud.google.com/${inc.uri.replace(/^\//, '')}`,
       severity: googleImpactToSeverity(inc.status_impact, !!inc.end),
     }));
 }
@@ -274,7 +302,7 @@ async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
         inc.IncidentEvents?.[0]?.createdAt ??
         inc.updatedAt ??
         inc.createdAt,
-      link: `https://status.salesforce.com/generalmessages/${inc.id}`,
+      link: `https://status.salesforce.com/incidents/${inc.id}`,
       severity: salesforceTypeToSeverity(inc.type, inc.status),
     };
   });
