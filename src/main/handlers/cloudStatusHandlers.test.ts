@@ -177,13 +177,11 @@ describe('cloudStatusHandlers', () => {
       },
     ]);
 
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(xml),
-        json: () => Promise.resolve({ incidents: [] }),
-      });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(xml),
+      json: () => Promise.resolve({ incidents: [] }),
+    });
 
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
@@ -221,13 +219,11 @@ describe('cloudStatusHandlers', () => {
       { title: 'Update', description: 'general info', pubDate: '2026-02-28T09:00:00Z', guid: 'g4' },
     ]);
 
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(xml),
-        json: () => Promise.resolve({ incidents: [] }),
-      });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(xml),
+      json: () => Promise.resolve({ incidents: [] }),
+    });
 
     const result = (await handler()) as {
       providers: Record<string, { severity: string; title: string }[]>;
@@ -257,13 +253,11 @@ describe('cloudStatusHandlers', () => {
       },
     ]);
 
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(xml),
-        json: () => Promise.resolve({ incidents: [] }),
-      });
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(xml),
+      json: () => Promise.resolve({ incidents: [] }),
+    });
 
     const result = (await handler()) as { providers: Record<string, { title: string }[]> };
     // M365 is the third RSS provider
@@ -511,13 +505,11 @@ describe('cloudStatusHandlers', () => {
 
   it('returns cached data on subsequent calls within TTL', async () => {
     const rssEmpty = rssXml([]);
-    const mockFetch = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(rssEmpty),
-        json: () => Promise.resolve({ incidents: [] }),
-      });
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(rssEmpty),
+      json: () => Promise.resolve({ incidents: [] }),
+    });
     globalThis.fetch = mockFetch;
 
     const result1 = await handler();
