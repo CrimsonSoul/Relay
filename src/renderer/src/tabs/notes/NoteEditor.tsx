@@ -132,12 +132,8 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div
-      className="modal-overlay animate-fade-in"
-      aria-hidden="true"
-      onMouseDown={onClose}
-      onKeyDown={handleKeyDown}
-    >
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div className="modal-overlay animate-fade-in" onMouseDown={onClose} onKeyDown={handleKeyDown}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <dialog
         open

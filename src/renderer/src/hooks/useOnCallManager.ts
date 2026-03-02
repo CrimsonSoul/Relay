@@ -15,6 +15,12 @@ const getWeekRange = () => {
   )}, ${sunday.getFullYear()}`;
 };
 
+function getApi() {
+  const api = globalThis.api;
+  if (!api) throw new Error('API not initialized');
+  return api;
+}
+
 export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: string) => void) {
   const { showToast } = useToast();
   const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
@@ -57,6 +63,7 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
 
     pendingMutationsRef.current++;
+    const previousList = [...localOnCall];
 
     const buildReorderedList = (prev: OnCallRow[]) => {
       const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
@@ -70,8 +77,9 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     setLocalOnCall(buildReorderedList);
 
     try {
-      const success = await globalThis.api!.updateOnCallTeam(team, rows);
+      const success = await getApi().updateOnCallTeam(team, rows);
       if (!success) {
+        setLocalOnCall(previousList);
         showToast('Failed to save changes', 'error');
       }
     } finally {
@@ -82,7 +90,7 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
   const handleRemoveTeam = async (team: string) => {
     pendingMutationsRef.current++;
     try {
-      const success = await globalThis.api!.removeOnCallTeam(team);
+      const success = await getApi().removeOnCallTeam(team);
       if (success) {
         setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
         showToast(`Removed ${team}`, 'success');
@@ -97,7 +105,7 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
   const handleRenameTeam = async (oldName: string, newName: string) => {
     pendingMutationsRef.current++;
     try {
-      const success = await globalThis.api!.renameOnCallTeam(oldName, newName);
+      const success = await getApi().renameOnCallTeam(oldName, newName);
       if (success) {
         setLocalOnCall((prev) =>
           prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
@@ -128,10 +136,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
 
     // 2. Perform API calls outside the setter
     try {
-      const success = await globalThis.api!.updateOnCallTeam(name, [initialRow]);
+      const success = await getApi().updateOnCallTeam(name, [initialRow]);
       if (success) {
         const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
-        await globalThis.api!.reorderOnCallTeams(currentTeams, {});
+        await getApi().reorderOnCallTeams(currentTeams, {});
         showToast(`Added team ${name}`, 'success');
       } else {
         throw new Error('API call failed');
@@ -165,7 +173,7 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     setLocalOnCall(newFlatList);
 
     try {
-      const success = await globalThis.api!.reorderOnCallTeams(currentTeams, {});
+      const success = await getApi().reorderOnCallTeams(currentTeams, {});
       if (success) {
         showToast('Teams reordered', 'success');
       } else {

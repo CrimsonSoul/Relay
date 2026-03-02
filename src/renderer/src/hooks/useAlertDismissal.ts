@@ -8,7 +8,7 @@ const getAlertKey = (type: string) => {
 const ALERT_TYPES = ['first-responder', 'general', 'sql', 'oracle'] as const;
 
 export function useAlertDismissal() {
-  const [currentDay, setCurrentDay] = useState(new Date().getDay());
+  const [currentDay, setCurrentDay] = useState(new Date().getDate());
   const [tick, setTick] = useState(Date.now());
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
@@ -33,7 +33,7 @@ export function useAlertDismissal() {
   useEffect(() => {
     const interval = setInterval(() => {
       setTick(Date.now());
-      const newDay = new Date().getDay();
+      const newDay = new Date().getDate();
       if (newDay !== currentDay) {
         setCurrentDay(newDay);
         const saved = new Set<string>();

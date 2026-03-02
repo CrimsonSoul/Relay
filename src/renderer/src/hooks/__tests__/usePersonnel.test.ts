@@ -241,7 +241,7 @@ describe('usePersonnel', () => {
     expect(result.current.dismissedAlerts.has(key)).toBe(true);
   });
 
-  it('handleUpdateRows does not roll back on API failure (only toasts)', async () => {
+  it('handleUpdateRows rolls back on API failure and toasts', async () => {
     mockApi.updateOnCallTeam.mockResolvedValue(false);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
@@ -252,10 +252,11 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Network', updatedRows);
     });
 
-    // Optimistic update should remain (no rollback in the code)
+    // Rollback should restore original rows after API failure
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');
-    expect(networkRows).toHaveLength(1);
-    expect(networkRows[0]!.name).toBe('Zara');
+    expect(networkRows).toHaveLength(2);
+    expect(networkRows[0]!.name).toBe('Alice');
+    expect(networkRows[1]!.name).toBe('Bob');
   });
 
   it('getAlertKey generates date-based key', () => {

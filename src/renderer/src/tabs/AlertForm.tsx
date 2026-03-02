@@ -74,12 +74,13 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
     }, []);
 
     const updateActiveFormats = useCallback(() => {
-      // eslint-disable-next-line sonarjs/deprecation -- queryCommandState is the only way to check formatting in contentEditable
+      /* eslint-disable sonarjs/deprecation -- queryCommandState is the only way to check formatting in contentEditable */
       setActiveFormats({
         bold: document.queryCommandState('bold'),
         italic: document.queryCommandState('italic'),
         underline: document.queryCommandState('underline'),
       });
+      /* eslint-enable sonarjs/deprecation */
     }, []);
 
     useEffect(() => {

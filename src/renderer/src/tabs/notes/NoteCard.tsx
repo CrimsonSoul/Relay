@@ -77,8 +77,9 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
       .join(' ');
 
     return (
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         ref={setNodeRef}
         data-note-id={note.id}
         className={classNames}
@@ -152,7 +153,7 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
           )}
           <span className="note-card-time">{timeAgo(note.updatedAt)}</span>
         </div>
-      </button>
+      </div>
     );
   },
 );

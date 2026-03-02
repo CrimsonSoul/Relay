@@ -261,7 +261,7 @@ describe('NoteCard', () => {
     render(<NoteCard {...props} />);
     const card = screen.getByRole('button', { name: /Note: Test Note/ });
     expect(card).toBeTruthy();
-    expect(card.tagName).toBe('BUTTON');
+    expect(card.getAttribute('tabindex')).toBe('0');
   });
 
   it('applies color class based on note color', () => {
