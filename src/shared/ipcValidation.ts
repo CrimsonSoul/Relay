@@ -93,6 +93,19 @@ export const BridgeHistoryEntrySchema = z.object({
   recipientCount: z.number(),
 });
 
+// ==================== Alert History Schemas ====================
+export const AlertHistoryEntrySchema = z.object({
+  id: z.string().max(MAX_ID).optional(),
+  timestamp: z.number().optional(),
+  severity: z.enum(['MAJOR', 'MINOR', 'MAINTENANCE', 'INFO', 'RESOLVED']),
+  subject: z.string().max(MAX_NOTE),
+  bodyHtml: z.string().max(MAX_NOTE),
+  sender: z.string().max(MAX_NOTE),
+  recipient: z.string().max(MAX_NOTE),
+  pinned: z.boolean().optional(),
+  label: z.string().max(MAX_NOTE).optional(),
+});
+
 // ==================== Data Record Input Schemas ====================
 
 export const ContactRecordInputSchema = z.object({

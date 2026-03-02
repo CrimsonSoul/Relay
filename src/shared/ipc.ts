@@ -60,6 +60,7 @@ export type OnCallEntry = {
 
 export type TabName =
   | 'Compose'
+  | 'Alerts'
   | 'Personnel'
   | 'People'
   | 'Servers'
@@ -332,6 +333,15 @@ export type BridgeAPI = {
   ) => Promise<IpcResult<BridgeHistoryEntry>>;
   deleteBridgeHistory: (id: string) => Promise<IpcResult>;
   clearBridgeHistory: () => Promise<IpcResult>;
+  // Alert History
+  getAlertHistory: () => Promise<AlertHistoryEntry[]>;
+  addAlertHistory: (
+    entry: Omit<AlertHistoryEntry, 'id' | 'timestamp'>,
+  ) => Promise<IpcResult<AlertHistoryEntry>>;
+  deleteAlertHistory: (id: string) => Promise<IpcResult>;
+  clearAlertHistory: () => Promise<IpcResult>;
+  pinAlertHistory: (id: string, pinned: boolean) => Promise<IpcResult>;
+  updateAlertHistoryLabel: (id: string, label: string) => Promise<IpcResult>;
   // Notes
   getNotes: () => Promise<NotesData>;
   setContactNote: (email: string, note: string, tags: string[]) => Promise<IpcResult>;
@@ -380,6 +390,12 @@ export type BridgeAPI = {
   getDataStats: () => Promise<DataStats>;
   // Clipboard
   writeClipboard: (text: string) => Promise<boolean>;
+  writeClipboardImage: (dataUrl: string) => Promise<boolean>;
+  // Alerts
+  saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
+  saveCompanyLogo: () => Promise<IpcResult<string>>;
+  getCompanyLogo: () => Promise<string | null>;
+  removeCompanyLogo: () => Promise<IpcResult>;
   platform:
     | 'aix'
     | 'android'
@@ -446,6 +462,13 @@ export const IPC_CHANNELS = {
   ADD_BRIDGE_HISTORY: 'history:add',
   DELETE_BRIDGE_HISTORY: 'history:delete',
   CLEAR_BRIDGE_HISTORY: 'history:clear',
+  // Alert History
+  GET_ALERT_HISTORY: 'alerthistory:get',
+  ADD_ALERT_HISTORY: 'alerthistory:add',
+  DELETE_ALERT_HISTORY: 'alerthistory:delete',
+  CLEAR_ALERT_HISTORY: 'alerthistory:clear',
+  PIN_ALERT_HISTORY: 'alerthistory:pin',
+  UPDATE_ALERT_HISTORY_LABEL: 'alerthistory:updateLabel',
   // Notes
   GET_NOTES: 'notes:get',
   SET_CONTACT_NOTE: 'notes:setContact',
@@ -479,6 +502,12 @@ export const IPC_CHANNELS = {
   GET_DATA_STATS: 'data:stats',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
+  CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',
+  // Alerts
+  SAVE_ALERT_IMAGE: 'alert:saveImage',
+  SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
+  GET_COMPANY_LOGO: 'alert:getCompanyLogo',
+  REMOVE_COMPANY_LOGO: 'alert:removeCompanyLogo',
   // Drag Sync
   DRAG_STARTED: 'drag:started',
   DRAG_STOPPED: 'drag:stopped',
@@ -522,6 +551,19 @@ export type BridgeHistoryEntry = {
   groups: string[]; // Names of groups used
   contacts: string[]; // All contact emails in the composition
   recipientCount: number;
+};
+
+// Alert History - log of past alert compositions
+export type AlertHistoryEntry = {
+  id: string;
+  timestamp: number;
+  severity: 'MAJOR' | 'MINOR' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
+  subject: string;
+  bodyHtml: string;
+  sender: string;
+  recipient: string;
+  pinned?: boolean;
+  label?: string;
 };
 
 // Notes overlay for contacts and servers

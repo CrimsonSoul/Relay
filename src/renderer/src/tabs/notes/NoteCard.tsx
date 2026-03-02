@@ -77,7 +77,8 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
       .join(' ');
 
     return (
-      <div
+      <button
+        type="button"
         ref={setNodeRef}
         data-note-id={note.id}
         className={classNames}
@@ -85,8 +86,6 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
         {...listeners}
         onClick={onClick}
         onContextMenu={onContextMenu}
-        role="button"
-        tabIndex={0}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -153,7 +152,7 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
           )}
           <span className="note-card-time">{timeAgo(note.updatedAt)}</span>
         </div>
-      </div>
+      </button>
     );
   },
 );

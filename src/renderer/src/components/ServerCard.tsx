@@ -37,11 +37,13 @@ export const ServerCard = memo(
         <div className="accent-strip" style={{ background: osInfo.text }} />
         <div
           className="server-card-os-badge"
-          style={{
-            background: osInfo.bg,
-            border: `1px solid ${osInfo.border}`,
-            color: osInfo.text,
-          }}
+          style={
+            {
+              '--badge-bg': osInfo.bg,
+              '--badge-border': osInfo.border,
+              '--badge-text': osInfo.text,
+            } as React.CSSProperties
+          }
         >
           <svg
             width="20"

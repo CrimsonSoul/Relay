@@ -1,4 +1,6 @@
-import { ipcMain, BrowserWindow, clipboard } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog } from 'electron';
+import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
+import { join } from 'node:path';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { loggers } from '../logger';
 
@@ -13,9 +15,13 @@ export const ALLOWED_AUX_ROUTES = new Set([
 ]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 
+const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_LOGO_WIDTH = 400;
+
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
   createAuxWindow?: (route: string) => void,
+  getDataRoot?: () => Promise<string>,
 ) {
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
@@ -60,6 +66,114 @@ export function setupWindowHandlers(
         error: err instanceof Error ? err.message : String(err),
       });
       return false;
+    }
+  });
+
+  // Clipboard Image - write PNG data URL to clipboard as native image
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, async (_, dataUrl: string) => {
+    try {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+        return false;
+      }
+      const image = nativeImage.createFromDataURL(dataUrl);
+      if (image.isEmpty()) return false;
+      clipboard.writeImage(image);
+      return true;
+    } catch (err) {
+      loggers.ipc.warn('Clipboard image write failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  });
+
+  // Save Alert Image - native save dialog + write PNG to disk
+  ipcMain.handle(
+    IPC_CHANNELS.SAVE_ALERT_IMAGE,
+    async (_, dataUrl: string, suggestedName: string) => {
+      try {
+        if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+          return { success: false, error: 'Invalid image data' };
+        }
+        const { canceled, filePath } = await dialog.showSaveDialog({
+          defaultPath: suggestedName || 'alert.png',
+          filters: [{ name: 'PNG Image', extensions: ['png'] }],
+        });
+        if (canceled || !filePath) {
+          return { success: false, error: 'Cancelled' };
+        }
+        const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+        await writeFile(filePath, Buffer.from(base64, 'base64'));
+        return { success: true, data: filePath };
+      } catch (err) {
+        loggers.ipc.warn('Alert image save failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return { success: false, error: err instanceof Error ? err.message : 'Save failed' };
+      }
+    },
+  );
+
+  // Company Logo — save, get, remove
+  ipcMain.handle(IPC_CHANNELS.SAVE_COMPANY_LOGO, async () => {
+    if (!getDataRoot) return { success: false, error: 'Data root not available' };
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Select Company Logo',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
+
+      const buf = await readFile(filePaths[0]);
+      if (buf.length > MAX_LOGO_SIZE) {
+        return { success: false, error: 'Image must be under 2MB' };
+      }
+
+      let image = nativeImage.createFromBuffer(buf);
+      if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
+
+      const { width } = image.getSize();
+      if (width > MAX_LOGO_WIDTH) {
+        image = image.resize({ width: MAX_LOGO_WIDTH });
+      }
+
+      const assetsDir = join(await getDataRoot(), 'assets');
+      await mkdir(assetsDir, { recursive: true });
+      const logoPath = join(assetsDir, 'company-logo.png');
+      const pngBuffer = image.toPNG();
+      await writeFile(logoPath, pngBuffer);
+
+      const dataUrl = 'data:image/png;base64,' + pngBuffer.toString('base64');
+      return { success: true, data: dataUrl };
+    } catch (err) {
+      loggers.ipc.warn('Company logo save failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { success: false, error: err instanceof Error ? err.message : 'Save failed' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_COMPANY_LOGO, async () => {
+    if (!getDataRoot) return null;
+    try {
+      const logoPath = join(await getDataRoot(), 'assets', 'company-logo.png');
+      const buf = await readFile(logoPath);
+      return 'data:image/png;base64,' + buf.toString('base64');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REMOVE_COMPANY_LOGO, async () => {
+    if (!getDataRoot) return { success: false, error: 'Data root not available' };
+    try {
+      const logoPath = join(await getDataRoot(), 'assets', 'company-logo.png');
+      await unlink(logoPath);
+      return { success: true };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { success: true };
+      return { success: false, error: err instanceof Error ? err.message : 'Remove failed' };
     }
   });
 

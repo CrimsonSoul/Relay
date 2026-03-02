@@ -9,6 +9,7 @@ export * from './FileContext';
 export * from './BackupOperations';
 export * from './PresetOperations';
 export * from './BridgeHistoryOperations';
+export * from './AlertHistoryOperations';
 export * from './NotesOperations';
 export * from './SavedLocationOperations';
 // JSON-based data operations

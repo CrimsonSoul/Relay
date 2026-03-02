@@ -47,11 +47,13 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
         <div className="detail-panel-identity">
           <div
             className="detail-panel-avatar"
-            style={{
-              background: AMBER.bg,
-              border: `1.5px solid ${AMBER.border}`,
-              color: AMBER.text,
-            }}
+            style={
+              {
+                '--avatar-bg': AMBER.bg,
+                '--avatar-border': AMBER.border,
+                '--avatar-text': AMBER.text,
+              } as React.CSSProperties
+            }
           >
             {initials}
           </div>

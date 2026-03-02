@@ -1,3 +1,4 @@
+import React from 'react';
 import { Tooltip } from '../../components/Tooltip';
 import type { WeatherAlert } from './types';
 import { SEVERITY_COLORS } from './utils';
@@ -30,10 +31,13 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
         aria-expanded={isExpanded}
         aria-label={`Weather alert: ${alert.event}`}
         className="weather-alert-card"
-        style={{
-          background: colors.bg,
-          border: `1px solid ${colors.border}`,
-        }}
+        style={
+          {
+            '--alert-bg': colors.bg,
+            '--alert-border': colors.border,
+            '--alert-text': colors.text,
+          } as React.CSSProperties
+        }
         onClick={onToggle}
       >
         <div className="weather-alert-content">
@@ -54,12 +58,8 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
           </svg>
           <div className="weather-alert-body">
             <div className="weather-alert-title-row">
-              <span className="weather-alert-event" style={{ color: colors.text }}>
-                {alert.event}
-              </span>
-              <span className="weather-alert-badge" style={{ color: colors.text }}>
-                {badgeText}
-              </span>
+              <span className="weather-alert-event">{alert.event}</span>
+              <span className="weather-alert-badge">{badgeText}</span>
               {alert.urgency === 'Immediate' && (
                 <span className="weather-alert-urgent-badge">🚨 Immediate</span>
               )}
@@ -69,10 +69,7 @@ export const WeatherAlertCard: React.FC<WeatherAlertCardProps> = ({
               className={`weather-alert-expand${isExpanded ? ' weather-alert-expand--open' : ''}`}
             >
               <div className="weather-alert-expand-inner">
-                <div
-                  className="weather-scroll-container weather-alert-expand-content"
-                  style={{ borderTop: `1px solid ${colors.border}` }}
-                >
+                <div className="weather-scroll-container weather-alert-expand-content">
                   <p className="weather-alert-description">{alert.description}</p>
                   <div className="weather-alert-meta">
                     <span>Expires: {new Date(alert.expires).toLocaleString()}</span>

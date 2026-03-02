@@ -38,6 +38,7 @@ const NotesTab = lazy(() => import('./tabs/NotesTab').then((m) => ({ default: m.
 const CloudStatusTab = lazy(() =>
   import('./tabs/CloudStatusTab').then((m) => ({ default: m.CloudStatusTab })),
 );
+const AlertsTab = lazy(() => import('./tabs/AlertsTab').then((m) => ({ default: m.AlertsTab })));
 const PopoutBoard = lazy(() =>
   import('./components/PopoutBoard').then((m) => ({ default: m.PopoutBoard })),
 );
@@ -157,6 +158,7 @@ export function MainApp() {
       '6': 'Radar',
       '7': 'Status',
       '8': 'Notes',
+      '9': 'Alerts',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -243,6 +245,7 @@ export function MainApp() {
                   Weather: 'Weather',
                   Notes: 'Notes',
                   Status: 'Service Status',
+                  Alerts: 'Alerts',
                 }[activeTab] ?? activeTab}
               </span>
             </div>
@@ -385,6 +388,17 @@ export function MainApp() {
                       loading={cloudStatusLoading}
                       refetch={cloudStatusRefetch}
                     />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+            )}
+            {mountedTabs.has('Alerts') && (
+              <div
+                className={`tab-panel animate-fade-in${activeTab === 'Alerts' ? ' tab-panel--active' : ''}`}
+              >
+                <ErrorBoundary fallback={<TabFallback error />}>
+                  <Suspense fallback={<TabFallback />}>
+                    <AlertsTab />
                   </Suspense>
                 </ErrorBoundary>
               </div>

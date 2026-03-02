@@ -118,7 +118,7 @@ if (gotLock) {
             "default-src 'self'; " +
               `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
               "style-src 'self' 'unsafe-inline'; " +
-              "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
+              "img-src 'self' data: blob: https://api.weather.gov https://*.rainviewer.com; " +
               "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
               "font-src 'self' data:; " +
               "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
@@ -195,29 +195,50 @@ if (gotLock) {
       return { action: 'deny' };
     });
 
-    // Spellcheck context menu — show suggestions on right-click
+    // Context menu — spellcheck suggestions + Cut/Copy/Paste for editable fields
     state.mainWindow.webContents.on('context-menu', (_event, params) => {
-      if (!params.misspelledWord) return;
-      const menuItems: Electron.MenuItemConstructorOptions[] = params.dictionarySuggestions.map(
-        (suggestion) => ({
+      const menuItems: Electron.MenuItemConstructorOptions[] = [];
+
+      // Spellcheck suggestions when a word is misspelled
+      if (params.misspelledWord) {
+        const suggestions = params.dictionarySuggestions.map((suggestion) => ({
           label: suggestion,
           click: () => state.mainWindow?.webContents.replaceMisspelling(suggestion),
-        }),
-      );
-      if (menuItems.length === 0) {
-        menuItems.push({ label: 'No suggestions', enabled: false });
+        }));
+        if (suggestions.length === 0) {
+          menuItems.push({ label: 'No suggestions', enabled: false });
+        } else {
+          menuItems.push(...suggestions);
+        }
+        menuItems.push(
+          { type: 'separator' },
+          {
+            label: 'Add to Dictionary',
+            click: () =>
+              state.mainWindow?.webContents.session.addWordToSpellCheckerDictionary(
+                params.misspelledWord,
+              ),
+          },
+          { type: 'separator' },
+        );
       }
-      menuItems.push(
-        { type: 'separator' },
-        {
-          label: 'Add to Dictionary',
-          click: () =>
-            state.mainWindow?.webContents.session.addWordToSpellCheckerDictionary(
-              params.misspelledWord,
-            ),
-        },
-      );
-      Menu.buildFromTemplate(menuItems).popup();
+
+      // Standard editing actions for editable fields
+      if (params.isEditable) {
+        menuItems.push(
+          { label: 'Cut', role: 'cut', enabled: params.editFlags.canCut },
+          { label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy },
+          { label: 'Paste', role: 'paste', enabled: params.editFlags.canPaste },
+          { label: 'Select All', role: 'selectAll', enabled: params.editFlags.canSelectAll },
+        );
+      } else if (params.selectionText) {
+        // Allow copying selected text in non-editable areas
+        menuItems.push({ label: 'Copy', role: 'copy', enabled: params.editFlags.canCopy });
+      }
+
+      if (menuItems.length > 0) {
+        Menu.buildFromTemplate(menuItems).popup();
+      }
     });
 
     state.mainWindow.on('closed', () => {

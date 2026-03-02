@@ -42,7 +42,7 @@ let cache: { data: CloudStatusData; fetchedAt: number } | null = null;
 /** Extract text content from an XML tag, handling CDATA sections. */
 function extractTag(xml: string, tag: string): string {
   const regex = new RegExp(
-    `<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?<\\/${tag}>`,
+    String.raw`<${tag}[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/${tag}>`,
     's',
   );
   const match = regex.exec(xml);
@@ -59,11 +59,11 @@ function extractHref(xml: string, tag: string): string {
 /** Decode common XML/HTML entities in a string. */
 function decodeXmlEntities(text: string): string {
   return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'");
+    .replaceAll('&amp;', '&')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'");
 }
 
 type RssItem = {

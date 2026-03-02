@@ -16,7 +16,7 @@ type FilterMode = 'all' | CloudStatusProvider;
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '';
+  if (Number.isNaN(date.getTime())) return '';
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
@@ -56,7 +56,7 @@ function providerShortLabel(provider: CloudStatusProvider): string {
 
 function formatLocalTime(dateStr: string): string {
   const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return '';
+  if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',

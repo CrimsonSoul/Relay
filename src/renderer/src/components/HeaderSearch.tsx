@@ -284,9 +284,11 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
             {isListFilteringTab && query && (
               <div className="search-dropdown-context">Filtering {activeTab} list</div>
             )}
+            {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
             <ul ref={resultsRef} className="search-dropdown-results" role="listbox">
+              {/* NOSONAR */}
               {dropdownResults.map((result, index) => (
-                <li
+                <li // NOSONAR - combobox pattern requires role="option" on li
                   key={result.id}
                   className={`search-dropdown-item ${index === selectedIndex ? 'is-selected' : ''}`}
                   role="option"

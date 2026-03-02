@@ -4,28 +4,28 @@ import { parseNoteContent } from '../noteContentParser';
 describe('parseNoteContent', () => {
   it('should parse plain text lines', () => {
     const result = parseNoteContent('Hello world');
-    expect(result).toEqual([{ type: 'text', text: 'Hello world' }]);
+    expect(result).toEqual([{ id: 'text-0', type: 'text', text: 'Hello world' }]);
   });
 
   it('should parse empty lines as text', () => {
     const result = parseNoteContent('Line 1\n\nLine 3');
     expect(result).toEqual([
-      { type: 'text', text: 'Line 1' },
-      { type: 'text', text: '' },
-      { type: 'text', text: 'Line 3' },
+      { id: 'text-0', type: 'text', text: 'Line 1' },
+      { id: 'text-1', type: 'text', text: '' },
+      { id: 'text-2', type: 'text', text: 'Line 3' },
     ]);
   });
 
   it('should parse bullet items', () => {
     const result = parseNoteContent('- Check replication lag');
-    expect(result).toEqual([{ type: 'bullet', text: 'Check replication lag' }]);
+    expect(result).toEqual([{ id: 'bullet-0', type: 'bullet', text: 'Check replication lag' }]);
   });
 
   it('should parse numbered items', () => {
     const result = parseNoteContent('1. First step\n2. Second step');
     expect(result).toEqual([
-      { type: 'numbered', number: '1', text: 'First step' },
-      { type: 'numbered', number: '2', text: 'Second step' },
+      { id: 'numbered-0', type: 'numbered', number: '1', text: 'First step' },
+      { id: 'numbered-1', type: 'numbered', number: '2', text: 'Second step' },
     ]);
   });
 
@@ -33,9 +33,9 @@ describe('parseNoteContent', () => {
     const content = 'Header text\n- Bullet point\n1. Numbered item';
     const result = parseNoteContent(content);
     expect(result).toEqual([
-      { type: 'text', text: 'Header text' },
-      { type: 'bullet', text: 'Bullet point' },
-      { type: 'numbered', number: '1', text: 'Numbered item' },
+      { id: 'text-0', type: 'text', text: 'Header text' },
+      { id: 'bullet-1', type: 'bullet', text: 'Bullet point' },
+      { id: 'numbered-2', type: 'numbered', number: '1', text: 'Numbered item' },
     ]);
   });
 

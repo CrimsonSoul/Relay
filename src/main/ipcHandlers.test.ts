@@ -89,7 +89,11 @@ describe('ipcHandlers', () => {
     expect(setupFileHandlers).toHaveBeenCalled();
     expect(setupLocationHandlers).toHaveBeenCalled();
     expect(setupWeatherHandlers).toHaveBeenCalled();
-    expect(setupWindowHandlers).toHaveBeenCalledWith(getMainWindow, createAuxWindow);
+    expect(setupWindowHandlers).toHaveBeenCalledWith(
+      getMainWindow,
+      createAuxWindow,
+      expect.any(Function),
+    );
     expect(setupFeatureHandlers).toHaveBeenCalled();
     expect(setupDataRecordHandlers).toHaveBeenCalled();
   });
@@ -103,7 +107,11 @@ describe('ipcHandlers', () => {
       getDefaultDataPath,
     );
 
-    expect(setupWindowHandlers).toHaveBeenCalledWith(getMainWindow, undefined);
+    expect(setupWindowHandlers).toHaveBeenCalledWith(
+      getMainWindow,
+      undefined,
+      expect.any(Function),
+    );
   });
 
   it('continues setup if one handler throws', () => {

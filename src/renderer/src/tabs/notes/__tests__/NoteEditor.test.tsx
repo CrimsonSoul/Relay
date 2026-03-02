@@ -169,7 +169,7 @@ describe('NoteEditor', () => {
       target: { value: '   ' },
     });
     // Manually trigger save via keyboard shortcut (bypasses disabled button)
-    fireEvent.keyDown(screen.getByRole('presentation'), {
+    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
       key: 'Enter',
       metaKey: true,
     });
@@ -344,7 +344,7 @@ describe('NoteEditor', () => {
   it('closes editor when Escape is pressed', () => {
     const props = defaultProps();
     render(<NoteEditor {...props} />);
-    fireEvent.keyDown(screen.getByRole('presentation'), { key: 'Escape' });
+    fireEvent.keyDown(document.querySelector('.modal-overlay')!, { key: 'Escape' });
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -356,7 +356,7 @@ describe('NoteEditor', () => {
     fireEvent.change(screen.getByPlaceholderText('Note title...'), {
       target: { value: 'Shortcut' },
     });
-    fireEvent.keyDown(screen.getByRole('presentation'), {
+    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
       key: 'Enter',
       metaKey: true,
     });
@@ -371,7 +371,7 @@ describe('NoteEditor', () => {
     fireEvent.change(screen.getByPlaceholderText('Note title...'), {
       target: { value: 'Ctrl Save' },
     });
-    fireEvent.keyDown(screen.getByRole('presentation'), {
+    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
       key: 'Enter',
       ctrlKey: true,
     });
@@ -438,7 +438,7 @@ describe('NoteEditor', () => {
   it('closes when clicking the overlay', () => {
     const props = defaultProps();
     render(<NoteEditor {...props} />);
-    fireEvent.mouseDown(screen.getByRole('presentation'));
+    fireEvent.mouseDown(document.querySelector('.modal-overlay')!);
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -446,7 +446,7 @@ describe('NoteEditor', () => {
   it('does not close when clicking inside the dialog', () => {
     const props = defaultProps();
     render(<NoteEditor {...props} />);
-    fireEvent.mouseDown(screen.getByRole('dialog'));
+    fireEvent.mouseDown(document.querySelector('dialog')!);
     expect(props.onClose).not.toHaveBeenCalled();
   });
 

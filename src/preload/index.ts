@@ -113,6 +113,14 @@ const api: BridgeAPI = {
   addBridgeHistory: (entry) => ipcRenderer.invoke(IPC_CHANNELS.ADD_BRIDGE_HISTORY, entry),
   deleteBridgeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_BRIDGE_HISTORY, id),
   clearBridgeHistory: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_BRIDGE_HISTORY),
+  // Alert History
+  getAlertHistory: () => ipcRenderer.invoke(IPC_CHANNELS.GET_ALERT_HISTORY),
+  addAlertHistory: (entry) => ipcRenderer.invoke(IPC_CHANNELS.ADD_ALERT_HISTORY, entry),
+  deleteAlertHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ALERT_HISTORY, id),
+  clearAlertHistory: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_ALERT_HISTORY),
+  pinAlertHistory: (id, pinned) => ipcRenderer.invoke(IPC_CHANNELS.PIN_ALERT_HISTORY, id, pinned),
+  updateAlertHistoryLabel: (id, label) =>
+    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ALERT_HISTORY_LABEL, id, label),
   // Notes
   getNotes: () => ipcRenderer.invoke(IPC_CHANNELS.GET_NOTES),
   setContactNote: (email, note, tags) =>
@@ -151,6 +159,13 @@ const api: BridgeAPI = {
   getDataStats: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_STATS),
   // Clipboard
   writeClipboard: (text) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text),
+  writeClipboardImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, dataUrl),
+  // Alerts
+  saveAlertImage: (dataUrl, suggestedName) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),
+  saveCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_COMPANY_LOGO),
+  getCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.GET_COMPANY_LOGO),
+  removeCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_COMPANY_LOGO),
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
   windowMaximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),

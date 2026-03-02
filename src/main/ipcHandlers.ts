@@ -64,7 +64,9 @@ export function setupIpcHandlers(
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
 
   // Window Management
-  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow));
+  safeSetup('window', () =>
+    setupWindowHandlers(getMainWindow, createAuxWindow, guardedGetDataRoot),
+  );
 
   // Feature Handlers (Presets, History, Notes, Saved Locations)
   safeSetup('feature', () => setupFeatureHandlers(guardedGetDataRoot));

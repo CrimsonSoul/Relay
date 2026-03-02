@@ -2,6 +2,7 @@ import React from 'react';
 import { SidebarButton } from './sidebar/SidebarButton';
 import {
   ComposeIcon,
+  AlertsIcon,
   PersonnelIcon,
   PeopleIcon,
   ServersIcon,
@@ -15,6 +16,7 @@ import {
 
 type Tab =
   | 'Compose'
+  | 'Alerts'
   | 'Personnel'
   | 'People'
   | 'Radar'
@@ -32,6 +34,7 @@ interface SidebarProps {
 // Moved outside component to avoid recreation every render
 const navItems: { label: string; tab: Tab; icon: React.ReactNode }[] = [
   { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
+  { label: 'Alerts', tab: 'Alerts', icon: <AlertsIcon /> },
   { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
   { label: 'Notes', tab: 'Notes', icon: <NotesIcon /> },
   { label: 'Status', tab: 'Status', icon: <StatusIcon /> },

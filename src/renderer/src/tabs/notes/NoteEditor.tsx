@@ -134,17 +134,16 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
   return createPortal(
     <div
       className="modal-overlay animate-fade-in"
-      role="presentation"
+      aria-hidden="true"
       onMouseDown={onClose}
       onKeyDown={handleKeyDown}
     >
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-      <div
+      <dialog
+        open
         className="note-editor-container animate-scale-in"
         onMouseDown={(e) => e.stopPropagation()}
-        role="dialog"
         aria-label={note ? 'Edit note' : 'New note'}
-        aria-modal="true"
       >
         <div className="note-editor-body">
           {/* Title */}
@@ -254,7 +253,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
           </kbd>{' '}
           Save
         </div>
-      </div>
+      </dialog>
     </div>,
     document.body,
   );

@@ -179,7 +179,7 @@ export const NotesTab: React.FC = () => {
     if (!node) return;
 
     const observer =
-      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateColumnCount) : null;
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
     observer?.observe(node);
     globalThis.addEventListener('resize', updateColumnCount);
 
@@ -265,7 +265,10 @@ export const NotesTab: React.FC = () => {
         <div ref={gridRef} className="relay-grid--notes" data-font-size={pad.fontSize}>
           <div className="notes-masonry-columns stagger-children">
             {noteColumns.map((column, columnIndex) => (
-              <div className="notes-masonry-column" key={`notes-column-${columnIndex}`}>
+              <div
+                className="notes-masonry-column"
+                key={column[0]?.id ?? `empty-col-${columnIndex}`}
+              >
                 {column.map((note) => (
                   <NoteCard
                     key={note.id}

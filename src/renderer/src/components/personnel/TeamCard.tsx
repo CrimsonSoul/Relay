@@ -164,7 +164,7 @@ export const TeamCard = React.memo(
           }
         >
           <div className="team-card-header-row">
-            <div className="team-card-name" style={{ color: colorScheme.text }}>
+            <div className="team-card-name">
               <Tooltip content={team}>
                 <span>{team}</span>
               </Tooltip>

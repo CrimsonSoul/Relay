@@ -42,11 +42,13 @@ export const ServerDetailPanel: React.FC<ServerDetailPanelProps> = ({
         <div className="detail-panel-identity">
           <div
             className="detail-panel-avatar detail-panel-avatar--server"
-            style={{
-              background: osInfo.bg,
-              border: `1.5px solid ${osInfo.border}`,
-              color: osInfo.text,
-            }}
+            style={
+              {
+                '--avatar-bg': osInfo.bg,
+                '--avatar-border': osInfo.border,
+                '--avatar-text': osInfo.text,
+              } as React.CSSProperties
+            }
           >
             <svg
               width="24"
@@ -67,11 +69,13 @@ export const ServerDetailPanel: React.FC<ServerDetailPanelProps> = ({
           <div className="detail-panel-name">{server.name}</div>
           <span
             className="detail-panel-os-badge"
-            style={{
-              background: osInfo.bg,
-              border: `1px solid ${osInfo.border}`,
-              color: osInfo.text,
-            }}
+            style={
+              {
+                '--badge-bg': osInfo.bg,
+                '--badge-border': osInfo.border,
+                '--badge-text': osInfo.text,
+              } as React.CSSProperties
+            }
           >
             {osInfo.label}
           </span>

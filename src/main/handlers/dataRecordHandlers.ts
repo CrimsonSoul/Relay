@@ -40,7 +40,7 @@ import {
   importData,
 } from '../operations';
 import { loggers } from '../logger';
-import { checkMutationRateLimit, safeMutation } from './ipcHelpers';
+import { checkMutationRateLimit, safeMutation, safeMutationWithValidation } from './ipcHelpers';
 import { getErrorMessage } from '@shared/types';
 
 export function setupDataRecordHandlers(getDataRoot: () => Promise<string>) {
@@ -56,18 +56,13 @@ export function setupDataRecordHandlers(getDataRoot: () => Promise<string>) {
     }
   });
 
-  safeMutation(IPC_CHANNELS.ADD_CONTACT_RECORD, async (_, contact) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(
-      ContactRecordInputSchema,
-      contact,
-      'ADD_CONTACT_RECORD',
-      (m, d) => loggers.ipc.warn(m, d),
-    );
-    if (!validated) return { success: false, error: 'Invalid contact data' };
-    const result = await addContactRecord(await getDataRoot(), validated);
-    return { success: !!result, data: result || undefined };
-  });
+  safeMutationWithValidation(
+    IPC_CHANNELS.ADD_CONTACT_RECORD,
+    ContactRecordInputSchema,
+    addContactRecord,
+    getDataRoot,
+    { errorLabel: 'Invalid contact data' },
+  );
 
   safeMutation(IPC_CHANNELS.UPDATE_CONTACT_RECORD, async (_, id, updates) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
@@ -102,18 +97,13 @@ export function setupDataRecordHandlers(getDataRoot: () => Promise<string>) {
     }
   });
 
-  safeMutation(IPC_CHANNELS.ADD_SERVER_RECORD, async (_, server) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(
-      ServerRecordInputSchema,
-      server,
-      'ADD_SERVER_RECORD',
-      (m, d) => loggers.ipc.warn(m, d),
-    );
-    if (!validated) return { success: false, error: 'Invalid server data' };
-    const result = await addServerRecord(await getDataRoot(), validated);
-    return { success: !!result, data: result || undefined };
-  });
+  safeMutationWithValidation(
+    IPC_CHANNELS.ADD_SERVER_RECORD,
+    ServerRecordInputSchema,
+    addServerRecord,
+    getDataRoot,
+    { errorLabel: 'Invalid server data' },
+  );
 
   safeMutation(IPC_CHANNELS.UPDATE_SERVER_RECORD, async (_, id, updates) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
@@ -146,18 +136,13 @@ export function setupDataRecordHandlers(getDataRoot: () => Promise<string>) {
     }
   });
 
-  safeMutation(IPC_CHANNELS.ADD_ONCALL_RECORD, async (_, record) => {
-    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    const validated = validateIpcDataSafe(
-      OnCallRecordInputSchema,
-      record,
-      'ADD_ONCALL_RECORD',
-      (m, d) => loggers.ipc.warn(m, d),
-    );
-    if (!validated) return { success: false, error: 'Invalid on-call record data' };
-    const result = await addOnCallRecord(await getDataRoot(), validated);
-    return { success: !!result, data: result || undefined };
-  });
+  safeMutationWithValidation(
+    IPC_CHANNELS.ADD_ONCALL_RECORD,
+    OnCallRecordInputSchema,
+    addOnCallRecord,
+    getDataRoot,
+    { errorLabel: 'Invalid on-call record data' },
+  );
 
   safeMutation(IPC_CHANNELS.UPDATE_ONCALL_RECORD, async (_, id, updates) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };

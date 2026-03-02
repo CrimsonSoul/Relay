@@ -1,4 +1,12 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 
 type SearchContextValue = {
@@ -35,22 +43,30 @@ export function SearchProvider({
     setQuery('');
   }, [activeTab]);
 
-  return (
-    <SearchContext.Provider
-      value={{
-        query,
-        setQuery,
-        debouncedQuery,
-        isSearchFocused,
-        setIsSearchFocused,
-        searchInputRef,
-        focusSearch,
-        clearSearch,
-      }}
-    >
-      {children}
-    </SearchContext.Provider>
+  const value = useMemo(
+    () => ({
+      query,
+      setQuery,
+      debouncedQuery,
+      isSearchFocused,
+      setIsSearchFocused,
+      searchInputRef,
+      focusSearch,
+      clearSearch,
+    }),
+    [
+      query,
+      setQuery,
+      debouncedQuery,
+      isSearchFocused,
+      setIsSearchFocused,
+      searchInputRef,
+      focusSearch,
+      clearSearch,
+    ],
   );
+
+  return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;
 }
 
 export function useSearchContext() {
