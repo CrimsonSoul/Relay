@@ -16,7 +16,8 @@ describe('AddServerModal', () => {
 
   it('does not render when isOpen is false', () => {
     render(<AddServerModal isOpen={false} onClose={vi.fn()} />);
-    expect(screen.queryByText('Add Server')).toBeNull();
+    const dialog = document.querySelector('dialog');
+    expect(!dialog || !dialog.hasAttribute('open')).toBe(true);
   });
 
   it('renders with title Add Server when no serverToEdit', () => {

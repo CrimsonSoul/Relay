@@ -202,14 +202,17 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
       ]}
       extraContent={
         editingLabelId ? (
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions
           <div
             className="alert-history-label-overlay"
-            aria-hidden="true"
             onClick={(e) => {
               if (e.target === e.currentTarget) commitLabel();
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') commitLabel();
+              if (e.key === 'Escape') {
+                setEditingLabelId(null);
+                setLabelDraft('');
+              }
             }}
           >
             <dialog className="alert-history-label-editor" open aria-label="Edit template name">

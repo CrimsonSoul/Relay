@@ -14,7 +14,8 @@ describe('ConfirmModal', () => {
         message="Are you sure?"
       />,
     );
-    expect(screen.queryByText('Delete item')).toBeNull();
+    const dialog = document.querySelector('dialog');
+    expect(!dialog || !dialog.hasAttribute('open')).toBe(true);
   });
 
   it('renders title and message when open', () => {

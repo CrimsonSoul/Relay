@@ -5461,6 +5461,10 @@ body.modal-open {
   background: rgba(255, 255, 255, 0.06);
 }
 
+.note-editor-inner {
+  display: contents;
+}
+
 .note-editor-body {
   padding: 28px;
   display: flex;

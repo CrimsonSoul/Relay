@@ -63,7 +63,8 @@ describe('NotesModal', () => {
 
   it('renders nothing when closed', () => {
     render(<NotesModal {...defaultProps} isOpen={false} />);
-    expect(screen.queryByText('Contact Notes')).not.toBeInTheDocument();
+    const dialog = document.querySelector('dialog');
+    expect(!dialog || !dialog.hasAttribute('open')).toBe(true);
   });
 
   it('renders the modal when open', () => {

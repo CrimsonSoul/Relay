@@ -69,86 +69,116 @@ export function useAlertHistory() {
 
   const addHistory = useCallback(
     async (entry: Omit<AlertHistoryEntry, 'id' | 'timestamp'>) => {
-      const result = await globalThis.api?.addAlertHistory(entry);
-      const normalized = normalizeAlertHistoryEntry(
-        isIpcResult<AlertHistoryEntry>(result) ? result.data : result,
-      );
+      try {
+        const result = await globalThis.api?.addAlertHistory(entry);
+        const normalized = normalizeAlertHistoryEntry(
+          isIpcResult<AlertHistoryEntry>(result) ? result.data : result,
+        );
 
-      if (normalized) {
-        setHistory((prev) => [normalized, ...prev]);
-      } else {
+        if (normalized) {
+          setHistory((prev) => [normalized, ...prev]);
+        } else {
+          showToast('Failed to save alert history', 'error');
+        }
+
+        return normalized;
+      } catch (error) {
+        loggers.app.error('Failed to add alert history', { error });
         showToast('Failed to save alert history', 'error');
+        return null;
       }
-
-      return normalized;
     },
     [showToast],
   );
 
   const deleteHistory = useCallback(
     async (id: string) => {
-      const result = await globalThis.api?.deleteAlertHistory(id);
-      const success = isIpcResult(result) ? result.success : !!result;
+      try {
+        const result = await globalThis.api?.deleteAlertHistory(id);
+        const success = isIpcResult(result) ? result.success : !!result;
 
-      if (success) {
-        setHistory((prev) => prev.filter((h) => h.id !== id));
-        showToast('History entry deleted', 'success');
-      } else {
+        if (success) {
+          setHistory((prev) => prev.filter((h) => h.id !== id));
+          showToast('History entry deleted', 'success');
+        } else {
+          showToast('Failed to delete history entry', 'error');
+        }
+        return success;
+      } catch (error) {
+        loggers.app.error('Failed to delete alert history', { error });
         showToast('Failed to delete history entry', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );
 
   const clearHistory = useCallback(async () => {
-    const result = await globalThis.api?.clearAlertHistory();
-    const success = isIpcResult(result) ? result.success : !!result;
+    try {
+      const result = await globalThis.api?.clearAlertHistory();
+      const success = isIpcResult(result) ? result.success : !!result;
 
-    if (success) {
-      setHistory([]);
-      showToast('Alert history cleared', 'success');
-    } else {
+      if (success) {
+        setHistory([]);
+        showToast('Alert history cleared', 'success');
+      } else {
+        showToast('Failed to clear history', 'error');
+      }
+      return success;
+    } catch (error) {
+      loggers.app.error('Failed to clear alert history', { error });
       showToast('Failed to clear history', 'error');
+      return false;
     }
-    return success;
   }, [showToast]);
 
   const pinHistory = useCallback(
     async (id: string, pinned: boolean) => {
-      const result = await globalThis.api?.pinAlertHistory(id, pinned);
-      const success = isIpcResult(result) ? result.success : !!result;
+      try {
+        const result = await globalThis.api?.pinAlertHistory(id, pinned);
+        const success = isIpcResult(result) ? result.success : !!result;
 
-      if (success) {
-        setHistory((prev) =>
-          prev.map((h) =>
-            h.id === id
-              ? { ...h, pinned: pinned || undefined, ...(pinned ? {} : { label: undefined }) }
-              : h,
-          ),
-        );
-        showToast(pinned ? 'Pinned as template' : 'Unpinned', 'success');
-      } else {
+        if (success) {
+          setHistory((prev) =>
+            prev.map((h) =>
+              h.id === id
+                ? { ...h, pinned: pinned || undefined, ...(pinned ? {} : { label: undefined }) }
+                : h,
+            ),
+          );
+          showToast(pinned ? 'Pinned as template' : 'Unpinned', 'success');
+        } else {
+          showToast('Failed to update pin', 'error');
+        }
+        return success;
+      } catch (error) {
+        loggers.app.error('Failed to update alert history pin', { error });
         showToast('Failed to update pin', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );
 
   const updateLabel = useCallback(
     async (id: string, label: string) => {
-      const result = await globalThis.api?.updateAlertHistoryLabel(id, label);
-      const success = isIpcResult(result) ? result.success : !!result;
+      try {
+        const result = await globalThis.api?.updateAlertHistoryLabel(id, label);
+        const success = isIpcResult(result) ? result.success : !!result;
 
-      if (success) {
-        setHistory((prev) =>
-          prev.map((h) => (h.id === id ? { ...h, label: label || undefined } : h)),
-        );
-      } else {
+        if (success) {
+          setHistory((prev) =>
+            prev.map((h) => (h.id === id ? { ...h, label: label || undefined } : h)),
+          );
+        } else {
+          showToast('Failed to update label', 'error');
+        }
+        return success;
+      } catch (error) {
+        loggers.app.error('Failed to update alert history label', { error });
         showToast('Failed to update label', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );

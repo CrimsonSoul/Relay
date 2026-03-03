@@ -24,6 +24,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   logoDataUrl,
 }) => {
   const colors = SEVERITY_COLORS[severity];
+  const hasContent = hasVisibleText(bodyHtml);
 
   return (
     <div className="alerts-preview">
@@ -61,9 +62,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             </div>
           </div>
           <div
-            className={`alerts-email-body${hasVisibleText(bodyHtml) ? '' : ' empty'}`}
+            className={`alerts-email-body${hasContent ? '' : ' empty'}`}
             dangerouslySetInnerHTML={{
-              __html: hasVisibleText(bodyHtml) ? bodyHtml : 'Your message will appear here...',
+              __html: hasContent ? bodyHtml : 'Your message will appear here...',
             }}
           />
           <div className="alerts-email-footer">

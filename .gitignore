@@ -23,6 +23,10 @@ test-results/
 coverage/
 playwright-report/
 
+# Static analysis working directories
+.scannerwork/
+coderabbit-reports/
+
 # Generated data files
 *.xlsx
 resources/*.xlsx

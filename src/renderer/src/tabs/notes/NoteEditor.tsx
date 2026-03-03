@@ -133,7 +133,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   return createPortal(
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <div className="modal-overlay animate-fade-in" onMouseDown={onClose} onKeyDown={handleKeyDown}>
+    <div className="modal-overlay animate-fade-in" onMouseDown={onClose}>
       {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <dialog
         open
@@ -141,113 +141,116 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         onMouseDown={(e) => e.stopPropagation()}
         aria-label={note ? 'Edit note' : 'New note'}
       >
-        <div className="note-editor-body">
-          {/* Title */}
-          <input
-            ref={titleRef}
-            className="note-editor-title"
-            type="text"
-            placeholder="Note title..."
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            maxLength={200}
-          />
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+        <div className="note-editor-inner" onKeyDown={handleKeyDown}>
+          <div className="note-editor-body">
+            {/* Title */}
+            <input
+              ref={titleRef}
+              className="note-editor-title"
+              type="text"
+              placeholder="Note title..."
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={200}
+            />
 
-          {/* Content */}
-          <textarea
-            ref={textareaRef}
-            className="note-editor-content"
-            placeholder="Write something..."
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            onKeyDown={handleTextareaKeyDown}
-          />
+            {/* Content */}
+            <textarea
+              ref={textareaRef}
+              className="note-editor-content"
+              placeholder="Write something..."
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onKeyDown={handleTextareaKeyDown}
+            />
 
-          {/* Tags */}
-          <div className="note-editor-tags">
-            <div className="note-editor-tag-list">
-              {tags.map((tag) => (
-                <span key={tag} className="note-editor-tag">
-                  {tag}
-                  <button
-                    className="note-editor-tag-remove"
-                    onClick={() => removeTag(tag)}
-                    aria-label={`Remove tag ${tag}`}
-                  >
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
+            {/* Tags */}
+            <div className="note-editor-tags">
+              <div className="note-editor-tag-list">
+                {tags.map((tag) => (
+                  <span key={tag} className="note-editor-tag">
+                    {tag}
+                    <button
+                      className="note-editor-tag-remove"
+                      onClick={() => removeTag(tag)}
+                      aria-label={`Remove tag ${tag}`}
                     >
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </span>
-              ))}
-              <input
-                className="note-editor-tag-input"
-                type="text"
-                placeholder={tags.length === 0 ? 'Add tags...' : ''}
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-              />
-            </div>
-          </div>
-
-          {/* Color picker */}
-          <div className="note-editor-color-picker">
-            <span className="note-editor-color-label">Color</span>
-            <div className="note-editor-color-swatches">
-              {NOTE_COLORS.map((c) => (
-                <button
-                  key={c.value}
-                  className={`note-editor-color-swatch${color === c.value ? ' is-selected' : ''}`}
-                  style={{ backgroundColor: c.hex }}
-                  onClick={() => setColor(c.value)}
-                  aria-label={c.label}
-                  title={c.label}
+                      <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="note-editor-tag-input"
+                  type="text"
+                  placeholder={tags.length === 0 ? 'Add tags...' : ''}
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={handleTagKeyDown}
                 />
-              ))}
+              </div>
+            </div>
+
+            {/* Color picker */}
+            <div className="note-editor-color-picker">
+              <span className="note-editor-color-label">Color</span>
+              <div className="note-editor-color-swatches">
+                {NOTE_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    className={`note-editor-color-swatch${color === c.value ? ' is-selected' : ''}`}
+                    style={{ backgroundColor: c.hex }}
+                    onClick={() => setColor(c.value)}
+                    aria-label={c.label}
+                    title={c.label}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="note-editor-footer">
-          <div className="note-editor-footer-left">
-            {note && onDelete && (
-              <TactileButton variant="danger" size="sm" onClick={onDelete}>
-                Delete
+          {/* Footer */}
+          <div className="note-editor-footer">
+            <div className="note-editor-footer-left">
+              {note && onDelete && (
+                <TactileButton variant="danger" size="sm" onClick={onDelete}>
+                  Delete
+                </TactileButton>
+              )}
+            </div>
+            <div className="note-editor-footer-right">
+              <TactileButton variant="secondary" size="sm" onClick={onClose}>
+                Cancel
               </TactileButton>
-            )}
+              <TactileButton
+                variant="primary"
+                size="sm"
+                onClick={handleSave}
+                disabled={!title.trim() && !content.trim()}
+              >
+                {note ? 'Save' : 'Create'}
+              </TactileButton>
+            </div>
           </div>
-          <div className="note-editor-footer-right">
-            <TactileButton variant="secondary" size="sm" onClick={onClose}>
-              Cancel
-            </TactileButton>
-            <TactileButton
-              variant="primary"
-              size="sm"
-              onClick={handleSave}
-              disabled={!title.trim() && !content.trim()}
-            >
-              {note ? 'Save' : 'Create'}
-            </TactileButton>
-          </div>
-        </div>
 
-        {/* Keyboard hint */}
-        <div className="note-editor-hint">
-          <kbd className="kbd-key">
-            {navigator.userAgent?.includes('Mac') ? '\u2318' : 'Ctrl'}+{'\u23CE'}
-          </kbd>{' '}
-          Save
+          {/* Keyboard hint */}
+          <div className="note-editor-hint">
+            <kbd className="kbd-key">
+              {navigator.userAgent?.includes('Mac') ? '\u2318' : 'Ctrl'}+{'\u23CE'}
+            </kbd>{' '}
+            Save
+          </div>
         </div>
       </dialog>
     </div>,

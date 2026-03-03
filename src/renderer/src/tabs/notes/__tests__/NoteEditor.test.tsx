@@ -169,7 +169,7 @@ describe('NoteEditor', () => {
       target: { value: '   ' },
     });
     // Manually trigger save via keyboard shortcut (bypasses disabled button)
-    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
+    fireEvent.keyDown(document.querySelector('.note-editor-inner')!, {
       key: 'Enter',
       metaKey: true,
     });
@@ -344,7 +344,7 @@ describe('NoteEditor', () => {
   it('closes editor when Escape is pressed', () => {
     const props = defaultProps();
     render(<NoteEditor {...props} />);
-    fireEvent.keyDown(document.querySelector('.modal-overlay')!, { key: 'Escape' });
+    fireEvent.keyDown(document.querySelector('.note-editor-inner')!, { key: 'Escape' });
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -356,7 +356,7 @@ describe('NoteEditor', () => {
     fireEvent.change(screen.getByPlaceholderText('Note title...'), {
       target: { value: 'Shortcut' },
     });
-    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
+    fireEvent.keyDown(document.querySelector('.note-editor-inner')!, {
       key: 'Enter',
       metaKey: true,
     });
@@ -371,7 +371,7 @@ describe('NoteEditor', () => {
     fireEvent.change(screen.getByPlaceholderText('Note title...'), {
       target: { value: 'Ctrl Save' },
     });
-    fireEvent.keyDown(document.querySelector('.modal-overlay')!, {
+    fireEvent.keyDown(document.querySelector('.note-editor-inner')!, {
       key: 'Enter',
       ctrlKey: true,
     });
