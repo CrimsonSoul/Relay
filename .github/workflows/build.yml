@@ -2,15 +2,15 @@ name: Build and Package
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
-    types:
-      - closed
 
 jobs:
   quality:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20.18.1'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -52,8 +52,13 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high --omit=dev
+        continue-on-error: true
+
   package-windows:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    needs: quality
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: windows-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
@@ -64,7 +69,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20.18.1'
           cache: npm
           cache-dependency-path: package-lock.json
 

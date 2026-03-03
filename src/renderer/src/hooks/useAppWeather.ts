@@ -198,6 +198,10 @@ export function useAppWeather(
     [mounted, processAlerts],
   );
 
+  // Keep a ref to the latest fetchWeather to avoid stale closures in the polling interval
+  const fetchWeatherRef = useRef(fetchWeather);
+  fetchWeatherRef.current = fetchWeather;
+
   // Persistence of weather location
   useEffect(() => {
     if (weatherLocation) {
@@ -232,14 +236,16 @@ export function useAppWeather(
     }
 
     const interval = setInterval(() => {
-      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
-        loggers.weather.error('[Weather] Background polling failed', { error: error_ });
-      });
+      fetchWeatherRef
+        .current(weatherLocation.latitude, weatherLocation.longitude, true)
+        .catch((error_) => {
+          loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+        });
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mounted is a stable ref, including it would cause unnecessary re-runs
-  }, [weatherLocation, fetchWeather]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWeatherRef is a stable ref; weatherLocation triggers re-subscribe
+  }, [weatherLocation]);
 
   return {
     weatherLocation,

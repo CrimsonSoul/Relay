@@ -2,6 +2,21 @@ import { FileEmitter, CachedData } from './FileEmitter';
 import { type DataError } from '@shared/ipc';
 
 /**
+ * Deep-freeze an object and all nested objects/arrays to prevent
+ * accidental mutation of shared cache references.
+ */
+function deepFreeze<T>(obj: T): T {
+  if (typeof obj !== 'object' || !obj) return obj;
+  Object.freeze(obj);
+  for (const value of Object.values(obj)) {
+    if (typeof value === 'object' && value && !Object.isFrozen(value)) {
+      deepFreeze(value);
+    }
+  }
+  return obj;
+}
+
+/**
  * DataCacheManager - Manages the in-memory cache of application data
  * and coordinates broadcasting updates to the renderer windows.
  */
@@ -24,7 +39,7 @@ export class DataCacheManager {
   }
 
   public updateCache(data: Partial<CachedData>): void {
-    this.cachedData = { ...this.cachedData, ...data };
+    this.cachedData = deepFreeze({ ...this.cachedData, ...data });
   }
 
   public broadcast(): void {

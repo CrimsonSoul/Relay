@@ -53,12 +53,9 @@ export const AlertsTab: React.FC = () => {
       });
   }, []);
 
-  // When customTimestamp is empty, we show "now". The extra deps beyond customTimestamp
-  // force re-evaluation of new Date() whenever the form changes, so the displayed time
-  // stays current as the user edits fields rather than being stale from first render.
-  const formattedDate = useMemo(() => {
-    const date = customTimestamp ? new Date(customTimestamp) : new Date();
-    if (customTimestamp && Number.isNaN(date.getTime())) return 'Invalid date';
+  const formatDate = (timestamp: string): string => {
+    const date = timestamp ? new Date(timestamp) : new Date();
+    if (timestamp && Number.isNaN(date.getTime())) return 'Invalid date';
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -67,8 +64,9 @@ export const AlertsTab: React.FC = () => {
       minute: '2-digit',
       hour12: true,
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subject, bodyHtml, sender, severity, recipient, customTimestamp]);
+  };
+
+  const formattedDate = formatDate(customTimestamp);
 
   const captureCard = useCallback(async (): Promise<HTMLCanvasElement> => {
     if (!cardRef.current) throw new Error('Card ref not available');

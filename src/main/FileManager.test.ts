@@ -506,7 +506,7 @@ describe('FileManager', () => {
       const offset = today.getTimezoneOffset() * 60000;
       const localToday = new Date(today.getTime() - offset);
 
-      // 35 days ago (Should be pruned)
+      // 35 days ago (Should be pruned — only if there are >3 newer backups)
       const date35 = new Date(localToday);
       date35.setDate(localToday.getDate() - 35);
       const str35 = date35.toISOString().slice(0, 10) + '_00-00-00';
@@ -518,7 +518,19 @@ describe('FileManager', () => {
       const str1 = date1.toISOString().slice(0, 10) + '_00-00-00';
       await fs.mkdir(path.join(backupDir, str1));
 
-      // Trigger backup
+      // 2 days ago (Should be kept)
+      const date2 = new Date(localToday);
+      date2.setDate(localToday.getDate() - 2);
+      const str2 = date2.toISOString().slice(0, 10) + '_00-00-00';
+      await fs.mkdir(path.join(backupDir, str2));
+
+      // 3 days ago (Should be kept)
+      const date3 = new Date(localToday);
+      date3.setDate(localToday.getDate() - 3);
+      const str3 = date3.toISOString().slice(0, 10) + '_00-00-00';
+      await fs.mkdir(path.join(backupDir, str3));
+
+      // Trigger backup (creates today's backup, making 5 total — enough to prune old ones)
       await fileManager.performBackup('auto');
 
       const backups = await fs.readdir(backupDir);

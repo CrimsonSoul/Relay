@@ -56,7 +56,7 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
 
     React.useImperativeHandle(ref, () => ({
       setEditorContent(html: string) {
-        if (editorRef.current) editorRef.current.innerHTML = html;
+        if (editorRef.current) editorRef.current.innerHTML = sanitizeHtml(html);
       },
     }));
 

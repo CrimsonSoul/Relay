@@ -112,15 +112,16 @@ export function useAssembler({
 
   const log = allRecipients;
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     const success = await globalThis.api?.writeClipboard(log.map((m) => m.email).join('; '));
     if (success) {
       showToast('Copied to clipboard', 'success');
     } else {
       showToast('Failed to copy to clipboard', 'error');
     }
-  };
-  const executeDraftBridge = () => {
+  }, [log, showToast]);
+
+  const executeDraftBridge = useCallback(() => {
     const date = new Date();
     const params = new URLSearchParams({
       subject: `${date.getMonth() + 1}/${date.getDate()} -`,
@@ -128,11 +129,13 @@ export function useAssembler({
     });
     globalThis.api
       ?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`)
+      ?.then(() => {
+        showToast('Bridge drafted', 'success');
+      })
       ?.catch((error_) => {
         showToast(`Failed to open Teams draft: ${getErrorMessage(error_)}`, 'error');
       });
-    showToast('Bridge drafted', 'success');
-  };
+  }, [log, showToast]);
   const handleQuickAdd = useCallback(
     (email: string) => {
       onAddManual(email);

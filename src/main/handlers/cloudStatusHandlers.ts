@@ -365,9 +365,9 @@ export function setupCloudStatusHandlers() {
         if (result.status === 'fulfilled') {
           providers[provider] = result.value;
         } else {
-          errors.push({ provider, message: getErrorMessage(result.reason) });
+          errors.push({ provider, message: String(getErrorMessage(result.reason)).slice(0, 500) });
           loggers.cloudStatus.warn(`${CLOUD_STATUS_PROVIDERS[provider].label} status feed failed`, {
-            error: getErrorMessage(result.reason),
+            error: String(getErrorMessage(result.reason)).slice(0, 500),
             category: ErrorCategory.NETWORK,
           });
         }
@@ -378,7 +378,7 @@ export function setupCloudStatusHandlers() {
       return data;
     } catch (err) {
       loggers.cloudStatus.error('Failed to fetch cloud status', {
-        error: getErrorMessage(err),
+        error: String(getErrorMessage(err)).slice(0, 500),
         category: ErrorCategory.NETWORK,
       });
       return cachedOrEmpty();

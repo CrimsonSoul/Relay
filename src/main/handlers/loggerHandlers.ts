@@ -35,7 +35,9 @@ export function setupLoggerHandlers(): void {
         return;
       }
 
-      const { level, module, message, data } = validated.data;
+      const { level, message, data } = validated.data;
+      // Sanitize renderer-controlled module name: allow only alphanumeric, dots, hyphens; truncate to 50 chars
+      const module = validated.data.module.replace(/[^a-zA-Z0-9.-]/g, '').slice(0, 50);
 
       // Map level string to logger method
       switch (level.toUpperCase()) {

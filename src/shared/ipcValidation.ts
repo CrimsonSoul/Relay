@@ -14,6 +14,7 @@ import { z } from 'zod';
 const MAX_NAME = 500;
 const MAX_FIELD = 1000;
 const MAX_NOTE = 10000;
+const MAX_HTML_BODY = 50000;
 const MAX_SEARCH = 2000;
 const MAX_ID = 200;
 const MAX_ARRAY_ITEMS = 500;
@@ -90,7 +91,7 @@ export const BridgeHistoryEntrySchema = z.object({
   note: z.string().max(MAX_NOTE),
   groups: z.array(z.string().max(MAX_NAME)).max(MAX_ARRAY_ITEMS),
   contacts: z.array(z.string().email().max(MAX_FIELD)).max(MAX_ARRAY_ITEMS),
-  recipientCount: z.number(),
+  recipientCount: z.number().int().min(0).max(100000),
 });
 
 // ==================== Alert History Schemas ====================
@@ -99,7 +100,7 @@ export const AlertHistoryEntrySchema = z.object({
   timestamp: z.number().optional(),
   severity: z.enum(['MAJOR', 'MINOR', 'MAINTENANCE', 'INFO', 'RESOLVED']),
   subject: z.string().max(MAX_NOTE),
-  bodyHtml: z.string().max(MAX_NOTE),
+  bodyHtml: z.string().max(MAX_HTML_BODY),
   sender: z.string().max(MAX_NOTE),
   recipient: z.string().max(MAX_NOTE),
   pinned: z.boolean().optional(),
@@ -138,14 +139,53 @@ export const ContactRecordUpdateSchema = ContactRecordInputSchema.partial().stri
 export const ServerRecordUpdateSchema = ServerRecordInputSchema.partial().strict();
 export const OnCallRecordUpdateSchema = OnCallRecordInputSchema.partial().strict();
 
+// ==================== Persistence-Layer Record Schemas ====================
+// Lenient schemas for validating records read from disk. These only check that
+// required fields exist with the correct type — no strict constraints like
+// email format or min-length, since historical data may not conform.
+
+export const ContactRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  phone: z.string(),
+  title: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const ServerRecordSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  businessArea: z.string(),
+  lob: z.string(),
+  comment: z.string(),
+  owner: z.string(),
+  contact: z.string(),
+  os: z.string(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const OnCallRecordSchema = z.object({
+  id: z.string(),
+  team: z.string(),
+  role: z.string(),
+  name: z.string(),
+  contact: z.string(),
+  timeWindow: z.string().optional().default(''),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
 export const TeamLayoutSchema = z
   .record(
     z.string().max(MAX_NAME),
     z.object({
-      x: z.number(),
-      y: z.number(),
-      w: z.number().optional(),
-      h: z.number().optional(),
+      x: z.number().min(-10000).max(10000),
+      y: z.number().min(-10000).max(10000),
+      w: z.number().min(0).max(10000).optional(),
+      h: z.number().min(0).max(10000).optional(),
       static: z.boolean().optional(),
     }),
   )
@@ -154,9 +194,9 @@ export const TeamLayoutSchema = z
 
 export const RadarSnapshotSchema = z.object({
   counters: z.object({
-    ok: z.number().optional(),
-    pending: z.number().optional(),
-    internalError: z.number().optional(),
+    ok: z.number().int().min(0).optional(),
+    pending: z.number().int().min(0).optional(),
+    internalError: z.number().int().min(0).optional(),
   }),
   statusText: z.string().max(MAX_FIELD).optional(),
   statusColor: z.string().max(100).optional(),
@@ -168,7 +208,7 @@ export const SearchQuerySchema = z
   .string()
   .min(1)
   .max(200)
-  .refine((s) => !/[<>{}]/.test(s), 'Invalid characters in search query');
+  .refine((s) => !/[<>{}`;|$\\]/.test(s), 'Invalid characters in search query');
 
 export const ExportOptionsSchema = z.object({
   format: z.enum(['json', 'csv']),
@@ -189,7 +229,7 @@ export const LogEntrySchema = z.object({
   level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),
   module: z.string().max(100),
   message: z.string().max(5000),
-  data: z.record(z.string(), z.unknown()).optional(),
+  data: z.unknown().optional(),
   timestamp: z.string().optional(),
 });
 
@@ -199,8 +239,6 @@ export const SavedLocationSchema = z.object({
   lat: LatitudeSchema,
   lon: LongitudeSchema,
   isDefault: z.boolean().optional(),
-  createdAt: z.string().optional(),
-  updatedAt: z.string().optional(),
 });
 
 export const LocationUpdateSchema = z.object({

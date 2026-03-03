@@ -1,5 +1,5 @@
-import React from 'react';
-import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText } from './alertUtils';
+import React, { useMemo } from 'react';
+import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
 
 export interface AlertCardProps {
@@ -25,6 +25,11 @@ export const AlertCard: React.FC<AlertCardProps> = ({
 }) => {
   const colors = SEVERITY_COLORS[severity];
   const hasContent = hasVisibleText(bodyHtml);
+  // Always sanitize HTML at the render boundary to prevent XSS
+  const safeHtml = useMemo(
+    () => (hasContent ? sanitizeHtml(bodyHtml) : 'Your message will appear here...'),
+    [bodyHtml, hasContent],
+  );
 
   return (
     <div className="alerts-preview">
@@ -63,9 +68,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           </div>
           <div
             className={`alerts-email-body${hasContent ? '' : ' empty'}`}
-            dangerouslySetInnerHTML={{
-              __html: hasContent ? bodyHtml : 'Your message will appear here...',
-            }}
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
           <div className="alerts-email-footer">
             <span className="alerts-email-footer-severity">{severity}</span>

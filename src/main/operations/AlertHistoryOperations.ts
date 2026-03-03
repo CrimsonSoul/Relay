@@ -14,6 +14,7 @@ import { generateId } from './idUtils';
 const HISTORY_FILE = 'alertHistory.json';
 const HISTORY_FILE_PATH = (rootDir: string) => join(rootDir, HISTORY_FILE);
 const MAX_HISTORY_ENTRIES = 50;
+const MAX_PINNED_ENTRIES = 100;
 const MAX_HISTORY_AGE_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 export async function getAlertHistory(rootDir: string): Promise<AlertHistoryEntry[]> {
@@ -27,7 +28,11 @@ export async function getAlertHistory(rootDir: string): Promise<AlertHistoryEntr
       if (!Array.isArray(data)) return [];
 
       const cutoff = Date.now() - MAX_HISTORY_AGE_MS;
-      return data.filter((entry: AlertHistoryEntry) => entry.pinned || entry.timestamp > cutoff);
+      const pinned = data.filter((entry: AlertHistoryEntry) => entry.pinned);
+      const unpinned = data
+        .filter((entry: AlertHistoryEntry) => !entry.pinned && entry.timestamp > cutoff)
+        .slice(0, MAX_HISTORY_ENTRIES);
+      return [...pinned.slice(0, MAX_PINNED_ENTRIES), ...unpinned];
     } catch (parseError) {
       loggers.fileManager.error('[AlertHistoryOperations] JSON parse error:', {
         error: parseError,
@@ -69,9 +74,12 @@ export async function addAlertHistory(
         history.unshift(newEntry);
 
         const cutoff = now - MAX_HISTORY_AGE_MS;
-        const pinned = history.filter((h) => h.pinned);
+        let pinned = history.filter((h) => h.pinned);
         let unpinned = history.filter((h) => !h.pinned && h.timestamp > cutoff);
 
+        if (pinned.length > MAX_PINNED_ENTRIES) {
+          pinned = pinned.slice(0, MAX_PINNED_ENTRIES);
+        }
         if (unpinned.length > MAX_HISTORY_ENTRIES) {
           unpinned = unpinned.slice(0, MAX_HISTORY_ENTRIES);
         }

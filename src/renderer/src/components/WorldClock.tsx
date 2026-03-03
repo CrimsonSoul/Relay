@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from '../contexts';
+import { loggers } from '../utils/logger';
 
 const logInvalidTimezone = (tz: string, error: unknown) =>
-  console.warn(`[WorldClock] Invalid timezone "${tz}":`, error);
+  loggers.app.warn(`[WorldClock] Invalid timezone "${tz}"`, { error });
 
 const OFFICE_ZONES = [
   { label: 'PST', timeZone: 'America/Los_Angeles' },

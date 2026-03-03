@@ -144,7 +144,6 @@ export function cacheCredentials(host: string, username: string, password: strin
     const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to cache credentials', {
       error: err.message,
-      stack: err.stack,
       category: ErrorCategory.AUTH,
       host,
     });
@@ -171,7 +170,6 @@ export function getCachedCredentials(host: string): { username: string; password
     const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to decrypt cached credentials', {
       error: err.message,
-      stack: err.stack,
       category: ErrorCategory.AUTH,
       host,
     });

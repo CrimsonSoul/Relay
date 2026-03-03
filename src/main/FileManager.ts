@@ -222,13 +222,30 @@ export class FileManager {
     this.cache.emitError(error);
   }
 
+  /** Increment the write guard so the file watcher ignores our own writes. */
+  private guardWrite(): void {
+    this.internalWriteCount++;
+  }
+
+  /** Schedule the write guard decrement after the delay. */
+  private unguardWrite(): void {
+    setTimeout(() => {
+      this.internalWriteCount--;
+    }, WRITE_GUARD_DELAY_MS);
+  }
+
   // Delegated Operations
   public async removeContact(email: string) {
     const contact = await findContactByEmail(this.rootDir, email);
     if (contact) {
-      const success = await deleteContactRecord(this.rootDir, contact.id);
-      if (success) await this.readAndEmit();
-      return success;
+      this.guardWrite();
+      try {
+        const success = await deleteContactRecord(this.rootDir, contact.id);
+        if (success) await this.readAndEmit();
+        return success;
+      } finally {
+        this.unguardWrite();
+      }
     }
     return false;
   }
@@ -240,9 +257,14 @@ export class FileManager {
       phone: contact.phone || '',
       title: contact.title || '',
     };
-    const result = await addContactRecord(this.rootDir, record);
-    if (result) await this.readAndEmit();
-    return !!result;
+    this.guardWrite();
+    try {
+      const result = await addContactRecord(this.rootDir, record);
+      if (result) await this.readAndEmit();
+      return !!result;
+    } finally {
+      this.unguardWrite();
+    }
   }
 
   public async addServer(server: Partial<Server>) {
@@ -255,17 +277,27 @@ export class FileManager {
       contact: server.contact || '',
       os: server.os || '',
     };
-    const result = await addServerRecord(this.rootDir, record);
-    if (result) await this.readAndEmit();
-    return !!result;
+    this.guardWrite();
+    try {
+      const result = await addServerRecord(this.rootDir, record);
+      if (result) await this.readAndEmit();
+      return !!result;
+    } finally {
+      this.unguardWrite();
+    }
   }
 
   public async removeServer(name: string) {
     const server = await findServerByName(this.rootDir, name);
     if (server) {
-      const success = await deleteServerRecord(this.rootDir, server.id);
-      if (success) await this.readAndEmit();
-      return success;
+      this.guardWrite();
+      try {
+        const success = await deleteServerRecord(this.rootDir, server.id);
+        if (success) await this.readAndEmit();
+        return success;
+      } finally {
+        this.unguardWrite();
+      }
     }
     return false;
   }
@@ -296,20 +328,25 @@ export class FileManager {
       contact: r.contact,
       timeWindow: r.timeWindow,
     }));
-    const success = await updateOnCallTeamJson(this.rootDir, team, records);
+    this.guardWrite();
+    try {
+      const success = await updateOnCallTeamJson(this.rootDir, team, records);
 
-    if (!success) {
-      loggers.fileManager.error('updateOnCallTeam persistence failed, rolling back');
-      this.cache.updateCache({ onCall: previousOnCall });
-      this.cache.broadcast();
-      this.emitError({
-        type: 'persistence',
-        message: 'Changes could not be saved. Please try again.',
-        file: 'oncall.json',
-      });
+      if (!success) {
+        loggers.fileManager.error('updateOnCallTeam persistence failed, rolling back');
+        this.cache.updateCache({ onCall: previousOnCall });
+        this.cache.broadcast();
+        this.emitError({
+          type: 'persistence',
+          message: 'Changes could not be saved. Please try again.',
+          file: 'oncall.json',
+        });
+      }
+
+      return success;
+    } finally {
+      this.unguardWrite();
     }
-
-    return success;
   }
 
   public async removeOnCallTeam(team: string) {
@@ -317,20 +354,25 @@ export class FileManager {
     this.cache.updateCache({ onCall: previousOnCall.filter((r) => r.team !== team) });
     this.cache.broadcast();
 
-    const success = await deleteOnCallByTeam(this.rootDir, team);
+    this.guardWrite();
+    try {
+      const success = await deleteOnCallByTeam(this.rootDir, team);
 
-    if (!success) {
-      loggers.fileManager.error('removeOnCallTeam persistence failed, rolling back');
-      this.cache.updateCache({ onCall: previousOnCall });
-      this.cache.broadcast();
-      this.emitError({
-        type: 'persistence',
-        message: 'Team deletion failed to save. Please try again.',
-        file: 'oncall.json',
-      });
+      if (!success) {
+        loggers.fileManager.error('removeOnCallTeam persistence failed, rolling back');
+        this.cache.updateCache({ onCall: previousOnCall });
+        this.cache.broadcast();
+        this.emitError({
+          type: 'persistence',
+          message: 'Team deletion failed to save. Please try again.',
+          file: 'oncall.json',
+        });
+      }
+
+      return success;
+    } finally {
+      this.unguardWrite();
     }
-
-    return success;
   }
 
   public async renameOnCallTeam(oldName: string, newName: string) {
@@ -340,20 +382,25 @@ export class FileManager {
     });
     this.cache.broadcast();
 
-    const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
+    this.guardWrite();
+    try {
+      const success = await renameOnCallTeamJson(this.rootDir, oldName, newName);
 
-    if (!success) {
-      loggers.fileManager.error('renameOnCallTeam persistence failed, rolling back');
-      this.cache.updateCache({ onCall: previousOnCall });
-      this.cache.broadcast();
-      this.emitError({
-        type: 'persistence',
-        message: 'Team rename failed to save. Please try again.',
-        file: 'oncall.json',
-      });
+      if (!success) {
+        loggers.fileManager.error('renameOnCallTeam persistence failed, rolling back');
+        this.cache.updateCache({ onCall: previousOnCall });
+        this.cache.broadcast();
+        this.emitError({
+          type: 'persistence',
+          message: 'Team rename failed to save. Please try again.',
+          file: 'oncall.json',
+        });
+      }
+
+      return success;
+    } finally {
+      this.unguardWrite();
     }
-
-    return success;
   }
 
   public async reorderOnCallTeams(teamOrder: string[], layout?: TeamLayout) {
@@ -382,7 +429,7 @@ export class FileManager {
     this.cache.updateCache({ onCall: orderedRows, teamLayout: layout || previousLayout });
     this.cache.broadcast();
 
-    this.internalWriteCount++;
+    this.guardWrite();
     try {
       if (layout) {
         await this.fsService.atomicWrite('oncall_layout.json', JSON.stringify(layout, null, 2));
@@ -403,13 +450,18 @@ export class FileManager {
 
       return success;
     } finally {
-      setTimeout(() => {
-        this.internalWriteCount--;
-      }, WRITE_GUARD_DELAY_MS);
+      this.unguardWrite();
     }
   }
 
   public async saveAllOnCall(rows: OnCallRow[]) {
+    const previousOnCall = [...this.cache.getCache().onCall];
+
+    // Backup before destructive full-replace operation
+    await this.performBackup('pre-save-all-oncall').catch((e) =>
+      loggers.fileManager.warn('Pre-save backup failed (non-fatal)', { error: e }),
+    );
+
     this.cache.updateCache({ onCall: rows });
     this.cache.broadcast();
 
@@ -421,9 +473,27 @@ export class FileManager {
       contact: r.contact,
       timeWindow: r.timeWindow,
     }));
-    const success = await saveAllOnCallJson(this.rootDir, records);
-    if (success) await this.readAndEmit();
-    return success;
+    this.guardWrite();
+    try {
+      const success = await saveAllOnCallJson(this.rootDir, records);
+
+      if (!success) {
+        loggers.fileManager.error('saveAllOnCall persistence failed, rolling back');
+        this.cache.updateCache({ onCall: previousOnCall });
+        this.cache.broadcast();
+        this.emitError({
+          type: 'persistence',
+          message: 'Save all on-call failed. Please try again.',
+          file: 'oncall.json',
+        });
+      } else {
+        await this.readAndEmit();
+      }
+
+      return success;
+    } finally {
+      this.unguardWrite();
+    }
   }
 
   public async generateDummyData() {

@@ -54,16 +54,8 @@ export function SearchProvider({
       focusSearch,
       clearSearch,
     }),
-    [
-      query,
-      setQuery,
-      debouncedQuery,
-      isSearchFocused,
-      setIsSearchFocused,
-      searchInputRef,
-      focusSearch,
-      clearSearch,
-    ],
+    // setQuery and setIsSearchFocused are React state setters (guaranteed stable) and omitted
+    [query, debouncedQuery, isSearchFocused, searchInputRef, focusSearch, clearSearch],
   );
 
   return <SearchContext.Provider value={value}>{children}</SearchContext.Provider>;

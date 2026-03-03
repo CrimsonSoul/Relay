@@ -35,7 +35,7 @@ win:
   artifactName: 'Relay.exe'
   icon: build/icon.ico
   requestedExecutionLevel: 'asInvoker'
-compression: 'normal'
+compression: 'maximum'
 electronDownload:
   cache: '.electron'
 

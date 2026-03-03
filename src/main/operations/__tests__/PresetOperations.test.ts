@@ -31,6 +31,7 @@ vi.mock('electron', () => ({
 vi.mock('node:fs/promises', () => ({
   default: {
     readFile: vi.fn(),
+    stat: vi.fn().mockResolvedValue({ size: 100 }),
   },
 }));
 

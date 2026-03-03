@@ -7,6 +7,52 @@ import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
 import { getErrorMessage } from '@shared/types';
 
+interface ZipCodeResult {
+  name: string;
+  lat: number;
+  lon: number;
+  admin1: string;
+  country_code: string;
+}
+
+/** Look up a US 5-digit zip code via zippopotam.us. Returns null on miss/error. */
+async function lookupZipCode(zip: string): Promise<{ results: ZipCodeResult[] } | null> {
+  try {
+    const zipRes = await fetch(`https://api.zippopotam.us/us/${zip}`);
+    if (!zipRes.ok) return null;
+    const zipData = (await zipRes.json()) as {
+      'post code': string;
+      country: string;
+      places: Array<{
+        'place name': string;
+        longitude: string;
+        state: string;
+        'state abbreviation': string;
+        latitude: string;
+      }>;
+    };
+    const place = zipData.places?.[0];
+    if (!place) return null;
+    return {
+      results: [
+        {
+          name: place['place name'],
+          lat: Number.parseFloat(place.latitude),
+          lon: Number.parseFloat(place.longitude),
+          admin1: place.state,
+          country_code: 'US',
+        },
+      ],
+    };
+  } catch (error_) {
+    loggers.weather.warn('Zip code search failed, falling back to general search', {
+      query: zip,
+      error: String(getErrorMessage(error_)).slice(0, 500),
+    });
+    return null;
+  }
+}
+
 // NWS API Response Types (for type safety)
 interface NWSAlertProperties {
   id?: string;
@@ -56,9 +102,25 @@ export function setupWeatherHandlers() {
         { cache: 'no-store' } as RequestInit,
       );
       if (!res.ok) throw new Error('Failed to fetch weather data');
-      return await res.json();
+      const data = await res.json();
+
+      // Basic shape validation: ensure the response has expected top-level keys
+      if (
+        !data ||
+        typeof data !== 'object' ||
+        !('current_weather' in data) ||
+        !('hourly' in data) ||
+        !('daily' in data)
+      ) {
+        loggers.weather.warn('Weather API returned unexpected shape', {
+          keys: data ? Object.keys(data) : [],
+        });
+        return { error: 'Weather data has unexpected format' };
+      }
+
+      return data;
     } catch (err: unknown) {
-      const message = getErrorMessage(err);
+      const message = String(getErrorMessage(err)).slice(0, 500);
       loggers.weather.error('Failed to fetch weather data', {
         error: message,
         category: ErrorCategory.NETWORK,
@@ -74,48 +136,18 @@ export function setupWeatherHandlers() {
     try {
       const validated = SearchQuerySchema.safeParse(query);
       if (!validated.success) {
-        loggers.weather.warn('Invalid search query', { error: validated.error.message, query });
+        loggers.weather.warn('Invalid search query', {
+          error: validated.error.message,
+          queryLength: typeof query === 'string' ? query.length : 0,
+        });
         return { results: [] };
       }
       const trimmedQuery = validated.data.trim();
 
       // Handle Zip Code (US 5-digit)
       if (/^\d{5}$/.test(trimmedQuery)) {
-        try {
-          const zipRes = await fetch(`https://api.zippopotam.us/us/${trimmedQuery}`);
-          if (zipRes.ok) {
-            const zipData = (await zipRes.json()) as {
-              'post code': string;
-              country: string;
-              places: Array<{
-                'place name': string;
-                longitude: string;
-                state: string;
-                'state abbreviation': string;
-                latitude: string;
-              }>;
-            };
-            if (zipData.places?.[0]) {
-              const place = zipData.places[0];
-              return {
-                results: [
-                  {
-                    name: place['place name'],
-                    lat: Number.parseFloat(place.latitude),
-                    lon: Number.parseFloat(place.longitude),
-                    admin1: place.state,
-                    country_code: 'US',
-                  },
-                ],
-              };
-            }
-          }
-        } catch (error_) {
-          loggers.weather.warn('Zip code search failed, falling back to general search', {
-            query: trimmedQuery,
-            error: error_,
-          });
-        }
+        const zipResult = await lookupZipCode(trimmedQuery);
+        if (zipResult) return zipResult;
       }
 
       // General Search
@@ -139,8 +171,7 @@ export function setupWeatherHandlers() {
             original: trimmedQuery,
             cityPart,
           });
-          let cityData = await fetchResults(cityPart);
-          data = cityData as {
+          data = (await fetchResults(cityPart)) as {
             results?: Array<{ name: string; latitude: number; longitude: number }>;
           };
         }
@@ -148,11 +179,10 @@ export function setupWeatherHandlers() {
 
       return data;
     } catch (err: unknown) {
-      const message = getErrorMessage(err);
+      const message = String(getErrorMessage(err)).slice(0, 500);
       loggers.weather.error('Location search failed', {
         error: message,
         category: ErrorCategory.NETWORK,
-        query,
       });
       return { error: 'Location search unavailable' };
     }
@@ -217,7 +247,7 @@ export function setupWeatherHandlers() {
         };
       });
     } catch (err: unknown) {
-      const message = getErrorMessage(err);
+      const message = String(getErrorMessage(err)).slice(0, 500);
       loggers.weather.error('Failed to fetch weather alerts', {
         error: message,
         category: ErrorCategory.NETWORK,

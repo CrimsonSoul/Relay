@@ -45,7 +45,7 @@ export function LocationProvider({ children }: { readonly children: ReactNode })
     const tryIpLocation = async () => {
       loggers.location.info('Fetching IP-based location...');
       try {
-        const data = await globalThis.window.api?.getIpLocation();
+        const data = await globalThis.api?.getIpLocation();
 
         if (data?.lat && data?.lon) {
           loggers.location.info('IP location found', { city: data.city, source: 'ip' });

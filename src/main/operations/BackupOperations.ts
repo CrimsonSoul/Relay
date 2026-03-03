@@ -18,33 +18,47 @@ function formatLocalDate(date: Date): string {
 }
 
 /**
- * Format local time as HH-MM-SS
+ * Format local time as HH-MM-SS-mmm (including milliseconds to prevent same-second collisions)
  */
 function formatLocalTime(date: Date): string {
-  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+  return `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}-${String(date.getMilliseconds()).padStart(3, '0')}`;
 }
 
 /**
- * Prune backups older than 30 days
+ * Prune backups older than 30 days, always keeping at least MIN_BACKUPS_KEPT.
  */
+/** Minimum number of backups to always keep, regardless of age */
+const MIN_BACKUPS_KEPT = 3;
+
 async function pruneOldBackups(backupDir: string, now: Date): Promise<void> {
   try {
     const backups = await fs.readdir(backupDir);
     const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
+    // Collect backups with parsed dates for sorting
+    const dated: { dirName: string; dateMs: number }[] = [];
     for (const dirName of backups) {
       const match = /^(\d{4}-\d{2}-\d{2})/.exec(dirName);
       if (match?.[1]) {
         const [year, month, day] = match[1].split('-').map(Number);
         if (year !== undefined && month !== undefined && day !== undefined) {
-          const folderDateMs = new Date(year, month - 1, day).getTime();
-          if (todayStart - folderDateMs > THIRTY_DAYS_MS) {
-            const dirPath = join(backupDir, dirName);
-            await fs.rm(dirPath, { recursive: true, force: true });
-            loggers.fileManager.debug(`Pruned old backup: ${dirName}`);
-          }
+          dated.push({ dirName, dateMs: new Date(year, month - 1, day).getTime() });
         }
+      }
+    }
+
+    // Sort newest first so we can protect the N most recent
+    dated.sort((a, b) => b.dateMs - a.dateMs);
+
+    // Skip the newest MIN_BACKUPS_KEPT; only consider the rest for pruning
+    const candidates = dated.slice(MIN_BACKUPS_KEPT);
+
+    for (const { dirName, dateMs } of candidates) {
+      if (todayStart - dateMs > THIRTY_DAYS_MS) {
+        const dirPath = join(backupDir, dirName);
+        await fs.rm(dirPath, { recursive: true, force: true });
+        loggers.fileManager.debug(`Pruned old backup: ${dirName}`);
       }
     }
   } catch (err) {
@@ -81,6 +95,8 @@ export async function performBackup(
       'bridgeHistory.json',
       'notes.json',
       'savedLocations.json',
+      'alertHistory.json',
+      'oncall_layout.json',
     ];
     for (const file of filesToBackup) {
       const sourcePath = join(rootDir, file);

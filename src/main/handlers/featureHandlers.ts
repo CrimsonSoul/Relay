@@ -212,7 +212,7 @@ export function setupFeatureHandlers(getDataRoot: () => Promise<string>) {
 
   safeMutation(IPC_CHANNELS.UPDATE_ALERT_HISTORY_LABEL, async (_, id, label) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof id !== 'string' || !id || typeof label !== 'string') {
+    if (typeof id !== 'string' || !id || typeof label !== 'string' || label.length > 10000) {
       loggers.ipc.error('Invalid update alert history label parameters');
       return { success: false, error: 'Invalid parameters' };
     }

@@ -5,6 +5,7 @@
  */
 
 import type { ServerRecord } from '@shared/ipc';
+import { ServerRecordSchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { generateId } from './idUtils';
 import {
@@ -19,6 +20,7 @@ import {
 const config: JsonCrudConfig = {
   fileName: 'servers.json',
   logPrefix: '[ServerJsonOperations]',
+  recordSchema: ServerRecordSchema,
 };
 
 /**

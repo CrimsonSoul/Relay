@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { atomicWriteWithLock, modifyJsonWithLock } from './fileLock';
 import fs from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 
 // Mock logger
 vi.mock('./logger', () => ({
@@ -12,6 +14,13 @@ vi.mock('./logger', () => ({
   },
 }));
 
+// Mock file handle returned by fs.open()
+const mockFileHandle = {
+  writeFile: vi.fn().mockResolvedValue(undefined),
+  datasync: vi.fn().mockResolvedValue(undefined),
+  close: vi.fn().mockResolvedValue(undefined),
+};
+
 // Mock fs/promises
 vi.mock('node:fs/promises', () => ({
   default: {
@@ -20,12 +29,17 @@ vi.mock('node:fs/promises', () => ({
     unlink: vi.fn(),
     readFile: vi.fn(),
     access: vi.fn(),
+    open: vi.fn(),
+    stat: vi.fn(),
   },
 }));
 
 describe('fileLock', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFileHandle.writeFile.mockResolvedValue(undefined);
+    mockFileHandle.datasync.mockResolvedValue(undefined);
+    mockFileHandle.close.mockResolvedValue(undefined);
   });
 
   describe('atomicWriteWithLock', () => {
@@ -33,16 +47,15 @@ describe('fileLock', () => {
       const filePath = '/data/test.json';
       const content = '{"test": true}';
 
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fs.open).mockResolvedValue(mockFileHandle as unknown as FileHandle);
       vi.mocked(fs.rename).mockResolvedValue(undefined);
 
       await atomicWriteWithLock(filePath, content);
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.stringContaining(filePath),
-        content,
-        'utf-8',
-      );
+      expect(fs.open).toHaveBeenCalledWith(expect.stringContaining(filePath), 'w', 0o600);
+      expect(mockFileHandle.writeFile).toHaveBeenCalledWith(content, 'utf-8');
+      expect(mockFileHandle.datasync).toHaveBeenCalled();
+      expect(mockFileHandle.close).toHaveBeenCalled();
       expect(fs.rename).toHaveBeenCalled();
     });
 
@@ -50,7 +63,7 @@ describe('fileLock', () => {
       const filePath = '/data/test.json';
       const content = '{"test": true}';
 
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fs.open).mockResolvedValue(mockFileHandle as unknown as FileHandle);
       vi.mocked(fs.rename)
         .mockRejectedValueOnce(new Error('Locked'))
         .mockResolvedValueOnce(undefined);
@@ -64,7 +77,7 @@ describe('fileLock', () => {
       const filePath = '/data/test.json';
       const content = '{"test": true}';
 
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fs.open).mockResolvedValue(mockFileHandle as unknown as FileHandle);
       vi.mocked(fs.rename).mockRejectedValue(new Error('Persistent error'));
       vi.mocked(fs.access).mockResolvedValue(undefined);
       vi.mocked(fs.unlink).mockResolvedValue(undefined);
@@ -80,9 +93,9 @@ describe('fileLock', () => {
       const initialData = { count: 1 };
       const defaultValue = { count: 0 };
 
-      vi.mocked(fs.access).mockResolvedValue(undefined);
+      vi.mocked(fs.stat).mockResolvedValue({ size: 100 } as unknown as Stats);
       vi.mocked(fs.readFile).mockResolvedValue(JSON.stringify(initialData));
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+      vi.mocked(fs.open).mockResolvedValue(mockFileHandle as unknown as FileHandle);
       vi.mocked(fs.rename).mockResolvedValue(undefined);
 
       await modifyJsonWithLock(
@@ -94,8 +107,7 @@ describe('fileLock', () => {
         defaultValue,
       );
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
+      expect(mockFileHandle.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('"count": 2'),
         'utf-8',
       );
@@ -105,8 +117,9 @@ describe('fileLock', () => {
       const filePath = '/data/test.json';
       const defaultValue = { count: 0 };
 
-      vi.mocked(fs.access).mockRejectedValue(new Error('ENOENT'));
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+      const enoentError = Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      vi.mocked(fs.readFile).mockRejectedValue(enoentError);
+      vi.mocked(fs.open).mockResolvedValue(mockFileHandle as unknown as FileHandle);
       vi.mocked(fs.rename).mockResolvedValue(undefined);
 
       await modifyJsonWithLock(
@@ -118,36 +131,39 @@ describe('fileLock', () => {
         defaultValue,
       );
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
+      expect(mockFileHandle.writeFile).toHaveBeenCalledWith(
         expect.stringContaining('"count": 1'),
         'utf-8',
       );
     });
 
-    it('should fall back to default value on parse error', async () => {
+    it('should throw on parse error instead of falling back', async () => {
       const filePath = '/data/test.json';
       const defaultValue = { count: 0 };
 
-      vi.mocked(fs.access).mockResolvedValue(undefined);
+      vi.mocked(fs.stat).mockResolvedValue({ size: 100 } as unknown as Stats);
       vi.mocked(fs.readFile).mockResolvedValue('invalid json');
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fs.rename).mockResolvedValue(undefined);
 
-      await modifyJsonWithLock(
-        filePath,
-        (data: Record<string, number>) => {
-          data.count += 1;
-          return data;
-        },
-        defaultValue,
-      );
+      // Suppress the unhandled rejection from the internal pathLock cleanup chain
+      const suppress = () => {
+        /* swallow */
+      };
+      process.on('unhandledRejection', suppress);
 
-      expect(fs.writeFile).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.stringContaining('"count": 1'),
-        'utf-8',
-      );
+      await expect(
+        modifyJsonWithLock(
+          filePath,
+          (data: Record<string, number>) => {
+            data.count += 1;
+            return data;
+          },
+          defaultValue,
+        ),
+      ).rejects.toThrow('Corrupt JSON');
+
+      // Allow the pathLock cleanup to settle before removing the handler
+      await new Promise((r) => setTimeout(r, 0));
+      process.removeListener('unhandledRejection', suppress);
     });
   });
 });

@@ -14,7 +14,7 @@ export default defineConfig({
       '@renderer': resolve(__dirname, 'src/renderer/src'),
       '@main': resolve(__dirname, 'src/main'),
     },
-    testTimeout: 30000,
+    testTimeout: 10000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],

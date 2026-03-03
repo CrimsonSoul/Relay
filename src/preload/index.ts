@@ -9,6 +9,7 @@ import {
 } from '@shared/ipc';
 
 const api: BridgeAPI = {
+  /** Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
   importGroupsFromCsv: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV),
@@ -171,8 +172,7 @@ const api: BridgeAPI = {
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
   isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
   onMaximizeChange: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) =>
-      callback(_event, maximized);
+    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized);
     ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
   },

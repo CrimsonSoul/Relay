@@ -111,3 +111,5 @@ export const ContactCard = memo(
     );
   },
 );
+
+ContactCard.displayName = 'ContactCard';

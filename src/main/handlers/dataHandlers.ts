@@ -1,5 +1,5 @@
-import { ipcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
+import { BrowserWindow } from 'electron';
+import { IPC_CHANNELS, type AppData } from '@shared/ipc';
 import { FileManager } from '../FileManager';
 import { rateLimiters } from '../rateLimiter';
 import { loggers } from '../logger';
@@ -32,7 +32,7 @@ export function setupDataHandlers(
 
   safeMutation(IPC_CHANNELS.REMOVE_CONTACT, async (_, email) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof email !== 'string' || !email) {
+    if (typeof email !== 'string' || !email || email.length > 1000) {
       loggers.ipc.error('Invalid email parameter');
       return { success: false, error: 'Invalid email' };
     }
@@ -73,7 +73,14 @@ export function setupDataHandlers(
 
   safeMutation(IPC_CHANNELS.RENAME_ONCALL_TEAM, async (_, oldName, newName) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof oldName !== 'string' || !oldName || typeof newName !== 'string' || !newName) {
+    if (
+      typeof oldName !== 'string' ||
+      !oldName ||
+      oldName.length > 500 ||
+      typeof newName !== 'string' ||
+      !newName ||
+      newName.length > 500
+    ) {
       loggers.ipc.error('Invalid team name parameters');
       return { success: false, error: 'Invalid team names' };
     }
@@ -116,7 +123,7 @@ export function setupDataHandlers(
   });
 
   // Dummy data generation — only functional in development
-  ipcMain.handle(IPC_CHANNELS.GENERATE_DUMMY_DATA, async (): Promise<IpcResult> => {
+  safeMutation(IPC_CHANNELS.GENERATE_DUMMY_DATA, async () => {
     const { app } = await import('electron');
     if (app.isPackaged || process.env.NODE_ENV !== 'development') {
       return { success: false, error: 'Not available in production' };
@@ -142,7 +149,7 @@ export function setupDataHandlers(
 
   safeMutation(IPC_CHANNELS.REMOVE_SERVER, async (_, name) => {
     if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
-    if (typeof name !== 'string' || !name) {
+    if (typeof name !== 'string' || !name || name.length > 500) {
       loggers.ipc.error('Invalid server name parameter');
       return { success: false, error: 'Invalid server name' };
     }
@@ -151,14 +158,14 @@ export function setupDataHandlers(
   });
 
   // Data reload
-  ipcMain.handle(IPC_CHANNELS.DATA_RELOAD, async () => {
+  safeMutation(IPC_CHANNELS.DATA_RELOAD, async () => {
     const rateLimitResult = rateLimiters.dataReload.tryConsume();
     if (!rateLimitResult.allowed) return { success: false, rateLimited: true };
     await getFileManager()?.readAndEmit();
     return { success: true };
   });
 
-  ipcMain.handle(IPC_CHANNELS.DATA_GET_INITIAL, async () => {
+  safeMutation(IPC_CHANNELS.DATA_GET_INITIAL, async () => {
     const fileManager = getFileManager();
     if (!fileManager) return null;
     await fileManager.readAndEmit();
@@ -169,6 +176,7 @@ export function setupDataHandlers(
       servers: data.servers.length,
       onCall: data.onCall.length,
     });
-    return { ...data, lastUpdated: Date.now() };
+    const result: AppData = { ...data, lastUpdated: Date.now() };
+    return result;
   });
 }

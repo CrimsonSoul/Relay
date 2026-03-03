@@ -174,6 +174,7 @@ export function setupDataRecordHandlers(getDataRoot: () => Promise<string>) {
 
   // ==================== Data Manager ====================
   safeMutation(IPC_CHANNELS.EXPORT_DATA, async (_, options) => {
+    if (!checkMutationRateLimit()) return { success: false, rateLimited: true };
     const validated = validateIpcDataSafe(ExportOptionsSchema, options, 'EXPORT_DATA', (m, d) =>
       loggers.ipc.warn(m, d),
     );

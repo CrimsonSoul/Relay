@@ -141,6 +141,7 @@ async function parseContactsCsv(content: string): Promise<ImportedContact[]> {
   const titleIdx = matcher.findColumn(CONTACT_COLUMN_ALIASES.title);
 
   const invalidPhones: string[] = [];
+  const invalidEmails: string[] = [];
 
   const records = rows
     .map((row: string[]) => {
@@ -154,6 +155,13 @@ async function parseContactsCsv(content: string): Promise<ImportedContact[]> {
       };
     })
     .filter((c) => c.email) // Must have email
+    .filter((c) => {
+      if (!isValidEmail(c.email)) {
+        invalidEmails.push(c.email);
+        return false;
+      }
+      return true;
+    })
     .map((c) => {
       if (c.phone && !isValidPhone(c.phone)) {
         invalidPhones.push(c.phone);
@@ -162,6 +170,11 @@ async function parseContactsCsv(content: string): Promise<ImportedContact[]> {
       return c;
     });
 
+  if (invalidEmails.length > 0) {
+    loggers.fileManager.warn(
+      `[DataImportOperations] Skipped ${invalidEmails.length} contacts with invalid emails during CSV import`,
+    );
+  }
   if (invalidPhones.length > 0) {
     loggers.fileManager.warn(
       `[DataImportOperations] Cleared ${invalidPhones.length} contacts with invalid phone numbers during CSV import`,
@@ -308,17 +321,11 @@ async function parseOnCallCsv(content: string): Promise<ImportedOnCall[]> {
 }
 
 /**
- * Parse groups from JSON with validation
+ * Validate and normalize an array of group records
  */
-function parseGroupsJson(content: string): ImportedBridgeGroup[] {
-  const data = safeJsonParse(content, 'groups');
-  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).groups || [];
-
-  if (!Array.isArray(records)) {
-    throw new TypeError('Invalid groups data: expected an array');
-  }
+function validateGroupRecords(records: unknown[]): ImportedBridgeGroup[] {
   if (records.length > MAX_IMPORT_RECORDS) {
-    throw new TypeError(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
+    throw new Error(`Import limit exceeded: maximum ${MAX_IMPORT_RECORDS} records allowed`);
   }
 
   return (records as Record<string, unknown>[])
@@ -329,6 +336,20 @@ function parseGroupsJson(content: string): ImportedBridgeGroup[] {
         : [],
     }))
     .filter((g) => g.name); // Must have name
+}
+
+/**
+ * Parse groups from JSON with validation
+ */
+function parseGroupsJson(content: string): ImportedBridgeGroup[] {
+  const data = safeJsonParse(content, 'groups');
+  const records = Array.isArray(data) ? data : (data as Record<string, unknown>).groups || [];
+
+  if (!Array.isArray(records)) {
+    throw new TypeError('Invalid groups data: expected an array');
+  }
+
+  return validateGroupRecords(records);
 }
 
 /**
@@ -431,7 +452,7 @@ async function processImportAll(
   content: string,
   result: ImportResult,
 ): Promise<void> {
-  const data = JSON.parse(content);
+  const data = safeJsonParse(content, 'import-all') as Record<string, unknown>;
 
   if (data.contacts && Array.isArray(data.contacts)) {
     mergeUpsertResult(
@@ -455,7 +476,7 @@ async function processImportAll(
     );
   }
   if (data.groups && Array.isArray(data.groups)) {
-    const validatedGroups = data.groups as ImportedBridgeGroup[];
+    const validatedGroups = validateGroupRecords(data.groups);
     await processGroups(rootDir, validatedGroups, result);
   }
 }

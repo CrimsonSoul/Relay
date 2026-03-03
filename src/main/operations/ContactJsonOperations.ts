@@ -5,6 +5,7 @@
  */
 
 import type { ContactRecord } from '@shared/ipc';
+import { ContactRecordSchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { generateId } from './idUtils';
 import {
@@ -19,6 +20,7 @@ import {
 const config: JsonCrudConfig = {
   fileName: 'contacts.json',
   logPrefix: '[ContactJsonOperations]',
+  recordSchema: ContactRecordSchema,
 };
 
 /**

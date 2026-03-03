@@ -4,6 +4,7 @@
  */
 
 import type { SavedLocation } from '@shared/ipc';
+import { SavedLocationSchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { generateId } from './idUtils';
 import { readAll, modifyItems, deleteById, type JsonCrudConfig } from './jsonCrudHelper';
@@ -11,6 +12,7 @@ import { readAll, modifyItems, deleteById, type JsonCrudConfig } from './jsonCru
 const config: JsonCrudConfig = {
   fileName: 'savedLocations.json',
   logPrefix: '[SavedLocationOperations]',
+  recordSchema: SavedLocationSchema,
 };
 
 export async function getSavedLocations(rootDir: string): Promise<SavedLocation[]> {

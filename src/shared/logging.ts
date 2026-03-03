@@ -2,6 +2,9 @@
  * Shared logging types for main and renderer processes
  */
 import type { LogData } from './types';
+import type { LogEntry } from './ipc';
+
+export type { LogEntry };
 
 export enum LogLevel {
   DEBUG = 0,
@@ -40,15 +43,6 @@ export interface ErrorContext {
   // Renderer specific
   componentStack?: string;
   url?: string;
-}
-
-export interface LogEntry {
-  timestamp: string;
-  level: string;
-  module: string;
-  message: string;
-  data?: LogData;
-  errorContext?: ErrorContext;
 }
 
 export interface ILogger {

@@ -1,5 +1,33 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock secureStorage with an in-memory store
+const secureStore = new Map<string, unknown>();
+vi.mock('../../utils/secureStorage', () => ({
+  secureStorage: {
+    getItemSync: vi.fn((key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItemSync: vi.fn((key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      secureStore.delete(key);
+    }),
+    clear: vi.fn(() => {
+      secureStore.clear();
+    }),
+    getItem: vi.fn(async (key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItem: vi.fn(async (key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+  },
+}));
+
 import { NotesTab } from '../NotesTab';
 
 // Mock @dnd-kit/core
@@ -80,6 +108,7 @@ vi.mock('../../contexts/SearchContext', () => ({
 describe('NotesTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    secureStore.clear();
     localStorage.clear();
     mockDebouncedQuery = '';
   });
@@ -161,8 +190,8 @@ describe('NotesTab', () => {
   });
 
   it('should show empty state when no notes exist', () => {
-    // Pre-set empty localStorage so no sample notes load
-    localStorage.setItem('relay-notepad', '[]');
+    // Pre-set empty store so no sample notes load
+    secureStore.set('relay-notepad', []);
     render(<NotesTab />);
     expect(screen.getByText('No notes yet')).toBeInTheDocument();
     expect(screen.getByText('Create Note')).toBeInTheDocument();
@@ -187,8 +216,8 @@ describe('NotesTab', () => {
     });
     fireEvent.click(screen.getByText('Create'));
 
-    const stored = JSON.parse(localStorage.getItem('relay-notepad') || '[]');
-    expect(stored.some((n: { title: string }) => n.title === 'Persisted Note')).toBe(true);
+    const stored = secureStore.get('relay-notepad') as { title: string }[];
+    expect(stored.some((n) => n.title === 'Persisted Note')).toBe(true);
   });
 
   it('should set data-font-size attribute on the grid', () => {

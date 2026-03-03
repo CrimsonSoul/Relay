@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { secureStorage } from '../utils/secureStorage';
 
 const getAlertKey = (type: string) => {
   const now = new Date();
@@ -15,14 +16,14 @@ export function useAlertDismissal() {
     const saved = new Set<string>();
     ALERT_TYPES.forEach((type) => {
       const k = getAlertKey(type);
-      if (localStorage.getItem(`dismissed-${k}`)) saved.add(k);
+      if (secureStorage.getItemSync<string>(`dismissed-${k}`)) saved.add(k);
     });
     return saved;
   });
 
   const dismissAlert = useCallback((type: string) => {
     const key = getAlertKey(type);
-    localStorage.setItem(`dismissed-${key}`, 'true');
+    secureStorage.setItemSync(`dismissed-${key}`, 'true');
     setDismissedAlerts((prev) => {
       const next = new Set(prev);
       next.add(key);
@@ -31,7 +32,9 @@ export function useAlertDismissal() {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const tick_ = () => {
       setTick(Date.now());
       const newDay = new Date().getDate();
       if (newDay !== currentDay) {
@@ -39,12 +42,42 @@ export function useAlertDismissal() {
         const saved = new Set<string>();
         ALERT_TYPES.forEach((type) => {
           const key = getAlertKey(type);
-          if (localStorage.getItem(`dismissed-${key}`)) saved.add(key);
+          if (secureStorage.getItemSync<string>(`dismissed-${key}`)) saved.add(key);
         });
         setDismissedAlerts(saved);
       }
-    }, 60000);
-    return () => clearInterval(interval);
+    };
+
+    const startInterval = () => {
+      if (!intervalId) {
+        intervalId = setInterval(tick_, 60000);
+      }
+    };
+
+    const stopInterval = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopInterval();
+      } else {
+        // Fire immediately on resume so we catch any day change
+        tick_();
+        startInterval();
+      }
+    };
+
+    startInterval();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopInterval();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [currentDay]);
 
   return {

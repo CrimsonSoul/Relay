@@ -2,6 +2,7 @@ import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { registerTrustedWebviewOrigin, clearTrustedRuntimeOrigins } from '../securityPolicy';
+import { checkMutationRateLimit } from './ipcHelpers';
 
 export function setupConfigHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -43,7 +44,16 @@ export function setupConfigHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.REGISTER_RADAR_URL, (_event, url: string) => {
+    if (!checkMutationRateLimit()) return;
     clearTrustedRuntimeOrigins();
-    if (url) registerTrustedWebviewOrigin(url);
+    if (typeof url !== 'string' || !url || url.length > 2048) return;
+    // Only allow HTTPS URLs to be registered as trusted webview origins
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return;
+    } catch {
+      return;
+    }
+    registerTrustedWebviewOrigin(url);
   });
 }

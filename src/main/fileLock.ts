@@ -26,6 +26,9 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { loggers } from './logger';
 
+// Maximum file size for JSON reads (50 MB). Prevents OOM from unexpectedly large files.
+const MAX_JSON_READ_BYTES = 50 * 1024 * 1024;
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -60,8 +63,14 @@ async function retryOperation<T>(
 export async function atomicWriteWithLock(filePath: string, content: string): Promise<void> {
   const tempPath = `${filePath}.${Date.now()}.${randomUUID()}.tmp`;
   try {
-    // Write temp file
-    await fs.writeFile(tempPath, content, 'utf-8');
+    // Write temp file with fsync to ensure data reaches disk before rename
+    const fh = await fs.open(tempPath, 'w', 0o600);
+    try {
+      await fh.writeFile(content, 'utf-8');
+      await fh.datasync();
+    } finally {
+      await fh.close();
+    }
 
     // Atomic rename with robust retry for Windows/OneDrive latency
     await retryOperation(() => fs.rename(tempPath, filePath));
@@ -81,16 +90,38 @@ export async function atomicWriteWithLock(filePath: string, content: string): Pr
 
 /**
  * Simple read without locking overhead.
+ * Reads the file directly and catches ENOENT, avoiding a stat-then-read TOCTOU race.
  */
 export async function readWithLock(filePath: string): Promise<string | null> {
-  if (!(await fileExists(filePath))) {
-    return null;
-  }
   try {
-    return await retryOperation(() => fs.readFile(filePath, 'utf-8'));
+    // Read the file as a Buffer first so we can check its byte length
+    // before decoding. This avoids a stat-then-read TOCTOU race where the
+    // file could change (or be deleted) between the stat and the read.
+    const buf = await retryOperation(() => fs.readFile(filePath));
+    if (buf.byteLength > MAX_JSON_READ_BYTES) {
+      loggers.fileManager.error('File exceeds maximum read size limit', {
+        filePath,
+        size: buf.byteLength,
+        maxSize: MAX_JSON_READ_BYTES,
+      });
+      throw new Error(
+        `File too large (${buf.byteLength} bytes, max ${MAX_JSON_READ_BYTES}): ${filePath}`,
+      );
+    }
+    return buf.toString('utf-8');
   } catch (error) {
+    // ENOENT means file doesn't exist — return null (expected)
+    if (
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === 'ENOENT'
+    ) {
+      return null;
+    }
+    // All other read failures are real errors — throw to prevent data loss
     loggers.fileManager.error('Read failed:', { error, filePath });
-    return null;
+    throw error;
   }
 }
 
@@ -123,18 +154,22 @@ export function modifyJsonWithLock<T>(
   return withPathLock(filePath, async () => {
     let data: T = defaultValue;
 
-    if (await fileExists(filePath)) {
+    const content = await readWithLock(filePath);
+    if (content !== null) {
       try {
-        const content = await readWithLock(filePath);
-        if (content) {
-          data = JSON.parse(content);
-        }
+        data = JSON.parse(content);
       } catch (err) {
-        loggers.fileManager.error('JSON parse error, starting fresh', {
-          error: err,
-          filePath,
-        });
-        data = defaultValue;
+        // JSON parse error on an existing file — refuse to overwrite to prevent data loss
+        loggers.fileManager.error(
+          'JSON parse error, refusing to overwrite potentially corrupt file',
+          {
+            error: err,
+            filePath,
+          },
+        );
+        throw new Error(
+          `Corrupt JSON in ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 

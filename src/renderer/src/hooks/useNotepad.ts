@@ -3,12 +3,13 @@ import type { NoteColor } from '@shared/ipc';
 import type { FontSize } from '../tabs/notes/types';
 import { useSearchContext } from '../contexts/SearchContext';
 import { useNoteStorage } from './useNoteStorage';
+import { secureStorage } from '../utils/secureStorage';
 
-const FONT_SIZE_KEY = 'relay-notepad-fontsize';
+const FONT_SIZE_KEY = 'notepad-fontsize';
 
 function loadFontSize(): FontSize {
   try {
-    const raw = localStorage.getItem(FONT_SIZE_KEY);
+    const raw = secureStorage.getItemSync<string>(FONT_SIZE_KEY);
     if (raw === 'sm' || raw === 'md' || raw === 'lg') return raw;
   } catch {
     /* ignore */
@@ -29,7 +30,7 @@ export function useNotepad() {
   const setFontSize = useCallback((size: FontSize) => {
     setFontSizeRaw(size);
     try {
-      localStorage.setItem(FONT_SIZE_KEY, size);
+      secureStorage.setItemSync(FONT_SIZE_KEY, size);
     } catch {
       /* ignore */
     }

@@ -97,3 +97,5 @@ export const ServerCard = memo(
     );
   },
 );
+
+ServerCard.displayName = 'ServerCard';

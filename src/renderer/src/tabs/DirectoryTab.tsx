@@ -136,6 +136,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     handleAddWrapper: dir.handleAddWrapper,
     setContextMenu: dir.setContextMenu,
     listContainerRef,
+    rowHeight: ROW_HEIGHT,
   });
 
   const { contextMenu, setContextMenu } = dir;

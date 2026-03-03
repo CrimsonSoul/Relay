@@ -145,6 +145,11 @@ function groupsToCsv(groups: BridgeGroup[], includeMetadata: boolean): string {
  * Escape a CSV field and prevent formula injection.
  * Spreadsheet applications interpret cells starting with =, +, -, @ as formulas.
  * We prefix such values with a single quote to prevent execution.
+ *
+ * NOTE: Google Sheets strips the leading single-quote prefix on import, which may
+ * re-expose formula-triggering characters. This is a known Google Sheets limitation.
+ * The single-quote approach is the industry-standard mitigation (OWASP recommendation)
+ * and works correctly in Excel, LibreOffice Calc, and Numbers.
  */
 function escapeCSV(field: string | number | undefined): string {
   const str = String(field ?? '');

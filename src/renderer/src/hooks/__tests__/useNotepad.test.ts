@@ -20,6 +20,33 @@ vi.mock('../../contexts/SearchContext', () => ({
 }));
 import { useSearchContext } from '../../contexts/SearchContext';
 
+// Mock secureStorage with an in-memory store
+const secureStore = new Map<string, unknown>();
+vi.mock('../../utils/secureStorage', () => ({
+  secureStorage: {
+    getItemSync: vi.fn((key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItemSync: vi.fn((key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      secureStore.delete(key);
+    }),
+    clear: vi.fn(() => {
+      secureStore.clear();
+    }),
+    getItem: vi.fn(async (key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItem: vi.fn(async (key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+  },
+}));
+
 // Mock crypto.randomUUID
 let uuidCounter = 0;
 vi.stubGlobal('crypto', {
@@ -55,6 +82,7 @@ function setSearchQuery(query: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  secureStore.clear();
   localStorage.clear();
   uuidCounter = 0;
   setSearchQuery('');
@@ -71,7 +99,7 @@ describe('useNotepad', () => {
   describe('initial load', () => {
     it('loads notes from localStorage when data exists', () => {
       const stored = [makeNote({ id: 'existing-1', title: 'Stored Note' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(stored));
+      secureStore.set('relay-notepad', stored);
 
       const { result } = renderHook(() => useNotepad());
 
@@ -85,13 +113,13 @@ describe('useNotepad', () => {
       // getSampleNotes creates 5 notes
       expect(result.current.totalCount).toBe(5);
       // Should have been persisted
-      const raw = localStorage.getItem('relay-notepad');
-      expect(raw).not.toBeNull();
-      expect(JSON.parse(raw!).length).toBe(5);
+      const raw = secureStore.get('relay-notepad') as unknown[];
+      expect(raw).toBeDefined();
+      expect(raw.length).toBe(5);
     });
 
     it('returns empty array when localStorage contains corrupted data', () => {
-      localStorage.setItem('relay-notepad', '%%%NOT-JSON%%%');
+      secureStore.set('relay-notepad', '%%%NOT-JSON%%%');
 
       const { result } = renderHook(() => useNotepad());
 
@@ -100,28 +128,25 @@ describe('useNotepad', () => {
     });
 
     it('migrates legacy pinned notes on load', () => {
-      localStorage.setItem(
-        'relay-notepad',
-        JSON.stringify([
-          {
-            id: 'legacy-1',
-            title: 'Legacy note',
-            content: 'legacy content',
-            color: 'amber',
-            tags: ['legacy'],
-            pinned: true,
-            createdAt: 100,
-            updatedAt: 200,
-          },
-        ]),
-      );
+      secureStore.set('relay-notepad', [
+        {
+          id: 'legacy-1',
+          title: 'Legacy note',
+          content: 'legacy content',
+          color: 'amber',
+          tags: ['legacy'],
+          pinned: true,
+          createdAt: 100,
+          updatedAt: 200,
+        },
+      ]);
 
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.notes).toHaveLength(1);
       expect('pinned' in result.current.notes[0]).toBe(false);
 
-      const stored = JSON.parse(localStorage.getItem('relay-notepad') || '[]');
+      const stored = secureStore.get('relay-notepad') as Record<string, unknown>[];
       expect(stored[0]).not.toHaveProperty('pinned');
     });
   });
@@ -132,7 +157,7 @@ describe('useNotepad', () => {
   describe('addNote', () => {
     it('creates a note with UUID and timestamps', () => {
       // Seed localStorage so we start with a known state (no samples)
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
+      secureStore.set('relay-notepad', []);
       const { result } = renderHook(() => useNotepad());
 
       let newNote: ReturnType<typeof result.current.addNote>;
@@ -154,7 +179,7 @@ describe('useNotepad', () => {
 
     it('prepends the new note to the list', () => {
       const existing = [makeNote({ id: 'old', title: 'Old' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(existing));
+      secureStore.set('relay-notepad', existing);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -176,7 +201,7 @@ describe('useNotepad', () => {
   describe('updateNote', () => {
     it('updates the specified note and bumps updatedAt', () => {
       const notes = [makeNote({ id: 'u1', title: 'Original', updatedAt: 100 })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -195,7 +220,7 @@ describe('useNotepad', () => {
   describe('deleteNote', () => {
     it('removes the note from the list', () => {
       const notes = [makeNote({ id: 'd1' }), makeNote({ id: 'd2' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -213,7 +238,7 @@ describe('useNotepad', () => {
   describe('duplicateNote', () => {
     it('copies a note when source is found', () => {
       const notes = [makeNote({ id: 'dup1', title: 'Original', color: 'red', tags: ['x'] })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -228,7 +253,7 @@ describe('useNotepad', () => {
     });
 
     it('does nothing when source is not found', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([makeNote({ id: 'a' })]));
+      secureStore.set('relay-notepad', [makeNote({ id: 'a' })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -249,7 +274,7 @@ describe('useNotepad', () => {
         makeNote({ id: 'r2', title: 'Second' }),
         makeNote({ id: 'r3', title: 'Third' }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -261,7 +286,7 @@ describe('useNotepad', () => {
 
     it('does nothing when activeId equals overId (same index)', () => {
       const notes = [makeNote({ id: 's1' }), makeNote({ id: 's2' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       const before = result.current.notes.map((n) => n.id);
@@ -276,7 +301,7 @@ describe('useNotepad', () => {
 
     it('does nothing when an id is not found', () => {
       const notes = [makeNote({ id: 'f1' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -293,7 +318,7 @@ describe('useNotepad', () => {
         makeNote({ id: 'c', tags: ['ops'] }),
         makeNote({ id: 'd', tags: ['infra'] }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -310,7 +335,7 @@ describe('useNotepad', () => {
   describe('setVisibleOrder', () => {
     it('applies full visible order when all notes are visible', () => {
       const notes = [makeNote({ id: 'a' }), makeNote({ id: 'b' }), makeNote({ id: 'c' })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -327,7 +352,7 @@ describe('useNotepad', () => {
         makeNote({ id: 'c', tags: ['ops'] }),
         makeNote({ id: 'd', tags: ['infra'] }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -366,7 +391,7 @@ describe('useNotepad', () => {
           updatedAt: 100,
         }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
     }
 
     it('filters by debouncedQuery matching title', () => {
@@ -428,7 +453,7 @@ describe('useNotepad', () => {
         makeNote({ id: 'c1', title: 'Alpha', tags: ['work'], updatedAt: 200 }),
         makeNote({ id: 'c2', title: 'Alpha Beta', tags: ['personal'], updatedAt: 100 }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       setSearchQuery('alpha');
       const { result } = renderHook(() => useNotepad());
 
@@ -450,7 +475,7 @@ describe('useNotepad', () => {
   // -------------------------------------------------------------------------
   describe('setFontSize', () => {
     it('updates fontSize state and persists to localStorage', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
+      secureStore.set('relay-notepad', []);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.fontSize).toBe('md'); // default
@@ -460,7 +485,7 @@ describe('useNotepad', () => {
       });
 
       expect(result.current.fontSize).toBe('lg');
-      expect(localStorage.getItem('relay-notepad-fontsize')).toBe('lg');
+      expect(secureStore.get('notepad-fontsize')).toBe('lg');
     });
   });
 
@@ -468,29 +493,29 @@ describe('useNotepad', () => {
   // 11. loadFontSize
   // -------------------------------------------------------------------------
   describe('loadFontSize (via initial state)', () => {
-    it('loads "sm" from localStorage', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
-      localStorage.setItem('relay-notepad-fontsize', 'sm');
+    it('loads "sm" from secureStorage', () => {
+      secureStore.set('relay-notepad', []);
+      secureStore.set('notepad-fontsize', 'sm');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('sm');
     });
 
-    it('loads "lg" from localStorage', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
-      localStorage.setItem('relay-notepad-fontsize', 'lg');
+    it('loads "lg" from secureStorage', () => {
+      secureStore.set('relay-notepad', []);
+      secureStore.set('notepad-fontsize', 'lg');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('lg');
     });
 
     it('defaults to "md" for invalid value', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
-      localStorage.setItem('relay-notepad-fontsize', 'xl');
+      secureStore.set('relay-notepad', []);
+      secureStore.set('notepad-fontsize', 'xl');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('md');
     });
 
     it('defaults to "md" when no value is stored', () => {
-      localStorage.setItem('relay-notepad', JSON.stringify([]));
+      secureStore.set('relay-notepad', []);
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('md');
     });
@@ -505,7 +530,7 @@ describe('useNotepad', () => {
         makeNote({ id: 't1', tags: ['zebra', 'apple'] }),
         makeNote({ id: 't2', tags: ['banana', 'apple'] }),
       ];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.allTags).toEqual(['apple', 'banana', 'zebra']);
@@ -513,7 +538,7 @@ describe('useNotepad', () => {
 
     it('returns empty array when no notes have tags', () => {
       const notes = [makeNote({ id: 'nt1', tags: [] })];
-      localStorage.setItem('relay-notepad', JSON.stringify(notes));
+      secureStore.set('relay-notepad', notes);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.allTags).toEqual([]);

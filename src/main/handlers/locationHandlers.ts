@@ -133,7 +133,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       }
     } catch (err) {
       loggers.ipc.warn('ipapi.co failed', {
-        error: getErrorMessage(err),
+        error: String(getErrorMessage(err)).slice(0, 500),
       });
     }
 
@@ -142,7 +142,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       if (result) return result;
     } catch (err) {
       loggers.ipc.warn('ipinfo.io failed', {
-        error: getErrorMessage(err),
+        error: String(getErrorMessage(err)).slice(0, 500),
       });
     }
 
@@ -152,7 +152,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       if (result) return result;
     } catch (err) {
       loggers.ipc.error('All location providers failed', {
-        error: getErrorMessage(err),
+        error: String(getErrorMessage(err)).slice(0, 500),
       });
     }
     return null;

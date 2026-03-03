@@ -14,6 +14,7 @@ export const ALLOWED_AUX_ROUTES = new Set([
   'popout/board',
 ]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
+const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
 
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
@@ -75,6 +76,10 @@ export function setupWindowHandlers(
       if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
         return false;
       }
+      if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        loggers.ipc.warn('Clipboard image data URL exceeds size limit');
+        return false;
+      }
       const image = nativeImage.createFromDataURL(dataUrl);
       if (image.isEmpty()) return false;
       clipboard.writeImage(image);
@@ -94,6 +99,9 @@ export function setupWindowHandlers(
       try {
         if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
           return { success: false, error: 'Invalid image data' };
+        }
+        if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+          return { success: false, error: 'Image data exceeds size limit' };
         }
         const { canceled, filePath } = await dialog.showSaveDialog({
           defaultPath: suggestedName || 'alert.png',

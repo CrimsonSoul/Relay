@@ -1,3 +1,4 @@
+/** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
   id?: string;
   createdAt?: number;
@@ -14,6 +15,7 @@ export type Contact = {
   raw: ContactRaw;
 };
 
+/** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ServerRaw = {
   id?: string;
   createdAt?: number;
@@ -49,13 +51,6 @@ export type IpcResult<T = void> = {
   data?: T;
   error?: string;
   rateLimited?: boolean;
-};
-
-export type OnCallEntry = {
-  team: string;
-  primary: string; // email
-  backup: string; // email
-  backupLabel?: string;
 };
 
 export type TabName =
@@ -266,6 +261,7 @@ type IpLocationResult = {
 } | null;
 
 export type BridgeAPI = {
+  /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
   openExternal: (url: string) => Promise<void>;
   importGroupsFromCsv: () => Promise<IpcResult>;
@@ -307,7 +303,7 @@ export type BridgeAPI = {
   windowMaximize: () => void;
   windowClose: () => void;
   isMaximized: () => Promise<boolean>;
-  onMaximizeChange: (callback: (event: unknown, maximized: boolean) => void) => () => void;
+  onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
   openAuxWindow: (route: string) => void;
   generateDummyData: () => Promise<IpcResult>;
   getIpLocation: () => Promise<IpLocationResult>;
@@ -390,6 +386,7 @@ export type BridgeAPI = {
   getDataStats: () => Promise<DataStats>;
   // Clipboard
   writeClipboard: (text: string) => Promise<boolean>;
+  /** Accepts PNG data URLs only. This is intentional: clipboard operations use PNG format. */
   writeClipboardImage: (dataUrl: string) => Promise<boolean>;
   // Alerts
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
@@ -532,6 +529,8 @@ export type LogEntry = {
   module: string;
   message: string;
   data?: unknown;
+  timestamp?: string;
+  errorContext?: import('./logging').ErrorContext;
 };
 
 // Bridge Groups - saved recipient lists with metadata

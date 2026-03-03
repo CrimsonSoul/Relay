@@ -35,6 +35,10 @@ export function createFileWatcher(rootDir: string, callbacks: WatcherCallbacks):
   const pendingUpdates = new Set<FileType>();
   let debounceTimer: NodeJS.Timeout | null = null;
 
+  watcher.on('error', (error) => {
+    loggers.fileManager.error('File watcher error', { error, rootDir });
+  });
+
   watcher.on('all', (event, changedPath) => {
     // Always log event to debug sync issues
     const fileName = changedPath.split(/[/\\]/).pop() || '';

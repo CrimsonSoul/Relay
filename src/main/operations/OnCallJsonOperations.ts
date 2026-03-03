@@ -6,6 +6,7 @@
 
 import { join } from 'node:path';
 import type { OnCallRecord } from '@shared/ipc';
+import { OnCallRecordSchema } from '@shared/ipcValidation';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';
 import { modifyJsonWithLock, readWithLock } from '../fileLock';
@@ -25,7 +26,26 @@ export async function getOnCall(rootDir: string): Promise<OnCallRecord[]> {
 
     try {
       const data = JSON.parse(contents);
-      return Array.isArray(data) ? data : [];
+      if (!Array.isArray(data)) return [];
+
+      // Validate each record and filter out malformed ones
+      const valid: OnCallRecord[] = [];
+      let skipped = 0;
+      for (const item of data) {
+        const result = OnCallRecordSchema.safeParse(item);
+        if (result.success) {
+          valid.push(result.data as OnCallRecord);
+        } else {
+          skipped++;
+        }
+      }
+      if (skipped > 0) {
+        loggers.fileManager.warn(
+          `[OnCallJsonOperations] Skipped ${skipped} invalid record(s) during read`,
+          { path, skipped, total: data.length },
+        );
+      }
+      return valid;
     } catch (parseError) {
       loggers.fileManager.error('[OnCallJsonOperations] JSON parse error:', {
         error: parseError,
@@ -196,8 +216,18 @@ export async function updateOnCallTeamJson(
       (records) => {
         const now = Date.now();
 
-        // Find the index of the first record for this team to preserve order
-        const firstIndex = records.findIndex((r) => r.team.trim().toLowerCase() === normalizedTeam);
+        // Count how many non-team records appear before the first team record
+        // to compute the correct insertion index in the filtered array
+        let insertIndex = -1;
+        for (let i = 0; i < records.length; i++) {
+          if (records[i].team.trim().toLowerCase() === normalizedTeam) {
+            // insertIndex = number of non-team records before this position
+            insertIndex = records
+              .slice(0, i)
+              .filter((r) => r.team.trim().toLowerCase() !== normalizedTeam).length;
+            break;
+          }
+        }
 
         // Remove existing records for this team (case-insensitive check for robustness)
         const filtered = records.filter((r) => r.team.trim().toLowerCase() !== normalizedTeam);
@@ -218,14 +248,12 @@ export async function updateOnCallTeamJson(
           `[OnCallJsonOperations] Updated team ${team}: ${recordsWithIds.length} records (IDs preserved)`,
         );
 
-        if (firstIndex !== -1) {
-          // Insert at original position to preserve team order
-          // Note: We use the index from the original array, which corresponds to the insertion point
-          // in the filtered array (assuming all prior items were kept).
+        if (insertIndex !== -1) {
+          // Insert at the correct position in the filtered array
           return [
-            ...filtered.slice(0, firstIndex),
+            ...filtered.slice(0, insertIndex),
             ...recordsWithIds,
-            ...filtered.slice(firstIndex),
+            ...filtered.slice(insertIndex),
           ];
         }
 

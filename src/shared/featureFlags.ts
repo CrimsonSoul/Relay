@@ -7,6 +7,9 @@
  * - User configuration
  * - Runtime conditions
  * - Gradual rollout percentages
+ *
+ * NOTE: This module is currently unused in the application code (no imports outside its own test).
+ * Consider integrating it into the app or removing it in a future cleanup pass.
  */
 
 // Safe access to process.env
@@ -203,9 +206,9 @@ class FeatureFlagManager {
    */
   private simpleHash(str: string): number {
     let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.codePointAt(i) ?? 0;
-      hash = (hash << 5) - hash + char;
+    for (const ch of str) {
+      const code = ch.codePointAt(0) ?? 0;
+      hash = (hash << 5) - hash + code;
       hash = hash & hash; // Convert to 32-bit integer
     }
     return Math.abs(hash);
@@ -278,7 +281,7 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
 }
 
 /**
- * HOC for React components that depend on feature flags
+ * HOC for React components that depend on feature flags.
  * NOTE: This requires React to be available. Import React in your component file.
  *
  * @example
@@ -289,15 +292,15 @@ export function isFeatureEnabled(flagName: keyof FeatureFlags): boolean {
  * const MyFeature = withFeatureFlag(MyComponent, 'enableNewFeature', <div>Coming soon!</div>);
  * ```
  */
-export function withFeatureFlag<P extends object>(
-  Component: (props: P) => unknown, // Function component type without React dependency
+export function withFeatureFlag<P extends object, R = unknown>(
+  Component: (props: P) => R,
   flagName: keyof FeatureFlags,
-  fallback?: unknown,
-) {
-  return function FeatureFlagWrapper(props: P) {
+  fallback: R | null = null,
+): (props: P) => R | null {
+  return function FeatureFlagWrapper(props: P): R | null {
     if (isFeatureEnabled(flagName)) {
       return Component(props);
     }
-    return fallback || null;
+    return fallback;
   };
 }

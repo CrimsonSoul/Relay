@@ -52,7 +52,17 @@ describe('ContactJsonOperations', () => {
   // ── getContacts ─────────────────────────────────────────────────────────────
   describe('getContacts', () => {
     it('returns contacts array from valid JSON', async () => {
-      const data = [{ id: 'c1', email: 'a@example.com', name: 'Alice' }];
+      const data = [
+        {
+          id: 'c1',
+          email: 'a@example.com',
+          name: 'Alice',
+          phone: '555-0001',
+          title: 'Engineer',
+          createdAt: 1000,
+          updatedAt: 1000,
+        },
+      ];
       vi.mocked(readWithLock).mockResolvedValue(JSON.stringify(data));
       const result = await getContacts(rootDir);
       expect(result).toEqual(data);
@@ -70,10 +80,9 @@ describe('ContactJsonOperations', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns empty array on JSON parse error', async () => {
+    it('throws on JSON parse error', async () => {
       vi.mocked(readWithLock).mockResolvedValue('{ invalid json ]]]');
-      const result = await getContacts(rootDir);
-      expect(result).toEqual([]);
+      await expect(getContacts(rootDir)).rejects.toThrow(SyntaxError);
     });
 
     it('throws on non-ENOENT errors (e.g. EACCES)', async () => {
@@ -214,7 +223,17 @@ describe('ContactJsonOperations', () => {
   // ── findContactByEmail ───────────────────────────────────────────────────────
   describe('findContactByEmail', () => {
     it('finds contact by email (case-insensitive)', async () => {
-      const data = [{ id: 'c1', email: 'alice@example.com', name: 'Alice' }];
+      const data = [
+        {
+          id: 'c1',
+          email: 'alice@example.com',
+          name: 'Alice',
+          phone: '555-0001',
+          title: 'Engineer',
+          createdAt: 1000,
+          updatedAt: 1000,
+        },
+      ];
       vi.mocked(readWithLock).mockResolvedValue(JSON.stringify(data));
 
       const result = await findContactByEmail(rootDir, 'ALICE@EXAMPLE.COM');

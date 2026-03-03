@@ -1,7 +1,7 @@
 import React from 'react';
 import { TactileButton } from './TactileButton';
 
-export const TabFallback = ({ error }: { error?: boolean }) => (
+export const TabFallback = ({ error, onReset }: { error?: boolean; onReset?: () => void }) => (
   <div className="tab-fallback">
     {error ? (
       <>
@@ -10,6 +10,11 @@ export const TabFallback = ({ error }: { error?: boolean }) => (
         <div className="tab-fallback-hint">
           Try reloading. If it keeps failing, check data/config in Settings.
         </div>
+        {onReset && (
+          <TactileButton variant="secondary" size="sm" onClick={onReset}>
+            Try Again
+          </TactileButton>
+        )}
         <TactileButton variant="secondary" size="sm" onClick={() => globalThis.location.reload()}>
           Reload Tab
         </TactileButton>

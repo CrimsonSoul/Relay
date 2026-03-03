@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20.18.1'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -57,7 +57,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20.18.1'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -117,7 +117,7 @@ jobs:
           name: ${{ steps.version.outputs.name }}
           body: 'Automated release from workflow dispatch.'
           files: release/Relay.exe
-          draft: false
+          draft: true
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

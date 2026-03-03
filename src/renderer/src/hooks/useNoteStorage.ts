@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { StandaloneNote, NoteColor } from '@shared/ipc';
+import { secureStorage } from '../utils/secureStorage';
 
 const STORAGE_KEY = 'relay-notepad';
 const NOTE_COLOR_SET = new Set<NoteColor>(['amber', 'blue', 'green', 'red', 'purple', 'slate']);
@@ -93,13 +94,12 @@ function getSampleNotes(): StandaloneNote[] {
 
 function loadFromStorage(): StandaloneNote[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = secureStorage.getItemSync<unknown>(STORAGE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as unknown;
-      const normalized = normalizeStoredNotes(parsed);
+      const normalized = normalizeStoredNotes(raw);
 
-      if (Array.isArray(parsed)) {
-        if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+      if (Array.isArray(raw)) {
+        if (JSON.stringify(raw) !== JSON.stringify(normalized)) {
           saveToStorage(normalized);
         }
         return normalized;
@@ -119,7 +119,7 @@ function loadFromStorage(): StandaloneNote[] {
 
 function saveToStorage(notes: StandaloneNote[]) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+    secureStorage.setItemSync(STORAGE_KEY, notes);
   } catch {
     // Storage full or unavailable — silently fail
   }

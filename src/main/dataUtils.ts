@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { app } from 'electron';
 import { loggers } from './logger';
 import { JSON_DATA_FILES } from './operations/FileContext';
+import { atomicWriteWithLock } from './fileLock';
 
 export async function ensureDataFilesAsync(targetRoot: string) {
   try {
@@ -68,10 +69,9 @@ export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {
 
 export async function saveConfigAsync(config: { dataRoot?: string }): Promise<void> {
   try {
-    await fsPromises.writeFile(
+    await atomicWriteWithLock(
       join(app.getPath('userData'), 'config.json'),
       JSON.stringify(config, null, 2),
-      'utf-8',
     );
   } catch (error) {
     loggers.fileManager.error('Failed to save config', { error });

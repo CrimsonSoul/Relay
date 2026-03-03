@@ -84,6 +84,7 @@ if (gotLock) {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // L7: webviewTag is required for RadarTab functionality (embedded radar webviews)
         webviewTag: true,
         webSecurity: true,
         allowRunningInsecureContent: false,
@@ -110,6 +111,9 @@ if (gotLock) {
     const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
 
     // Set Content Security Policy
+    // M5: 'unsafe-eval' in dev is intentional — only enabled when !app.isPackaged for HMR/dev tooling
+    // M4: 'unsafe-inline' for style-src is an accepted risk — React and many UI libraries
+    //     inject inline styles at runtime; removing it would break component rendering
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: {
@@ -181,10 +185,15 @@ if (gotLock) {
     });
 
     // Prevent the main window from navigating away (H-1: navigation hijacking defense)
+    const allowedFilePath = join(__dirname, '../renderer/');
     state.mainWindow.webContents.on('will-navigate', (event, url) => {
       // Allow dev server and local file reloads
       if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
-      if (url.startsWith('file://')) return;
+      // Only allow file:// navigation within the app's renderer directory
+      if (url.startsWith('file://')) {
+        const decodedUrl = decodeURIComponent(url.replace('file://', ''));
+        if (decodedUrl.startsWith(allowedFilePath)) return;
+      }
       loggers.security.warn(`Blocked main window navigation to: ${url}`);
       event.preventDefault();
     });
@@ -274,6 +283,7 @@ if (gotLock) {
     setupWindowListeners(auxWindow);
 
     // Prevent aux window navigation hijacking
+    const auxAllowedFilePath = join(__dirname, '../renderer/');
     auxWindow.webContents.on('will-navigate', (event, url) => {
       if (
         !app.isPackaged &&
@@ -281,7 +291,10 @@ if (gotLock) {
         url.startsWith(process.env.ELECTRON_RENDERER_URL)
       )
         return;
-      if (url.startsWith('file://')) return;
+      if (url.startsWith('file://')) {
+        const decodedUrl = decodeURIComponent(url.replace('file://', ''));
+        if (decodedUrl.startsWith(auxAllowedFilePath)) return;
+      }
       loggers.security.warn(`Blocked aux window navigation to: ${url}`);
       event.preventDefault();
     });

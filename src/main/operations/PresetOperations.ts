@@ -147,6 +147,17 @@ export async function importGroupsFromCsv(rootDir: string): Promise<boolean> {
     if (result.canceled || !result.filePaths[0]) return false;
 
     const filePath = result.filePaths[0];
+
+    // Enforce the same file size limit used by DataImportOperations (50 MB)
+    const MAX_FILE_SIZE = 50 * 1024 * 1024;
+    const stats = await fs.stat(filePath);
+    if (stats.size > MAX_FILE_SIZE) {
+      loggers.fileManager.error(
+        `[GroupOperations] CSV file too large: ${Math.round(stats.size / 1024 / 1024)}MB (max 50MB)`,
+      );
+      return false;
+    }
+
     const content = await fs.readFile(filePath, 'utf-8');
     const rows = await parseCsvAsync(content);
 

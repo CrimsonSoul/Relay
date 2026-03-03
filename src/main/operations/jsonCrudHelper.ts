@@ -7,6 +7,7 @@
  */
 
 import { join } from 'node:path';
+import type { ZodType } from 'zod';
 import { isNodeError } from '@shared/types';
 import { loggers } from '../logger';
 import { modifyJsonWithLock, readWithLock } from '../fileLock';
@@ -19,9 +20,38 @@ export interface JsonCrudConfig {
   fileName: string;
   /** Log prefix for messages (e.g. '[ContactJsonOperations]') */
   logPrefix: string;
+  /** Optional Zod schema to validate each record on read. Invalid records are filtered out with a warning. */
+  recordSchema?: ZodType;
 }
 
 // ── Read helpers ─────────────────────────────────────────────────────
+
+/** Validate an array of items against a Zod schema, filtering out invalid records. */
+function validateRecords<T>(
+  data: unknown[],
+  schema: ZodType,
+  logPrefix: string,
+  path: string,
+): T[] {
+  const valid: T[] = [];
+  let skipped = 0;
+  for (const item of data) {
+    const result = schema.safeParse(item);
+    if (result.success) {
+      valid.push(result.data as T);
+    } else {
+      skipped++;
+    }
+  }
+  if (skipped > 0) {
+    loggers.fileManager.warn(`${logPrefix} Skipped ${skipped} invalid record(s) during read`, {
+      path,
+      skipped,
+      total: data.length,
+    });
+  }
+  return valid;
+}
 
 /**
  * Read all items from a JSON array file.
@@ -34,16 +64,14 @@ export async function readAll<T>(rootDir: string, config: JsonCrudConfig): Promi
     const contents = await readWithLock(path);
     if (!contents) return [];
 
-    try {
-      const data = JSON.parse(contents);
-      return Array.isArray(data) ? data : [];
-    } catch (parseError) {
-      loggers.fileManager.error(`${config.logPrefix} JSON parse error:`, {
-        error: parseError,
-        path,
-      });
-      return [];
+    const data = JSON.parse(contents);
+    if (!Array.isArray(data)) return [];
+
+    if (config.recordSchema) {
+      return validateRecords<T>(data, config.recordSchema, config.logPrefix, path);
     }
+
+    return data;
   } catch (e) {
     if (isNodeError(e) && e.code === 'ENOENT') return [];
     loggers.fileManager.error(`${config.logPrefix} read error:`, { error: e });

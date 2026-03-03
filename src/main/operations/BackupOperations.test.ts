@@ -54,9 +54,20 @@ describe('BackupOperations', () => {
     const oldDate = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
     const oldFolderName = `${oldDate.getFullYear()}-${String(oldDate.getMonth() + 1).padStart(2, '0')}-${String(oldDate.getDate()).padStart(2, '0')}_12-00-00`;
 
-    vi.mocked(fs.readdir).mockResolvedValue([oldFolderName] as unknown as Awaited<
-      ReturnType<typeof fs.readdir>
-    >);
+    // Need more than MIN_BACKUPS_KEPT (3) recent folders so the old one becomes a prune candidate
+    const recent1 = new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000);
+    const recent1Name = `${recent1.getFullYear()}-${String(recent1.getMonth() + 1).padStart(2, '0')}-${String(recent1.getDate()).padStart(2, '0')}_12-00-00`;
+    const recent2 = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+    const recent2Name = `${recent2.getFullYear()}-${String(recent2.getMonth() + 1).padStart(2, '0')}-${String(recent2.getDate()).padStart(2, '0')}_12-00-00`;
+    const recent3 = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const recent3Name = `${recent3.getFullYear()}-${String(recent3.getMonth() + 1).padStart(2, '0')}-${String(recent3.getDate()).padStart(2, '0')}_12-00-00`;
+
+    vi.mocked(fs.readdir).mockResolvedValue([
+      oldFolderName,
+      recent1Name,
+      recent2Name,
+      recent3Name,
+    ] as unknown as Awaited<ReturnType<typeof fs.readdir>>);
 
     await performBackup(rootDir);
 

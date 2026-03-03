@@ -51,10 +51,9 @@ export class FileSystemService {
   public async atomicWrite(fileName: string, content: string): Promise<void> {
     await this.assertSafePath(fileName, this.rootDir);
     const path = join(this.rootDir, fileName);
-    const contentWithBom = content.startsWith('\uFEFF') ? content : '\uFEFF' + content;
-    await retryFileOperation(
-      () => atomicWriteWithLock(path, contentWithBom),
-      `atomicWrite(${fileName})`,
-    );
+    // Only add BOM for CSV files; JSON and other files are written as-is
+    const output =
+      fileName.endsWith('.csv') && !content.startsWith('\uFEFF') ? '\uFEFF' + content : content;
+    await retryFileOperation(() => atomicWriteWithLock(path, output), `atomicWrite(${fileName})`);
   }
 }

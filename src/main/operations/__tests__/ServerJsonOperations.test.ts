@@ -79,11 +79,10 @@ describe('ServerJsonOperations', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns empty array for invalid JSON', async () => {
+    it('throws on invalid JSON', async () => {
       mockRead.mockResolvedValue('bad-json!!!');
 
-      const result = await getServers(rootDir);
-      expect(result).toEqual([]);
+      await expect(getServers(rootDir)).rejects.toThrow(SyntaxError);
     });
 
     it('returns empty array when data is not an array', async () => {

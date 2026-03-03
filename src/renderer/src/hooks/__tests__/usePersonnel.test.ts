@@ -1,9 +1,37 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
-import { usePersonnel } from '../usePersonnel';
 import { NoopToastProvider } from '../../components/Toast';
 import type { OnCallRow } from '@shared/ipc';
+
+// Mock secureStorage with an in-memory store
+const secureStore = new Map<string, unknown>();
+vi.mock('../../utils/secureStorage', () => ({
+  secureStorage: {
+    getItemSync: vi.fn((key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItemSync: vi.fn((key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+    removeItem: vi.fn((key: string) => {
+      secureStore.delete(key);
+    }),
+    clear: vi.fn(() => {
+      secureStore.clear();
+    }),
+    getItem: vi.fn(async (key: string, defaultValue?: unknown) => {
+      const val = secureStore.get(key);
+      return val !== undefined ? val : defaultValue;
+    }),
+    setItem: vi.fn(async (key: string, value: unknown) => {
+      secureStore.set(key, value);
+    }),
+  },
+}));
+
+import { usePersonnel } from '../usePersonnel';
 
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
@@ -34,11 +62,13 @@ describe('usePersonnel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    secureStore.clear();
     (globalThis.window as unknown as { api: typeof mockApi }).api = mockApi;
     localStorage.clear();
   });
 
   afterEach(() => {
+    secureStore.clear();
     localStorage.clear();
   });
 
@@ -223,7 +253,7 @@ describe('usePersonnel', () => {
 
     const key = result.current.getAlertKey('general');
     expect(result.current.dismissedAlerts.has(key)).toBe(true);
-    expect(localStorage.getItem(`dismissed-${key}`)).toBe('true');
+    expect(secureStore.get(`dismissed-${key}`)).toBe('true');
   });
 
   it('handleUpdateRows auto-dismisses general alert on Monday', async () => {

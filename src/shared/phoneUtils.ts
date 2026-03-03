@@ -46,28 +46,26 @@ export const sanitizePhoneNumber = (phone: string): string => {
  */
 const formatUSOrExtension = (clean: string, hasPlus: boolean, phone: string): string | null => {
   // Normalize US with 1 prefix
-  if (!hasPlus && clean.length === 11 && clean.startsWith('1')) {
-    clean = clean.slice(1);
-  }
+  const digits = !hasPlus && clean.length === 11 && clean.startsWith('1') ? clean.slice(1) : clean;
 
   // Internal Extension: (7) 270-5555
-  if (clean.length === 8 && clean.startsWith('7')) {
-    return `(7) ${clean.slice(1, 4)}-${clean.slice(4)}`;
+  if (digits.length === 8 && digits.startsWith('7')) {
+    return `(7) ${digits.slice(1, 4)}-${digits.slice(4)}`;
   }
 
   // Format US 10-digit: (XXX) XXX-XXXX
-  if (clean.length === 10 && (!hasPlus || phone.startsWith('+1'))) {
-    return `(${clean.slice(0, 3)}) ${clean.slice(3, 6)}-${clean.slice(6)}`;
+  if (digits.length === 10 && (!hasPlus || phone.startsWith('+1'))) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
   }
 
   // Format US 7-digit (local)
-  if (clean.length === 7) {
-    return `${clean.slice(0, 3)}-${clean.slice(3)}`;
+  if (digits.length === 7) {
+    return `${digits.slice(0, 3)}-${digits.slice(3)}`;
   }
 
   // Internal Extension (2-6 digits)
-  if (clean.length >= 2 && clean.length <= 6) {
-    return clean;
+  if (digits.length >= 2 && digits.length <= 6) {
+    return digits;
   }
 
   return null;
@@ -82,7 +80,7 @@ const formatInternational = (clean: string, hasPlus: boolean): string | null => 
 
     if (clean.length > 10 && hasPlus) {
       const excess = clean.length - 10;
-      if (excess > 0 && excess < 4) {
+      if (excess < 4) {
         const code = clean.slice(0, excess);
         const rest = clean.slice(excess);
         const formattedRest = `${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6)}`;
@@ -138,7 +136,8 @@ export const formatPhoneNumber = (phone: string): string => {
   const input = phone.trim();
   const digitOnly = input.replaceAll(/\D/g, '');
 
-  // Handle "Run-on" numbers (concatenated 10-digit numbers) without separators
+  // Handle "Run-on" numbers (concatenated 10-digit numbers) without separators.
+  // Assumes US 10-digit format; international numbers use different lengths.
   // e.g. 55555555551111111111 -> split
   if (
     digitOnly.length >= 20 &&
