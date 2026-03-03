@@ -124,7 +124,7 @@ describe('NotesTab', () => {
 
   it('should render the toolbar with font size toggle and new note button', () => {
     render(<NotesTab />);
-    expect(screen.getByText('New Note')).toBeInTheDocument();
+    expect(screen.getByText('NEW NOTE')).toBeInTheDocument();
     expect(screen.getByLabelText('Font size S')).toBeInTheDocument();
     expect(screen.getByLabelText('Font size M')).toBeInTheDocument();
     expect(screen.getByLabelText('Font size L')).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe('NotesTab', () => {
 
   it('should open editor when clicking New Note', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByText('New Note'));
+    fireEvent.click(screen.getByText('NEW NOTE'));
     expect(screen.getByPlaceholderText('Note title...')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('Write something...')).toBeInTheDocument();
     expect(screen.getByText('Create')).toBeInTheDocument();
@@ -174,7 +174,7 @@ describe('NotesTab', () => {
 
   it('should create a new note', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByText('New Note'));
+    fireEvent.click(screen.getByText('NEW NOTE'));
     const titleInput = screen.getByPlaceholderText('Note title...');
     const contentArea = screen.getByPlaceholderText('Write something...');
     fireEvent.change(titleInput, { target: { value: 'Test Note' } });
@@ -199,7 +199,7 @@ describe('NotesTab', () => {
 
   it('should display color swatches in the editor', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByText('New Note'));
+    fireEvent.click(screen.getByText('NEW NOTE'));
     expect(screen.getByLabelText('Amber')).toBeInTheDocument();
     expect(screen.getByLabelText('Blue')).toBeInTheDocument();
     expect(screen.getByLabelText('Green')).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe('NotesTab', () => {
 
   it('should persist notes to localStorage', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByText('New Note'));
+    fireEvent.click(screen.getByText('NEW NOTE'));
     fireEvent.change(screen.getByPlaceholderText('Note title...'), {
       target: { value: 'Persisted Note' },
     });

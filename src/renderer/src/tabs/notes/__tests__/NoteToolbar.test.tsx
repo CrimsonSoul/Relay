@@ -64,7 +64,7 @@ describe('NoteToolbar', () => {
     const onNewNote = vi.fn();
     render(<NoteToolbar {...defaultProps({ onNewNote })} />);
 
-    fireEvent.click(screen.getByText('New Note'));
+    fireEvent.click(screen.getByText('NEW NOTE'));
     expect(onNewNote).toHaveBeenCalledOnce();
   });
 

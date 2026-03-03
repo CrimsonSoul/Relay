@@ -231,7 +231,7 @@
 
 .btn-cancel:hover {
   background: var(--app-surface-3);
-  color: #ffffff;
+  color: var(--color-text-primary);
   border-color: rgba(255, 255, 255, 0.2);
 }
 

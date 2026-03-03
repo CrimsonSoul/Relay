@@ -78,8 +78,8 @@
   --font-family-weather: 'Avenir Next', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 
   /* Font Size Scale — balanced for 10ft/55" and 1ft/24" at 1080p
-     At 1920px: 2xs≈13px, xs≈15px, sm≈17px, base≈20px, lg≈27px */
-  --text-2xs: clamp(11px, 0.7vw, 14px);
+     At 1920px: 2xs≈14px, xs≈15px, sm≈17px, base≈20px, lg≈27px */
+  --text-2xs: clamp(12px, 0.72vw, 14px);
   --text-xs: clamp(13px, 0.8vw, 16px);
   --text-sm: clamp(14px, 0.9vw, 18px);
   --text-base: clamp(16px, 1.05vw, 20px);
