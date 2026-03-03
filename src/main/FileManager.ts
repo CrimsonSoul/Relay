@@ -477,7 +477,9 @@ export class FileManager {
     try {
       const success = await saveAllOnCallJson(this.rootDir, records);
 
-      if (!success) {
+      if (success) {
+        await this.readAndEmit();
+      } else {
         loggers.fileManager.error('saveAllOnCall persistence failed, rolling back');
         this.cache.updateCache({ onCall: previousOnCall });
         this.cache.broadcast();
@@ -486,8 +488,6 @@ export class FileManager {
           message: 'Save all on-call failed. Please try again.',
           file: 'oncall.json',
         });
-      } else {
-        await this.readAndEmit();
       }
 
       return success;

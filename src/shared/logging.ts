@@ -2,9 +2,8 @@
  * Shared logging types for main and renderer processes
  */
 import type { LogData } from './types';
-import type { LogEntry } from './ipc';
 
-export type { LogEntry };
+export type { LogEntry } from './ipc';
 
 export enum LogLevel {
   DEBUG = 0,

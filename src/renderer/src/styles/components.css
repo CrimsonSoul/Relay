@@ -1968,9 +1968,10 @@ body.modal-open {
    =========================== */
 .sortable-edit-row-grid {
   display: grid;
-  grid-template-columns:
-    28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(100px, 130px)
-    28px;
+  grid-template-columns: 28px minmax(110px, 150px) 1fr minmax(120px, 160px) minmax(
+      100px,
+      130px
+    ) 28px;
   gap: 10px;
   align-items: center;
   background: rgba(255, 255, 255, 0.02);
@@ -3363,7 +3364,7 @@ body.modal-open {
   border-radius: 10px;
   text-transform: uppercase;
   flex-shrink: 0;
-  background: var(--severity-color, #888); /* NOSONAR - contrast ensured by severity color values */
+  background: var(--severity-color, #555);
 }
 
 .alert-history-entry-subject {
@@ -5213,18 +5214,23 @@ body.modal-open {
 .note-card--amber {
   background-color: rgba(245, 158, 11, 0.04);
 }
+
 .note-card--blue {
   background-color: rgba(59, 130, 246, 0.04);
 }
+
 .note-card--green {
   background-color: rgba(34, 197, 94, 0.04);
 }
+
 .note-card--red {
   background-color: rgba(239, 68, 68, 0.04);
 }
+
 .note-card--purple {
   background-color: rgba(168, 85, 247, 0.04);
 }
+
 .note-card--slate {
   background-color: rgba(100, 116, 139, 0.04);
 }
@@ -5465,8 +5471,15 @@ body.modal-open {
   display: contents;
 }
 
+.note-editor-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+
 .note-editor-body {
-  padding: 28px;
+  padding: 48px 28px 28px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -5475,14 +5488,15 @@ body.modal-open {
 }
 
 .note-editor-title {
-  background: transparent;
-  border: none;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
   outline: none;
   color: var(--color-text-primary);
   font-size: var(--text-xl);
   font-weight: 600;
   font-family: inherit;
-  padding: 0;
+  padding: 12px;
   width: 100%;
 }
 
@@ -5711,6 +5725,7 @@ body.modal-open {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -6050,14 +6065,6 @@ body.modal-open {
   overflow: hidden;
 }
 
-.alerts-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-bottom: 12px;
-  flex-shrink: 0;
-}
-
 .alerts-toolbar-actions {
   display: flex;
   align-items: center;
@@ -6103,11 +6110,10 @@ body.modal-open {
 
 .alerts-field-label {
   font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: var(--tracking-wider);
+  font-weight: 700;
+  letter-spacing: 0.08em;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
-  font-family: var(--font-family-mono);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6138,14 +6144,18 @@ body.modal-open {
   border: 1px solid var(--color-border-subtle);
   border-radius: 6px;
   padding: 10px 14px;
-  outline: none;
+  outline: none !important;
+  outline-width: 0 !important;
   transition: border-color 0.15s;
   resize: none;
 }
 
-.alerts-input:focus {
+.alerts-input:focus,
+.alerts-input:focus-visible {
   border-color: var(--color-accent);
   background: var(--color-bg-surface);
+  outline: none !important;
+  outline-width: 0 !important;
 }
 
 /* Body Editor (contentEditable + toolbar) */
@@ -6162,6 +6172,13 @@ body.modal-open {
 
 .alerts-body-editor:focus-within {
   border-color: var(--color-accent);
+}
+
+.alerts-body-editor:focus-within .alerts-editable-body,
+.alerts-editable-body:focus,
+.alerts-editable-body:focus-visible {
+  outline: none !important;
+  outline-width: 0 !important;
 }
 
 .alerts-body-toolbar {
@@ -6225,7 +6242,7 @@ body.modal-open {
   flex: 1;
 }
 
-.alerts-editable-body:focus {
+.alerts-body-editor:focus-within .alerts-editable-body {
   background: var(--color-bg-surface);
 }
 
@@ -6241,6 +6258,9 @@ body.modal-open {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 6px;
+  border: none;
+  margin: 0;
+  padding: 0;
 }
 
 .alerts-sev-btn {
@@ -6266,32 +6286,32 @@ body.modal-open {
 
 .alerts-sev-btn.active[data-sev='MAJOR'] {
   background: rgba(211, 47, 47, 0.12);
-  border-color: #b71c1c;
-  color: #b71c1c;
+  border-color: #ef5350;
+  color: #ef5350;
 }
 
 .alerts-sev-btn.active[data-sev='MINOR'] {
   background: rgba(234, 88, 12, 0.12);
-  border-color: #9a3412;
-  color: #9a3412;
+  border-color: #fb923c;
+  color: #fb923c;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {
   background: rgba(202, 138, 4, 0.12);
-  border-color: #78350f;
-  color: #78350f;
+  border-color: #fbbf24;
+  color: #fbbf24;
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
   background: rgba(37, 99, 235, 0.12);
-  border-color: #1e40af;
-  color: #1e40af;
+  border-color: #60a5fa;
+  color: #60a5fa;
 }
 
 .alerts-sev-btn.active[data-sev='RESOLVED'] {
   background: rgba(46, 125, 50, 0.12);
-  border-color: #1b5e20;
-  color: #1b5e20;
+  border-color: #66bb6a;
+  color: #66bb6a;
 }
 
 /* --- Preview Panel (Right) --- */

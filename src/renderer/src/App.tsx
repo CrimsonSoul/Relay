@@ -43,6 +43,8 @@ const PopoutBoard = lazy(() =>
   import('./components/PopoutBoard').then((m) => ({ default: m.PopoutBoard })),
 );
 
+const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
+
 export function MainApp() {
   const { showToast } = useToast();
   const deviceLocation = useLocation();
@@ -207,7 +209,7 @@ export function MainApp() {
         </div>
         <div className="popout-body">
           {popoutRoute?.includes('board') && (
-            <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+            <ErrorBoundary fallback={errorFallback}>
               <Suspense fallback={<TabFallback />}>
                 <PopoutBoard
                   onCall={data.onCall}
@@ -277,7 +279,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <AssemblerTab
                     groups={data.groups}
                     contacts={data.contacts}
@@ -300,7 +302,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <PersonnelTab
                       onCall={data.onCall}
@@ -315,7 +317,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'People' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <DirectoryTab
                       contacts={data.contacts}
@@ -330,7 +332,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Weather' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <WeatherTab
                       weather={weatherData}
@@ -348,7 +350,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <ServersTab servers={data.servers} contacts={data.contacts} />
                   </Suspense>
@@ -359,7 +361,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Radar' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <RadarTab />
                   </Suspense>
@@ -370,7 +372,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <NotesTab />
                   </Suspense>
@@ -381,7 +383,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Status' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <CloudStatusTab
                       statusData={cloudStatusData}
@@ -396,7 +398,7 @@ export function MainApp() {
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Alerts' ? ' tab-panel--active' : ''}`}
               >
-                <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+                <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <AlertsTab />
                   </Suspense>
@@ -410,7 +412,7 @@ export function MainApp() {
           <WindowControls />
         </div>
 
-        <ErrorBoundary fallback={(reset) => <TabFallback error onReset={reset} />}>
+        <ErrorBoundary fallback={errorFallback}>
           <Suspense fallback={null}>
             {settingsOpen && (
               <SettingsModal

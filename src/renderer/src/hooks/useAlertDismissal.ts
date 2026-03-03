@@ -49,9 +49,7 @@ export function useAlertDismissal() {
     };
 
     const startInterval = () => {
-      if (!intervalId) {
-        intervalId = setInterval(tick_, 60000);
-      }
+      intervalId ??= setInterval(tick_, 60000);
     };
 
     const stopInterval = () => {
