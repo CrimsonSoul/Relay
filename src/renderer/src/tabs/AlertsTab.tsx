@@ -77,9 +77,9 @@ export const AlertsTab: React.FC = () => {
     el.style.minWidth = '640px';
     try {
       return await html2canvas(el, {
-        scale: 2,
+        scale: 3,
         useCORS: true,
-        backgroundColor: '#ffffff',
+        backgroundColor: null,
         logging: false,
       });
     } finally {
