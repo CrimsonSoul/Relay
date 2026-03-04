@@ -41,7 +41,7 @@ export const WorldClock: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
-  const [popoverPos, setPopoverPos] = useState({ top: 0, right: 0 });
+  const [popoverPos, setPopoverPos] = useState({ top: 0, left: 0 });
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -55,31 +55,18 @@ export const WorldClock: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Position the popover when opening
+  // Position the popover centered under the trigger
   useEffect(() => {
     if (isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
       setPopoverPos({
         top: rect.bottom + 8,
-        right: window.innerWidth - rect.right,
+        left: rect.left + rect.width / 2,
       });
     }
   }, [isOpen]);
 
-  // Close on outside click
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (
-        triggerRef.current?.contains(e.target as Node) ||
-        popoverRef.current?.contains(e.target as Node)
-      )
-        return;
-      setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [isOpen]);
+  const closePopover = useCallback(() => setIsOpen(false), []);
 
   // Close on Escape
   useEffect(() => {
@@ -164,13 +151,16 @@ export const WorldClock: React.FC = () => {
 
       {isOpen &&
         createPortal(
-          <div
-            ref={popoverRef}
-            className="world-clock-popover"
-            style={{ top: popoverPos.top, right: popoverPos.right }}
-          >
-            {secondaryZoneItems}
-          </div>,
+          <>
+            <div role="presentation" className="world-clock-backdrop" onMouseDown={closePopover} />
+            <div
+              ref={popoverRef}
+              className="world-clock-popover"
+              style={{ top: popoverPos.top, left: popoverPos.left }}
+            >
+              {secondaryZoneItems}
+            </div>
+          </>,
           document.body,
         )}
     </div>

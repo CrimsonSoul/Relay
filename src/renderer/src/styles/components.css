@@ -1091,9 +1091,17 @@ input.tactile-input.tactile-input:focus {
   font-weight: 500;
 }
 
+.world-clock-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  -webkit-app-region: no-drag;
+}
+
 .world-clock-popover {
   position: fixed;
   z-index: 9999;
+  transform: translateX(-50%);
   background-color: var(--color-bg-chrome);
   background-image: var(--chrome-pattern);
   background-size: var(--chrome-pattern-size);
