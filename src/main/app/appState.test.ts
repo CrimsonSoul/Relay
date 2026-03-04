@@ -137,6 +137,17 @@ describe('appState', () => {
       expect(root).toContain('data');
       expect(ensureDataFilesAsync).toHaveBeenCalled();
     });
+
+    it('retries initialization after an initial failure', async () => {
+      vi.mocked(loadConfigAsync)
+        .mockRejectedValueOnce(new Error('temporary failure'))
+        .mockResolvedValueOnce({ dataRoot: '/custom/data' });
+      vi.mocked(ensureDataFilesAsync).mockResolvedValue(undefined);
+
+      await expect(getDataRoot()).rejects.toThrow('temporary failure');
+      await expect(getDataRoot()).resolves.toBe('/custom/data');
+      expect(loadConfigAsync).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe('handleDataPathChange', () => {

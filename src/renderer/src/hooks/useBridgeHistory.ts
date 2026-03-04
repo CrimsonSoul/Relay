@@ -64,49 +64,67 @@ export function useBridgeHistory() {
 
   const addHistory = useCallback(
     async (entry: Omit<BridgeHistoryEntry, 'id' | 'timestamp'>) => {
-      const result = await globalThis.api?.addBridgeHistory(entry);
-      const normalized = normalizeBridgeHistoryEntry(
-        isIpcResult<BridgeHistoryEntry>(result) ? result.data : result,
-      );
+      try {
+        const result = await globalThis.api?.addBridgeHistory(entry);
+        const normalized = normalizeBridgeHistoryEntry(
+          isIpcResult<BridgeHistoryEntry>(result) ? result.data : result,
+        );
 
-      if (normalized) {
-        setHistory((prev) => [normalized, ...prev]);
-      } else {
+        if (normalized) {
+          setHistory((prev) => [normalized, ...prev]);
+        } else {
+          showToast('Failed to save bridge history', 'error');
+        }
+
+        return normalized;
+      } catch (error) {
+        loggers.app.error('Failed to add bridge history', { error });
         showToast('Failed to save bridge history', 'error');
+        return null;
       }
-
-      return normalized;
     },
     [showToast],
   );
 
   const deleteHistory = useCallback(
     async (id: string) => {
-      const result = await globalThis.api?.deleteBridgeHistory(id);
-      const success = isIpcResult(result) ? result.success : !!result;
+      try {
+        const result = await globalThis.api?.deleteBridgeHistory(id);
+        const success = isIpcResult(result) ? result.success : !!result;
 
-      if (success) {
-        setHistory((prev) => prev.filter((h) => h.id !== id));
-        showToast('History entry deleted', 'success');
-      } else {
+        if (success) {
+          setHistory((prev) => prev.filter((h) => h.id !== id));
+          showToast('History entry deleted', 'success');
+        } else {
+          showToast('Failed to delete history entry', 'error');
+        }
+        return success;
+      } catch (error) {
+        loggers.app.error('Failed to delete bridge history', { error });
         showToast('Failed to delete history entry', 'error');
+        return false;
       }
-      return success;
     },
     [showToast],
   );
 
   const clearHistory = useCallback(async () => {
-    const result = await globalThis.api?.clearBridgeHistory();
-    const success = isIpcResult(result) ? result.success : !!result;
+    try {
+      const result = await globalThis.api?.clearBridgeHistory();
+      const success = isIpcResult(result) ? result.success : !!result;
 
-    if (success) {
-      setHistory([]);
-      showToast('Bridge history cleared', 'success');
-    } else {
+      if (success) {
+        setHistory([]);
+        showToast('Bridge history cleared', 'success');
+      } else {
+        showToast('Failed to clear history', 'error');
+      }
+      return success;
+    } catch (error) {
+      loggers.app.error('Failed to clear bridge history', { error });
       showToast('Failed to clear history', 'error');
+      return false;
     }
-    return success;
   }, [showToast]);
 
   return {

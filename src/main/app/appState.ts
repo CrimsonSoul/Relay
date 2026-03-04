@@ -50,12 +50,17 @@ export async function getDataRoot(): Promise<string> {
 
   // Coalesce concurrent callers behind a single promise
   dataRootPromise ??= (async () => {
-    const config = await loadConfigAsync();
-    const root = config.dataRoot || getDefaultDataPath();
-    await ensureDataFilesAsync(root);
-    state.currentDataRoot = root;
-    loggers.main.info('Data root resolved', { path: root });
-    return root;
+    try {
+      const config = await loadConfigAsync();
+      const root = config.dataRoot || getDefaultDataPath();
+      await ensureDataFilesAsync(root);
+      state.currentDataRoot = root;
+      loggers.main.info('Data root resolved', { path: root });
+      return root;
+    } catch (error) {
+      dataRootPromise = null;
+      throw error;
+    }
   })();
 
   return dataRootPromise;

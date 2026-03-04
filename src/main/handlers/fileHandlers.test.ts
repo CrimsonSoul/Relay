@@ -70,6 +70,11 @@ describe('fileHandlers', () => {
       expect(shell.openPath).toHaveBeenCalledWith('/data/relay/contacts.csv');
     });
 
+    it('resolves relative paths against data root before opening', async () => {
+      await handlers[IPC_CHANNELS.OPEN_PATH](null, './contacts.csv');
+      expect(shell.openPath).toHaveBeenCalledWith('/data/relay/contacts.csv');
+    });
+
     it('blocks when rate limited', async () => {
       vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValueOnce({
         allowed: false,

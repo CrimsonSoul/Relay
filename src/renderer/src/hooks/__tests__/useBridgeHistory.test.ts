@@ -139,6 +139,26 @@ describe('useBridgeHistory', () => {
     expect(result.current.history).toHaveLength(2); // No new entry
   });
 
+  it('handles addHistory rejection without throwing', async () => {
+    mockApi.addBridgeHistory.mockRejectedValue(new Error('write failed'));
+
+    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(
+        result.current.addHistory({
+          note: 'bad write',
+          groups: [],
+          contacts: ['d@test.com'],
+          recipientCount: 1,
+        }),
+      ).resolves.toBeNull();
+    });
+
+    expect(result.current.history).toHaveLength(2);
+  });
+
   it('deletes a history entry from state', async () => {
     mockApi.deleteBridgeHistory.mockResolvedValue({ success: true });
 
@@ -166,6 +186,19 @@ describe('useBridgeHistory', () => {
     expect(result.current.history).toHaveLength(2);
   });
 
+  it('handles deleteHistory rejection without throwing', async () => {
+    mockApi.deleteBridgeHistory.mockRejectedValue(new Error('delete failed'));
+
+    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.deleteHistory('h1')).resolves.toBe(false);
+    });
+
+    expect(result.current.history).toHaveLength(2);
+  });
+
   it('clears all history', async () => {
     mockApi.clearBridgeHistory.mockResolvedValue({ success: true });
 
@@ -187,6 +220,19 @@ describe('useBridgeHistory', () => {
 
     await act(async () => {
       await result.current.clearHistory();
+    });
+
+    expect(result.current.history).toHaveLength(2);
+  });
+
+  it('handles clearHistory rejection without throwing', async () => {
+    mockApi.clearBridgeHistory.mockRejectedValue(new Error('clear failed'));
+
+    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => {
+      await expect(result.current.clearHistory()).resolves.toBe(false);
     });
 
     expect(result.current.history).toHaveLength(2);

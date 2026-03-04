@@ -64,6 +64,7 @@ export function useAppWeather(
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
+  const missingApiLoggedRef = useRef(false);
 
   // Restore Weather Location and Cached Data (Stale-while-revalidate)
   useEffect(() => {
@@ -77,8 +78,13 @@ export function useAppWeather(
         longitude: Number(loc.longitude ?? loc.lon),
         name: (typeof loc.name === 'string' ? loc.name : undefined) || 'Saved Location',
       };
-      if (Number.isNaN(sanitized.latitude) || Number.isNaN(sanitized.longitude)) return;
-      if (mounted.current) setWeatherLocation(sanitized);
+      if (
+        !Number.isNaN(sanitized.latitude) &&
+        !Number.isNaN(sanitized.longitude) &&
+        mounted.current
+      ) {
+        setWeatherLocation(sanitized);
+      }
     }
 
     // 2. Restore cached weather data and alerts for SWR
@@ -160,7 +166,11 @@ export function useAppWeather(
       try {
         const api = globalThis.api;
         if (!api) {
-          throw new Error('api is not available on globalThis');
+          if (!missingApiLoggedRef.current) {
+            loggers.weather.info('Weather polling disabled: API bridge not available');
+            missingApiLoggedRef.current = true;
+          }
+          return;
         }
         const [wData, aData] = await Promise.all([
           api.getWeather(lat, lon),

@@ -1,5 +1,5 @@
 import { ipcMain, shell } from 'electron';
-import { extname } from 'node:path';
+import { extname, normalize, resolve } from 'node:path';
 import { IPC_CHANNELS, type IpcResult } from '@shared/ipc';
 import { validatePath } from '../utils/pathSafety';
 import { loggers } from '../logger';
@@ -25,17 +25,19 @@ export function setupFileHandlers(getDataRoot: () => Promise<string>) {
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     const root = await getDataRoot();
-    if (!(await validatePath(path, root))) {
+    const resolvedPath = resolve(root, normalize(path));
+
+    if (!(await validatePath(resolvedPath, root))) {
       loggers.security.error(`Blocked access to path outside data root: ${path}`);
       return;
     }
     // Restrict to safe file extensions to prevent arbitrary code execution
-    const ext = extname(path).toLowerCase();
+    const ext = extname(resolvedPath).toLowerCase();
     if (!SAFE_OPEN_EXTENSIONS.has(ext)) {
       loggers.security.error(`Blocked opening file with unsafe extension: ${path}`);
       return;
     }
-    await shell.openPath(path);
+    await shell.openPath(resolvedPath);
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {

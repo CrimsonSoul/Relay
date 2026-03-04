@@ -29,6 +29,16 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
 
   // Track pending API calls to distinguish local optimistic updates from external pushes
   const pendingMutationsRef = useRef(0);
+  const queuedExternalOnCallRef = useRef<OnCallRow[] | null>(null);
+
+  const finishPendingMutation = useCallback(() => {
+    pendingMutationsRef.current = Math.max(0, pendingMutationsRef.current - 1);
+    if (pendingMutationsRef.current === 0 && queuedExternalOnCallRef.current) {
+      const queued = queuedExternalOnCallRef.current;
+      queuedExternalOnCallRef.current = null;
+      setLocalOnCall(queued);
+    }
+  }, []);
 
   // Ref to always hold the latest localOnCall to avoid stale closures in callbacks
   const localOnCallRef = useRef(localOnCall);
@@ -38,6 +48,9 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
   useEffect(() => {
     if (pendingMutationsRef.current === 0) {
       setLocalOnCall(onCall);
+      queuedExternalOnCallRef.current = null;
+    } else {
+      queuedExternalOnCallRef.current = onCall;
     }
   }, [onCall]);
 
@@ -93,10 +106,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
           showToast('Failed to save changes', 'error');
         }
       } finally {
-        pendingMutationsRef.current--;
+        finishPendingMutation();
       }
     },
-    [dismissAlert, showToast],
+    [dismissAlert, showToast, finishPendingMutation],
   );
 
   const handleRemoveTeam = useCallback(
@@ -111,10 +124,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
           showToast('Failed to remove team', 'error');
         }
       } finally {
-        pendingMutationsRef.current--;
+        finishPendingMutation();
       }
     },
-    [showToast],
+    [showToast, finishPendingMutation],
   );
 
   const handleRenameTeam = useCallback(
@@ -131,10 +144,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
           showToast('Failed to rename team', 'error');
         }
       } finally {
-        pendingMutationsRef.current--;
+        finishPendingMutation();
       }
     },
-    [showToast],
+    [showToast, finishPendingMutation],
   );
 
   const handleAddTeam = useCallback(
@@ -169,10 +182,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         showToast('Failed to add team', 'error');
         loggers.app.warn('[useOnCallManager] Failed to add team', { error: err });
       } finally {
-        pendingMutationsRef.current--;
+        finishPendingMutation();
       }
     },
-    [showToast],
+    [showToast, finishPendingMutation],
   );
 
   const handleReorderTeams = useCallback(
@@ -203,10 +216,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
           showToast('Failed to save team order', 'error');
         }
       } finally {
-        pendingMutationsRef.current--;
+        finishPendingMutation();
       }
     },
-    [showToast],
+    [showToast, finishPendingMutation],
   );
 
   return {

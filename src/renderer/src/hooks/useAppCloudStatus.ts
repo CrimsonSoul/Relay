@@ -48,6 +48,7 @@ export function useAppCloudStatus(
   const [statusData, setStatusData] = useState<CloudStatusData | null>(null);
   const [loading, setLoading] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
+  const missingApiLoggedRef = useRef(false);
 
   // Restore from cache on mount (stale-while-revalidate) and seed seen IDs
   useEffect(() => {
@@ -95,7 +96,13 @@ export function useAppCloudStatus(
       if (!silent && mounted.current) setLoading(true);
       try {
         const api = globalThis.api;
-        if (!api) throw new Error('API bridge not available');
+        if (!api) {
+          if (!missingApiLoggedRef.current) {
+            loggers.app.info('Cloud status polling disabled: API bridge not available');
+            missingApiLoggedRef.current = true;
+          }
+          return;
+        }
 
         // Run fetch and minimum spinner duration in parallel for manual refresh
         const [data] = await Promise.all([

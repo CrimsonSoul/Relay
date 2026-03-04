@@ -138,6 +138,39 @@ describe('useOnCallManager', () => {
       resolveUpdate(true);
       await updatePromise;
     });
+
+    it('applies latest external onCall once in-flight mutation completes', async () => {
+      let resolveUpdate!: (value: boolean) => void;
+      mockApi.updateOnCallTeam.mockReturnValue(
+        new Promise<boolean>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+      );
+
+      const { result, rerender } = renderHook(
+        ({ onCall }) => useOnCallManager(onCall, dismissAlert),
+        { initialProps: { onCall: defaultRows } },
+      );
+
+      let mutationPromise: Promise<void> | undefined;
+      act(() => {
+        mutationPromise = result.current.handleUpdateRows('Alpha', [
+          makeRow({ id: 'r1', team: 'Alpha', name: 'Alice Updated' }),
+        ]);
+      });
+
+      const externalRows = [makeRow({ id: 'r99', team: 'External', name: 'External' })];
+      rerender({ onCall: externalRows });
+
+      expect(result.current.localOnCall).not.toEqual(externalRows);
+
+      resolveUpdate(true);
+      await act(async () => {
+        await mutationPromise;
+      });
+
+      expect(result.current.localOnCall).toEqual(externalRows);
+    });
   });
 
   // ---------------------------------------------------------------------------

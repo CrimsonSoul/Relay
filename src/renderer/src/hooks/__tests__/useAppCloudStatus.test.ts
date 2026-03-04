@@ -391,10 +391,10 @@ describe('useAppCloudStatus', () => {
     });
 
     expect(result.current.statusData).toBeNull();
-    expect(loggerMock.error).toHaveBeenCalledWith(
-      'Cloud status fetch failed',
-      expect.objectContaining({ error: 'API bridge not available' }),
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      'Cloud status polling disabled: API bridge not available',
     );
+    expect(loggerMock.error).not.toHaveBeenCalled();
   });
 
   // ------- polling -------
