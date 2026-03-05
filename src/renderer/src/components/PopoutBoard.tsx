@@ -19,7 +19,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   contacts,
   teamLayout: _teamLayout,
 }) => {
-  const { localOnCall, weekRange, dismissedAlerts, getAlertKey, currentDay, teams, tick } =
+  const { localOnCall, weekRange, dismissedAlerts, getAlertKey, dayOfWeek, teams, tick } =
     usePersonnel(onCall);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
@@ -63,7 +63,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
   const renderAlerts = () =>
     alertConfigs
-      .filter((c) => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type)))
+      .filter((c) => c.day === dayOfWeek && !dismissedAlerts.has(getAlertKey(c.type)))
       .map((c) => {
         const isDanger = c.tone === 'danger';
         return (

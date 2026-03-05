@@ -177,6 +177,22 @@ describe('windowHandlers', () => {
     });
   });
 
+  describe('ONCALL_ALERT_DISMISSED', () => {
+    it('broadcasts alert dismissal to all windows', () => {
+      onHandlers[IPC_CHANNELS.ONCALL_ALERT_DISMISSED](null, 'oracle');
+      expect(mockWin.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.ONCALL_ALERT_DISMISSED,
+        'oracle',
+      );
+    });
+
+    it('skips destroyed windows', () => {
+      vi.mocked(mockWin.isDestroyed).mockReturnValueOnce(true);
+      onHandlers[IPC_CHANNELS.ONCALL_ALERT_DISMISSED](null, 'oracle');
+      expect(mockWin.webContents.send).not.toHaveBeenCalled();
+    });
+  });
+
   describe('CLIPBOARD_WRITE', () => {
     it('writes text to clipboard and returns true', async () => {
       const result = await (

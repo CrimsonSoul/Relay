@@ -54,6 +54,15 @@ export function setupWindowHandlers(
     });
   });
 
+  // On-Call Alert Dismissal Sync - broadcast to all windows
+  ipcMain.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, (_event, type: string) => {
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type);
+      }
+    });
+  });
+
   // Clipboard - use Electron's native clipboard API
   ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (_, text: string) => {
     try {

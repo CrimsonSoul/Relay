@@ -58,6 +58,8 @@ describe('usePersonnel', () => {
     removeOnCallTeam: vi.fn(),
     renameOnCallTeam: vi.fn(),
     reorderOnCallTeams: vi.fn(),
+    onAlertDismissed: vi.fn(() => vi.fn()),
+    notifyAlertDismissed: vi.fn(),
   };
 
   beforeEach(() => {

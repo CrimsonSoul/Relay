@@ -10,6 +10,7 @@ const ALERT_TYPES = ['first-responder', 'general', 'sql', 'oracle'] as const;
 
 export function useAlertDismissal() {
   const [currentDay, setCurrentDay] = useState(new Date().getDate());
+  const [dayOfWeek, setDayOfWeek] = useState(new Date().getDay());
   const [tick, setTick] = useState(Date.now());
 
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(() => {
@@ -29,6 +30,8 @@ export function useAlertDismissal() {
       next.add(key);
       return next;
     });
+    // Broadcast to other windows (main <-> popout)
+    globalThis.api?.notifyAlertDismissed(type);
   }, []);
 
   useEffect(() => {
@@ -36,7 +39,9 @@ export function useAlertDismissal() {
 
     const tick_ = () => {
       setTick(Date.now());
-      const newDay = new Date().getDate();
+      const now = new Date();
+      const newDay = now.getDate();
+      setDayOfWeek(now.getDay());
       if (newDay !== currentDay) {
         setCurrentDay(newDay);
         const saved = new Set<string>();
@@ -72,9 +77,21 @@ export function useAlertDismissal() {
     startInterval();
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // Listen for alert dismissals from other windows
+    const cleanupAlertListener = globalThis.api?.onAlertDismissed((type: string) => {
+      const key = getAlertKey(type);
+      secureStorage.setItemSync(`dismissed-${key}`, 'true');
+      setDismissedAlerts((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    });
+
     return () => {
       stopInterval();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      cleanupAlertListener?.();
     };
   }, [currentDay]);
 
@@ -82,7 +99,7 @@ export function useAlertDismissal() {
     dismissedAlerts,
     dismissAlert,
     getAlertKey,
-    currentDay,
+    dayOfWeek,
     tick,
   };
 }

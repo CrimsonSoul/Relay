@@ -17,6 +17,7 @@ import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
+import '@fontsource/montserrat/800.css';
 
 export const AlertsTab: React.FC = () => {
   const { showToast } = useToast();
@@ -54,9 +55,17 @@ export const AlertsTab: React.FC = () => {
       });
   }, []);
 
-  const formatDate = (timestamp: string): string => {
-    const date = timestamp ? new Date(timestamp) : new Date();
-    if (timestamp && Number.isNaN(date.getTime())) return 'Invalid date';
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    if (customTimestamp) return;
+    const id = setInterval(() => setNow(new Date()), 15_000);
+    return () => clearInterval(id);
+  }, [customTimestamp]);
+
+  const formattedDate = useMemo(() => {
+    const date = customTimestamp ? new Date(customTimestamp) : now;
+    if (customTimestamp && Number.isNaN(date.getTime())) return 'Invalid date';
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -65,9 +74,7 @@ export const AlertsTab: React.FC = () => {
       minute: '2-digit',
       hour12: true,
     });
-  };
-
-  const formattedDate = formatDate(customTimestamp);
+  }, [customTimestamp, now]);
 
   const captureCard = useCallback(async (): Promise<HTMLCanvasElement> => {
     if (!cardRef.current) throw new Error('Card ref not available');

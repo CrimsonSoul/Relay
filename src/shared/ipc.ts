@@ -312,6 +312,9 @@ export type BridgeAPI = {
   notifyDragStart: () => void;
   notifyDragStop: () => void;
   onDragStateChange: (callback: (isDragging: boolean) => void) => () => void;
+  // On-Call Alert Dismissal Sync
+  notifyAlertDismissed: (type: string) => void;
+  onAlertDismissed: (callback: (type: string) => void) => () => void;
   // Bridge Groups
   getGroups: () => Promise<BridgeGroup[]>;
   saveGroup: (
@@ -508,6 +511,8 @@ export const IPC_CHANNELS = {
   // Drag Sync
   DRAG_STARTED: 'drag:started',
   DRAG_STOPPED: 'drag:stopped',
+  // On-Call Alert Dismissal Sync
+  ONCALL_ALERT_DISMISSED: 'oncall:alertDismissed',
 } as const;
 
 export type WeatherAlert = {
