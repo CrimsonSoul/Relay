@@ -18,7 +18,7 @@ vi.mock('../../utils/logger', () => ({
 const makeEntry = (overrides: Partial<AlertHistoryEntry> = {}): AlertHistoryEntry => ({
   id: 'a1',
   timestamp: 1000,
-  severity: 'MAJOR',
+  severity: 'ISSUE',
   subject: 'Server down',
   bodyHtml: '<p>Details</p>',
   sender: 'ops@test.com',
@@ -29,7 +29,7 @@ const makeEntry = (overrides: Partial<AlertHistoryEntry> = {}): AlertHistoryEntr
 describe('useAlertHistory', () => {
   const mockHistory: AlertHistoryEntry[] = [
     makeEntry({ id: 'a1', timestamp: 1000 }),
-    makeEntry({ id: 'a2', timestamp: 2000, severity: 'MINOR', subject: 'High latency' }),
+    makeEntry({ id: 'a2', timestamp: 2000, severity: 'MAINTENANCE', subject: 'High latency' }),
   ];
 
   const mockApi = {
@@ -123,7 +123,7 @@ describe('useAlertHistory', () => {
 
     it('filters entries with invalid severity', async () => {
       mockApi.getAlertHistory.mockResolvedValue([
-        makeEntry({ id: 'ok', severity: 'MAJOR' }),
+        makeEntry({ id: 'ok', severity: 'ISSUE' }),
         { ...makeEntry({ id: 'bad' }), severity: 'UNKNOWN' },
       ]);
 
@@ -199,7 +199,7 @@ describe('useAlertHistory', () => {
       let returned: AlertHistoryEntry | null = null;
       await act(async () => {
         returned = await result.current.addHistory({
-          severity: 'MAJOR',
+          severity: 'ISSUE',
           subject: 'New alert',
           bodyHtml: '<p>Details</p>',
           sender: 'ops@test.com',
@@ -221,7 +221,7 @@ describe('useAlertHistory', () => {
 
       await act(async () => {
         await result.current.addHistory({
-          severity: 'MAJOR',
+          severity: 'ISSUE',
           subject: 'Server down',
           bodyHtml: '<p>Details</p>',
           sender: 'ops@test.com',
@@ -242,7 +242,7 @@ describe('useAlertHistory', () => {
       let returned: AlertHistoryEntry | null = null;
       await act(async () => {
         returned = await result.current.addHistory({
-          severity: 'MAJOR',
+          severity: 'ISSUE',
           subject: 'New alert',
           bodyHtml: '<p>Details</p>',
           sender: 'ops@test.com',
@@ -264,7 +264,7 @@ describe('useAlertHistory', () => {
       let returned: AlertHistoryEntry | null = null;
       await act(async () => {
         returned = await result.current.addHistory({
-          severity: 'MINOR',
+          severity: 'MAINTENANCE',
           subject: 'Test',
           bodyHtml: '<p>Test</p>',
           sender: 'a@b.com',

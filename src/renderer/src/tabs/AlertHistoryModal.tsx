@@ -4,8 +4,7 @@ import { TactileButton } from '../components/TactileButton';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
 const SEVERITY_DOT_COLORS: Record<string, string> = {
-  MAJOR: '#d32f2f',
-  MINOR: '#e65100',
+  ISSUE: '#d32f2f',
   MAINTENANCE: '#f9a825',
   INFO: '#1565c0',
   RESOLVED: '#2e7d32',

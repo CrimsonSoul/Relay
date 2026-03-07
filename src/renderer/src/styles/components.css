@@ -6291,16 +6291,10 @@ body.modal-open {
   color: var(--color-text-primary);
 }
 
-.alerts-sev-btn.active[data-sev='MAJOR'] {
+.alerts-sev-btn.active[data-sev='ISSUE'] {
   background: rgba(211, 47, 47, 0.12);
   border-color: #ef5350;
   color: #ef5350;
-}
-
-.alerts-sev-btn.active[data-sev='MINOR'] {
-  background: rgba(234, 88, 12, 0.12);
-  border-color: #fb923c;
-  color: #fb923c;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {

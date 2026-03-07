@@ -45,3 +45,6 @@ data/*.json
 
 # Local Electron Binaries
 .electron/
+
+# Local git worktrees
+.worktrees/

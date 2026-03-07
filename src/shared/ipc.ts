@@ -561,7 +561,7 @@ export type BridgeHistoryEntry = {
 export type AlertHistoryEntry = {
   id: string;
   timestamp: number;
-  severity: 'MAJOR' | 'MINOR' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
+  severity: 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
   subject: string;
   bodyHtml: string;
   sender: string;

@@ -98,7 +98,7 @@ export const BridgeHistoryEntrySchema = z.object({
 export const AlertHistoryEntrySchema = z.object({
   id: z.string().max(MAX_ID).optional(),
   timestamp: z.number().optional(),
-  severity: z.enum(['MAJOR', 'MINOR', 'MAINTENANCE', 'INFO', 'RESOLVED']),
+  severity: z.enum(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']),
   subject: z.string().max(MAX_NOTE),
   bodyHtml: z.string().max(MAX_HTML_BODY),
   sender: z.string().max(MAX_NOTE),

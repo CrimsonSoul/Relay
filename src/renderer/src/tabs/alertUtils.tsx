@@ -1,15 +1,14 @@
 import React from 'react';
 
-export type Severity = 'MAJOR' | 'MINOR' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
+export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
 
-export const SEVERITIES: Severity[] = ['MAJOR', 'MINOR', 'MAINTENANCE', 'INFO', 'RESOLVED'];
+export const SEVERITIES: Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
 export const SEVERITY_COLORS: Record<
   Severity,
   { banner: string; bannerEnd: string; badgeBg: string; badgeText: string }
 > = {
-  MAJOR: { banner: '#d32f2f', bannerEnd: '#b71c1c', badgeBg: '#ffebee', badgeText: '#c62828' },
-  MINOR: { banner: '#e65100', bannerEnd: '#bf360c', badgeBg: '#fff3e0', badgeText: '#bf360c' },
+  ISSUE: { banner: '#d32f2f', bannerEnd: '#b71c1c', badgeBg: '#ffebee', badgeText: '#c62828' },
   MAINTENANCE: {
     banner: '#f9a825',
     bannerEnd: '#f57f17',
@@ -21,7 +20,7 @@ export const SEVERITY_COLORS: Record<
 };
 
 export const SEVERITY_ICONS: Record<Severity, React.ReactNode> = {
-  MAJOR: (
+  ISSUE: (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
       <path
         d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3"
@@ -29,13 +28,6 @@ export const SEVERITY_ICONS: Record<Severity, React.ReactNode> = {
       />
       <path d="M12 9v4" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
       <circle cx="12" cy="17" r="1.2" fill="#fff" />
-    </svg>
-  ),
-  MINOR: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="9" fill="#e65100" />
-      <path d="M12 8v4" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" />
-      <circle cx="12" cy="16" r="1.2" fill="#fff" />
     </svg>
   ),
   MAINTENANCE: (

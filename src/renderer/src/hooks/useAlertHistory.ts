@@ -9,7 +9,7 @@ const isObject = (value: unknown): value is Record<string, unknown> =>
 const isIpcResult = <T>(value: unknown): value is IpcResult<T> =>
   isObject(value) && typeof value.success === 'boolean';
 
-const VALID_SEVERITIES = new Set(['MAJOR', 'MINOR', 'MAINTENANCE', 'INFO', 'RESOLVED']);
+const VALID_SEVERITIES = new Set(['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED']);
 
 const normalizeAlertHistoryEntry = (value: unknown): AlertHistoryEntry | null => {
   if (!isObject(value)) return null;

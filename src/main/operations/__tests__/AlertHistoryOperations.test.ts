@@ -125,7 +125,7 @@ describe('AlertHistoryOperations', () => {
       });
 
       const result = await addAlertHistory(rootDir, {
-        severity: 'MAJOR',
+        severity: 'ISSUE',
         subject: 'Outage Alert',
         bodyHtml: '<strong>Systems down</strong>',
         sender: 'NOC',
@@ -133,7 +133,7 @@ describe('AlertHistoryOperations', () => {
 
       expect(result).not.toBeNull();
       expect(result!.id).toBe('test-id-123');
-      expect(result!.severity).toBe('MAJOR');
+      expect(result!.severity).toBe('ISSUE');
       expect(result!.subject).toBe('Outage Alert');
       expect(captured).toBeDefined();
       expect(captured[0]?.id).toBe('test-id-123');
