@@ -16,10 +16,10 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -32,7 +32,7 @@ jobs:
           echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
 
       - name: Cache Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/electron
           key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
@@ -63,10 +63,10 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -80,7 +80,7 @@ jobs:
           echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
 
       - name: Cache Electron binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/AppData/Local/electron/Cache
@@ -94,7 +94,7 @@ jobs:
         run: npm run build:win
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: relay-windows
           path: release/*.exe
