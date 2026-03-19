@@ -6388,7 +6388,7 @@ body.modal-open {
 }
 
 .alerts-email-header-logo {
-  max-height: 48px;
+  max-height: 36px;
   width: auto;
   max-width: 200px;
   object-fit: contain;
