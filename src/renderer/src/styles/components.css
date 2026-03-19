@@ -6388,12 +6388,12 @@ body.modal-open {
 }
 
 .alerts-email-header-logo {
-  max-height: 32px;
+  max-height: 48px;
   width: auto;
-  max-width: 160px;
+  max-width: 200px;
   object-fit: contain;
   flex-shrink: 0;
-  opacity: 0.9;
+  opacity: 1;
 }
 
 .alerts-email-icon-wrapper {
