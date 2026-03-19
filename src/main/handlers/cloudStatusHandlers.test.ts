@@ -346,22 +346,36 @@ describe('cloudStatusHandlers', () => {
   // --- Google Cloud parsing ---
 
   it('parses Google Cloud incidents with most_recent_update timestamp', async () => {
+    const now = Date.now();
+    const t = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    // gc-1: ongoing outage 5 days ago with a most_recent_update
+    const gc1Begin = t(-5 * DAY);
+    const gc1Modified = t(-5 * DAY + 2 * 3600_000);
+    const gc1MostRecent = t(-5 * DAY + 6 * 3600_000);
+
+    // gc-2: resolved 4 days ago, no most_recent_update — pubDate falls to modified
+    const gc2Begin = t(-4 * DAY);
+    const gc2End = t(-4 * DAY + 3 * 3600_000);
+    const gc2Modified = t(-4 * DAY + 5 * 3600_000);
+
     const incidents = [
       {
         id: 'gc-1',
         external_desc: 'Outage',
-        begin: '2026-02-28T10:00:00Z',
-        modified: '2026-02-28T12:00:00Z',
+        begin: gc1Begin,
+        modified: gc1Modified,
         status_impact: 'SERVICE_OUTAGE',
         uri: '/incidents/1',
-        most_recent_update: { text: 'Outage update', when: '2026-02-28T16:00:00Z' },
+        most_recent_update: { text: 'Outage update', when: gc1MostRecent },
       },
       {
         id: 'gc-2',
         external_desc: 'Resolved',
-        begin: '2026-02-28T10:00:00Z',
-        end: '2026-02-28T13:00:00Z',
-        modified: '2026-02-28T15:00:00Z',
+        begin: gc2Begin,
+        end: gc2End,
+        modified: gc2Modified,
         status_impact: 'SERVICE_DISRUPTION',
         uri: '/incidents/2',
       },
@@ -386,10 +400,10 @@ describe('cloudStatusHandlers', () => {
     const gcItems = result.providers.google;
 
     expect(gcItems[0]?.severity).toBe('error');
-    expect(gcItems[0]?.pubDate).toBe('2026-02-28T16:00:00Z');
+    expect(gcItems[0]?.pubDate).toBe(gc1MostRecent);
     // Ended incident with no most_recent_update falls to 'modified'
     expect(gcItems[1]?.severity).toBe('resolved');
-    expect(gcItems[1]?.pubDate).toBe('2026-02-28T15:00:00Z');
+    expect(gcItems[1]?.pubDate).toBe(gc2Modified);
   });
 
   // --- Salesforce parsing ---

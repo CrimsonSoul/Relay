@@ -13,6 +13,8 @@ vi.mock('../../contexts', () => ({
 describe('WorldClock', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Freeze to January (standard time) so America/Chicago shows CST, not CDT
+    vi.setSystemTime(new Date('2026-01-15T12:00:00Z'));
   });
 
   afterEach(() => {
