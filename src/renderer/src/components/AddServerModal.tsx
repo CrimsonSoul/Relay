@@ -65,7 +65,10 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await globalThis.api.addServer(formData);
+      const serverId = serverToEdit?.raw?.id;
+      const result = serverId
+        ? await globalThis.api.updateServerRecord(serverId, formData)
+        : await globalThis.api.addServer(formData);
       if (result?.success) {
         onClose();
       } else {

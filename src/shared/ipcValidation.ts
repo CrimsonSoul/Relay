@@ -43,9 +43,9 @@ export const ServerSchema = z.object({
   businessArea: z.string().max(MAX_FIELD),
   lob: z.string().max(MAX_FIELD),
   comment: z.string().max(MAX_NOTE),
-  // owner and contact are email fields (can be empty when unknown)
-  owner: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
-  contact: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
+  // owner and contact may contain emails or free-text names
+  owner: z.string().max(MAX_FIELD),
+  contact: z.string().max(MAX_FIELD),
   os: z.string().max(MAX_FIELD),
   _searchString: z.string().max(MAX_SEARCH).optional(),
   raw: z
@@ -121,9 +121,9 @@ export const ServerRecordInputSchema = z.object({
   businessArea: z.string().max(MAX_FIELD),
   lob: z.string().max(MAX_FIELD),
   comment: z.string().max(MAX_NOTE),
-  // owner and contact are email fields (can be empty when unknown)
-  owner: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
-  contact: z.union([z.literal(''), z.string().email().max(MAX_FIELD)]),
+  // owner and contact may contain emails or free-text names
+  owner: z.string().max(MAX_FIELD),
+  contact: z.string().max(MAX_FIELD),
   os: z.string().max(MAX_FIELD),
 });
 
