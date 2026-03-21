@@ -22,6 +22,7 @@
 - Per-user authentication (shared secret only)
 - Full merge/conflict resolution UI (last-write-wins with conflict log is sufficient)
 - Configurable data root (replaced by portable folder model)
+- Server-mode graceful degradation — if PocketBase crashes on the server and cannot restart, data is inaccessible until the app is restarted. This is acceptable because the server is the source of truth and clients have their own offline cache.
 
 ---
 
@@ -59,6 +60,8 @@ On first launch, user picks mode and enters config. Saved to `config.json` and r
 ### Authentication
 
 Shared secret (passphrase) configured on the server. Clients enter it once alongside the server URL. Prevents casual access from other devices on the network. No user accounts.
+
+**Mechanism:** PocketBase creates a single `relay_user` auth record on first setup with the configured passphrase as its password. Clients authenticate on connect via `pb.collection('users').authWithPassword('relay', secret)`. All collection rules require `@request.auth.id != ""` — unauthenticated requests are rejected. The PocketBase JS SDK stores the auth token and includes it on all subsequent requests automatically.
 
 ---
 
@@ -116,10 +119,14 @@ Relay/
 
 ### Shutdown (Server Mode)
 
-1. `app.on('before-quit')` → send SIGTERM to PocketBase child process
+1. `app.on('before-quit')` → gracefully stop PocketBase
+   - **Windows:** Use `taskkill /PID <pid>` to send WM_CLOSE, allowing PocketBase to flush SQLite WAL cleanly
+   - **macOS/Linux:** Send SIGTERM via `child.kill('SIGTERM')`
 2. Wait up to 5s for graceful exit
-3. Force kill if still alive
+3. Force kill if still alive (`child.kill('SIGKILL')` / `taskkill /F /PID <pid>`)
 4. Electron exits
+
+Note: Even on force-kill, SQLite with WAL mode is crash-safe by design — data will not be corrupted.
 
 ### Crash Recovery (Server Mode)
 
@@ -180,7 +187,7 @@ PocketBase auto-generates `id` (string), `created` (datetime), and `updated` (da
 | contacts       | json   | string array |
 | recipientCount | number |              |
 
-Retention: 30 days, max 100 entries.
+Retention: 30 days, max 100 entries. Enforced by server-side cleanup (see below).
 
 ### alert_history
 
@@ -194,7 +201,17 @@ Retention: 30 days, max 100 entries.
 | pinned    | bool   | default false                      |
 | label     | text   | only when pinned                   |
 
-Retention: 90 days unpinned, pinned kept indefinitely. Max 50 unpinned + 100 pinned.
+Retention: 90 days unpinned, pinned kept indefinitely. Max 50 unpinned + 100 pinned. Enforced by server-side cleanup (see below).
+
+### Retention Enforcement
+
+The Electron main process (server mode only) runs a cleanup task on startup and every 24 hours:
+
+- Delete `bridge_history` records older than 30 days, keep max 100
+- Delete unpinned `alert_history` records older than 90 days, keep max 50 unpinned + 100 pinned
+- Delete `conflict_log` entries older than 90 days
+
+Cleanup runs via PocketBase API calls (filter + delete), not direct SQL.
 
 ### notes
 
@@ -276,18 +293,29 @@ src/renderer/hooks/
 CONNECTING → ONLINE → OFFLINE → RECONNECTING → ONLINE
 ```
 
+### Online-to-Offline Detection
+
+The app uses multiple signals to detect loss of connectivity:
+
+1. **API error catching:** Any PocketBase API call that fails with a network error transitions to offline state
+2. **SSE monitoring:** The realtime subscription's `onerror`/`onclose` events trigger offline detection
+3. **Periodic heartbeat:** Health check runs every 30s even while online (`GET /api/health`), catches silent SSE disconnects (common over VPN)
+
+All three mechanisms feed into the same state transition. A single failure triggers offline mode immediately — no waiting for multiple failures.
+
 ### Online Mode
 
 - PocketBase JS SDK talks directly to server
 - Realtime SSE subscriptions keep UI in sync across all windows/clients
 - Every received event also updates the local cache (client mode)
+- Periodic 30s health check detects silent disconnects
 
 ### Offline Mode (Client Only)
 
 - Reads from local SQLite cache (`cache.db`) via IPC to main process
 - Writes queued in `pending_changes.db` (mutation type, collection, data, timestamp)
 - UI shows "offline" indicator
-- Periodic health check every 30s polls server
+- Periodic health check every 30s polls server for reconnection
 
 ### Reconnection Sync
 
@@ -325,9 +353,12 @@ On first server-mode launch, if legacy JSON files are detected:
    - Convert `createdAt`/`updatedAt` millisecond timestamps to PocketBase datetime format
    - Flatten `notes.json` nested structure into individual records with `entityType` discriminator
    - Generate `sortOrder` for `oncall` records based on array position
+   - `bridgeGroups.json` (managed by `PresetOperations.ts`) maps to the `bridge_groups` collection
 4. Batch-insert into PocketBase collections
 5. Rename originals (e.g., `contacts.json` → `contacts.json.migrated`)
 6. Log migration summary (record counts per collection, errors if any)
+
+**Failure recovery:** If migration fails partway through (e.g., crash during batch insert), the JSON files are still in their original state (not yet renamed). On next launch, the migration detects the JSON files again and retries. To avoid duplicates, the migration deletes all PocketBase data for any collection that has a corresponding un-renamed JSON file before re-importing. This makes the migration idempotent — safe to retry from any failure point.
 
 ---
 
@@ -369,6 +400,15 @@ Export categories: per-collection or "all".
 - No PocketBase admin UI exposed to clients (admin routes restricted to localhost)
 - Existing security posture maintained: context isolation, CSP, path validation in Electron
 
+### CSP Changes
+
+The renderer needs `fetch` access to PocketBase's HTTP endpoint and SSE endpoint for realtime. CSP `connect-src` must be set dynamically at window creation based on `config.json`:
+
+- **Server mode:** `connect-src 'self' http://127.0.0.1:<port>`
+- **Client mode:** `connect-src 'self' http://<serverUrl>`
+
+This is configured in the BrowserWindow's `webPreferences` or via a custom session handler before the renderer loads.
+
 ---
 
 ## 11. Development Experience
@@ -393,6 +433,16 @@ Export categories: per-collection or "all".
 - Build script to download PocketBase binary per target platform
 - New dependencies: `pocketbase` (JS SDK), `better-sqlite3` (offline cache), `exceljs` (Excel import/export)
 - Removed: `chokidar`
+- `npmRebuild` must be enabled (or `electron-rebuild` run as a postinstall step) because `better-sqlite3` is a native C++ addon that requires compilation against Electron's Node.js ABI. Alternatively, `sql.js` (pure WASM, no native compilation) could be used if native module pain becomes an issue.
+
+### Platform Considerations
+
+The app builds for Windows (portable exe) and macOS (DMG). Platform-specific differences:
+
+- **Binary naming:** `pocketbase.exe` (Windows) vs `pocketbase` (macOS/Linux)
+- **Shutdown signals:** `taskkill` on Windows, SIGTERM on macOS/Linux (see Section 5)
+- **Portable folder semantics:** On Windows the folder is self-contained; on macOS the binary lives inside the `.app` bundle's Resources directory
+- **Download script:** Must select the correct PocketBase release binary per platform+arch (win-amd64, darwin-arm64, darwin-amd64)
 
 ### Codebase Changes
 
