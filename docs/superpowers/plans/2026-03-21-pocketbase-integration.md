@@ -6,9 +6,18 @@
 
 **Architecture:** PocketBase runs as a child process spawned by Electron main. Renderer talks directly to PocketBase REST API via the official JS SDK. Clients cache data locally in SQLite (better-sqlite3) for offline fallback, with a pending-changes queue that syncs on reconnection using last-write-wins with conflict logging.
 
-**Tech Stack:** PocketBase (Go binary), pocketbase JS SDK, better-sqlite3 (offline cache), exceljs (Excel import/export), Zod (validation)
+**Tech Stack:** PocketBase (Go binary), pocketbase JS SDK, better-sqlite3 (offline cache), exceljs (Excel import/export), papaparse (CSV parsing in renderer), Zod (validation)
 
 **Spec:** `docs/superpowers/specs/2026-03-21-pocketbase-integration-design.md`
+
+### Important Implementation Notes
+
+1. **Logger pattern:** The codebase uses `import { loggers } from '../logger'` with pre-configured child loggers. New modules should add children to the `loggers` export in `src/main/logger.ts` (e.g., `pocketbase: logger.createChild('PocketBase')`). Do NOT use `createLogger()` — that function does not exist.
+2. **PocketBase migration syntax:** Verify the exact migration JS API for PocketBase v0.25.9 before writing migration files. The field definition format changed significantly in v0.23+. Consult the official PocketBase v0.25.x migration docs.
+3. **Node.js modules in renderer:** The renderer runs in a browser context with context isolation. Do NOT import Node.js-only packages (`csv-parse`, `fs`, `path`) in renderer code. Use browser-compatible alternatives: `papaparse` for CSV parsing, `exceljs` (which has browser support via ArrayBuffer). File I/O (save dialog, read file) must go through IPC to the main process.
+4. **Auth user creation:** On first server-mode startup, after PocketBase is healthy, the main process must create the `relay_user` auth record via PocketBase's Admin API if it does not already exist. This is NOT handled by the migration files — it requires the configured passphrase from `config.json`.
+5. **`isStatic` vs `static`:** The `oncall_layout` collection uses `isStatic` instead of `static` to avoid the JavaScript reserved word. The spec says `static` but the implementation deliberately renames it.
+6. **CSP:** The BrowserWindow CSP `connect-src` must be set dynamically based on config mode before the renderer loads. Server mode: `connect-src 'self' http://127.0.0.1:<port>`. Client mode: `connect-src 'self' <serverUrl>`.
 
 ---
 
@@ -99,8 +108,8 @@ Run:
 
 ```bash
 cd /Users/ryan/Apps/Relay
-npm install pocketbase better-sqlite3 exceljs
-npm install -D @types/better-sqlite3
+npm install pocketbase better-sqlite3 exceljs papaparse
+npm install -D @types/better-sqlite3 @types/papaparse
 ```
 
 - [ ] **Step 2: Create PocketBase download script**
@@ -109,11 +118,8 @@ Create `scripts/download-pocketbase.ts`:
 
 ```typescript
 import { execSync } from 'child_process';
-import { existsSync, mkdirSync, createWriteStream, unlinkSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { get } from 'https';
-import { createUnzip } from 'zlib';
-import { Extract } from 'unzip-stream';
 
 const PB_VERSION = '0.25.9';
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
@@ -175,11 +181,13 @@ Add to `scripts` section of `package.json`:
 
 - [ ] **Step 4: Update electron-builder.yml**
 
-Add `extraResources` and update `npmRebuild`:
+Change `npmRebuild` from `false` to `true` (required for `better-sqlite3` native addon). APPEND a second entry to the existing `extraResources` list — do NOT remove the existing `from: resources` / `to: data` entry:
 
 ```yaml
 npmRebuild: true
 extraResources:
+  - from: resources
+    to: data
   - from: 'resources/pocketbase/'
     to: 'pocketbase/'
     filter:
@@ -442,9 +450,9 @@ Create `src/main/pocketbase/PocketBaseProcess.ts`:
 
 ```typescript
 import { spawn, type ChildProcess } from 'child_process';
-import { createLogger } from '../logging/logger';
-
-const logger = createLogger('pocketbase');
+import { loggers } from '../logger';
+// First add to src/main/logger.ts: pocketbase: logger.createChild('PocketBase')
+const logger = loggers.pocketbase;
 
 export interface PocketBaseConfig {
   binaryPath: string;
@@ -2287,9 +2295,9 @@ Create `src/main/cache/SyncManager.ts`:
 ```typescript
 import type PocketBase from 'pocketbase';
 import type { PendingChange } from './PendingChanges';
-import { createLogger } from '../logging/logger';
-
-const logger = createLogger('sync');
+import { loggers } from '../logger';
+// Add to src/main/logger.ts: sync: logger.createChild('Sync')
+const logger = loggers.sync;
 
 export interface SyncResult {
   conflict: boolean;
@@ -2537,9 +2545,9 @@ Create `src/main/migration/JsonMigrator.ts`:
 import { existsSync, readFileSync, renameSync, copyFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import type PocketBase from 'pocketbase';
-import { createLogger } from '../logging/logger';
-
-const logger = createLogger('migration');
+import { loggers } from '../logger';
+// Add to src/main/logger.ts: migration: logger.createChild('Migration')
+const logger = loggers.migration;
 
 interface LegacyContact {
   id: string;
@@ -2840,7 +2848,7 @@ Create `src/renderer/src/services/importExportService.ts`:
 ```typescript
 import { getPb } from './pocketbase';
 import ExcelJS from 'exceljs';
-import { parse as csvParse } from 'csv-parse/sync';
+import Papa from 'papaparse'; // Browser-compatible CSV parser (do NOT use csv-parse in renderer)
 
 const ALL_COLLECTIONS = [
   'contacts',
@@ -2956,12 +2964,12 @@ export async function importFromCsv(
   collection: CollectionName,
   csvString: string,
 ): Promise<{ imported: number; updated: number; errors: string[] }> {
-  const records = csvParse(csvString, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-  }) as Array<Record<string, unknown>>;
-  return bulkUpsert(collection, records);
+  const parsed = Papa.parse(csvString, {
+    header: true,
+    skipEmptyLines: true,
+    trimHeaders: true,
+  });
+  return bulkUpsert(collection, parsed.data as Array<Record<string, unknown>>);
 }
 
 export async function importFromExcel(
@@ -3365,16 +3373,59 @@ getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),
 
 This requires reading the current `index.ts` and replacing the FileManager initialization with PocketBase startup. Key changes:
 
-1. Import `AppConfig` and `PocketBaseProcess`
+1. Import `AppConfig`, `PocketBaseProcess`, `BackupManager`, `RetentionManager`
 2. In the `app.whenReady()` block, after resolving `appRoot`:
    - Create `AppConfig` with `join(appRoot, 'data')`
    - If configured and server mode: create and start `PocketBaseProcess`
+   - **Create the `relay_user` auth record if it doesn't exist:**
+     ```typescript
+     // After PocketBase is healthy, create auth user via Admin API
+     const PocketBase = (await import('pocketbase')).default;
+     const adminPb = new PocketBase(pbProcess.getLocalUrl());
+     // Authenticate as admin (first-run creates admin automatically)
+     try {
+       const users = await adminPb.collection('users').getFullList();
+       if (users.length === 0) {
+         await adminPb.collection('users').create({
+           username: 'relay',
+           password: config.secret,
+           passwordConfirm: config.secret,
+           name: 'Relay User',
+         });
+       }
+     } catch (err) {
+       logger.error('Failed to create auth user', { error: err });
+     }
+     ```
    - Register `PB_GET_URL` and `PB_GET_SECRET` IPC handlers
    - If legacy data detected: run `JsonMigrator`
-3. In `app.on('before-quit')`: stop PocketBase process
-4. Set CSP `connect-src` dynamically based on config
+   - Start `BackupManager` with scheduled daily backups:
+     ```typescript
+     const backupManager = new BackupManager(join(appRoot, 'data'));
+     // Schedule daily backup
+     setInterval(() => backupManager.backup(), 24 * 60 * 60 * 1000);
+     backupManager.backup(); // Initial backup on startup
+     ```
+   - Start `RetentionManager` scheduled cleanup
+3. In `app.on('before-quit')`: stop PocketBase process, stop retention manager
+4. Set CSP `connect-src` dynamically based on config:
+   ```typescript
+   // In BrowserWindow webPreferences or session handler:
+   const pbUrl = config.mode === 'server' ? `http://127.0.0.1:${config.port}` : config.serverUrl;
+   // Add to existing CSP: connect-src 'self' ${pbUrl}
+   ```
+5. Update `appState.ts` to hold the new state shape:
+   ```typescript
+   // Replace fileManager with:
+   pbProcess: PocketBaseProcess | null;
+   appConfig: AppConfig;
+   offlineCache: OfflineCache | null; // client mode only
+   pendingChanges: PendingChanges | null; // client mode only
+   backupManager: BackupManager | null; // server mode only
+   retentionManager: RetentionManager | null; // server mode only
+   ```
 
-The exact edits depend on the current structure of `index.ts`. The implementer should read the file, identify the FileManager init block, and replace it.
+The exact edits depend on the current structure of `index.ts`. The implementer should read the file fully, identify the FileManager init block (around lines 144-152), and replace it with the PocketBase lifecycle above.
 
 - [ ] **Step 6: Update ipcHandlers.ts to register new handlers**
 
@@ -3517,9 +3568,9 @@ Create `src/main/pocketbase/BackupManager.ts`:
 ```typescript
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
 import { join } from 'path';
-import { createLogger } from '../logging/logger';
-
-const logger = createLogger('backup');
+import { loggers } from '../logger';
+// Add to src/main/logger.ts: backup: logger.createChild('Backup')
+const logger = loggers.backup;
 
 export class BackupManager {
   private backupsDir: string;
@@ -3587,9 +3638,9 @@ Create `src/main/pocketbase/RetentionManager.ts`:
 
 ```typescript
 import type PocketBase from 'pocketbase';
-import { createLogger } from '../logging/logger';
-
-const logger = createLogger('retention');
+import { loggers } from '../logger';
+// Add to src/main/logger.ts: retention: logger.createChild('Retention')
+const logger = loggers.retention;
 
 export class RetentionManager {
   private interval: ReturnType<typeof setInterval> | null = null;
@@ -3704,10 +3755,12 @@ git commit -m "feat: add BackupManager and RetentionManager for data lifecycle"
 - Delete: `src/main/handlers/dataRecordHandlers.ts`
 - Delete: `src/main/handlers/featureHandlers.ts`
 - Delete: `src/main/handlers/fileHandlers.ts`
+- Review: `src/main/handlers/authHandlers.ts` — check if it handles auth that is now replaced by PocketBase's built-in auth. If so, delete or refactor. If it handles credential encryption for other features (email, etc.), keep it.
 - Modify: `src/main/ipcHandlers.ts` (remove references to deleted handlers)
 - Modify: `src/preload/index.ts` (remove old data API methods)
 - Modify: `src/shared/ipc.ts` (remove old data channel constants)
 - Modify: `package.json` (remove chokidar)
+- Modify: `src/main/logger.ts` (add new child loggers: pocketbase, sync, migration, backup, retention)
 
 - [ ] **Step 1: Delete old operations directory**
 
@@ -3815,6 +3868,16 @@ npm run dev
 git add -A
 git commit -m "fix: address issues found during integration testing"
 ```
+
+---
+
+## Deferred Items (Post-MVP)
+
+These items from the spec are intentionally deferred to keep the initial implementation focused:
+
+1. **Conflict log viewer UI** — The spec describes a viewable conflict log with "Restore this version" functionality. The `conflict_log` collection and `SyncManager` write logic are implemented, but no renderer component for viewing/restoring conflicts is included in this plan. Add as a follow-up task once the core integration is stable.
+
+2. **SSE `onerror`/`onclose` wiring** — The health check heartbeat covers offline detection, but explicitly wiring SSE connection lifecycle events (`onerror`, `onclose`) from PocketBase's realtime subscriptions into the connection state machine would improve responsiveness. Can be added once the basic realtime flow is working.
 
 ---
 
