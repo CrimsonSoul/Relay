@@ -78,7 +78,6 @@ function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
   return redactedObject;
 }
 
-// eslint-disable-next-line sonarjs/function-return-type
 export function redactSensitiveData(data: LogData): LogData {
   const redacted = redactValue(data, new WeakMap());
   return redacted !== null && typeof redacted === 'object' ? (redacted as LogData) : data;

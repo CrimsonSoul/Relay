@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import html2canvas from 'html2canvas';
+// html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { Modal } from '../components/Modal';
@@ -83,6 +83,7 @@ export const AlertsTab: React.FC = () => {
     const prev = el.style.minWidth;
     el.style.minWidth = '640px';
     try {
+      const { default: html2canvas } = await import('html2canvas');
       return await html2canvas(el, {
         scale: 3,
         useCORS: true,
