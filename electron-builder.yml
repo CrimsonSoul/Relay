@@ -31,6 +31,10 @@ extraResources:
     to: 'pocketbase/'
     filter:
       - '**/*'
+  - from: 'resources/pb_migrations/'
+    to: 'pb_migrations/'
+    filter:
+      - '**/*'
 win:
   target:
     - target: portable
