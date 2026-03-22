@@ -36,12 +36,26 @@ function setConnectionState(state: ConnectionState): void {
 }
 
 export async function authenticate(secret: string): Promise<boolean> {
+  const pb = getPb();
+
+  // Try superuser first (works for server mode and remote clients)
   try {
-    await getPb().collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+    await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
     setConnectionState('online');
     startHealthCheck();
     return true;
-  } catch {
+  } catch (suErr) {
+    console.warn('Superuser auth failed, trying app user', suErr);
+  }
+
+  // Fall back to app user
+  try {
+    await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+    setConnectionState('online');
+    startHealthCheck();
+    return true;
+  } catch (appErr) {
+    console.error('App user auth also failed', appErr);
     return false;
   }
 }
