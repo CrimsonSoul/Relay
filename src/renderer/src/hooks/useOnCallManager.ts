@@ -2,6 +2,12 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { OnCallRow } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
+import {
+  replaceTeamRecords,
+  deleteOnCallByTeam,
+  renameTeam as pbRenameTeam,
+  reorderTeams as pbReorderTeams,
+} from '../services/oncallService';
 
 const getWeekRange = () => {
   const now = new Date();
@@ -15,12 +21,6 @@ const getWeekRange = () => {
     options,
   )}, ${sunday.getFullYear()}`;
 };
-
-function getApi() {
-  const api = globalThis.api;
-  if (!api) throw new Error('API not initialized');
-  return api;
-}
 
 export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: string) => void) {
   const { showToast } = useToast();
@@ -100,11 +100,19 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       setLocalOnCall(buildReorderedList);
 
       try {
-        const success = await getApi().updateOnCallTeam(team, rows);
-        if (!success) {
-          setLocalOnCall(previousList);
-          showToast('Failed to save changes', 'error');
-        }
+        await replaceTeamRecords(
+          team,
+          rows.map((r, i) => ({
+            role: r.role,
+            name: r.name,
+            contact: r.contact,
+            timeWindow: r.timeWindow,
+            sortOrder: i,
+          })),
+        );
+      } catch {
+        setLocalOnCall(previousList);
+        showToast('Failed to save changes', 'error');
       } finally {
         finishPendingMutation();
       }
@@ -116,13 +124,11 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     async (team: string) => {
       pendingMutationsRef.current++;
       try {
-        const success = await getApi().removeOnCallTeam(team);
-        if (success) {
-          setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
-          showToast(`Removed ${team}`, 'success');
-        } else {
-          showToast('Failed to remove team', 'error');
-        }
+        await deleteOnCallByTeam(team);
+        setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
+        showToast(`Removed ${team}`, 'success');
+      } catch {
+        showToast('Failed to remove team', 'error');
       } finally {
         finishPendingMutation();
       }
@@ -134,15 +140,13 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     async (oldName: string, newName: string) => {
       pendingMutationsRef.current++;
       try {
-        const success = await getApi().renameOnCallTeam(oldName, newName);
-        if (success) {
-          setLocalOnCall((prev) =>
-            prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
-          );
-          showToast(`Renamed ${oldName} to ${newName}`, 'success');
-        } else {
-          showToast('Failed to rename team', 'error');
-        }
+        await pbRenameTeam(oldName, newName);
+        setLocalOnCall((prev) =>
+          prev.map((r) => (r.team === oldName ? { ...r, team: newName } : r)),
+        );
+        showToast(`Renamed ${oldName} to ${newName}`, 'success');
+      } catch {
+        showToast('Failed to rename team', 'error');
       } finally {
         finishPendingMutation();
       }
@@ -166,16 +170,14 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       const nextList = [...localOnCallRef.current, initialRow];
       setLocalOnCall(nextList);
 
-      // 2. Perform API calls outside the setter
+      // 2. Perform API calls
       try {
-        const success = await getApi().updateOnCallTeam(name, [initialRow]);
-        if (success) {
-          const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
-          await getApi().reorderOnCallTeams(currentTeams, {});
-          showToast(`Added team ${name}`, 'success');
-        } else {
-          throw new Error('API call failed');
-        }
+        await replaceTeamRecords(name, [
+          { role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
+        ]);
+        const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
+        await pbReorderTeams(currentTeams);
+        showToast(`Added team ${name}`, 'success');
       } catch (err: unknown) {
         // Rollback local state
         setLocalOnCall((p) => p.filter((r) => r.id !== initialRow.id));
@@ -208,13 +210,11 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       setLocalOnCall(newFlatList);
 
       try {
-        const success = await getApi().reorderOnCallTeams(currentTeams, {});
-        if (success) {
-          showToast('Teams reordered', 'success');
-        } else {
-          setLocalOnCall(oldFlatList);
-          showToast('Failed to save team order', 'error');
-        }
+        await pbReorderTeams(currentTeams);
+        showToast('Teams reordered', 'success');
+      } catch {
+        setLocalOnCall(oldFlatList);
+        showToast('Failed to save team order', 'error');
       } finally {
         finishPendingMutation();
       }

@@ -3,6 +3,10 @@ import { Modal } from './Modal';
 import { Input } from './Input';
 import { TactileButton } from './TactileButton';
 import { Server } from '@shared/ipc';
+import {
+  addServer as pbAddServer,
+  updateServer as pbUpdateServer,
+} from '../services/serverService';
 
 interface AddServerModalProps {
   isOpen: boolean;
@@ -57,25 +61,19 @@ export const AddServerModal: React.FC<AddServerModalProps> = ({
 
   const handleSubmit = async () => {
     if (!formData.name) return; // Name is required
-    if (!globalThis.api) {
-      setSubmitError('API not available');
-      return;
-    }
 
     setIsSubmitting(true);
     setSubmitError(null);
     try {
       const serverId = serverToEdit?.raw?.id;
-      const result = serverId
-        ? await globalThis.api.updateServerRecord(serverId, formData)
-        : await globalThis.api.addServer(formData);
-      if (result?.success) {
-        onClose();
+      if (serverId) {
+        await pbUpdateServer(serverId, formData);
       } else {
-        setSubmitError(result?.error || 'Failed to save server');
+        await pbAddServer(formData);
       }
-    } catch {
-      setSubmitError('Failed to save server');
+      onClose();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save server');
     } finally {
       setIsSubmitting(false);
     }

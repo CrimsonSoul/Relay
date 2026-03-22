@@ -14,6 +14,7 @@ import { SetupScreen } from './components/SetupScreen';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { Contact, TabName } from '@shared/ipc';
 import { loggers } from './utils/logger';
+import { addContact as pbAddContact } from './services/contactService';
 // Hooks
 import { useAppWeather } from './hooks/useAppWeather';
 import { useAppData } from './hooks/useAppData';
@@ -114,17 +115,14 @@ export function MainApp() {
 
   // Handler for saving contact
   const handleContactSaved = async (contact: Partial<Contact>) => {
-    if (!globalThis.api) {
-      showToast('API not available', 'error');
-      return;
-    }
     try {
-      const result = await globalThis.api.addContact(contact);
-      if (result.success) {
-        showToast('Contact created successfully', 'success');
-      } else {
-        showToast(result.error || 'Failed to create contact', 'error');
-      }
+      await pbAddContact({
+        name: contact.name || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        title: contact.title || '',
+      });
+      showToast('Contact created successfully', 'success');
     } catch (e) {
       loggers.app.error('Failed to save contact', { error: e });
       showToast('Failed to create contact', 'error');

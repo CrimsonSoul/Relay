@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
 import { loggers } from '../../utils/logger';
+import { updateGroup as pbUpdateGroup } from '../../services/bridgeGroupService';
 
 interface GroupSelectorProps {
   contact: Contact;
@@ -35,10 +36,6 @@ export const GroupSelector = ({
       setUpdating(group.id);
 
       try {
-        if (!globalThis.api) {
-          throw new Error('API not available');
-        }
-
         const contactEmail = contact.email.toLowerCase();
         let newContacts: string[];
 
@@ -48,10 +45,7 @@ export const GroupSelector = ({
           newContacts = [...group.contacts, contact.email];
         }
 
-        const result = await globalThis.api.updateGroup(group.id, { contacts: newContacts });
-        if (!result?.success) {
-          throw new Error(result?.error || 'Failed to update group');
-        }
+        await pbUpdateGroup(group.id, { contacts: newContacts });
       } catch (error) {
         setMembership((prev) => ({ ...prev, [group.id]: previousState ?? false }));
         const message = isMember

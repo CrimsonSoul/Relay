@@ -1,5 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { AppData, Contact, Server, DataError } from '@shared/ipc';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AppData, Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
+import { useCollection } from './useCollection';
+import type { ContactRecord } from '../services/contactService';
+import type { ServerRecord } from '../services/serverService';
+import type { BridgeGroupRecord } from '../services/bridgeGroupService';
+import type { OnCallRecord } from '../services/oncallService';
 import { loggers } from '../utils/logger';
 
 // Dev-only mock data for browser preview (no Electron API available)
@@ -257,157 +262,148 @@ function getDevMockData(): AppData {
   return { groups, contacts, servers, onCall, lastUpdated: now };
 }
 
-// Constants
-const RELOAD_INDICATOR_MIN_DURATION_MS = 900;
-const STUCK_SYNC_TIMEOUT_MS = 5000;
-const INITIAL_DATA_RETRY_ATTEMPTS = 20;
-const INITIAL_DATA_RETRY_DELAY_MS = 100;
+/** Convert a PocketBase ContactRecord to the app Contact type. */
+function toContact(r: ContactRecord): Contact {
+  return {
+    name: r.name,
+    email: r.email,
+    phone: r.phone,
+    title: r.title,
+    _searchString: `${r.name} ${r.email} ${r.phone} ${r.title}`.toLowerCase(),
+    raw: {
+      id: r.id,
+      createdAt: new Date(r.created).getTime(),
+      updatedAt: new Date(r.updated).getTime(),
+    },
+  };
+}
 
-// Format data errors for user-friendly display
-function formatDataError(error: DataError): string {
-  const file = error.file ? ` in ${error.file}` : '';
-  switch (error.type) {
-    case 'validation':
-      if (Array.isArray(error.details) && error.details.length > 0) {
-        const count = error.details.length;
-        return `Data validation: ${count} issue${count > 1 ? 's' : ''} found${file}`;
-      }
-      return error.message;
-    case 'parse':
-      return `Failed to parse data${file}: ${error.message}`;
-    case 'write':
-      return `Failed to save changes${file}`;
-    case 'read':
-      return `Failed to read data${file}`;
-    default:
-      return error.message || 'An unknown error occurred';
-  }
+/** Convert a PocketBase ServerRecord to the app Server type. */
+function toServer(r: ServerRecord): Server {
+  return {
+    name: r.name,
+    businessArea: r.businessArea,
+    lob: r.lob,
+    comment: r.comment,
+    owner: r.owner,
+    contact: r.contact,
+    os: r.os,
+    _searchString:
+      `${r.name} ${r.businessArea} ${r.lob} ${r.comment} ${r.owner} ${r.contact} ${r.os}`.toLowerCase(),
+    raw: {
+      id: r.id,
+      createdAt: new Date(r.created).getTime(),
+      updatedAt: new Date(r.updated).getTime(),
+    },
+  };
+}
+
+/** Convert a PocketBase BridgeGroupRecord to the app BridgeGroup type. */
+function toGroup(r: BridgeGroupRecord): BridgeGroup {
+  return {
+    id: r.id,
+    name: r.name,
+    contacts: r.contacts || [],
+    createdAt: new Date(r.created).getTime(),
+    updatedAt: new Date(r.updated).getTime(),
+  };
+}
+
+/** Convert a PocketBase OnCallRecord to the app OnCallRow type. */
+function toOnCallRow(r: OnCallRecord): OnCallRow {
+  return {
+    id: r.id,
+    team: r.team,
+    role: r.role,
+    name: r.name,
+    contact: r.contact,
+    timeWindow: r.timeWindow,
+  };
 }
 
 export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
-  const [data, setData] = useState<AppData>({
-    groups: [],
-    contacts: [],
-    servers: [],
-    onCall: [],
-    lastUpdated: 0,
-  });
+  // Dev browser preview: no PocketBase, use mock data
+  const [isDevMode] = useState(() => !globalThis.api);
+
+  const {
+    data: contactRecords,
+    loading: contactsLoading,
+    error: contactsError,
+    refetch: refetchContacts,
+  } = useCollection<ContactRecord>('contacts', { sort: 'name' });
+
+  const {
+    data: serverRecords,
+    loading: serversLoading,
+    error: serversError,
+    refetch: refetchServers,
+  } = useCollection<ServerRecord>('servers', { sort: 'name' });
+
+  const {
+    data: groupRecords,
+    loading: groupsLoading,
+    error: groupsError,
+    refetch: refetchGroups,
+  } = useCollection<BridgeGroupRecord>('bridge_groups', { sort: 'name' });
+
+  const {
+    data: oncallRecords,
+    loading: oncallLoading,
+    error: oncallError,
+    refetch: refetchOncall,
+  } = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder' });
+
+  // Transform PB records to app types
+  const contacts = useMemo(() => contactRecords.map(toContact), [contactRecords]);
+  const servers = useMemo(() => serverRecords.map(toServer), [serverRecords]);
+  const groups = useMemo(() => groupRecords.map(toGroup), [groupRecords]);
+  const onCall = useMemo(() => oncallRecords.map(toOnCallRow), [oncallRecords]);
+
+  const isLoading = contactsLoading || serversLoading || groupsLoading || oncallLoading;
   const [isReloading, setIsReloading] = useState(false);
-  const reloadStartRef = useRef<number | null>(null);
-  const reloadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isReloadingRef = useRef(isReloading);
 
-  // Sync ref
+  // Show errors as toasts
   useEffect(() => {
-    isReloadingRef.current = isReloading;
-  }, [isReloading]);
-
-  const settleReloadIndicator = useCallback(() => {
-    if (!reloadStartRef.current) {
-      setIsReloading(false);
-      return;
-    }
-    const elapsed = performance.now() - reloadStartRef.current;
-    const delay = Math.max(RELOAD_INDICATOR_MIN_DURATION_MS - elapsed, 0);
-    if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
-    reloadTimeoutRef.current = setTimeout(() => {
-      setIsReloading(false);
-      reloadStartRef.current = null;
-      reloadTimeoutRef.current = null;
-    }, delay);
-  }, []);
-
-  // Safety timeout to prevent stuck syncing state
+    if (contactsError) showToast(`Contacts: ${contactsError}`, 'error');
+  }, [contactsError, showToast]);
   useEffect(() => {
-    if (isReloading) {
-      const safety = setTimeout(() => {
-        if (isReloadingRef.current) {
-          loggers.app.warn('Force clearing stuck sync indicator after timeout');
-          setIsReloading(false);
-          reloadStartRef.current = null;
-        }
-      }, STUCK_SYNC_TIMEOUT_MS);
-      return () => clearTimeout(safety);
-    }
-  }, [isReloading]);
-
+    if (serversError) showToast(`Servers: ${serversError}`, 'error');
+  }, [serversError, showToast]);
   useEffect(() => {
-    // Dev browser preview: no Electron API, use mock data
-    if (!globalThis.api) {
-      setData(getDevMockData());
-      return;
-    }
+    if (groupsError) showToast(`Groups: ${groupsError}`, 'error');
+  }, [groupsError, showToast]);
+  useEffect(() => {
+    if (oncallError) showToast(`On-Call: ${oncallError}`, 'error');
+  }, [oncallError, showToast]);
 
-    let cancelled = false;
-
-    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-    const fetchInitialData = async () => {
-      for (let attempt = 0; attempt < INITIAL_DATA_RETRY_ATTEMPTS; attempt++) {
-        const initialData = await globalThis.api?.getInitialData();
-        if (initialData) {
-          loggers.app.info('Initial data received', {
-            groups: initialData.groups.length,
-            contacts: initialData.contacts.length,
-            servers: initialData.servers.length,
-            onCall: initialData.onCall.length,
-          });
-          if (!cancelled) setData(initialData);
-          return;
-        }
-        await sleep(INITIAL_DATA_RETRY_DELAY_MS);
-      }
-      loggers.app.warn('Initial data unavailable after retries');
+  // Build AppData object
+  const data = useMemo<AppData>(() => {
+    if (isDevMode) return getDevMockData();
+    return {
+      contacts,
+      servers,
+      groups,
+      onCall,
+      lastUpdated: Date.now(),
     };
-
-    // Fetch initial data with retries to handle startup race with main process init
-    void fetchInitialData();
-
-    const unsubscribeData = globalThis.api.subscribeToData((newData: AppData) => {
-      loggers.app.info('Data update received', {
-        groups: newData.groups.length,
-        contacts: newData.contacts.length,
-        servers: newData.servers.length,
-        onCall: newData.onCall.length,
-      });
-      setData(newData);
-      settleReloadIndicator();
-    });
-    const unsubscribeReloadStart = globalThis.api.onReloadStart(() => {
-      reloadStartRef.current = performance.now();
-      setIsReloading(true);
-    });
-    const unsubscribeReloadComplete = globalThis.api.onReloadComplete(() => {
-      settleReloadIndicator();
-    });
-    const unsubscribeDataError = globalThis.api.onDataError((error: DataError) => {
-      loggers.app.error('Data error received', { error });
-      const errorMessage = formatDataError(error);
-      showToast(errorMessage, 'error');
-    });
-
-    // Ensure at least one reload event after subscriptions are attached.
-    // This prevents a startup race where DATA_UPDATED is emitted before renderer subscribes.
-    void globalThis.api.reloadData();
-
-    return () => {
-      cancelled = true;
-      unsubscribeData();
-      unsubscribeReloadStart();
-      unsubscribeReloadComplete();
-      unsubscribeDataError();
-      if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current);
-    };
-  }, [settleReloadIndicator, showToast]);
+  }, [isDevMode, contacts, servers, groups, onCall]);
 
   const handleSync = useCallback(async () => {
     if (isReloading) return;
-    await globalThis.api?.reloadData();
-  }, [isReloading]);
+    setIsReloading(true);
+    try {
+      await Promise.all([refetchContacts(), refetchServers(), refetchGroups(), refetchOncall()]);
+    } catch (err) {
+      loggers.app.error('Sync failed', { error: err });
+      showToast('Failed to sync data', 'error');
+    } finally {
+      setIsReloading(false);
+    }
+  }, [isReloading, refetchContacts, refetchServers, refetchGroups, refetchOncall, showToast]);
 
   return {
     data,
-    isReloading,
+    isReloading: isReloading || isLoading,
     handleSync,
   };
 }

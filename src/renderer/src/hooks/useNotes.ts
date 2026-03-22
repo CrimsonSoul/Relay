@@ -1,60 +1,55 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { NotesData, NoteEntry } from '@shared/ipc';
 import { loggers } from '../utils/logger';
+import { useCollection } from './useCollection';
+import { setNote as pbSetNote } from '../services/notesService';
+import type { NoteRecord } from '../services/notesService';
+
+function buildNotesData(records: NoteRecord[]): NotesData {
+  const contacts: Record<string, NoteEntry> = {};
+  const servers: Record<string, NoteEntry> = {};
+  for (const r of records) {
+    const entry: NoteEntry = {
+      note: r.note,
+      tags: r.tags || [],
+      updatedAt: new Date(r.updated).getTime(),
+    };
+    if (r.entityType === 'contact') {
+      contacts[r.entityKey.toLowerCase()] = entry;
+    } else if (r.entityType === 'server') {
+      servers[r.entityKey.toLowerCase()] = entry;
+    }
+  }
+  return { contacts, servers };
+}
 
 export function useNotes() {
-  const [notes, setNotes] = useState<NotesData>({ contacts: {}, servers: {} });
-  const [loading, setLoading] = useState(true);
+  const {
+    data: noteRecords,
+    loading,
+    refetch: reloadNotes,
+  } = useCollection<NoteRecord>('notes', { sort: '-updated' });
 
-  const loadNotes = useCallback(async () => {
-    try {
-      const data = await globalThis.api?.getNotes();
-      setNotes(data || { contacts: {}, servers: {} });
-    } catch (e) {
-      loggers.app.error('Failed to load notes', { error: e });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadNotes().catch((error_) => {
-      loggers.app.error('Failed to run initial notes load', { error: error_ });
-    });
-  }, [loadNotes]);
+  const notes = useMemo(() => buildNotesData(noteRecords), [noteRecords]);
 
   const setContactNote = useCallback(async (email: string, note: string, tags: string[]) => {
-    const success = await globalThis.api?.setContactNote(email, note, tags);
-    if (success) {
-      const key = email.toLowerCase();
-      setNotes((prev) => {
-        const newContacts = { ...prev.contacts };
-        if (!note && tags.length === 0) {
-          delete newContacts[key];
-        } else {
-          newContacts[key] = { note, tags, updatedAt: Date.now() };
-        }
-        return { ...prev, contacts: newContacts };
-      });
+    try {
+      await pbSetNote('contact', email.toLowerCase(), note, tags);
+      return true;
+    } catch (e) {
+      loggers.app.error('Failed to set contact note', { error: e });
+      return false;
     }
-    return success;
   }, []);
 
   const setServerNote = useCallback(async (name: string, note: string, tags: string[]) => {
-    const success = await globalThis.api?.setServerNote(name, note, tags);
-    if (success) {
-      const key = name.toLowerCase();
-      setNotes((prev) => {
-        const newServers = { ...prev.servers };
-        if (!note && tags.length === 0) {
-          delete newServers[key];
-        } else {
-          newServers[key] = { note, tags, updatedAt: Date.now() };
-        }
-        return { ...prev, servers: newServers };
-      });
+    try {
+      await pbSetNote('server', name.toLowerCase(), note, tags);
+      return true;
+    } catch (e) {
+      loggers.app.error('Failed to set server note', { error: e });
+      return false;
     }
-    return success;
   }, []);
 
   const getContactNote = useCallback(
@@ -78,6 +73,6 @@ export function useNotes() {
     setServerNote,
     getContactNote,
     getServerNote,
-    reloadNotes: loadNotes,
+    reloadNotes,
   };
 }

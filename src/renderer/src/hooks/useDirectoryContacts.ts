@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Contact } from '@shared/ipc';
 import { useToast } from '../components/Toast';
+import {
+  addContact as pbAddContact,
+  updateContact as pbUpdateContact,
+  deleteContact as pbDeleteContact,
+  findContactByEmail,
+} from '../services/contactService';
 
 export function useDirectoryContacts(contacts: Contact[]) {
   const { showToast } = useToast();
@@ -47,22 +53,17 @@ export function useDirectoryContacts(contacts: Contact[]) {
     setOptimisticAdds((prev) => [newContact, ...prev]);
 
     try {
-      const result = await globalThis.api?.addContact(contact);
-      if (!result?.success) {
-        setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
-        const errorMsg = result?.error || 'Failed to create contact';
-        showToast(errorMsg, 'error');
-        throw new Error(errorMsg); // Throw so Modal doesn't close
-      }
+      await pbAddContact({
+        name: contact.name || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        title: contact.title || '',
+      });
       showToast('Contact created successfully', 'success');
     } catch (error) {
       setOptimisticAdds((prev) => prev.filter((c) => c.email !== contact.email));
-      if (!(error instanceof Error && error.message.includes('Failed to create contact'))) {
-        showToast(
-          `Failed to create contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'error',
-        );
-      }
+      const errorMsg = error instanceof Error ? error.message : 'Failed to create contact';
+      showToast(errorMsg, 'error');
       throw error;
     }
   };
@@ -71,17 +72,23 @@ export function useDirectoryContacts(contacts: Contact[]) {
     if (updated.email) setOptimisticUpdates((prev) => new Map(prev).set(updated.email!, updated));
 
     try {
-      const result = await globalThis.api?.addContact(updated);
-      if (!result?.success) {
-        if (updated.email)
-          setOptimisticUpdates((prev) => {
-            const next = new Map(prev);
-            next.delete(updated.email!);
-            return next;
-          });
-        const errorMsg = result?.error || 'Failed to update contact';
-        showToast(errorMsg, 'error');
-        throw new Error(errorMsg);
+      // Find existing record by email to get the PocketBase id
+      const existing = await findContactByEmail(updated.email || '');
+      if (existing) {
+        await pbUpdateContact(existing.id, {
+          name: updated.name || existing.name,
+          email: updated.email || existing.email,
+          phone: updated.phone || existing.phone,
+          title: updated.title || existing.title,
+        });
+      } else {
+        // If not found, create it
+        await pbAddContact({
+          name: updated.name || '',
+          email: updated.email || '',
+          phone: updated.phone || '',
+          title: updated.title || '',
+        });
       }
       showToast('Contact updated successfully', 'success');
     } catch (error) {
@@ -91,12 +98,8 @@ export function useDirectoryContacts(contacts: Contact[]) {
           next.delete(updated.email!);
           return next;
         });
-      if (!(error instanceof Error && error.message.includes('Failed to update contact'))) {
-        showToast(
-          `Failed to update contact: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          'error',
-        );
-      }
+      const errorMsg = error instanceof Error ? error.message : 'Failed to update contact';
+      showToast(errorMsg, 'error');
       throw error;
     }
   };
@@ -107,17 +110,17 @@ export function useDirectoryContacts(contacts: Contact[]) {
     setOptimisticDeletes((prev) => new Set(prev).add(email));
     setDeleteConfirmation(null);
     try {
-      const result = await globalThis.api?.removeContact(email);
-      if (!result?.success) {
+      // Find the record by email to get the PocketBase id
+      const existing = await findContactByEmail(email);
+      if (existing) {
+        await pbDeleteContact(existing.id);
+      } else {
         setOptimisticDeletes((prev) => {
           const next = new Set(prev);
           next.delete(email);
           return next;
         });
-        showToast(
-          result?.error || 'Failed to delete contact: Contact not found or file error',
-          'error',
-        );
+        showToast('Contact not found', 'error');
       }
     } catch (error) {
       setOptimisticDeletes((prev) => {

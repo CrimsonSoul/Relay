@@ -4,6 +4,7 @@ import { getErrorMessage } from '@shared/types';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
+import { addContact as pbAddContact } from '../services/contactService';
 
 interface AssemblerState {
   groups: BridgeGroup[];
@@ -183,18 +184,15 @@ export function useAssembler({
   );
 
   const handleContactSaved = async (contact: Partial<Contact>) => {
-    if (!globalThis.api) {
-      showToast('API not available', 'error');
-      return;
-    }
     try {
-      const result = await globalThis.api.addContact(contact);
-      if (result.success) {
-        if (contact.email) onAddManual(contact.email);
-        showToast('Contact created successfully', 'success');
-      } else {
-        showToast('Failed to create contact', 'error');
-      }
+      await pbAddContact({
+        name: contact.name || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        title: contact.title || '',
+      });
+      if (contact.email) onAddManual(contact.email);
+      showToast('Contact created successfully', 'success');
     } catch (e) {
       loggers.app.error('[useAssembler] Failed to save contact', { error: e });
       showToast('Failed to create contact', 'error');

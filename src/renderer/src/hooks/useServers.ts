@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Server, Contact } from '@shared/ipc';
 import { useSearchContext } from '../contexts/SearchContext';
+import { deleteServer as pbDeleteServer } from '../services/serverService';
 
 export function useServers(servers: Server[], contacts: Contact[]) {
   const { debouncedQuery: debouncedSearch } = useSearchContext();
@@ -53,9 +54,12 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   const handleDelete = async () => {
     if (contextMenu) {
       try {
-        await globalThis.api?.removeServer(contextMenu.server.name);
+        const serverId = contextMenu.server.raw?.id;
+        if (serverId) {
+          await pbDeleteServer(serverId);
+        }
       } catch {
-        // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
+        // Errors surface via useCollection realtime updates
       }
       setContextMenu(null);
     }
@@ -73,9 +77,12 @@ export function useServers(servers: Server[], contacts: Contact[]) {
   };
   const deleteServer = async (server: Server) => {
     try {
-      await globalThis.api?.removeServer(server.name);
+      const serverId = server.raw?.id;
+      if (serverId) {
+        await pbDeleteServer(serverId);
+      }
     } catch {
-      // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
+      // Errors surface via useCollection realtime updates
     }
   };
   const openAddModal = () => {

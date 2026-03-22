@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
-import type { ExportOptions, ImportResult, DataCategory, DataStats } from '@shared/ipc';
+import type { ImportResult, DataStats } from '@shared/ipc';
 import { loggers } from '../utils/logger';
+import { getPb } from '../services/pocketbase';
 
 export function useDataManager() {
   const [exporting, setExporting] = useState(false);
@@ -10,10 +11,24 @@ export function useDataManager() {
 
   const loadStats = useCallback(async () => {
     try {
-      const data = await globalThis.api?.getDataStats();
-      if (data) {
-        setStats(data);
+      // Build stats from PocketBase directly
+      const data: DataStats = { contacts: 0, servers: 0, groups: 0, onCall: 0, total: 0 };
+      const collectionToStat: Record<string, keyof Omit<DataStats, 'total'>> = {
+        contacts: 'contacts',
+        servers: 'servers',
+        bridge_groups: 'groups',
+        oncall: 'onCall',
+      };
+      for (const [collection, key] of Object.entries(collectionToStat)) {
+        try {
+          const result = await getPb().collection(collection).getList(1, 1);
+          data[key] = result.totalItems;
+          data.total += result.totalItems;
+        } catch {
+          // Collection may not exist yet
+        }
       }
+      setStats(data);
       return data;
     } catch (e) {
       loggers.storage.error('Failed to load data stats', { error: e });
@@ -21,7 +36,10 @@ export function useDataManager() {
     }
   }, []);
 
-  const exportData = useCallback(async (options: ExportOptions) => {
+  // Export and import still use IPC for native file dialogs.
+  // The actual data reading/writing happens via PocketBase in the service layer,
+  // but triggering file save/open dialogs requires the main process.
+  const exportData = useCallback(async (options: { format: string; categories: string[] }) => {
     setExporting(true);
     try {
       const result = await globalThis.api?.exportData(options);
@@ -35,7 +53,7 @@ export function useDataManager() {
   }, []);
 
   const importData = useCallback(
-    async (category: DataCategory) => {
+    async (category: string) => {
       setImporting(true);
       try {
         const result = await globalThis.api?.importData(category);
