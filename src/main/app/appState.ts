@@ -102,7 +102,7 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
     handleDataPathChange,
     getDefaultDataPath,
     createAuxWindow,
-    state.appConfig,
+    () => state.appConfig,
     () => state.offlineCache,
   );
   setupAuthHandlers();

@@ -22,7 +22,7 @@ export function setupIpcHandlers(
   onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string,
   createAuxWindow?: (route: string) => void,
-  appConfig?: AppConfig | null,
+  getAppConfig?: () => AppConfig | null,
   getCache?: () => OfflineCache | null,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
@@ -59,13 +59,9 @@ export function setupIpcHandlers(
     setupWindowHandlers(getMainWindow, createAuxWindow, guardedGetDataRoot),
   );
 
-  // PocketBase Setup Handlers
-  if (appConfig) {
-    safeSetup('setup', () => setupSetupHandlers(appConfig));
-  }
+  // PocketBase Setup Handlers (always registered — uses getter for lazy access)
+  safeSetup('setup', () => setupSetupHandlers(getAppConfig ?? (() => null)));
 
-  // Offline Cache Handlers
-  if (getCache) {
-    safeSetup('cache', () => setupCacheHandlers(getCache));
-  }
+  // Offline Cache Handlers (always registered — getter returns null when not in client mode)
+  safeSetup('cache', () => setupCacheHandlers(getCache ?? (() => null)));
 }
