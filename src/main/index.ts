@@ -129,7 +129,7 @@ if (gotLock) {
               `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
               "style-src 'self' 'unsafe-inline'; " +
               "img-src 'self' data: blob: https://api.weather.gov https://*.rainviewer.com; " +
-              "connect-src 'self' http://127.0.0.1:* http://localhost:* https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
+              "connect-src 'self' http: https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
               "font-src 'self' data:; " +
               "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
               "object-src 'none'; " +
