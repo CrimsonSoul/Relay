@@ -25,11 +25,14 @@ export interface ImportResult {
   errors: string[];
 }
 
-// Metadata fields stripped before create/update
+// Metadata fields stripped before create/update.
+// Includes both PocketBase format (created, updated) and legacy Relay format (createdAt, updatedAt).
 const METADATA_FIELDS = new Set([
   'id',
   'created',
   'updated',
+  'createdAt',
+  'updatedAt',
   'collectionId',
   'collectionName',
   'expand',
