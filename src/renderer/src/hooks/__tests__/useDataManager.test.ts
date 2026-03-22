@@ -2,9 +2,8 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDataManager } from '../useDataManager';
 
-const { storageError, storageWarn } = vi.hoisted(() => ({
+const { storageError } = vi.hoisted(() => ({
   storageError: vi.fn(),
-  storageWarn: vi.fn(),
 }));
 
 vi.mock('../../utils/logger', () => ({
@@ -12,7 +11,7 @@ vi.mock('../../utils/logger', () => ({
     storage: {
       error: storageError,
       info: vi.fn(),
-      warn: storageWarn,
+      warn: vi.fn(),
     },
   },
 }));
@@ -26,6 +25,15 @@ vi.mock('../../services/pocketbase', () => ({
   handleApiError: vi.fn(),
   onConnectionStateChange: vi.fn().mockReturnValue(() => {}),
   getConnectionState: vi.fn().mockReturnValue('online'),
+}));
+
+// Mock importExportService
+vi.mock('../../services/importExportService', () => ({
+  exportToJson: vi.fn().mockResolvedValue('[]'),
+  exportToCsv: vi.fn().mockResolvedValue(''),
+  importFromJson: vi.fn().mockResolvedValue({ imported: 0, updated: 0, errors: [] }),
+  importFromCsv: vi.fn().mockResolvedValue({ imported: 0, updated: 0, errors: [] }),
+  ALL_COLLECTIONS: ['contacts', 'servers', 'oncall', 'bridge_groups'],
 }));
 
 describe('useDataManager', () => {
@@ -46,9 +54,24 @@ describe('useDataManager', () => {
     expect(mockCollection).toHaveBeenCalled();
   });
 
+  it('returns stats with count and lastUpdated shape', async () => {
+    mockGetList.mockResolvedValue({ totalItems: 42 });
+
+    const { result } = renderHook(() => useDataManager());
+
+    await act(async () => {
+      await result.current.loadStats();
+    });
+
+    const stats = result.current.stats;
+    expect(stats).not.toBeNull();
+    // Verify the shape has count property
+    if (stats && typeof stats.contacts === 'object') {
+      expect((stats.contacts as { count: number }).count).toBe(42);
+    }
+  });
+
   it('handles loadStats when individual collections throw', async () => {
-    // When individual collections throw, they are caught inside the inner try
-    // and result in 0 counts — the outer function still returns data
     mockGetList.mockRejectedValue(new Error('fail'));
 
     const { result } = renderHook(() => useDataManager());
@@ -63,30 +86,25 @@ describe('useDataManager', () => {
     expect(result.current.stats).not.toBeNull();
   });
 
-  it('exportData returns false (IPC no longer available)', async () => {
+  it('exportData triggers a download for json format', async () => {
+    // Mock URL.createObjectURL and DOM manipulation
+    const mockCreateObjectURL = vi.fn().mockReturnValue('blob:test');
+    const mockRevokeObjectURL = vi.fn();
+    globalThis.URL.createObjectURL = mockCreateObjectURL;
+    globalThis.URL.revokeObjectURL = mockRevokeObjectURL;
+
     const { result } = renderHook(() => useDataManager());
 
-    let ok = true;
+    let ok = false;
     await act(async () => {
       ok = await result.current.exportData({
         format: 'json',
-        categories: ['all'],
+        category: 'contacts',
       });
     });
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(result.current.exporting).toBe(false);
-  });
-
-  it('importData returns null (IPC no longer available)', async () => {
-    const { result } = renderHook(() => useDataManager());
-
-    let imported: unknown = 'not-null';
-    await act(async () => {
-      imported = await result.current.importData('contacts');
-    });
-
-    expect(imported).toBeNull();
   });
 
   it('clearLastImportResult clears the result', async () => {

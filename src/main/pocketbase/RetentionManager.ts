@@ -30,7 +30,9 @@ export class RetentionManager {
   }
 
   private async cleanBridgeHistory(): Promise<void> {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ');
     try {
       const old = await this.pb
         .collection('bridge_history')
@@ -45,7 +47,9 @@ export class RetentionManager {
   }
 
   private async cleanAlertHistory(): Promise<void> {
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ');
     try {
       const old = await this.pb
         .collection('alert_history')
@@ -67,7 +71,9 @@ export class RetentionManager {
   }
 
   private async cleanConflictLog(): Promise<void> {
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ');
     try {
       const old = await this.pb
         .collection('conflict_log')

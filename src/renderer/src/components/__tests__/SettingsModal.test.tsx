@@ -75,11 +75,8 @@ describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const mockApi = {
-      getDataPath: vi.fn().mockResolvedValue('/data/path'),
-      changeDataFolder: vi.fn(),
-      resetDataFolder: vi.fn(),
+      getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090, secret: 'test' }),
       registerRadarUrl: vi.fn().mockReturnValue(Promise.resolve()),
-      generateDummyData: vi.fn(),
     };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi;
   });
@@ -133,6 +130,28 @@ describe('SettingsModal', () => {
     expect(screen.queryByText('Open Data Manager...')).not.toBeInTheDocument();
   });
 
+  it('shows PocketBase section with connection info', async () => {
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText(/Embedded Server/)).toBeInTheDocument();
+    });
+  });
+
+  it('shows Reconfigure button', async () => {
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+  });
+
+  it('shows "Not configured" when getConfig returns null', async () => {
+    (globalThis.api as Record<string, unknown>).getConfig = vi.fn().mockResolvedValue(null);
+    render(<SettingsModal {...defaultProps} />);
+    await waitFor(() => {
+      expect(screen.getByText('Not configured')).toBeInTheDocument();
+    });
+  });
+
   it('saves radar URL and shows success toast', async () => {
     render(<SettingsModal {...defaultProps} />);
     const input = screen.getByPlaceholderText(
@@ -161,37 +180,6 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByText('Clear'));
     expect(secureStorage.setItemSync).toHaveBeenCalledWith('radar_url', '');
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Radar URL cleared', 'success'));
-  });
-
-  it('calls changeDataFolder on Change button click (success)', async () => {
-    (globalThis.api as Record<string, unknown>).changeDataFolder = vi
-      .fn()
-      .mockResolvedValue({ success: true });
-    render(<SettingsModal {...defaultProps} />);
-    fireEvent.click(screen.getByText('Change...'));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith('Data folder updated successfully', 'success'),
-    );
-  });
-
-  it('shows error toast on changeDataFolder failure', async () => {
-    (globalThis.api as Record<string, unknown>).changeDataFolder = vi
-      .fn()
-      .mockResolvedValue({ error: 'Permission denied' });
-    render(<SettingsModal {...defaultProps} />);
-    fireEvent.click(screen.getByText('Change...'));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Permission denied'), 'error'),
-    );
-  });
-
-  it('calls resetDataFolder on Reset button click (success)', async () => {
-    (globalThis.api as Record<string, unknown>).resetDataFolder = vi.fn().mockResolvedValue(true);
-    render(<SettingsModal {...defaultProps} />);
-    fireEvent.click(screen.getByText('Reset to Default'));
-    await waitFor(() =>
-      expect(showToast).toHaveBeenCalledWith('Data folder reset to default', 'success'),
-    );
   });
 
   it('reads existing radar URL from secureStorage on open', () => {

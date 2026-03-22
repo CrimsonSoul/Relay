@@ -270,9 +270,6 @@ export type BridgeAPI = {
   getWeather: (lat: number, lon: number) => Promise<WeatherData | null>;
   searchLocation: (query: string) => Promise<LocationSearchResult>;
   getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
-  changeDataFolder: () => Promise<boolean>;
-  resetDataFolder: () => Promise<boolean>;
-  getDataPath: () => Promise<string>;
   registerRadarUrl: (url: string) => Promise<void>;
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -330,9 +327,6 @@ export const IPC_CHANNELS = {
   WINDOW_IS_MAXIMIZED: 'window:isMaximized',
   WINDOW_MAXIMIZE_CHANGE: 'window:maximizeChange',
   WINDOW_OPEN_AUX: 'window:openAux',
-  CHANGE_DATA_FOLDER: 'config:changeDataFolder',
-  RESET_DATA_FOLDER: 'config:resetDataFolder',
-  GET_DATA_PATH: 'config:getDataPath',
   OPEN_PATH: 'fs:openPath',
   OPEN_EXTERNAL: 'shell:openExternal',
   AUTH_REQUESTED: 'auth:requested',

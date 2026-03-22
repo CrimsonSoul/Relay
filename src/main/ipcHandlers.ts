@@ -19,8 +19,8 @@ import { getErrorMessage } from '@shared/types';
 export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
   getDataRoot: () => Promise<string>,
-  onDataPathChange: (newPath: string) => Promise<void>,
-  getDefaultDataPath: () => string,
+  _onDataPathChange?: (newPath: string) => Promise<void>,
+  _getDefaultDataPath?: () => string,
   createAuxWindow?: (route: string) => void,
   getAppConfig?: () => AppConfig | null,
   getCache?: () => OfflineCache | null,
@@ -45,9 +45,7 @@ export function setupIpcHandlers(
   };
 
   // Config & App State
-  safeSetup('config', () =>
-    setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath),
-  );
+  safeSetup('config', () => setupConfigHandlers());
 
   // Location & Weather
   safeSetup('location', () => setupLocationHandlers(getMainWindow));

@@ -14,16 +14,12 @@ type Props = {
   onOpenDataManager?: () => void;
 };
 
-const DataPathDisplay = () => {
-  const [path, setPath] = useState('');
-  useEffect(() => {
-    globalThis.api
-      ?.getDataPath()
-      .then(setPath)
-      .catch(() => setPath(''));
-  }, []);
-  return <>{path || 'Loading...'}</>;
-};
+type PbConfig = {
+  mode?: string;
+  port?: number;
+  serverUrl?: string;
+  secret?: string;
+} | null;
 
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
@@ -32,14 +28,19 @@ export const SettingsModal: React.FC<Props> = ({
   onSync,
   onOpenDataManager,
 }) => {
-  // Force re-render of path when modal opens or folder changes
-  const [pathKey, setPathKey] = useState(0);
   const [radarUrl, setRadarUrl] = useState('');
+  const [pbConfig, setPbConfig] = useState<PbConfig>(null);
+  const [pbConfigLoading, setPbConfigLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setPathKey((p) => p + 1);
       setRadarUrl(secureStorage.getItemSync<string>(RADAR_URL_KEY, '') ?? '');
+      setPbConfigLoading(true);
+      globalThis.api
+        ?.getConfig()
+        .then((config) => setPbConfig(config as PbConfig))
+        .catch(() => setPbConfig(null))
+        .finally(() => setPbConfigLoading(false));
     }
   }, [isOpen]);
 
@@ -58,39 +59,15 @@ export const SettingsModal: React.FC<Props> = ({
     showToast(trimmed ? 'Radar URL saved' : 'Radar URL cleared', 'success');
   };
 
-  const handleChangeFolder = async () => {
-    try {
-      const result = await globalThis.api?.changeDataFolder();
-      if (!result || typeof result !== 'object') return;
-
-      const resultObj = result as { success?: boolean; error?: string };
-      if (resultObj.success) {
-        showToast('Data folder updated successfully', 'success');
-      } else if (resultObj.error && resultObj.error !== 'Cancelled') {
-        showToast(`Failed to update data folder: ${resultObj.error}`, 'error');
-      }
-    } catch (e: unknown) {
-      showToast(`Error: ${getErrorMessage(e)}`, 'error');
-    }
-    setPathKey((p) => p + 1);
+  const handleReconfigure = () => {
+    // Reload the app to go back to the setup screen
+    window.location.reload();
   };
 
-  const handleResetFolder = async () => {
-    try {
-      const result = await globalThis.api?.resetDataFolder();
-      if (result === true) {
-        showToast('Data folder reset to default', 'success');
-      } else if (result && typeof result === 'object') {
-        const resultObj = result as { error?: string };
-        if (resultObj.error) {
-          showToast(String(resultObj.error), 'error');
-        }
-      }
-    } catch (e: unknown) {
-      showToast(getErrorMessage(e), 'error');
-    }
-    setPathKey((p) => p + 1);
-  };
+  const pbUrl =
+    pbConfig?.mode === 'server'
+      ? `http://localhost:${pbConfig.port ?? 8090}`
+      : (pbConfig?.serverUrl ?? null);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
@@ -130,18 +107,24 @@ export const SettingsModal: React.FC<Props> = ({
         <div className="settings-divider" />
 
         <div className="settings-section">
-          <div className="settings-section-heading">Storage Location</div>
-          <div className="settings-data-path">
-            <DataPathDisplay key={pathKey} />
-          </div>
-          <div className="settings-button-row">
-            <TactileButton onClick={handleChangeFolder} className="btn-flex-center">
-              Change...
-            </TactileButton>
-            <TactileButton onClick={handleResetFolder} className="btn-flex-center">
-              Reset to Default
-            </TactileButton>
-          </div>
+          <div className="settings-section-heading">PocketBase</div>
+          {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
+          {!pbConfigLoading && !pbConfig && (
+            <div className="settings-data-path">Not configured</div>
+          )}
+          {!pbConfigLoading && pbConfig && (
+            <>
+              <div className="settings-data-path">
+                Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
+              </div>
+              {pbUrl && <div className="settings-data-path">URL: {pbUrl}</div>}
+              <div className="settings-button-row">
+                <TactileButton onClick={handleReconfigure} className="btn-flex-center">
+                  Reconfigure...
+                </TactileButton>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="settings-divider" />
