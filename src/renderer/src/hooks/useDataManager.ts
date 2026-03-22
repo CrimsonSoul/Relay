@@ -12,18 +12,17 @@ export function useDataManager() {
   const loadStats = useCallback(async () => {
     try {
       // Build stats from PocketBase directly
-      const data: DataStats = { contacts: 0, servers: 0, groups: 0, onCall: 0, total: 0 };
-      const collectionToStat: Record<string, keyof Omit<DataStats, 'total'>> = {
+      const data: DataStats = { contacts: 0, servers: 0, groups: 0, oncall: 0 };
+      const collectionToStat: Record<string, keyof DataStats> = {
         contacts: 'contacts',
         servers: 'servers',
         bridge_groups: 'groups',
-        oncall: 'onCall',
+        oncall: 'oncall',
       };
       for (const [collection, key] of Object.entries(collectionToStat)) {
         try {
           const result = await getPb().collection(collection).getList(1, 1);
-          data[key] = result.totalItems;
-          data.total += result.totalItems;
+          (data as Record<string, unknown>)[key] = result.totalItems;
         } catch {
           // Collection may not exist yet
         }
@@ -36,43 +35,28 @@ export function useDataManager() {
     }
   }, []);
 
-  // Export and import still use IPC for native file dialogs.
-  // The actual data reading/writing happens via PocketBase in the service layer,
-  // but triggering file save/open dialogs requires the main process.
-  const exportData = useCallback(async (options: { format: string; categories: string[] }) => {
+  // Export and import operations are now handled through PocketBase services.
+  // Native file dialogs for export/import would need to be re-implemented
+  // as PocketBase-aware IPC handlers if needed in the future.
+  const exportData = useCallback(async (_options: { format: string; categories: string[] }) => {
     setExporting(true);
     try {
-      const result = await globalThis.api?.exportData(options);
-      return result?.success || false;
-    } catch (e) {
-      loggers.storage.error('Export failed', { error: e });
+      loggers.storage.warn('Export via IPC is no longer available — use PocketBase export');
       return false;
     } finally {
       setExporting(false);
     }
   }, []);
 
-  const importData = useCallback(
-    async (category: string) => {
-      setImporting(true);
-      try {
-        const result = await globalThis.api?.importData(category);
-        if (result?.success && result.data) {
-          setLastImportResult(result.data);
-          // Refresh stats after import
-          await loadStats();
-          return result.data;
-        }
-        return null;
-      } catch (e) {
-        loggers.storage.error('Import failed', { error: e });
-        return null;
-      } finally {
-        setImporting(false);
-      }
-    },
-    [loadStats],
-  );
+  const importData = useCallback(async (_category: string) => {
+    setImporting(true);
+    try {
+      loggers.storage.warn('Import via IPC is no longer available — use PocketBase import');
+      return null;
+    } finally {
+      setImporting(false);
+    }
+  }, []);
 
   const clearLastImportResult = useCallback(() => {
     setLastImportResult(null);

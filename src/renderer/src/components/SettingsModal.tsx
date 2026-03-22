@@ -184,26 +184,6 @@ export const SettingsModal: React.FC<Props> = ({
         </div>
 
         <div className="settings-divider" />
-
-        {import.meta.env.DEV && (
-          <div className="settings-section">
-            <div className="settings-section-heading">Diagnostics & Demo</div>
-            <TactileButton
-              onClick={async () => {
-                const result = await globalThis.api?.generateDummyData();
-                if (result) {
-                  showToast('Dummy data loaded successfully', 'success');
-                  onClose();
-                } else {
-                  showToast('Failed to load dummy data', 'error');
-                }
-              }}
-              className="btn-center"
-            >
-              Load Dummy Data
-            </TactileButton>
-          </div>
-        )}
       </div>
     </Modal>
   );

@@ -1,8 +1,10 @@
-import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog } from 'electron';
+import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { extname, normalize, resolve, join } from 'node:path';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { loggers } from '../logger';
+import { validatePath } from '../utils/pathSafety';
+import { rateLimiters } from '../rateLimiter';
 
 export const ALLOWED_AUX_ROUTES = new Set([
   'oncall',
@@ -19,11 +21,59 @@ const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data U
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
 
+/** Safe file extensions allowed for shell.openPath */
+const SAFE_OPEN_EXTENSIONS = new Set([
+  '.csv',
+  '.json',
+  '.txt',
+  '.log',
+  '.md',
+  '.pdf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.svg',
+]);
+
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
   createAuxWindow?: (route: string) => void,
   getDataRoot?: () => Promise<string>,
 ) {
+  // Shell / File Operations
+  ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
+    if (!getDataRoot) return;
+    const root = await getDataRoot();
+    const resolvedPath = resolve(root, normalize(path));
+
+    if (!(await validatePath(resolvedPath, root))) {
+      loggers.security.error(`Blocked access to path outside data root: ${path}`);
+      return;
+    }
+    const ext = extname(resolvedPath).toLowerCase();
+    if (!SAFE_OPEN_EXTENSIONS.has(ext)) {
+      loggers.security.error(`Blocked opening file with unsafe extension: ${path}`);
+      return;
+    }
+    await shell.openPath(resolvedPath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
+    try {
+      const parsed = new URL(url);
+      if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+        await shell.openExternal(url);
+      } else {
+        loggers.security.error(`Blocked opening external URL with unsafe protocol: ${url}`);
+      }
+    } catch {
+      loggers.security.error(`Invalid URL provided to openExternal: ${url}`);
+    }
+  });
+
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

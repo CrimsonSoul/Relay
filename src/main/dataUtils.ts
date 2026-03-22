@@ -2,7 +2,6 @@ import fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { loggers } from './logger';
-import { JSON_DATA_FILES } from './operations/FileContext';
 import { atomicWriteWithLock } from './fileLock';
 
 export async function ensureDataFilesAsync(targetRoot: string) {
@@ -16,32 +15,15 @@ export async function ensureDataFilesAsync(targetRoot: string) {
 export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string): Promise<boolean> {
   try {
     await fsPromises.mkdir(targetRoot, { recursive: true });
+    loggers.fileManager.debug('Ensured target directory exists', {
+      from: sourceRoot,
+      to: targetRoot,
+    });
+    return true;
   } catch (e) {
     loggers.fileManager.error('Failed to create target directory', { error: e });
+    return false;
   }
-
-  const results = await Promise.all(
-    JSON_DATA_FILES.map(async (file) => {
-      const source = join(sourceRoot, file);
-      const target = join(targetRoot, file);
-      try {
-        await fsPromises.access(target);
-        return false; // Target already exists
-      } catch {
-        try {
-          await fsPromises.access(source);
-          await fsPromises.copyFile(source, target);
-          loggers.fileManager.debug(`Copied ${file}`, { from: sourceRoot, to: targetRoot });
-          return true;
-        } catch {
-          // Source doesn't exist, skip - JSON files are created on-demand
-          return false;
-        }
-      }
-    }),
-  );
-
-  return results.some(Boolean);
 }
 
 export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {

@@ -40,10 +40,6 @@ vi.mock('./fileLock', () => ({
   atomicWriteWithLock: vi.fn(async () => undefined),
 }));
 
-vi.mock('./operations/FileContext', () => ({
-  JSON_DATA_FILES: ['contacts.json', 'servers.json', 'oncall.json'],
-}));
-
 describe('dataUtils', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -62,58 +58,16 @@ describe('dataUtils', () => {
   });
 
   describe('copyDataFilesAsync', () => {
-    it('returns false when all target files already exist', async () => {
-      // access succeeds (file exists) → skip copy
-      vi.mocked(fsPromises.access).mockResolvedValue(undefined);
-      const result = await copyDataFilesAsync('/source', '/target');
-      expect(result).toBe(false);
-      expect(fsPromises.copyFile).not.toHaveBeenCalled();
-    });
-
-    it('copies files that do not exist in target', async () => {
-      // Promise.all runs all 3 file checks concurrently.
-      // Order: target-1, target-2, target-3, source-1, source-2, source-3
-      vi.mocked(fsPromises.access)
-        .mockRejectedValueOnce(new Error('not found')) // target-1 fails → go to catch
-        .mockRejectedValueOnce(new Error('not found')) // target-2 fails → go to catch
-        .mockRejectedValueOnce(new Error('not found')) // target-3 fails → go to catch
-        .mockResolvedValueOnce(undefined) // source-1 exists → copy
-        .mockResolvedValueOnce(undefined) // source-2 exists → copy
-        .mockResolvedValueOnce(undefined); // source-3 exists → copy
-
+    it('creates the target directory and returns true', async () => {
       const result = await copyDataFilesAsync('/source', '/target');
       expect(result).toBe(true);
-      expect(fsPromises.copyFile).toHaveBeenCalledTimes(3);
+      expect(fsPromises.mkdir).toHaveBeenCalledWith('/target', { recursive: true });
     });
 
-    it('skips copy when source file also does not exist', async () => {
-      // both target and source access fail
-      vi.mocked(fsPromises.access).mockRejectedValue(new Error('not found'));
-      const result = await copyDataFilesAsync('/source', '/target');
-      expect(result).toBe(false);
-      expect(fsPromises.copyFile).not.toHaveBeenCalled();
-    });
-
-    it('handles mkdir failure gracefully', async () => {
+    it('returns false on mkdir failure', async () => {
       vi.mocked(fsPromises.mkdir).mockRejectedValueOnce(new Error('perm denied'));
-      vi.mocked(fsPromises.access).mockResolvedValue(undefined); // target exists
-      // Should not throw
       const result = await copyDataFilesAsync('/source', '/target');
       expect(result).toBe(false);
-    });
-
-    it('returns true if at least one file was copied', async () => {
-      // First file: target doesn't exist, source does → copy
-      // Second file: target exists → skip
-      // Third file: target exists → skip
-      vi.mocked(fsPromises.access)
-        .mockRejectedValueOnce(new Error('not found')) // target file 1
-        .mockResolvedValueOnce(undefined) // source file 1
-        .mockResolvedValueOnce(undefined) // target file 2 exists
-        .mockResolvedValueOnce(undefined); // target file 3 exists
-
-      const result = await copyDataFilesAsync('/source', '/target');
-      expect(result).toBe(true);
     });
   });
 

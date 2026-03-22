@@ -17,7 +17,6 @@ type AssemblerSidebarProps = {
     updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>,
   ) => Promise<boolean | undefined>;
   onDeleteGroup: (id: string) => Promise<boolean | undefined>;
-  onImportFromCsv: () => Promise<boolean | undefined>;
   // For updating a group with current selection
   currentEmails?: string[];
 };
@@ -29,7 +28,6 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   onSaveGroup,
   onUpdateGroup,
   onDeleteGroup,
-  onImportFromCsv: _onImportFromCsv,
   currentEmails = [],
 }) => {
   const [groupContextMenu, setGroupContextMenu] = useState<{

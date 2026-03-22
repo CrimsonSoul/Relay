@@ -1,26 +1,38 @@
 import { app, BrowserWindow } from 'electron';
 import { join } from 'node:path';
-import { FileManager } from '../FileManager';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
-import {
-  copyDataFilesAsync,
-  ensureDataFilesAsync,
-  loadConfigAsync,
-  saveConfigAsync,
-} from '../dataUtils';
+import { ensureDataFilesAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
 import { validateDataPath } from '../pathValidation';
 import { loggers } from '../logger';
 import { getSecureOrigin, isTrustedGeolocationOrigin } from '../securityPolicy';
+import type { AppConfig } from '../config/AppConfig';
+import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
+import type { BackupManager } from '../pocketbase/BackupManager';
+import type { RetentionManager } from '../pocketbase/RetentionManager';
+import type { OfflineCache } from '../cache/OfflineCache';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
-  fileManager: FileManager | null;
   currentDataRoot: string;
+  // PocketBase-related state
+  appConfig: AppConfig | null;
+  pbProcess: PocketBaseProcess | null;
+  backupManager: BackupManager | null;
+  retentionManager: RetentionManager | null;
+  offlineCache: OfflineCache | null;
 }
 
-export const state: AppState = { mainWindow: null, fileManager: null, currentDataRoot: '' };
+export const state: AppState = {
+  mainWindow: null,
+  currentDataRoot: '',
+  appConfig: null,
+  pbProcess: null,
+  backupManager: null,
+  retentionManager: null,
+  offlineCache: null,
+};
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
 export const getBundledDataPath = () =>
@@ -67,38 +79,31 @@ export async function getDataRoot(): Promise<string> {
 }
 
 /**
- * Handles a user-initiated data path change. Fully async — copies files,
- * saves config, recreates the FileManager, and invalidates the cache.
+ * Handles a user-initiated data path change. Fully async — saves config
+ * and invalidates the cache.
  */
 export async function handleDataPathChange(newPath: string): Promise<void> {
   if (!state.mainWindow) return;
   const validation = await validateDataPath(newPath);
   if (!validation.success) throw new Error(validation.error || 'Invalid data path');
 
-  await copyDataFilesAsync(state.currentDataRoot, newPath);
   await ensureDataFilesAsync(newPath);
   await saveConfigAsync({ dataRoot: newPath });
 
   // Update cached root and invalidate the deferred promise
   state.currentDataRoot = newPath;
   dataRootPromise = null;
-
-  if (state.fileManager) {
-    state.fileManager.destroy();
-    state.fileManager = null;
-  }
-  state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
-  state.fileManager.init();
 }
 
 export function setupIpc(createAuxWindow?: (route: string) => void) {
   setupIpcHandlers(
     () => state.mainWindow,
-    () => state.fileManager,
     getDataRoot,
     handleDataPathChange,
     getDefaultDataPath,
     createAuxWindow,
+    state.appConfig,
+    () => state.offlineCache,
   );
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);

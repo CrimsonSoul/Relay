@@ -1,14 +1,19 @@
-import { app, BrowserWindow, session, dialog, Menu } from 'electron';
+import { app, BrowserWindow, session, dialog, Menu, ipcMain } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FileManager } from './FileManager';
 import { loggers } from './logger';
+import { AppConfig, type ServerConfig } from './config/AppConfig';
+import { PocketBaseProcess } from './pocketbase/PocketBaseProcess';
+import { BackupManager } from './pocketbase/BackupManager';
+import { RetentionManager } from './pocketbase/RetentionManager';
+import { JsonMigrator } from './migration/JsonMigrator';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 import { validateEnv } from './env';
-import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+import { state, getDataRoot, setupIpc, setupPermissions } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from './handlers/windowHandlers';
 import { isTrustedWebviewUrl } from './securityPolicy';
@@ -68,6 +73,7 @@ if (gotLock) {
     });
   });
 
+  // eslint-disable-next-line sonarjs/cognitive-complexity -- window setup is inherently complex
   async function createWindow() {
     state.mainWindow = new BrowserWindow({
       width: 960,
@@ -123,7 +129,7 @@ if (gotLock) {
               `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
               "style-src 'self' 'unsafe-inline'; " +
               "img-src 'self' data: blob: https://api.weather.gov https://*.rainviewer.com; " +
-              "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
+              "connect-src 'self' http://127.0.0.1:* http://localhost:* https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
               "font-src 'self' data:; " +
               "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
               "object-src 'none'; " +
@@ -138,18 +144,127 @@ if (gotLock) {
       });
     });
 
-    // Initialize data BEFORE loading the renderer so IPC handlers have
-    // a ready FileManager when the renderer starts making requests.
+    // Resolve data root before loading the renderer
     loggers.main.info('Starting data initialization...');
     try {
       state.currentDataRoot = await getDataRoot();
       loggers.main.info('Data root:', { path: state.currentDataRoot });
-      state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
-      state.fileManager.init();
-      loggers.main.info('FileManager initialized successfully');
     } catch (error) {
-      loggers.main.error('Failed to initialize data', { error });
+      loggers.main.error('Failed to initialize data root', { error });
     }
+
+    // Initialize AppConfig (always available for setup screen)
+    const appRoot = app.isPackaged ? process.resourcesPath : process.cwd();
+    const configDataDir = join(state.currentDataRoot || app.getPath('userData'), 'data');
+    state.appConfig = new AppConfig(configDataDir);
+
+    // PocketBase lifecycle — start if configured in server mode
+    const relayConfig = state.appConfig.load();
+    if (relayConfig && relayConfig.mode === 'server') {
+      try {
+        const serverConfig = relayConfig as ServerConfig;
+        const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
+        const binaryPath = app.isPackaged
+          ? join(process.resourcesPath, 'pocketbase', binaryName)
+          : join(appRoot, 'resources', 'pocketbase', binaryName);
+        const pbDataDir = join(configDataDir, 'pb_data');
+        const migrationsDir = app.isPackaged
+          ? join(process.resourcesPath, 'pb_migrations')
+          : join(appRoot, 'resources', 'pb_migrations');
+
+        state.pbProcess = new PocketBaseProcess({
+          binaryPath,
+          dataDir: pbDataDir,
+          migrationsDir,
+          host: '0.0.0.0',
+          port: serverConfig.port,
+        });
+
+        state.pbProcess.onCrash((error) => {
+          loggers.pocketbase.error('PocketBase crashed', { error });
+        });
+
+        await state.pbProcess.start();
+        loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
+
+        // Create relay_user if it doesn't exist (via PB Admin API)
+        try {
+          const adminUrl = state.pbProcess.getLocalUrl();
+          const usersRes = await fetch(
+            `${adminUrl}/api/collections/users/records?filter=(username='relay_user')`,
+          );
+          const usersData = (await usersRes.json()) as { totalItems: number };
+          if (usersData.totalItems === 0) {
+            await fetch(`${adminUrl}/api/collections/users/records`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                username: 'relay_user',
+                password: serverConfig.secret,
+                passwordConfirm: serverConfig.secret,
+              }),
+            });
+            loggers.pocketbase.info('Created relay_user');
+          }
+        } catch (userErr) {
+          loggers.pocketbase.warn('Failed to create relay_user (may already exist)', {
+            error: userErr,
+          });
+        }
+
+        // Check for legacy JSON data and run migration if found
+        const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
+        if (JsonMigrator.hasLegacyData(legacyDir)) {
+          loggers.migration.info('Legacy JSON data detected, starting migration');
+          try {
+            const PocketBase = (await import('pocketbase')).default;
+            const pb = new PocketBase(state.pbProcess.getLocalUrl());
+            const migrator = new JsonMigrator(pb);
+            const result = await migrator.migrate(legacyDir);
+            loggers.migration.info('Migration complete', {
+              success: result.success,
+              summary: result.summary,
+              errors: result.errors,
+            });
+          } catch (migErr) {
+            loggers.migration.error('JSON migration failed', { error: migErr });
+          }
+        }
+
+        // Start backup and retention managers
+        state.backupManager = new BackupManager(configDataDir);
+        state.backupManager.backup(); // Initial backup on startup
+
+        try {
+          const PocketBase = (await import('pocketbase')).default;
+          const pb = new PocketBase(state.pbProcess.getLocalUrl());
+          state.retentionManager = new RetentionManager(pb);
+          state.retentionManager.startSchedule();
+          loggers.pocketbase.info('Backup and retention managers started');
+        } catch (retErr) {
+          loggers.pocketbase.error('Failed to start retention manager', { error: retErr });
+        }
+      } catch (pbError) {
+        loggers.pocketbase.error('Failed to start PocketBase', { error: pbError });
+      }
+    }
+
+    // Register PB_GET_URL and PB_GET_SECRET IPC handlers
+    ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
+      if (state.pbProcess?.isRunning()) {
+        return state.pbProcess.getUrl();
+      }
+      const config = state.appConfig?.load();
+      if (config?.mode === 'client') {
+        return config.serverUrl;
+      }
+      return null;
+    });
+
+    ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {
+      const config = state.appConfig?.load();
+      return config?.secret ?? null;
+    });
 
     state.mainWindow.once('ready-to-show', () => {
       state.mainWindow?.show();
@@ -252,10 +367,6 @@ if (gotLock) {
 
     state.mainWindow.on('closed', () => {
       state.mainWindow = null;
-      if (state.fileManager) {
-        state.fileManager.destroy();
-        state.fileManager = null;
-      }
     });
   }
 
@@ -314,10 +425,7 @@ if (gotLock) {
       await auxWindow.loadURL(url);
     }
 
-    // Emit current data to the new window
-    if (state.fileManager) {
-      await state.fileManager.readAndEmit();
-    }
+    // Data is managed by PocketBase — aux windows subscribe via the SDK
   }
 
   const bootstrap = async () => {
@@ -334,15 +442,26 @@ if (gotLock) {
 
       setupIpc(createAuxWindow);
       await createWindow();
-      const cleanupMaintenance = setupMaintenanceTasks(() => state.fileManager);
+      const cleanupMaintenance = setupMaintenanceTasks();
 
       // Graceful shutdown: clean up file watchers, timers, etc.
       app.on('before-quit', () => {
         loggers.main.info('App quitting — cleaning up resources');
         cleanupMaintenance();
-        if (state.fileManager) {
-          state.fileManager.destroy();
-          state.fileManager = null;
+        // PocketBase cleanup
+        if (state.retentionManager) {
+          state.retentionManager.stop();
+          state.retentionManager = null;
+        }
+        if (state.pbProcess) {
+          state.pbProcess.stop().catch((err) => {
+            loggers.pocketbase.error('Failed to stop PocketBase on quit', { error: err });
+          });
+          state.pbProcess = null;
+        }
+        if (state.offlineCache) {
+          state.offlineCache.close();
+          state.offlineCache = null;
         }
       });
 

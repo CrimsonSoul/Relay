@@ -1,14 +1,13 @@
 import { BrowserWindow } from 'electron';
-import { FileManager } from './FileManager';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
 import { setupCloudStatusHandlers } from './handlers/cloudStatusHandlers';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
-import { setupDataHandlers } from './handlers/dataHandlers';
-import { setupFileHandlers } from './handlers/fileHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
-import { setupFeatureHandlers } from './handlers/featureHandlers';
-import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
+import { setupSetupHandlers } from './handlers/setupHandlers';
+import { setupCacheHandlers } from './handlers/cacheHandlers';
+import type { AppConfig } from './config/AppConfig';
+import type { OfflineCache } from './cache/OfflineCache';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 
@@ -16,17 +15,15 @@ import { getErrorMessage } from '@shared/types';
  * Orchestrates all IPC handlers for the application.
  * Each handler group is wrapped in try/catch to prevent a single failure
  * from leaving all subsequent handlers unregistered.
- *
- * `getDataRoot` is async — it resolves from config on the first call,
- * then returns the cached value on subsequent calls with no I/O.
  */
 export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
-  getFileManager: () => FileManager | null,
   getDataRoot: () => Promise<string>,
   onDataPathChange: (newPath: string) => Promise<void>,
   getDefaultDataPath: () => string,
   createAuxWindow?: (route: string) => void,
+  appConfig?: AppConfig | null,
+  getCache?: () => OfflineCache | null,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
     try {
@@ -52,12 +49,6 @@ export function setupIpcHandlers(
     setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath),
   );
 
-  // Data Mutations (Contacts, Groups, Servers, On-Call)
-  safeSetup('data', () => setupDataHandlers(getMainWindow, getFileManager));
-
-  // File System Operations
-  safeSetup('file', () => setupFileHandlers(guardedGetDataRoot));
-
   // Location & Weather
   safeSetup('location', () => setupLocationHandlers(getMainWindow));
   safeSetup('weather', () => setupWeatherHandlers());
@@ -68,9 +59,13 @@ export function setupIpcHandlers(
     setupWindowHandlers(getMainWindow, createAuxWindow, guardedGetDataRoot),
   );
 
-  // Feature Handlers (Presets, History, Notes, Saved Locations)
-  safeSetup('feature', () => setupFeatureHandlers(guardedGetDataRoot));
+  // PocketBase Setup Handlers
+  if (appConfig) {
+    safeSetup('setup', () => setupSetupHandlers(appConfig));
+  }
 
-  // Data Record Handlers (JSON-based contacts, servers, on-call, data manager)
-  safeSetup('dataRecord', () => setupDataRecordHandlers(guardedGetDataRoot));
+  // Offline Cache Handlers
+  if (getCache) {
+    safeSetup('cache', () => setupCacheHandlers(getCache));
+  }
 }

@@ -106,16 +106,8 @@ export const PersonnelTab: React.FC<{
   };
 
   const handleExportCsv = useCallback(async () => {
-    const result = await globalThis.api?.exportData({
-      format: 'csv',
-      category: 'oncall',
-      includeMetadata: false,
-    });
-    if (result) {
-      showToast('Exported successfully', 'success');
-    } else {
-      showToast('Export failed', 'error');
-    }
+    // Export via IPC is no longer available — data is managed through PocketBase
+    showToast('Export is not currently available', 'info');
   }, [showToast]);
 
   const alertConfigs = [

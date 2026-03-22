@@ -79,28 +79,12 @@ export function useGroups() {
     [showToast],
   );
 
-  const importFromCsv = useCallback(async () => {
-    // CSV import for groups is kept as IPC since it requires native file dialog
-    const result = await globalThis.api?.importGroupsFromCsv();
-    if (result?.success) {
-      await reloadGroups();
-      showToast('Import successful', 'success');
-      return true;
-    } else if (result) {
-      showToast(result.error || 'Import failed', 'error');
-    } else {
-      showToast('Import failed', 'error');
-    }
-    return false;
-  }, [reloadGroups, showToast]);
-
   return {
     groups,
     loading,
     saveGroup,
     updateGroup,
     deleteGroup,
-    importFromCsv,
     reloadGroups,
   };
 }

@@ -34,7 +34,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   } = props;
   const asm = useAssembler(props);
   const { showToast } = useToast();
-  const { saveGroup, updateGroup, deleteGroup, importFromCsv } = useGroups();
+  const { saveGroup, updateGroup, deleteGroup } = useGroups();
   const { history, addHistory, deleteHistory, clearHistory } = useBridgeHistory();
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // SaveGroupModal is only opened from bridge history "Save as Group" action
@@ -165,7 +165,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           onSaveGroup={saveGroup}
           onUpdateGroup={updateGroup}
           onDeleteGroup={deleteGroup}
-          onImportFromCsv={importFromCsv}
           currentEmails={currentEmails}
         />
         <div className="tab-main-content">
