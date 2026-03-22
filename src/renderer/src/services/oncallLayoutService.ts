@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface OncallLayoutRecord {
   id: string;
@@ -43,13 +43,14 @@ export async function saveLayout(
   team: string,
   position: { x: number; y: number; w?: number; h?: number; isStatic?: boolean },
 ): Promise<OncallLayoutRecord> {
+  requireOnline();
   try {
     // Find existing record for this team (upsert)
     let existing: OncallLayoutRecord | null = null;
     try {
       existing = await getPb()
         .collection('oncall_layout')
-        .getFirstListItem<OncallLayoutRecord>(`team="${team}"`);
+        .getFirstListItem<OncallLayoutRecord>(`team="${escapeFilter(team)}"`);
     } catch (err: unknown) {
       if (
         !(err instanceof Error && 'status' in err && (err as { status: number }).status === 404)

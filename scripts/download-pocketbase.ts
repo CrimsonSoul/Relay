@@ -31,7 +31,8 @@ function downloadFile(url: string, dest: string): Promise<void> {
     const client = url.startsWith('https') ? https : http;
 
     function doRequest(requestUrl: string): void {
-      client
+      const reqClient = requestUrl.startsWith('https') ? https : http;
+      reqClient
         .get(requestUrl, (res) => {
           // Follow redirects (GitHub uses 302)
           if (
@@ -75,6 +76,49 @@ function extractZip(zipPath: string, destDir: string): void {
   }
 }
 
+/** Download the SHA256 checksums file and verify a local file against it. */
+async function verifyChecksum(zipPath: string, expectedFilename: string): Promise<void> {
+  const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_checksums.txt`;
+  const checksumPath = `${zipPath}.checksums.txt`;
+
+  try {
+    await downloadFile(checksumUrl, checksumPath);
+    const { readFileSync: readFs } = await import('fs');
+    const { createHash } = await import('crypto');
+
+    const checksumFile = readFs(checksumPath, 'utf-8');
+    const line = checksumFile.split('\n').find((l) => l.includes(expectedFilename));
+    if (!line) {
+      console.warn(
+        `Checksum for ${expectedFilename} not found in checksums file — skipping verification`,
+      );
+      return;
+    }
+
+    const expectedHash = line.trim().split(/\s+/)[0];
+    const fileBuffer = readFs(zipPath);
+    const actualHash = createHash('sha256').update(fileBuffer).digest('hex');
+
+    if (actualHash !== expectedHash) {
+      unlinkSync(zipPath);
+      throw new Error(
+        `Checksum mismatch for ${expectedFilename}!\n  Expected: ${expectedHash}\n  Actual:   ${actualHash}`,
+      );
+    }
+
+    console.log(`Checksum verified: ${actualHash}`);
+    unlinkSync(checksumPath);
+  } catch (err) {
+    // Clean up checksums file on error
+    try {
+      unlinkSync(checksumPath);
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
+}
+
 async function download(): Promise<void> {
   const { os, arch, ext } = getPlatformArch();
   const binaryName = `pocketbase${ext}`;
@@ -87,13 +131,25 @@ async function download(): Promise<void> {
 
   mkdirSync(RESOURCES_DIR, { recursive: true });
 
-  const url = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_${os}_${arch}.zip`;
+  const zipFilename = `pocketbase_${PB_VERSION}_${os}_${arch}.zip`;
+  const url = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/${zipFilename}`;
   const zipPath = join(RESOURCES_DIR, 'pb.zip');
 
   console.log(`Downloading PocketBase ${PB_VERSION} for ${os}/${arch}...`);
   console.log(`URL: ${url}`);
 
-  await downloadFile(url, zipPath);
+  try {
+    await downloadFile(url, zipPath);
+    await verifyChecksum(zipPath, zipFilename);
+  } catch (err) {
+    // Clean up partial/invalid zip on failure
+    try {
+      unlinkSync(zipPath);
+    } catch {
+      /* already gone */
+    }
+    throw err;
+  }
   extractZip(zipPath, RESOURCES_DIR);
   unlinkSync(zipPath);
 

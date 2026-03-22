@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, requireOnline } from './pocketbase';
 
 export interface BridgeGroupRecord {
   id: string;
@@ -11,6 +11,7 @@ export interface BridgeGroupRecord {
 export type BridgeGroupInput = Omit<BridgeGroupRecord, 'id' | 'created' | 'updated'>;
 
 export async function addGroup(data: BridgeGroupInput): Promise<BridgeGroupRecord> {
+  requireOnline();
   try {
     return await getPb().collection('bridge_groups').create<BridgeGroupRecord>(data);
   } catch (err) {
@@ -23,6 +24,7 @@ export async function updateGroup(
   id: string,
   data: Partial<BridgeGroupInput>,
 ): Promise<BridgeGroupRecord> {
+  requireOnline();
   try {
     return await getPb().collection('bridge_groups').update<BridgeGroupRecord>(id, data);
   } catch (err) {
@@ -32,6 +34,7 @@ export async function updateGroup(
 }
 
 export async function deleteGroup(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('bridge_groups').delete(id);
   } catch (err) {

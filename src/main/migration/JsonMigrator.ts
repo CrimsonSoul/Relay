@@ -227,8 +227,11 @@ export class JsonMigrator {
         await this.pb.collection(m.collection).delete(record.id);
       }
 
-      for (const record of records) {
-        await this.pb.collection(m.collection).create(record);
+      // Batch creates in parallel chunks for performance
+      const BATCH_SIZE = 30;
+      for (let i = 0; i < records.length; i += BATCH_SIZE) {
+        const batch = records.slice(i, i + BATCH_SIZE);
+        await Promise.all(batch.map((r) => this.pb.collection(m.collection).create(r)));
       }
 
       summary[m.collection] = records.length;

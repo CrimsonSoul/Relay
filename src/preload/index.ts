@@ -82,6 +82,8 @@ const api: BridgeAPI = {
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
   cacheWrite: (collection: string, action: string, record: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.CACHE_WRITE, collection, action, record),
+  // Sync
+  syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase
   getPbUrl: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_URL),
   getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),

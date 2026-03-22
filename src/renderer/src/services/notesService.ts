@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface NoteRecord {
   id: string;
@@ -19,7 +19,9 @@ export async function getNote(
   try {
     const result = await getPb()
       .collection('notes')
-      .getFirstListItem<NoteRecord>(`entityType="${entityType}" && entityKey="${entityKey}"`);
+      .getFirstListItem<NoteRecord>(
+        `entityType="${escapeFilter(entityType)}" && entityKey="${escapeFilter(entityKey)}"`,
+      );
     return result;
   } catch (err: unknown) {
     if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
@@ -36,6 +38,7 @@ export async function setNote(
   note: string,
   tags: string[],
 ): Promise<NoteRecord> {
+  requireOnline();
   try {
     const existing = await getNote(entityType, entityKey);
     if (existing) {

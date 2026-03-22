@@ -1,32 +1,41 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
 import { join } from 'path';
+import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
 
 const logger = loggers.backup;
 
 export class BackupManager {
   private backupsDir: string;
-  private dbPath: string;
   private maxBackups = 10;
+  private pb: PocketBase | null = null;
 
   constructor(dataDir: string) {
-    this.backupsDir = join(dataDir, 'backups');
-    this.dbPath = join(dataDir, 'pb_data', 'data.db');
+    // PocketBase API stores backups in pb_data/backups/, so prune from the same location
+    this.backupsDir = join(dataDir, 'pb_data', 'backups');
     mkdirSync(this.backupsDir, { recursive: true });
   }
 
-  backup(): string | null {
-    if (!existsSync(this.dbPath)) {
-      logger.warn('No database file to back up');
-      return null;
-    }
+  /** Set the authenticated PocketBase client for API-based backups. */
+  setPocketBase(pb: PocketBase): void {
+    this.pb = pb;
+  }
+
+  async backup(): Promise<string | null> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backupPath = join(this.backupsDir, `${timestamp}.db`);
+    const backupName = `${timestamp}.zip`;
+
     try {
-      copyFileSync(this.dbPath, backupPath);
-      logger.info('Backup created', { path: backupPath });
+      if (this.pb) {
+        // Use PocketBase backup API for a consistent snapshot
+        await this.pb.backups.create(backupName);
+        logger.info('Backup created via PB API', { name: backupName });
+      } else {
+        logger.warn('No PocketBase client — skipping backup');
+        return null;
+      }
       this.pruneOldBackups();
-      return backupPath;
+      return join(this.backupsDir, backupName);
     } catch (err) {
       logger.error('Backup failed', { error: err });
       return null;
@@ -35,7 +44,7 @@ export class BackupManager {
 
   private pruneOldBackups(): void {
     const files = readdirSync(this.backupsDir)
-      .filter((f) => f.endsWith('.db'))
+      .filter((f) => f.endsWith('.db') || f.endsWith('.zip'))
       .map((f) => ({
         name: f,
         path: join(this.backupsDir, f),
@@ -51,7 +60,7 @@ export class BackupManager {
   listBackups(): Array<{ name: string; date: Date; size: number }> {
     if (!existsSync(this.backupsDir)) return [];
     return readdirSync(this.backupsDir)
-      .filter((f) => f.endsWith('.db'))
+      .filter((f) => f.endsWith('.db') || f.endsWith('.zip'))
       .map((f) => {
         const stat = statSync(join(this.backupsDir, f));
         return { name: f, date: stat.mtime, size: stat.size };

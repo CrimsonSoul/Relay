@@ -108,14 +108,34 @@ export function useCollection<T extends RecordModel>(
     }
   }, [collectionName, options.sort, options.filter]);
 
-  // Subscribe to realtime changes
-  useEffect(() => {
-    if (!isOnline()) {
-      void fetchData();
-      return;
-    }
+  // Track connection state with a ref (avoids cascading effect re-runs)
+  // and a counter to trigger re-subscription on reconnect.
+  const connectedRef = useRef(isOnline());
+  const [connectGeneration, setConnectGeneration] = useState(0);
 
+  useEffect(() => {
+    const unsubscribe = onConnectionStateChange((s) => {
+      const online = s === 'online';
+      const wasOffline = !connectedRef.current;
+      connectedRef.current = online;
+
+      if (online && wasOffline) {
+        // Flush pending offline writes then bump generation to trigger re-subscribe
+        void window.api?.syncPending?.();
+        setConnectGeneration((g) => g + 1);
+      } else if (!online && !wasOffline) {
+        // Going offline — bump to tear down stale subscription
+        setConnectGeneration((g) => g + 1);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // Subscribe to realtime changes — re-runs on reconnect via connectGeneration
+  useEffect(() => {
     void fetchData();
+
+    if (!connectedRef.current) return;
 
     function handleRealtimeEvent(collection: string, action: string, record: RecordModel): void {
       const next = applyRealtimeEvent<T>(dataRef.current, action, record);
@@ -139,17 +159,7 @@ export function useCollection<T extends RecordModel>(
       subscriptionRef.current?.();
       subscriptionRef.current = null;
     };
-  }, [collectionName, fetchData]);
-
-  // Re-fetch when coming back online
-  useEffect(() => {
-    const unsubscribe = onConnectionStateChange((state) => {
-      if (state === 'online') {
-        void fetchData();
-      }
-    });
-    return unsubscribe;
-  }, [fetchData]);
+  }, [collectionName, fetchData, connectGeneration]);
 
   return { data, loading, error, refetch: fetchData };
 }

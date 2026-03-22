@@ -106,8 +106,24 @@ export const PersonnelTab: React.FC<{
   };
 
   const handleExportCsv = useCallback(async () => {
-    // Export via IPC is no longer available — data is managed through PocketBase
-    showToast('Export is not currently available', 'info');
+    try {
+      const { exportToCsv } = await import('../services/importExportService');
+      const csv = await exportToCsv('oncall');
+      if (!csv) {
+        showToast('No on-call data to export', 'info');
+        return;
+      }
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `oncall-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('On-call data exported', 'success');
+    } catch (err) {
+      showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
   }, [showToast]);
 
   const alertConfigs = [

@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface ContactRecord {
   id: string;
@@ -13,6 +13,7 @@ export interface ContactRecord {
 export type ContactInput = Omit<ContactRecord, 'id' | 'created' | 'updated'>;
 
 export async function addContact(data: ContactInput): Promise<ContactRecord> {
+  requireOnline();
   try {
     return await getPb().collection('contacts').create<ContactRecord>(data);
   } catch (err) {
@@ -25,6 +26,7 @@ export async function updateContact(
   id: string,
   data: Partial<ContactInput>,
 ): Promise<ContactRecord> {
+  requireOnline();
   try {
     return await getPb().collection('contacts').update<ContactRecord>(id, data);
   } catch (err) {
@@ -34,6 +36,7 @@ export async function updateContact(
 }
 
 export async function deleteContact(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('contacts').delete(id);
   } catch (err) {
@@ -46,7 +49,7 @@ export async function findContactByEmail(email: string): Promise<ContactRecord |
   try {
     const result = await getPb()
       .collection('contacts')
-      .getFirstListItem<ContactRecord>(`email="${email}"`);
+      .getFirstListItem<ContactRecord>(`email="${escapeFilter(email)}"`);
     return result;
   } catch (err: unknown) {
     if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
@@ -58,6 +61,7 @@ export async function findContactByEmail(email: string): Promise<ContactRecord |
 }
 
 export async function bulkUpsertContacts(contacts: ContactInput[]): Promise<ContactRecord[]> {
+  requireOnline();
   const results: ContactRecord[] = [];
   for (const contact of contacts) {
     try {

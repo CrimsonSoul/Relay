@@ -8,6 +8,8 @@ import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupCacheHandlers } from './handlers/cacheHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
+import type { PendingChanges } from './cache/PendingChanges';
+import type { SyncManager } from './cache/SyncManager';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 
@@ -24,6 +26,8 @@ export function setupIpcHandlers(
   createAuxWindow?: (route: string) => void,
   getAppConfig?: () => AppConfig | null,
   getCache?: () => OfflineCache | null,
+  getPendingChanges?: () => PendingChanges | null,
+  getSyncManager?: () => SyncManager | null,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
     try {
@@ -60,6 +64,13 @@ export function setupIpcHandlers(
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
   safeSetup('setup', () => setupSetupHandlers(getAppConfig ?? (() => null)));
 
-  // Offline Cache Handlers (always registered — getter returns null when not in client mode)
-  safeSetup('cache', () => setupCacheHandlers(getCache ?? (() => null)));
+  // Offline Cache Handlers (always registered — getters return null when not in client mode)
+  safeSetup('cache', () =>
+    setupCacheHandlers(
+      getCache ?? (() => null),
+      getPendingChanges ?? (() => null),
+      getSyncManager ?? (() => null),
+      getAppConfig ?? (() => null),
+    ),
+  );
 }

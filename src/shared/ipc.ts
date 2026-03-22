@@ -302,6 +302,8 @@ export type BridgeAPI = {
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
+  // Sync
+  syncPending: () => Promise<{ total: number; conflicts: number; errors: string[] }>;
   // PocketBase
   getPbUrl: () => Promise<string | null>;
   getPbSecret: () => Promise<string | null>;
@@ -366,6 +368,8 @@ export const IPC_CHANNELS = {
   PB_GET_URL: 'pb:getUrl',
   PB_GET_SECRET: 'pb:getSecret',
   PB_START: 'pb:start',
+  // Sync
+  SYNC_PENDING: 'sync:pending',
 } as const;
 
 export type WeatherAlert = {

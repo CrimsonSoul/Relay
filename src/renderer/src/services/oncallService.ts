@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface OnCallRecord {
   id: string;
@@ -15,6 +15,7 @@ export interface OnCallRecord {
 export type OnCallInput = Omit<OnCallRecord, 'id' | 'created' | 'updated'>;
 
 export async function addOnCall(data: OnCallInput): Promise<OnCallRecord> {
+  requireOnline();
   try {
     return await getPb().collection('oncall').create<OnCallRecord>(data);
   } catch (err) {
@@ -24,6 +25,7 @@ export async function addOnCall(data: OnCallInput): Promise<OnCallRecord> {
 }
 
 export async function updateOnCall(id: string, data: Partial<OnCallInput>): Promise<OnCallRecord> {
+  requireOnline();
   try {
     return await getPb().collection('oncall').update<OnCallRecord>(id, data);
   } catch (err) {
@@ -33,6 +35,7 @@ export async function updateOnCall(id: string, data: Partial<OnCallInput>): Prom
 }
 
 export async function deleteOnCall(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('oncall').delete(id);
   } catch (err) {
@@ -42,10 +45,11 @@ export async function deleteOnCall(id: string): Promise<void> {
 }
 
 export async function deleteOnCallByTeam(team: string): Promise<void> {
+  requireOnline();
   try {
     const records = await getPb()
       .collection('oncall')
-      .getFullList<OnCallRecord>({ filter: `team="${team}"` });
+      .getFullList<OnCallRecord>({ filter: `team="${escapeFilter(team)}"` });
     for (const record of records) {
       await getPb().collection('oncall').delete(record.id);
     }
@@ -74,10 +78,11 @@ export async function replaceTeamRecords(
 }
 
 export async function renameTeam(oldName: string, newName: string): Promise<void> {
+  requireOnline();
   try {
     const records = await getPb()
       .collection('oncall')
-      .getFullList<OnCallRecord>({ filter: `team="${oldName}"` });
+      .getFullList<OnCallRecord>({ filter: `team="${escapeFilter(oldName)}"` });
     for (const record of records) {
       await getPb().collection('oncall').update(record.id, { team: newName });
     }
@@ -88,12 +93,13 @@ export async function renameTeam(oldName: string, newName: string): Promise<void
 }
 
 export async function reorderTeams(teamOrder: string[]): Promise<void> {
+  requireOnline();
   try {
     for (let i = 0; i < teamOrder.length; i++) {
-      const team = teamOrder[i];
+      const team = teamOrder[i]!;
       const records = await getPb()
         .collection('oncall')
-        .getFullList<OnCallRecord>({ filter: `team="${team}"` });
+        .getFullList<OnCallRecord>({ filter: `team="${escapeFilter(team)}"` });
       for (const record of records) {
         await getPb().collection('oncall').update(record.id, { sortOrder: i });
       }

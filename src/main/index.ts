@@ -3,11 +3,14 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { loggers } from './logger';
-import { AppConfig, type ServerConfig } from './config/AppConfig';
+import { AppConfig, type ServerConfig, type ClientConfig } from './config/AppConfig';
 import { PocketBaseProcess } from './pocketbase/PocketBaseProcess';
 import { BackupManager } from './pocketbase/BackupManager';
 import { RetentionManager } from './pocketbase/RetentionManager';
 import { JsonMigrator } from './migration/JsonMigrator';
+import { OfflineCache } from './cache/OfflineCache';
+import { PendingChanges } from './cache/PendingChanges';
+import { SyncManager } from './cache/SyncManager';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -120,7 +123,16 @@ if (gotLock) {
     // M5: 'unsafe-eval' in dev is intentional — only enabled when !app.isPackaged for HMR/dev tooling
     // M4: 'unsafe-inline' for style-src is an accepted risk — React and many UI libraries
     //     inject inline styles at runtime; removing it would break component rendering
+    // CSP reads config dynamically on each request so it picks up port/URL changes after setup.
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      const pbConnectSrc = (() => {
+        const config = state.appConfig?.load();
+        if (config?.mode === 'server') return `http://127.0.0.1:${config.port}`;
+        if (config?.mode === 'client') return config.serverUrl;
+        // Not yet configured — allow localhost on common PB ports for setup flow
+        return 'http://127.0.0.1:8090';
+      })();
+
       callback({
         responseHeaders: {
           ...details.responseHeaders,
@@ -129,7 +141,7 @@ if (gotLock) {
               `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
               "style-src 'self' 'unsafe-inline'; " +
               "img-src 'self' data: blob: https://api.weather.gov https://*.rainviewer.com; " +
-              "connect-src 'self' http: https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
+              `connect-src 'self' ${pbConnectSrc} https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; ` +
               "font-src 'self' data:; " +
               "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
               "object-src 'none'; " +
@@ -211,14 +223,14 @@ if (gotLock) {
         // Auth as superuser to manage users
         await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
 
-        // Delete all existing users (avoids filter issues with @ in email)
+        // Delete the existing app user if present (recreate with correct password)
         try {
-          const all = await pb.collection('_pb_users_auth_').getFullList();
-          for (const user of all) {
-            await pb.collection('_pb_users_auth_').delete(user.id);
-          }
+          const existing = await pb
+            .collection('_pb_users_auth_')
+            .getFirstListItem('email="relay@relay.app"');
+          await pb.collection('_pb_users_auth_').delete(existing.id);
         } catch {
-          // Collection may be empty
+          // User doesn't exist yet
         }
 
         // Create with current passphrase
@@ -334,7 +346,6 @@ if (gotLock) {
 
         // Start backup and retention managers
         state.backupManager = new BackupManager(configDataDir);
-        state.backupManager.backup();
 
         try {
           const PocketBase = (await import('pocketbase')).default;
@@ -342,11 +353,13 @@ if (gotLock) {
           await pb
             .collection('_superusers')
             .authWithPassword('admin@relay.app', serverConfig.secret);
+          state.backupManager.setPocketBase(pb);
+          await state.backupManager.backup();
           state.retentionManager = new RetentionManager(pb);
           state.retentionManager.startSchedule();
           loggers.pocketbase.info('Backup and retention managers started');
         } catch (retErr) {
-          loggers.pocketbase.error('Failed to start retention manager', { error: retErr });
+          loggers.pocketbase.error('Failed to start backup/retention managers', { error: retErr });
         }
 
         return true;
@@ -360,6 +373,33 @@ if (gotLock) {
     const relayConfig = state.appConfig.load();
     if (relayConfig && relayConfig.mode === 'server') {
       await startPocketBase(relayConfig as ServerConfig);
+    }
+
+    // Initialize offline cache infrastructure for client mode.
+    // All three components (cache, pending, sync) are initialized together so
+    // they're either all available or none — preventing silent data loss from
+    // a half-initialized state.
+    if (relayConfig && relayConfig.mode === 'client') {
+      const clientConfig = relayConfig as ClientConfig;
+      try {
+        const PocketBase = (await import('pocketbase')).default;
+        const syncPb = new PocketBase(clientConfig.serverUrl);
+        await syncPb
+          .collection('_pb_users_auth_')
+          .authWithPassword('relay@relay.app', clientConfig.secret);
+
+        state.offlineCache = new OfflineCache(join(configDataDir, 'cache.db'));
+        state.pendingChanges = new PendingChanges(join(configDataDir, 'pending_changes.db'));
+        state.syncManager = new SyncManager(syncPb);
+        loggers.pocketbase.info('Client-mode offline infrastructure initialized');
+      } catch (syncErr) {
+        loggers.pocketbase.warn(
+          'Could not initialize offline infrastructure — will retry on reconnect',
+          {
+            error: syncErr,
+          },
+        );
+      }
     }
 
     // Register PB_GET_URL and PB_GET_SECRET IPC handlers
@@ -581,6 +621,10 @@ if (gotLock) {
         if (state.offlineCache) {
           state.offlineCache.close();
           state.offlineCache = null;
+        }
+        if (state.pendingChanges) {
+          state.pendingChanges.close();
+          state.pendingChanges = null;
         }
       });
 

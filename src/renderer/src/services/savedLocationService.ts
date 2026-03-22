@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, requireOnline } from './pocketbase';
 
 export interface SavedLocationRecord {
   id: string;
@@ -13,6 +13,7 @@ export interface SavedLocationRecord {
 export type SavedLocationInput = Omit<SavedLocationRecord, 'id' | 'created' | 'updated'>;
 
 export async function addLocation(data: SavedLocationInput): Promise<SavedLocationRecord> {
+  requireOnline();
   try {
     return await getPb().collection('saved_locations').create<SavedLocationRecord>(data);
   } catch (err) {
@@ -25,6 +26,7 @@ export async function updateLocation(
   id: string,
   data: Partial<SavedLocationInput>,
 ): Promise<SavedLocationRecord> {
+  requireOnline();
   try {
     return await getPb().collection('saved_locations').update<SavedLocationRecord>(id, data);
   } catch (err) {
@@ -34,6 +36,7 @@ export async function updateLocation(
 }
 
 export async function deleteLocation(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('saved_locations').delete(id);
   } catch (err) {
@@ -43,6 +46,7 @@ export async function deleteLocation(id: string): Promise<void> {
 }
 
 export async function setDefaultLocation(id: string): Promise<SavedLocationRecord> {
+  requireOnline();
   try {
     // Clear all existing defaults first
     const allLocations = await getPb()

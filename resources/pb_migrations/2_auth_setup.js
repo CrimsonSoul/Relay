@@ -37,7 +37,7 @@ migrate(
     }
     users.listRule = AUTH_RULE;
     users.viewRule = AUTH_RULE;
-    users.createRule = ''; // allow anyone to register (admin can tighten later)
+    users.createRule = null; // server manages user creation via superuser — no public registration
     users.updateRule = 'id = @request.auth.id';
     users.deleteRule = 'id = @request.auth.id';
 

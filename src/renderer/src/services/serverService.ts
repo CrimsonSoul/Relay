@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface ServerRecord {
   id: string;
@@ -16,6 +16,7 @@ export interface ServerRecord {
 export type ServerInput = Omit<ServerRecord, 'id' | 'created' | 'updated'>;
 
 export async function addServer(data: ServerInput): Promise<ServerRecord> {
+  requireOnline();
   try {
     return await getPb().collection('servers').create<ServerRecord>(data);
   } catch (err) {
@@ -25,6 +26,7 @@ export async function addServer(data: ServerInput): Promise<ServerRecord> {
 }
 
 export async function updateServer(id: string, data: Partial<ServerInput>): Promise<ServerRecord> {
+  requireOnline();
   try {
     return await getPb().collection('servers').update<ServerRecord>(id, data);
   } catch (err) {
@@ -34,6 +36,7 @@ export async function updateServer(id: string, data: Partial<ServerInput>): Prom
 }
 
 export async function deleteServer(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('servers').delete(id);
   } catch (err) {
@@ -46,7 +49,7 @@ export async function findServerByName(name: string): Promise<ServerRecord | nul
   try {
     const result = await getPb()
       .collection('servers')
-      .getFirstListItem<ServerRecord>(`name="${name}"`);
+      .getFirstListItem<ServerRecord>(`name="${escapeFilter(name)}"`);
     return result;
   } catch (err: unknown) {
     if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
@@ -58,6 +61,7 @@ export async function findServerByName(name: string): Promise<ServerRecord | nul
 }
 
 export async function bulkUpsertServers(servers: ServerInput[]): Promise<ServerRecord[]> {
+  requireOnline();
   const results: ServerRecord[] = [];
   for (const server of servers) {
     try {

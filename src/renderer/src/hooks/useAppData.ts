@@ -5,6 +5,7 @@ import type { ContactRecord } from '../services/contactService';
 import type { ServerRecord } from '../services/serverService';
 import type { BridgeGroupRecord } from '../services/bridgeGroupService';
 import type { OnCallRecord } from '../services/oncallService';
+import type { OncallLayoutRecord } from '../services/oncallLayoutService';
 import { loggers } from '../utils/logger';
 
 // Dev-only mock data for browser preview (no Electron API available)
@@ -353,13 +354,31 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     refetch: refetchOncall,
   } = useCollection<OnCallRecord>('oncall', { sort: 'sortOrder' });
 
+  const {
+    data: layoutRecords,
+    loading: layoutLoading,
+    error: layoutError,
+    refetch: refetchLayout,
+  } = useCollection<OncallLayoutRecord>('oncall_layout');
+
   // Transform PB records to app types
   const contacts = useMemo(() => contactRecords.map(toContact), [contactRecords]);
   const servers = useMemo(() => serverRecords.map(toServer), [serverRecords]);
   const groups = useMemo(() => groupRecords.map(toGroup), [groupRecords]);
   const onCall = useMemo(() => oncallRecords.map(toOnCallRow), [oncallRecords]);
+  const teamLayout = useMemo(() => {
+    const layout: Record<
+      string,
+      { x: number; y: number; w?: number; h?: number; isStatic?: boolean }
+    > = {};
+    for (const r of layoutRecords) {
+      layout[r.team] = { x: r.x, y: r.y, w: r.w, h: r.h, isStatic: r.isStatic };
+    }
+    return layout;
+  }, [layoutRecords]);
 
-  const isLoading = contactsLoading || serversLoading || groupsLoading || oncallLoading;
+  const isLoading =
+    contactsLoading || serversLoading || groupsLoading || oncallLoading || layoutLoading;
   const [isReloading, setIsReloading] = useState(false);
 
   // Show errors as toasts (suppress PocketBase auto-cancellation errors)
@@ -379,31 +398,50 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     if (oncallError && !oncallError.includes('autocancelled'))
       showToast(`On-Call: ${oncallError}`, 'error');
   }, [oncallError, showToast]);
+  useEffect(() => {
+    if (layoutError && !layoutError.includes('autocancelled'))
+      showToast(`Layout: ${layoutError}`, 'error');
+  }, [layoutError, showToast]);
 
   // Build AppData object
   const data = useMemo<AppData>(() => {
-    if (isDevMode) return getDevMockData();
+    if (isDevMode && import.meta.env.DEV) return getDevMockData();
     return {
       contacts,
       servers,
       groups,
       onCall,
+      teamLayout,
       lastUpdated: Date.now(),
     };
-  }, [isDevMode, contacts, servers, groups, onCall]);
+  }, [isDevMode, contacts, servers, groups, onCall, teamLayout]);
 
   const handleSync = useCallback(async () => {
     if (isReloading) return;
     setIsReloading(true);
     try {
-      await Promise.all([refetchContacts(), refetchServers(), refetchGroups(), refetchOncall()]);
+      await Promise.all([
+        refetchContacts(),
+        refetchServers(),
+        refetchGroups(),
+        refetchOncall(),
+        refetchLayout(),
+      ]);
     } catch (err) {
       loggers.app.error('Sync failed', { error: err });
       showToast('Failed to sync data', 'error');
     } finally {
       setIsReloading(false);
     }
-  }, [isReloading, refetchContacts, refetchServers, refetchGroups, refetchOncall, showToast]);
+  }, [
+    isReloading,
+    refetchContacts,
+    refetchServers,
+    refetchGroups,
+    refetchOncall,
+    refetchLayout,
+    showToast,
+  ]);
 
   return {
     data,

@@ -1,4 +1,4 @@
-import { getPb, handleApiError } from './pocketbase';
+import { getPb, handleApiError, requireOnline } from './pocketbase';
 
 export interface AlertHistoryRecord {
   id: string;
@@ -16,6 +16,7 @@ export interface AlertHistoryRecord {
 export type AlertHistoryInput = Omit<AlertHistoryRecord, 'id' | 'created' | 'updated'>;
 
 export async function addAlertHistory(data: AlertHistoryInput): Promise<AlertHistoryRecord> {
+  requireOnline();
   try {
     return await getPb().collection('alert_history').create<AlertHistoryRecord>(data);
   } catch (err) {
@@ -25,6 +26,7 @@ export async function addAlertHistory(data: AlertHistoryInput): Promise<AlertHis
 }
 
 export async function deleteAlertHistory(id: string): Promise<void> {
+  requireOnline();
   try {
     await getPb().collection('alert_history').delete(id);
   } catch (err) {
@@ -34,6 +36,7 @@ export async function deleteAlertHistory(id: string): Promise<void> {
 }
 
 export async function clearAlertHistory(): Promise<void> {
+  requireOnline();
   try {
     const records = await getPb().collection('alert_history').getFullList<AlertHistoryRecord>();
     for (const record of records) {
@@ -46,6 +49,7 @@ export async function clearAlertHistory(): Promise<void> {
 }
 
 export async function pinAlertHistory(id: string, pinned: boolean): Promise<AlertHistoryRecord> {
+  requireOnline();
   try {
     return await getPb().collection('alert_history').update<AlertHistoryRecord>(id, { pinned });
   } catch (err) {
@@ -55,6 +59,7 @@ export async function pinAlertHistory(id: string, pinned: boolean): Promise<Aler
 }
 
 export async function updateAlertLabel(id: string, label: string): Promise<AlertHistoryRecord> {
+  requireOnline();
   try {
     return await getPb().collection('alert_history').update<AlertHistoryRecord>(id, { label });
   } catch (err) {

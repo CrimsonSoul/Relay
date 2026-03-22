@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
-import { getPb } from './pocketbase';
+import { getPb, escapeFilter } from './pocketbase';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -97,7 +97,7 @@ async function upsertOne(
   const uniqueKey = UNIQUE_KEYS[collection];
 
   if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
-    const filterValue = String(data[uniqueKey]).replace(/"/g, '\\"');
+    const filterValue = escapeFilter(String(data[uniqueKey]));
     let existing: { id: string } | null = null;
     try {
       existing = (await getPb()

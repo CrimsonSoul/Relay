@@ -37,27 +37,45 @@ function setConnectionState(state: ConnectionState): void {
 
 export async function authenticate(secret: string): Promise<boolean> {
   const pb = getPb();
+  setStoredSecret(secret);
 
-  // Try superuser first (works for server mode and remote clients)
-  try {
-    await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
-    setConnectionState('online');
-    startHealthCheck();
-    return true;
-  } catch (suErr) {
-    console.warn('Superuser auth failed, trying app user', suErr);
-  }
-
-  // Fall back to app user
+  // Try app user first — this works both locally and remotely.
+  // Superuser auth is restricted to localhost by PocketBase, so it would
+  // fail for remote clients. Only fall back to superuser for local dev/setup.
   try {
     await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
     setConnectionState('online');
     startHealthCheck();
     return true;
   } catch (appErr) {
-    console.error('App user auth also failed', appErr);
+    console.warn('App user auth failed, trying superuser fallback', appErr);
+  }
+
+  // Fall back to superuser (localhost only — useful during initial setup
+  // before the app user has been created)
+  try {
+    await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+    setConnectionState('online');
+    startHealthCheck();
+    return true;
+  } catch (suErr) {
+    console.error('All auth methods failed', suErr);
     return false;
   }
+}
+
+/** Stored secret for re-authentication on reconnect. Cleared after 8 hours. */
+let storedSecret: string | null = null;
+let storedSecretTimer: ReturnType<typeof setTimeout> | null = null;
+const SECRET_TTL_MS = 8 * 60 * 60 * 1000;
+
+export function setStoredSecret(secret: string): void {
+  storedSecret = secret;
+  if (storedSecretTimer) clearTimeout(storedSecretTimer);
+  storedSecretTimer = setTimeout(() => {
+    storedSecret = null;
+    storedSecretTimer = null;
+  }, SECRET_TTL_MS);
 }
 
 export function startHealthCheck(intervalMs = 30000): void {
@@ -67,7 +85,14 @@ export function startHealthCheck(intervalMs = 30000): void {
       const res = await fetch(`${getPb().baseURL}/api/health`);
       if (res.ok && connectionState !== 'online') {
         setConnectionState('reconnecting');
-        if (!getPb().authStore.isValid) {
+        // Re-authenticate if token expired during offline period
+        if (!getPb().authStore.isValid && storedSecret) {
+          const reauthed = await authenticate(storedSecret);
+          if (!reauthed) {
+            console.warn('Re-authentication failed on reconnect');
+            return;
+          }
+        } else if (!getPb().authStore.isValid) {
           return;
         }
         setConnectionState('online');
@@ -92,9 +117,31 @@ export function stopHealthCheck(): void {
 export function handleApiError(error: unknown): void {
   if (error instanceof TypeError && (error as TypeError).message.includes('fetch')) {
     setConnectionState('offline');
+    return;
+  }
+  // PocketBase SDK wraps network errors as ClientResponseError with status 0
+  if (
+    error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    (error as { status: number }).status === 0
+  ) {
+    setConnectionState('offline');
   }
 }
 
 export function isOnline(): boolean {
   return connectionState === 'online';
+}
+
+/** Throws immediately if offline — prevents writes from silently failing with a network error. */
+export function requireOnline(): void {
+  if (!isOnline()) {
+    throw new Error('You are offline. Changes cannot be saved until the connection is restored.');
+  }
+}
+
+/** Escape a value for use in PocketBase filter strings to prevent injection. */
+export function escapeFilter(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }

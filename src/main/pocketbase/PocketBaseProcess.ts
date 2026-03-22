@@ -16,6 +16,7 @@ export class PocketBaseProcess {
   private config: PocketBaseConfig;
   private restartCount = 0;
   private maxRestarts = 3;
+  private stopping = false;
   private onCrashCallback?: (error: string) => void;
 
   constructor(config: PocketBaseConfig) {
@@ -67,7 +68,7 @@ export class PocketBaseProcess {
       logger.warn('PocketBase exited', { code, signal });
       this.child = null;
 
-      if (code !== 0 && code !== null) {
+      if (!this.stopping && code !== 0 && code !== null) {
         void this.handleCrash(`PocketBase exited with code ${code}`);
       }
     });
@@ -78,7 +79,8 @@ export class PocketBaseProcess {
   }
 
   async stop(): Promise<void> {
-    if (!this.child) return;
+    if (!this.child || this.stopping) return;
+    this.stopping = true;
 
     logger.info('Stopping PocketBase');
 
@@ -87,19 +89,22 @@ export class PocketBaseProcess {
       const safetyTimeout = setTimeout(() => {
         logger.warn('PocketBase stop safety timeout, continuing');
         this.child = null;
+        this.stopping = false;
         resolve();
       }, 10000);
 
-      this.child!.on('exit', () => {
+      this.child!.once('exit', () => {
         clearTimeout(safetyTimeout);
         this.child = null;
+        this.stopping = false;
         resolve();
       });
 
-      // Try graceful kill first
+      // PocketBase is a headless Go binary — WM_CLOSE (taskkill without /F) won't work.
+      // Use /F on Windows; SIGTERM on Unix gives PB a chance to flush WAL.
       if (process.platform === 'win32') {
         // eslint-disable-next-line sonarjs/no-os-command-from-path
-        spawn('taskkill', ['/PID', this.child!.pid!.toString()]);
+        spawn('taskkill', ['/F', '/PID', this.child!.pid!.toString()]);
       } else {
         this.child!.kill('SIGTERM');
       }
