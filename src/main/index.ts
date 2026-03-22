@@ -203,15 +203,15 @@ if (gotLock) {
 
         // Delete existing app user (may have stale password)
         const existing = await pb
-          .collection('users')
+          .collection('_pb_users_auth_')
           .getFullList({ filter: "email='relay@relay.app'" });
         for (const user of existing) {
-          await pb.collection('users').delete(user.id);
+          await pb.collection('_pb_users_auth_').delete(user.id);
         }
 
         // Create with current passphrase
         await pb
-          .collection('users')
+          .collection('_pb_users_auth_')
           .create({ email: 'relay@relay.app', password: secret, passwordConfirm: secret });
         loggers.pocketbase.info('App user ready');
       } catch (err) {
