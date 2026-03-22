@@ -27,6 +27,11 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
       return;
     }
 
+    if (secret.length < 8) {
+      setError('Passphrase must be at least 8 characters');
+      return;
+    }
+
     if (mode === 'server') {
       const portNum = parseInt(port, 10);
       if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {

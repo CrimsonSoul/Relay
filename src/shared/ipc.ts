@@ -308,6 +308,7 @@ export type BridgeAPI = {
   // PocketBase
   getPbUrl: () => Promise<string | null>;
   getPbSecret: () => Promise<string | null>;
+  startPocketBase: () => Promise<boolean>;
   platform:
     | 'aix'
     | 'android'
@@ -370,6 +371,7 @@ export const IPC_CHANNELS = {
   // PocketBase
   PB_GET_URL: 'pb:getUrl',
   PB_GET_SECRET: 'pb:getSecret',
+  PB_START: 'pb:start',
 } as const;
 
 export type WeatherAlert = {

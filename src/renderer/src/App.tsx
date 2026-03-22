@@ -493,9 +493,18 @@ function AppWithSetup() {
     }) => {
       try {
         await globalThis.api!.saveConfig(config);
+        // In server mode, start PocketBase before checking config
+        if (config.mode === 'server') {
+          const started = await globalThis.api!.startPocketBase();
+          if (!started) {
+            setPhase({ stage: 'error', message: 'Failed to start PocketBase server.' });
+            return;
+          }
+        }
         await checkConfig();
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
+        setPhase({ stage: 'error', message: 'Failed to save configuration.' });
       }
     },
     [checkConfig],

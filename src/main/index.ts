@@ -73,7 +73,6 @@ if (gotLock) {
     });
   });
 
-  // eslint-disable-next-line sonarjs/cognitive-complexity -- window setup is inherently complex
   async function createWindow() {
     state.mainWindow = new BrowserWindow({
       width: 960,
@@ -158,11 +157,12 @@ if (gotLock) {
     const configDataDir = join(state.currentDataRoot || app.getPath('userData'), 'data');
     state.appConfig = new AppConfig(configDataDir);
 
-    // PocketBase lifecycle — start if configured in server mode
-    const relayConfig = state.appConfig.load();
-    if (relayConfig && relayConfig.mode === 'server') {
+    // PocketBase startup function — called on boot if already configured, or
+    // after first-time setup via IPC
+    const startPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
+      if (state.pbProcess?.isRunning()) return true; // already running
+
       try {
-        const serverConfig = relayConfig as ServerConfig;
         const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
         const binaryPath = app.isPackaged
           ? join(process.resourcesPath, 'pocketbase', binaryName)
@@ -187,27 +187,35 @@ if (gotLock) {
         await state.pbProcess.start();
         loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
 
-        // Create relay_user if it doesn't exist (via PB Admin API)
+        // Create relay auth user if it doesn't exist.
+        // The users collection has createRule="" (allow anyone) so no auth needed.
+        // On duplicate, PocketBase returns 400 which we safely ignore.
         try {
           const adminUrl = state.pbProcess.getLocalUrl();
-          const usersRes = await fetch(
-            `${adminUrl}/api/collections/users/records?filter=(username='relay_user')`,
-          );
-          const usersData = (await usersRes.json()) as { totalItems: number };
-          if (usersData.totalItems === 0) {
-            await fetch(`${adminUrl}/api/collections/users/records`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                username: 'relay_user',
-                password: serverConfig.secret,
-                passwordConfirm: serverConfig.secret,
-              }),
-            });
-            loggers.pocketbase.info('Created relay_user');
+          const createRes = await fetch(`${adminUrl}/api/collections/users/records`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: 'relay',
+              email: 'relay@localhost',
+              password: serverConfig.secret,
+              passwordConfirm: serverConfig.secret,
+            }),
+          });
+          if (createRes.ok) {
+            loggers.pocketbase.info('Created relay auth user');
+          } else {
+            const body = await createRes.text();
+            // 400 with "already exists" is expected on subsequent starts
+            if (!body.includes('already exists')) {
+              loggers.pocketbase.warn('relay user creation response', {
+                status: createRes.status,
+                body,
+              });
+            }
           }
         } catch (userErr) {
-          loggers.pocketbase.warn('Failed to create relay_user (may already exist)', {
+          loggers.pocketbase.warn('Failed to create relay user (may already exist)', {
             error: userErr,
           });
         }
@@ -219,6 +227,7 @@ if (gotLock) {
           try {
             const PocketBase = (await import('pocketbase')).default;
             const pb = new PocketBase(state.pbProcess.getLocalUrl());
+            await pb.collection('users').authWithPassword('relay', serverConfig.secret);
             const migrator = new JsonMigrator(pb);
             const result = await migrator.migrate(legacyDir);
             loggers.migration.info('Migration complete', {
@@ -233,32 +242,51 @@ if (gotLock) {
 
         // Start backup and retention managers
         state.backupManager = new BackupManager(configDataDir);
-        state.backupManager.backup(); // Initial backup on startup
+        state.backupManager.backup();
 
         try {
           const PocketBase = (await import('pocketbase')).default;
           const pb = new PocketBase(state.pbProcess.getLocalUrl());
+          // Authenticate so retention queries pass collection auth rules
+          await pb.collection('users').authWithPassword('relay', serverConfig.secret);
           state.retentionManager = new RetentionManager(pb);
           state.retentionManager.startSchedule();
           loggers.pocketbase.info('Backup and retention managers started');
         } catch (retErr) {
           loggers.pocketbase.error('Failed to start retention manager', { error: retErr });
         }
+
+        return true;
       } catch (pbError) {
         loggers.pocketbase.error('Failed to start PocketBase', { error: pbError });
+        return false;
       }
+    };
+
+    // Start PocketBase if already configured in server mode
+    const relayConfig = state.appConfig.load();
+    if (relayConfig && relayConfig.mode === 'server') {
+      await startPocketBase(relayConfig as ServerConfig);
     }
 
     // Register PB_GET_URL and PB_GET_SECRET IPC handlers
     ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
       if (state.pbProcess?.isRunning()) {
-        return state.pbProcess.getUrl();
+        // Server mode: renderer connects to localhost, not 0.0.0.0
+        return state.pbProcess.getLocalUrl();
       }
       const config = state.appConfig?.load();
       if (config?.mode === 'client') {
         return config.serverUrl;
       }
       return null;
+    });
+
+    // Start PocketBase on demand (called after first-time setup)
+    ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
+      const config = state.appConfig?.load();
+      if (!config || config.mode !== 'server') return false;
+      return startPocketBase(config as ServerConfig);
     });
 
     ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {

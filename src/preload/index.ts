@@ -88,6 +88,7 @@ const api: BridgeAPI = {
   // PocketBase
   getPbUrl: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_URL),
   getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),
+  startPocketBase: () => ipcRenderer.invoke(IPC_CHANNELS.PB_START),
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
   windowMaximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
