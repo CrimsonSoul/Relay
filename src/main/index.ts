@@ -190,6 +190,35 @@ if (gotLock) {
       }
     }
 
+    /**
+     * Ensure the app user (relay@relay.app) exists with the current passphrase.
+     * Clients auth as this user since _superusers is localhost-only.
+     * Uses superuser (localhost) to manage the user via PB SDK.
+     */
+    async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
+      try {
+        const PocketBase = (await import('pocketbase')).default;
+        const pb = new PocketBase(localUrl);
+        await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+
+        // Delete existing app user (may have stale password)
+        const existing = await pb
+          .collection('users')
+          .getFullList({ filter: "email='relay@relay.app'" });
+        for (const user of existing) {
+          await pb.collection('users').delete(user.id);
+        }
+
+        // Create with current passphrase
+        await pb
+          .collection('users')
+          .create({ email: 'relay@relay.app', password: secret, passwordConfirm: secret });
+        loggers.pocketbase.info('App user ready');
+      } catch (err) {
+        loggers.pocketbase.error('Failed to ensure app user', { error: err });
+      }
+    }
+
     /** Find the pb_migrations directory — tries multiple candidate paths for packaged builds. */
     function resolveMigrationsDir(_pbDataDir: string): string {
       const candidates = app.isPackaged
@@ -265,6 +294,9 @@ if (gotLock) {
 
         await state.pbProcess.start();
         loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
+
+        // Ensure app user exists for remote client auth (superuser is localhost-only)
+        await ensureAppUser(state.pbProcess.getLocalUrl(), serverConfig.secret);
 
         // Check for legacy JSON data and run migration if found
         const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
