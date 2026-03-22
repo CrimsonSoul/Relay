@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - pb
   pull_request:
     branches:
       - main
@@ -57,7 +58,7 @@ jobs:
         continue-on-error: true
 
   package-windows:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb'))
     runs-on: windows-latest
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
