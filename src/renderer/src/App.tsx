@@ -50,7 +50,7 @@ const PopoutBoard = lazy(() =>
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
 
-export function MainApp() {
+export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
   const { showToast } = useToast();
   const deviceLocation = useLocation();
 
@@ -58,7 +58,7 @@ export function MainApp() {
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
 
-  const { data, isReloading, handleSync } = useAppData(showToast);
+  const { data } = useAppData(showToast);
 
   const {
     weatherLocation,
@@ -420,9 +420,8 @@ export function MainApp() {
               <SettingsModal
                 isOpen={settingsOpen}
                 onClose={() => setSettingsOpen(false)}
-                isSyncing={isReloading}
-                onSync={handleSync}
                 onOpenDataManager={() => setIsDataManagerOpen(true)}
+                onReconfigure={onReconfigure}
               />
             )}
             {isDataManagerOpen && (
@@ -582,7 +581,7 @@ function ConnectedApp({
 
   return (
     <>
-      <MainApp />
+      <MainApp onReconfigure={onReconfigure} />
       <ConnectionStatus />
     </>
   );

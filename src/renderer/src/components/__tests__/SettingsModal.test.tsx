@@ -67,8 +67,6 @@ import { secureStorage } from '../../utils/secureStorage';
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
-  isSyncing: false,
-  onSync: vi.fn(),
 };
 
 describe('SettingsModal', () => {
@@ -89,23 +87,6 @@ describe('SettingsModal', () => {
   it('renders modal when open', () => {
     render(<SettingsModal {...defaultProps} />);
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-  });
-
-  it('shows "Sync Data Now" when not syncing', () => {
-    render(<SettingsModal {...defaultProps} isSyncing={false} />);
-    expect(screen.getByText('Sync Data Now')).toBeInTheDocument();
-  });
-
-  it('shows "Syncing..." when isSyncing is true', () => {
-    render(<SettingsModal {...defaultProps} isSyncing={true} />);
-    expect(screen.getByText('Syncing...')).toBeInTheDocument();
-  });
-
-  it('calls onSync when Sync button is clicked', () => {
-    const onSync = vi.fn();
-    render(<SettingsModal {...defaultProps} onSync={onSync} />);
-    fireEvent.click(screen.getByText('Sync Data Now'));
-    expect(onSync).toHaveBeenCalled();
   });
 
   it('shows "Open Data Manager..." when onOpenDataManager is provided', () => {

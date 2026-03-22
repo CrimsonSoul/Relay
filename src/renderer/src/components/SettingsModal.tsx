@@ -9,9 +9,8 @@ import { RADAR_URL_KEY } from '../tabs/RadarTab';
 type Props = {
   isOpen: boolean;
   onClose: () => void;
-  isSyncing: boolean;
-  onSync: () => void;
   onOpenDataManager?: () => void;
+  onReconfigure?: () => void;
 };
 
 type PbConfig = {
@@ -24,9 +23,8 @@ type PbConfig = {
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
   onClose,
-  isSyncing,
-  onSync,
   onOpenDataManager,
+  onReconfigure,
 }) => {
   const [radarUrl, setRadarUrl] = useState('');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
@@ -59,9 +57,15 @@ export const SettingsModal: React.FC<Props> = ({
     showToast(trimmed ? 'Radar URL saved' : 'Radar URL cleared', 'success');
   };
 
-  const handleReconfigure = () => {
-    // Reload the app to go back to the setup screen
-    window.location.reload();
+  const handleReconfigure = async () => {
+    // Clear config so the app shows the setup screen on reload
+    try {
+      await globalThis.api?.saveConfig({ mode: 'unconfigured' });
+    } catch {
+      // If save fails, clearing via reload will still show setup if PB can't connect
+    }
+    onClose();
+    onReconfigure?.();
   };
 
   const pbUrl =
@@ -72,22 +76,6 @@ export const SettingsModal: React.FC<Props> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
       <div className="settings-body">
-        <div className="settings-section">
-          <div className="settings-section-heading">Data Synchronization</div>
-          <TactileButton onClick={onSync} variant="primary" block className="btn-center">
-            {isSyncing ? (
-              <>
-                <span className="animate-spin settings-spinner" />
-                <span>Syncing...</span>
-              </>
-            ) : (
-              'Sync Data Now'
-            )}
-          </TactileButton>
-        </div>
-
-        <div className="settings-divider" />
-
         {onOpenDataManager && (
           <div className="settings-section">
             <div className="settings-section-heading">Data Management</div>
