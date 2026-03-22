@@ -158,50 +158,84 @@ if (gotLock) {
     const configDataDir = join(app.getPath('userData'), 'data');
     state.appConfig = new AppConfig(configDataDir);
 
-    // Create app user and superuser for PocketBase
+    // Create or update app user and superuser for PocketBase.
+    // Always updates the password to match the current config passphrase.
     async function ensurePocketBaseUsers(localUrl: string, secret: string): Promise<void> {
-      // Create relay app user (for collection auth rules)
+      await ensurePbUser(localUrl, 'users', 'relay@relay.app', secret);
+      await ensurePbUser(localUrl, '_superusers', 'admin@relay.app', secret);
+    }
+
+    async function ensurePbUser(
+      localUrl: string,
+      collection: string,
+      email: string,
+      secret: string,
+    ): Promise<void> {
       try {
-        const createRes = await fetch(`${localUrl}/api/collections/users/records`, {
+        // Try to create the user first
+        const createRes = await fetch(`${localUrl}/api/collections/${collection}/records`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: 'relay@relay.app',
-            password: secret,
-            passwordConfirm: secret,
-          }),
+          body: JSON.stringify({ email, password: secret, passwordConfirm: secret }),
         });
         if (createRes.ok) {
-          loggers.pocketbase.info('Created relay auth user');
-        } else {
-          const body = await createRes.text();
-          if (!body.includes('already exists') && !body.includes('not_unique')) {
-            loggers.pocketbase.warn('relay user creation response', {
-              status: createRes.status,
-              body,
-            });
-          }
+          loggers.pocketbase.info(`Created ${collection} user ${email}`);
+          return;
         }
-      } catch (err) {
-        loggers.pocketbase.warn('Failed to create relay user (may already exist)', { error: err });
-      }
 
-      // Create superuser for PocketBase admin dashboard (http://<host>:<port>/_/)
-      try {
-        const suRes = await fetch(`${localUrl}/api/collections/_superusers/records`, {
+        // User already exists — update password to match current passphrase.
+        // First, authenticate as superuser to get a token (needed to update records).
+        const authRes = await fetch(`${localUrl}/api/collections/_superusers/auth-with-password`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email: 'admin@relay.app',
-            password: secret,
-            passwordConfirm: secret,
-          }),
+          body: JSON.stringify({ identity: 'admin@relay.app', password: secret }),
         });
-        if (suRes.ok) {
-          loggers.pocketbase.info('Created superuser admin@relay.app');
+        if (!authRes.ok) {
+          // Can't auth as superuser — try to auth with current password to see if it already matches
+          const testAuth = await fetch(
+            `${localUrl}/api/collections/${collection}/auth-with-password`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ identity: email, password: secret }),
+            },
+          );
+          if (testAuth.ok) return; // Password already matches, nothing to do
+
+          loggers.pocketbase.warn(`Cannot update ${email} password — superuser auth failed`);
+          return;
         }
-      } catch {
-        // Superuser creation is non-critical
+
+        const authData = (await authRes.json()) as { token: string };
+
+        // Find the user record
+        const listRes = await fetch(
+          `${localUrl}/api/collections/${collection}/records?filter=(email='${email}')`,
+          { headers: { Authorization: `Bearer ${authData.token}` } },
+        );
+        if (!listRes.ok) return;
+
+        const listData = (await listRes.json()) as { items: Array<{ id: string }> };
+        if (listData.items.length === 0) return;
+
+        // Update password
+        const userId = listData.items[0].id;
+        const updateRes = await fetch(
+          `${localUrl}/api/collections/${collection}/records/${userId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${authData.token}`,
+            },
+            body: JSON.stringify({ password: secret, passwordConfirm: secret }),
+          },
+        );
+        if (updateRes.ok) {
+          loggers.pocketbase.info(`Updated ${email} password`);
+        }
+      } catch (err) {
+        loggers.pocketbase.warn(`Failed to ensure ${collection} user ${email}`, { error: err });
       }
     }
 
