@@ -434,4 +434,6 @@ export const loggers = {
   pocketbase: logger.createChild('PocketBase'),
   sync: logger.createChild('Sync'),
   migration: logger.createChild('Migration'),
+  backup: logger.createChild('Backup'),
+  retention: logger.createChild('Retention'),
 };
