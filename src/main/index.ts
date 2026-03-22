@@ -157,6 +157,53 @@ if (gotLock) {
     const configDataDir = join(state.currentDataRoot || app.getPath('userData'), 'data');
     state.appConfig = new AppConfig(configDataDir);
 
+    // Create app user and superuser for PocketBase
+    async function ensurePocketBaseUsers(localUrl: string, secret: string): Promise<void> {
+      // Create relay app user (for collection auth rules)
+      try {
+        const createRes = await fetch(`${localUrl}/api/collections/users/records`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'relay@relay.app',
+            password: secret,
+            passwordConfirm: secret,
+          }),
+        });
+        if (createRes.ok) {
+          loggers.pocketbase.info('Created relay auth user');
+        } else {
+          const body = await createRes.text();
+          if (!body.includes('already exists') && !body.includes('not_unique')) {
+            loggers.pocketbase.warn('relay user creation response', {
+              status: createRes.status,
+              body,
+            });
+          }
+        }
+      } catch (err) {
+        loggers.pocketbase.warn('Failed to create relay user (may already exist)', { error: err });
+      }
+
+      // Create superuser for PocketBase admin dashboard (http://<host>:<port>/_/)
+      try {
+        const suRes = await fetch(`${localUrl}/api/collections/_superusers/records`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: 'admin@relay.app',
+            password: secret,
+            passwordConfirm: secret,
+          }),
+        });
+        if (suRes.ok) {
+          loggers.pocketbase.info('Created superuser admin@relay.app');
+        }
+      } catch {
+        // Superuser creation is non-critical
+      }
+    }
+
     // PocketBase startup function — called on boot if already configured, or
     // after first-time setup via IPC
     const startPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
@@ -187,37 +234,8 @@ if (gotLock) {
         await state.pbProcess.start();
         loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
 
-        // Create relay auth user if it doesn't exist.
-        // The users collection has createRule="" (allow anyone) so no auth needed.
-        // On duplicate, PocketBase returns 400 which we safely ignore.
-        try {
-          const adminUrl = state.pbProcess.getLocalUrl();
-          const createRes = await fetch(`${adminUrl}/api/collections/users/records`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: 'relay@relay.app',
-              password: serverConfig.secret,
-              passwordConfirm: serverConfig.secret,
-            }),
-          });
-          if (createRes.ok) {
-            loggers.pocketbase.info('Created relay auth user');
-          } else {
-            const body = await createRes.text();
-            // 400 with "already exists" is expected on subsequent starts
-            if (!body.includes('already exists')) {
-              loggers.pocketbase.warn('relay user creation response', {
-                status: createRes.status,
-                body,
-              });
-            }
-          }
-        } catch (userErr) {
-          loggers.pocketbase.warn('Failed to create relay user (may already exist)', {
-            error: userErr,
-          });
-        }
+        // Create app user and admin superuser
+        await ensurePocketBaseUsers(state.pbProcess.getLocalUrl(), serverConfig.secret);
 
         // Check for legacy JSON data and run migration if found
         const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
