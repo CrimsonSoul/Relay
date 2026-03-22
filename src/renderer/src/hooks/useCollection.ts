@@ -37,6 +37,8 @@ function applyRealtimeEvent<T extends RecordModel>(
 ): T[] {
   switch (action) {
     case 'create':
+      // Deduplicate: if record already exists (e.g. from a rapid fetch+realtime race), skip
+      if (prev.some((r) => r.id === record.id)) return prev;
       return [...prev, record as T];
     case 'update':
       return prev.map((r) => (r.id === record.id ? (record as T) : r));
