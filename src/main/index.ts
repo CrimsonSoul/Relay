@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, dialog, Menu, ipcMain } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { loggers } from './logger';
 import { AppConfig, type ServerConfig } from './config/AppConfig';
 import { PocketBaseProcess } from './pocketbase/PocketBaseProcess';
@@ -239,6 +240,33 @@ if (gotLock) {
       }
     }
 
+    /** Find the pb_migrations directory — tries multiple candidate paths for packaged builds. */
+    function resolveMigrationsDir(_pbDataDir: string): string {
+      const candidates = app.isPackaged
+        ? [
+            join(process.resourcesPath, 'pb_migrations'),
+            join(process.resourcesPath, 'data', 'pb_migrations'),
+            join(dirname(process.execPath), 'resources', 'pb_migrations'),
+            join(dirname(process.execPath), 'pb_migrations'),
+          ]
+        : [join(appRoot, 'resources', 'pb_migrations')];
+
+      for (const candidate of candidates) {
+        if (existsSync(candidate)) {
+          loggers.pocketbase.info('Found migrations', { path: candidate });
+          return candidate;
+        }
+      }
+
+      // Fallback: copy to pb_data if none found (shouldn't happen if build is correct)
+      loggers.pocketbase.warn('No migrations directory found in expected locations', {
+        candidates,
+        resourcesPath: process.resourcesPath,
+        execPath: process.execPath,
+      });
+      return candidates[0]; // Return first candidate even if missing — PB will log its own error
+    }
+
     // PocketBase startup function — called on boot if already configured, or
     // after first-time setup via IPC
     const startPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
@@ -250,9 +278,17 @@ if (gotLock) {
           ? join(process.resourcesPath, 'pocketbase', binaryName)
           : join(appRoot, 'resources', 'pocketbase', binaryName);
         const pbDataDir = join(configDataDir, 'pb_data');
-        const migrationsDir = app.isPackaged
-          ? join(process.resourcesPath, 'pb_migrations')
-          : join(appRoot, 'resources', 'pb_migrations');
+        const migrationsDir = resolveMigrationsDir(pbDataDir);
+
+        loggers.pocketbase.info('PocketBase paths', {
+          binaryPath,
+          pbDataDir,
+          migrationsDir,
+          migrationsExists: existsSync(migrationsDir),
+          resourcesPath: process.resourcesPath,
+          execPath: process.execPath,
+          isPackaged: app.isPackaged,
+        });
 
         state.pbProcess = new PocketBaseProcess({
           binaryPath,
