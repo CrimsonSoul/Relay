@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { TactileButton } from './TactileButton';
+import { Input } from './Input';
 
 interface SetupScreenProps {
   readonly onComplete: (config: {
@@ -43,17 +45,31 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
 
   if (!mode) {
     return (
-      <div className="setup-screen">
-        <h1>Relay Setup</h1>
-        <p>How will this instance be used?</p>
-        <div className="setup-options">
-          <button onClick={() => setMode('server')} className="setup-option">
-            <h2>Server Mode</h2>
-            <p>This is the primary NOC station. Other clients will connect to this instance.</p>
+      <div className="setup-fullscreen">
+        <div className="setup-branding">
+          <h1 className="setup-branding__title">Relay</h1>
+          <p className="setup-branding__subtitle">How will this instance be used?</p>
+        </div>
+        <div className="setup-mode-cards">
+          <button onClick={() => setMode('server')} className="card-surface setup-mode-card">
+            <div className="accent-strip" style={{ backgroundColor: 'var(--color-accent)' }} />
+            <span className="setup-mode-card__icon" aria-hidden="true">
+              &#128752;
+            </span>
+            <h2 className="setup-mode-card__title">Server Mode</h2>
+            <p className="setup-mode-card__desc">
+              This is the primary NOC station. Other clients will connect to this instance.
+            </p>
           </button>
-          <button onClick={() => setMode('client')} className="setup-option">
-            <h2>Client Mode</h2>
-            <p>Connect to an existing Relay server on the network.</p>
+          <button onClick={() => setMode('client')} className="card-surface setup-mode-card">
+            <div className="accent-strip" style={{ backgroundColor: 'var(--color-accent)' }} />
+            <span className="setup-mode-card__icon" aria-hidden="true">
+              &#128279;
+            </span>
+            <h2 className="setup-mode-card__title">Client Mode</h2>
+            <p className="setup-mode-card__desc">
+              Connect to an existing Relay server on the network.
+            </p>
           </button>
         </div>
       </div>
@@ -61,48 +77,66 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   }
 
   return (
-    <div className="setup-screen">
-      <h1>Relay Setup — {mode === 'server' ? 'Server' : 'Client'} Mode</h1>
-      <button onClick={() => setMode(null)} className="setup-back">
-        Back
-      </button>
-      <form onSubmit={handleSubmit}>
-        {mode === 'server' && (
-          <label>
-            Port:
-            <input
+    <div className="setup-fullscreen">
+      <div className="setup-config">
+        <div className="setup-config__header">
+          <div className="setup-config__back">
+            <TactileButton
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setMode(null);
+                setError(null);
+              }}
+            >
+              Back
+            </TactileButton>
+          </div>
+          <span className="setup-config__mode-label">
+            {mode === 'server' ? 'Server' : 'Client'} Mode
+          </span>
+          <h1 className="setup-config__title">Configure Relay</h1>
+        </div>
+
+        <form onSubmit={handleSubmit} className="setup-config__form">
+          {mode === 'server' && (
+            <Input
+              label="Port"
               type="number"
               value={port}
               onChange={(e) => setPort(e.target.value)}
               min={1024}
               max={65535}
+              placeholder="8090"
             />
-          </label>
-        )}
-        {mode === 'client' && (
-          <label>
-            Server URL:
-            <input
+          )}
+          {mode === 'client' && (
+            <Input
+              label="Server URL"
               type="text"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
               // eslint-disable-next-line sonarjs/no-clear-text-protocols
               placeholder="http://192.168.1.50:8090"
             />
-          </label>
-        )}
-        <label>
-          Passphrase:
-          <input
+          )}
+          <Input
+            label="Passphrase"
             type="password"
             value={secret}
             onChange={(e) => setSecret(e.target.value)}
             placeholder="Shared passphrase"
           />
-        </label>
-        {error && <p className="setup-error">{error}</p>}
-        <button type="submit">Save and Continue</button>
-      </form>
+
+          {error && <p className="setup-config__error">{error}</p>}
+
+          <div className="setup-config__actions">
+            <TactileButton variant="primary" type="submit">
+              Save and Continue
+            </TactileButton>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

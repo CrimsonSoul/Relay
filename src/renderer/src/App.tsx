@@ -11,6 +11,7 @@ import { HeaderSearch } from './components/HeaderSearch';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
+import { TactileButton } from './components/TactileButton';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { Contact, TabName } from '@shared/ipc';
 import { loggers } from './utils/logger';
@@ -502,11 +503,9 @@ function AppWithSetup() {
 
   if (phase.stage === 'checking') {
     return (
-      <div
-        className="setup-screen"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}
-      >
-        <p>Loading...</p>
+      <div className="app-state">
+        <div className="app-state__spinner" />
+        <p className="app-state__text">Initializing...</p>
       </div>
     );
   }
@@ -517,19 +516,14 @@ function AppWithSetup() {
 
   if (phase.stage === 'error') {
     return (
-      <div
-        className="setup-screen"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          gap: 16,
-        }}
-      >
-        <p style={{ color: '#ef4444' }}>{phase.message}</p>
-        <button onClick={() => setPhase({ stage: 'setup' })}>Reconfigure</button>
+      <div className="app-state">
+        <div className="app-state__error-icon" aria-hidden="true">
+          !
+        </div>
+        <p className="app-state__error-text">{phase.message}</p>
+        <TactileButton variant="primary" onClick={() => setPhase({ stage: 'setup' })}>
+          Reconfigure
+        </TactileButton>
       </div>
     );
   }
@@ -556,30 +550,23 @@ function ConnectedApp({
 
   if (error) {
     return (
-      <div
-        className="setup-screen"
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100vh',
-          gap: 16,
-        }}
-      >
-        <p style={{ color: '#ef4444' }}>{error}</p>
-        <button onClick={onReconfigure}>Reconfigure</button>
+      <div className="app-state">
+        <div className="app-state__error-icon" aria-hidden="true">
+          !
+        </div>
+        <p className="app-state__error-text">{error}</p>
+        <TactileButton variant="primary" onClick={onReconfigure}>
+          Reconfigure
+        </TactileButton>
       </div>
     );
   }
 
   if (connectionState === 'connecting') {
     return (
-      <div
-        className="setup-screen"
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}
-      >
-        <p>Connecting to PocketBase...</p>
+      <div className="app-state">
+        <div className="app-state__spinner" />
+        <p className="app-state__text">Connecting to server...</p>
       </div>
     );
   }
