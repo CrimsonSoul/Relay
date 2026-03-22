@@ -20,6 +20,68 @@
   -webkit-app-region: no-drag;
 }
 
+/* Close button — top-right corner of all setup/state screens */
+.setup-close-btn {
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: var(--z-sticky);
+  -webkit-app-region: no-drag;
+}
+
+.setup-close-btn:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-subtle);
+}
+
+.setup-close-btn:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Close button for app-state screens */
+.app-state__close-btn {
+  position: fixed;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  z-index: var(--z-sticky);
+  -webkit-app-region: no-drag;
+}
+
+.app-state__close-btn:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-subtle);
+}
+
+.app-state__close-btn:active {
+  background: rgba(255, 255, 255, 0.03);
+}
+
 /* === Mode Selection (Step 1) === */
 
 .setup-branding {
@@ -106,10 +168,6 @@
 
 .setup-config__header {
   margin-bottom: var(--space-6);
-}
-
-.setup-config__back {
-  margin-bottom: var(--space-4);
 }
 
 .setup-config__title {

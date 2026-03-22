@@ -11,6 +11,18 @@ interface SetupScreenProps {
   }) => void;
 }
 
+function CloseButton() {
+  return (
+    <button
+      className="setup-close-btn"
+      onClick={() => globalThis.window.api?.windowClose()}
+      aria-label="Close"
+    >
+      &#10005;
+    </button>
+  );
+}
+
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
@@ -51,6 +63,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   if (!mode) {
     return (
       <div className="setup-fullscreen">
+        <CloseButton />
         <div className="setup-branding">
           <h1 className="setup-branding__title">Relay</h1>
           <p className="setup-branding__subtitle">How will this instance be used?</p>
@@ -83,20 +96,19 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
 
   return (
     <div className="setup-fullscreen">
+      <CloseButton />
       <div className="setup-config">
         <div className="setup-config__header">
-          <div className="setup-config__back">
-            <TactileButton
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setMode(null);
-                setError(null);
-              }}
-            >
-              Back
-            </TactileButton>
-          </div>
+          <TactileButton
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setMode(null);
+              setError(null);
+            }}
+          >
+            &#8592; Back
+          </TactileButton>
           <span className="setup-config__mode-label">
             {mode === 'server' ? 'Server' : 'Client'} Mode
           </span>

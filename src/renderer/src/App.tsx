@@ -512,6 +512,13 @@ function AppWithSetup() {
   if (phase.stage === 'checking') {
     return (
       <div className="app-state">
+        <button
+          className="app-state__close-btn"
+          onClick={() => globalThis.window.api?.windowClose()}
+          aria-label="Close"
+        >
+          &#10005;
+        </button>
         <div className="app-state__spinner" />
         <p className="app-state__text">Initializing...</p>
       </div>
@@ -525,6 +532,13 @@ function AppWithSetup() {
   if (phase.stage === 'error') {
     return (
       <div className="app-state">
+        <button
+          className="app-state__close-btn"
+          onClick={() => globalThis.window.api?.windowClose()}
+          aria-label="Close"
+        >
+          &#10005;
+        </button>
         <div className="app-state__error-icon" aria-hidden="true">
           !
         </div>
@@ -559,6 +573,13 @@ function ConnectedApp({
   if (error) {
     return (
       <div className="app-state">
+        <button
+          className="app-state__close-btn"
+          onClick={() => globalThis.window.api?.windowClose()}
+          aria-label="Close"
+        >
+          &#10005;
+        </button>
         <div className="app-state__error-icon" aria-hidden="true">
           !
         </div>
@@ -573,6 +594,13 @@ function ConnectedApp({
   if (connectionState === 'connecting') {
     return (
       <div className="app-state">
+        <button
+          className="app-state__close-btn"
+          onClick={() => globalThis.window.api?.windowClose()}
+          aria-label="Close"
+        >
+          &#10005;
+        </button>
         <div className="app-state__spinner" />
         <p className="app-state__text">Connecting to server...</p>
       </div>
