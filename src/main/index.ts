@@ -192,28 +192,40 @@ if (gotLock) {
 
     /**
      * Ensure the app user (relay@relay.app) exists with the current passphrase.
-     * Clients auth as this user since _superusers is localhost-only.
-     * Uses superuser (localhost) to manage the user via PB SDK.
+     * Clients need this because _superusers may not be accessible remotely.
      */
     async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
       try {
         const PocketBase = (await import('pocketbase')).default;
         const pb = new PocketBase(localUrl);
+
+        // If app user already works with current password, nothing to do
+        try {
+          await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+          loggers.pocketbase.info('App user auth OK');
+          return;
+        } catch {
+          // Need to create or recreate
+        }
+
+        // Auth as superuser to manage users
         await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
 
-        // Delete existing app user (may have stale password)
-        const existing = await pb
-          .collection('_pb_users_auth_')
-          .getFullList({ filter: "email='relay@relay.app'" });
-        for (const user of existing) {
-          await pb.collection('_pb_users_auth_').delete(user.id);
+        // Delete all existing users (avoids filter issues with @ in email)
+        try {
+          const all = await pb.collection('_pb_users_auth_').getFullList();
+          for (const user of all) {
+            await pb.collection('_pb_users_auth_').delete(user.id);
+          }
+        } catch {
+          // Collection may be empty
         }
 
         // Create with current passphrase
         await pb
           .collection('_pb_users_auth_')
           .create({ email: 'relay@relay.app', password: secret, passwordConfirm: secret });
-        loggers.pocketbase.info('App user ready');
+        loggers.pocketbase.info('App user created');
       } catch (err) {
         loggers.pocketbase.error('Failed to ensure app user', { error: err });
       }
