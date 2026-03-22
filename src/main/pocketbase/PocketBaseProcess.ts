@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'child_process';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -115,9 +115,28 @@ export class PocketBaseProcess {
 
     if (process.platform === 'win32') {
       // eslint-disable-next-line sonarjs/no-os-command-from-path
-      spawn('taskkill', ['/F', '/PID', this.child.pid.toString()]);
+      spawn('taskkill', ['/F', '/T', '/PID', this.child.pid.toString()]);
     } else {
       this.child.kill('SIGKILL');
+    }
+    this.child = null;
+  }
+
+  /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
+  killSync(): void {
+    if (!this.child?.pid) return;
+    const pid = this.child.pid;
+    logger.info('Force-killing PocketBase (sync)', { pid });
+
+    try {
+      if (process.platform === 'win32') {
+        // eslint-disable-next-line sonarjs/os-command
+        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+      } else {
+        process.kill(pid, 'SIGKILL');
+      }
+    } catch {
+      // Process may already be dead
     }
     this.child = null;
   }

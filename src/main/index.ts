@@ -494,15 +494,13 @@ if (gotLock) {
       app.on('before-quit', () => {
         loggers.main.info('App quitting — cleaning up resources');
         cleanupMaintenance();
-        // PocketBase cleanup
+        // PocketBase cleanup — synchronous kill to ensure process dies before app exits
         if (state.retentionManager) {
           state.retentionManager.stop();
           state.retentionManager = null;
         }
         if (state.pbProcess) {
-          state.pbProcess.stop().catch((err) => {
-            loggers.pocketbase.error('Failed to stop PocketBase on quit', { error: err });
-          });
+          state.pbProcess.killSync();
           state.pbProcess = null;
         }
         if (state.offlineCache) {
