@@ -162,7 +162,8 @@ if (gotLock) {
     // Create or update app user and superuser for PocketBase.
     // Always updates the password to match the current config passphrase.
     async function ensurePocketBaseUsers(localUrl: string, secret: string): Promise<void> {
-      await ensurePbUser(localUrl, 'users', 'relay@relay.app', secret);
+      // PB v0.25+ uses internal collection IDs for built-in auth collections
+      await ensurePbUser(localUrl, '_pb_users_auth_', 'relay@relay.app', secret);
       await ensurePbUser(localUrl, '_superusers', 'admin@relay.app', secret);
     }
 
@@ -315,7 +316,9 @@ if (gotLock) {
           try {
             const PocketBase = (await import('pocketbase')).default;
             const pb = new PocketBase(state.pbProcess.getLocalUrl());
-            await pb.collection('users').authWithPassword('relay@relay.app', serverConfig.secret);
+            await pb
+              .collection('_pb_users_auth_')
+              .authWithPassword('relay@relay.app', serverConfig.secret);
             const migrator = new JsonMigrator(pb);
             const result = await migrator.migrate(legacyDir);
             loggers.migration.info('Migration complete', {
@@ -336,7 +339,9 @@ if (gotLock) {
           const PocketBase = (await import('pocketbase')).default;
           const pb = new PocketBase(state.pbProcess.getLocalUrl());
           // Authenticate so retention queries pass collection auth rules
-          await pb.collection('users').authWithPassword('relay@relay.app', serverConfig.secret);
+          await pb
+            .collection('_pb_users_auth_')
+            .authWithPassword('relay@relay.app', serverConfig.secret);
           state.retentionManager = new RetentionManager(pb);
           state.retentionManager.startSchedule();
           loggers.pocketbase.info('Backup and retention managers started');
