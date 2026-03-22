@@ -152,9 +152,10 @@ if (gotLock) {
       loggers.main.error('Failed to initialize data root', { error });
     }
 
-    // Initialize AppConfig (always available for setup screen)
+    // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
+    // NOT in the old custom dataRoot (which is only used for legacy JSON migration).
     const appRoot = app.isPackaged ? process.resourcesPath : process.cwd();
-    const configDataDir = join(state.currentDataRoot || app.getPath('userData'), 'data');
+    const configDataDir = join(app.getPath('userData'), 'data');
     state.appConfig = new AppConfig(configDataDir);
 
     // Create app user and superuser for PocketBase
