@@ -83,43 +83,40 @@ export class PocketBaseProcess {
     logger.info('Stopping PocketBase');
 
     return new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        logger.warn('PocketBase did not exit gracefully, force killing');
-        this.forceKill();
+      // Always resolve via the 'exit' event so the process is truly dead
+      const safetyTimeout = setTimeout(() => {
+        logger.warn('PocketBase stop safety timeout, continuing');
+        this.child = null;
         resolve();
-      }, 5000);
+      }, 10000);
 
       this.child!.on('exit', () => {
-        clearTimeout(timeout);
+        clearTimeout(safetyTimeout);
         this.child = null;
         resolve();
       });
 
-      this.gracefulKill();
+      // Try graceful kill first
+      if (process.platform === 'win32') {
+        // eslint-disable-next-line sonarjs/no-os-command-from-path
+        spawn('taskkill', ['/PID', this.child!.pid!.toString()]);
+      } else {
+        this.child!.kill('SIGTERM');
+      }
+
+      // Force kill after 5s if still alive — process.kill is synchronous,
+      // so the 'exit' event fires immediately after
+      setTimeout(() => {
+        if (this.child?.pid) {
+          logger.warn('PocketBase did not exit gracefully, force killing');
+          try {
+            process.kill(this.child.pid, 'SIGKILL');
+          } catch {
+            // already dead
+          }
+        }
+      }, 5000);
     });
-  }
-
-  private gracefulKill(): void {
-    if (!this.child?.pid) return;
-
-    if (process.platform === 'win32') {
-      // eslint-disable-next-line sonarjs/no-os-command-from-path
-      spawn('taskkill', ['/PID', this.child.pid.toString()]);
-    } else {
-      this.child.kill('SIGTERM');
-    }
-  }
-
-  private forceKill(): void {
-    if (!this.child?.pid) return;
-
-    if (process.platform === 'win32') {
-      // eslint-disable-next-line sonarjs/no-os-command-from-path
-      spawn('taskkill', ['/F', '/T', '/PID', this.child.pid.toString()]);
-    } else {
-      this.child.kill('SIGKILL');
-    }
-    this.child = null;
   }
 
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */

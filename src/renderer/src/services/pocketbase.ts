@@ -37,7 +37,7 @@ function setConnectionState(state: ConnectionState): void {
 
 export async function authenticate(secret: string): Promise<boolean> {
   try {
-    await getPb().collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+    await getPb().collection('_superusers').authWithPassword('admin@relay.app', secret);
     setConnectionState('online');
     startHealthCheck();
     return true;

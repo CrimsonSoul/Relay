@@ -167,10 +167,14 @@ if (gotLock) {
      */
     function ensureSuperuserSync(binaryPath: string, pbDataDir: string, secret: string): void {
       try {
-        const { execSync } = require('node:child_process') as typeof import('node:child_process');
+        const { execFileSync } =
+          require('node:child_process') as typeof import('node:child_process');
 
-        execSync(
-          `"${binaryPath}" superuser upsert admin@relay.app "${secret}" --dir="${pbDataDir}"`,
+        // Use execFileSync with args array to bypass cmd.exe shell quoting on Windows.
+        // execSync passes through cmd.exe which mangles paths with spaces and special chars.
+        execFileSync(
+          binaryPath,
+          ['superuser', 'upsert', 'admin@relay.app', secret, `--dir=${pbDataDir}`],
           {
             timeout: 10000,
             stdio: 'pipe',
@@ -178,72 +182,11 @@ if (gotLock) {
         );
         loggers.pocketbase.info('Superuser upserted via CLI');
       } catch (err) {
-        loggers.pocketbase.warn('Failed to upsert superuser via CLI', { error: err });
-      }
-    }
-
-    async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
-      try {
-        // Check if app user auth already works
-        const authTest = await fetch(
-          `${localUrl}/api/collections/_pb_users_auth_/auth-with-password`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identity: 'relay@relay.app', password: secret }),
-          },
-        );
-        if (authTest.ok) {
-          loggers.pocketbase.info('App user auth OK');
-          return;
-        }
-
-        // Auth as superuser (password guaranteed correct from CLI upsert)
-        const suAuth = await fetch(`${localUrl}/api/collections/_superusers/auth-with-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identity: 'admin@relay.app', password: secret }),
+        loggers.pocketbase.error('Failed to upsert superuser via CLI — auth will not work', {
+          error: err,
+          binaryPath,
+          pbDataDir,
         });
-        if (!suAuth.ok) {
-          loggers.pocketbase.warn('Superuser auth failed — cannot manage app user');
-          return;
-        }
-        const { token } = (await suAuth.json()) as { token: string };
-        const authHeader = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
-        // Delete existing app user if present (may have wrong password)
-        const listRes = await fetch(
-          `${localUrl}/api/collections/_pb_users_auth_/records?filter=(email='relay@relay.app')`,
-          { headers: authHeader },
-        );
-        if (listRes.ok) {
-          const data = (await listRes.json()) as { items: Array<{ id: string }> };
-          for (const item of data.items) {
-            await fetch(`${localUrl}/api/collections/_pb_users_auth_/records/${item.id}`, {
-              method: 'DELETE',
-              headers: authHeader,
-            });
-          }
-        }
-
-        // Create fresh app user with correct password
-        const createRes = await fetch(`${localUrl}/api/collections/_pb_users_auth_/records`, {
-          method: 'POST',
-          headers: authHeader,
-          body: JSON.stringify({
-            email: 'relay@relay.app',
-            password: secret,
-            passwordConfirm: secret,
-          }),
-        });
-        if (createRes.ok) {
-          loggers.pocketbase.info('App user created with current passphrase');
-        } else {
-          const body = await createRes.text();
-          loggers.pocketbase.warn('Failed to create app user', { status: createRes.status, body });
-        }
-      } catch (err) {
-        loggers.pocketbase.warn('Failed to ensure app user', { error: err });
       }
     }
 
@@ -277,7 +220,15 @@ if (gotLock) {
     // PocketBase startup function — called on boot if already configured, or
     // after first-time setup via IPC
     const startPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
-      if (state.pbProcess?.isRunning()) return true; // already running
+      // If PB is already running (reconfigure), stop it so we can re-upsert credentials
+      if (state.pbProcess?.isRunning()) {
+        loggers.pocketbase.info('Stopping PocketBase for reconfigure');
+        if (state.retentionManager) {
+          state.retentionManager.stop();
+          state.retentionManager = null;
+        }
+        await state.pbProcess.stop();
+      }
 
       try {
         const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
@@ -315,9 +266,6 @@ if (gotLock) {
         await state.pbProcess.start();
         loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
 
-        // Create/update app user using superuser auth (password always correct from CLI upsert)
-        await ensureAppUser(state.pbProcess.getLocalUrl(), serverConfig.secret);
-
         // Check for legacy JSON data and run migration if found
         const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
         if (JsonMigrator.hasLegacyData(legacyDir)) {
@@ -326,8 +274,8 @@ if (gotLock) {
             const PocketBase = (await import('pocketbase')).default;
             const pb = new PocketBase(state.pbProcess.getLocalUrl());
             await pb
-              .collection('_pb_users_auth_')
-              .authWithPassword('relay@relay.app', serverConfig.secret);
+              .collection('_superusers')
+              .authWithPassword('admin@relay.app', serverConfig.secret);
             const migrator = new JsonMigrator(pb);
             const result = await migrator.migrate(legacyDir);
             loggers.migration.info('Migration complete', {
@@ -347,10 +295,9 @@ if (gotLock) {
         try {
           const PocketBase = (await import('pocketbase')).default;
           const pb = new PocketBase(state.pbProcess.getLocalUrl());
-          // Authenticate so retention queries pass collection auth rules
           await pb
-            .collection('_pb_users_auth_')
-            .authWithPassword('relay@relay.app', serverConfig.secret);
+            .collection('_superusers')
+            .authWithPassword('admin@relay.app', serverConfig.secret);
           state.retentionManager = new RetentionManager(pb);
           state.retentionManager.startSchedule();
           loggers.pocketbase.info('Backup and retention managers started');
