@@ -5,8 +5,10 @@ import { getPb } from '../services/pocketbase';
 import {
   exportToJson,
   exportToCsv,
+  exportToExcel,
   importFromJson,
   importFromCsv,
+  importFromExcel,
   type CollectionName,
 } from '../services/importExportService';
 
@@ -33,8 +35,10 @@ function downloadBlob(blob: Blob, filename: string): void {
   }, 100);
 }
 
-/** Open a browser file picker and return the chosen file's text content. */
-function pickFile(accept: string): Promise<{ text: string; name: string } | null> {
+/** Open a browser file picker and return the chosen file's content. */
+function pickFile(
+  accept: string,
+): Promise<{ text: string; buffer: ArrayBuffer; name: string } | null> {
   return new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -50,8 +54,8 @@ function pickFile(accept: string): Promise<{ text: string; name: string } | null
         return;
       }
       try {
-        const text = await file.text();
-        resolve({ text, name: file.name });
+        const [text, buffer] = await Promise.all([file.text(), file.arrayBuffer()]);
+        resolve({ text, buffer, name: file.name });
       } catch {
         resolve(null);
       }
@@ -65,6 +69,46 @@ function pickFile(accept: string): Promise<{ text: string; name: string } | null
 
     input.click();
   });
+}
+
+async function performExport(
+  format: ExportFormat,
+  category: DataCategory,
+  collection: CollectionName | 'all',
+  timestamp: string,
+): Promise<void> {
+  if (format === 'json') {
+    const jsonStr = await exportToJson(collection);
+    downloadBlob(
+      new Blob([jsonStr], { type: 'application/json' }),
+      `relay-${category}-${timestamp}.json`,
+    );
+    return;
+  }
+
+  if (format === 'csv') {
+    if (category === 'all') {
+      for (const [cat, col] of Object.entries(CATEGORY_TO_COLLECTION)) {
+        const csvStr = await exportToCsv(col);
+        if (csvStr)
+          downloadBlob(new Blob([csvStr], { type: 'text/csv' }), `relay-${cat}-${timestamp}.csv`);
+      }
+      return;
+    }
+    const csvStr = await exportToCsv(collection as CollectionName);
+    downloadBlob(new Blob([csvStr], { type: 'text/csv' }), `relay-${category}-${timestamp}.csv`);
+    return;
+  }
+
+  if (format === 'excel') {
+    const buffer = await exportToExcel(collection);
+    downloadBlob(
+      new Blob([buffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+      `relay-${category}-${timestamp}.xlsx`,
+    );
+  }
 }
 
 export function useDataManager() {
@@ -113,36 +157,11 @@ export function useDataManager() {
       try {
         const { format, category } = options;
         const timestamp = new Date().toISOString().slice(0, 10);
+        const collection: CollectionName | 'all' =
+          category === 'all' ? 'all' : CATEGORY_TO_COLLECTION[category];
 
-        if (format === 'json') {
-          const collection: CollectionName | 'all' =
-            category === 'all' ? 'all' : CATEGORY_TO_COLLECTION[category];
-          const jsonStr = await exportToJson(collection);
-          const blob = new Blob([jsonStr], { type: 'application/json' });
-          downloadBlob(blob, `relay-${category}-${timestamp}.json`);
-          return true;
-        }
-
-        if (format === 'csv') {
-          if (category === 'all') {
-            // CSV doesn't support multi-collection; export each separately
-            for (const [cat, col] of Object.entries(CATEGORY_TO_COLLECTION)) {
-              const csvStr = await exportToCsv(col);
-              if (csvStr) {
-                const blob = new Blob([csvStr], { type: 'text/csv' });
-                downloadBlob(blob, `relay-${cat}-${timestamp}.csv`);
-              }
-            }
-            return true;
-          }
-          const collection = CATEGORY_TO_COLLECTION[category];
-          const csvStr = await exportToCsv(collection);
-          const blob = new Blob([csvStr], { type: 'text/csv' });
-          downloadBlob(blob, `relay-${category}-${timestamp}.csv`);
-          return true;
-        }
-
-        return false;
+        await performExport(format, category, collection, timestamp);
+        return true;
       } catch (e) {
         loggers.storage.error('Export failed', { error: e });
         return false;
@@ -161,7 +180,7 @@ export function useDataManager() {
 
     setImporting(true);
     try {
-      const accept = '.json,.csv';
+      const accept = '.json,.csv,.xlsx';
       const file = await pickFile(accept);
       if (!file) {
         return null;
@@ -170,7 +189,9 @@ export function useDataManager() {
       const collection = CATEGORY_TO_COLLECTION[category];
       let result: { imported: number; updated: number; errors: string[] };
 
-      if (file.name.endsWith('.csv')) {
+      if (file.name.endsWith('.xlsx')) {
+        result = await importFromExcel(collection, file.buffer);
+      } else if (file.name.endsWith('.csv')) {
         result = await importFromCsv(collection, file.text);
       } else {
         // Default to JSON

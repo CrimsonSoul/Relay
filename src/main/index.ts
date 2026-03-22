@@ -196,8 +196,7 @@ if (gotLock) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              username: 'relay',
-              email: 'relay@localhost',
+              email: 'relay@relay.app',
               password: serverConfig.secret,
               passwordConfirm: serverConfig.secret,
             }),
@@ -227,7 +226,7 @@ if (gotLock) {
           try {
             const PocketBase = (await import('pocketbase')).default;
             const pb = new PocketBase(state.pbProcess.getLocalUrl());
-            await pb.collection('users').authWithPassword('relay', serverConfig.secret);
+            await pb.collection('users').authWithPassword('relay@relay.app', serverConfig.secret);
             const migrator = new JsonMigrator(pb);
             const result = await migrator.migrate(legacyDir);
             loggers.migration.info('Migration complete', {
@@ -248,7 +247,7 @@ if (gotLock) {
           const PocketBase = (await import('pocketbase')).default;
           const pb = new PocketBase(state.pbProcess.getLocalUrl());
           // Authenticate so retention queries pass collection auth rules
-          await pb.collection('users').authWithPassword('relay', serverConfig.secret);
+          await pb.collection('users').authWithPassword('relay@relay.app', serverConfig.secret);
           state.retentionManager = new RetentionManager(pb);
           state.retentionManager.startSchedule();
           loggers.pocketbase.info('Backup and retention managers started');

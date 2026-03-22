@@ -58,5 +58,6 @@ export const FormatSelect: React.FC<{
   >
     <option value="json">JSON</option>
     <option value="csv">CSV</option>
+    <option value="excel">Excel</option>
   </select>
 );

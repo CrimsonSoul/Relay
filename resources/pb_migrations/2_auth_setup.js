@@ -40,6 +40,11 @@ migrate(
     users.createRule = ''; // allow anyone to register (admin can tighten later)
     users.updateRule = 'id = @request.auth.id';
     users.deleteRule = 'id = @request.auth.id';
+
+    // PB v0.25+ uses email as the default identity field for password auth.
+    // We use a fixed email (relay@relay.app) with the shared passphrase.
+    // No changes needed to identity fields — email-only is the default and works.
+
     app.save(users);
 
     // ── 2. Require auth on all data collections ────────────────────────────

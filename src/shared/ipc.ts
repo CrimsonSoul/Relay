@@ -485,7 +485,7 @@ export type OnCallRecord = {
 // Import/Export Types
 // ============================================
 
-export type ExportFormat = 'json' | 'csv';
+export type ExportFormat = 'json' | 'csv' | 'excel';
 export type DataCategory = 'contacts' | 'servers' | 'oncall' | 'groups' | 'all';
 
 export type ExportOptions = {
