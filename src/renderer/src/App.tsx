@@ -10,6 +10,8 @@ import { TabFallback } from './components/TabFallback';
 import { HeaderSearch } from './components/HeaderSearch';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
+import { SetupScreen } from './components/SetupScreen';
+import { ConnectionStatus } from './components/ConnectionStatus';
 import { Contact, TabName } from '@shared/ipc';
 import { loggers } from './utils/logger';
 // Hooks
@@ -17,6 +19,7 @@ import { useAppWeather } from './hooks/useAppWeather';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
+import { usePocketBase } from './hooks/usePocketBase';
 
 // Lazy load non-default tabs and settings modal
 const DirectoryTab = lazy(() =>
@@ -449,6 +452,148 @@ export function MainApp() {
   );
 }
 
+type AppPhase =
+  | { stage: 'checking' }
+  | { stage: 'setup' }
+  | { stage: 'connecting'; pbUrl: string; pbSecret: string }
+  | { stage: 'error'; message: string };
+
+function AppWithSetup() {
+  const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
+
+  const checkConfig = useCallback(async () => {
+    try {
+      const configured = await globalThis.api!.isConfigured();
+      if (!configured) {
+        setPhase({ stage: 'setup' });
+        return;
+      }
+      const pbUrl = await globalThis.api!.getPbUrl();
+      const pbSecret = await globalThis.api!.getPbSecret();
+      if (!pbUrl || !pbSecret) {
+        setPhase({ stage: 'setup' });
+        return;
+      }
+      setPhase({ stage: 'connecting', pbUrl, pbSecret });
+    } catch (err) {
+      loggers.app.error('Failed to check configuration', { error: err });
+      setPhase({ stage: 'error', message: 'Failed to read configuration.' });
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkConfig();
+  }, [checkConfig]);
+
+  const handleSetupComplete = useCallback(
+    async (config: {
+      mode: 'server' | 'client';
+      port?: number;
+      serverUrl?: string;
+      secret: string;
+    }) => {
+      try {
+        await globalThis.api!.saveConfig(config);
+        await checkConfig();
+      } catch (err) {
+        loggers.app.error('Failed to save configuration', { error: err });
+      }
+    },
+    [checkConfig],
+  );
+
+  if (phase.stage === 'checking') {
+    return (
+      <div
+        className="setup-screen"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}
+      >
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  if (phase.stage === 'setup') {
+    return <SetupScreen onComplete={handleSetupComplete} />;
+  }
+
+  if (phase.stage === 'error') {
+    return (
+      <div
+        className="setup-screen"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          gap: 16,
+        }}
+      >
+        <p style={{ color: '#ef4444' }}>{phase.message}</p>
+        <button onClick={() => setPhase({ stage: 'setup' })}>Reconfigure</button>
+      </div>
+    );
+  }
+
+  return (
+    <ConnectedApp
+      pbUrl={phase.pbUrl}
+      pbSecret={phase.pbSecret}
+      onReconfigure={() => setPhase({ stage: 'setup' })}
+    />
+  );
+}
+
+function ConnectedApp({
+  pbUrl,
+  pbSecret,
+  onReconfigure,
+}: {
+  readonly pbUrl: string;
+  readonly pbSecret: string;
+  readonly onReconfigure: () => void;
+}) {
+  const { connectionState, error } = usePocketBase(pbUrl, pbSecret);
+
+  if (error) {
+    return (
+      <div
+        className="setup-screen"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          gap: 16,
+        }}
+      >
+        <p style={{ color: '#ef4444' }}>{error}</p>
+        <button onClick={onReconfigure}>Reconfigure</button>
+      </div>
+    );
+  }
+
+  if (connectionState === 'connecting') {
+    return (
+      <div
+        className="setup-screen"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}
+      >
+        <p>Connecting to PocketBase...</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <MainApp />
+      <ConnectionStatus />
+    </>
+  );
+}
+
 export default function App() {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
@@ -458,7 +603,7 @@ export default function App() {
       <ToastWrapper>
         <LocationProvider>
           <NotesProvider>
-            <MainApp />
+            <AppWithSetup />
           </NotesProvider>
         </LocationProvider>
       </ToastWrapper>
