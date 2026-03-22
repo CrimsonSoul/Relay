@@ -362,18 +362,22 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
   const isLoading = contactsLoading || serversLoading || groupsLoading || oncallLoading;
   const [isReloading, setIsReloading] = useState(false);
 
-  // Show errors as toasts
+  // Show errors as toasts (suppress PocketBase auto-cancellation errors)
   useEffect(() => {
-    if (contactsError) showToast(`Contacts: ${contactsError}`, 'error');
+    if (contactsError && !contactsError.includes('autocancelled'))
+      showToast(`Contacts: ${contactsError}`, 'error');
   }, [contactsError, showToast]);
   useEffect(() => {
-    if (serversError) showToast(`Servers: ${serversError}`, 'error');
+    if (serversError && !serversError.includes('autocancelled'))
+      showToast(`Servers: ${serversError}`, 'error');
   }, [serversError, showToast]);
   useEffect(() => {
-    if (groupsError) showToast(`Groups: ${groupsError}`, 'error');
+    if (groupsError && !groupsError.includes('autocancelled'))
+      showToast(`Groups: ${groupsError}`, 'error');
   }, [groupsError, showToast]);
   useEffect(() => {
-    if (oncallError) showToast(`On-Call: ${oncallError}`, 'error');
+    if (oncallError && !oncallError.includes('autocancelled'))
+      showToast(`On-Call: ${oncallError}`, 'error');
   }, [oncallError, showToast]);
 
   // Build AppData object

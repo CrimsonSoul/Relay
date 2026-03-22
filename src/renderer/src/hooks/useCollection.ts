@@ -47,6 +47,16 @@ function applyRealtimeEvent<T extends RecordModel>(
   }
 }
 
+/** Try to load data from the offline cache. Returns records or null. */
+async function tryOfflineCache<T>(collectionName: string): Promise<T[] | null> {
+  try {
+    const cached = await getApi()?.cacheRead?.(collectionName);
+    return cached ? (cached as T[]) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useCollection<T extends RecordModel>(
   collectionName: string,
   options: UseCollectionOptions = {},
@@ -67,35 +77,34 @@ export function useCollection<T extends RecordModel>(
           .getFullList<T>({
             sort: options.sort || '-created',
             filter: options.filter || '',
+            // Disable auto-cancellation so parallel fetches for different
+            // collections don't abort each other (PB SDK groups by collection).
+            requestKey: null,
           });
         dataRef.current = records;
         setData(records);
         setError(null);
-      } else if (options.offlineCacheChannel) {
-        const cached = await getApi()?.cacheRead?.(collectionName);
+      } else {
+        const cached = await tryOfflineCache<T>(collectionName);
         if (cached) {
-          dataRef.current = cached as T[];
-          setData(cached as T[]);
+          dataRef.current = cached;
+          setData(cached);
         }
       }
     } catch (err) {
       handleApiError(err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-      if (options.offlineCacheChannel) {
-        try {
-          const cached = await getApi()?.cacheRead?.(collectionName);
-          if (cached) {
-            dataRef.current = cached as T[];
-            setData(cached as T[]);
-          }
-        } catch {
-          // Cache also failed
-        }
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('autocancelled')) return; // PB SDK auto-cancellation, not a real error
+      setError(msg);
+      const cached = await tryOfflineCache<T>(collectionName);
+      if (cached) {
+        dataRef.current = cached;
+        setData(cached);
       }
     } finally {
       setLoading(false);
     }
-  }, [collectionName, options.sort, options.filter, options.offlineCacheChannel]);
+  }, [collectionName, options.sort, options.filter]);
 
   // Subscribe to realtime changes
   useEffect(() => {
