@@ -2,8 +2,9 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useDataManager } from '../useDataManager';
 
-const { storageError } = vi.hoisted(() => ({
+const { storageError, storageWarn } = vi.hoisted(() => ({
   storageError: vi.fn(),
+  storageWarn: vi.fn(),
 }));
 
 vi.mock('../../utils/logger', () => ({
@@ -11,135 +12,90 @@ vi.mock('../../utils/logger', () => ({
     storage: {
       error: storageError,
       info: vi.fn(),
-      warn: vi.fn(),
+      warn: storageWarn,
     },
   },
 }));
 
-describe('useDataManager', () => {
-  const api = {
-    getDataStats: vi.fn(),
-    exportData: vi.fn(),
-    importData: vi.fn(),
-  };
+// Mock PocketBase service
+const mockGetList = vi.fn();
+const mockCollection = vi.fn().mockReturnValue({ getList: mockGetList });
+vi.mock('../../services/pocketbase', () => ({
+  getPb: () => ({ collection: mockCollection }),
+  isOnline: vi.fn().mockReturnValue(true),
+  handleApiError: vi.fn(),
+  onConnectionStateChange: vi.fn().mockReturnValue(() => {}),
+  getConnectionState: vi.fn().mockReturnValue('online'),
+}));
 
+describe('useDataManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api?: typeof api }).api = api;
   });
 
-  it('loads stats successfully and handles load failures', async () => {
-    api.getDataStats.mockResolvedValueOnce({
-      contacts: { count: 1, lastUpdated: 1 },
-      servers: { count: 2, lastUpdated: 2 },
-      oncall: { count: 3, lastUpdated: 3 },
-      groups: { count: 4, lastUpdated: 4 },
-    });
+  it('loads stats from PocketBase collections', async () => {
+    mockGetList.mockResolvedValue({ totalItems: 5 });
 
     const { result } = renderHook(() => useDataManager());
 
     await act(async () => {
       await result.current.loadStats();
     });
-    expect(result.current.stats?.contacts.count).toBe(1);
 
-    api.getDataStats.mockRejectedValueOnce(new Error('fail'));
-    await act(async () => {
-      const loaded = await result.current.loadStats();
-      expect(loaded).toBeNull();
-    });
-    expect(storageError).toHaveBeenCalled();
+    expect(result.current.stats).not.toBeNull();
+    expect(mockCollection).toHaveBeenCalled();
   });
 
-  it('exports data and tracks export state', async () => {
-    api.exportData
-      .mockResolvedValueOnce({ success: true })
-      .mockResolvedValueOnce({ success: false });
+  it('handles loadStats when individual collections throw', async () => {
+    // When individual collections throw, they are caught inside the inner try
+    // and result in 0 counts — the outer function still returns data
+    mockGetList.mockRejectedValue(new Error('fail'));
 
     const { result } = renderHook(() => useDataManager());
 
-    let ok = false;
+    let loaded: unknown;
+    await act(async () => {
+      loaded = await result.current.loadStats();
+    });
+
+    // Individual collection errors are silently caught; stats returned with 0s
+    expect(loaded).not.toBeNull();
+    expect(result.current.stats).not.toBeNull();
+  });
+
+  it('exportData returns false (IPC no longer available)', async () => {
+    const { result } = renderHook(() => useDataManager());
+
+    let ok = true;
     await act(async () => {
       ok = await result.current.exportData({
         format: 'json',
-        category: 'all',
-        includeMetadata: true,
+        categories: ['all'],
       });
     });
-    expect(ok).toBe(true);
+
+    expect(ok).toBe(false);
     expect(result.current.exporting).toBe(false);
-
-    let bad = true;
-    await act(async () => {
-      bad = await result.current.exportData({
-        format: 'csv',
-        category: 'servers',
-        includeMetadata: false,
-      });
-    });
-    expect(bad).toBe(false);
-
-    api.exportData.mockRejectedValueOnce(new Error('boom'));
-    await act(async () => {
-      const failed = await result.current.exportData({
-        format: 'json',
-        category: 'contacts',
-        includeMetadata: false,
-      });
-      expect(failed).toBe(false);
-    });
   });
 
-  it('imports data, stores last result, and can clear it', async () => {
-    api.getDataStats.mockResolvedValue({
-      contacts: { count: 10, lastUpdated: 1 },
-      servers: { count: 1, lastUpdated: 1 },
-      oncall: { count: 2, lastUpdated: 1 },
-      groups: { count: 3, lastUpdated: 1 },
-    });
-    api.importData.mockResolvedValueOnce({
-      success: true,
-      data: {
-        success: true,
-        imported: 2,
-        updated: 1,
-        skipped: 0,
-        errors: [],
-      },
-    });
-
+  it('importData returns null (IPC no longer available)', async () => {
     const { result } = renderHook(() => useDataManager());
 
+    let imported: unknown = 'not-null';
     await act(async () => {
-      const imported = await result.current.importData('contacts');
-      expect(imported?.imported).toBe(2);
+      imported = await result.current.importData('contacts');
     });
 
-    expect(result.current.lastImportResult?.updated).toBe(1);
-    expect(result.current.stats?.contacts.count).toBe(10);
+    expect(imported).toBeNull();
+  });
+
+  it('clearLastImportResult clears the result', async () => {
+    const { result } = renderHook(() => useDataManager());
 
     await act(async () => {
       result.current.clearLastImportResult();
     });
+
     expect(result.current.lastImportResult).toBeNull();
-  });
-
-  it('returns null when import fails or throws', async () => {
-    api.importData
-      .mockResolvedValueOnce({ success: false, data: null })
-      .mockRejectedValueOnce(new Error('x'));
-
-    const { result } = renderHook(() => useDataManager());
-
-    await act(async () => {
-      const imported = await result.current.importData('servers');
-      expect(imported).toBeNull();
-    });
-
-    await act(async () => {
-      const imported = await result.current.importData('servers');
-      expect(imported).toBeNull();
-    });
-    expect(storageError).toHaveBeenCalled();
   });
 });

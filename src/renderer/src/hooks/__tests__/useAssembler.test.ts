@@ -25,6 +25,12 @@ vi.mock('../../utils/logger', () => ({
   },
 }));
 
+// Mock PocketBase contact service
+const mockAddContact = vi.fn();
+vi.mock('../../services/contactService', () => ({
+  addContact: (...args: unknown[]) => mockAddContact(...args),
+}));
+
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
@@ -94,11 +100,10 @@ describe('useAssembler', () => {
       { wrapper },
     );
 
-    // bob@test.com is in both groups but should appear only once
     const emails = result.current.log.map((l) => l.email);
     const bobCount = emails.filter((e) => e === 'bob@test.com').length;
     expect(bobCount).toBe(1);
-    expect(result.current.log).toHaveLength(3); // alice, bob, charlie
+    expect(result.current.log).toHaveLength(3);
   });
 
   it('includes manual adds in the log', () => {
@@ -165,7 +170,6 @@ describe('useAssembler', () => {
       { wrapper },
     );
 
-    // Change to sort by email descending
     act(() => {
       result.current.setSortConfig({ key: 'email', direction: 'desc' });
     });
@@ -185,7 +189,6 @@ describe('useAssembler', () => {
     });
 
     const emails = result.current.log.map((l) => l.email);
-    // Director (charlie) < Engineer (alice) < Manager (bob)
     expect(emails).toEqual(['charlie@test.com', 'alice@test.com', 'bob@test.com']);
   });
 
@@ -224,13 +227,12 @@ describe('useAssembler', () => {
       () =>
         useAssembler({
           ...baseProps,
-          contacts: [], // No contact data
+          contacts: [],
           manualAdds: ['unknown@test.com'],
         }),
       { wrapper },
     );
 
-    // Should still be in log even without contact data
     expect(result.current.log).toHaveLength(1);
     expect(result.current.log[0].email).toBe('unknown@test.com');
   });
@@ -246,7 +248,6 @@ describe('useAssembler', () => {
     });
 
     const emails = result.current.log.map((l) => l.email);
-    // 555-1111 (alice) < 555-2222 (bob) < 555-3333 (charlie)
     expect(emails).toEqual(['alice@test.com', 'bob@test.com', 'charlie@test.com']);
   });
 
@@ -261,7 +262,6 @@ describe('useAssembler', () => {
     });
 
     const emails = result.current.log.map((l) => l.email);
-    // alice: "Engineering", bob: "Engineering, Leadership", charlie: "Leadership"
     expect(emails).toEqual(['alice@test.com', 'bob@test.com', 'charlie@test.com']);
   });
 
@@ -280,7 +280,6 @@ describe('useAssembler', () => {
 
     expect(mockWriteClipboard).toHaveBeenCalledTimes(1);
     const clipboardArg = mockWriteClipboard.mock.calls[0][0];
-    // Should contain emails separated by "; "
     expect(clipboardArg).toContain('alice@test.com');
     expect(clipboardArg).toContain('bob@test.com');
     expect(clipboardArg).toContain('; ');
@@ -321,16 +320,13 @@ describe('useAssembler', () => {
     expect(url).toContain('https://teams.microsoft.com/l/meeting/new');
     expect(url).toContain('attendees=');
     expect(url).toContain('subject=');
-    // Both emails from g1 should be in attendees
     expect(url).toContain('alice%40test.com');
     expect(url).toContain('bob%40test.com');
   });
 
-  it('handleContactSaved creates contact and adds email to manual list', async () => {
-    const mockAddContact = vi.fn().mockResolvedValue({ success: true });
+  it('handleContactSaved creates contact via PocketBase and adds email to manual list', async () => {
+    mockAddContact.mockResolvedValue({ id: 'c1', name: 'Dave', email: 'dave@test.com' });
     const onAddManual = vi.fn();
-    const mockApi = { addContact: mockAddContact };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
@@ -338,15 +334,18 @@ describe('useAssembler', () => {
       await result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' });
     });
 
-    expect(mockAddContact).toHaveBeenCalledWith({ name: 'Dave', email: 'dave@test.com' });
+    expect(mockAddContact).toHaveBeenCalledWith({
+      name: 'Dave',
+      email: 'dave@test.com',
+      phone: '',
+      title: '',
+    });
     expect(onAddManual).toHaveBeenCalledWith('dave@test.com');
   });
 
-  it('handleContactSaved shows error toast on API failure', async () => {
-    const mockAddContact = vi.fn().mockResolvedValue({ success: false, error: 'Failed' });
+  it('handleContactSaved shows error toast on service failure', async () => {
+    mockAddContact.mockRejectedValue(new Error('Failed'));
     const onAddManual = vi.fn();
-    const mockApi = { addContact: mockAddContact };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
@@ -355,22 +354,20 @@ describe('useAssembler', () => {
     });
 
     expect(mockAddContact).toHaveBeenCalled();
-    // Should NOT forward the email on failure
     expect(onAddManual).not.toHaveBeenCalled();
   });
 
-  it('handleContactSaved handles exception from API', async () => {
-    const mockAddContact = vi.fn().mockRejectedValue(new Error('Network error'));
+  it('handleContactSaved does not call onAddManual when contact has no email', async () => {
+    mockAddContact.mockResolvedValue({ id: 'c1', name: 'Dave', email: '' });
     const onAddManual = vi.fn();
-    const mockApi = { addContact: mockAddContact };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
     const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
 
     await act(async () => {
-      await result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' });
+      await result.current.handleContactSaved({ name: 'Dave' });
     });
 
+    expect(mockAddContact).toHaveBeenCalled();
     expect(onAddManual).not.toHaveBeenCalled();
   });
 
@@ -396,38 +393,6 @@ describe('useAssembler', () => {
     expect(result.current.isAddContactModalOpen).toBe(true);
   });
 
-  it('handleContactSaved shows error toast when api is not available', async () => {
-    // Remove api from globalThis
-    (globalThis as Window & { api?: unknown }).api = undefined;
-
-    const onAddManual = vi.fn();
-    const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
-
-    await act(async () => {
-      await result.current.handleContactSaved({ name: 'Dave', email: 'dave@test.com' });
-    });
-
-    // Should not add manual since api is unavailable
-    expect(onAddManual).not.toHaveBeenCalled();
-  });
-
-  it('handleContactSaved does not call onAddManual when contact has no email', async () => {
-    const mockAddContact = vi.fn().mockResolvedValue(true);
-    const onAddManual = vi.fn();
-    const mockApi = { addContact: mockAddContact };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
-
-    const { result } = renderHook(() => useAssembler({ ...baseProps, onAddManual }), { wrapper });
-
-    await act(async () => {
-      await result.current.handleContactSaved({ name: 'Dave' }); // no email
-    });
-
-    expect(mockAddContact).toHaveBeenCalled();
-    // No email provided, so onAddManual should NOT be called
-    expect(onAddManual).not.toHaveBeenCalled();
-  });
-
   it('executeDraftBridge works when api is undefined', () => {
     (globalThis as Window & { api?: unknown }).api = undefined;
 
@@ -435,30 +400,11 @@ describe('useAssembler', () => {
       wrapper,
     });
 
-    // Should not throw when api is missing
     expect(() => {
       act(() => {
         result.current.executeDraftBridge();
       });
     }).not.toThrow();
-  });
-
-  it('executeDraftBridge shows error toast when openExternal rejects', async () => {
-    const mockOpenExternal = vi.fn().mockReturnValue(Promise.reject(new Error('blocked')));
-    const mockApi = { openExternal: mockOpenExternal };
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
-
-    const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
-      wrapper,
-    });
-
-    await act(async () => {
-      result.current.executeDraftBridge();
-      // Give the rejected promise a chance to settle
-      await Promise.resolve();
-    });
-
-    expect(mockOpenExternal).toHaveBeenCalled();
   });
 
   it('handleCompositionContextMenu sets context menu state', () => {

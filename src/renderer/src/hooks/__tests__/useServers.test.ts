@@ -10,6 +10,12 @@ vi.mock('../../contexts/SearchContext', () => ({
   useSearchContext: () => ({ debouncedQuery: mockServerDebouncedQuery.value }),
 }));
 
+// Mock PocketBase server service
+const mockDeleteServer = vi.fn();
+vi.mock('../../services/serverService', () => ({
+  deleteServer: (...args: unknown[]) => mockDeleteServer(...args),
+}));
+
 describe('useServers', () => {
   const servers: Server[] = [
     {
@@ -21,7 +27,7 @@ describe('useServers', () => {
       contact: 'alpha@test.com',
       os: 'Linux',
       _searchString: 'alpha finance core owner a linux',
-      raw: {},
+      raw: { id: 'pb-1' },
     },
     {
       name: 'Bravo',
@@ -32,7 +38,7 @@ describe('useServers', () => {
       contact: 'bravo@test.com',
       os: 'Windows',
       _searchString: 'bravo it infra owner b windows',
-      raw: {},
+      raw: { id: 'pb-2' },
     },
   ];
 
@@ -49,9 +55,7 @@ describe('useServers', () => {
 
   beforeEach(() => {
     vi.useRealTimers();
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer: vi.fn().mockResolvedValue(true),
-    };
+    vi.clearAllMocks();
   });
 
   it('builds contact lookup and filters/sorts servers', () => {
@@ -61,12 +65,10 @@ describe('useServers', () => {
     expect(result.current.contactLookup.get('alice')?.email).toBe('alpha@test.com');
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Alpha', 'Bravo']);
 
-    // Test filtering via search context mock
     mockServerDebouncedQuery.value = 'bravo';
     rerender();
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo']);
 
-    // Reset search and test sorting
     mockServerDebouncedQuery.value = '';
     rerender();
     act(() => {
@@ -98,10 +100,7 @@ describe('useServers', () => {
   });
 
   it('handles delete/edit flows and modal helpers', async () => {
-    const removeServer = vi.fn().mockResolvedValue(true);
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer,
-    };
+    mockDeleteServer.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
@@ -112,7 +111,7 @@ describe('useServers', () => {
     await act(async () => {
       await result.current.handleDelete();
     });
-    expect(removeServer).toHaveBeenCalledWith('Alpha');
+    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
     expect(result.current.contextMenu).toBeNull();
 
     act(() => {
@@ -132,10 +131,7 @@ describe('useServers', () => {
   });
 
   it('swallows server delete errors', async () => {
-    const removeServer = vi.fn().mockRejectedValue(new Error('boom'));
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer,
-    };
+    mockDeleteServer.mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
@@ -143,6 +139,6 @@ describe('useServers', () => {
       await result.current.deleteServer(servers[0]);
     });
 
-    expect(removeServer).toHaveBeenCalledWith('Alpha');
+    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
   });
 });

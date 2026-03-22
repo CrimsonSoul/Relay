@@ -1,88 +1,90 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { useGroups } from '../useGroups';
 import { NoopToastProvider } from '../../components/Toast';
-import type { BridgeGroup } from '@shared/ipc';
 
-// Mock logger
 vi.mock('../../utils/logger', () => ({
   loggers: {
     directory: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   },
 }));
 
+// Mock useCollection
+const mockRefetch = vi.fn();
+const mockCollectionData = { current: [] as unknown[] };
+vi.mock('../useCollection', () => ({
+  useCollection: () => ({
+    data: mockCollectionData.current,
+    loading: false,
+    error: null,
+    refetch: mockRefetch,
+  }),
+}));
+
+// Mock PocketBase bridge group service
+const mockAddGroup = vi.fn();
+const mockUpdateGroup = vi.fn();
+const mockDeleteGroup = vi.fn();
+vi.mock('../../services/bridgeGroupService', () => ({
+  addGroup: (...args: unknown[]) => mockAddGroup(...args),
+  updateGroup: (...args: unknown[]) => mockUpdateGroup(...args),
+  deleteGroup: (...args: unknown[]) => mockDeleteGroup(...args),
+}));
+
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
+const makeRecord = (id: string, name: string, contacts: string[]) => ({
+  id,
+  name,
+  contacts,
+  created: '2026-01-01T00:00:01Z',
+  updated: '2026-01-01T00:00:01Z',
+});
+
 describe('useGroups', () => {
-  const mockGroups: BridgeGroup[] = [
-    { id: 'g1', name: 'Network', contacts: ['a@test.com'], createdAt: 1000, updatedAt: 1000 },
-    { id: 'g2', name: 'Database', contacts: ['b@test.com'], createdAt: 2000, updatedAt: 2000 },
-  ];
-
-  const mockApi = {
-    getGroups: vi.fn(),
-    saveGroup: vi.fn(),
-    updateGroup: vi.fn(),
-    deleteGroup: vi.fn(),
-    importGroupsFromCsv: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
-    mockApi.getGroups.mockResolvedValue(mockGroups);
+    mockCollectionData.current = [
+      makeRecord('g1', 'Network', ['a@test.com']),
+      makeRecord('g2', 'Database', ['b@test.com']),
+    ];
   });
 
-  it('loads groups on mount', async () => {
+  it('loads groups from useCollection', () => {
     const { result } = renderHook(() => useGroups(), { wrapper });
 
-    await waitFor(() => {
-      expect(result.current.groups).toEqual(mockGroups);
-      expect(result.current.loading).toBe(false);
-    });
+    expect(result.current.groups).toHaveLength(2);
+    expect(result.current.groups[0].name).toBe('Network');
+    expect(result.current.loading).toBe(false);
   });
 
-  it('returns empty array when API returns null', async () => {
-    mockApi.getGroups.mockResolvedValue(null);
-
+  it('returns empty array when no records', () => {
+    mockCollectionData.current = [];
     const { result } = renderHook(() => useGroups(), { wrapper });
-
-    await waitFor(() => {
-      expect(result.current.groups).toEqual([]);
-      expect(result.current.loading).toBe(false);
-    });
+    expect(result.current.groups).toEqual([]);
   });
 
-  it('saves a new group and adds it to state', async () => {
-    const newGroup: BridgeGroup = {
-      id: 'g3',
-      name: 'Security',
-      contacts: ['c@test.com'],
-      createdAt: 3000,
-      updatedAt: 3000,
-    };
-    mockApi.saveGroup.mockResolvedValue({ success: true, data: newGroup });
+  it('saves a new group via PocketBase service', async () => {
+    const newRecord = makeRecord('g3', 'Security', ['c@test.com']);
+    mockAddGroup.mockResolvedValue(newRecord);
 
     const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let saved: BridgeGroup | undefined;
+    let saved: unknown;
     await act(async () => {
       saved = await result.current.saveGroup({ name: 'Security', contacts: ['c@test.com'] });
     });
 
-    expect(saved).toEqual(newGroup);
-    expect(result.current.groups).toHaveLength(3);
-    expect(result.current.groups[2]).toEqual(newGroup);
+    expect(saved).toBeDefined();
+    expect(mockAddGroup).toHaveBeenCalledWith({ name: 'Security', contacts: ['c@test.com'] });
   });
 
   it('handles save group failure', async () => {
-    mockApi.saveGroup.mockResolvedValue(null);
+    mockAddGroup.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
     let saved: unknown;
     await act(async () => {
@@ -90,120 +92,57 @@ describe('useGroups', () => {
     });
 
     expect(saved).toBeUndefined();
-    expect(result.current.groups).toHaveLength(2); // No new group added
   });
 
-  it('updates a group in state', async () => {
-    mockApi.updateGroup.mockResolvedValue({ success: true });
+  it('updates a group via PocketBase service', async () => {
+    mockUpdateGroup.mockResolvedValue({ id: 'g1', name: 'Network Updated' });
 
     const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let success = false;
     await act(async () => {
-      await result.current.updateGroup('g1', { name: 'Network Updated' });
-    });
-
-    const updated = result.current.groups.find((g) => g.id === 'g1');
-    expect(updated?.name).toBe('Network Updated');
-  });
-
-  it('does not update group on API failure', async () => {
-    mockApi.updateGroup.mockResolvedValue(false);
-
-    const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.updateGroup('g1', { name: 'Network Updated' });
-    });
-
-    const group = result.current.groups.find((g) => g.id === 'g1');
-    expect(group?.name).toBe('Network');
-  });
-
-  it('deletes a group from state', async () => {
-    mockApi.deleteGroup.mockResolvedValue({ success: true });
-
-    const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.deleteGroup('g1');
-    });
-
-    expect(result.current.groups).toHaveLength(1);
-    expect(result.current.groups[0].id).toBe('g2');
-  });
-
-  it('does not delete group on API failure', async () => {
-    mockApi.deleteGroup.mockResolvedValue(false);
-
-    const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.deleteGroup('g1');
-    });
-
-    expect(result.current.groups).toHaveLength(2);
-  });
-
-  it('imports groups from CSV and reloads', async () => {
-    mockApi.importGroupsFromCsv.mockResolvedValue({ success: true, count: 5 });
-    const updatedGroups = [
-      ...mockGroups,
-      { id: 'g3', name: 'Imported', contacts: [], createdAt: 0, updatedAt: 0 },
-    ];
-    mockApi.getGroups.mockResolvedValueOnce(mockGroups).mockResolvedValueOnce(updatedGroups);
-
-    const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    let success: boolean = false;
-    await act(async () => {
-      success = await result.current.importFromCsv();
+      success = await result.current.updateGroup('g1', { name: 'Network Updated' });
     });
 
     expect(success).toBe(true);
-    expect(mockApi.getGroups).toHaveBeenCalledTimes(2); // Initial load + reload after import
+    expect(mockUpdateGroup).toHaveBeenCalledWith('g1', { name: 'Network Updated' });
   });
 
-  it('handles CSV import failure', async () => {
-    mockApi.importGroupsFromCsv.mockResolvedValue({ success: false, error: 'Bad CSV' });
+  it('returns false on update failure', async () => {
+    mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
 
     const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let success: boolean = true;
+    let success = true;
     await act(async () => {
-      success = await result.current.importFromCsv();
+      success = await result.current.updateGroup('g1', { name: 'Network Updated' });
     });
 
     expect(success).toBe(false);
   });
 
-  it('handles exception during loadGroups', async () => {
-    mockApi.getGroups.mockRejectedValue(new Error('Network error'));
+  it('deletes a group via PocketBase service', async () => {
+    mockDeleteGroup.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useGroups(), { wrapper });
 
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+    let success = false;
+    await act(async () => {
+      success = await result.current.deleteGroup('g1');
     });
 
-    // Should fall back to empty array and not crash
-    expect(result.current.groups).toEqual([]);
+    expect(success).toBe(true);
+    expect(mockDeleteGroup).toHaveBeenCalledWith('g1');
   });
 
-  it('handles null result from importGroupsFromCsv', async () => {
-    mockApi.importGroupsFromCsv.mockResolvedValue(null);
+  it('returns false on delete failure', async () => {
+    mockDeleteGroup.mockRejectedValue(new Error('Delete failed'));
 
     const { result } = renderHook(() => useGroups(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let success: boolean = true;
+    let success = true;
     await act(async () => {
-      success = await result.current.importFromCsv();
+      success = await result.current.deleteGroup('g1');
     });
 
     expect(success).toBe(false);

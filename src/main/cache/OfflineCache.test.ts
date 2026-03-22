@@ -37,7 +37,7 @@ describe('OfflineCache', () => {
     cache.writeCollection('contacts', [{ id: '2', name: 'Bob' }]);
     const result = cache.readCollection('contacts');
     expect(result).toHaveLength(1);
-    expect((result[0] as any).name).toBe('Bob');
+    expect((result[0] as unknown as { name: string }).name).toBe('Bob');
   });
 
   it('handles single record updates', () => {
@@ -47,7 +47,13 @@ describe('OfflineCache', () => {
     ]);
     cache.updateRecord('contacts', 'update', { id: '1', name: 'Alice Updated' });
     const result = cache.readCollection('contacts');
-    expect((result.find((r: any) => r.id === '1') as any).name).toBe('Alice Updated');
+    expect(
+      (
+        result.find((r) => (r as unknown as { id: string }).id === '1') as unknown as {
+          name: string;
+        }
+      ).name,
+    ).toBe('Alice Updated');
   });
 
   it('handles single record create', () => {

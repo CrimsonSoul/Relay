@@ -32,7 +32,8 @@ export class SyncManager {
     collection: string,
     data: Record<string, unknown>,
   ): Promise<SyncResult> {
-    const { id, ...createData } = data as { id?: string } & Record<string, unknown>;
+    // eslint-disable-next-line sonarjs/no-unused-vars
+    const { id: _id, ...createData } = data as { id?: string } & Record<string, unknown>;
     await this.pb.collection(collection).create(createData);
     return { conflict: false };
   }
@@ -65,13 +66,21 @@ export class SyncManager {
       }
     } catch {
       // Record not found on server — apply as create
-      const { id, ...createData } = data as { id?: string } & Record<string, unknown>;
+      // eslint-disable-next-line sonarjs/no-unused-vars
+      const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>;
       await this.pb.collection(collection).create(createData);
       return { conflict: false };
     }
 
     // Apply the client's version (last-write-wins)
-    const { id, created, updated, ...updateData } = data as Record<string, unknown>;
+    /* eslint-disable sonarjs/no-unused-vars */
+    const {
+      id: _id,
+      created: _created,
+      updated: _updated,
+      ...updateData
+    } = data as Record<string, unknown>;
+    /* eslint-enable sonarjs/no-unused-vars */
     await this.pb.collection(collection).update(recordId, updateData);
 
     return { conflict, overwrittenData };

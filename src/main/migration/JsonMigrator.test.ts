@@ -7,7 +7,7 @@ vi.mock('../logger', () => ({
   },
 }));
 
-const mockPb = { collection: vi.fn() } as any;
+const mockPb = { collection: vi.fn() } as unknown as import('pocketbase').default;
 
 describe('JsonMigrator', () => {
   it('transforms contact — strips id, createdAt, updatedAt', () => {

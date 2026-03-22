@@ -19,7 +19,7 @@ describe('SyncManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    syncManager = new SyncManager(mockPb as any);
+    syncManager = new SyncManager(mockPb as unknown as import('pocketbase').default);
   });
 
   it('applies a create change without conflict', async () => {

@@ -31,6 +31,24 @@ vi.mock('../../utils/secureStorage', () => ({
   },
 }));
 
+vi.mock('../../utils/logger', () => ({
+  loggers: {
+    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  },
+}));
+
+// Mock PocketBase oncall service
+const mockReplaceTeamRecords = vi.fn();
+const mockDeleteOnCallByTeam = vi.fn();
+const mockRenameTeam = vi.fn();
+const mockReorderTeams = vi.fn();
+vi.mock('../../services/oncallService', () => ({
+  replaceTeamRecords: (...args: unknown[]) => mockReplaceTeamRecords(...args),
+  deleteOnCallByTeam: (...args: unknown[]) => mockDeleteOnCallByTeam(...args),
+  renameTeam: (...args: unknown[]) => mockRenameTeam(...args),
+  reorderTeams: (...args: unknown[]) => mockReorderTeams(...args),
+}));
+
 import { usePersonnel } from '../usePersonnel';
 
 const wrapper = ({ children }: { children: React.ReactNode }) =>
@@ -53,19 +71,9 @@ describe('usePersonnel', () => {
     makeRow('Database', 'Backup', 'Dave'),
   ];
 
-  const mockApi = {
-    updateOnCallTeam: vi.fn(),
-    removeOnCallTeam: vi.fn(),
-    renameOnCallTeam: vi.fn(),
-    reorderOnCallTeams: vi.fn(),
-    onAlertDismissed: vi.fn(() => vi.fn()),
-    notifyAlertDismissed: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
     secureStore.clear();
-    (globalThis.window as unknown as { api: typeof mockApi }).api = mockApi;
     localStorage.clear();
   });
 
@@ -94,7 +102,7 @@ describe('usePersonnel', () => {
   });
 
   it('handles updating team rows optimistically', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -113,7 +121,7 @@ describe('usePersonnel', () => {
   });
 
   it('preserves team order when updating rows', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -123,13 +131,12 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Database', updatedDatabaseRows);
     });
 
-    // Network should still come before Database
     const teams = Array.from(new Set(result.current.localOnCall.map((r) => r.team)));
     expect(teams).toEqual(['Network', 'Database']);
   });
 
   it('handles removing a team', async () => {
-    mockApi.removeOnCallTeam.mockResolvedValue({ success: true });
+    mockDeleteOnCallByTeam.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -142,7 +149,7 @@ describe('usePersonnel', () => {
   });
 
   it('shows error toast on remove team API failure', async () => {
-    mockApi.removeOnCallTeam.mockResolvedValue(false);
+    mockDeleteOnCallByTeam.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -150,12 +157,12 @@ describe('usePersonnel', () => {
       await result.current.handleRemoveTeam('Database');
     });
 
-    // When API returns falsy, the team is NOT removed (if block not entered)
+    // Team should still exist since API failed
     expect(result.current.teams).toEqual(['Network', 'Database']);
   });
 
   it('handles renaming a team', async () => {
-    mockApi.renameOnCallTeam.mockResolvedValue({ success: true });
+    mockRenameTeam.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -168,7 +175,7 @@ describe('usePersonnel', () => {
   });
 
   it('does not rename team on API failure', async () => {
-    mockApi.renameOnCallTeam.mockResolvedValue(false);
+    mockRenameTeam.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -181,8 +188,8 @@ describe('usePersonnel', () => {
   });
 
   it('handles adding a new team', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
-    mockApi.reorderOnCallTeams.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
+    mockReorderTeams.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -194,7 +201,7 @@ describe('usePersonnel', () => {
   });
 
   it('rolls back add team on API failure', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue(false);
+    mockReplaceTeamRecords.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -206,11 +213,10 @@ describe('usePersonnel', () => {
   });
 
   it('handles reordering teams', async () => {
-    mockApi.reorderOnCallTeams.mockResolvedValue({ success: true });
+    mockReorderTeams.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
-    // Swap Network (index 0) and Database (index 1)
     await act(async () => {
       await result.current.handleReorderTeams(0, 1);
     });
@@ -219,7 +225,7 @@ describe('usePersonnel', () => {
   });
 
   it('rolls back reorder on API failure', async () => {
-    mockApi.reorderOnCallTeams.mockResolvedValue(false);
+    mockReorderTeams.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -237,16 +243,15 @@ describe('usePersonnel', () => {
       await result.current.handleReorderTeams(0, 0);
     });
 
-    expect(mockApi.reorderOnCallTeams).not.toHaveBeenCalled();
+    expect(mockReorderTeams).not.toHaveBeenCalled();
   });
 
   it('provides a weekRange string with date range and year', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
-    // Format: "Month Day - Month Day, Year" e.g. "February 2 - February 8, 2026"
     expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} - [A-Za-z]+ \d{1,2}, \d{4}$/);
   });
 
-  it('dismisses alerts and persists to localStorage', () => {
+  it('dismisses alerts and persists to secureStorage', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
     act(() => {
@@ -259,9 +264,8 @@ describe('usePersonnel', () => {
   });
 
   it('handleUpdateRows auto-dismisses general alert on Monday', async () => {
-    // Mock Date to be a Monday (day=1)
     vi.setSystemTime(new Date(2026, 1, 2, 10, 0, 0)); // Feb 2, 2026 is a Monday
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -274,7 +278,7 @@ describe('usePersonnel', () => {
   });
 
   it('handleUpdateRows rolls back on API failure and toasts', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue(false);
+    mockReplaceTeamRecords.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -284,7 +288,6 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Network', updatedRows);
     });
 
-    // Rollback should restore original rows after API failure
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');
     expect(networkRows).toHaveLength(2);
     expect(networkRows[0]!.name).toBe('Alice');

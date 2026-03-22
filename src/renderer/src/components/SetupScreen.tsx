@@ -82,11 +82,11 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
         {mode === 'client' && (
           <label>
             Server URL:
-            {/* eslint-disable-next-line sonarjs/no-clear-text-protocols */}
             <input
               type="text"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
+              // eslint-disable-next-line sonarjs/no-clear-text-protocols
               placeholder="http://192.168.1.50:8090"
             />
           </label>

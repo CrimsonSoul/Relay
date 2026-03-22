@@ -3,15 +3,17 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { AddServerModal } from '../AddServerModal';
 
-// Mock globalThis.api
-const mockApi = {
-  addServer: vi.fn(),
-};
+// Mock the PocketBase server service
+const mockAddServer = vi.fn();
+const mockUpdateServer = vi.fn();
+vi.mock('../../services/serverService', () => ({
+  addServer: (...args: unknown[]) => mockAddServer(...args),
+  updateServer: (...args: unknown[]) => mockUpdateServer(...args),
+}));
 
 describe('AddServerModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as unknown as Record<string, unknown>).api = mockApi;
   });
 
   it('does not render when isOpen is false', () => {
@@ -35,6 +37,7 @@ describe('AddServerModal', () => {
       owner: '',
       contact: '',
       os: '',
+      raw: { id: 'pb-1' },
     };
     render(<AddServerModal isOpen={true} onClose={vi.fn()} serverToEdit={server} />);
     expect(screen.getByText('Edit Server')).toBeInTheDocument();
@@ -50,6 +53,7 @@ describe('AddServerModal', () => {
       owner: 'owner@example.com',
       contact: 'support@example.com',
       os: 'Linux',
+      raw: { id: 'pb-1' },
     };
     render(<AddServerModal isOpen={true} onClose={vi.fn()} serverToEdit={server} />);
     expect(screen.getByDisplayValue('SRV-001')).toBeInTheDocument();
@@ -68,8 +72,8 @@ describe('AddServerModal', () => {
     expect(screen.getByText('Save Server').closest('button')).not.toBeDisabled();
   });
 
-  it('calls api.addServer and onClose on successful submit', async () => {
-    mockApi.addServer.mockResolvedValue({ success: true });
+  it('calls pbAddServer and onClose on successful submit', async () => {
+    mockAddServer.mockResolvedValue({ id: 'new-1', name: 'TestServer' });
     const onClose = vi.fn();
     render(<AddServerModal isOpen={true} onClose={onClose} />);
     fireEvent.change(screen.getByPlaceholderText('e.g. SRV-001'), {
@@ -79,23 +83,13 @@ describe('AddServerModal', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it('shows error when api.addServer returns failure', async () => {
-    mockApi.addServer.mockResolvedValue({ success: false, error: 'Duplicate name' });
+  it('shows error when pbAddServer throws', async () => {
+    mockAddServer.mockRejectedValue(new Error('Duplicate name'));
     render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
     fireEvent.change(screen.getByPlaceholderText('e.g. SRV-001'), {
       target: { value: 'TestServer' },
     });
     fireEvent.click(screen.getByText('Save Server'));
     await vi.waitFor(() => expect(screen.getByText('Duplicate name')).toBeInTheDocument());
-  });
-
-  it('shows error when no api available', async () => {
-    (globalThis as unknown as Record<string, unknown>).api = undefined;
-    render(<AddServerModal isOpen={true} onClose={vi.fn()} />);
-    fireEvent.change(screen.getByPlaceholderText('e.g. SRV-001'), {
-      target: { value: 'TestServer' },
-    });
-    fireEvent.click(screen.getByText('Save Server'));
-    await vi.waitFor(() => expect(screen.getByText('API not available')).toBeInTheDocument());
   });
 });
