@@ -432,4 +432,5 @@ export const loggers = {
   network: logger.createChild('Network'),
   cloudStatus: logger.createChild('CloudStatus'),
   pocketbase: logger.createChild('PocketBase'),
+  sync: logger.createChild('Sync'),
 };
