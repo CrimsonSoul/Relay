@@ -159,85 +159,91 @@ if (gotLock) {
     const configDataDir = join(app.getPath('userData'), 'data');
     state.appConfig = new AppConfig(configDataDir);
 
-    // Create or update app user and superuser for PocketBase.
-    // Always updates the password to match the current config passphrase.
-    async function ensurePocketBaseUsers(localUrl: string, secret: string): Promise<void> {
-      // PB v0.25+ uses internal collection IDs for built-in auth collections
-      await ensurePbUser(localUrl, '_pb_users_auth_', 'relay@relay.app', secret);
-      await ensurePbUser(localUrl, '_superusers', 'admin@relay.app', secret);
+    /**
+     * Ensure superuser and app user exist with the correct passphrase.
+     *
+     * 1. Use PB CLI to upsert superuser BEFORE PB starts (always works, no auth needed)
+     * 2. After PB starts, use superuser to create/recreate app user
+     */
+    function ensureSuperuserSync(binaryPath: string, pbDataDir: string, secret: string): void {
+      try {
+        const { execSync } = require('node:child_process') as typeof import('node:child_process');
+
+        execSync(
+          `"${binaryPath}" superuser upsert admin@relay.app "${secret}" --dir="${pbDataDir}"`,
+          {
+            timeout: 10000,
+            stdio: 'pipe',
+          },
+        );
+        loggers.pocketbase.info('Superuser upserted via CLI');
+      } catch (err) {
+        loggers.pocketbase.warn('Failed to upsert superuser via CLI', { error: err });
+      }
     }
 
-    async function ensurePbUser(
-      localUrl: string,
-      collection: string,
-      email: string,
-      secret: string,
-    ): Promise<void> {
+    async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
       try {
-        // Try to create the user first
-        const createRes = await fetch(`${localUrl}/api/collections/${collection}/records`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password: secret, passwordConfirm: secret }),
-        });
-        if (createRes.ok) {
-          loggers.pocketbase.info(`Created ${collection} user ${email}`);
+        // Check if app user auth already works
+        const authTest = await fetch(
+          `${localUrl}/api/collections/_pb_users_auth_/auth-with-password`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: 'relay@relay.app', password: secret }),
+          },
+        );
+        if (authTest.ok) {
+          loggers.pocketbase.info('App user auth OK');
           return;
         }
 
-        // User already exists — update password to match current passphrase.
-        // First, authenticate as superuser to get a token (needed to update records).
-        const authRes = await fetch(`${localUrl}/api/collections/_superusers/auth-with-password`, {
+        // Auth as superuser (password guaranteed correct from CLI upsert)
+        const suAuth = await fetch(`${localUrl}/api/collections/_superusers/auth-with-password`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identity: 'admin@relay.app', password: secret }),
         });
-        if (!authRes.ok) {
-          // Can't auth as superuser — try to auth with current password to see if it already matches
-          const testAuth = await fetch(
-            `${localUrl}/api/collections/${collection}/auth-with-password`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ identity: email, password: secret }),
-            },
-          );
-          if (testAuth.ok) return; // Password already matches, nothing to do
-
-          loggers.pocketbase.warn(`Cannot update ${email} password — superuser auth failed`);
+        if (!suAuth.ok) {
+          loggers.pocketbase.warn('Superuser auth failed — cannot manage app user');
           return;
         }
+        const { token } = (await suAuth.json()) as { token: string };
+        const authHeader = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-        const authData = (await authRes.json()) as { token: string };
-
-        // Find the user record
+        // Delete existing app user if present (may have wrong password)
         const listRes = await fetch(
-          `${localUrl}/api/collections/${collection}/records?filter=(email='${email}')`,
-          { headers: { Authorization: `Bearer ${authData.token}` } },
+          `${localUrl}/api/collections/_pb_users_auth_/records?filter=(email='relay@relay.app')`,
+          { headers: authHeader },
         );
-        if (!listRes.ok) return;
+        if (listRes.ok) {
+          const data = (await listRes.json()) as { items: Array<{ id: string }> };
+          for (const item of data.items) {
+            await fetch(`${localUrl}/api/collections/_pb_users_auth_/records/${item.id}`, {
+              method: 'DELETE',
+              headers: authHeader,
+            });
+          }
+        }
 
-        const listData = (await listRes.json()) as { items: Array<{ id: string }> };
-        if (listData.items.length === 0) return;
-
-        // Update password
-        const userId = listData.items[0].id;
-        const updateRes = await fetch(
-          `${localUrl}/api/collections/${collection}/records/${userId}`,
-          {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${authData.token}`,
-            },
-            body: JSON.stringify({ password: secret, passwordConfirm: secret }),
-          },
-        );
-        if (updateRes.ok) {
-          loggers.pocketbase.info(`Updated ${email} password`);
+        // Create fresh app user with correct password
+        const createRes = await fetch(`${localUrl}/api/collections/_pb_users_auth_/records`, {
+          method: 'POST',
+          headers: authHeader,
+          body: JSON.stringify({
+            email: 'relay@relay.app',
+            password: secret,
+            passwordConfirm: secret,
+          }),
+        });
+        if (createRes.ok) {
+          loggers.pocketbase.info('App user created with current passphrase');
+        } else {
+          const body = await createRes.text();
+          loggers.pocketbase.warn('Failed to create app user', { status: createRes.status, body });
         }
       } catch (err) {
-        loggers.pocketbase.warn(`Failed to ensure ${collection} user ${email}`, { error: err });
+        loggers.pocketbase.warn('Failed to ensure app user', { error: err });
       }
     }
 
@@ -291,6 +297,9 @@ if (gotLock) {
           isPackaged: app.isPackaged,
         });
 
+        // Upsert superuser via CLI BEFORE starting PB (no auth/server needed)
+        ensureSuperuserSync(binaryPath, pbDataDir, serverConfig.secret);
+
         state.pbProcess = new PocketBaseProcess({
           binaryPath,
           dataDir: pbDataDir,
@@ -306,8 +315,8 @@ if (gotLock) {
         await state.pbProcess.start();
         loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
 
-        // Create app user and admin superuser
-        await ensurePocketBaseUsers(state.pbProcess.getLocalUrl(), serverConfig.secret);
+        // Create/update app user using superuser auth (password always correct from CLI upsert)
+        await ensureAppUser(state.pbProcess.getLocalUrl(), serverConfig.secret);
 
         // Check for legacy JSON data and run migration if found
         const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
