@@ -21,23 +21,25 @@ const AUTH_RULE = '@request.auth.id != ""';
 
 migrate(
   (app) => {
-    // ── 1. Create users auth collection ────────────────────────────────────
-    const users = new Collection({
-      type: 'auth',
-      name: 'users',
-      // Only authenticated users can list/view other users.
-      // Self-management rules: update/delete only own record.
-      listRule: AUTH_RULE,
-      viewRule: AUTH_RULE,
-      createRule: '', // allow anyone to register (admin can tighten later)
-      updateRule: 'id = @request.auth.id',
-      deleteRule: 'id = @request.auth.id',
-      fields: [
-        // email and password are built-in to auth collections;
-        // add a display name field as a convenience.
-        { type: 'text', name: 'name' },
-      ],
-    });
+    // ── 1. Configure the built-in users auth collection ─────────────────────
+    // PocketBase v0.25+ creates a default "users" auth collection automatically.
+    // We just need to update its rules rather than creating a new one.
+    let users;
+    try {
+      users = app.findCollectionByNameOrId('users');
+    } catch (_) {
+      // If users collection doesn't exist (shouldn't happen), create it
+      users = new Collection({
+        type: 'auth',
+        name: 'users',
+        fields: [{ type: 'text', name: 'name' }],
+      });
+    }
+    users.listRule = AUTH_RULE;
+    users.viewRule = AUTH_RULE;
+    users.createRule = ''; // allow anyone to register (admin can tighten later)
+    users.updateRule = 'id = @request.auth.id';
+    users.deleteRule = 'id = @request.auth.id';
     app.save(users);
 
     // ── 2. Require auth on all data collections ────────────────────────────
