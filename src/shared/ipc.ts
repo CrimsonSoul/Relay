@@ -232,7 +232,7 @@ export type WeatherData = {
   };
 };
 
-type LocationSearchResult = {
+export type LocationSearchResult = {
   results?: {
     name: string;
     lat: number;
@@ -242,7 +242,7 @@ type LocationSearchResult = {
   }[];
 };
 
-type IpLocationResult = {
+export type IpLocationResult = {
   lat: number;
   lon: number;
   city: string;
