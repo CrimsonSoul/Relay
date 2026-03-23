@@ -3,8 +3,8 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { RadarSnapshotSchema, validateIpcDataSafe } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { checkNetworkRateLimit } from '../rateLimiter';
-import { getErrorMessage } from '@shared/types';
 import { isValidCoordinate } from '../utils/validation';
+import { truncateError } from './ipcHelpers';
 
 interface IpApiCoResponse {
   latitude?: number;
@@ -130,7 +130,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       }
     } catch (err) {
       loggers.ipc.warn('ipapi.co failed', {
-        error: String(getErrorMessage(err)).slice(0, 500),
+        error: truncateError(err),
       });
     }
 
@@ -139,7 +139,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       if (result) return result;
     } catch (err) {
       loggers.ipc.warn('ipinfo.io failed', {
-        error: String(getErrorMessage(err)).slice(0, 500),
+        error: truncateError(err),
       });
     }
 
@@ -149,7 +149,7 @@ export function setupLocationHandlers(getMainWindow: () => BrowserWindow | null)
       if (result) return result;
     } catch (err) {
       loggers.ipc.error('All location providers failed', {
-        error: String(getErrorMessage(err)).slice(0, 500),
+        error: truncateError(err),
       });
     }
     return null;

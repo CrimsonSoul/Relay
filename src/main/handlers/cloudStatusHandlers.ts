@@ -12,7 +12,7 @@ import {
 import { loggers } from '../logger';
 import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
-import { getErrorMessage } from '@shared/types';
+import { truncateError } from './ipcHelpers';
 
 // --- Feed URLs ---
 
@@ -365,9 +365,9 @@ export function setupCloudStatusHandlers() {
         if (result.status === 'fulfilled') {
           providers[provider] = result.value;
         } else {
-          errors.push({ provider, message: String(getErrorMessage(result.reason)).slice(0, 500) });
+          errors.push({ provider, message: truncateError(result.reason) });
           loggers.cloudStatus.warn(`${CLOUD_STATUS_PROVIDERS[provider].label} status feed failed`, {
-            error: String(getErrorMessage(result.reason)).slice(0, 500),
+            error: truncateError(result.reason),
             category: ErrorCategory.NETWORK,
           });
         }
@@ -378,7 +378,7 @@ export function setupCloudStatusHandlers() {
       return data;
     } catch (err) {
       loggers.cloudStatus.error('Failed to fetch cloud status', {
-        error: String(getErrorMessage(err)).slice(0, 500),
+        error: truncateError(err),
         category: ErrorCategory.NETWORK,
       });
       return cachedOrEmpty();

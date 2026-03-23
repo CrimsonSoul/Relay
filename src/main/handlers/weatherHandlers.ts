@@ -5,8 +5,8 @@ import { SearchQuerySchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
-import { getErrorMessage } from '@shared/types';
 import { isValidCoordinate } from '../utils/validation';
+import { truncateError } from './ipcHelpers';
 
 interface ZipCodeResult {
   name: string;
@@ -48,7 +48,7 @@ async function lookupZipCode(zip: string): Promise<{ results: ZipCodeResult[] } 
   } catch (error_) {
     loggers.weather.warn('Zip code search failed, falling back to general search', {
       query: zip,
-      error: String(getErrorMessage(error_)).slice(0, 500),
+      error: truncateError(error_),
     });
     return null;
   }
@@ -114,7 +114,7 @@ export function setupWeatherHandlers() {
 
       return data;
     } catch (err: unknown) {
-      const message = String(getErrorMessage(err)).slice(0, 500);
+      const message = truncateError(err);
       loggers.weather.error('Failed to fetch weather data', {
         error: message,
         category: ErrorCategory.NETWORK,
@@ -173,7 +173,7 @@ export function setupWeatherHandlers() {
 
       return data;
     } catch (err: unknown) {
-      const message = String(getErrorMessage(err)).slice(0, 500);
+      const message = truncateError(err);
       loggers.weather.error('Location search failed', {
         error: message,
         category: ErrorCategory.NETWORK,
@@ -234,7 +234,7 @@ export function setupWeatherHandlers() {
         };
       });
     } catch (err: unknown) {
-      const message = String(getErrorMessage(err)).slice(0, 500);
+      const message = truncateError(err);
       loggers.weather.error('Failed to fetch weather alerts', {
         error: message,
         category: ErrorCategory.NETWORK,
