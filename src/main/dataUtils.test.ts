@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from './dataUtils';
 import fsPromises from 'node:fs/promises';
+import * as nodeFs from 'node:fs';
 import { join } from 'node:path';
 import { app } from 'electron';
-import { atomicWriteWithLock } from './fileLock';
 
 vi.mock('node:fs/promises', () => ({
   default: {
@@ -31,8 +31,9 @@ vi.mock('./logger', () => ({
   },
 }));
 
-vi.mock('./fileLock', () => ({
-  atomicWriteWithLock: vi.fn(async () => undefined),
+vi.mock('node:fs', () => ({
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
 }));
 
 describe('dataUtils', () => {
@@ -99,15 +100,18 @@ describe('dataUtils', () => {
   describe('saveConfigAsync', () => {
     it('writes config to userData/config.json', async () => {
       await saveConfigAsync({ dataRoot: '/my/path' });
-      expect(atomicWriteWithLock).toHaveBeenCalledWith(
+      expect(nodeFs.writeFileSync).toHaveBeenCalledWith(
         // eslint-disable-next-line sonarjs/publicly-writable-directories
         join('/tmp/user-data', 'config.json'),
         '{\n  "dataRoot": "/my/path"\n}',
+        'utf-8',
       );
     });
 
     it('handles write error gracefully', async () => {
-      vi.mocked(atomicWriteWithLock).mockRejectedValueOnce(new Error('disk full'));
+      vi.mocked(nodeFs.writeFileSync).mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
       await expect(saveConfigAsync({})).resolves.toBeUndefined();
     });
   });

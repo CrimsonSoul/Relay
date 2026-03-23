@@ -1,8 +1,8 @@
 import fsPromises from 'node:fs/promises';
-import { join } from 'node:path';
+import { writeFileSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { app } from 'electron';
 import { loggers } from './logger';
-import { atomicWriteWithLock } from './fileLock';
 
 export async function ensureDataDirectoryAsync(targetRoot: string) {
   try {
@@ -37,10 +37,9 @@ export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {
 
 export async function saveConfigAsync(config: { dataRoot?: string }): Promise<void> {
   try {
-    await atomicWriteWithLock(
-      join(app.getPath('userData'), 'config.json'),
-      JSON.stringify(config, null, 2),
-    );
+    const configPath = join(app.getPath('userData'), 'config.json');
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (error) {
     loggers.fileManager.error('Failed to save config', { error });
   }
