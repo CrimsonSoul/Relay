@@ -129,22 +129,15 @@ export function useDataManager() {
         servers: { count: 0, lastUpdated: 0 },
         groups: { count: 0, lastUpdated: 0 },
         oncall: { count: 0, lastUpdated: 0 },
-        bridge_history: { count: 0, lastUpdated: 0 },
         alert_history: { count: 0, lastUpdated: 0 },
         notes: { count: 0, lastUpdated: 0 },
-        saved_locations: { count: 0, lastUpdated: 0 },
-        oncall_layout: { count: 0, lastUpdated: 0 },
       };
       const collectionToStat: Record<string, keyof DataStats> = {
         contacts: 'contacts',
         servers: 'servers',
         bridge_groups: 'groups',
         oncall: 'oncall',
-        bridge_history: 'bridge_history',
-        alert_history: 'alert_history',
         notes: 'notes',
-        saved_locations: 'saved_locations',
-        oncall_layout: 'oncall_layout',
       };
       for (const [collection, key] of Object.entries(collectionToStat)) {
         try {
@@ -153,6 +146,15 @@ export function useDataManager() {
         } catch {
           // Collection may not exist yet
         }
+      }
+      // Alert history: only count pinned alerts
+      try {
+        const pinned = await getPb()
+          .collection('alert_history')
+          .getList(1, 1, { filter: 'pinned = true' });
+        data.alert_history = { count: pinned.totalItems, lastUpdated: 0 };
+      } catch {
+        // Collection may not exist yet
       }
       setStats(data);
       return data;
