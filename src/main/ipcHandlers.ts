@@ -1,6 +1,6 @@
 import { BrowserWindow } from 'electron';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
-import { setupCloudStatusHandlers } from './handlers/cloudStatusHandlers';
+import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';

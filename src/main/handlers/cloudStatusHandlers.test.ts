@@ -123,7 +123,7 @@ describe('cloudStatusHandlers', () => {
     mockHandle.mockReset();
 
     // Dynamic import so each test gets a fresh module with cleared cache
-    const mod = await import('./cloudStatusHandlers');
+    const mod = await import('./cloudStatus');
     mod.setupCloudStatusHandlers();
 
     // Capture the registered IPC handler
