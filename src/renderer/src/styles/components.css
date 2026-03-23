@@ -104,27 +104,6 @@ input.tactile-input.tactile-input:focus {
   box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
 }
 
-.tactile-input-wrapper {
-  position: relative;
-  width: 100%;
-}
-
-.tactile-input-icon {
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--color-text-tertiary);
-  pointer-events: none;
-  z-index: 10;
-  transition: color 0.2s ease;
-}
-
-.tactile-input:focus ~ .tactile-input-icon,
-.tactile-input:hover ~ .tactile-input-icon {
-  color: var(--color-text-primary);
-}
-
 /* Sizes */
 .tactile-button--sm {
   height: 34px;
@@ -151,40 +130,6 @@ input.tactile-input.tactile-input:focus {
 
 .tactile-button.is-block {
   width: 100%;
-}
-
-/* Custom Tooltip System */
-.tooltip-container {
-  position: relative;
-  display: inline-block;
-}
-
-.tooltip-content {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 10px;
-  background: var(--color-bg-chrome);
-  border: var(--border-medium);
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: var(--text-sm);
-  color: var(--color-text-primary);
-  white-space: nowrap;
-  z-index: 1000;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-  opacity: 0;
-  transform: translateY(4px);
-  transition:
-    opacity 0.15s ease,
-    transform 0.15s ease;
-}
-
-.tooltip-container:hover .tooltip-content,
-.tooltip-container:focus-within .tooltip-content {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 /* Card Lift Effect -- unified with card system */
@@ -438,11 +383,6 @@ input.tactile-input.tactile-input:focus {
   opacity: 0.6;
 }
 
-.detail-panel-close:hover {
-  color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .detail-panel-body {
   flex: 1;
   overflow-y: auto;
@@ -659,16 +599,6 @@ input.tactile-input.tactile-input:focus {
   height: 100%;
   border: none;
   background: transparent;
-}
-
-.webview-frame--absolute {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
-.webview-frame--hidden {
-  visibility: hidden;
 }
 
 .radar-refresh-btn {
@@ -930,23 +860,6 @@ input.tactile-input.tactile-input:focus {
   line-height: 1.2;
 }
 
-.server-card-os-label {
-  font-size: var(--text-xs);
-  font-weight: 900;
-  padding: 3px 8px;
-  border-radius: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.server-card-detail-row {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 4px;
-}
-
 .server-card-meta {
   font-size: var(--text-base);
   color: var(--color-text-secondary);
@@ -970,65 +883,6 @@ input.tactile-input.tactile-input:focus {
 
 .server-card-meta-lob {
   flex-shrink: 0;
-}
-
-.server-card-meta-comment {
-  font-style: italic;
-  opacity: 0.6;
-  cursor: help;
-  display: block;
-}
-
-.server-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-top: 6px;
-  justify-content: flex-start;
-}
-
-.server-card-tags {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.server-card-tag {
-  font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-accent);
-  padding: 4px 10px;
-  border-radius: 8px;
-  letter-spacing: 0.02em;
-  background: var(--color-accent-subtle);
-}
-
-.server-card-tag-overflow {
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-  font-weight: 600;
-}
-
-.server-card-notes-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fde68a;
-  border: none;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 6px;
-  background: rgba(120, 53, 15, 0.72);
-  width: 28px;
-  height: 28px;
-}
-
-.server-card-divider {
-  width: 2px;
-  height: 32px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 1px;
 }
 
 /* Server Card - Wide layout */
@@ -1166,10 +1020,6 @@ input.tactile-input.tactile-input:focus {
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.platform-darwin .popout-header {
-  padding-left: 80px;
-}
-
 .popout-title {
   font-size: var(--text-base);
   color: var(--color-accent);
@@ -1215,18 +1065,6 @@ body.modal-open {
    Weather Mini Modal
    (shared by SaveLocationModal / RenameLocationModal)
    =========================== */
-.weather-mini-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: var(--z-critical);
-}
-
 .weather-mini-modal {
   width: 100%;
   max-width: 420px;
@@ -1240,18 +1078,6 @@ body.modal-open {
   overflow: hidden;
 }
 
-.weather-mini-modal-header {
-  padding: 24px 28px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-chrome);
-}
-
-.weather-mini-modal-title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
 .weather-mini-modal-subtitle {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
@@ -1260,33 +1086,6 @@ body.modal-open {
 
 .weather-mini-modal-body {
   padding: 24px;
-}
-
-.weather-mini-modal-label {
-  display: block;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-  margin-bottom: 8px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.weather-mini-modal-input {
-  width: 100%;
-  padding: 12px 14px;
-  font-size: var(--text-base);
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-medium);
-  border-radius: 10px;
-  color: var(--color-text-primary);
-  font-family: inherit;
-  outline: none;
-}
-
-.weather-mini-modal-input:focus {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
 }
 
 .weather-mini-modal-checkbox-label {
@@ -1305,43 +1104,6 @@ body.modal-open {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-}
-
-.weather-mini-modal-btn {
-  padding: 10px 20px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.weather-mini-modal-btn--cancel {
-  background: var(--color-bg-surface-elevated);
-  color: var(--color-text-secondary);
-  border: var(--border-medium);
-}
-
-.weather-mini-modal-btn--cancel:hover {
-  color: var(--color-text-primary);
-  border-color: rgba(255, 255, 255, 0.15);
-}
-
-.weather-mini-modal-btn--primary {
-  background: var(--color-accent);
-  color: #000000;
-  border: 1px solid var(--color-accent);
-}
-
-.weather-mini-modal-btn--primary:hover:not(:disabled) {
-  background: var(--color-accent-hover);
-}
-
-.weather-mini-modal-btn--primary:disabled {
-  background: var(--color-bg-surface-elevated);
-  color: var(--color-text-tertiary);
-  border: var(--border-medium);
-  cursor: not-allowed;
 }
 
 /* ===========================
@@ -1881,14 +1643,6 @@ body.modal-open {
   flex-direction: column;
 }
 
-.group-selector-title {
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-text-tertiary);
-  padding: 4px 8px;
-  margin-bottom: 4px;
-}
-
 .group-selector-list {
   max-height: 200px;
   overflow-y: auto;
@@ -1947,28 +1701,6 @@ body.modal-open {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
   font-style: italic;
-}
-
-.group-selector-footer {
-  border-top: var(--border-subtle);
-  margin-top: 8px;
-  padding-top: 8px;
-}
-
-.group-selector-close {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  text-align: center;
-  cursor: pointer;
-  padding: 4px;
-  background: transparent;
-  border: none;
-  width: 100%;
-  transition: color var(--transition-micro);
-}
-
-.group-selector-close:hover {
-  color: var(--color-text-primary);
 }
 
 /* ===========================
@@ -2383,25 +2115,6 @@ body.modal-open {
   color: var(--color-text-primary);
 }
 
-.contact-card-groups {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  cursor: help;
-  flex-wrap: wrap;
-  overflow: hidden;
-}
-
-.contact-card-group-overflow {
-  font-size: var(--text-sm);
-  color: var(--color-text-tertiary);
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.05);
-  padding: 4px 8px;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
 .contact-card-actions {
   position: absolute;
   right: 32px;
@@ -2553,10 +2266,6 @@ body.modal-open {
   z-index: 9002;
   -webkit-app-region: drag;
   overflow: hidden;
-}
-
-.platform-darwin .sidebar {
-  padding-top: 48px;
 }
 
 .sidebar-divider {
@@ -3139,12 +2848,6 @@ body.modal-open {
   flex-direction: column;
   gap: 4px;
   overflow: visible;
-}
-
-.assembler-sidebar-group-list--collapsed {
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
 }
 
 .assembler-sidebar-empty {
@@ -3952,14 +3655,6 @@ body.modal-open {
   background: var(--border-subtle);
 }
 
-.settings-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-}
-
 .settings-data-path {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
@@ -4242,10 +3937,6 @@ body.modal-open {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-}
-
-.modal-form-actions--wide {
-  gap: 12px;
 }
 
 /* ============================================================================
@@ -4880,11 +4571,6 @@ body.modal-open {
   justify-content: center;
 }
 
-.btn-block-center {
-  width: 100%;
-  justify-content: center;
-}
-
 .btn-flex-center {
   flex: 1;
   justify-content: center;
@@ -4903,11 +4589,6 @@ body.modal-open {
   min-height: 0;
   align-items: stretch;
   overflow: visible;
-}
-
-.assembler-header-btn {
-  font-size: var(--text-sm);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ============================================================================
@@ -5290,11 +4971,6 @@ body.modal-open {
   opacity: 0.92;
 }
 
-.note-card--overlay .note-card-drag-handle {
-  opacity: 1;
-}
-
-.note-card--dragging .note-card-drag-handle,
 .note-card--dragging .note-card-copy {
   opacity: 0;
 }
@@ -6072,12 +5748,6 @@ body.modal-open {
   overflow: hidden;
 }
 
-.alerts-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .alerts-layout {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(0, 704px);
@@ -6506,11 +6176,6 @@ body.modal-open {
   height: 6px;
   background: var(--email-banner);
   border-top: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.alerts-email-footer-severity {
-  color: var(--email-badge-text);
-  font-weight: 700;
 }
 
 /* --- Logo Controls (Composer Panel) --- */
