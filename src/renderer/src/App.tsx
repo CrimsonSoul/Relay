@@ -12,7 +12,7 @@ import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { TactileButton } from './components/TactileButton';
-import { ConnectionStatus } from './components/ConnectionStatus';
+import { ConnectionManager } from './components/ConnectionManager';
 import { Contact, TabName } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
@@ -21,7 +21,7 @@ import { useAppWeather } from './hooks/useAppWeather';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
-import { usePocketBase } from './hooks/usePocketBase';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 
 // Lazy load non-default tabs and settings modal
 const DirectoryTab = lazy(() =>
@@ -114,6 +114,14 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
   const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
   const [initialContactEmail, setInitialContactEmail] = useState('');
 
+  // Global keyboard shortcuts
+  useKeyboardShortcuts({
+    setActiveTab,
+    setSettingsOpen,
+    setIsShortcutsOpen,
+    searchInputRef,
+  });
+
   // Handler for saving contact
   const handleContactSaved = async (contact: Partial<Contact>) => {
     try {
@@ -150,55 +158,6 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
       document.body.classList.add('is-popout');
     }
   }, [isPopout]);
-
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const tabMap: Record<string, string> = {
-      '1': 'Compose',
-      '2': 'Personnel',
-      '3': 'People',
-      '4': 'Weather',
-      '5': 'Servers',
-      '6': 'Radar',
-      '7': 'Status',
-      '8': 'Notes',
-      '9': 'Alerts',
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const mod = e.metaKey || e.ctrlKey;
-
-      // Cmd/Ctrl+K to focus header search bar
-      if (mod && e.key === 'k') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
-
-      // Cmd/Ctrl+, for Settings
-      if (mod && e.key === ',') {
-        e.preventDefault();
-        setSettingsOpen(true);
-        return;
-      }
-
-      // Cmd/Ctrl+? for Shortcuts (Shift+/)
-      if (mod && e.shiftKey && (e.key === '/' || e.key === '?')) {
-        e.preventDefault();
-        setIsShortcutsOpen(true);
-        return;
-      }
-
-      // Cmd/Ctrl+1-7 for tab navigation
-      if (mod && !e.shiftKey && tabMap[e.key]) {
-        e.preventDefault();
-        setActiveTab(tabMap[e.key] as TabName);
-      }
-    };
-
-    globalThis.addEventListener('keydown', handleKeyDown);
-    return () => globalThis.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveTab, setSettingsOpen]);
 
   if (isPopout) {
     return (
@@ -558,67 +517,13 @@ function AppWithSetup() {
   }
 
   return (
-    <ConnectedApp
+    <ConnectionManager
       pbUrl={phase.pbUrl}
       pbSecret={phase.pbSecret}
       onReconfigure={() => setPhase({ stage: 'setup' })}
-    />
-  );
-}
-
-function ConnectedApp({
-  pbUrl,
-  pbSecret,
-  onReconfigure,
-}: {
-  readonly pbUrl: string;
-  readonly pbSecret: string;
-  readonly onReconfigure: () => void;
-}) {
-  const { connectionState, error } = usePocketBase(pbUrl, pbSecret);
-
-  if (error) {
-    return (
-      <div className="app-state">
-        <button
-          className="app-state__close-btn"
-          onClick={() => globalThis.window.api?.windowClose()}
-          aria-label="Close"
-        >
-          &#10005;
-        </button>
-        <div className="app-state__error-icon" aria-hidden="true">
-          !
-        </div>
-        <p className="app-state__error-text">{error}</p>
-        <TactileButton variant="primary" onClick={onReconfigure}>
-          Reconfigure
-        </TactileButton>
-      </div>
-    );
-  }
-
-  if (connectionState === 'connecting') {
-    return (
-      <div className="app-state">
-        <button
-          className="app-state__close-btn"
-          onClick={() => globalThis.window.api?.windowClose()}
-          aria-label="Close"
-        >
-          &#10005;
-        </button>
-        <div className="app-state__spinner" />
-        <p className="app-state__text">Connecting to server...</p>
-      </div>
-    );
-  }
-
-  return (
-    <>
-      <MainApp onReconfigure={onReconfigure} />
-      <ConnectionStatus />
-    </>
+    >
+      <MainApp onReconfigure={() => setPhase({ stage: 'setup' })} />
+    </ConnectionManager>
   );
 }
 
