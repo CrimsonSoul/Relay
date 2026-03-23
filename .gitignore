@@ -52,3 +52,4 @@ data/*.json
 # PocketBase
 resources/pocketbase/
 dev-data/
+.superpowers/

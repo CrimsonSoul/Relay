@@ -82,20 +82,36 @@
   background: rgba(255, 255, 255, 0.03);
 }
 
-/* === Mode Selection (Step 1) === */
+/* =========================================
+   Mode Selection (Step 1)
+   ========================================= */
 
 .setup-branding {
   text-align: center;
   margin-bottom: var(--space-10);
-  animation: fadeIn 0.5s ease forwards;
+  animation: brandEnter 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+@keyframes brandEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .setup-branding__title {
   font-size: var(--text-4xl);
   font-weight: var(--weight-bold);
   color: var(--color-accent);
-  letter-spacing: var(--tracking-tight);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wider);
   margin: 0 0 var(--space-2) 0;
+  line-height: 1;
 }
 
 .setup-branding__subtitle {
@@ -104,61 +120,151 @@
   margin: 0;
 }
 
+/* Card container */
 .setup-mode-cards {
   display: flex;
-  gap: var(--space-5);
-  max-width: 640px;
+  gap: var(--space-4);
+  max-width: 680px;
   width: 100%;
 }
 
+/* Mode card — horizontal layout with icon left, text right */
 .setup-mode-card {
   flex: 1;
+  position: relative;
+  background-color: var(--color-bg-card);
+  background-image: var(--surface-pattern);
+  background-size: var(--surface-pattern-size);
+  background-position: var(--surface-pattern-position);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5) var(--space-5);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
   cursor: pointer;
-  padding: var(--space-6) var(--space-5);
-  padding-left: calc(var(--space-5) + 3px);
+  overflow: hidden;
   text-align: left;
-  background: none;
-  border: none;
   color: inherit;
   font-family: inherit;
-  transform: translateY(0);
-  animation: scaleIn 0.4s ease forwards;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Staggered entrance */
+  opacity: 0;
+  animation: cardEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.setup-mode-card:nth-child(1) {
+  animation-delay: 0.12s;
+}
 .setup-mode-card:nth-child(2) {
-  animation-delay: 0.08s;
+  animation-delay: 0.22s;
+}
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .setup-mode-card:hover {
+  background-color: var(--color-bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.12);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 
 .setup-mode-card:active {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.99);
+  transition-duration: 0.1s;
 }
 
+/* Icon container */
 .setup-mode-card__icon {
-  font-size: var(--text-2xl);
-  margin-bottom: var(--space-3);
-  display: block;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.25s ease;
+}
+
+.setup-mode-card__icon--server {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+.setup-mode-card__icon--client {
+  background: var(--color-accent-secondary-subtle);
+  color: var(--color-accent-secondary);
+}
+
+/* Icon glow on hover */
+.setup-mode-card:hover .setup-mode-card__icon--server {
+  background: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.08);
+}
+
+.setup-mode-card:hover .setup-mode-card__icon--client {
+  background: rgba(6, 182, 212, 0.12);
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.08);
+}
+
+/* Text body */
+.setup-mode-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
 }
 
 .setup-mode-card__title {
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
   color: var(--color-text-primary);
-  margin: 0 0 var(--space-2) 0;
+  margin: 0;
 }
 
 .setup-mode-card__desc {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
   line-height: var(--leading-relaxed);
   margin: 0;
 }
 
-/* === Configuration (Step 2) === */
+/* Role tags */
+.setup-mode-card__tag {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+
+.setup-mode-card__tag--server {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.setup-mode-card__tag--client {
+  color: var(--color-accent-secondary);
+  background: var(--color-accent-secondary-subtle);
+}
+
+/* =========================================
+   Configuration (Step 2)
+   ========================================= */
 
 .setup-config {
   width: 100%;
@@ -170,33 +276,149 @@
   margin-bottom: var(--space-6);
 }
 
+/* Back button + mode chip on the same row */
+.setup-config__topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Ghost back button — transparent, reveals border on hover */
+.setup-config__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-left: -10px;
+}
+
+.setup-config__back:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--color-border-subtle);
+}
+
+.setup-config__back:active {
+  background: rgba(255, 255, 255, 0.03);
+  transform: scale(0.97);
+  transition-duration: 0.1s;
+}
+
+/* Mode chip */
+.setup-config__mode-tag {
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border-radius: 5px;
+}
+
+.setup-config__mode-tag--server {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.setup-config__mode-tag--client {
+  color: var(--color-accent-secondary);
+  background: var(--color-accent-secondary-subtle);
+}
+
 .setup-config__title {
   font-size: var(--text-xl);
   font-weight: var(--weight-bold);
   color: var(--color-text-primary);
-  margin: 0 0 var(--space-1) 0;
+  margin: 0;
+  letter-spacing: -0.01em;
 }
 
-.setup-config__mode-label {
-  font-size: var(--text-xs);
-  color: var(--color-text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-wide);
-  font-weight: var(--weight-bold);
-}
-
+/* Form layout */
 .setup-config__form {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.setup-config__actions {
-  display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-3);
+/* Section labels */
+.setup-config__section-label {
+  font-size: 11px;
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
 }
 
+/* Divider between sections */
+.setup-config__divider {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: var(--space-1) 0;
+}
+
+/* Field wrapper for hint text below input */
+.setup-config__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup-config__hint {
+  font-size: var(--text-2xs);
+  color: var(--color-text-tertiary);
+  line-height: var(--leading-normal);
+  margin: 0;
+}
+
+/* Password field with eye toggle */
+.setup-config__password-wrap {
+  position: relative;
+}
+
+.setup-config__eye-toggle {
+  position: absolute;
+  /* Sits to the left of the Input component's built-in clear button */
+  right: 38px;
+  bottom: 5px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.setup-config__eye-toggle:hover {
+  color: var(--color-text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Port input — style the native spinner for dark backgrounds */
+.setup-config__port-input::-webkit-inner-spin-button,
+.setup-config__port-input::-webkit-outer-spin-button {
+  -webkit-appearance: inner-spin-button;
+  opacity: 1;
+  height: 32px;
+  cursor: pointer;
+  filter: invert(0.75);
+}
+
+/* Error message */
 .setup-config__error {
   font-size: var(--text-sm);
   color: var(--color-danger);
@@ -205,10 +427,52 @@
   border-radius: var(--radius-md);
   padding: var(--space-3) var(--space-4);
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   animation: fadeIn 0.2s ease forwards;
 }
 
-/* === App State Screens (loading, connecting, error) === */
+.setup-config__error-icon {
+  flex-shrink: 0;
+}
+
+/* Submit button — full-width primary */
+.setup-config__submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 48px;
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  color: #000;
+  font-family: inherit;
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-top: var(--space-1);
+}
+
+.setup-config__submit:hover {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.setup-config__submit:active {
+  transform: translateY(0) scale(0.98);
+  transition-duration: 0.1s;
+}
+
+/* =========================================
+   App State Screens (loading, connecting, error)
+   ========================================= */
 
 .app-state {
   display: flex;

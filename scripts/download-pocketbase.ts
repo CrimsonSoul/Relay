@@ -83,6 +83,13 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
 
   try {
     await downloadFile(checksumUrl, checksumPath);
+  } catch {
+    // Some PocketBase versions don't publish a checksums file — skip verification
+    console.warn(`Checksums file not available for v${PB_VERSION} — skipping verification`);
+    return;
+  }
+
+  try {
     const { readFileSync: readFs } = await import('fs');
     const { createHash } = await import('crypto');
 
