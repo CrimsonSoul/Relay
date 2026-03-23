@@ -251,16 +251,23 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           </span>
 
           {mode === 'server' && (
-            <Input
-              label="Port"
-              type="number"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              min={1024}
-              max={65535}
-              placeholder="8090"
-              className="setup-config__port-input"
-            />
+            <div className="setup-config__field">
+              <Input
+                label="Port"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={port}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '');
+                  setPort(v);
+                }}
+                placeholder="8090"
+              />
+              <p className="setup-config__hint">
+                Clients on the LAN will connect to this port (1024–65535)
+              </p>
+            </div>
           )}
           {mode === 'client' && (
             <div className="setup-config__field">

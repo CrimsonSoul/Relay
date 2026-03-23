@@ -385,10 +385,15 @@
   position: relative;
 }
 
+/* Push input padding to make room for the eye toggle + clear button */
+.setup-config__password-wrap input.tactile-input {
+  padding-right: 72px;
+}
+
 .setup-config__eye-toggle {
   position: absolute;
-  /* Sits to the left of the Input component's built-in clear button */
-  right: 38px;
+  /* Anchor to the input row, to the left of the clear button */
+  right: 34px;
   bottom: 5px;
   width: 34px;
   height: 34px;
@@ -401,6 +406,7 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   transition: all 0.15s ease;
+  z-index: 2;
 }
 
 .setup-config__eye-toggle:hover {
@@ -408,14 +414,9 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* Port input — style the native spinner for dark backgrounds */
-.setup-config__port-input::-webkit-inner-spin-button,
-.setup-config__port-input::-webkit-outer-spin-button {
-  -webkit-appearance: inner-spin-button;
-  opacity: 1;
-  height: 32px;
-  cursor: pointer;
-  filter: invert(0.75);
+/* Tame the clear button hover scale on setup screens — prevents tooltip jump */
+.setup-config .input-clear-btn:hover {
+  transform: translateY(-50%);
 }
 
 /* Error message */
