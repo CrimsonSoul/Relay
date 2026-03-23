@@ -17,8 +17,8 @@ vi.mock('electron', () => ({
 }));
 
 // Mock logger
-vi.mock('./logger', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./logger')>();
+vi.mock('../logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../logger')>();
   return {
     ...actual,
     loggers: {

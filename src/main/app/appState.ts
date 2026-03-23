@@ -4,7 +4,7 @@ import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
 import { ensureDataFilesAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
-import { validateDataPath } from '../pathValidation';
+import { validateDataPath } from '../utils/pathValidation';
 import { loggers } from '../logger';
 import { getSecureOrigin, isTrustedGeolocationOrigin } from '../securityPolicy';
 import type { AppConfig } from '../config/AppConfig';

@@ -1,7 +1,7 @@
 import fsPromises from 'node:fs/promises';
 import { join, normalize, resolve, relative, isAbsolute } from 'node:path';
 import { app } from 'electron';
-import { loggers } from './logger';
+import { loggers } from '../logger';
 import { ErrorCategory } from '@shared/logging';
 import { isNodeError } from '@shared/types';
 
