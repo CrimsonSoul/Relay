@@ -39,10 +39,9 @@ function fetchProvider(provider: CloudStatusProvider): Promise<CloudStatusItem[]
 // --- Empty response helper ---
 
 function emptyProviders(): CloudStatusData['providers'] {
-  const providers = {} as CloudStatusData['providers'];
-  for (const p of CLOUD_STATUS_PROVIDER_ORDER) {
-    providers[p] = [];
-  }
+  const providers: CloudStatusData['providers'] = Object.fromEntries(
+    CLOUD_STATUS_PROVIDER_ORDER.map((p) => [p, []]),
+  ) as CloudStatusData['providers'];
   return providers;
 }
 

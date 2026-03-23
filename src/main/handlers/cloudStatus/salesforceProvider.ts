@@ -1,4 +1,3 @@
-/* global RequestInit */
 import {
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -21,7 +20,7 @@ export async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
   const res = await fetch(SALESFORCE_ACTIVE_URL, {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
-  } as RequestInit);
+  });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${SALESFORCE_ACTIVE_URL}`);
 

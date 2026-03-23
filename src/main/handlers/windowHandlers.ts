@@ -2,6 +2,7 @@ import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'e
 import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
 import { extname, normalize, resolve, join } from 'node:path';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
 import { rateLimiters } from '../rateLimiter';
@@ -123,7 +124,7 @@ export function setupWindowHandlers(
       return true;
     } catch (err) {
       loggers.ipc.warn('Clipboard write failed', {
-        error: err instanceof Error ? err.message : String(err),
+        error: getErrorMessage(err),
       });
       return false;
     }
@@ -145,7 +146,7 @@ export function setupWindowHandlers(
       return true;
     } catch (err) {
       loggers.ipc.warn('Clipboard image write failed', {
-        error: err instanceof Error ? err.message : String(err),
+        error: getErrorMessage(err),
       });
       return false;
     }
@@ -174,7 +175,7 @@ export function setupWindowHandlers(
         return { success: true, data: filePath };
       } catch (err) {
         loggers.ipc.warn('Alert image save failed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: getErrorMessage(err),
         });
         return { success: false, error: err instanceof Error ? err.message : 'Save failed' };
       }
@@ -215,7 +216,7 @@ export function setupWindowHandlers(
       return { success: true, data: dataUrl };
     } catch (err) {
       loggers.ipc.warn('Company logo save failed', {
-        error: err instanceof Error ? err.message : String(err),
+        error: getErrorMessage(err),
       });
       return { success: false, error: err instanceof Error ? err.message : 'Save failed' };
     }
@@ -239,7 +240,8 @@ export function setupWindowHandlers(
       await unlink(logoPath);
       return { success: true };
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { success: true };
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')
+        return { success: true };
       return { success: false, error: err instanceof Error ? err.message : 'Remove failed' };
     }
   });

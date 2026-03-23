@@ -1,4 +1,3 @@
-/* global RequestInit */
 import {
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -35,7 +34,7 @@ export async function fetchStatuspageProvider(
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     redirect: 'follow',
-  } as RequestInit);
+  });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 

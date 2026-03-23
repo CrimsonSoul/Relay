@@ -1,4 +1,3 @@
-/* global RequestInit */
 import {
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -94,7 +93,7 @@ export async function fetchRssProvider(
   const res = await fetch(url, {
     cache: 'no-store',
     headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
-  } as RequestInit);
+  });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 
