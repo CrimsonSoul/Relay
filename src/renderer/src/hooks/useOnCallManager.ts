@@ -8,6 +8,7 @@ import {
   renameTeam as pbRenameTeam,
   reorderTeams as pbReorderTeams,
 } from '../services/oncallService';
+import { useOptimisticList } from './useOptimisticList';
 
 const getWeekRange = () => {
   const now = new Date();
@@ -24,35 +25,14 @@ const getWeekRange = () => {
 
 export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: string) => void) {
   const { showToast } = useToast();
-  const [localOnCall, setLocalOnCall] = useState<OnCallRow[]>(onCall);
+  const {
+    data: localOnCall,
+    setData: setLocalOnCall,
+    dataRef,
+    startMutation,
+    finishMutation,
+  } = useOptimisticList(onCall);
   const [weekRange, setWeekRange] = useState(getWeekRange());
-
-  // Track pending API calls to distinguish local optimistic updates from external pushes
-  const pendingMutationsRef = useRef(0);
-  const queuedExternalOnCallRef = useRef<OnCallRow[] | null>(null);
-
-  const finishPendingMutation = useCallback(() => {
-    pendingMutationsRef.current = Math.max(0, pendingMutationsRef.current - 1);
-    if (pendingMutationsRef.current === 0 && queuedExternalOnCallRef.current) {
-      const queued = queuedExternalOnCallRef.current;
-      queuedExternalOnCallRef.current = null;
-      setLocalOnCall(queued);
-    }
-  }, []);
-
-  // Ref to always hold the latest localOnCall to avoid stale closures in callbacks
-  const localOnCallRef = useRef(localOnCall);
-  localOnCallRef.current = localOnCall;
-
-  // Sync with external updates only when no local mutations are in-flight
-  useEffect(() => {
-    if (pendingMutationsRef.current === 0) {
-      setLocalOnCall(onCall);
-      queuedExternalOnCallRef.current = null;
-    } else {
-      queuedExternalOnCallRef.current = onCall;
-    }
-  }, [onCall]);
 
   // Keep weekRange up to date
   useEffect(() => {
@@ -85,8 +65,8 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       if (day === 3 && lowerTeam.includes('sql')) dismissAlert('sql');
       if (day === 4 && lowerTeam.includes('oracle')) dismissAlert('oracle');
 
-      pendingMutationsRef.current++;
-      const previousList = [...localOnCallRef.current];
+      startMutation();
+      const previousList = [...dataRef.current];
 
       const buildReorderedList = (prev: OnCallRow[]) => {
         const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
@@ -114,15 +94,15 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         setLocalOnCall(previousList);
         showToast('Failed to save changes', 'error');
       } finally {
-        finishPendingMutation();
+        finishMutation();
       }
     },
-    [dismissAlert, showToast, finishPendingMutation],
+    [dismissAlert, showToast, startMutation, finishMutation, dataRef, setLocalOnCall],
   );
 
   const handleRemoveTeam = useCallback(
     async (team: string) => {
-      pendingMutationsRef.current++;
+      startMutation();
       try {
         await deleteOnCallByTeam(team);
         setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
@@ -130,15 +110,15 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       } catch {
         showToast('Failed to remove team', 'error');
       } finally {
-        finishPendingMutation();
+        finishMutation();
       }
     },
-    [showToast, finishPendingMutation],
+    [showToast, startMutation, finishMutation, setLocalOnCall],
   );
 
   const handleRenameTeam = useCallback(
     async (oldName: string, newName: string) => {
-      pendingMutationsRef.current++;
+      startMutation();
       try {
         await pbRenameTeam(oldName, newName);
         setLocalOnCall((prev) =>
@@ -148,10 +128,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       } catch {
         showToast('Failed to rename team', 'error');
       } finally {
-        finishPendingMutation();
+        finishMutation();
       }
     },
-    [showToast, finishPendingMutation],
+    [showToast, startMutation, finishMutation, setLocalOnCall],
   );
 
   const handleAddTeam = useCallback(
@@ -164,10 +144,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         contact: '',
         timeWindow: '',
       };
-      pendingMutationsRef.current++;
+      startMutation();
 
       // 1. Update local state optimistically
-      const nextList = [...localOnCallRef.current, initialRow];
+      const nextList = [...dataRef.current, initialRow];
       setLocalOnCall(nextList);
 
       // 2. Perform API calls
@@ -184,10 +164,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         showToast('Failed to add team', 'error');
         loggers.app.warn('[useOnCallManager] Failed to add team', { error: err });
       } finally {
-        finishPendingMutation();
+        finishMutation();
       }
     },
-    [showToast, finishPendingMutation],
+    [showToast, startMutation, finishMutation, dataRef, setLocalOnCall],
   );
 
   const handleReorderTeams = useCallback(
@@ -199,13 +179,13 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       if (movedTeam === undefined) return;
       currentTeams.splice(newIndex, 0, movedTeam);
 
-      const current = localOnCallRef.current;
+      const current = dataRef.current;
       const newFlatList: OnCallRow[] = [];
       currentTeams.forEach((t) => {
         newFlatList.push(...current.filter((r) => r.team === t));
       });
 
-      pendingMutationsRef.current++;
+      startMutation();
       const oldFlatList = [...current];
       setLocalOnCall(newFlatList);
 
@@ -216,10 +196,10 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         setLocalOnCall(oldFlatList);
         showToast('Failed to save team order', 'error');
       } finally {
-        finishPendingMutation();
+        finishMutation();
       }
     },
-    [showToast, finishPendingMutation],
+    [showToast, startMutation, finishMutation, dataRef, setLocalOnCall],
   );
 
   return {
