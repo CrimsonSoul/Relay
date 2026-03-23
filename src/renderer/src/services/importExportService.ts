@@ -15,6 +15,7 @@ export const ALL_COLLECTIONS = [
   'alert_history',
   'notes',
   'saved_locations',
+  'oncall_layout',
 ] as const;
 
 export type CollectionName = (typeof ALL_COLLECTIONS)[number];

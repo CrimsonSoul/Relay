@@ -18,6 +18,11 @@ const CATEGORY_TO_COLLECTION: Record<Exclude<DataCategory, 'all'>, CollectionNam
   servers: 'servers',
   oncall: 'oncall',
   groups: 'bridge_groups',
+  bridge_history: 'bridge_history',
+  alert_history: 'alert_history',
+  notes: 'notes',
+  saved_locations: 'saved_locations',
+  oncall_layout: 'oncall_layout',
 };
 
 /** Trigger a browser file download from in-memory data. */
@@ -124,12 +129,22 @@ export function useDataManager() {
         servers: { count: 0, lastUpdated: 0 },
         groups: { count: 0, lastUpdated: 0 },
         oncall: { count: 0, lastUpdated: 0 },
+        bridge_history: { count: 0, lastUpdated: 0 },
+        alert_history: { count: 0, lastUpdated: 0 },
+        notes: { count: 0, lastUpdated: 0 },
+        saved_locations: { count: 0, lastUpdated: 0 },
+        oncall_layout: { count: 0, lastUpdated: 0 },
       };
       const collectionToStat: Record<string, keyof DataStats> = {
         contacts: 'contacts',
         servers: 'servers',
         bridge_groups: 'groups',
         oncall: 'oncall',
+        bridge_history: 'bridge_history',
+        alert_history: 'alert_history',
+        notes: 'notes',
+        saved_locations: 'saved_locations',
+        oncall_layout: 'oncall_layout',
       };
       for (const [collection, key] of Object.entries(collectionToStat)) {
         try {
