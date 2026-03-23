@@ -7,7 +7,7 @@ interface SetupScreenProps {
     port?: number;
     serverUrl?: string;
     secret: string;
-  }) => void;
+  }) => Promise<void> | void;
 }
 
 function CloseButton() {
@@ -145,8 +145,9 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [secret, setSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.SyntheticEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -166,13 +167,23 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
         setError('Port must be between 1024 and 65535');
         return;
       }
-      onComplete({ mode: 'server', port: portNum, secret });
+      setLoading(true);
+      try {
+        await onComplete({ mode: 'server', port: portNum, secret });
+      } catch {
+        setLoading(false);
+      }
     } else if (mode === 'client') {
       if (!serverUrl.trim()) {
         setError('Server URL is required');
         return;
       }
-      onComplete({ mode: 'client', serverUrl: serverUrl.trim(), secret });
+      setLoading(true);
+      try {
+        await onComplete({ mode: 'client', serverUrl: serverUrl.trim(), secret });
+      } catch {
+        setLoading(false);
+      }
     }
   };
 
@@ -318,9 +329,18 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
             </div>
           )}
 
-          <button type="submit" className="setup-config__submit">
-            {mode === 'server' ? 'Save & Start Server' : 'Save & Connect'}
-            <SubmitArrow />
+          <button type="submit" className="setup-config__submit" disabled={loading}>
+            {loading ? (
+              <>
+                <div className="setup-config__submit-spinner" />
+                {mode === 'server' ? 'Starting Server...' : 'Connecting...'}
+              </>
+            ) : (
+              <>
+                {mode === 'server' ? 'Save & Start Server' : 'Save & Connect'}
+                <SubmitArrow />
+              </>
+            )}
           </button>
         </form>
       </div>

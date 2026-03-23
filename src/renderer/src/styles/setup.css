@@ -479,6 +479,22 @@
   transition-duration: 0.1s;
 }
 
+.setup-config__submit:disabled {
+  opacity: 0.8;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.setup-config__submit-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 /* =========================================
    App State Screens (loading, connecting, error)
    ========================================= */

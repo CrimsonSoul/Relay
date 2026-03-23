@@ -331,45 +331,51 @@ if (gotLock) {
         // Ensure app user exists for remote client auth (superuser is localhost-only)
         await ensureAppUser(state.pbProcess.getLocalUrl(), serverConfig.secret);
 
-        // Check for legacy JSON data and run migration if found
-        const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
-        if (JsonMigrator.hasLegacyData(legacyDir)) {
-          loggers.migration.info('Legacy JSON data detected, starting migration');
+        // Fire-and-forget: migration, backup, and retention run in the background
+        // so the UI can proceed as soon as PB is up and the app user is ready.
+        const localUrl = state.pbProcess.getLocalUrl();
+        void (async () => {
+          // Check for legacy JSON data and run migration if found
+          const legacyDir = state.currentDataRoot || join(app.getPath('userData'), 'data');
+          if (JsonMigrator.hasLegacyData(legacyDir)) {
+            loggers.migration.info('Legacy JSON data detected, starting migration');
+            try {
+              const PocketBase = (await import('pocketbase')).default;
+              const pb = new PocketBase(localUrl);
+              await pb
+                .collection('_superusers')
+                .authWithPassword('admin@relay.app', serverConfig.secret);
+              const migrator = new JsonMigrator(pb);
+              const result = await migrator.migrate(legacyDir);
+              loggers.migration.info('Migration complete', {
+                success: result.success,
+                summary: result.summary,
+                errors: result.errors,
+              });
+            } catch (migErr) {
+              loggers.migration.error('JSON migration failed', { error: migErr });
+            }
+          }
+
+          // Start backup and retention managers
+          state.backupManager = new BackupManager(configDataDir);
           try {
             const PocketBase = (await import('pocketbase')).default;
-            const pb = new PocketBase(state.pbProcess.getLocalUrl());
+            const pb = new PocketBase(localUrl);
             await pb
               .collection('_superusers')
               .authWithPassword('admin@relay.app', serverConfig.secret);
-            const migrator = new JsonMigrator(pb);
-            const result = await migrator.migrate(legacyDir);
-            loggers.migration.info('Migration complete', {
-              success: result.success,
-              summary: result.summary,
-              errors: result.errors,
+            state.backupManager.setPocketBase(pb);
+            await state.backupManager.backup();
+            state.retentionManager = new RetentionManager(pb);
+            state.retentionManager.startSchedule();
+            loggers.pocketbase.info('Backup and retention managers started');
+          } catch (retErr) {
+            loggers.pocketbase.error('Failed to start backup/retention managers', {
+              error: retErr,
             });
-          } catch (migErr) {
-            loggers.migration.error('JSON migration failed', { error: migErr });
           }
-        }
-
-        // Start backup and retention managers
-        state.backupManager = new BackupManager(configDataDir);
-
-        try {
-          const PocketBase = (await import('pocketbase')).default;
-          const pb = new PocketBase(state.pbProcess.getLocalUrl());
-          await pb
-            .collection('_superusers')
-            .authWithPassword('admin@relay.app', serverConfig.secret);
-          state.backupManager.setPocketBase(pb);
-          await state.backupManager.backup();
-          state.retentionManager = new RetentionManager(pb);
-          state.retentionManager.startSchedule();
-          loggers.pocketbase.info('Backup and retention managers started');
-        } catch (retErr) {
-          loggers.pocketbase.error('Failed to start backup/retention managers', { error: retErr });
-        }
+        })();
 
         return true;
       } catch (pbError) {

@@ -492,7 +492,7 @@ function AppWithSetup() {
     }) => {
       try {
         await globalThis.api!.saveConfig(config);
-        // In server mode, start PocketBase before checking config
+        // In server mode, start PocketBase before connecting
         if (config.mode === 'server') {
           const started = await globalThis.api!.startPocketBase();
           if (!started) {
@@ -500,13 +500,20 @@ function AppWithSetup() {
             return;
           }
         }
-        await checkConfig();
+        // Go straight to connecting — we already know the URL and secret,
+        // no need for another IPC roundtrip through checkConfig().
+        const pbUrl = await globalThis.api!.getPbUrl();
+        if (!pbUrl) {
+          setPhase({ stage: 'error', message: 'Server not reachable.' });
+          return;
+        }
+        setPhase({ stage: 'connecting', pbUrl, pbSecret: config.secret });
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
         setPhase({ stage: 'error', message: 'Failed to save configuration.' });
       }
     },
-    [checkConfig],
+    [],
   );
 
   if (phase.stage === 'checking') {
