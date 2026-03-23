@@ -26,10 +26,10 @@ export function useOptimisticList<T>(externalData: T[]) {
     pendingRef.current++;
   }, []);
 
-  // Sync with external updates only when no mutations in-flight
+  // Sync with external updates only when no mutations in-flight.
   useEffect(() => {
     if (pendingRef.current === 0) {
-      setLocalData(externalData);
+      setLocalData((prev) => (prev === externalData ? prev : externalData));
       queuedRef.current = null;
     } else {
       queuedRef.current = externalData;
