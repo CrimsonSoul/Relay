@@ -2,6 +2,10 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSavedLocations } from '../useSavedLocations';
 
+vi.mock('../../components/Toast', () => ({
+  useToast: () => ({ showToast: vi.fn() }),
+}));
+
 vi.mock('../../utils/logger', () => ({
   loggers: {
     location: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },

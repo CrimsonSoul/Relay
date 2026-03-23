@@ -247,7 +247,7 @@ export function useAppWeather(
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [weatherLocation, fetchWeather]);
+  }, [weatherLocation, fetchWeather, mounted]);
 
   return {
     weatherLocation,

@@ -6,6 +6,10 @@ const { appLoggerError } = vi.hoisted(() => ({
   appLoggerError: vi.fn(),
 }));
 
+vi.mock('../../components/Toast', () => ({
+  useToast: () => ({ showToast: vi.fn() }),
+}));
+
 vi.mock('../../utils/logger', () => ({
   loggers: {
     app: {

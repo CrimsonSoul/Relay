@@ -182,7 +182,7 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(true);
-      expect(showToast).toHaveBeenCalledWith('Alert history cleared', 'success');
+      expect(showToast).toHaveBeenCalledWith('alert history cleared', 'success');
     });
 
     it('handles thrown error and shows error toast', async () => {
@@ -196,7 +196,7 @@ describe('useAlertHistory', () => {
       });
 
       expect(success).toBe(false);
-      expect(showToast).toHaveBeenCalledWith('Failed to clear history', 'error');
+      expect(showToast).toHaveBeenCalledWith('Failed to clear alert history', 'error');
     });
   });
 

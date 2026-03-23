@@ -1,4 +1,3 @@
-/* global RequestInit */
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { SearchQuerySchema } from '@shared/ipcValidation';
