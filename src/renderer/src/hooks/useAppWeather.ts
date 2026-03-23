@@ -39,7 +39,6 @@ const loadCachedWeather = (): WeatherData | null => {
     return isWeatherDataUsable(cache.data) ? cache.data : null;
   }
 
-  // Legacy cache format (raw WeatherData) is discarded to avoid timezone issues
   return null;
 };
 
@@ -74,8 +73,8 @@ export function useAppWeather(
       // Defensively handle both 'latitude' (new) and 'lat' (legacy) keys
       const loc = savedLocation as Record<string, unknown>;
       const sanitized: Location = {
-        latitude: Number(loc.latitude ?? loc.lat),
-        longitude: Number(loc.longitude ?? loc.lon),
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
         name: (typeof loc.name === 'string' ? loc.name : undefined) || 'Saved Location',
       };
       if (
@@ -208,10 +207,6 @@ export function useAppWeather(
     [mounted, processAlerts],
   );
 
-  // Keep a ref to the latest fetchWeather to avoid stale closures in the polling interval
-  const fetchWeatherRef = useRef(fetchWeather);
-  fetchWeatherRef.current = fetchWeather;
-
   // Persistence of weather location
   useEffect(() => {
     if (weatherLocation) {
@@ -246,16 +241,13 @@ export function useAppWeather(
     }
 
     const interval = setInterval(() => {
-      fetchWeatherRef
-        .current(weatherLocation.latitude, weatherLocation.longitude, true)
-        .catch((error_) => {
-          loggers.weather.error('[Weather] Background polling failed', { error: error_ });
-        });
+      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
+        loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+      });
     }, WEATHER_POLLING_INTERVAL_MS);
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchWeatherRef is a stable ref; weatherLocation triggers re-subscribe
-  }, [weatherLocation]);
+  }, [weatherLocation, fetchWeather]);
 
   return {
     weatherLocation,
