@@ -4,76 +4,106 @@ Patterns, conventions, and testing strategy for the Relay codebase.
 
 ## Table of Contents
 
-- [Operations Pattern](#operations-pattern)
+- [PocketBase Service Pattern](#pocketbase-service-pattern)
 - [IPC and Validation](#ipc-and-validation)
-- [File I/O and Locking](#file-io-and-locking)
+- [PocketBase Data Access](#pocketbase-data-access)
+- [Realtime Subscriptions](#realtime-subscriptions)
+- [Offline Cache and Pending Changes](#offline-cache-and-pending-changes)
 - [Renderer Patterns](#renderer-patterns)
 - [Testing](#testing)
 - [Code Style](#code-style)
 
-## Operations Pattern
+## PocketBase Service Pattern
 
-Business logic lives in `src/main/operations/`, separated from IPC handlers. Each domain has its own module.
+Data CRUD lives in `src/renderer/src/services/`, separated from UI hooks. Each domain has its own service module. Services call the PocketBase REST API directly — no IPC round-trip for data operations.
 
-### Current Modules
+### Current Service Modules
 
-| Module                  | File                         | Domain                                                               |
-| ----------------------- | ---------------------------- | -------------------------------------------------------------------- |
-| ContactJsonOperations   | `ContactJsonOperations.ts`   | Contact CRUD against `contacts.json`                                 |
-| ServerJsonOperations    | `ServerJsonOperations.ts`    | Server CRUD against `servers.json`                                   |
-| OnCallJsonOperations    | `OnCallJsonOperations.ts`    | On-call team CRUD, rename, reorder against `oncall.json`             |
-| PresetOperations        | `PresetOperations.ts`        | Bridge group presets against `bridgeGroups.json`                     |
-| BridgeHistoryOperations | `BridgeHistoryOperations.ts` | Bridge history log (auto-prunes entries older than 30 days, max 500) |
-| NotesOperations         | `NotesOperations.ts`         | Contact and server notes with tags                                   |
-| SavedLocationOperations | `SavedLocationOperations.ts` | Weather saved locations with default management                      |
-| DataImportOperations    | `DataImportOperations.ts`    | CSV and JSON import with email/phone validation                      |
-| DataExportOperations    | `DataExportOperations.ts`    | JSON and CSV export via Electron dialog                              |
-| BackupOperations        | `BackupOperations.ts`        | Automatic backup creation                                            |
+| Module               | File                      | Domain                                          |
+| -------------------- | ------------------------- | ----------------------------------------------- |
+| PocketBase client    | `pocketbase.ts`           | Client init, auth, health check, error handling |
+| contactService       | `contactService.ts`       | Contact CRUD                                    |
+| serverService        | `serverService.ts`        | Server CRUD                                     |
+| oncallService        | `oncallService.ts`        | On-call team CRUD and reorder                   |
+| oncallLayoutService  | `oncallLayoutService.ts`  | On-call board layout persistence                |
+| bridgeGroupService   | `bridgeGroupService.ts`   | Bridge group preset CRUD                        |
+| bridgeHistoryService | `bridgeHistoryService.ts` | Bridge history log                              |
+| notesService         | `notesService.ts`         | Contact and server notes                        |
+| savedLocationService | `savedLocationService.ts` | Weather saved locations                         |
+| alertHistoryService  | `alertHistoryService.ts`  | Alert history log                               |
+| importExportService  | `importExportService.ts`  | CSV and JSON import/export                      |
 
-### Adding a New Operation
+### Adding a New Service
 
-1. Create `src/main/operations/NewDomainOperations.ts`
-2. Import `readWithLock` / `modifyJsonWithLock` from `../../fileLock`
-3. Import `loggers` from `../../logger`
-4. Import `generateId` from `./idUtils` if you need IDs
-5. Export pure async functions that take a `dataRoot` path and input, return results
-6. Add the module to `src/main/operations/index.ts`
-7. Write tests in `src/main/operations/__tests__/NewDomainOperations.test.ts`
-8. Wire into a handler in `src/main/handlers/`
+1. Create `src/renderer/src/services/newDomainService.ts`
+2. Import `getPb`, `requireOnline`, `handleApiError` from `./pocketbase`
+3. Export pure async functions; use `requireOnline()` before any write
+4. Write tests in a `__tests__/` directory (mock the PB SDK — see [Testing PB Services](#testing-pb-services))
+5. Create a hook in `src/renderer/src/hooks/useNewDomain.ts` that calls the service
 
 ```typescript
-import { readWithLock, modifyJsonWithLock } from '../../fileLock';
-import { loggers } from '../../logger';
-import { generateId } from './idUtils';
-import path from 'path';
+import { getPb, handleApiError, requireOnline } from './pocketbase';
 
-const FILE = 'myDomain.json';
-
-type MyRecord = { id: string; name: string; createdAt: number };
-
-export async function getAll(dataRoot: string): Promise<MyRecord[]> {
-  return readWithLock<MyRecord[]>(path.join(dataRoot, FILE), []);
+export interface MyRecord {
+  id: string;
+  name: string;
+  created: string;
+  updated: string;
 }
 
-export async function add(dataRoot: string, name: string): Promise<MyRecord> {
-  const record: MyRecord = { id: generateId(), name, createdAt: Date.now() };
-  await modifyJsonWithLock<MyRecord[]>(path.join(dataRoot, FILE), [], (current) => {
-    return [...current, record];
-  });
-  loggers.fileManager.info('Record added', { id: record.id });
-  return record;
+export type MyInput = Omit<MyRecord, 'id' | 'created' | 'updated'>;
+
+export async function getAll(): Promise<MyRecord[]> {
+  try {
+    return await getPb().collection('myDomain').getFullList<MyRecord>({ sort: 'name' });
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+export async function add(data: MyInput): Promise<MyRecord> {
+  requireOnline();
+  try {
+    return await getPb().collection('myDomain').create<MyRecord>(data);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+export async function update(id: string, data: Partial<MyInput>): Promise<MyRecord> {
+  requireOnline();
+  try {
+    return await getPb().collection('myDomain').update<MyRecord>(id, data);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+export async function remove(id: string): Promise<void> {
+  requireOnline();
+  try {
+    await getPb().collection('myDomain').delete(id);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
 }
 ```
 
 ### Why This Pattern?
 
-- **Testable**: Operations can be unit tested by mocking `fileLock`, without Electron IPC
-- **Reusable**: Same operation callable from handlers, maintenance tasks, or migration scripts
-- **Atomic**: `modifyJsonWithLock` handles read-modify-write atomically with temp files
+- **Testable**: Services can be unit tested by mocking the PB SDK, without Electron or IPC
+- **No IPC overhead**: Renderer talks directly to PocketBase REST — one fewer round-trip
+- **Consistent error handling**: `handleApiError` centralises offline detection; `requireOnline` gives clear errors before writes
 
 ## IPC and Validation
 
-All data crossing the main/renderer boundary is validated with Zod 4 schemas.
+Data CRUD no longer uses IPC. IPC handlers remain for system-level operations: weather API proxy, window management, auth credential prompts, cloud status, location lookup, logging bridge, and initial setup/config.
+
+All IPC messages are validated with Zod 4 schemas.
 
 ### Defining Channels
 
@@ -81,8 +111,7 @@ Channels are defined in `src/shared/ipc.ts` as the `IPC_CHANNELS` const object:
 
 ```typescript
 export const IPC_CHANNELS = {
-  GET_MY_RECORDS: 'myDomain:get',
-  ADD_MY_RECORD: 'myDomain:add',
+  MY_CHANNEL: 'myDomain:action',
   // ...
 } as const;
 ```
@@ -104,52 +133,73 @@ export const MyInputSchema = z.object({
 // Use in handler
 import { validateIpcDataSafe } from '../../shared/ipcValidation';
 
-ipcMain.handle(IPC_CHANNELS.ADD_MY_RECORD, async (_, payload) => {
-  const data = validateIpcDataSafe(MyInputSchema, payload, 'myDomain:add');
+ipcMain.handle(IPC_CHANNELS.MY_CHANNEL, async (_, payload) => {
+  const data = validateIpcDataSafe(MyInputSchema, payload, 'myDomain:action');
   if (!data) return { success: false, error: 'Invalid input' };
-  const record = await add(dataRoot, data.name);
-  return { success: true, data: record };
+  return doSomething(data);
 });
 ```
 
 ### Preload Bridge
 
-After adding the handler, expose it in the preload:
+After adding a handler, expose it in the preload:
 
 1. Add the method signature to the `BridgeAPI` type in `src/shared/ipc.ts`
 2. Implement in `src/preload/index.ts` using `ipcRenderer.invoke`
 
-## File I/O and Locking
+## PocketBase Data Access
 
-### Atomic Writes
+The PB client is initialised in the renderer at startup via `initPocketBase(url)` from `src/renderer/src/services/pocketbase.ts`. All service modules access it through `getPb()`.
 
-All file mutations use `modifyJsonWithLock` from `src/main/fileLock.ts`:
+### Filter Escaping
 
-1. Acquires an in-memory lock for the file path
-2. Reads current file contents
-3. Passes contents to your callback function
-4. Writes callback return value to a temp file
-5. Renames temp file over original (atomic on all platforms)
-6. Releases lock
-
-If the write fails, the temp file is cleaned up and the original is untouched.
-
-### Read-Only Access
-
-For reads, use `readWithLock` which acquires a shared lock and parses JSON:
+Always escape user-supplied values in PB filter strings:
 
 ```typescript
-const contacts = await readWithLock<ContactRecord[]>(filePath, []);
-// Second argument is the default value if the file doesn't exist
+import { escapeFilter } from './pocketbase';
+
+const result = await getPb()
+  .collection('contacts')
+  .getFirstListItem<ContactRecord>(`email="${escapeFilter(email)}"`);
 ```
 
-### File Watching
+Never interpolate user input directly into filter strings — this is equivalent to a SQL injection vector.
 
-`FileWatcher.ts` uses chokidar to detect external file changes. When a watched file changes, `FileEmitter.ts` pushes updated data to all renderer windows via IPC. This enables live sync when files are edited externally or by another app instance.
+### Connection State
 
-### Data Cache
+The PB client exposes a connection state machine: `connecting` → `online` → `offline` → `reconnecting`. Use `isOnline()` to check, or `requireOnline()` to throw immediately on writes when offline. `onConnectionStateChange(listener)` registers a callback for UI updates.
 
-`DataCacheManager.ts` maintains an in-memory cache of parsed JSON data. The cache is invalidated when file changes are detected, avoiding redundant disk reads on each IPC call.
+## Realtime Subscriptions
+
+PocketBase supports realtime subscriptions over SSE. Use them to push collection changes to the UI without polling:
+
+```typescript
+// Subscribe to all changes in a collection
+const unsub = await getPb()
+  .collection('contacts')
+  .subscribe('*', (e) => {
+    if (e.action === 'create') addToList(e.record);
+    if (e.action === 'update') updateInList(e.record);
+    if (e.action === 'delete') removeFromList(e.record.id);
+  });
+
+// Unsubscribe on component unmount
+return () => {
+  unsub();
+};
+```
+
+The `useCollection` hook in `src/renderer/src/hooks/useCollection.ts` provides a generic subscription wrapper.
+
+## Offline Cache and Pending Changes
+
+The main process maintains two local SQLite databases (via better-sqlite3) for offline resilience:
+
+- **OfflineCache** (`src/main/cache/OfflineCache.ts`): Read-through cache of PB collections. Renderer reads from this via `window.api.cacheRead(collection)` when offline.
+- **PendingChanges** (`src/main/cache/PendingChanges.ts`): Write queue for mutations that occurred while offline.
+- **SyncManager** (`src/main/cache/SyncManager.ts`): On reconnect, replays the pending queue to PocketBase and resolves conflicts (last-write-wins, server takes precedence).
+
+Cache updates are triggered via `window.api.cacheSnapshot(collection, records)` after a successful PB fetch. Pending writes are queued via `window.api.cacheWrite(collection, action, record)` when the renderer is offline.
 
 ## Renderer Patterns
 
@@ -176,11 +226,12 @@ Each feature domain has a dedicated hook in `src/renderer/src/hooks/`:
 | `useAppWeather`        | Weather | Weather data, alerts, location              |
 | `useWeatherLocation`   | Weather | Location selection state                    |
 | `useSavedLocations`    | Weather | Saved location CRUD                         |
-| `useAIChat`            | AI      | Chat session management                     |
 | `useAppData`           | Global  | Data loading, reload, sync                  |
 | `useNotes`             | Global  | Contact/server notes                        |
 | `useCommandSearch`     | Global  | Command palette search                      |
 | `useDataManager`       | Global  | Import/export                               |
+| `useCollection`        | Global  | Generic PB realtime subscription wrapper    |
+| `usePolling`           | Global  | Generic polling loop                        |
 | `useDebounce`          | Utility | Debounced values                            |
 | `useFocusTrap`         | Utility | Modal focus trapping                        |
 | `useMounted`           | Utility | Mount state tracking                        |
@@ -268,41 +319,54 @@ Enforced in both vitest configs — CI fails if coverage drops below:
 
 | Suite       | Lines | Functions | Branches | Statements |
 | ----------- | ----- | --------- | -------- | ---------- |
-| Main/Shared | 52%   | 52%       | 38%      | 52%        |
-| Renderer    | 78%   | 76%       | 67%      | 79%        |
+| Main/Shared | 80%   | 80%       | 75%      | 80%        |
+| Renderer    | 80%   | 80%       | 75%      | 80%        |
 
-### Testing Operations (Main Process)
+### Testing PB Services
 
-Mock the file lock, logger, and ID generator:
+Mock the PocketBase SDK and the `pocketbase.ts` module:
 
 ```typescript
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { readWithLock, modifyJsonWithLock } from '../../fileLock';
+import { getPb, requireOnline, handleApiError } from '../pocketbase';
+import { add, update, remove } from '../myDomainService';
 
-vi.mock('../../fileLock', () => ({
-  readWithLock: vi.fn(),
-  modifyJsonWithLock: vi.fn(),
-}));
-vi.mock('../../logger', () => ({
-  loggers: { fileManager: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
-}));
-vi.mock('./idUtils', () => ({
-  generateId: vi.fn(() => 'test-id'),
+vi.mock('../pocketbase', () => ({
+  getPb: vi.fn(),
+  requireOnline: vi.fn(),
+  handleApiError: vi.fn(),
 }));
 
-describe('MyOperations', () => {
-  beforeEach(() => vi.clearAllMocks());
+const mockCollection = {
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  getFullList: vi.fn(),
+};
 
-  it('adds a record', async () => {
-    // Capture the modifyJsonWithLock callback and test it
-    (modifyJsonWithLock as Mock).mockImplementation(async (_path, _default, callback) => {
-      const result = callback([]); // Pass empty array as current data
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({ id: 'test-id', name: 'Test' });
-    });
+beforeEach(() => {
+  vi.clearAllMocks();
+  (getPb as Mock).mockReturnValue({ collection: () => mockCollection });
+});
 
-    await add('/data', 'Test');
-    expect(modifyJsonWithLock).toHaveBeenCalledOnce();
+describe('myDomainService', () => {
+  it('creates a record', async () => {
+    const record = { id: '1', name: 'Test', created: '', updated: '' };
+    mockCollection.create.mockResolvedValue(record);
+
+    const result = await add({ name: 'Test' });
+
+    expect(requireOnline).toHaveBeenCalledOnce();
+    expect(mockCollection.create).toHaveBeenCalledWith({ name: 'Test' });
+    expect(result).toEqual(record);
+  });
+
+  it('calls handleApiError on network failure', async () => {
+    const err = new Error('Network error');
+    mockCollection.create.mockRejectedValue(err);
+
+    await expect(add({ name: 'Test' })).rejects.toThrow('Network error');
+    expect(handleApiError).toHaveBeenCalledWith(err);
   });
 });
 ```
@@ -320,10 +384,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 it('loads data on mount', async () => {
-  const mockApi = {
-    getContacts: vi.fn().mockResolvedValue([{ id: '1', name: 'Alice' }]),
-  };
-  (window as Window & { api: typeof mockApi }).api = mockApi as unknown as Window['api'];
+  mockCollection.getFullList.mockResolvedValue([{ id: '1', name: 'Alice' }]);
 
   const { result } = renderHook(() => useMyHook(), { wrapper });
 
