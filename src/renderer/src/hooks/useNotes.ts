@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import type { NotesData, NoteEntry } from '@shared/ipc';
+import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
 import { useCollection } from './useCollection';
 import { setNote as pbSetNote } from '../services/notesService';
@@ -24,6 +25,7 @@ function buildNotesData(records: NoteRecord[]): NotesData {
 }
 
 export function useNotes() {
+  const { showToast } = useToast();
   const {
     data: noteRecords,
     loading,
@@ -32,25 +34,33 @@ export function useNotes() {
 
   const notes = useMemo(() => buildNotesData(noteRecords), [noteRecords]);
 
-  const setContactNote = useCallback(async (email: string, note: string, tags: string[]) => {
-    try {
-      await pbSetNote('contact', email.toLowerCase(), note, tags);
-      return true;
-    } catch (e) {
-      loggers.app.error('Failed to set contact note', { error: e });
-      return false;
-    }
-  }, []);
+  const setContactNote = useCallback(
+    async (email: string, note: string, tags: string[]) => {
+      try {
+        await pbSetNote('contact', email.toLowerCase(), note, tags);
+        return true;
+      } catch (e) {
+        loggers.app.error('Failed to set contact note', { error: e });
+        showToast('Failed to save contact note', 'error');
+        return false;
+      }
+    },
+    [showToast],
+  );
 
-  const setServerNote = useCallback(async (name: string, note: string, tags: string[]) => {
-    try {
-      await pbSetNote('server', name.toLowerCase(), note, tags);
-      return true;
-    } catch (e) {
-      loggers.app.error('Failed to set server note', { error: e });
-      return false;
-    }
-  }, []);
+  const setServerNote = useCallback(
+    async (name: string, note: string, tags: string[]) => {
+      try {
+        await pbSetNote('server', name.toLowerCase(), note, tags);
+        return true;
+      } catch (e) {
+        loggers.app.error('Failed to set server note', { error: e });
+        showToast('Failed to save server note', 'error');
+        return false;
+      }
+    },
+    [showToast],
+  );
 
   const getContactNote = useCallback(
     (email: string): NoteEntry | undefined => {
