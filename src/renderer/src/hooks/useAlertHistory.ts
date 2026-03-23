@@ -1,8 +1,7 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import type { AlertHistoryEntry } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
-import { useCollection } from './useCollection';
 import {
   addAlertHistory as pbAddAlertHistory,
   deleteAlertHistory as pbDeleteAlertHistory,
@@ -11,6 +10,7 @@ import {
   updateAlertLabel as pbUpdateAlertLabel,
 } from '../services/alertHistoryService';
 import type { AlertHistoryRecord } from '../services/alertHistoryService';
+import { useHistory } from './useHistory';
 
 function toAlertHistoryEntry(r: AlertHistoryRecord): AlertHistoryEntry {
   return {
@@ -26,64 +26,43 @@ function toAlertHistoryEntry(r: AlertHistoryRecord): AlertHistoryEntry {
   };
 }
 
+const alertHistoryServices = {
+  add: pbAddAlertHistory as (data: Record<string, unknown>) => Promise<AlertHistoryRecord>,
+  delete: pbDeleteAlertHistory,
+  clear: pbClearAlertHistory,
+};
+
+const alertHistoryLabels = { name: 'alert history' };
+
 export function useAlertHistory() {
   const { showToast } = useToast();
+
   const {
-    data: alertRecords,
+    entries,
     loading,
-    refetch: reloadHistory,
-  } = useCollection<AlertHistoryRecord>('alert_history', { sort: '-created' });
-
-  const history = useMemo(() => alertRecords.map(toAlertHistoryEntry), [alertRecords]);
-
-  const addHistory = useCallback(
-    async (entry: Omit<AlertHistoryEntry, 'id' | 'timestamp'>) => {
-      try {
-        const created = await pbAddAlertHistory({
-          severity: entry.severity,
-          subject: entry.subject,
-          bodyHtml: entry.bodyHtml,
-          sender: entry.sender,
-          recipient: entry.recipient || '',
-          pinned: entry.pinned || false,
-          label: entry.label || '',
-        });
-        return toAlertHistoryEntry(created);
-      } catch (error) {
-        loggers.app.error('Failed to add alert history', { error });
-        showToast('Failed to save alert history', 'error');
-        return null;
-      }
-    },
-    [showToast],
+    addHistory: addHistoryRaw,
+    deleteHistory,
+    clearHistory,
+    reloadHistory,
+  } = useHistory<AlertHistoryRecord, AlertHistoryEntry>(
+    'alert_history',
+    toAlertHistoryEntry,
+    alertHistoryServices,
+    alertHistoryLabels,
   );
 
-  const deleteHistory = useCallback(
-    async (id: string) => {
-      try {
-        await pbDeleteAlertHistory(id);
-        showToast('History entry deleted', 'success');
-        return true;
-      } catch (error) {
-        loggers.app.error('Failed to delete alert history', { error });
-        showToast('Failed to delete history entry', 'error');
-        return false;
-      }
-    },
-    [showToast],
-  );
+  const history = entries;
 
-  const clearHistory = useCallback(async () => {
-    try {
-      await pbClearAlertHistory();
-      showToast('Alert history cleared', 'success');
-      return true;
-    } catch (error) {
-      loggers.app.error('Failed to clear alert history', { error });
-      showToast('Failed to clear history', 'error');
-      return false;
-    }
-  }, [showToast]);
+  const addHistory = (entry: Omit<AlertHistoryEntry, 'id' | 'timestamp'>) =>
+    addHistoryRaw({
+      severity: entry.severity,
+      subject: entry.subject,
+      bodyHtml: entry.bodyHtml,
+      sender: entry.sender,
+      recipient: entry.recipient || '',
+      pinned: entry.pinned || false,
+      label: entry.label || '',
+    });
 
   const pinHistory = useCallback(
     async (id: string, pinned: boolean) => {
