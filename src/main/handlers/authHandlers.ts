@@ -10,12 +10,16 @@ import {
 } from '../credentialManager';
 import { loggers } from '../logger';
 
+function isValidNonce(nonce: unknown): nonce is string {
+  return typeof nonce === 'string' && /^[a-f0-9]{64}$/i.test(nonce);
+}
+
 export function setupAuthHandlers() {
   ipcMain.handle(
     IPC_CHANNELS.AUTH_SUBMIT,
     async (_event, { nonce, username, password, remember }) => {
       // Input validation
-      if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+      if (!isValidNonce(nonce)) {
         loggers.auth.warn('Invalid auth nonce format');
         return false;
       }
@@ -40,7 +44,7 @@ export function setupAuthHandlers() {
   );
 
   ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, { nonce }) => {
-    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+    if (!isValidNonce(nonce)) {
       loggers.auth.warn('Invalid auth nonce format for cached auth');
       return false;
     }
@@ -59,7 +63,7 @@ export function setupAuthHandlers() {
   });
 
   ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (_event, { nonce }) => {
-    if (typeof nonce !== 'string' || !/^[a-f0-9]{64}$/i.test(nonce)) {
+    if (!isValidNonce(nonce)) {
       loggers.auth.warn('Invalid auth nonce format for cancel');
       return;
     }
