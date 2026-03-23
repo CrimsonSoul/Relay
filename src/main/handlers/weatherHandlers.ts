@@ -6,6 +6,7 @@ import { loggers } from '../logger';
 import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../rateLimiter';
 import { getErrorMessage } from '@shared/types';
+import { isValidCoordinate } from '../utils/validation';
 
 interface ZipCodeResult {
   name: string;
@@ -82,20 +83,13 @@ export function setupWeatherHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_WEATHER, async (_event, lat, lon) => {
     if (!checkNetworkRateLimit()) return null;
     try {
-      const nLat = Number(lat);
-      const nLon = Number(lon);
-
-      if (
-        Number.isNaN(nLat) ||
-        Number.isNaN(nLon) ||
-        nLat < -90 ||
-        nLat > 90 ||
-        nLon < -180 ||
-        nLon > 180
-      ) {
+      if (!isValidCoordinate(lat, lon)) {
         loggers.weather.warn('Invalid coordinates for weather fetch', { lat, lon });
         throw new Error('Invalid coordinates');
       }
+
+      const nLat = Number(lat);
+      const nLon = Number(lon);
 
       const res = await fetch(
         `https://api.open-meteo.com/v1/forecast?latitude=${nLat}&longitude=${nLon}&hourly=temperature_2m,weathercode,precipitation_probability&daily=weathercode,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max&current_weather=true&temperature_unit=fahrenheit&windspeed_unit=mph&precipitation_unit=inch&forecast_days=16&timezone=auto`,
@@ -192,20 +186,13 @@ export function setupWeatherHandlers() {
   ipcMain.handle(IPC_CHANNELS.GET_WEATHER_ALERTS, async (_event, lat, lon) => {
     if (!checkNetworkRateLimit()) return [];
     try {
-      const nLat = Number(lat);
-      const nLon = Number(lon);
-
-      if (
-        Number.isNaN(nLat) ||
-        Number.isNaN(nLon) ||
-        nLat < -90 ||
-        nLat > 90 ||
-        nLon < -180 ||
-        nLon > 180
-      ) {
+      if (!isValidCoordinate(lat, lon)) {
         loggers.weather.warn('Invalid coordinates for alerts fetch', { lat, lon });
         return [];
       }
+
+      const nLat = Number(lat);
+      const nLon = Number(lon);
 
       // NWS requires a point lookup first (optional check, but NWS alerts endpoint also takes point)
       // Point lookup is good for verifying it's in a supported area

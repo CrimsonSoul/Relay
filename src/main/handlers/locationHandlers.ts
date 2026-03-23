@@ -4,6 +4,7 @@ import { RadarSnapshotSchema, validateIpcDataSafe } from '@shared/ipcValidation'
 import { loggers } from '../logger';
 import { checkNetworkRateLimit } from '../rateLimiter';
 import { getErrorMessage } from '@shared/types';
+import { isValidCoordinate } from '../utils/validation';
 
 interface IpApiCoResponse {
   latitude?: number;
@@ -32,11 +33,7 @@ function validateLocationResponse(data: {
   country?: unknown;
   timezone?: unknown;
 }): boolean {
-  const lat = Number(data.lat);
-  const lon = Number(data.lon);
-  return (
-    !Number.isNaN(lat) && !Number.isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
-  );
+  return isValidCoordinate(data.lat, data.lon);
 }
 
 async function fetchIpInfoIo() {
