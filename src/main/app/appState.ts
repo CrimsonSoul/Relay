@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { setupIpcHandlers } from '../ipcHandlers';
 import { setupAuthHandlers, setupAuthInterception } from '../handlers/authHandlers';
 import { setupLoggerHandlers } from '../handlers/loggerHandlers';
-import { ensureDataFilesAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
+import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
 import { validateDataPath } from '../utils/pathValidation';
 import { loggers } from '../logger';
 import { getSecureOrigin, isTrustedGeolocationOrigin } from '../securityPolicy';
@@ -71,7 +71,7 @@ export async function getDataRoot(): Promise<string> {
     try {
       const config = await loadConfigAsync();
       const root = config.dataRoot || getDefaultDataPath();
-      await ensureDataFilesAsync(root);
+      await ensureDataDirectoryAsync(root);
       state.currentDataRoot = root;
       loggers.main.info('Data root resolved', { path: root });
       return root;
@@ -93,7 +93,7 @@ export async function handleDataPathChange(newPath: string): Promise<void> {
   const validation = await validateDataPath(newPath);
   if (!validation.success) throw new Error(validation.error || 'Invalid data path');
 
-  await ensureDataFilesAsync(newPath);
+  await ensureDataDirectoryAsync(newPath);
   await saveConfigAsync({ dataRoot: newPath });
 
   // Update cached root and invalidate the deferred promise
@@ -105,8 +105,6 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
   setupIpcHandlers(
     () => state.mainWindow,
     getDataRoot,
-    handleDataPathChange,
-    getDefaultDataPath,
     createAuxWindow,
     () => state.appConfig,
     () => state.offlineCache,

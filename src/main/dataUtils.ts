@@ -4,25 +4,11 @@ import { app } from 'electron';
 import { loggers } from './logger';
 import { atomicWriteWithLock } from './fileLock';
 
-export async function ensureDataFilesAsync(targetRoot: string) {
+export async function ensureDataDirectoryAsync(targetRoot: string) {
   try {
     await fsPromises.mkdir(targetRoot, { recursive: true });
   } catch (e) {
     loggers.fileManager.error('Failed to create persistent data directory', { error: e });
-  }
-}
-
-export async function copyDataFilesAsync(sourceRoot: string, targetRoot: string): Promise<boolean> {
-  try {
-    await fsPromises.mkdir(targetRoot, { recursive: true });
-    loggers.fileManager.debug('Ensured target directory exists', {
-      from: sourceRoot,
-      to: targetRoot,
-    });
-    return true;
-  } catch (e) {
-    loggers.fileManager.error('Failed to create target directory', { error: e });
-    return false;
   }
 }
 

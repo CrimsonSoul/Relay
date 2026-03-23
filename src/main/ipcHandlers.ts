@@ -21,8 +21,6 @@ import { getErrorMessage } from '@shared/types';
 export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
   getDataRoot: () => Promise<string>,
-  _onDataPathChange?: (newPath: string) => Promise<void>,
-  _getDefaultDataPath?: () => string,
   createAuxWindow?: (route: string) => void,
   getAppConfig?: () => AppConfig | null,
   getCache?: () => OfflineCache | null,
@@ -39,15 +37,6 @@ export function setupIpcHandlers(
     }
   };
 
-  // Guard wrapper: logs a warning if data root hasn't resolved yet
-  const guardedGetDataRoot = async (): Promise<string> => {
-    const root = await getDataRoot();
-    if (!root) {
-      loggers.main.warn('getDataRoot() returned empty string — data root not yet initialized');
-    }
-    return root;
-  };
-
   // Config & App State
   safeSetup('config', () => setupConfigHandlers());
 
@@ -57,9 +46,7 @@ export function setupIpcHandlers(
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
 
   // Window Management
-  safeSetup('window', () =>
-    setupWindowHandlers(getMainWindow, createAuxWindow, guardedGetDataRoot),
-  );
+  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot));
 
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
   safeSetup('setup', () => setupSetupHandlers(getAppConfig ?? (() => null)));

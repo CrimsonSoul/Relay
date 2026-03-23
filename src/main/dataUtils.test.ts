@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  ensureDataFilesAsync,
-  copyDataFilesAsync,
-  loadConfigAsync,
-  saveConfigAsync,
-} from './dataUtils';
+import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from './dataUtils';
 import fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
@@ -45,29 +40,15 @@ describe('dataUtils', () => {
     vi.clearAllMocks();
   });
 
-  describe('ensureDataFilesAsync', () => {
+  describe('ensureDataDirectoryAsync', () => {
     it('creates the target directory', async () => {
-      await ensureDataFilesAsync('/data/relay');
+      await ensureDataDirectoryAsync('/data/relay');
       expect(fsPromises.mkdir).toHaveBeenCalledWith('/data/relay', { recursive: true });
     });
 
     it('handles mkdir error gracefully', async () => {
       vi.mocked(fsPromises.mkdir).mockRejectedValueOnce(new Error('permission denied'));
-      await expect(ensureDataFilesAsync('/data/relay')).resolves.toBeUndefined();
-    });
-  });
-
-  describe('copyDataFilesAsync', () => {
-    it('creates the target directory and returns true', async () => {
-      const result = await copyDataFilesAsync('/source', '/target');
-      expect(result).toBe(true);
-      expect(fsPromises.mkdir).toHaveBeenCalledWith('/target', { recursive: true });
-    });
-
-    it('returns false on mkdir failure', async () => {
-      vi.mocked(fsPromises.mkdir).mockRejectedValueOnce(new Error('perm denied'));
-      const result = await copyDataFilesAsync('/source', '/target');
-      expect(result).toBe(false);
+      await expect(ensureDataDirectoryAsync('/data/relay')).resolves.toBeUndefined();
     });
   });
 
