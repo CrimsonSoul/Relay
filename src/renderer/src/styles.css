@@ -3,6 +3,15 @@
 @import './styles/theme.css';
 @import './styles/animations.css';
 @import './styles/components.css';
+@import './tabs/weather/weather.css';
+@import './tabs/alerts.css';
+@import './tabs/notes/notes.css';
+@import './tabs/cloud-status.css';
+@import './components/oncall/oncall.css';
+@import './tabs/assembler/assembler.css';
+@import './components/directory/directory.css';
+@import './tabs/radar.css';
+@import './components/sidebar/sidebar.css';
 @import './styles/modals.css';
 @import './styles/utilities.css';
 @import './styles/responsive.css';

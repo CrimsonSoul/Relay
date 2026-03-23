@@ -1,0 +1,390 @@
+/* ============================================
+   Cloud Status Tab
+   ============================================ */
+
+.cloud-status {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px 24px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Header row: meta + filters */
+.cloud-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.cloud-status__meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.cloud-status__updated {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.cloud-status__refresh {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.cloud-status__refresh svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cloud-status__refresh:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-surface-elevated);
+}
+
+.cloud-status__refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cloud-status__refresh-icon--spinning {
+  animation: cloud-status-spin 1s linear infinite;
+}
+
+.cloud-status__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cloud-status__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--color-bg-chrome);
+  color: var(--color-text-secondary);
+  border-radius: 10px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.cloud-status__filter:hover:not(.cloud-status__filter--active) {
+  background: var(--color-bg-surface-elevated);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: var(--color-text-primary);
+}
+
+.cloud-status__filter--active {
+  background: var(--color-bg-surface-elevated);
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+/* Provider summary cards */
+.cloud-status__summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 16px;
+}
+
+.cloud-status-provider {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.cloud-status-provider:hover {
+  border-color: var(--color-border);
+  background: var(--color-bg-card-hover, var(--color-bg-card));
+}
+
+.cloud-status-provider__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cloud-status-provider__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-status-provider__icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.cloud-status-provider__indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cloud-status-provider__indicator--ok {
+  background: var(--color-accent-green);
+  box-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+}
+
+.cloud-status-provider__indicator--warning {
+  background: var(--color-warning);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+}
+
+.cloud-status-provider__indicator--error {
+  background: var(--color-danger);
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+}
+
+.cloud-status-provider__indicator--unknown {
+  background: var(--color-text-tertiary);
+}
+
+.cloud-status-provider__body {
+  min-height: 28px;
+}
+
+.cloud-status-provider__status {
+  font-size: var(--text-base);
+}
+
+.cloud-status-provider__status--ok {
+  color: var(--color-accent-green);
+}
+
+.cloud-status-provider__status--issue {
+  color: var(--color-warning);
+}
+
+.cloud-status-provider__status--unknown {
+  color: var(--color-text-tertiary);
+}
+
+/* Feed section */
+.cloud-status__feed {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cloud-status__feed-title {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 6px;
+}
+
+.cloud-status__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 80px 20px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-lg);
+}
+
+.cloud-status__empty svg {
+  width: 64px;
+  height: 64px;
+}
+
+/* Individual status item */
+.cloud-status-item {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+
+.cloud-status-item:hover {
+  border-color: var(--color-border-default, var(--color-border-subtle));
+}
+
+.cloud-status-item__header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  color: var(--color-text-primary);
+}
+
+.cloud-status-item__severity {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+.cloud-status-item__severity--error {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+.cloud-status-item__severity--warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
+}
+
+.cloud-status-item__severity--resolved {
+  background: var(--color-accent-green-subtle);
+  color: var(--color-accent-green);
+}
+
+.cloud-status-item__severity--info {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+}
+
+.cloud-status-item__provider-tag {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.cloud-status-item__title {
+  font-size: var(--text-md);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloud-status-item__time {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.cloud-status-item__chevron {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s;
+}
+
+.cloud-status-item__chevron svg {
+  width: 24px;
+  height: 24px;
+}
+
+.cloud-status-item__chevron--open {
+  transform: rotate(180deg);
+}
+
+.cloud-status-item__body {
+  padding: 0 24px 24px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.cloud-status-item__description {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin: 16px 0 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cloud-status-item__link {
+  font-size: var(--text-base);
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  text-decoration: none;
+}
+
+.cloud-status-item__link:hover {
+  text-decoration: underline;
+}
+
+/* Footer */
+.cloud-status__footer {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.cloud-status__footer-links {
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+  line-height: 2;
+}
+
+.cloud-status__ext-link {
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.cloud-status__ext-link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
+}
