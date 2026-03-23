@@ -1,6 +1,6 @@
 import Papa from 'papaparse';
 import ExcelJS from 'exceljs';
-import { getPb, escapeFilter } from './pocketbase';
+import { getPb, escapeFilter, requireOnline } from './pocketbase';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -155,6 +155,7 @@ async function bulkUpsert(
 
 /** Export a single collection or all collections to a JSON string. */
 export async function exportToJson(collection: CollectionName | 'all'): Promise<string> {
+  requireOnline();
   if (collection === 'all') {
     const result: Record<string, unknown[]> = {};
     for (const col of ALL_COLLECTIONS) {
@@ -173,6 +174,7 @@ export async function exportToJson(collection: CollectionName | 'all'): Promise<
 
 /** Export a single collection to a CSV string with formula-injection protection. */
 export async function exportToCsv(collection: CollectionName): Promise<string> {
+  requireOnline();
   const records = await fetchAll(collection);
 
   if (records.length === 0) {
@@ -198,6 +200,7 @@ export async function exportToCsv(collection: CollectionName): Promise<string> {
 
 /** Export a single collection or all collections to an Excel ArrayBuffer. */
 export async function exportToExcel(collection: CollectionName | 'all'): Promise<ArrayBuffer> {
+  requireOnline();
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Relay';
   workbook.created = new Date();
@@ -270,6 +273,7 @@ export async function importFromJson(
   collection: CollectionName,
   jsonString: string,
 ): Promise<ImportResult> {
+  requireOnline();
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonString);
@@ -316,6 +320,7 @@ export async function importFromCsv(
   collection: CollectionName,
   csvString: string,
 ): Promise<ImportResult> {
+  requireOnline();
   const parseResult = Papa.parse<Record<string, string>>(csvString, {
     header: true,
     skipEmptyLines: true,
@@ -352,6 +357,7 @@ export async function importFromExcel(
   collection: CollectionName,
   buffer: ArrayBuffer,
 ): Promise<ImportResult> {
+  requireOnline();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 

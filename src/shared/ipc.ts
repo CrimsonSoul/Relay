@@ -302,6 +302,7 @@ export type BridgeAPI = {
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
+  cacheSnapshot: (collection: string, records: unknown[]) => Promise<void>;
   // Sync
   syncPending: () => Promise<{ total: number; conflicts: number; errors: string[] }>;
   // PocketBase
@@ -364,6 +365,7 @@ export const IPC_CHANNELS = {
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
   CACHE_WRITE: 'cache:write',
+  CACHE_SNAPSHOT: 'cache:snapshot',
   // PocketBase
   PB_GET_URL: 'pb:getUrl',
   PB_GET_SECRET: 'pb:getSecret',

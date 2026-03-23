@@ -27,6 +27,10 @@ removePackageScripts: true
 extraResources:
   - from: resources
     to: data
+    filter:
+      - '**/*'
+      - '!pocketbase/**'
+      - '!pb_migrations/**'
   - from: 'resources/pocketbase/'
     to: 'pocketbase/'
     filter:

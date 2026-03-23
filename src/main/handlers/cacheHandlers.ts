@@ -27,6 +27,15 @@ export function setupCacheHandlers(
     },
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.CACHE_SNAPSHOT,
+    (_event, collection: string, records: Record<string, unknown>[]) => {
+      const cache = getCache();
+      if (!cache) return;
+      cache.writeCollection(collection, records);
+    },
+  );
+
   ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, async () => {
     const pending = getPendingChanges?.();
     const sync = getSyncManager?.();
@@ -37,13 +46,11 @@ export function setupCacheHandlers(
 
     // Re-authenticate the SyncManager's PB client if the token has expired.
     // Without this, long-running client-mode sessions would permanently fail to sync.
-    if (!sync.pb.authStore.isValid) {
+    if (!sync.isAuthenticated()) {
       const config = getAppConfig?.()?.load();
       if (config?.secret) {
         try {
-          await sync.pb
-            .collection('_pb_users_auth_')
-            .authWithPassword('relay@relay.app', config.secret);
+          await sync.reauthenticate('relay@relay.app', config.secret);
           loggers.sync.info('SyncManager re-authenticated');
         } catch (authErr) {
           loggers.sync.error('SyncManager re-auth failed', { error: authErr });

@@ -23,6 +23,7 @@ interface UseCollectionResult<T> {
 interface ExtendedApi {
   cacheRead?: (collection: string) => Promise<RecordModel[] | null>;
   cacheWrite?: (collection: string, action: string, record: RecordModel) => void;
+  cacheSnapshot?: (collection: string, records: RecordModel[]) => void;
 }
 
 function getApi(): ExtendedApi | undefined {
@@ -86,6 +87,9 @@ export function useCollection<T extends RecordModel>(
         dataRef.current = records;
         setData(records);
         setError(null);
+        // Populate offline cache with the full collection so going offline
+        // before any realtime events still has cached data available.
+        getApi()?.cacheSnapshot?.(collectionName, records);
       } else {
         const cached = await tryOfflineCache<T>(collectionName);
         if (cached) {

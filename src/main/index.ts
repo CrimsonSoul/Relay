@@ -271,8 +271,17 @@ if (gotLock) {
     }
 
     // PocketBase startup function — called on boot if already configured, or
-    // after first-time setup via IPC
-    const startPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
+    // after first-time setup via IPC.
+    // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
+    let pbStartPromise: Promise<boolean> | null = null;
+    const startPocketBase = (serverConfig: ServerConfig): Promise<boolean> => {
+      if (pbStartPromise) return pbStartPromise;
+      pbStartPromise = doStartPocketBase(serverConfig).finally(() => {
+        pbStartPromise = null;
+      });
+      return pbStartPromise;
+    };
+    const doStartPocketBase = async (serverConfig: ServerConfig): Promise<boolean> => {
       // If PB is already running (reconfigure), stop it so we can re-upsert credentials
       if (state.pbProcess?.isRunning()) {
         loggers.pocketbase.info('Stopping PocketBase for reconfigure');
@@ -422,6 +431,12 @@ if (gotLock) {
       return startPocketBase(config as ServerConfig);
     });
 
+    // Intentional: the plaintext passphrase is sent to the renderer for PB SDK auth.
+    // This is an accepted tradeoff for the shared-passphrase LAN use case. The renderer
+    // is sandboxed + context-isolated, and the passphrase is already known to all operators
+    // who use the tool. If the threat model ever includes untrusted renderer content,
+    // switch to a token-exchange approach where main authenticates and passes only the
+    // PB auth token (not the master passphrase).
     ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {
       const config = state.appConfig?.load();
       return config?.secret ?? null;

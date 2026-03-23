@@ -12,6 +12,16 @@ export interface SyncResult {
 export class SyncManager {
   constructor(private pb: PocketBase) {}
 
+  /** Whether the internal PB client has a valid auth token. */
+  isAuthenticated(): boolean {
+    return this.pb.authStore.isValid;
+  }
+
+  /** Re-authenticate the internal PB client (e.g. after token expiry). */
+  async reauthenticate(email: string, secret: string): Promise<void> {
+    await this.pb.collection('_pb_users_auth_').authWithPassword(email, secret);
+  }
+
   async applyChange(change: PendingChange): Promise<SyncResult> {
     const { collection, action, data } = change;
     const recordId = (data as { id?: string }).id;
