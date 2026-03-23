@@ -6,7 +6,7 @@ Relay is an Electron desktop command center for operations teams managing people
 
 ## Snapshot
 
-- Local-first data model with atomic JSON writes and live file-watcher sync
+- Embedded PocketBase with offline-first cache and realtime sync
 - Typed IPC contracts with Zod validation and a context-isolated preload bridge
 - Scales to large directories via virtualization and lazy tab loading
 - Security-first desktop posture: CSP, webview allowlists, path validation, encrypted credentials
@@ -29,7 +29,7 @@ Relay is an Electron desktop command center for operations teams managing people
 
 ## Architecture
 
-- `src/main/`: IPC handlers, file/data services, and business-logic operations modules
+- `src/main/`: IPC handlers, PocketBase services, offline cache, and business-logic operations modules
 - `src/preload/`: typed `window.api` bridge via Electron context isolation
 - `src/renderer/`: React tabs, feature-focused hooks, and shared UI components
 - `src/shared/`: IPC channel contracts, Zod validation schemas, and domain types
@@ -66,8 +66,8 @@ npm run test:electron  # Playwright integration tests
 
 Coverage thresholds are enforced:
 
-- Main/shared: lines 52%, functions 52%, branches 38%
-- Renderer: lines 78%, functions 76%, branches 67%
+- Main/shared: lines 80%, functions 80%, branches 75%
+- Renderer: lines 80%, functions 80%, branches 75%
 
 ## Security
 
