@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isUncPath, validatePath } from './pathSafety';
+import { validatePath } from './pathSafety';
 import fsPromises from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -21,21 +21,6 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 describe('pathSafety', () => {
-  describe('isUncPath', () => {
-    it('should identify Windows UNC paths', () => {
-      expect(isUncPath(String.raw`\\server\share`)).toBe(true);
-      expect(isUncPath('//server/share')).toBe(true);
-      expect(isUncPath('\\\\?\\C:\\')).toBe(true);
-    });
-
-    it('should identify non-UNC paths', () => {
-      expect(isUncPath(String.raw`C:\Windows`)).toBe(false);
-      expect(isUncPath('/usr/local/bin')).toBe(false);
-      expect(isUncPath('./relative')).toBe(false);
-      expect(isUncPath('relative/path')).toBe(false);
-    });
-  });
-
   describe('validatePath', () => {
     const root = '/apps/Relay/data';
 

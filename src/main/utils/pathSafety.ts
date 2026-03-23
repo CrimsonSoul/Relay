@@ -5,7 +5,7 @@ import { loggers } from '../logger';
 /**
  * Check if a path is a Windows UNC path (\\server\share)
  */
-export function isUncPath(path: string): boolean {
+function isUncPath(path: string): boolean {
   return /^[/\\]{2}[^/\\]+[/\\]+[^/\\]+/.test(path);
 }
 
@@ -13,7 +13,7 @@ export function isUncPath(path: string): boolean {
  * Safely resolve a path to its real location, following symlinks
  * Returns null if the path doesn't exist or can't be resolved
  */
-export async function safeRealPath(path: string): Promise<string | null> {
+async function safeRealPath(path: string): Promise<string | null> {
   try {
     return await fsPromises.realpath(path);
   } catch {
