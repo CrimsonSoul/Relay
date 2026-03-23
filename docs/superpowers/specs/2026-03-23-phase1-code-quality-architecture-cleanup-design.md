@@ -10,15 +10,14 @@
 
 Remove all confirmed dead code:
 
-| Target                                                   | Location                                 | Impact                                        |
-| -------------------------------------------------------- | ---------------------------------------- | --------------------------------------------- |
-| `featureFlags` module + test                             | `src/shared/featureFlags.ts` + test file | ~306 lines removed                            |
-| `copyDataFilesAsync`                                     | `src/main/dataUtils.ts`                  | ~13 lines removed                             |
-| `handleDataPathChange`                                   | `src/main/app/appState.ts`               | ~12 lines removed                             |
-| `safeMutation` + `safeMutationWithValidation`            | `src/main/handlers/ipcHelpers.ts`        | ~60 lines removed                             |
-| Unused params `_onDataPathChange`, `_getDefaultDataPath` | `src/main/ipcHandlers.ts`                | 2 params removed                              |
-| `guardedGetDataRoot` wrapper                             | `src/main/ipcHandlers.ts`                | ~8 lines removed; pass `getDataRoot` directly |
-| Un-export `isUncPath`, `safeRealPath`                    | `src/main/utils/pathSafety.ts`           | Visibility change only (remove `export`)      |
+| Target                                                   | Location                                 | Impact                                                                                          |
+| -------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `featureFlags` module + test                             | `src/shared/featureFlags.ts` + test file | ~306 lines removed                                                                              |
+| `copyDataFilesAsync`                                     | `src/main/dataUtils.ts`                  | ~13 lines removed                                                                               |
+| `safeMutation` + `safeMutationWithValidation`            | `src/main/handlers/ipcHelpers.ts`        | ~60 lines removed                                                                               |
+| Unused params `_onDataPathChange`, `_getDefaultDataPath` | `src/main/ipcHandlers.ts`                | 2 params removed; stop passing `handleDataPathChange` from `setupIpc` in `appState.ts`          |
+| `guardedGetDataRoot` wrapper                             | `src/main/ipcHandlers.ts`                | ~8 lines removed; pass `getDataRoot` directly (intentionally drops empty-string diagnostic log) |
+| Un-export `isUncPath`, `safeRealPath`                    | `src/main/utils/pathSafety.ts`           | Visibility change only (remove `export`)                                                        |
 
 Rename `ensureDataFilesAsync` → `ensureDataDirectoryAsync` in `dataUtils.ts` (only creates a directory, name is misleading).
 
@@ -75,22 +74,14 @@ function isValidNonce(nonce: unknown): nonce is string {
 
 Replaces 3 copies. Fix inconsistent return on AUTH_CANCEL (returns void vs false).
 
-### 2d. Path Validation Consolidation
+### 2d. Path Validation Cleanup
 
-Merge `src/main/pathValidation.ts` and `src/main/utils/pathSafety.ts` into single `src/main/utils/pathValidation.ts`:
+Keep `pathValidation.ts` and `pathSafety.ts` as separate files — they serve different concerns (user-facing data path validation vs. IPC security sandboxing). Changes:
 
-```typescript
-export async function validatePath(
-  path: string,
-  root: string,
-  options?: {
-    checkSymlinks?: boolean;
-    checkFilesystem?: boolean;
-  },
-): Promise<{ valid: boolean; error?: string }>;
-```
-
-Remove old `src/main/pathValidation.ts`. Update imports in `appState.ts` and `windowHandlers.ts`.
+- Move `src/main/utils/pathSafety.ts` to stay where it is (already in utils)
+- Move `src/main/pathValidation.ts` → `src/main/utils/pathValidation.ts` for consistent location
+- Un-export `isUncPath` and `safeRealPath` from `pathSafety.ts` (only used internally by `validatePath`)
+- Update import in `appState.ts` to new path
 
 ---
 
@@ -107,29 +98,15 @@ export function useHistory<T>(
 ): {
   entries: T[];
   loading: boolean;
-  addHistory: (data: Partial<T>) => Promise<boolean>;
+  addHistory: (data: Record<string, unknown>) => Promise<T | null>;
   deleteHistory: (id: string) => Promise<boolean>;
   clearHistory: () => Promise<boolean>;
 };
 ```
 
-`useBridgeHistory` and `useAlertHistory` become thin wrappers that call `useHistory` with their specific converter function.
+`useBridgeHistory` and `useAlertHistory` become thin wrappers that call `useHistory` with their specific converter function. Wrappers can add extra methods (e.g., `useAlertHistory` adds `pinHistory` and `updateLabel`) on top of the base return value.
 
-### 3b. Generic Cached Data Hook
-
-New file: `src/renderer/src/hooks/useCachedData.ts`
-
-```typescript
-export function useCachedData<T>(
-  key: string,
-  ttl: number,
-  fetcher: () => Promise<T>,
-): { data: T | null; loading: boolean; refresh: () => void };
-```
-
-Encapsulates the stale-while-revalidate + secureStorage pattern. Replaces duplicated logic in `useAppWeather` and `useAppCloudStatus`.
-
-### 3c. Polling Hook
+### 3b. Polling Hook
 
 New file: `src/renderer/src/hooks/usePolling.ts`
 
@@ -139,23 +116,20 @@ export function usePolling(callback: () => void, intervalMs: number): void;
 
 Handles ref-based stale closure prevention internally. Replaces duplicated polling setup in `useAppWeather` and `useAppCloudStatus`.
 
-### 3d. Record Converter Utilities
+### 3c. Record Converter Utilities
 
 New file: `src/renderer/src/utils/recordConverters.ts`
 
-Move all `toXxxEntry()` converter functions from individual hooks into one file:
+Only extract converters that are used by more than one consumer. Converters used by exactly one hook stay co-located with that hook for easier maintenance.
 
-- `toContactEntry`
-- `toServerEntry`
-- `toBridgeHistoryEntry`
-- `toAlertHistoryEntry`
-- `toGroupEntry`
-- `toSavedLocationEntry`
-- Any other record → app type converters
+Known multi-consumer converters (verify during implementation):
 
-Each hook imports what it needs.
+- `toContactEntry` — used by `useAppData` and `useDirectoryContacts`
+- `toServerEntry` — used by `useAppData` and `useServers`
 
-### 3e. CRUD Error Consistency
+Single-consumer converters (e.g., `toBridgeHistoryEntry`, `toAlertHistoryEntry`, `toGroupEntry`, `toSavedLocationEntry`) stay in their respective hooks.
+
+### 3d. CRUD Error Consistency
 
 Not extracting a generic CRUD hook (too many differences between hooks). Instead standardize:
 
@@ -195,7 +169,7 @@ App.tsx retains the main shell and tab routing (~300 lines).
 Split `src/renderer/src/hooks/useAppData.ts` (451 lines):
 
 - `src/renderer/src/utils/mockData.ts` — mock data generation (~250 lines)
-- Record converters move to `recordConverters.ts` (section 3d)
+- Multi-consumer record converters move to `recordConverters.ts` (section 3c)
 - `useAppData.ts` retains collection fetching and state (~150 lines)
 
 ### 4d. CSS Audit (Deferred)
@@ -217,20 +191,21 @@ Standardize all IPC handlers:
 
 ### 5b. Type Assertion Cleanup
 
-- Remove `as RequestInit` casts in `cloudStatusHandlers.ts` (4 instances)
+- Remove `as RequestInit` casts in `cloudStatusHandlers.ts` (4 instances) and `weatherHandlers.ts` (1 instance)
 - Replace `(err as NodeJS.ErrnoException).code` with type guard in `windowHandlers.ts`
+- Replace `err instanceof Error ? err.message : String(err)` with `getErrorMessage(err)` in `windowHandlers.ts` (2 instances)
 - Replace `{} as CloudStatusData['providers']` with properly initialized object
 
 ### 5c. Logging Consistency
 
 - Pattern: first provider failure = `warn`, all providers exhausted = `error`
-- Fix `LOG_BRIDGE` to use appropriate logger category
+- Review `LOG_TO_MAIN` handler in `loggerHandlers.ts` — currently routes all renderer logs through `loggers.bridge.*` regardless of module. Consider routing by the module name passed in the payload, or document why bridge is correct
 - Standardize error metadata: always `{ error: getErrorMessage(err) }`
 
 ### 5d. Legacy Format Removal
 
-- Remove `lat`/`lon` fallback in `useAppWeather.ts` (lines 72-79) — PB records use `latitude`/`longitude`
-- Remove legacy cache format handling dead code in `useAppWeather.ts` (lines 42-43)
+- Remove `lat`/`lon` fallback in `useAppWeather.ts` — the app now consistently uses `latitude`/`longitude` in the `Location` type; the fallback keys were for legacy secureStorage cache entries that have rotated out
+- Remove legacy cache format handling dead code in `useAppWeather.ts`
 
 ### 5e. Missing Type Exports
 
@@ -260,11 +235,11 @@ Standardize all IPC handlers:
 Work proceeds module by module, all cleanup passes per module before moving on:
 
 1. `src/shared/` — dead code, type exports
-2. `src/main/utils/` — new validation utilities, path consolidation
+2. `src/main/utils/` — new validation utilities, path relocation
 3. `src/main/handlers/` — deduplication, splitting, consistency
 4. `src/main/` — dead code, rename, unused params
-5. `src/renderer/src/hooks/` — new shared hooks, deduplication
-6. `src/renderer/src/utils/` — record converters, mock data extraction
+5. `src/renderer/src/utils/` — record converters, mock data extraction (created before hooks that depend on them)
+6. `src/renderer/src/hooks/` — new shared hooks (useHistory, usePolling), deduplication
 7. `src/renderer/src/components/` — App.tsx decomposition
 8. `src/renderer/src/` — legacy format removal, CRUD consistency
 
