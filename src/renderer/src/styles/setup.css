@@ -385,15 +385,14 @@
   position: relative;
 }
 
-/* Push input padding to make room for the eye toggle + clear button */
+/* Push input padding to make room for the eye toggle (+ clear button when visible) */
 .setup-config__password-wrap input.tactile-input {
-  padding-right: 72px;
+  padding-right: 48px;
 }
 
 .setup-config__eye-toggle {
   position: absolute;
-  /* Anchor to the input row, to the left of the clear button */
-  right: 34px;
+  right: 8px;
   bottom: 5px;
   width: 34px;
   height: 34px;
@@ -412,6 +411,15 @@
 .setup-config__eye-toggle:hover {
   color: var(--color-text-primary);
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* When clear button is visible, shift eye toggle left and widen input padding */
+.setup-config__password-wrap:has(.input-clear-btn) .setup-config__eye-toggle {
+  right: 38px;
+}
+
+.setup-config__password-wrap:has(.input-clear-btn) input.tactile-input {
+  padding-right: 78px;
 }
 
 /* Tame the clear button hover scale on setup screens — prevents tooltip jump */
