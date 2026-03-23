@@ -6,6 +6,7 @@ import { loggers } from '../utils/logger';
 import { ErrorCategory } from '@shared/logging';
 import { getErrorMessage } from '@shared/types';
 import { useMounted } from './useMounted';
+import { usePolling } from './usePolling';
 
 const POLLING_INTERVAL_MS = 60 * 1000; // 1 minute
 const CACHE_KEY = 'cached_cloud_status';
@@ -126,13 +127,14 @@ export function useAppCloudStatus(
     [mounted, processNewEvents],
   );
 
-  // Initial fetch + polling
+  // Initial fetch on mount
   useEffect(() => {
-    void fetchStatus(!!statusData); // silent if we already have cached data
-    const interval = setInterval(() => fetchStatus(true), POLLING_INTERVAL_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- statusData intentionally excluded
-  }, [fetchStatus]);
+    void fetchStatus(!!statusData);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
+  }, []);
+
+  // Background polling
+  usePolling(() => void fetchStatus(true), POLLING_INTERVAL_MS);
 
   return { statusData, loading, refetch: () => fetchStatus(false) };
 }
