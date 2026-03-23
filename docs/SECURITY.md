@@ -113,33 +113,32 @@ frame-src 'self' [trusted domains];
 - Phone numbers, emails, and other fields are sanitized
 - Size limits enforced on file uploads and imports
 
-### File System Security
+### Data Integrity
 
-**Atomic Writes:**
+**ACID Transactions:**
 
-- All file writes use atomic operations (write to temp, then rename)
-- Prevents data corruption from interrupted writes
-- Implemented in: `src/main/FileSystemService.ts`
+- PocketBase stores all application data in an embedded SQLite database
+- All writes are protected by SQLite ACID transactions — partial writes and corruption are not possible
+- No application-level file locking or atomic rename operations are required
 
-**File Locking:**
+**Offline Write Queue:**
 
-- Concurrent write protection via file locks
-- Prevents race conditions and data corruption
-- Automatic cleanup of stale locks
-- Implemented in: `src/main/fileLock.ts`, `src/main/FileManager.ts`
+- When the PocketBase server is unreachable, writes are queued in `PendingChanges` (local SQLite via better-sqlite3)
+- `SyncManager` replays the queue and resolves conflicts when the connection is restored
+- Conflict resolution is last-write-wins with server records taking precedence
 
 **Backup Strategy:**
 
-- Automatic backups before critical operations
-- Backups stored in `backups/` subdirectory
-- Retention policy can be configured
+- `BackupManager` creates backups via the PocketBase Admin API (`pb.backups.create()`)
+- Backups are stored in `pb_data/backups/` as timestamped `.zip` archives
+- Retention policy enforces a maximum of 10 backups; older backups are pruned automatically
 
 ## Threat Model
 
 ### In Scope
 
 1. **Local Data Tampering**
-   - Mitigation: Atomic writes, file locking, validation
+   - Mitigation: SQLite ACID transactions, PocketBase access controls, validation
    - Severity: Medium
 
 2. **Path Traversal Attacks**
@@ -188,9 +187,9 @@ frame-src 'self' [trusted domains];
    - Use Zod schemas for type-safe validation
    - Never trust data from renderer or external sources
 
-3. **Use parameterized queries for future database work**
-   - Prepare for SQLite migration with security in mind
-   - Avoid string concatenation for queries
+3. **Use parameterized queries and filter escaping**
+   - PocketBase is now the data store — use `escapeFilter()` from `pocketbase.ts` for filter values
+   - Never interpolate user input directly into PocketBase filter strings
 
 4. **Minimize use of `any` type**
    - Leverage TypeScript's strict mode
@@ -250,10 +249,10 @@ If you discover a security vulnerability, please report it to the project mainta
    - [ ] Add permission system for webview capabilities
    - [ ] Consider alternatives to webview tags
 
-2. **Database Migration**
-   - [ ] Migrate to SQLite with encrypted database
-   - [ ] Implement prepared statements for all queries
-   - [ ] Add database-level access controls
+2. **PocketBase Hardening**
+   - [ ] Enforce collection-level access rules for all PB collections
+   - [ ] Audit filter escaping across all renderer services
+   - [ ] Consider encrypted PocketBase data directory for high-security deployments
 
 3. **Enhanced Logging**
    - [ ] Security event logging framework
@@ -274,10 +273,10 @@ If you discover a security vulnerability, please report it to the project mainta
 
 This application handles operational data and may be subject to various compliance requirements:
 
-- **Data Residency:** All data is stored locally on the user's device
-- **Data Retention:** User controls retention via manual deletion
-- **Data Encryption:** OS-level encryption for credentials, plaintext for operational data
-- **Access Controls:** Single-user application, OS-level access controls apply
+- **Data Residency:** In server mode, all data is stored locally in the embedded PocketBase SQLite database. In client mode, data lives on the designated server node.
+- **Data Retention:** User controls retention via the application or direct PocketBase admin access
+- **Data Encryption:** OS-level encryption for the config secret (`safeStorage`); PocketBase database is plaintext SQLite — use full-disk encryption for sensitive deployments
+- **Access Controls:** Two-tier auth (superuser + app user); superuser access is restricted to localhost
 
 Organizations using this application should assess their specific compliance requirements and implement additional controls as needed.
 
