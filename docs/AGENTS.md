@@ -58,7 +58,6 @@ On reconnect       -> SyncManager.syncAll(pendingChanges) -> PocketBase REST API
 | `src/main/pocketbase/`                   | PocketBase process management, backup, and retention                    |
 | `src/main/cache/`                        | Offline cache (OfflineCache), write queue (PendingChanges), SyncManager |
 | `src/main/config/`                       | AppConfig — reads/writes encrypted relay config                         |
-| `src/main/migration/`                    | JsonMigrator — one-time migration from JSON files to PocketBase         |
 | `src/renderer/src/services/`             | PocketBase service modules — all data CRUD (contacts, servers, etc.)    |
 | `src/renderer/src/tabs/`                 | Tab components (Compose, On-Call, People, Servers, Weather, Radar, AI)  |
 | `src/renderer/src/hooks/`                | Custom React hooks (one per feature domain)                             |

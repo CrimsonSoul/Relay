@@ -433,7 +433,6 @@ export const loggers = {
   cloudStatus: logger.createChild('CloudStatus'),
   pocketbase: logger.createChild('PocketBase'),
   sync: logger.createChild('Sync'),
-  migration: logger.createChild('Migration'),
   backup: logger.createChild('Backup'),
   retention: logger.createChild('Retention'),
 };
