@@ -5,6 +5,7 @@ import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
+import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
@@ -31,10 +32,10 @@ export const AlertsTab: React.FC = () => {
   const [recipient, setRecipient] = useState('');
   const [isCapturing, setIsCapturing] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const historyModal = useModalState();
   const [updateNumber, setUpdateNumber] = useState(0); // 0 = off, 1+ = "UPDATE #N"
   const [customTimestamp, setCustomTimestamp] = useState('');
-  const [pinPromptOpen, setPinPromptOpen] = useState(false);
+  const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
   const { history, addHistory, deleteHistory, clearHistory, pinHistory, updateLabel } =
@@ -95,49 +96,56 @@ export const AlertsTab: React.FC = () => {
     }
   }, []);
 
-  const handleCopyImage = useCallback(async () => {
-    setIsCapturing(true);
-    try {
-      const canvas = await captureCard();
-      const dataUrl = canvas.toDataURL('image/png');
-      const success = await globalThis.api?.writeClipboardImage(dataUrl);
-      if (success) {
-        showToast('Image copied — paste into Outlook!', 'success');
-        void addHistory({ severity, subject, bodyHtml, sender, recipient });
-      } else {
-        showToast('Failed to copy image to clipboard', 'error');
+  /** Shared capture wrapper: captures the card as a PNG data URL, manages loading state, and handles errors. */
+  const withCapture = useCallback(
+    async (action: (dataUrl: string) => Promise<void>) => {
+      setIsCapturing(true);
+      try {
+        const canvas = await captureCard();
+        const dataUrl = canvas.toDataURL('image/png');
+        await action(dataUrl);
+      } catch {
+        showToast('Capture failed', 'error');
+      } finally {
+        setIsCapturing(false);
       }
-    } catch {
-      showToast('Capture failed', 'error');
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [captureCard, showToast, addHistory, severity, subject, bodyHtml, sender, recipient]);
+    },
+    [captureCard, showToast],
+  );
 
-  const handleSavePNG = useCallback(async () => {
-    setIsCapturing(true);
-    try {
-      const canvas = await captureCard();
-      const dataUrl = canvas.toDataURL('image/png');
-      const slug =
-        subject
-          .trim()
-          .replaceAll(/[^a-z0-9]/gi, '_')
-          .toLowerCase()
-          .slice(0, 40) || 'alert';
-      const result = await globalThis.api?.saveAlertImage(dataUrl, `alert_${slug}.png`);
-      if (result?.success) {
-        showToast('Saved!', 'success');
-        void addHistory({ severity, subject, bodyHtml, sender, recipient });
-      } else if (result?.error !== 'Cancelled') {
-        showToast(result?.error || 'Save failed', 'error');
-      }
-    } catch {
-      showToast('Capture failed', 'error');
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [captureCard, showToast, subject, addHistory, severity, bodyHtml, sender, recipient]);
+  const handleCopyImage = useCallback(
+    () =>
+      withCapture(async (dataUrl) => {
+        const success = await globalThis.api?.writeClipboardImage(dataUrl);
+        if (success) {
+          showToast('Image copied — paste into Outlook!', 'success');
+          void addHistory({ severity, subject, bodyHtml, sender, recipient });
+        } else {
+          showToast('Failed to copy image to clipboard', 'error');
+        }
+      }),
+    [withCapture, showToast, addHistory, severity, subject, bodyHtml, sender, recipient],
+  );
+
+  const handleSavePNG = useCallback(
+    () =>
+      withCapture(async (dataUrl) => {
+        const slug =
+          subject
+            .trim()
+            .replaceAll(/[^a-z0-9]/gi, '_')
+            .toLowerCase()
+            .slice(0, 40) || 'alert';
+        const result = await globalThis.api?.saveAlertImage(dataUrl, `alert_${slug}.png`);
+        if (result?.success) {
+          showToast('Saved!', 'success');
+          void addHistory({ severity, subject, bodyHtml, sender, recipient });
+        } else if (result?.error !== 'Cancelled') {
+          showToast(result?.error || 'Save failed', 'error');
+        }
+      }),
+    [withCapture, showToast, subject, addHistory, severity, bodyHtml, sender, recipient],
+  );
 
   const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
     setSeverity(entry.severity);
@@ -188,11 +196,11 @@ export const AlertsTab: React.FC = () => {
 
   const handlePinTemplate = useCallback(() => {
     setPinPromptLabel(subject.trim() || 'Untitled Template');
-    setPinPromptOpen(true);
-  }, [subject]);
+    pinPromptModal.open();
+  }, [subject, pinPromptModal]);
 
   const handlePinTemplateConfirm = useCallback(async () => {
-    setPinPromptOpen(false);
+    pinPromptModal.close();
     try {
       const entry = await addHistory({
         severity,
@@ -209,7 +217,17 @@ export const AlertsTab: React.FC = () => {
     } catch {
       showToast('Failed to pin template', 'error');
     }
-  }, [addHistory, severity, subject, bodyHtml, sender, recipient, pinPromptLabel, showToast]);
+  }, [
+    addHistory,
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+    pinPromptLabel,
+    showToast,
+    pinPromptModal,
+  ]);
 
   const displaySubject = useMemo(() => {
     const base = subject.trim() || 'Alert Subject';
@@ -243,7 +261,7 @@ export const AlertsTab: React.FC = () => {
         </TactileButton>
         <TactileButton
           variant="ghost"
-          onClick={() => setHistoryOpen(true)}
+          onClick={historyModal.open}
           icon={
             <svg
               width="14"
@@ -366,8 +384,8 @@ export const AlertsTab: React.FC = () => {
       </div>
 
       <AlertHistoryModal
-        isOpen={historyOpen}
-        onClose={() => setHistoryOpen(false)}
+        isOpen={historyModal.isOpen}
+        onClose={historyModal.close}
         history={history}
         onLoad={handleLoadFromHistory}
         onDelete={(id) => void deleteHistory(id)}
@@ -376,8 +394,8 @@ export const AlertsTab: React.FC = () => {
         onUpdateLabel={(id, label) => void updateLabel(id, label)}
       />
       <Modal
-        isOpen={pinPromptOpen}
-        onClose={() => setPinPromptOpen(false)}
+        isOpen={pinPromptModal.isOpen}
+        onClose={pinPromptModal.close}
         title="Pin Template"
         width="400px"
       >
@@ -398,7 +416,7 @@ export const AlertsTab: React.FC = () => {
             autoFocus
           />
           <div className="pin-template-actions">
-            <TactileButton variant="ghost" size="sm" onClick={() => setPinPromptOpen(false)}>
+            <TactileButton variant="ghost" size="sm" onClick={pinPromptModal.close}>
               CANCEL
             </TactileButton>
             <TactileButton

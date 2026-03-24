@@ -3,9 +3,12 @@ import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { getPlatformColor } from './shared/PersonInfo';
 
+/** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
+type ContextMenuEvent = Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>;
+
 interface ServerCardProps {
   server: Server;
-  onContextMenu: (e: React.MouseEvent, server: Server) => void;
+  onContextMenu: (e: ContextMenuEvent, server: Server) => void;
   style?: React.CSSProperties;
   selected?: boolean;
   onRowClick?: () => void;
@@ -24,7 +27,7 @@ export const ServerCard = memo(
 
       const handleContextMenu = (event: MouseEvent) => {
         event.preventDefault();
-        onContextMenu(event as unknown as React.MouseEvent, server);
+        onContextMenu(event, server);
       };
 
       node.addEventListener('contextmenu', handleContextMenu);

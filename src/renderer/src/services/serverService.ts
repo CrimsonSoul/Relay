@@ -1,4 +1,6 @@
 import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { isPbNotFoundError } from './pbErrors';
+import { createCrudService } from './crudServiceFactory';
 
 export interface ServerRecord {
   id: string;
@@ -15,35 +17,14 @@ export interface ServerRecord {
 
 export type ServerInput = Omit<ServerRecord, 'id' | 'created' | 'updated'>;
 
-export async function addServer(data: ServerInput): Promise<ServerRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('servers').create<ServerRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+const crud = createCrudService<ServerRecord>('servers');
 
-export async function updateServer(id: string, data: Partial<ServerInput>): Promise<ServerRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('servers').update<ServerRecord>(id, data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const addServer = (data: ServerInput): Promise<ServerRecord> => crud.create(data);
 
-export async function deleteServer(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('servers').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const updateServer = (id: string, data: Partial<ServerInput>): Promise<ServerRecord> =>
+  crud.update(id, data);
+
+export const deleteServer = (id: string): Promise<void> => crud.remove(id);
 
 export async function findServerByName(name: string): Promise<ServerRecord | null> {
   try {
@@ -52,7 +33,7 @@ export async function findServerByName(name: string): Promise<ServerRecord | nul
       .getFirstListItem<ServerRecord>(`name="${escapeFilter(name)}"`);
     return result;
   } catch (err: unknown) {
-    if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
+    if (isPbNotFoundError(err)) {
       return null;
     }
     handleApiError(err);

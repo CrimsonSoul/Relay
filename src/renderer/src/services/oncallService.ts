@@ -1,4 +1,5 @@
 import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { createCrudService } from './crudServiceFactory';
 
 export interface OnCallRecord {
   id: string;
@@ -14,35 +15,14 @@ export interface OnCallRecord {
 
 export type OnCallInput = Omit<OnCallRecord, 'id' | 'created' | 'updated'>;
 
-export async function addOnCall(data: OnCallInput): Promise<OnCallRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('oncall').create<OnCallRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+const crud = createCrudService<OnCallRecord>('oncall');
 
-export async function updateOnCall(id: string, data: Partial<OnCallInput>): Promise<OnCallRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('oncall').update<OnCallRecord>(id, data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const addOnCall = (data: OnCallInput): Promise<OnCallRecord> => crud.create(data);
 
-export async function deleteOnCall(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('oncall').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const updateOnCall = (id: string, data: Partial<OnCallInput>): Promise<OnCallRecord> =>
+  crud.update(id, data);
+
+export const deleteOnCall = (id: string): Promise<void> => crud.remove(id);
 
 export async function deleteOnCallByTeam(team: string): Promise<void> {
   requireOnline();

@@ -5,6 +5,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
+import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
 
 export const ALLOWED_AUX_ROUTES = new Set([
@@ -90,28 +91,16 @@ export function setupWindowHandlers(
 
   // Drag Sync - broadcast to all windows
   ipcMain.on(IPC_CHANNELS.DRAG_STARTED, () => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC_CHANNELS.DRAG_STARTED);
-      }
-    });
+    broadcastToAllWindows(IPC_CHANNELS.DRAG_STARTED);
   });
 
   ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, () => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC_CHANNELS.DRAG_STOPPED);
-      }
-    });
+    broadcastToAllWindows(IPC_CHANNELS.DRAG_STOPPED);
   });
 
   // On-Call Alert Dismissal Sync - broadcast to all windows
   ipcMain.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, (_event, type: string) => {
-    BrowserWindow.getAllWindows().forEach((win) => {
-      if (!win.isDestroyed()) {
-        win.webContents.send(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type);
-      }
-    });
+    broadcastToAllWindows(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type);
   });
 
   // Clipboard - use Electron's native clipboard API

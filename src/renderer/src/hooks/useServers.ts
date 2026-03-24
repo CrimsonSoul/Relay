@@ -38,10 +38,13 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     });
   }, [servers, debouncedSearch, sortOrder, sortKey]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, server: Server) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, server });
-  }, []);
+  const handleContextMenu = useCallback(
+    (e: Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>, server: Server) => {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, server });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (contextMenu) {

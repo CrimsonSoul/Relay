@@ -16,15 +16,19 @@ const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Notes: ['contact', 'group', 'server'],
 };
 
+export type HeaderSearchActions = {
+  onAddContactToBridge: (email: string) => void;
+  onToggleGroup: (groupId: string) => void;
+  onNavigateToTab: (tab: string) => void;
+  onOpenAddContact: (email?: string) => void;
+};
+
 type HeaderSearchProps = {
   activeTab: string;
   contacts: Contact[];
   servers: Server[];
   groups: BridgeGroup[];
-  onAddContactToBridge: (email: string) => void;
-  onToggleGroup: (groupId: string) => void;
-  onNavigateToTab: (tab: string) => void;
-  onOpenAddContact: (email?: string) => void;
+  actions: HeaderSearchActions;
 };
 
 const RenderIcon: React.FC<{ result: SearchResult }> = ({ result }) => {
@@ -47,11 +51,9 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   contacts,
   servers,
   groups,
-  onAddContactToBridge,
-  onToggleGroup,
-  onNavigateToTab,
-  onOpenAddContact,
+  actions,
 }) => {
+  const { onAddContactToBridge, onToggleGroup, onNavigateToTab, onOpenAddContact } = actions;
   const { query, setQuery, isSearchFocused, setIsSearchFocused, searchInputRef, clearSearch } =
     useSearchContext();
   const [selectedIndex, setSelectedIndex] = useState(0);

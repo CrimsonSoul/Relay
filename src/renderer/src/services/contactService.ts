@@ -1,4 +1,6 @@
 import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { isPbNotFoundError } from './pbErrors';
+import { createCrudService } from './crudServiceFactory';
 
 export interface ContactRecord {
   id: string;
@@ -12,38 +14,14 @@ export interface ContactRecord {
 
 export type ContactInput = Omit<ContactRecord, 'id' | 'created' | 'updated'>;
 
-export async function addContact(data: ContactInput): Promise<ContactRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('contacts').create<ContactRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+const crud = createCrudService<ContactRecord>('contacts');
 
-export async function updateContact(
-  id: string,
-  data: Partial<ContactInput>,
-): Promise<ContactRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('contacts').update<ContactRecord>(id, data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const addContact = (data: ContactInput): Promise<ContactRecord> => crud.create(data);
 
-export async function deleteContact(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('contacts').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const updateContact = (id: string, data: Partial<ContactInput>): Promise<ContactRecord> =>
+  crud.update(id, data);
+
+export const deleteContact = (id: string): Promise<void> => crud.remove(id);
 
 export async function findContactByEmail(email: string): Promise<ContactRecord | null> {
   try {
@@ -52,7 +30,7 @@ export async function findContactByEmail(email: string): Promise<ContactRecord |
       .getFirstListItem<ContactRecord>(`email="${escapeFilter(email)}"`);
     return result;
   } catch (err: unknown) {
-    if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
+    if (isPbNotFoundError(err)) {
       return null;
     }
     handleApiError(err);

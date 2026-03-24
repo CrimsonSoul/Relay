@@ -7,6 +7,7 @@ import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
 import { ErrorCategory } from '@shared/logging';
 import { useMounted } from './useMounted';
+import { usePolling } from './usePolling';
 
 const WEATHER_POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const WEATHER_CACHE_KEY = 'cached_weather_data';
@@ -214,40 +215,38 @@ export function useAppWeather(
     }
   }, [weatherLocation]);
 
-  // Weather Polling
+  // Fetch on location change
   const lastFetchedLocationRef = useRef<string>('');
 
   useEffect(() => {
     if (!weatherLocation) return;
 
     const locKey = `${weatherLocation.latitude},${weatherLocation.longitude}`;
-    const isNewLocation = lastFetchedLocationRef.current !== locKey;
+    if (lastFetchedLocationRef.current === locKey) return;
 
-    if (isNewLocation) {
-      if (mounted.current) {
-        setWeatherData(null);
-        setWeatherAlerts([]);
-      }
-      fetchWeather(
-        weatherLocation.latitude,
-        weatherLocation.longitude,
-        false, // Not silent for new location
-      ).catch((error_) => {
-        loggers.weather.error('[Weather] Failed to fetch weather for new location', {
-          error: error_,
-        });
-      });
-      lastFetchedLocationRef.current = locKey;
+    if (mounted.current) {
+      setWeatherData(null);
+      setWeatherAlerts([]);
     }
-
-    const interval = setInterval(() => {
-      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
-        loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+    fetchWeather(
+      weatherLocation.latitude,
+      weatherLocation.longitude,
+      false, // Not silent for new location
+    ).catch((error_) => {
+      loggers.weather.error('[Weather] Failed to fetch weather for new location', {
+        error: error_,
       });
-    }, WEATHER_POLLING_INTERVAL_MS);
-
-    return () => clearInterval(interval);
+    });
+    lastFetchedLocationRef.current = locKey;
   }, [weatherLocation, fetchWeather, mounted]);
+
+  // Background polling
+  usePolling(() => {
+    if (!weatherLocation) return;
+    fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
+      loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+    });
+  }, WEATHER_POLLING_INTERVAL_MS);
 
   return {
     weatherLocation,

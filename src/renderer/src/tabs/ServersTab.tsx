@@ -21,9 +21,12 @@ interface ServersTabProps {
   contacts: Contact[];
 }
 
+/** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
+type ContextMenuEvent = Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>;
+
 interface ServerVirtualRowData {
   servers: Server[];
-  onContextMenu: (e: React.MouseEvent, server: Server) => void;
+  onContextMenu: (e: ContextMenuEvent, server: Server) => void;
   selectedIndex: number;
   onRowClick: (index: number) => void;
 }

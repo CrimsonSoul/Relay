@@ -38,35 +38,29 @@ export function useAssembler({
   } | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
 
-  const contactMap = useMemo(() => {
-    const map = new Map<string, Contact>();
-    contacts.forEach((c) => map.set(c.email.toLowerCase(), c));
-    return map;
-  }, [contacts]);
+  // Build all lookup maps in a single pass to reduce dependency chains
+  const { contactMap, emailToGroupsMap, groupStringMap } = useMemo(() => {
+    const contactMap = new Map<string, Contact>();
+    contacts.forEach((c) => contactMap.set(c.email.toLowerCase(), c));
 
-  // Create a map of email -> group names for display
-  const emailToGroupsMap = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const emailToGroupsMap = new Map<string, string[]>();
     groups.forEach((group) => {
       group.contacts.forEach((email) => {
         const lowerEmail = email.toLowerCase();
-        if (!map.has(lowerEmail)) {
-          map.set(lowerEmail, []);
+        if (!emailToGroupsMap.has(lowerEmail)) {
+          emailToGroupsMap.set(lowerEmail, []);
         }
-        map.get(lowerEmail)!.push(group.name);
+        emailToGroupsMap.get(lowerEmail)!.push(group.name);
       });
     });
-    return map;
-  }, [groups]);
 
-  // Create a simple groupMap for display (email -> groups list as string)
-  const groupStringMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const groupStringMap = new Map<string, string>();
     emailToGroupsMap.forEach((groupNames, email) => {
-      map.set(email, groupNames.join(', '));
+      groupStringMap.set(email, groupNames.join(', '));
     });
-    return map;
-  }, [emailToGroupsMap]);
+
+    return { contactMap, emailToGroupsMap, groupStringMap };
+  }, [contacts, groups]);
 
   const allRecipients = useMemo(() => {
     // Get all emails from selected groups

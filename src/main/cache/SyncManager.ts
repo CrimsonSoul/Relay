@@ -42,8 +42,7 @@ export class SyncManager {
     collection: string,
     data: Record<string, unknown>,
   ): Promise<SyncResult> {
-    // eslint-disable-next-line sonarjs/no-unused-vars
-    const { id: _id, ...createData } = data as { id?: string } & Record<string, unknown>;
+    const { id: _id, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
     await this.pb.collection(collection).create(createData);
     return { conflict: false };
   }
@@ -76,21 +75,18 @@ export class SyncManager {
       }
     } catch {
       // Record not found on server — apply as create
-      // eslint-disable-next-line sonarjs/no-unused-vars
-      const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>;
+      const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
       await this.pb.collection(collection).create(createData);
       return { conflict: false };
     }
 
     // Apply the client's version (last-write-wins)
-    /* eslint-disable sonarjs/no-unused-vars */
     const {
-      id: _id,
-      created: _created,
-      updated: _updated,
+      id: _id, // eslint-disable-line sonarjs/no-unused-vars
+      created: _created, // eslint-disable-line sonarjs/no-unused-vars
+      updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
       ...updateData
     } = data as Record<string, unknown>;
-    /* eslint-enable sonarjs/no-unused-vars */
     await this.pb.collection(collection).update(recordId, updateData);
 
     return { conflict, overwrittenData };

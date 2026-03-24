@@ -1,4 +1,5 @@
 import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { isPbNotFoundError } from './pbErrors';
 
 export interface OncallLayoutRecord {
   id: string;
@@ -52,9 +53,7 @@ export async function saveLayout(
         .collection('oncall_layout')
         .getFirstListItem<OncallLayoutRecord>(`team="${escapeFilter(team)}"`);
     } catch (err: unknown) {
-      if (
-        !(err instanceof Error && 'status' in err && (err as { status: number }).status === 404)
-      ) {
+      if (!isPbNotFoundError(err)) {
         handleApiError(err);
         throw err;
       }

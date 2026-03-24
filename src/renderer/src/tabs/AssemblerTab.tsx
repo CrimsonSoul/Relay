@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { BridgeGroup, BridgeHistoryEntry, Contact } from '@shared/ipc';
+import { BridgeGroup, BridgeHistoryEntry } from '@shared/ipc';
 import { AddContactModal } from '../components/AddContactModal';
 import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
@@ -19,6 +19,7 @@ import { useAssembler } from '../hooks/useAssembler';
 import { useGroups } from '../hooks/useGroups';
 import { useBridgeHistory } from '../hooks/useBridgeHistory';
 import { useToast } from '../components/Toast';
+import { useModalState } from '../hooks/useModalState';
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const {
@@ -36,9 +37,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const { showToast } = useToast();
   const { saveGroup, updateGroup, deleteGroup } = useGroups();
   const { history, addHistory, deleteHistory, clearHistory } = useBridgeHistory();
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const historyModal = useModalState();
   // SaveGroupModal is only opened from bridge history "Save as Group" action
-  const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
+  const saveGroupModal = useModalState();
   const [historyContacts, setHistoryContacts] = useState<string[]>([]);
   const [groupSelectorEmail, setGroupSelectorEmail] = useState<string | null>(null);
 
@@ -147,10 +148,13 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Handle "Save as Group" from bridge history context menu:
   // captures the entry's contacts and opens the save group modal
-  const handleHistoryEntryToGroup = useCallback((entry: BridgeHistoryEntry) => {
-    setHistoryContacts(entry.contacts);
-    setIsSaveGroupOpen(true);
-  }, []);
+  const handleHistoryEntryToGroup = useCallback(
+    (entry: BridgeHistoryEntry) => {
+      setHistoryContacts(entry.contacts);
+      saveGroupModal.open();
+    },
+    [saveGroupModal],
+  );
 
   // Current emails for the sidebar (all recipients, not search-filtered)
   const currentEmails = useMemo(() => asm.allRecipients.map((l) => l.email), [asm.allRecipients]);
@@ -161,10 +165,12 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         <AssemblerSidebar
           groups={groups}
           selectedGroupIds={selectedGroupIds}
-          onToggleGroup={onToggleGroup}
-          onSaveGroup={saveGroup}
-          onUpdateGroup={updateGroup}
-          onDeleteGroup={deleteGroup}
+          actions={{
+            onToggleGroup,
+            onSaveGroup: saveGroup,
+            onUpdateGroup: updateGroup,
+            onDeleteGroup: deleteGroup,
+          }}
           currentEmails={currentEmails}
         />
         <div className="tab-main-content">
@@ -222,7 +228,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                setIsHistoryOpen(true);
+                historyModal.open();
               }}
               icon={
                 <svg
@@ -331,9 +337,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         onConfirm={handleDraftBridgeWithHistory}
       />
       <SaveGroupModal
-        isOpen={isSaveGroupOpen}
+        isOpen={saveGroupModal.isOpen}
         onClose={() => {
-          setIsSaveGroupOpen(false);
+          saveGroupModal.close();
           setHistoryContacts([]);
         }}
         onSave={handleSaveHistoryAsGroup}
@@ -343,8 +349,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         contacts={historyContacts}
       />
       <BridgeHistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
+        isOpen={historyModal.isOpen}
+        onClose={historyModal.close}
         history={history}
         onLoad={handleLoadFromHistory}
         onDelete={deleteHistory}
@@ -444,7 +450,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           width="400px"
         >
           <GroupSelector
-            contact={{ email: groupSelectorEmail } as unknown as Contact}
+            contact={{ email: groupSelectorEmail }}
             groups={groups}
             onClose={() => setGroupSelectorEmail(null)}
           />

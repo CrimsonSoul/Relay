@@ -1,5 +1,5 @@
 import { LocationProvider, useLocation, NotesProvider, SearchProvider } from './contexts';
-import { useEffect, useState, useCallback, useRef, Suspense, lazy } from 'react';
+import { useEffect, useState, useCallback, useRef, Suspense, lazy, ComponentType } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
 import { AssemblerTab } from './tabs/AssemblerTab';
@@ -22,31 +22,28 @@ import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useModalState } from './hooks/useModalState';
+
+// Lazy-load helper for named exports
+function lazyTab<T extends Record<string, ComponentType>>(
+  factory: () => Promise<T>,
+  name: keyof T & string,
+) {
+  return lazy(() => factory().then((m) => ({ default: m[name] })));
+}
 
 // Lazy load non-default tabs and settings modal
-const DirectoryTab = lazy(() =>
-  import('./tabs/DirectoryTab').then((m) => ({ default: m.DirectoryTab })),
-);
-const ServersTab = lazy(() => import('./tabs/ServersTab').then((m) => ({ default: m.ServersTab })));
-const RadarTab = lazy(() => import('./tabs/RadarTab').then((m) => ({ default: m.RadarTab })));
-const WeatherTab = lazy(() => import('./tabs/WeatherTab').then((m) => ({ default: m.WeatherTab })));
-const PersonnelTab = lazy(() =>
-  import('./tabs/PersonnelTab').then((m) => ({ default: m.PersonnelTab })),
-);
-const SettingsModal = lazy(() =>
-  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal })),
-);
-const DataManagerModal = lazy(() =>
-  import('./components/DataManagerModal').then((m) => ({ default: m.DataManagerModal })),
-);
-const NotesTab = lazy(() => import('./tabs/NotesTab').then((m) => ({ default: m.NotesTab })));
-const CloudStatusTab = lazy(() =>
-  import('./tabs/CloudStatusTab').then((m) => ({ default: m.CloudStatusTab })),
-);
-const AlertsTab = lazy(() => import('./tabs/AlertsTab').then((m) => ({ default: m.AlertsTab })));
-const PopoutBoard = lazy(() =>
-  import('./components/PopoutBoard').then((m) => ({ default: m.PopoutBoard })),
-);
+const DirectoryTab = lazyTab(() => import('./tabs/DirectoryTab'), 'DirectoryTab');
+const ServersTab = lazyTab(() => import('./tabs/ServersTab'), 'ServersTab');
+const RadarTab = lazyTab(() => import('./tabs/RadarTab'), 'RadarTab');
+const WeatherTab = lazyTab(() => import('./tabs/WeatherTab'), 'WeatherTab');
+const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab');
+const SettingsModal = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
+const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
+const NotesTab = lazyTab(() => import('./tabs/NotesTab'), 'NotesTab');
+const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
+const AlertsTab = lazyTab(() => import('./tabs/AlertsTab'), 'AlertsTab');
+const PopoutBoard = lazyTab(() => import('./components/PopoutBoard'), 'PopoutBoard');
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
 
@@ -108,17 +105,17 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
   // Header search ref (for Cmd+K focus)
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Shortcuts modal state
-  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
-  const [isDataManagerOpen, setIsDataManagerOpen] = useState(false);
-  const [isAddContactModalOpen, setIsAddContactModalOpen] = useState(false);
+  // Modal states
+  const shortcutsModal = useModalState();
+  const dataManagerModal = useModalState();
+  const addContactModal = useModalState();
   const [initialContactEmail, setInitialContactEmail] = useState('');
 
   // Global keyboard shortcuts
   useKeyboardShortcuts({
     setActiveTab,
     setSettingsOpen,
-    setIsShortcutsOpen,
+    setIsShortcutsOpen: shortcutsModal.open,
     searchInputRef,
   });
 
@@ -218,15 +215,17 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                 contacts={data.contacts}
                 servers={data.servers}
                 groups={data.groups}
-                onAddContactToBridge={(email) => {
-                  handleAddManual(email);
-                  setActiveTab('Compose');
-                }}
-                onToggleGroup={handleLoadGroupFromPalette}
-                onNavigateToTab={(tab) => setActiveTab(tab as TabName)}
-                onOpenAddContact={(email) => {
-                  setInitialContactEmail(email || '');
-                  setIsAddContactModalOpen(true);
+                actions={{
+                  onAddContactToBridge: (email) => {
+                    handleAddManual(email);
+                    setActiveTab('Compose');
+                  },
+                  onToggleGroup: handleLoadGroupFromPalette,
+                  onNavigateToTab: (tab) => setActiveTab(tab as TabName),
+                  onOpenAddContact: (email) => {
+                    setInitialContactEmail(email || '');
+                    addContactModal.open();
+                  },
                 }}
               />
             </div>
@@ -379,27 +378,24 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
               <SettingsModal
                 isOpen={settingsOpen}
                 onClose={() => setSettingsOpen(false)}
-                onOpenDataManager={() => setIsDataManagerOpen(true)}
+                onOpenDataManager={dataManagerModal.open}
                 onReconfigure={onReconfigure}
               />
             )}
-            {isDataManagerOpen && (
-              <DataManagerModal
-                isOpen={isDataManagerOpen}
-                onClose={() => setIsDataManagerOpen(false)}
-              />
+            {dataManagerModal.isOpen && (
+              <DataManagerModal isOpen={dataManagerModal.isOpen} onClose={dataManagerModal.close} />
             )}
           </Suspense>
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>
-          <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
+          <ShortcutsModal isOpen={shortcutsModal.isOpen} onClose={shortcutsModal.close} />
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>
           <AddContactModal
-            isOpen={isAddContactModalOpen}
-            onClose={() => setIsAddContactModalOpen(false)}
+            isOpen={addContactModal.isOpen}
+            onClose={addContactModal.close}
             onSave={handleContactSaved}
             initialEmail={initialContactEmail}
           />

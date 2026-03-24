@@ -1,4 +1,4 @@
-import { getPb, handleApiError, requireOnline } from './pocketbase';
+import { createCrudService } from './crudServiceFactory';
 
 export interface BridgeGroupRecord {
   id: string;
@@ -10,35 +10,13 @@ export interface BridgeGroupRecord {
 
 export type BridgeGroupInput = Omit<BridgeGroupRecord, 'id' | 'created' | 'updated'>;
 
-export async function addGroup(data: BridgeGroupInput): Promise<BridgeGroupRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('bridge_groups').create<BridgeGroupRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+const crud = createCrudService<BridgeGroupRecord>('bridge_groups');
 
-export async function updateGroup(
+export const addGroup = (data: BridgeGroupInput): Promise<BridgeGroupRecord> => crud.create(data);
+
+export const updateGroup = (
   id: string,
   data: Partial<BridgeGroupInput>,
-): Promise<BridgeGroupRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('bridge_groups').update<BridgeGroupRecord>(id, data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+): Promise<BridgeGroupRecord> => crud.update(id, data);
 
-export async function deleteGroup(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('bridge_groups').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+export const deleteGroup = (id: string): Promise<void> => crud.remove(id);

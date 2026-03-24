@@ -1,4 +1,5 @@
 import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { isPbNotFoundError } from './pbErrors';
 
 export interface NoteRecord {
   id: string;
@@ -24,7 +25,7 @@ export async function getNote(
       );
     return result;
   } catch (err: unknown) {
-    if (err instanceof Error && 'status' in err && (err as { status: number }).status === 404) {
+    if (isPbNotFoundError(err)) {
       return null;
     }
     handleApiError(err);

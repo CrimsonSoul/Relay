@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { useModalState } from '../hooks/useModalState';
 import { OnCallRow, Contact, TeamLayout } from '@shared/ipc';
 import { TactileButton } from '../components/TactileButton';
 import { Modal } from '../components/Modal';
@@ -46,7 +47,7 @@ export const PersonnelTab: React.FC<{
     handleReorderTeams,
     tick,
   } = usePersonnel(onCall);
-  const [isAddingTeam, setIsAddingTeam] = useState(false);
+  const addTeamModal = useModalState();
   const [newTeamName, setNewTeamName] = useState('');
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -156,7 +157,7 @@ export const PersonnelTab: React.FC<{
         );
       });
 
-  const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete);
+  const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root">
@@ -247,7 +248,7 @@ export const PersonnelTab: React.FC<{
           variant="primary"
           aria-label="Add Card"
           className="btn-collapsible"
-          onClick={() => setIsAddingTeam(true)}
+          onClick={addTeamModal.open}
           icon={
             <svg
               width="20"
@@ -364,8 +365,8 @@ export const PersonnelTab: React.FC<{
       </Modal>
 
       <Modal
-        isOpen={isAddingTeam}
-        onClose={() => setIsAddingTeam(false)}
+        isOpen={addTeamModal.isOpen}
+        onClose={addTeamModal.close}
         title="Add New Card"
         width="400px"
       >
@@ -379,12 +380,12 @@ export const PersonnelTab: React.FC<{
               if (e.key === 'Enter' && newTeamName.trim()) {
                 void handleAddTeam(newTeamName.trim());
                 setNewTeamName('');
-                setIsAddingTeam(false);
+                addTeamModal.close();
               }
             }}
           />
           <div className="modal-form-actions">
-            <TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>
+            <TactileButton variant="secondary" onClick={() => addTeamModal.close()}>
               Cancel
             </TactileButton>
             <TactileButton
@@ -393,7 +394,7 @@ export const PersonnelTab: React.FC<{
                 if (newTeamName.trim()) {
                   void handleAddTeam(newTeamName.trim());
                   setNewTeamName('');
-                  setIsAddingTeam(false);
+                  addTeamModal.close();
                 }
               }}
             >

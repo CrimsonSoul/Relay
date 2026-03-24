@@ -5,6 +5,18 @@ import { useAssembler } from '../useAssembler';
 import { NoopToastProvider } from '../../components/Toast';
 import type { BridgeGroup, Contact } from '@shared/ipc';
 
+/** Creates a minimal React.MouseEvent mock with only the properties used by handlers. */
+function createMockMouseEvent(
+  overrides: Partial<Pick<React.MouseEvent, 'clientX' | 'clientY'>> = {},
+): React.MouseEvent {
+  return {
+    preventDefault: vi.fn(),
+    clientX: 0,
+    clientY: 0,
+    ...overrides,
+  } as unknown as React.MouseEvent;
+}
+
 // Mock SearchContext
 vi.mock('../../contexts/SearchContext', () => ({
   useSearchContext: () => ({ debouncedQuery: '' }),
@@ -411,11 +423,7 @@ describe('useAssembler', () => {
     const { result } = renderHook(() => useAssembler(baseProps), { wrapper });
 
     act(() => {
-      const mockEvent = {
-        preventDefault: vi.fn(),
-        clientX: 100,
-        clientY: 200,
-      } as unknown as React.MouseEvent;
+      const mockEvent = createMockMouseEvent({ clientX: 100, clientY: 200 });
       result.current.itemData.onContextMenu(mockEvent, 'test@test.com', true);
     });
 
@@ -431,11 +439,7 @@ describe('useAssembler', () => {
     const { result } = renderHook(() => useAssembler(baseProps), { wrapper });
 
     act(() => {
-      const mockEvent = {
-        preventDefault: vi.fn(),
-        clientX: 50,
-        clientY: 60,
-      } as unknown as React.MouseEvent;
+      const mockEvent = createMockMouseEvent({ clientX: 50, clientY: 60 });
       result.current.itemData.onContextMenu(mockEvent, 'a@b.com', false);
     });
 

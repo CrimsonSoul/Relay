@@ -4,7 +4,7 @@ import { loggers } from '../../utils/logger';
 import { updateGroup as pbUpdateGroup } from '../../services/bridgeGroupService';
 
 interface GroupSelectorProps {
-  contact: Contact;
+  contact: Pick<Contact, 'email'>;
   groups: BridgeGroup[];
   onClose: () => void;
   onError?: (message: string) => void;

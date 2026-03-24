@@ -1,6 +1,9 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { SEVERITIES, escapeHtml, sanitizeHtml } from './alertUtils';
+import React, { useRef } from 'react';
 import type { Severity } from './alertUtils';
+import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
+import { AlertBodyEditor } from './alerts/AlertBodyEditor';
+import type { AlertBodyEditorHandle } from './alerts/AlertBodyEditor';
+import { AlertLogoUpload } from './alerts/AlertLogoUpload';
 
 export interface AlertFormProps {
   severity: Severity;
@@ -47,87 +50,18 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
     },
     ref,
   ) => {
-    const editorRef = useRef<HTMLDivElement>(null);
-    const [activeFormats, setActiveFormats] = useState({
-      bold: false,
-      italic: false,
-      underline: false,
-    });
+    const bodyEditorRef = useRef<AlertBodyEditorHandle>(null);
 
     React.useImperativeHandle(ref, () => ({
       setEditorContent(html: string) {
-        if (editorRef.current) editorRef.current.innerHTML = sanitizeHtml(html);
+        bodyEditorRef.current?.setEditorContent(html);
       },
     }));
-
-    const handleBodyInput = useCallback(() => {
-      setBodyHtml(editorRef.current?.innerHTML ?? '');
-    }, [setBodyHtml]);
-
-    const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const html = e.clipboardData.getData('text/html');
-      const plain = e.clipboardData.getData('text/plain');
-      const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
-      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
-      document.execCommand('insertHTML', false, cleaned);
-    }, []);
-
-    const updateActiveFormats = useCallback(() => {
-      /* eslint-disable sonarjs/deprecation -- queryCommandState is the only way to check formatting in contentEditable */
-      setActiveFormats({
-        bold: document.queryCommandState('bold'),
-        italic: document.queryCommandState('italic'),
-        underline: document.queryCommandState('underline'),
-      });
-      /* eslint-enable sonarjs/deprecation */
-    }, []);
-
-    useEffect(() => {
-      const handler = () => {
-        if (
-          editorRef.current?.contains(document.activeElement) ||
-          editorRef.current === document.activeElement
-        ) {
-          updateActiveFormats();
-        }
-      };
-      document.addEventListener('selectionchange', handler);
-      return () => document.removeEventListener('selectionchange', handler);
-    }, [updateActiveFormats]);
-
-    const applyFormat = useCallback(
-      (cmd: string) => {
-        editorRef.current?.focus();
-        // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to toggle formatting in contentEditable
-        document.execCommand(cmd);
-        updateActiveFormats();
-      },
-      [updateActiveFormats],
-    );
 
     return (
       <div className="alerts-composer">
         <div className="alerts-form-section">
-          {/* Severity */}
-          <div className="alerts-field">
-            <legend className="alerts-field-label" id="alerts-severity-label">
-              Severity
-            </legend>
-            <fieldset className="alerts-severity-grid" aria-labelledby="alerts-severity-label">
-              {SEVERITIES.map((sev) => (
-                <button
-                  key={sev}
-                  type="button"
-                  className={`alerts-sev-btn${severity === sev ? ' active' : ''}`}
-                  data-sev={sev}
-                  onClick={() => setSeverity(sev)}
-                >
-                  {sev}
-                </button>
-              ))}
-            </fieldset>
-          </div>
+          <AlertSeveritySelector severity={severity} setSeverity={setSeverity} />
 
           {/* Subject */}
           <div className="alerts-field">
@@ -149,141 +83,7 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             />
           </div>
 
-          {/* Body */}
-          <div className="alerts-field">
-            <span className="alerts-field-label">Body</span>
-            <div className="alerts-body-editor">
-              <div className="alerts-body-toolbar">
-                <button
-                  type="button"
-                  className={`alerts-fmt-btn${activeFormats.bold ? ' active' : ''}`}
-                  title="Bold (Cmd+B)"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyFormat('bold');
-                  }}
-                >
-                  <strong>B</strong>
-                </button>
-                <button
-                  type="button"
-                  className={`alerts-fmt-btn${activeFormats.italic ? ' active' : ''}`}
-                  title="Italic (Cmd+I)"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyFormat('italic');
-                  }}
-                >
-                  <em>I</em>
-                </button>
-                <button
-                  type="button"
-                  className={`alerts-fmt-btn${activeFormats.underline ? ' active' : ''}`}
-                  title="Underline (Cmd+U)"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyFormat('underline');
-                  }}
-                >
-                  <span className="alerts-fmt-underline">U</span>
-                </button>
-                <span className="alerts-fmt-separator" />
-                <button
-                  type="button"
-                  className="alerts-fmt-btn"
-                  title="Bullet List"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyFormat('insertUnorderedList');
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  >
-                    <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
-                    <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                    <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
-                    <line x1="9" y1="6" x2="21" y2="6" />
-                    <line x1="9" y1="12" x2="21" y2="12" />
-                    <line x1="9" y1="18" x2="21" y2="18" />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  className="alerts-fmt-btn"
-                  title="Numbered List"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    applyFormat('insertOrderedList');
-                  }}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  >
-                    <text
-                      x="2"
-                      y="8"
-                      fontSize="7"
-                      fontWeight="700"
-                      fill="currentColor"
-                      stroke="none"
-                      fontFamily="sans-serif"
-                    >
-                      1
-                    </text>
-                    <text
-                      x="2"
-                      y="14.5"
-                      fontSize="7"
-                      fontWeight="700"
-                      fill="currentColor"
-                      stroke="none"
-                      fontFamily="sans-serif"
-                    >
-                      2
-                    </text>
-                    <text
-                      x="2"
-                      y="21"
-                      fontSize="7"
-                      fontWeight="700"
-                      fill="currentColor"
-                      stroke="none"
-                      fontFamily="sans-serif"
-                    >
-                      3
-                    </text>
-                    <line x1="9" y1="6" x2="21" y2="6" />
-                    <line x1="9" y1="12" x2="21" y2="12" />
-                    <line x1="9" y1="18" x2="21" y2="18" />
-                  </svg>
-                </button>
-              </div>
-              <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
-                ref={editorRef}
-                className="alerts-editable-body"
-                contentEditable
-                role="textbox"
-                aria-label="Alert body"
-                spellCheck
-                data-placeholder="Write your alert message here. Cmd+B bold, Cmd+I italic, Cmd+U underline."
-                onInput={handleBodyInput}
-                onPaste={handlePaste}
-              />
-            </div>
-          </div>
+          <AlertBodyEditor ref={bodyEditorRef} setBodyHtml={setBodyHtml} />
 
           {/* Sender */}
           <div className="alerts-field">
@@ -378,26 +178,11 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             </div>
           </div>
 
-          {/* Company Logo */}
-          <div className="alerts-field">
-            <span className="alerts-field-label">
-              Company Logo <span className="alerts-optional-tag">OPTIONAL</span>
-            </span>
-            <div className="alerts-logo-controls">
-              {logoDataUrl ? (
-                <>
-                  <img src={logoDataUrl} alt="Company logo" className="alerts-logo-thumbnail" />
-                  <button type="button" className="alerts-logo-action" onClick={onRemoveLogo}>
-                    REMOVE
-                  </button>
-                </>
-              ) : (
-                <button type="button" className="alerts-logo-action" onClick={onSetLogo}>
-                  UPLOAD
-                </button>
-              )}
-            </div>
-          </div>
+          <AlertLogoUpload
+            logoDataUrl={logoDataUrl}
+            onSetLogo={onSetLogo}
+            onRemoveLogo={onRemoveLogo}
+          />
         </div>
       </div>
     );

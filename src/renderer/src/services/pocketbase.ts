@@ -130,6 +130,8 @@ export function handleApiError(error: unknown): void {
   }
 }
 
+export { isPbNotFoundError } from './pbErrors';
+
 export function isOnline(): boolean {
   return connectionState === 'online';
 }
