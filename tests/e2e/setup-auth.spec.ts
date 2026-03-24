@@ -43,7 +43,7 @@ test.describe('Setup Screen & Auth Flow', () => {
   /** Click the mode card by its tag text (Primary Station / Remote Station) */
   const selectMode = async (tag: 'Primary Station' | 'Remote Station') => {
     await window.locator('.setup-mode-card', { hasText: tag }).click();
-    await expect(window.locator('text=Configure Relay')).toBeVisible();
+    await expect(window.locator('.setup-config__form')).toBeVisible();
   };
 
   /** Fill the passphrase input (targets the actual text input, not the eye toggle) */
@@ -82,7 +82,6 @@ test.describe('Setup Screen & Auth Flow', () => {
 
     // Fill port and passphrase
     const portInput = window.getByLabel('Port');
-    await portInput.fill('');
     await portInput.fill('8099');
     await fillPassphrase('testpassphrase123');
 
