@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
 import { state } from './appState';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
@@ -9,7 +10,7 @@ import { setupContextMenu } from './contextMenu';
 
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
-const mainDir = dirname(new URL(import.meta.url).pathname);
+const mainDir = dirname(fileURLToPath(import.meta.url));
 
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
