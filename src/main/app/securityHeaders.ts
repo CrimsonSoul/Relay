@@ -13,12 +13,23 @@ export function setupSecurityHeaders(isDev: boolean): void {
   //     inject inline styles at runtime; removing it would break component rendering
   // CSP reads config dynamically on each request so it picks up port/URL changes after setup.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // Build connect-src entries for PocketBase (HTTP + WebSocket).
+    // Both schemes are needed: HTTP for REST API calls, WS for realtime subscriptions.
     const pbConnectSrc = (() => {
       const config = state.appConfig?.load();
-      if (config?.mode === 'server') return `http://127.0.0.1:${config.port}`;
-      if (config?.mode === 'client') return config.serverUrl;
+      if (config?.mode === 'server') {
+        return `http://127.0.0.1:${config.port} ws://127.0.0.1:${config.port}`;
+      }
+      if (config?.mode === 'client' && config.serverUrl) {
+        // Derive ws:// URL from the configured http:// server URL
+        const wsUrl = config.serverUrl
+          .replace(/^http:\/\//, 'ws://')
+          .replace(/^https:\/\//, 'wss://');
+        return `${config.serverUrl} ${wsUrl}`;
+      }
       // Not yet configured — allow localhost on common PB ports for setup flow
-      return 'http://127.0.0.1:8090';
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols
+      return 'http://127.0.0.1:8090 ws://127.0.0.1:8090';
     })();
 
     callback({

@@ -641,17 +641,12 @@ body.modal-open {
 }
 
 .combobox-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
   background: var(--color-bg-chrome);
   border: var(--border-medium);
   border-radius: 10px;
   max-height: 200px;
   overflow-y: auto;
-  z-index: 9999;
+  z-index: 99999;
   box-shadow: var(--shadow-lg);
   padding: 4px;
 }

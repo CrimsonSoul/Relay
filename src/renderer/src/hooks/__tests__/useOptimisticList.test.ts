@@ -52,7 +52,7 @@ describe('useOptimisticList', () => {
     expect(result.current.data).toEqual([1, 2, 3]);
   });
 
-  it('queued updates apply after mutation finishes', () => {
+  it('queued updates are discarded after mutation finishes (optimistic state preserved)', () => {
     const { result, rerender } = renderHook(({ data }) => useOptimisticList(data), {
       initialProps: { data: data1 },
     });
@@ -64,13 +64,20 @@ describe('useOptimisticList', () => {
     rerender({ data: data2 });
     expect(result.current.data).toEqual([1, 2, 3]);
 
+    // finishMutation discards queued data — optimistic state is the source of truth.
+    // Realtime events during mutations often have wrong ordering (delete+create
+    // cycles append records to the end), so applying them would scramble the UI.
     act(() => {
       result.current.finishMutation();
     });
+    expect(result.current.data).toEqual([1, 2, 3]);
+
+    // Next external update with a NEW reference syncs normally (no mutation pending)
+    rerender({ data: [4, 5, 6] });
     expect(result.current.data).toEqual([4, 5, 6]);
   });
 
-  it('multiple concurrent mutations hold off external updates until all settle', () => {
+  it('multiple concurrent mutations discard queued data and preserve optimistic state', () => {
     const { result, rerender } = renderHook(({ data }) => useOptimisticList(data), {
       initialProps: { data: data1 },
     });
@@ -89,10 +96,14 @@ describe('useOptimisticList', () => {
     });
     expect(result.current.data).toEqual([1, 2, 3]);
 
-    // Second mutation finishes — queued update should now apply
+    // Second mutation finishes — queued data discarded, optimistic state kept
     act(() => {
       result.current.finishMutation();
     });
+    expect(result.current.data).toEqual([1, 2, 3]);
+
+    // Next external update with a NEW reference syncs normally
+    rerender({ data: [7, 8, 9] });
     expect(result.current.data).toEqual([7, 8, 9]);
   });
 

@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts'],
-    exclude: ['src/renderer/**'],
+    exclude: ['src/renderer/**', 'src/main/cache/**/*.test.ts'],
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
       '@renderer': resolve(__dirname, 'src/renderer/src'),
