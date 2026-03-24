@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { type RecordModel } from 'pocketbase';
 import { getPb, isOnline, onConnectionStateChange, handleApiError } from '../services/pocketbase';
 
@@ -30,24 +30,66 @@ function getApi(): ExtendedApi | undefined {
   return window.api as (ExtendedApi & typeof window.api) | undefined;
 }
 
+/** Compare two values for a single sort field, returning -1 / 0 / 1. */
+function compareField(aVal: unknown, bVal: unknown, desc: boolean): number {
+  if (aVal === bVal) return 0;
+  if (aVal == null) return desc ? -1 : 1;
+  if (bVal == null) return desc ? 1 : -1;
+  const cmp = aVal < bVal ? -1 : 1;
+  return desc ? -cmp : cmp;
+}
+
+/**
+ * Build a comparator from a PocketBase sort string (e.g. "sortOrder", "-created").
+ * Returns null if no sort is specified.
+ */
+function buildComparator<T extends RecordModel>(
+  sort: string | undefined,
+): ((a: T, b: T) => number) | null {
+  if (!sort) return null;
+  const fields = sort.split(',').map((s) => {
+    const trimmed = s.trim();
+    const desc = trimmed.startsWith('-');
+    return { key: desc ? trimmed.slice(1) : trimmed, desc };
+  });
+  return (a: T, b: T) => {
+    for (const { key, desc } of fields) {
+      const result = compareField(
+        (a as Record<string, unknown>)[key],
+        (b as Record<string, unknown>)[key],
+        desc,
+      );
+      if (result !== 0) return result;
+    }
+    return 0;
+  };
+}
+
 /** Pure reducer that applies a realtime event to the current data array. */
 function applyRealtimeEvent<T extends RecordModel>(
   prev: T[],
   action: string,
   record: RecordModel,
+  comparator: ((a: T, b: T) => number) | null,
 ): T[] {
+  let next: T[];
   switch (action) {
     case 'create':
       // Deduplicate: if record already exists (e.g. from a rapid fetch+realtime race), skip
       if (prev.some((r) => r.id === record.id)) return prev;
-      return [...prev, record as T];
+      next = [...prev, record as T];
+      break;
     case 'update':
-      return prev.map((r) => (r.id === record.id ? (record as T) : r));
+      next = prev.map((r) => (r.id === record.id ? (record as T) : r));
+      break;
     case 'delete':
       return prev.filter((r) => r.id !== record.id);
     default:
       return prev;
   }
+  // Re-sort after create/update so realtime events preserve the collection's sort order
+  if (comparator) next.sort(comparator);
+  return next;
 }
 
 /** Try to load data from the offline cache. Returns records or null. */
@@ -71,6 +113,7 @@ export function useCollection<T extends RecordModel>(
   // Ref to latest data so the realtime handler can read it without a closure
   // over stale state (avoids functional updater nesting flagged by sonarjs).
   const dataRef = useRef<T[]>([]);
+  const comparator = useMemo(() => buildComparator<T>(options.sort), [options.sort]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -142,7 +185,7 @@ export function useCollection<T extends RecordModel>(
     if (!connectedRef.current) return;
 
     function handleRealtimeEvent(collection: string, action: string, record: RecordModel): void {
-      const next = applyRealtimeEvent<T>(dataRef.current, action, record);
+      const next = applyRealtimeEvent<T>(dataRef.current, action, record, comparator);
       dataRef.current = next;
       setData(next);
       getApi()?.cacheWrite?.(collection, action, record);
@@ -163,7 +206,7 @@ export function useCollection<T extends RecordModel>(
       subscriptionRef.current?.();
       subscriptionRef.current = null;
     };
-  }, [collectionName, fetchData, connectGeneration]);
+  }, [collectionName, fetchData, connectGeneration, comparator]);
 
   return { data, loading, error, refetch: fetchData };
 }
