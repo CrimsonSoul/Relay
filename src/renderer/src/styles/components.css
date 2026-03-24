@@ -652,9 +652,13 @@ body.modal-open {
 }
 
 .combobox-option {
+  width: 100%;
   padding: 8px 12px;
+  border: none;
+  font-family: inherit;
   font-size: var(--text-sm);
   color: var(--color-text-primary);
+  text-align: left;
   cursor: pointer;
   border-radius: 4px;
   display: flex;
