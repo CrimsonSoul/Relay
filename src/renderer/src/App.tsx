@@ -455,14 +455,9 @@ function AppWithSetup() {
             return;
           }
         }
-        // Go straight to connecting — we already know the URL and secret,
-        // no need for another IPC roundtrip through checkConfig().
-        const pbUrl = await globalThis.api!.getPbUrl();
-        if (!pbUrl) {
-          setPhase({ stage: 'error', message: 'Server not reachable.' });
-          return;
-        }
-        setPhase({ stage: 'connecting', pbUrl, pbSecret: config.secret });
+        // Reload the page so the CSP headers are re-evaluated with the
+        // newly saved config (connect-src must include the server URL).
+        window.location.reload();
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
         setPhase({ stage: 'error', message: 'Failed to save configuration.' });
