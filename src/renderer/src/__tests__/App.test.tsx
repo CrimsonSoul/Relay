@@ -64,23 +64,25 @@ vi.mock('../components/TabFallback', () => ({
 
 vi.mock('../components/HeaderSearch', () => ({
   HeaderSearch: ({
-    onNavigateToTab,
-    onAddContactToBridge,
-    onOpenAddContact,
+    actions,
   }: {
     activeTab: string;
     contacts: unknown[];
     servers: unknown[];
     groups: unknown[];
-    onAddContactToBridge: (email: string) => void;
-    onToggleGroup: (id: string) => void;
-    onNavigateToTab: (tab: string) => void;
-    onOpenAddContact: (email?: string) => void;
+    actions: {
+      onAddContactToBridge: (email: string) => void;
+      onToggleGroup: (id: string) => void;
+      onNavigateToTab: (tab: string) => void;
+      onOpenAddContact: (email?: string) => void;
+    };
   }) => (
     <div data-testid="header-search">
-      <button onClick={() => onNavigateToTab('Personnel')}>go-personnel</button>
-      <button onClick={() => onAddContactToBridge('test@example.com')}>add-to-bridge</button>
-      <button onClick={() => onOpenAddContact('new@example.com')}>open-add-contact</button>
+      <button onClick={() => actions.onNavigateToTab('Personnel')}>go-personnel</button>
+      <button onClick={() => actions.onAddContactToBridge('test@example.com')}>
+        add-to-bridge
+      </button>
+      <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
     </div>
   ),
 }));
