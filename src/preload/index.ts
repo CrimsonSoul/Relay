@@ -90,6 +90,12 @@ const api: BridgeAPI = {
   getPbUrl: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_URL),
   getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),
   startPocketBase: () => ipcRenderer.invoke(IPC_CHANNELS.PB_START),
+
+  // Backups
+  listBackups: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST),
+  createBackup: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE),
+  restoreBackup: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, name),
+
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
   windowMaximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
