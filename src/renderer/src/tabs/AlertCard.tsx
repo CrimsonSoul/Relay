@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
 
@@ -37,6 +37,10 @@ export interface AlertCardProps {
   formattedDate: string;
   bodyHtml: string;
   logoDataUrl: string | null;
+  /** When true, bodyHtml has been processed by compact+enhance pipeline */
+  enhancedBodyHtml?: string;
+  isEnhanced?: boolean;
+  isCompact?: boolean;
 }
 
 export const AlertCard: React.FC<AlertCardProps> = ({
@@ -48,6 +52,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   formattedDate,
   bodyHtml,
   logoDataUrl,
+  enhancedBodyHtml,
+  isEnhanced,
+  isCompact,
 }) => {
   const colors = SEVERITY_COLORS[severity];
   const hasContent = hasVisibleText(bodyHtml);
@@ -68,6 +75,32 @@ export const AlertCard: React.FC<AlertCardProps> = ({
     () => (hasContent ? sanitizeHtml(bodyHtml) : 'Your message will appear here...'),
     [bodyHtml, hasContent],
   );
+
+  const metaRef = useRef<HTMLDivElement>(null);
+  const [metaFontSize, setMetaFontSize] = useState(13);
+
+  useEffect(() => {
+    if (!metaRef.current) return;
+    const el = metaRef.current;
+    // Reset to base size to measure natural width
+    el.style.fontSize = '13px';
+    const overflow = el.scrollWidth > el.clientWidth;
+    if (!overflow) {
+      setMetaFontSize(13);
+      return;
+    }
+    // Try smaller sizes
+    for (const size of [11, 9.5]) {
+      el.style.fontSize = `${size}px`;
+      if (el.scrollWidth <= el.clientWidth) {
+        setMetaFontSize(size);
+        return;
+      }
+    }
+    setMetaFontSize(9.5);
+  }, [displaySender, displayRecipient]);
+
+  const renderedBody = (isEnhanced || isCompact) && enhancedBodyHtml ? enhancedBodyHtml : safeHtml;
 
   return (
     <div className="alerts-preview">
@@ -97,22 +130,30 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           <div className="alerts-email-header">
             <div className="alerts-email-subject">{displaySubject}</div>
           </div>
-          <div className="alerts-email-meta">
-            <div className="alerts-email-meta-left">
+          <div
+            className="alerts-email-meta"
+            ref={metaRef}
+            style={{ fontSize: `${metaFontSize}px` }}
+          >
+            <div className="alerts-email-meta-center">
               <div className="alerts-email-meta-item">
                 FROM <span>{displaySender}</span>
               </div>
+              <span className="alerts-email-meta-dot" />
               <div className="alerts-email-meta-item">
                 TO <span>{displayRecipient}</span>
               </div>
             </div>
-            <div className="alerts-email-meta-date">{formattedDate}</div>
           </div>
           <div
             className={`alerts-email-body${hasContent ? '' : ' empty'}`}
-            dangerouslySetInnerHTML={{ __html: safeHtml }}
+            dangerouslySetInnerHTML={{ __html: renderedBody }}
           />
-          <div className="alerts-email-footer" />
+          <div className="alerts-email-footer">
+            {/* Footer logo added in Task 10 — spacer placeholder for now */}
+            <div className="alerts-email-footer-spacer" />
+            <div className="alerts-email-footer-timestamp">{formattedDate}</div>
+          </div>
         </div>
       </div>
     </div>

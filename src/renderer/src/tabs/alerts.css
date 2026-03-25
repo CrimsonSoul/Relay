@@ -575,13 +575,8 @@
   border-bottom: 1px solid #eaeaea;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.alerts-email-meta-left {
-  display: flex;
-  gap: 28px;
-  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
 .alerts-email-meta-item {
@@ -596,14 +591,6 @@
   color: #222;
   font-weight: 600;
   text-transform: none;
-}
-
-.alerts-email-meta-date {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 13px;
-  color: #555;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
 }
 
 .alerts-email-body {
@@ -632,10 +619,89 @@
   font-style: italic;
 }
 
+/* Centered meta row */
+.alerts-email-meta-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.alerts-email-meta-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #bbb;
+  flex-shrink: 0;
+}
+
+/* Footer logo + timestamp */
+.alerts-email-footer-logo {
+  height: 22px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
+  opacity: 0.55;
+}
+
+.alerts-email-footer-spacer {
+  width: 1px;
+}
+
+.alerts-email-footer-timestamp {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: #888;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* Highlight pill styles (used in card body) */
+.alerts-email-body [data-hl='deadline'] {
+  background: #fff3cd;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  color: #856404;
+}
+
+.alerts-email-body [data-hl='warning'] {
+  background: #fee2e2;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  color: #991b1b;
+}
+
+.alerts-email-body [data-hl='success'] {
+  background: #d1fae5;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  color: #065f46;
+}
+
+.alerts-email-body [data-hl='number'] {
+  font-weight: 700;
+  color: #1565c0;
+}
+
+.alerts-email-body [data-hl='service'] {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9em;
+  background: #f0f0f5;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #333;
+}
+
 .alerts-email-footer {
-  height: 6px;
-  background: var(--email-banner);
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 14px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #eaeaea;
+  background: #fafafa;
 }
 
 /* --- Logo Controls (Composer Panel) --- */
