@@ -138,6 +138,14 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
+    name: 'oncall_dismissals',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'alertType', required: true },
+      { type: 'text', name: 'dateKey', required: true },
+    ],
+  },
+  {
     name: 'conflict_log',
     type: 'base',
     fields: [

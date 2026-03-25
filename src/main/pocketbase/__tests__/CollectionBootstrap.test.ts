@@ -65,6 +65,6 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(10);
+    expect(mockCreate).toHaveBeenCalledTimes(11);
   });
 });
