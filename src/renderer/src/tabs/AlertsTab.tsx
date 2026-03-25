@@ -34,6 +34,7 @@ export const AlertsTab: React.FC = () => {
   const [recipient, setRecipient] = useState('');
   const [isCapturing, setIsCapturing] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
+  const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
   const [updateNumber, setUpdateNumber] = useState(0); // 0 = off, 1+ = "UPDATE #N"
   const [eventTimeStart, setEventTimeStart] = useState('');
@@ -60,6 +61,16 @@ export const AlertsTab: React.FC = () => {
       .catch(() => {
         // Logo load is best-effort; a missing logo is not an error the user needs to see
       });
+  }, []);
+
+  // Load persisted footer logo on mount
+  useEffect(() => {
+    void globalThis.api
+      ?.getFooterLogo()
+      .then((url) => {
+        if (url) setFooterLogoDataUrl(url);
+      })
+      .catch(() => {});
   }, []);
 
   const [now, setNow] = useState(() => new Date());
@@ -220,6 +231,29 @@ export const AlertsTab: React.FC = () => {
       setLogoDataUrl(null);
     } catch {
       showToast('Failed to remove logo', 'error');
+    }
+  }, [showToast]);
+
+  const handleSetFooterLogo = useCallback(async () => {
+    const result = await globalThis.api?.saveFooterLogo();
+    if (result?.success && result.data) {
+      setFooterLogoDataUrl(result.data);
+      showToast('Footer logo saved', 'success');
+    } else if (result?.error && result.error !== 'Cancelled') {
+      showToast(result.error, 'error');
+    }
+  }, [showToast]);
+
+  const handleRemoveFooterLogo = useCallback(async () => {
+    try {
+      const result = await globalThis.api?.removeFooterLogo();
+      if (result?.success === false) {
+        showToast(result.error || 'Failed to remove footer logo', 'error');
+        return;
+      }
+      setFooterLogoDataUrl(null);
+    } catch {
+      showToast('Failed to remove footer logo', 'error');
     }
   }, [showToast]);
 
@@ -426,6 +460,9 @@ export const AlertsTab: React.FC = () => {
           logoDataUrl={logoDataUrl}
           onSetLogo={handleSetLogo}
           onRemoveLogo={handleRemoveLogo}
+          footerLogoDataUrl={footerLogoDataUrl}
+          onSetFooterLogo={handleSetFooterLogo}
+          onRemoveFooterLogo={handleRemoveFooterLogo}
           isCompact={isCompact}
           setIsCompact={setIsCompact}
           isEnhanced={isEnhanced}
@@ -442,6 +479,7 @@ export const AlertsTab: React.FC = () => {
           formattedDate={formattedDate}
           bodyHtml={bodyHtml}
           logoDataUrl={logoDataUrl}
+          footerLogoDataUrl={footerLogoDataUrl}
           enhancedBodyHtml={enhancedBodyHtml}
           isEnhanced={isEnhanced}
           isCompact={isCompact}

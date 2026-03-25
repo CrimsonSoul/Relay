@@ -296,6 +296,9 @@ export type BridgeAPI = {
   saveCompanyLogo: () => Promise<IpcResult<string>>;
   getCompanyLogo: () => Promise<string | null>;
   removeCompanyLogo: () => Promise<IpcResult>;
+  saveFooterLogo: () => Promise<IpcResult<string>>;
+  getFooterLogo: () => Promise<string | null>;
+  removeFooterLogo: () => Promise<IpcResult>;
   // Setup
   getConfig: () => Promise<unknown>;
   saveConfig: (config: unknown) => Promise<boolean>;
@@ -358,6 +361,9 @@ export const IPC_CHANNELS = {
   SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
   GET_COMPANY_LOGO: 'alert:getCompanyLogo',
   REMOVE_COMPANY_LOGO: 'alert:removeCompanyLogo',
+  SAVE_FOOTER_LOGO: 'alert:saveFooterLogo',
+  GET_FOOTER_LOGO: 'alert:getFooterLogo',
+  REMOVE_FOOTER_LOGO: 'alert:removeFooterLogo',
   // Drag Sync
   DRAG_STARTED: 'drag:started',
   DRAG_STOPPED: 'drag:stopped',

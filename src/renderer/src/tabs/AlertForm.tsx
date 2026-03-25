@@ -26,6 +26,9 @@ export interface AlertFormProps {
   logoDataUrl: string | null;
   onSetLogo: () => void;
   onRemoveLogo: () => void;
+  footerLogoDataUrl: string | null;
+  onSetFooterLogo: () => void;
+  onRemoveFooterLogo: () => void;
   isCompact: boolean;
   setIsCompact: (v: boolean) => void;
   isEnhanced: boolean;
@@ -59,6 +62,9 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       logoDataUrl,
       onSetLogo,
       onRemoveLogo,
+      footerLogoDataUrl,
+      onSetFooterLogo,
+      onRemoveFooterLogo,
       isCompact,
       setIsCompact,
       isEnhanced,
@@ -250,6 +256,32 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             onSetLogo={onSetLogo}
             onRemoveLogo={onRemoveLogo}
           />
+
+          {/* Footer Logo — separate upload, shown at original colors */}
+          <div className="alerts-field">
+            <span className="alerts-field-label">
+              Footer Logo <span className="alerts-optional-tag">OPTIONAL</span>
+            </span>
+            <span className="alerts-field-hint">Shown at original colors in the card footer</span>
+            <div className="alerts-logo-controls">
+              {footerLogoDataUrl ? (
+                <>
+                  <img
+                    src={footerLogoDataUrl}
+                    alt="Footer logo"
+                    className="alerts-logo-thumbnail"
+                  />
+                  <button type="button" className="alerts-logo-action" onClick={onRemoveFooterLogo}>
+                    REMOVE
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="alerts-logo-action" onClick={onSetFooterLogo}>
+                  UPLOAD
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );

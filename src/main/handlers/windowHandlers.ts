@@ -235,6 +235,70 @@ export function setupWindowHandlers(
     }
   });
 
+  // Footer Logo — save, get, remove (mirrors company logo pattern)
+  ipcMain.handle(IPC_CHANNELS.SAVE_FOOTER_LOGO, async () => {
+    if (!getDataRoot) return { success: false, error: 'Data root not available' };
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Select Footer Logo',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
+
+      const buf = await readFile(filePaths[0]);
+      if (buf.length > MAX_LOGO_SIZE) {
+        return { success: false, error: 'Image must be under 2MB' };
+      }
+
+      let image = nativeImage.createFromBuffer(buf);
+      if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
+
+      const { width } = image.getSize();
+      if (width > MAX_LOGO_WIDTH) {
+        image = image.resize({ width: MAX_LOGO_WIDTH });
+      }
+
+      const assetsDir = join(await getDataRoot(), 'assets');
+      await mkdir(assetsDir, { recursive: true });
+      const logoPath = join(assetsDir, 'footer-logo.png');
+      const pngBuffer = image.toPNG();
+      await writeFile(logoPath, pngBuffer);
+
+      const dataUrl = 'data:image/png;base64,' + pngBuffer.toString('base64');
+      return { success: true, data: dataUrl };
+    } catch (err) {
+      loggers.ipc.warn('Footer logo save failed', {
+        error: getErrorMessage(err),
+      });
+      return { success: false, error: err instanceof Error ? err.message : 'Save failed' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_FOOTER_LOGO, async () => {
+    if (!getDataRoot) return null;
+    try {
+      const logoPath = join(await getDataRoot(), 'assets', 'footer-logo.png');
+      const buf = await readFile(logoPath);
+      return 'data:image/png;base64,' + buf.toString('base64');
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.REMOVE_FOOTER_LOGO, async () => {
+    if (!getDataRoot) return { success: false, error: 'Data root not available' };
+    try {
+      const logoPath = join(await getDataRoot(), 'assets', 'footer-logo.png');
+      await unlink(logoPath);
+      return { success: true };
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT')
+        return { success: true };
+      return { success: false, error: err instanceof Error ? err.message : 'Remove failed' };
+    }
+  });
+
   ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isMaximized()) {

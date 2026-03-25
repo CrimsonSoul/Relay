@@ -273,6 +273,14 @@
   font-size: var(--text-2xs);
 }
 
+/* Field hint — used below label for supplementary info */
+.alerts-field-hint {
+  font-size: 10.5px;
+  color: var(--color-text-quaternary);
+  margin-top: -4px;
+  margin-bottom: 6px;
+}
+
 .alerts-input {
   font-family: var(--font-family-base);
   font-size: var(--text-xs);

@@ -38,6 +38,7 @@ export interface AlertCardProps {
   formattedDate: string;
   bodyHtml: string;
   logoDataUrl: string | null;
+  footerLogoDataUrl?: string | null;
   /** When true, bodyHtml has been processed by compact+enhance pipeline */
   enhancedBodyHtml?: string;
   isEnhanced?: boolean;
@@ -55,6 +56,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   formattedDate,
   bodyHtml,
   logoDataUrl,
+  footerLogoDataUrl,
   enhancedBodyHtml,
   isEnhanced,
   isCompact,
@@ -156,8 +158,11 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             dangerouslySetInnerHTML={{ __html: renderedBody }}
           />
           <div className="alerts-email-footer">
-            {/* Footer logo added in Task 10 — spacer placeholder for now */}
-            <div className="alerts-email-footer-spacer" />
+            {footerLogoDataUrl ? (
+              <img src={footerLogoDataUrl} alt="" className="alerts-email-footer-logo" />
+            ) : (
+              <div className="alerts-email-footer-spacer" />
+            )}
             <div className="alerts-email-footer-timestamp">{formattedDate}</div>
           </div>
         </div>
