@@ -1,5 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { sanitizeHtml, escapeHtml } from '../alertUtils';
+import { HighlightPopover } from './HighlightPopover';
+import { HIGHLIGHTS, type HighlightType } from './highlightColors';
 
 export interface AlertBodyEditorHandle {
   setEditorContent: (html: string) => void;
@@ -14,16 +16,7 @@ interface AlertBodyEditorProps {
 }
 
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
-  (
-    {
-      setBodyHtml,
-      isCompact: _isCompact,
-      setIsCompact: _setIsCompact,
-      isEnhanced: _isEnhanced,
-      setIsEnhanced: _setIsEnhanced,
-    },
-    ref,
-  ) => {
+  ({ setBodyHtml, isCompact, setIsCompact, isEnhanced, setIsEnhanced }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
@@ -81,6 +74,56 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
         updateActiveFormats();
       },
       [updateActiveFormats],
+    );
+
+    const applyHighlight = useCallback(
+      (type: HighlightType) => {
+        editorRef.current?.focus();
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+
+        const range = selection.getRangeAt(0);
+        const span = document.createElement('span');
+        span.setAttribute('data-hl', type);
+        try {
+          range.surroundContents(span);
+        } catch {
+          // surroundContents throws if selection crosses element boundaries — silently ignore
+          return;
+        }
+        handleBodyInput();
+      },
+      [handleBodyInput],
+    );
+
+    const clearHighlight = useCallback(() => {
+      editorRef.current?.focus();
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return;
+
+      const node = selection.anchorNode?.parentElement;
+      if (node?.hasAttribute('data-hl')) {
+        const parent = node.parentNode;
+        while (node.firstChild) parent?.insertBefore(node.firstChild, node);
+        parent?.removeChild(node);
+        handleBodyInput();
+      }
+    }, [handleBodyInput]);
+
+    const handleKeyDown = useCallback(
+      (e: React.KeyboardEvent) => {
+        if (!e.metaKey && !e.ctrlKey) return;
+        const key = e.key;
+        if (key >= '1' && key <= '5') {
+          e.preventDefault();
+          const idx = parseInt(key) - 1;
+          if (HIGHLIGHTS[idx]) applyHighlight(HIGHLIGHTS[idx].type);
+        } else if (key === '0') {
+          e.preventDefault();
+          clearHighlight();
+        }
+      },
+      [applyHighlight, clearHighlight],
     );
 
     return (
@@ -204,6 +247,56 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 <line x1="9" y1="18" x2="21" y2="18" />
               </svg>
             </button>
+            <span className="alerts-fmt-separator" />
+            <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
+            <span className="alerts-fmt-separator" />
+            <button
+              type="button"
+              className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-compact${isCompact ? ' active' : ''}`}
+              title="Compact — strip filler phrases"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsCompact(!isCompact);
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-enhance${isEnhanced ? ' active' : ''}`}
+              title="Enhance — auto-highlight key info"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsEnhanced(!isEnhanced);
+              }}
+            >
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+              </svg>
+            </button>
           </div>
           <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
             ref={editorRef}
@@ -211,10 +304,12 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
             contentEditable
             role="textbox"
             aria-label="Alert body"
+            tabIndex={0}
             spellCheck
             data-placeholder="Write your alert message here. Cmd+B bold, Cmd+I italic, Cmd+U underline."
             onInput={handleBodyInput}
             onPaste={handlePaste}
+            onKeyDown={handleKeyDown}
           />
         </div>
       </div>

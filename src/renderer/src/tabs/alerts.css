@@ -969,3 +969,18 @@
   background: var(--color-border-subtle);
   margin: 4px 0;
 }
+
+/* Compact/Enhance toggle buttons */
+.alerts-toggle-btn {
+  padding: 0 6px;
+}
+
+.alerts-toggle-compact.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.alerts-toggle-enhance.active {
+  background: rgba(124, 92, 252, 0.15);
+  color: #a78bfa;
+}
