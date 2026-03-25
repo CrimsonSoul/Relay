@@ -52,7 +52,7 @@ describe('useOptimisticList', () => {
     expect(result.current.data).toEqual([1, 2, 3]);
   });
 
-  it('queued updates are discarded after mutation finishes (optimistic state preserved)', () => {
+  it('queued updates are applied after mutation finishes', () => {
     const { result, rerender } = renderHook(({ data }) => useOptimisticList(data), {
       initialProps: { data: data1 },
     });
@@ -62,22 +62,18 @@ describe('useOptimisticList', () => {
     });
 
     rerender({ data: data2 });
+    // Should still show old data since mutation is pending
     expect(result.current.data).toEqual([1, 2, 3]);
 
-    // finishMutation discards queued data — optimistic state is the source of truth.
-    // Realtime events during mutations often have wrong ordering (delete+create
-    // cycles append records to the end), so applying them would scramble the UI.
+    // finishMutation applies queued data — realtime events from PB are correctly
+    // sorted by useCollection, so applying them is safe and prevents stale state.
     act(() => {
       result.current.finishMutation();
     });
-    expect(result.current.data).toEqual([1, 2, 3]);
-
-    // Next external update with a NEW reference syncs normally (no mutation pending)
-    rerender({ data: [4, 5, 6] });
     expect(result.current.data).toEqual([4, 5, 6]);
   });
 
-  it('multiple concurrent mutations discard queued data and preserve optimistic state', () => {
+  it('multiple concurrent mutations apply latest queued data after all finish', () => {
     const { result, rerender } = renderHook(({ data }) => useOptimisticList(data), {
       initialProps: { data: data1 },
     });
@@ -90,20 +86,16 @@ describe('useOptimisticList', () => {
     rerender({ data: data3 });
     expect(result.current.data).toEqual([1, 2, 3]);
 
-    // First mutation finishes — still one pending
+    // First mutation finishes — still one pending, data stays optimistic
     act(() => {
       result.current.finishMutation();
     });
     expect(result.current.data).toEqual([1, 2, 3]);
 
-    // Second mutation finishes — queued data discarded, optimistic state kept
+    // Second mutation finishes — queued data applied
     act(() => {
       result.current.finishMutation();
     });
-    expect(result.current.data).toEqual([1, 2, 3]);
-
-    // Next external update with a NEW reference syncs normally
-    rerender({ data: [7, 8, 9] });
     expect(result.current.data).toEqual([7, 8, 9]);
   });
 

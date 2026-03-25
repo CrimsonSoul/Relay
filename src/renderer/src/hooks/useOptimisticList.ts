@@ -15,12 +15,12 @@ export function useOptimisticList<T>(externalData: T[]) {
 
   const finishMutation = useCallback(() => {
     pendingRef.current = Math.max(0, pendingRef.current - 1);
-    if (pendingRef.current === 0) {
-      // Discard queued external data — the optimistic state is already correct.
-      // Applying queued realtime events would undo optimistic ordering because
-      // PocketBase delete+create cycles append records to the end of the array,
-      // scrambling the derived team order.  The next external data change (from
-      // any new realtime event) will sync naturally with pendingRef at 0.
+    if (pendingRef.current === 0 && queuedRef.current) {
+      // Apply queued external data now that all mutations are settled.
+      // useCollection sorts realtime events via applyRealtimeEvent, so
+      // the queued snapshot is correctly ordered and safe to apply.
+      localRef.current = queuedRef.current;
+      setLocalData(queuedRef.current);
       queuedRef.current = null;
     }
   }, []);
