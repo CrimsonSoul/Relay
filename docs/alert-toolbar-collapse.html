@@ -1,0 +1,1440 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Collapsible Highlight Palette — Toolbar Options</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Montserrat:wght@600;700;800;900&display=swap');
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #1a1a2e;
+        --surface: #232340;
+        --text-muted: #8888aa;
+      }
+
+      body {
+        font-family: 'IBM Plex Sans', sans-serif;
+        background: var(--bg);
+        color: #fff;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 48px 32px 120px;
+      }
+
+      .page-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 24px;
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+
+      .page-subtitle {
+        font-size: 14px;
+        color: var(--text-muted);
+        margin-bottom: 48px;
+        max-width: 640px;
+      }
+
+      .option {
+        margin-bottom: 56px;
+      }
+
+      .option-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 6px;
+      }
+
+      .option-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 15px;
+        font-weight: 700;
+      }
+
+      .option-badge {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding: 2px 8px;
+        border-radius: 4px;
+      }
+
+      .badge-rec {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+      }
+
+      .option-desc {
+        font-size: 13px;
+        color: #999;
+        margin-bottom: 20px;
+        max-width: 600px;
+      }
+
+      .toolbar-box {
+        background: var(--surface);
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 20px;
+        margin-bottom: 12px;
+      }
+
+      .toolbar-state-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #555;
+        margin-bottom: 8px;
+      }
+
+      /* ============ TOOLBAR BASE ============ */
+
+      .toolbar {
+        display: flex;
+        gap: 2px;
+        padding: 5px 6px;
+        background: #151528;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        align-items: center;
+      }
+
+      .tb-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 30px;
+        height: 28px;
+        border: none;
+        border-radius: 5px;
+        background: transparent;
+        color: #777;
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.15s;
+        padding: 0 4px;
+      }
+
+      .tb-btn:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #ccc;
+      }
+
+      .tb-sep {
+        width: 1px;
+        height: 18px;
+        background: rgba(255, 255, 255, 0.08);
+        margin: 0 5px;
+        flex-shrink: 0;
+      }
+
+      .tb-swatch {
+        width: 22px;
+        height: 22px;
+        border-radius: 4px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+
+      .tb-swatch:hover {
+        border-color: rgba(255, 255, 255, 0.3);
+        transform: scale(1.1);
+      }
+      .tb-swatch.active {
+        border-color: #fff;
+        transform: scale(1.1);
+      }
+
+      .sw-deadline {
+        background: #fff3cd;
+      }
+      .sw-warning {
+        background: #fee2e2;
+      }
+      .sw-success {
+        background: #d1fae5;
+      }
+      .sw-number {
+        background: #dbeafe;
+      }
+      .sw-service {
+        background: #f0f0f5;
+      }
+
+      .tb-swatch-clear {
+        width: 22px;
+        height: 22px;
+        border-radius: 4px;
+        border: 2px dashed rgba(255, 255, 255, 0.12);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #555;
+        font-size: 10px;
+        transition: all 0.15s;
+        flex-shrink: 0;
+      }
+
+      .tb-swatch-clear:hover {
+        border-color: rgba(255, 255, 255, 0.3);
+        color: #999;
+      }
+
+      .tb-toggle {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: all 0.15s;
+        border: 1px solid;
+        white-space: nowrap;
+      }
+
+      .tb-toggle svg {
+        width: 13px;
+        height: 13px;
+      }
+
+      .tb-compact {
+        border-color: rgba(59, 130, 246, 0.3);
+        background: rgba(59, 130, 246, 0.06);
+        color: #60a5fa;
+      }
+      .tb-enhance {
+        border-color: rgba(124, 92, 252, 0.3);
+        background: rgba(124, 92, 252, 0.06);
+        color: #a78bfa;
+      }
+
+      .tb-hl-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        color: #555;
+        margin-right: 1px;
+      }
+
+      /* ============ OPTION A: Dropdown popover ============ */
+
+      .tb-hl-trigger {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 5px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: all 0.15s;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.03);
+        color: #888;
+        position: relative;
+        white-space: nowrap;
+      }
+
+      .tb-hl-trigger:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #ccc;
+        border-color: rgba(255, 255, 255, 0.15);
+      }
+      .tb-hl-trigger.open {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .tb-hl-trigger .color-dots {
+        display: flex;
+        gap: 2px;
+      }
+
+      .tb-hl-trigger .color-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 2px;
+      }
+
+      .tb-hl-trigger .arrow {
+        font-size: 8px;
+        color: #555;
+        margin-left: 2px;
+      }
+
+      .popover {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: #1e1e36;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 8px;
+        padding: 10px 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 180px;
+      }
+
+      .popover::before {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: 50%;
+        transform: translateX(-50%) rotate(45deg);
+        width: 8px;
+        height: 8px;
+        background: #1e1e36;
+        border-left: 1px solid rgba(255, 255, 255, 0.12);
+        border-top: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .popover-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 6px;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+
+      .popover-row:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .popover-swatch {
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        flex-shrink: 0;
+      }
+
+      .popover-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        color: #bbb;
+      }
+
+      .popover-key {
+        margin-left: auto;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        color: #555;
+      }
+
+      .popover-divider {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      /* ============ OPTION B: Active swatch indicator ============ */
+
+      .tb-hl-cycle {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        position: relative;
+      }
+
+      .tb-active-swatch {
+        width: 26px;
+        height: 26px;
+        border-radius: 5px;
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        cursor: pointer;
+        transition: all 0.15s;
+        position: relative;
+      }
+
+      .tb-active-swatch:hover {
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .tb-active-swatch.active {
+        border-color: #fff;
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.15);
+      }
+
+      .tb-cycle-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 26px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: #555;
+        font-size: 10px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .tb-cycle-arrow:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #aaa;
+      }
+
+      /* ============ OPTION C: Second row ============ */
+
+      .toolbar-two-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        background: #151528;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+
+      .toolbar-row {
+        display: flex;
+        gap: 2px;
+        padding: 5px 6px;
+        align-items: center;
+      }
+
+      .toolbar-row-secondary {
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.015);
+        padding: 4px 6px;
+      }
+
+      .toolbar-row-secondary .tb-swatch {
+        width: 20px;
+        height: 20px;
+      }
+
+      .hl-row-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 8px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        color: #444;
+        margin-right: 4px;
+        text-transform: uppercase;
+      }
+
+      .swatch-label-tiny {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 7px;
+        letter-spacing: 0.04em;
+        color: #555;
+        white-space: nowrap;
+      }
+
+      /* ============ ANNOTATIONS ============ */
+
+      .pros-cons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+
+      .pro,
+      .con {
+        padding: 6px 10px;
+        border-radius: 6px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+      }
+
+      .pro {
+        background: rgba(34, 197, 94, 0.06);
+        color: #4ade80;
+      }
+      .con {
+        background: rgba(239, 68, 68, 0.06);
+        color: #f87171;
+      }
+
+      .pc-icon {
+        flex-shrink: 0;
+        font-size: 11px;
+        margin-top: 1px;
+      }
+
+      /* ============ COMPARISON ============ */
+
+      .width-demo {
+        margin-top: 20px;
+      }
+
+      .width-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #444;
+        margin-bottom: 6px;
+      }
+
+      .width-box {
+        background: #151528;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 5px 6px;
+        display: flex;
+        gap: 2px;
+        align-items: center;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="page-title">Collapsible Highlight Palette</div>
+      <p class="page-subtitle">
+        Three approaches for keeping the toolbar compact while still providing quick access to
+        highlight colors.
+      </p>
+
+      <!-- ===== OPTION A: Dropdown ===== -->
+      <div class="option">
+        <div class="option-header">
+          <span class="option-title">Option A — Dropdown Popover</span>
+          <span class="option-badge badge-rec">RECOMMENDED</span>
+        </div>
+        <div class="option-desc">
+          A single "Highlight" button with color preview dots. Click to open a popover with all
+          swatches + labels + keyboard shortcuts. Collapses to one button width.
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Collapsed (default)</div>
+          <div class="toolbar">
+            <div class="tb-btn"><strong>B</strong></div>
+            <div class="tb-btn"><em>I</em></div>
+            <div class="tb-btn" style="text-decoration: underline">U</div>
+            <div class="tb-sep"></div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <text
+                  x="2"
+                  y="8"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  1
+                </text>
+                <text
+                  x="2"
+                  y="14.5"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  2
+                </text>
+                <text
+                  x="2"
+                  y="21"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  3
+                </text>
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-sep"></div>
+
+            <div class="tb-hl-trigger">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+              </svg>
+              <div class="color-dots">
+                <div class="color-dot sw-deadline"></div>
+                <div class="color-dot sw-warning"></div>
+                <div class="color-dot sw-success"></div>
+                <div class="color-dot sw-number"></div>
+                <div class="color-dot sw-service"></div>
+              </div>
+              <span class="arrow">&#9662;</span>
+            </div>
+
+            <div class="tb-sep"></div>
+            <div class="tb-toggle tb-compact">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+              COMPACT
+            </div>
+            <div class="tb-toggle tb-enhance">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+              </svg>
+              ENHANCE
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Expanded (clicked)</div>
+          <div class="toolbar" style="position: relative">
+            <div class="tb-btn"><strong>B</strong></div>
+            <div class="tb-btn"><em>I</em></div>
+            <div class="tb-btn" style="text-decoration: underline">U</div>
+            <div class="tb-sep"></div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <text
+                  x="2"
+                  y="8"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  1
+                </text>
+                <text
+                  x="2"
+                  y="14.5"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  2
+                </text>
+                <text
+                  x="2"
+                  y="21"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  3
+                </text>
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-sep"></div>
+
+            <div style="position: relative">
+              <div class="tb-hl-trigger open">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                </svg>
+                <div class="color-dots">
+                  <div class="color-dot sw-deadline"></div>
+                  <div class="color-dot sw-warning"></div>
+                  <div class="color-dot sw-success"></div>
+                  <div class="color-dot sw-number"></div>
+                  <div class="color-dot sw-service"></div>
+                </div>
+                <span class="arrow">&#9652;</span>
+              </div>
+
+              <div class="popover">
+                <div class="popover-row">
+                  <div class="popover-swatch sw-deadline"></div>
+                  <span class="popover-label">Deadline</span>
+                  <span class="popover-key">⌘1</span>
+                </div>
+                <div class="popover-row">
+                  <div class="popover-swatch sw-warning"></div>
+                  <span class="popover-label">Warning</span>
+                  <span class="popover-key">⌘2</span>
+                </div>
+                <div class="popover-row">
+                  <div class="popover-swatch sw-success"></div>
+                  <span class="popover-label">Success</span>
+                  <span class="popover-key">⌘3</span>
+                </div>
+                <div class="popover-row">
+                  <div class="popover-swatch sw-number"></div>
+                  <span class="popover-label">Number</span>
+                  <span class="popover-key">⌘4</span>
+                </div>
+                <div class="popover-row">
+                  <div class="popover-swatch sw-service"></div>
+                  <span class="popover-label">Service</span>
+                  <span class="popover-key">⌘5</span>
+                </div>
+                <div class="popover-divider"></div>
+                <div class="popover-row">
+                  <div
+                    class="popover-swatch"
+                    style="
+                      border: 2px dashed rgba(255, 255, 255, 0.15);
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      color: #555;
+                      font-size: 10px;
+                    "
+                  >
+                    ✕
+                  </div>
+                  <span class="popover-label">Remove</span>
+                  <span class="popover-key">⌘0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="tb-sep"></div>
+            <div class="tb-toggle tb-compact">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+              COMPACT
+            </div>
+            <div class="tb-toggle tb-enhance">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+              </svg>
+              ENHANCE
+            </div>
+          </div>
+        </div>
+
+        <div class="pros-cons">
+          <div class="pro">
+            <span class="pc-icon">+</span> Minimal footprint — one button when closed
+          </div>
+          <div class="pro"><span class="pc-icon">+</span> Room for labels + keyboard shortcuts</div>
+          <div class="pro">
+            <span class="pc-icon">+</span> Color dots give a visual hint of what's inside
+          </div>
+          <div class="con"><span class="pc-icon">−</span> Extra click to reach swatches</div>
+        </div>
+      </div>
+
+      <!-- ===== OPTION B: Cycle button ===== -->
+      <div class="option">
+        <div class="option-header">
+          <span class="option-title">Option B — Active Color + Cycle Arrows</span>
+        </div>
+        <div class="option-desc">
+          Shows only the currently selected highlight color as a single swatch. Click arrows to
+          cycle through colors. Click the swatch to apply. Like the text color picker in Word/Google
+          Docs.
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Current color: Deadline (yellow)</div>
+          <div class="toolbar">
+            <div class="tb-btn"><strong>B</strong></div>
+            <div class="tb-btn"><em>I</em></div>
+            <div class="tb-btn" style="text-decoration: underline">U</div>
+            <div class="tb-sep"></div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <text
+                  x="2"
+                  y="8"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  1
+                </text>
+                <text
+                  x="2"
+                  y="14.5"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  2
+                </text>
+                <text
+                  x="2"
+                  y="21"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  3
+                </text>
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-sep"></div>
+
+            <div class="tb-hl-cycle">
+              <div class="tb-cycle-arrow">&#9664;</div>
+              <div
+                class="tb-active-swatch sw-deadline active"
+                title="Deadline — click to apply"
+              ></div>
+              <div class="tb-cycle-arrow">&#9654;</div>
+            </div>
+
+            <div class="tb-sep"></div>
+            <div class="tb-toggle tb-compact">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+              COMPACT
+            </div>
+            <div class="tb-toggle tb-enhance">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+              </svg>
+              ENHANCE
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Cycled to: Warning (red)</div>
+          <div class="toolbar">
+            <div class="tb-btn"><strong>B</strong></div>
+            <div class="tb-btn"><em>I</em></div>
+            <div class="tb-btn" style="text-decoration: underline">U</div>
+            <div class="tb-sep"></div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-btn">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              >
+                <text
+                  x="2"
+                  y="8"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  1
+                </text>
+                <text
+                  x="2"
+                  y="14.5"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  2
+                </text>
+                <text
+                  x="2"
+                  y="21"
+                  font-size="7"
+                  font-weight="700"
+                  fill="currentColor"
+                  stroke="none"
+                  font-family="sans-serif"
+                >
+                  3
+                </text>
+                <line x1="9" y1="6" x2="21" y2="6" />
+                <line x1="9" y1="12" x2="21" y2="12" />
+                <line x1="9" y1="18" x2="21" y2="18" />
+              </svg>
+            </div>
+            <div class="tb-sep"></div>
+
+            <div class="tb-hl-cycle">
+              <div class="tb-cycle-arrow">&#9664;</div>
+              <div
+                class="tb-active-swatch sw-warning active"
+                title="Warning — click to apply"
+              ></div>
+              <div class="tb-cycle-arrow">&#9654;</div>
+            </div>
+
+            <div class="tb-sep"></div>
+            <div class="tb-toggle tb-compact">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polyline points="4 14 10 14 10 20" />
+                <polyline points="20 10 14 10 14 4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+              COMPACT
+            </div>
+            <div class="tb-toggle tb-enhance">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+              </svg>
+              ENHANCE
+            </div>
+          </div>
+        </div>
+
+        <div class="pros-cons">
+          <div class="pro"><span class="pc-icon">+</span> Very compact — smaller than dropdown</div>
+          <div class="pro"><span class="pc-icon">+</span> One-click apply (no popover needed)</div>
+          <div class="con">
+            <span class="pc-icon">−</span> Tedious to reach a specific color (up to 4 clicks)
+          </div>
+          <div class="con">
+            <span class="pc-icon">−</span> No labels — harder to learn what each color means
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== OPTION C: Second row ===== -->
+      <div class="option">
+        <div class="option-header">
+          <span class="option-title">Option C — Collapsible Second Row</span>
+        </div>
+        <div class="option-desc">
+          Highlights live in a secondary toolbar row that slides open when you click a toggle or pen
+          icon. Keeps the primary row clean. The row remembers its state.
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Collapsed — highlight row hidden</div>
+          <div class="toolbar-two-row">
+            <div class="toolbar-row">
+              <div class="tb-btn"><strong>B</strong></div>
+              <div class="tb-btn"><em>I</em></div>
+              <div class="tb-btn" style="text-decoration: underline">U</div>
+              <div class="tb-sep"></div>
+              <div class="tb-btn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </div>
+              <div class="tb-btn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <text
+                    x="2"
+                    y="8"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    1
+                  </text>
+                  <text
+                    x="2"
+                    y="14.5"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    2
+                  </text>
+                  <text
+                    x="2"
+                    y="21"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    3
+                  </text>
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </div>
+              <div class="tb-sep"></div>
+              <div class="tb-btn" title="Toggle highlight palette" style="color: #666">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                </svg>
+              </div>
+              <div class="tb-sep"></div>
+              <div class="tb-toggle tb-compact">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="4 14 10 14 10 20" />
+                  <polyline points="20 10 14 10 14 4" />
+                  <line x1="14" y1="10" x2="21" y2="3" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+                COMPACT
+              </div>
+              <div class="tb-toggle tb-enhance">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+                </svg>
+                ENHANCE
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="toolbar-box">
+          <div class="toolbar-state-label">Expanded — highlight row visible</div>
+          <div class="toolbar-two-row">
+            <div class="toolbar-row">
+              <div class="tb-btn"><strong>B</strong></div>
+              <div class="tb-btn"><em>I</em></div>
+              <div class="tb-btn" style="text-decoration: underline">U</div>
+              <div class="tb-sep"></div>
+              <div class="tb-btn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </div>
+              <div class="tb-btn">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                >
+                  <text
+                    x="2"
+                    y="8"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    1
+                  </text>
+                  <text
+                    x="2"
+                    y="14.5"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    2
+                  </text>
+                  <text
+                    x="2"
+                    y="21"
+                    font-size="7"
+                    font-weight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    font-family="sans-serif"
+                  >
+                    3
+                  </text>
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </div>
+              <div class="tb-sep"></div>
+              <div
+                class="tb-btn"
+                title="Toggle highlight palette"
+                style="color: #fff; background: rgba(255, 255, 255, 0.1)"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+                </svg>
+              </div>
+              <div class="tb-sep"></div>
+              <div class="tb-toggle tb-compact">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="4 14 10 14 10 20" />
+                  <polyline points="20 10 14 10 14 4" />
+                  <line x1="14" y1="10" x2="21" y2="3" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+                COMPACT
+              </div>
+              <div class="tb-toggle tb-enhance">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+                </svg>
+                ENHANCE
+              </div>
+            </div>
+            <div class="toolbar-row toolbar-row-secondary">
+              <span class="hl-row-label">Highlight:</span>
+              <div
+                class="tb-swatch sw-deadline"
+                title="Deadline"
+                style="width: 20px; height: 20px"
+              ></div>
+              <span class="swatch-label-tiny">Deadline</span>
+              <div
+                class="tb-swatch sw-warning"
+                title="Warning"
+                style="width: 20px; height: 20px"
+              ></div>
+              <span class="swatch-label-tiny">Warning</span>
+              <div
+                class="tb-swatch sw-success"
+                title="Success"
+                style="width: 20px; height: 20px"
+              ></div>
+              <span class="swatch-label-tiny">Success</span>
+              <div
+                class="tb-swatch sw-number"
+                title="Number"
+                style="width: 20px; height: 20px"
+              ></div>
+              <span class="swatch-label-tiny">Number</span>
+              <div
+                class="tb-swatch sw-service"
+                title="Service"
+                style="width: 20px; height: 20px"
+              ></div>
+              <span class="swatch-label-tiny">Service</span>
+              <div class="tb-sep" style="height: 14px"></div>
+              <div
+                class="tb-swatch-clear"
+                title="Remove"
+                style="width: 20px; height: 20px; font-size: 9px"
+              >
+                ✕
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pros-cons">
+          <div class="pro">
+            <span class="pc-icon">+</span> All swatches visible with labels when open
+          </div>
+          <div class="pro">
+            <span class="pc-icon">+</span> No overlay/popover — stays in the toolbar flow
+          </div>
+          <div class="con"><span class="pc-icon">−</span> Adds vertical height when expanded</div>
+          <div class="con">
+            <span class="pc-icon">−</span> Slightly more complex animation than a popover
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
