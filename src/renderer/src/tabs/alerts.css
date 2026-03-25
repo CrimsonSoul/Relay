@@ -590,7 +590,7 @@
 }
 
 .alerts-email-meta-item {
-  font-size: 13px;
+  font-size: inherit;
   color: #777;
   font-family: 'IBM Plex Mono', monospace;
   letter-spacing: 0.03em;
