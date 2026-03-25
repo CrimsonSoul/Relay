@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import type { StandaloneNote } from '@shared/ipc';
 
 function createSearchContextValue(debouncedQuery = '') {
   return {
@@ -20,7 +21,31 @@ vi.mock('../../contexts/SearchContext', () => ({
 }));
 import { useSearchContext } from '../../contexts/SearchContext';
 
-// Mock secureStorage with an in-memory store
+// ---------------------------------------------------------------------------
+// Mock useNoteStorage — the PB-backed note CRUD layer
+// ---------------------------------------------------------------------------
+
+let mockNotes: StandaloneNote[] = [];
+const mockAddNote = vi.fn();
+const mockUpdateNote = vi.fn();
+const mockDeleteNote = vi.fn();
+const mockDuplicateNote = vi.fn();
+const mockReorderNotes = vi.fn();
+const mockSetVisibleOrder = vi.fn();
+
+vi.mock('../useNoteStorage', () => ({
+  useNoteStorage: () => ({
+    notes: mockNotes,
+    addNote: mockAddNote,
+    updateNote: mockUpdateNote,
+    deleteNote: mockDeleteNote,
+    duplicateNote: mockDuplicateNote,
+    reorderNotes: mockReorderNotes,
+    setVisibleOrder: mockSetVisibleOrder,
+  }),
+}));
+
+// Mock secureStorage (still used for font size)
 const secureStore = new Map<string, unknown>();
 vi.mock('../../utils/secureStorage', () => ({
   secureStorage: {
@@ -59,7 +84,7 @@ import { useNotepad, NOTE_COLORS } from '../useNotepad';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeNote(overrides: Record<string, unknown> = {}) {
+function makeNote(overrides: Record<string, unknown> = {}): StandaloneNote {
   return {
     id: `note-${Date.now()}-${crypto.randomUUID()}`,
     title: 'Test Note',
@@ -69,11 +94,15 @@ function makeNote(overrides: Record<string, unknown> = {}) {
     createdAt: 1000,
     updatedAt: 2000,
     ...overrides,
-  };
+  } as StandaloneNote;
 }
 
 function setSearchQuery(query: string) {
   vi.mocked(useSearchContext).mockReturnValue(createSearchContextValue(query));
+}
+
+function seedNotes(notes: StandaloneNote[]) {
+  mockNotes = notes;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,9 +112,22 @@ function setSearchQuery(query: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   secureStore.clear();
-  localStorage.clear();
+  mockNotes = [];
   uuidCounter = 0;
   setSearchQuery('');
+
+  // Default addNote mock returns a note object
+  mockAddNote.mockImplementation(
+    (input: Omit<StandaloneNote, 'id' | 'createdAt' | 'updatedAt'>) => {
+      const now = Date.now();
+      return {
+        ...input,
+        id: crypto.randomUUID(),
+        createdAt: now,
+        updatedAt: now,
+      } as StandaloneNote;
+    },
+  );
 });
 
 // ===========================================================================
@@ -94,12 +136,11 @@ beforeEach(() => {
 
 describe('useNotepad', () => {
   // -------------------------------------------------------------------------
-  // 1. Initial load from localStorage
+  // 1. Initial load
   // -------------------------------------------------------------------------
   describe('initial load', () => {
-    it('loads notes from localStorage when data exists', () => {
-      const stored = [makeNote({ id: 'existing-1', title: 'Stored Note' })];
-      secureStore.set('relay-notepad', stored);
+    it('loads notes from storage when data exists', () => {
+      seedNotes([makeNote({ id: 'existing-1', title: 'Stored Note' })]);
 
       const { result } = renderHook(() => useNotepad());
 
@@ -107,57 +148,21 @@ describe('useNotepad', () => {
       expect(result.current.notes[0].title).toBe('Stored Note');
     });
 
-    it('seeds sample notes when localStorage is empty', () => {
-      const { result } = renderHook(() => useNotepad());
-
-      // getSampleNotes creates 5 notes
-      expect(result.current.totalCount).toBe(5);
-      // Should have been persisted
-      const raw = secureStore.get('relay-notepad') as unknown[];
-      expect(raw).toBeDefined();
-      expect(raw.length).toBe(5);
-    });
-
-    it('returns empty array when localStorage contains corrupted data', () => {
-      secureStore.set('relay-notepad', '%%%NOT-JSON%%%');
-
+    it('returns empty array when storage is empty', () => {
+      seedNotes([]);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.notes).toEqual([]);
       expect(result.current.totalCount).toBe(0);
     });
-
-    it('migrates legacy pinned notes on load', () => {
-      secureStore.set('relay-notepad', [
-        {
-          id: 'legacy-1',
-          title: 'Legacy note',
-          content: 'legacy content',
-          color: 'amber',
-          tags: ['legacy'],
-          pinned: true,
-          createdAt: 100,
-          updatedAt: 200,
-        },
-      ]);
-
-      const { result } = renderHook(() => useNotepad());
-
-      expect(result.current.notes).toHaveLength(1);
-      expect('pinned' in result.current.notes[0]).toBe(false);
-
-      const stored = secureStore.get('relay-notepad') as Record<string, unknown>[];
-      expect(stored[0]).not.toHaveProperty('pinned');
-    });
   });
 
   // -------------------------------------------------------------------------
-  // 2. addNote
+  // 2. addNote — delegates to storage
   // -------------------------------------------------------------------------
   describe('addNote', () => {
     it('creates a note with UUID and timestamps', () => {
-      // Seed localStorage so we start with a known state (no samples)
-      secureStore.set('relay-notepad', []);
+      seedNotes([]);
       const { result } = renderHook(() => useNotepad());
 
       let newNote: ReturnType<typeof result.current.addNote>;
@@ -174,12 +179,10 @@ describe('useNotepad', () => {
       expect(newNote!.title).toBe('New');
       expect(newNote!.createdAt).toBeTypeOf('number');
       expect(newNote!.updatedAt).toBe(newNote!.createdAt);
-      expect(result.current.totalCount).toBe(1);
     });
 
-    it('prepends the new note to the list', () => {
-      const existing = [makeNote({ id: 'old', title: 'Old' })];
-      secureStore.set('relay-notepad', existing);
+    it('delegates to storage.addNote', () => {
+      seedNotes([makeNote({ id: 'old', title: 'Old' })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
@@ -191,184 +194,156 @@ describe('useNotepad', () => {
         });
       });
 
-      expect(result.current.totalCount).toBe(2);
+      expect(mockAddNote).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Fresh', color: 'amber' }),
+      );
     });
   });
 
   // -------------------------------------------------------------------------
-  // 3. updateNote
+  // 3. updateNote — delegates to storage
   // -------------------------------------------------------------------------
   describe('updateNote', () => {
-    it('updates the specified note and bumps updatedAt', () => {
-      const notes = [makeNote({ id: 'u1', title: 'Original', updatedAt: 100 })];
-      secureStore.set('relay-notepad', notes);
+    it('delegates to storage.updateNote with correct args', () => {
+      seedNotes([makeNote({ id: 'u1', title: 'Original', updatedAt: 100 })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.updateNote('u1', { title: 'Changed' });
       });
 
-      const updated = result.current.notes.find((n) => n.id === 'u1');
-      expect(updated!.title).toBe('Changed');
-      expect(updated!.updatedAt).toBeGreaterThan(100);
+      expect(mockUpdateNote).toHaveBeenCalledWith('u1', { title: 'Changed' });
     });
   });
 
   // -------------------------------------------------------------------------
-  // 4. deleteNote
+  // 4. deleteNote — delegates to storage
   // -------------------------------------------------------------------------
   describe('deleteNote', () => {
-    it('removes the note from the list', () => {
-      const notes = [makeNote({ id: 'd1' }), makeNote({ id: 'd2' })];
-      secureStore.set('relay-notepad', notes);
+    it('delegates to storage.deleteNote', () => {
+      seedNotes([makeNote({ id: 'd1' }), makeNote({ id: 'd2' })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.deleteNote('d1');
       });
 
-      expect(result.current.totalCount).toBe(1);
-      expect(result.current.notes.every((n) => n.id !== 'd1')).toBe(true);
+      expect(mockDeleteNote).toHaveBeenCalledWith('d1');
     });
   });
 
   // -------------------------------------------------------------------------
-  // 5. duplicateNote
+  // 5. duplicateNote — delegates to storage
   // -------------------------------------------------------------------------
   describe('duplicateNote', () => {
-    it('copies a note when source is found', () => {
-      const notes = [makeNote({ id: 'dup1', title: 'Original', color: 'red', tags: ['x'] })];
-      secureStore.set('relay-notepad', notes);
+    it('delegates to storage.duplicateNote', () => {
+      seedNotes([makeNote({ id: 'dup1', title: 'Original', color: 'red', tags: ['x'] })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.duplicateNote('dup1');
       });
 
-      expect(result.current.totalCount).toBe(2);
-      const copy = result.current.notes.find((n) => n.id !== 'dup1');
-      expect(copy!.title).toBe('Original (copy)');
-      expect(copy!.color).toBe('red');
-      expect(copy!.tags).toEqual(['x']);
+      expect(mockDuplicateNote).toHaveBeenCalledWith('dup1');
     });
 
-    it('does nothing when source is not found', () => {
-      secureStore.set('relay-notepad', [makeNote({ id: 'a' })]);
+    it('does nothing for nonexistent note (delegates to storage)', () => {
+      seedNotes([makeNote({ id: 'a' })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.duplicateNote('nonexistent');
       });
 
-      expect(result.current.totalCount).toBe(1);
+      expect(mockDuplicateNote).toHaveBeenCalledWith('nonexistent');
     });
   });
 
   // -------------------------------------------------------------------------
-  // 6. reorderNotes
+  // 6. reorderNotes — delegates to storage
   // -------------------------------------------------------------------------
   describe('reorderNotes', () => {
-    it('swaps notes for valid ids', () => {
-      const notes = [
+    it('delegates to storage.reorderNotes', () => {
+      seedNotes([
         makeNote({ id: 'r1', title: 'First' }),
         makeNote({ id: 'r2', title: 'Second' }),
         makeNote({ id: 'r3', title: 'Third' }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.reorderNotes('r1', 'r3');
       });
 
-      expect(result.current.notes.map((n) => n.id)).toEqual(['r3', 'r2', 'r1']);
+      expect(mockReorderNotes).toHaveBeenCalledWith('r1', 'r3');
     });
 
-    it('does nothing when activeId equals overId (same index)', () => {
-      const notes = [makeNote({ id: 's1' }), makeNote({ id: 's2' })];
-      secureStore.set('relay-notepad', notes);
+    it('delegates same-id reorder to storage', () => {
+      seedNotes([makeNote({ id: 's1' }), makeNote({ id: 's2' })]);
       const { result } = renderHook(() => useNotepad());
-
-      const before = result.current.notes.map((n) => n.id);
 
       act(() => {
         result.current.reorderNotes('s1', 's1');
       });
 
-      // Order should be unchanged
-      expect(result.current.notes.map((n) => n.id)).toEqual(before);
+      expect(mockReorderNotes).toHaveBeenCalledWith('s1', 's1');
     });
 
-    it('does nothing when an id is not found', () => {
-      const notes = [makeNote({ id: 'f1' })];
-      secureStore.set('relay-notepad', notes);
-      const { result } = renderHook(() => useNotepad());
-
-      act(() => {
-        result.current.reorderNotes('f1', 'ghost');
-      });
-
-      expect(result.current.totalCount).toBe(1);
-    });
-
-    it('reorders only visible notes when visibleIds are provided', () => {
-      const notes = [
+    it('delegates reorder with visibleIds to storage', () => {
+      seedNotes([
         makeNote({ id: 'a', tags: ['ops'] }),
         makeNote({ id: 'b', tags: ['infra'] }),
         makeNote({ id: 'c', tags: ['ops'] }),
         makeNote({ id: 'd', tags: ['infra'] }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.reorderNotes('c', 'a', ['a', 'c']);
       });
 
-      expect(result.current.notes.map((n) => n.id)).toEqual(['c', 'b', 'a', 'd']);
+      expect(mockReorderNotes).toHaveBeenCalledWith('c', 'a', ['a', 'c']);
     });
   });
 
   // -------------------------------------------------------------------------
-  // 7. setVisibleOrder
+  // 7. setVisibleOrder — delegates to storage
   // -------------------------------------------------------------------------
   describe('setVisibleOrder', () => {
-    it('applies full visible order when all notes are visible', () => {
-      const notes = [makeNote({ id: 'a' }), makeNote({ id: 'b' }), makeNote({ id: 'c' })];
-      secureStore.set('relay-notepad', notes);
+    it('delegates to storage.setVisibleOrder', () => {
+      seedNotes([makeNote({ id: 'a' }), makeNote({ id: 'b' }), makeNote({ id: 'c' })]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.setVisibleOrder(['b', 'c', 'a']);
       });
 
-      expect(result.current.notes.map((n) => n.id)).toEqual(['b', 'c', 'a']);
+      expect(mockSetVisibleOrder).toHaveBeenCalledWith(['b', 'c', 'a']);
     });
 
-    it('applies ordered visible subset while keeping hidden notes in place', () => {
-      const notes = [
+    it('delegates with visibleIds to storage', () => {
+      seedNotes([
         makeNote({ id: 'a', tags: ['ops'] }),
         makeNote({ id: 'b', tags: ['infra'] }),
         makeNote({ id: 'c', tags: ['ops'] }),
         makeNote({ id: 'd', tags: ['infra'] }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
       const { result } = renderHook(() => useNotepad());
 
       act(() => {
         result.current.setVisibleOrder(['c', 'a'], ['a', 'c']);
       });
 
-      expect(result.current.notes.map((n) => n.id)).toEqual(['c', 'b', 'a', 'd']);
+      expect(mockSetVisibleOrder).toHaveBeenCalledWith(['c', 'a'], ['a', 'c']);
     });
   });
 
   // -------------------------------------------------------------------------
-  // 8. Filtering
+  // 8. Filtering (useNotepad's own logic)
   // -------------------------------------------------------------------------
   describe('filtering', () => {
     function setupFilterNotes() {
-      const notes = [
+      seedNotes([
         makeNote({
           id: 'f1',
           title: 'Server Runbook',
@@ -390,8 +365,7 @@ describe('useNotepad', () => {
           tags: ['ideas'],
           updatedAt: 100,
         }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
     }
 
     it('filters by debouncedQuery matching title', () => {
@@ -449,11 +423,10 @@ describe('useNotepad', () => {
     });
 
     it('combines search query and activeTag filters', () => {
-      const notes = [
+      seedNotes([
         makeNote({ id: 'c1', title: 'Alpha', tags: ['work'], updatedAt: 200 }),
         makeNote({ id: 'c2', title: 'Alpha Beta', tags: ['personal'], updatedAt: 100 }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
       setSearchQuery('alpha');
       const { result } = renderHook(() => useNotepad());
 
@@ -474,8 +447,8 @@ describe('useNotepad', () => {
   // 10. setFontSize
   // -------------------------------------------------------------------------
   describe('setFontSize', () => {
-    it('updates fontSize state and persists to localStorage', () => {
-      secureStore.set('relay-notepad', []);
+    it('updates fontSize state and persists to secureStorage', () => {
+      seedNotes([]);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.fontSize).toBe('md'); // default
@@ -494,28 +467,28 @@ describe('useNotepad', () => {
   // -------------------------------------------------------------------------
   describe('loadFontSize (via initial state)', () => {
     it('loads "sm" from secureStorage', () => {
-      secureStore.set('relay-notepad', []);
+      seedNotes([]);
       secureStore.set('notepad-fontsize', 'sm');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('sm');
     });
 
     it('loads "lg" from secureStorage', () => {
-      secureStore.set('relay-notepad', []);
+      seedNotes([]);
       secureStore.set('notepad-fontsize', 'lg');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('lg');
     });
 
     it('defaults to "md" for invalid value', () => {
-      secureStore.set('relay-notepad', []);
+      seedNotes([]);
       secureStore.set('notepad-fontsize', 'xl');
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('md');
     });
 
     it('defaults to "md" when no value is stored', () => {
-      secureStore.set('relay-notepad', []);
+      seedNotes([]);
       const { result } = renderHook(() => useNotepad());
       expect(result.current.fontSize).toBe('md');
     });
@@ -526,19 +499,17 @@ describe('useNotepad', () => {
   // -------------------------------------------------------------------------
   describe('allTags', () => {
     it('computes unique sorted tags from all notes', () => {
-      const notes = [
+      seedNotes([
         makeNote({ id: 't1', tags: ['zebra', 'apple'] }),
         makeNote({ id: 't2', tags: ['banana', 'apple'] }),
-      ];
-      secureStore.set('relay-notepad', notes);
+      ]);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.allTags).toEqual(['apple', 'banana', 'zebra']);
     });
 
     it('returns empty array when no notes have tags', () => {
-      const notes = [makeNote({ id: 'nt1', tags: [] })];
-      secureStore.set('relay-notepad', notes);
+      seedNotes([makeNote({ id: 'nt1', tags: [] })]);
       const { result } = renderHook(() => useNotepad());
 
       expect(result.current.allTags).toEqual([]);

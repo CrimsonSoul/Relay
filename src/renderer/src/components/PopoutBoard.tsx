@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { OnCallRow, Contact, TeamLayout } from '@shared/ipc';
+import { OnCallRow, Contact } from '@shared/ipc';
 import { CollapsibleHeader, useCollapsibleHeader } from './CollapsibleHeader';
 import { TeamCard } from './personnel/TeamCard';
 import { usePersonnel } from '../hooks/usePersonnel';
@@ -11,14 +11,9 @@ import { useOnCallBoard } from '../hooks/useOnCallBoard';
 interface PopoutBoardProps {
   onCall: OnCallRow[];
   contacts: Contact[];
-  teamLayout?: TeamLayout;
 }
 
-export const PopoutBoard: React.FC<PopoutBoardProps> = ({
-  onCall,
-  contacts,
-  teamLayout: _teamLayout,
-}) => {
+export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) => {
   const { localOnCall, weekRange, dismissedAlerts, getAlertKey, dayOfWeek, teams, tick } =
     usePersonnel(onCall);
 

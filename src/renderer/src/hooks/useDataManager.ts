@@ -22,7 +22,7 @@ const CATEGORY_TO_COLLECTION: Record<Exclude<DataCategory, 'all'>, CollectionNam
   alert_history: 'alert_history',
   notes: 'notes',
   saved_locations: 'saved_locations',
-  oncall_layout: 'oncall_layout',
+  standalone_notes: 'standalone_notes',
 };
 
 /** Trigger a browser file download from in-memory data. */

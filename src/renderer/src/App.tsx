@@ -169,11 +169,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
           {popoutRoute?.includes('board') && (
             <ErrorBoundary fallback={errorFallback}>
               <Suspense fallback={<TabFallback />}>
-                <PopoutBoard
-                  onCall={data.onCall}
-                  contacts={data.contacts}
-                  teamLayout={data.teamLayout}
-                />
+                <PopoutBoard onCall={data.onCall} contacts={data.contacts} />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -264,11 +260,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
               >
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <PersonnelTab
-                      onCall={data.onCall}
-                      contacts={data.contacts}
-                      teamLayout={data.teamLayout}
-                    />
+                    <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
                   </Suspense>
                 </ErrorBoundary>
               </div>

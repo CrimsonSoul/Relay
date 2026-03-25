@@ -6,7 +6,6 @@ const logger = loggers.pocketbase;
 export interface PocketBaseConfig {
   binaryPath: string;
   dataDir: string;
-  migrationsDir: string;
   host: string;
   port: number;
 }
@@ -36,7 +35,6 @@ export class PocketBaseProcess {
       'serve',
       `--http=${this.config.host}:${this.config.port}`,
       `--dir=${this.config.dataDir}`,
-      `--migrationsDir=${this.config.migrationsDir}`,
     ];
   }
 

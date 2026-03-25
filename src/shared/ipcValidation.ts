@@ -178,20 +178,6 @@ export const OnCallRecordSchema = z.object({
   updatedAt: z.number(),
 });
 
-export const TeamLayoutSchema = z
-  .record(
-    z.string().max(MAX_NAME),
-    z.object({
-      x: z.number().min(-10000).max(10000),
-      y: z.number().min(-10000).max(10000),
-      w: z.number().min(0).max(10000).optional(),
-      h: z.number().min(0).max(10000).optional(),
-      static: z.boolean().optional(),
-    }),
-  )
-  .refine((obj) => Object.keys(obj).length <= 100, 'Too many teams in layout (max 100)')
-  .optional();
-
 export const RadarSnapshotSchema = z.object({
   counters: z.object({
     ok: z.number().int().min(0).optional(),

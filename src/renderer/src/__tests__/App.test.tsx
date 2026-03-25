@@ -179,7 +179,7 @@ vi.mock('../components/PopoutBoard', () => ({
 const mockHandleSync = vi.fn();
 vi.mock('../hooks/useAppData', () => ({
   useAppData: () => ({
-    data: { contacts: [], groups: [], servers: [], onCall: [], teamLayout: [] },
+    data: { contacts: [], groups: [], servers: [], onCall: [] },
     isReloading: false,
     handleSync: mockHandleSync,
   }),

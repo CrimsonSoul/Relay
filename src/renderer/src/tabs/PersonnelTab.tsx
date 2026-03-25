@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useModalState } from '../hooks/useModalState';
-import { OnCallRow, Contact, TeamLayout } from '@shared/ipc';
+import { OnCallRow, Contact } from '@shared/ipc';
 import { TactileButton } from '../components/TactileButton';
 import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
@@ -30,8 +30,7 @@ import { useOnCallBoard } from '../hooks/useOnCallBoard';
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
-  teamLayout?: TeamLayout;
-}> = ({ onCall, contacts, teamLayout: _teamLayout }) => {
+}> = ({ onCall, contacts }) => {
   const {
     localOnCall,
     weekRange,

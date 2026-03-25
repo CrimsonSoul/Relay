@@ -30,13 +30,8 @@ extraResources:
     filter:
       - '**/*'
       - '!pocketbase/**'
-      - '!pb_migrations/**'
   - from: 'resources/pocketbase/'
     to: 'pocketbase/'
-    filter:
-      - '**/*'
-  - from: 'resources/pb_migrations/'
-    to: 'pb_migrations/'
     filter:
       - '**/*'
 win:

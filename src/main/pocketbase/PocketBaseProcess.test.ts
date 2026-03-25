@@ -67,7 +67,6 @@ describe('PocketBaseProcess', () => {
     pbProcess = new PocketBaseProcess({
       binaryPath: '/fake/pocketbase',
       dataDir: '/fake/data/pb_data',
-      migrationsDir: '/fake/data/pb_migrations',
       host: '127.0.0.1',
       port: 8090,
     });
@@ -87,7 +86,6 @@ describe('PocketBaseProcess', () => {
     const pb = new PocketBaseProcess({
       binaryPath: '/fake/pb',
       dataDir: '/fake/data',
-      migrationsDir: '/fake/migrations',
       host: '0.0.0.0',
       port: 9090,
     });
@@ -99,7 +97,6 @@ describe('PocketBaseProcess', () => {
     const pb = new PocketBaseProcess({
       binaryPath: '/fake/pb',
       dataDir: '/fake/data',
-      migrationsDir: '/fake/migrations',
       host: '0.0.0.0',
       port: 9090,
     });
@@ -111,7 +108,6 @@ describe('PocketBaseProcess', () => {
       'serve',
       '--http=127.0.0.1:8090',
       '--dir=/fake/data/pb_data',
-      '--migrationsDir=/fake/data/pb_migrations',
     ]);
   });
 
@@ -126,12 +122,7 @@ describe('PocketBaseProcess', () => {
 
     expect(mockSpawn).toHaveBeenCalledWith(
       '/fake/pocketbase',
-      [
-        'serve',
-        '--http=127.0.0.1:8090',
-        '--dir=/fake/data/pb_data',
-        '--migrationsDir=/fake/data/pb_migrations',
-      ],
+      ['serve', '--http=127.0.0.1:8090', '--dir=/fake/data/pb_data'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
   });

@@ -48,7 +48,7 @@ export const CategorySelect: React.FC<{
     <option value="alert_history">Alert History</option>
     <option value="notes">Notes</option>
     <option value="saved_locations">Saved Locations</option>
-    <option value="oncall_layout">On-Call Layout</option>
+    <option value="standalone_notes">Standalone Notes</option>
   </select>
 );
 
