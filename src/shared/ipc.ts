@@ -51,6 +51,12 @@ export type IpcResult<T = void> = {
   rateLimited?: boolean;
 };
 
+export type BackupEntry = {
+  name: string;
+  date: string;
+  size: number;
+};
+
 export type TabName =
   | 'Compose'
   | 'Alerts'
@@ -169,16 +175,11 @@ export type StandaloneNote = {
   updatedAt: number;
 };
 
-export type TeamLayout = {
-  [teamName: string]: { x: number; y: number; w?: number; h?: number; static?: boolean };
-};
-
 export type AppData = {
   groups: BridgeGroup[];
   contacts: Contact[];
   servers: Server[];
   onCall: OnCallRow[];
-  teamLayout?: TeamLayout;
   lastUpdated: number;
 };
 
@@ -309,6 +310,10 @@ export type BridgeAPI = {
   getPbUrl: () => Promise<string | null>;
   getPbSecret: () => Promise<string | null>;
   startPocketBase: () => Promise<boolean>;
+  // Backups
+  listBackups: () => Promise<BackupEntry[]>;
+  createBackup: () => Promise<IpcResult<string>>;
+  restoreBackup: (name: string) => Promise<IpcResult>;
   platform:
     | 'aix'
     | 'android'
@@ -370,6 +375,10 @@ export const IPC_CHANNELS = {
   PB_GET_URL: 'pb:getUrl',
   PB_GET_SECRET: 'pb:getSecret',
   PB_START: 'pb:start',
+  // Backups
+  BACKUP_LIST: 'backup:list',
+  BACKUP_CREATE: 'backup:create',
+  BACKUP_RESTORE: 'backup:restore',
   // Sync
   SYNC_PENDING: 'sync:pending',
 } as const;
@@ -501,7 +510,7 @@ export type DataCategory =
   | 'alert_history'
   | 'notes'
   | 'saved_locations'
-  | 'oncall_layout'
+  | 'standalone_notes'
   | 'all';
 
 export type ExportOptions = {
