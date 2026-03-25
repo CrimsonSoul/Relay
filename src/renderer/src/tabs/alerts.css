@@ -328,8 +328,9 @@
 
 .alerts-body-toolbar {
   display: flex;
-  gap: 2px;
-  padding: 4px 6px;
+  gap: 3px;
+  padding: 5px 8px;
+  flex-wrap: wrap;
   background: var(--color-bg-surface);
   border-bottom: 1px solid var(--color-border-subtle);
   flex-shrink: 0;
@@ -339,8 +340,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 26px;
+  min-width: 30px;
+  height: 28px;
   border: none;
   border-radius: 4px;
   background: transparent;
@@ -482,13 +483,14 @@
 .alerts-email-card {
   background: #ffffff;
   width: 100%;
-  max-width: 640px;
+  max-width: 700px;
   border-radius: 10px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   font-family: 'IBM Plex Sans', sans-serif;
   color: #1a1a2e;
   border: 2px solid var(--email-banner);
+  border-bottom-width: 5px;
 }
 
 .alerts-email-severity-header {
@@ -645,11 +647,12 @@
 
 /* Footer logo + timestamp */
 .alerts-email-footer-logo {
-  height: 22px;
+  height: 14px;
   width: auto;
   max-width: 120px;
   object-fit: contain;
-  opacity: 0.55;
+  opacity: 0.45;
+  filter: grayscale(1);
 }
 
 .alerts-email-footer-spacer {
@@ -997,6 +1000,7 @@
 .alerts-email-event-time {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 9px 36px;
   background: linear-gradient(135deg, #fff8e1 0%, #fff3cd 100%);

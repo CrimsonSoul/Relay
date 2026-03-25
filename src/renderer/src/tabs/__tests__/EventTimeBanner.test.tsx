@@ -35,12 +35,12 @@ describe('EventTimeBanner', () => {
         endTime="2026-04-05T11:00:00Z"
       />,
     );
-    expect(screen.getByText(/02:00/)).toBeTruthy();
-    expect(screen.getByText(/06:00/)).toBeTruthy();
+    expect(screen.getByText(/2:00\s*AM/)).toBeTruthy();
+    expect(screen.getByText(/6:00\s*AM/)).toBeTruthy();
   });
 
   it('shows only start time when no end time', () => {
     render(<EventTimeBanner severity="ISSUE" startTime="2026-03-25T19:15:00Z" />);
-    expect(screen.getByText(/14:15/)).toBeTruthy();
+    expect(screen.getByText(/2:15\s*PM/)).toBeTruthy();
   });
 });

@@ -34,9 +34,9 @@ function formatEventDateTime(isoString: string): string {
     }) +
     ' · ' +
     date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
-      hour12: false,
+      hour12: true,
       timeZone: CENTRAL_TZ,
       timeZoneName: 'short',
     })
@@ -46,9 +46,9 @@ function formatEventDateTime(isoString: string): string {
 function formatTimeOnly(isoString: string): string {
   const date = new Date(isoString);
   return date.toLocaleTimeString('en-US', {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
-    hour12: false,
+    hour12: true,
     timeZone: CENTRAL_TZ,
     timeZoneName: 'short',
   });
@@ -75,7 +75,7 @@ export const EventTimeBanner: React.FC<EventTimeBannerProps> = ({
   let timeDisplay: string;
   if (endDate && sameDay) {
     timeDisplay = formatEventDateTime(startTime).replace(
-      /(\d{2}:\d{2}\s*\w+)$/,
+      /(\d{1,2}:\d{2}\s*[AP]M\s*\w+)$/,
       `$1 – ${formatTimeOnly(endTime!)}`,
     );
   } else if (endDate) {

@@ -120,7 +120,7 @@ export const AlertsTab: React.FC = () => {
     // Force card to render at full width regardless of viewport
     const el = cardRef.current;
     const prev = el.style.minWidth;
-    el.style.minWidth = '640px';
+    el.style.minWidth = '700px';
     try {
       const { default: html2canvas } = await import('html2canvas');
       return await html2canvas(el, {
@@ -139,7 +139,15 @@ export const AlertsTab: React.FC = () => {
     async (action: (dataUrl: string) => Promise<void>) => {
       setIsCapturing(true);
       try {
-        const canvas = await captureCard();
+        const hiRes = await captureCard();
+        // Scale 3x capture back to 1x for a crisp but normal-sized image
+        const w = Math.round(hiRes.width / 3);
+        const h = Math.round(hiRes.height / 3);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(hiRes, 0, 0, w, h);
         const dataUrl = canvas.toDataURL('image/png');
         await action(dataUrl);
       } catch {
