@@ -11,6 +11,7 @@ import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import type { BackupManager } from '../pocketbase/BackupManager';
 import type { RetentionManager } from '../pocketbase/RetentionManager';
+import type PocketBase from 'pocketbase';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
@@ -23,6 +24,7 @@ export interface AppState {
   pbProcess: PocketBaseProcess | null;
   backupManager: BackupManager | null;
   retentionManager: RetentionManager | null;
+  pbClient: PocketBase | null;
   offlineCache: OfflineCache | null;
   pendingChanges: PendingChanges | null;
   syncManager: SyncManager | null;
@@ -35,6 +37,7 @@ export const state: AppState = {
   pbProcess: null,
   backupManager: null,
   retentionManager: null,
+  pbClient: null,
   offlineCache: null,
   pendingChanges: null,
   syncManager: null,
@@ -101,7 +104,10 @@ export async function handleDataPathChange(newPath: string): Promise<void> {
   dataRootPromise = null;
 }
 
-export function setupIpc(createAuxWindow?: (route: string) => void) {
+export function setupIpc(
+  createAuxWindow?: (route: string) => void,
+  restartPb?: () => Promise<boolean>,
+) {
   setupIpcHandlers(
     () => state.mainWindow,
     getDataRoot,
@@ -110,6 +116,8 @@ export function setupIpc(createAuxWindow?: (route: string) => void) {
     () => state.offlineCache,
     () => state.pendingChanges,
     () => state.syncManager,
+    () => state.backupManager,
+    restartPb,
   );
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);

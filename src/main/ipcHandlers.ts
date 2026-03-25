@@ -6,10 +6,12 @@ import { setupConfigHandlers } from './handlers/configHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupCacheHandlers } from './handlers/cacheHandlers';
+import { setupBackupHandlers } from './handlers/backupHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
 import type { PendingChanges } from './cache/PendingChanges';
 import type { SyncManager } from './cache/SyncManager';
+import type { BackupManager } from './pocketbase/BackupManager';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 
@@ -26,6 +28,8 @@ export function setupIpcHandlers(
   getCache?: () => OfflineCache | null,
   getPendingChanges?: () => PendingChanges | null,
   getSyncManager?: () => SyncManager | null,
+  getBackupManager?: () => BackupManager | null,
+  restartPb?: () => Promise<boolean>,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
     try {
@@ -58,6 +62,14 @@ export function setupIpcHandlers(
       getPendingChanges ?? (() => null),
       getSyncManager ?? (() => null),
       getAppConfig ?? (() => null),
+    ),
+  );
+
+  // Backup Management
+  safeSetup('backup', () =>
+    setupBackupHandlers(
+      getBackupManager ?? (() => null),
+      restartPb ?? (() => Promise.resolve(false)),
     ),
   );
 }

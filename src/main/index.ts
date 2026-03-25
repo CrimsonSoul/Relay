@@ -161,7 +161,12 @@ if (gotLock) {
         return config?.secret ?? null;
       });
 
-      setupIpc(createAuxWindow);
+      const restartPb = async (): Promise<boolean> => {
+        const config = state.appConfig?.load();
+        if (!config || config.mode !== 'server') return false;
+        return startPocketBase(config as ServerConfig, configDataDir);
+      };
+      setupIpc(createAuxWindow, restartPb);
       await createWindow();
       const cleanupMaintenance = setupMaintenanceTasks();
 

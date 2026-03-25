@@ -1,11 +1,11 @@
 import { app } from 'electron';
-import { join, dirname } from 'node:path';
-import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { loggers } from '../logger';
 import type { ServerConfig } from '../config/AppConfig';
 import { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { BackupManager } from '../pocketbase/BackupManager';
 import { RetentionManager } from '../pocketbase/RetentionManager';
+import { ensureCollections } from '../pocketbase/CollectionBootstrap';
 import { state } from './appState';
 
 /**
@@ -79,34 +79,6 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
   }
 }
 
-/** Find the pb_migrations directory — tries multiple candidate paths for packaged builds. */
-function resolveMigrationsDir(_pbDataDir: string): string {
-  const appRoot = app.isPackaged ? process.resourcesPath : process.cwd();
-  const candidates = app.isPackaged
-    ? [
-        join(process.resourcesPath, 'pb_migrations'),
-        join(process.resourcesPath, 'data', 'pb_migrations'),
-        join(dirname(process.execPath), 'resources', 'pb_migrations'),
-        join(dirname(process.execPath), 'pb_migrations'),
-      ]
-    : [join(appRoot, 'resources', 'pb_migrations')];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      loggers.pocketbase.info('Found migrations', { path: candidate });
-      return candidate;
-    }
-  }
-
-  // Fallback: copy to pb_data if none found (shouldn't happen if build is correct)
-  loggers.pocketbase.warn('No migrations directory found in expected locations', {
-    candidates,
-    resourcesPath: process.resourcesPath,
-    execPath: process.execPath,
-  });
-  return candidates[0]; // Return first candidate even if missing — PB will log its own error
-}
-
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
 let pbStartPromise: Promise<boolean> | null = null;
 
@@ -146,13 +118,10 @@ const doStartPocketBase = async (
       ? join(process.resourcesPath, 'pocketbase', binaryName)
       : join(appRoot, 'resources', 'pocketbase', binaryName);
     const pbDataDir = join(configDataDir, 'pb_data');
-    const migrationsDir = resolveMigrationsDir(pbDataDir);
 
     loggers.pocketbase.info('PocketBase paths', {
       binaryPath,
       pbDataDir,
-      migrationsDir,
-      migrationsExists: existsSync(migrationsDir),
       resourcesPath: process.resourcesPath,
       execPath: process.execPath,
       isPackaged: app.isPackaged,
@@ -164,7 +133,6 @@ const doStartPocketBase = async (
     state.pbProcess = new PocketBaseProcess({
       binaryPath,
       dataDir: pbDataDir,
-      migrationsDir,
       host: '0.0.0.0',
       port: serverConfig.port,
     });
@@ -188,6 +156,8 @@ const doStartPocketBase = async (
         const PocketBase = (await import('pocketbase')).default;
         const pb = new PocketBase(localUrl);
         await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+        await ensureCollections(pb);
+        state.pbClient = pb;
         state.backupManager.setPocketBase(pb);
         await state.backupManager.backup();
         state.retentionManager = new RetentionManager(pb);
