@@ -1,33 +1,30 @@
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { NoopToastProvider } from '../../components/Toast';
 import type { OnCallRow } from '@shared/ipc';
 
-// Mock secureStorage with an in-memory store
-const secureStore = new Map<string, unknown>();
-vi.mock('../../utils/secureStorage', () => ({
-  secureStorage: {
-    getItemSync: vi.fn((key: string, defaultValue?: unknown) => {
-      const val = secureStore.get(key);
-      return val !== undefined ? val : defaultValue;
-    }),
-    setItemSync: vi.fn((key: string, value: unknown) => {
-      secureStore.set(key, value);
-    }),
-    removeItem: vi.fn((key: string) => {
-      secureStore.delete(key);
-    }),
-    clear: vi.fn(() => {
-      secureStore.clear();
-    }),
-    getItem: vi.fn(async (key: string, defaultValue?: unknown) => {
-      const val = secureStore.get(key);
-      return val !== undefined ? val : defaultValue;
-    }),
-    setItem: vi.fn(async (key: string, value: unknown) => {
-      secureStore.set(key, value);
-    }),
+const mockDismissAlert = vi.fn().mockResolvedValue({ id: 'rec1' });
+vi.mock('../../services/oncallDismissalService', () => ({
+  dismissAlert: (...args: unknown[]) => mockDismissAlert(...args),
+}));
+
+// Mock useCollection to return dismissal records
+const mockDismissalRecords: Array<{
+  id: string;
+  alertType: string;
+  dateKey: string;
+  collectionId: string;
+  collectionName: string;
+  created: string;
+  updated: string;
+}> = [];
+vi.mock('../useCollection', () => ({
+  useCollection: (name: string) => {
+    if (name === 'oncall_dismissals') {
+      return { data: mockDismissalRecords, loading: false, error: null, refetch: vi.fn() };
+    }
+    return { data: [], loading: false, error: null, refetch: vi.fn() };
   },
 }));
 
@@ -73,13 +70,7 @@ describe('usePersonnel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    secureStore.clear();
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    secureStore.clear();
-    localStorage.clear();
+    mockDismissalRecords.length = 0;
   });
 
   it('initializes with provided on-call rows', () => {
@@ -251,16 +242,18 @@ describe('usePersonnel', () => {
     expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} - [A-Za-z]+ \d{1,2}, \d{4}$/);
   });
 
-  it('dismisses alerts and persists to secureStorage', () => {
+  it('dismisses alerts optimistically and persists to PB', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
     act(() => {
       result.current.dismissAlert('general');
     });
 
-    const key = result.current.getAlertKey('general');
-    expect(result.current.dismissedAlerts.has(key)).toBe(true);
-    expect(secureStore.get(`dismissed-${key}`)).toBe('true');
+    expect(result.current.dismissedAlerts.has('general')).toBe(true);
+    expect(mockDismissAlert).toHaveBeenCalledWith(
+      'general',
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
   });
 
   it('handleUpdateRows auto-dismisses general alert on Monday', async () => {
@@ -273,8 +266,7 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Network', [makeRow('Network', 'Primary', 'Alice')]);
     });
 
-    const key = result.current.getAlertKey('general');
-    expect(result.current.dismissedAlerts.has(key)).toBe(true);
+    expect(result.current.dismissedAlerts.has('general')).toBe(true);
   });
 
   it('handleUpdateRows rolls back on API failure and toasts', async () => {
@@ -294,11 +286,32 @@ describe('usePersonnel', () => {
     expect(networkRows[1]!.name).toBe('Bob');
   });
 
-  it('getAlertKey generates date-based key', () => {
-    vi.setSystemTime(new Date(2026, 1, 6, 12, 0, 0)); // Feb 6, 2026
+  it('dismissedAlerts reflects PB records for today', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    mockDismissalRecords.push(
+      {
+        id: 'r1',
+        alertType: 'oracle',
+        dateKey: today,
+        collectionId: '',
+        collectionName: 'oncall_dismissals',
+        created: '',
+        updated: '',
+      },
+      {
+        id: 'r2',
+        alertType: 'sql',
+        dateKey: '2020-01-01',
+        collectionId: '',
+        collectionName: 'oncall_dismissals',
+        created: '',
+        updated: '',
+      },
+    );
+
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
-    const key = result.current.getAlertKey('general');
-    expect(key).toBe('2026-1-6-general');
+    expect(result.current.dismissedAlerts.has('oracle')).toBe(true);
+    expect(result.current.dismissedAlerts.has('sql')).toBe(false);
   });
 });

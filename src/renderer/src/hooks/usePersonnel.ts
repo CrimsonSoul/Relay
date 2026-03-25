@@ -15,7 +15,6 @@ export function usePersonnel(onCall: OnCallRow[]) {
     weekRange: manager.weekRange,
     dismissedAlerts: alerts.dismissedAlerts,
     dismissAlert: alerts.dismissAlert,
-    getAlertKey: alerts.getAlertKey,
     dayOfWeek: alerts.dayOfWeek,
     teams: manager.teams,
     handleUpdateRows: manager.handleUpdateRows,
