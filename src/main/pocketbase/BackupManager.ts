@@ -42,6 +42,29 @@ export class BackupManager {
     }
   }
 
+  /**
+   * Restore from a named backup.
+   * Creates a safety backup first, then delegates to PB's restore API.
+   * Caller is responsible for restarting PocketBase after this returns.
+   */
+  async restore(name: string): Promise<void> {
+    if (!this.pb) throw new Error('No PocketBase client available');
+
+    // Safety backup before overwriting
+    const safetyName = `pre-restore-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    try {
+      await this.pb.backups.create(safetyName);
+      logger.info('Pre-restore safety backup created', { name: safetyName });
+    } catch (err) {
+      logger.error('Failed to create pre-restore safety backup', { error: err });
+      throw new Error('Could not create safety backup before restore');
+    }
+
+    // Restore the requested backup
+    await this.pb.backups.restore(name);
+    logger.info('Backup restored', { name });
+  }
+
   private pruneOldBackups(): void {
     const files = readdirSync(this.backupsDir)
       .filter((f) => f.endsWith('.db') || f.endsWith('.zip'))
