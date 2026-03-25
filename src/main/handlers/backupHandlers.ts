@@ -27,7 +27,6 @@ export function setupBackupHandlers(
 
     try {
       const path = await mgr.backup();
-      if (!path) return { success: false, error: 'Backup creation failed' };
       return { success: true, data: path };
     } catch (err) {
       logger.error('Manual backup failed', { error: err });

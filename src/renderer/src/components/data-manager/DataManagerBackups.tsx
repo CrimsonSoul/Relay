@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { BackupEntry } from '@shared/ipc';
+import { TactileButton } from '../TactileButton';
 
 declare const api: {
   listBackups: () => Promise<BackupEntry[]>;
@@ -82,80 +83,79 @@ export const DataManagerBackups: React.FC = () => {
   };
 
   return (
-    <div className="dm-backups">
-      <div className="dm-backups-header">
-        <p className="dm-backups-desc">
-          Backups are created automatically on startup. You can also create one manually or restore
-          from a previous backup.
-        </p>
-        <button
-          type="button"
-          className="dm-btn dm-btn--primary"
-          onClick={handleCreate}
-          disabled={creating || restoring}
-        >
-          {creating ? 'Creating...' : 'Create Backup'}
-        </button>
+    <div className="data-manager-section">
+      <div className="data-manager-section-heading">Backups</div>
+      <div className="data-manager-section-description">
+        Backups are created automatically on startup. You can also create one manually or restore
+        from a previous backup.
       </div>
 
+      <TactileButton
+        variant="primary"
+        onClick={handleCreate}
+        disabled={creating || restoring}
+        loading={creating}
+        className="dm-big-btn"
+      >
+        Create Backup
+      </TactileButton>
+
       {error && (
-        <div className="dm-backups-error">
-          {error}
-          <button type="button" className="dm-btn-link" onClick={() => setError(null)}>
-            Dismiss
-          </button>
+        <div className="data-manager-import-result data-manager-import-result--error">
+          <div className="data-manager-import-result-header">
+            <span>{error}</span>
+            <button className="data-manager-import-close-btn" onClick={() => setError(null)}>
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
-      {loading && <div className="dm-backups-loading">Loading backups...</div>}
+      {loading && <div className="dm-backup-empty">Loading backups...</div>}
 
       {!loading && backups.length === 0 && (
-        <div className="dm-backups-empty">No backups available</div>
+        <div className="dm-backup-empty">No backups available</div>
       )}
 
       {!loading && backups.length > 0 && (
-        <div className="dm-backups-list">
+        <div className="dm-backup-list">
           {backups.map((b) => (
             <div key={b.name} className="dm-backup-row">
               <div className="dm-backup-info">
                 <span className="dm-backup-date">{formatDate(b.date)}</span>
                 <span className="dm-backup-size">{formatSize(b.size)}</span>
               </div>
-              <button
-                type="button"
-                className="dm-btn dm-btn--secondary"
+              <TactileButton
+                variant="secondary"
+                size="sm"
                 onClick={() => setConfirmRestore(b)}
                 disabled={restoring}
               >
                 Restore
-              </button>
+              </TactileButton>
             </div>
           ))}
         </div>
       )}
 
       {confirmRestore && (
-        <div className="dm-backups-confirm">
+        <div className="dm-backup-confirm">
           <p>
             This will replace all current data with the backup from{' '}
             <strong>{formatDate(confirmRestore.date)}</strong>. A safety backup of the current state
             will be created first. Continue?
           </p>
-          <div className="dm-backups-confirm-actions">
-            <button
-              type="button"
-              className="dm-btn dm-btn--secondary"
-              onClick={() => setConfirmRestore(null)}
-            >
+          <div className="dm-backup-confirm-actions">
+            <TactileButton variant="secondary" onClick={() => setConfirmRestore(null)}>
               Cancel
-            </button>
-            <button
-              type="button"
-              className="dm-btn dm-btn--danger"
+            </TactileButton>
+            <TactileButton
+              variant="danger"
               onClick={() => handleRestore(confirmRestore)}
+              loading={restoring}
             >
               Confirm Restore
-            </button>
+            </TactileButton>
           </div>
         </div>
       )}

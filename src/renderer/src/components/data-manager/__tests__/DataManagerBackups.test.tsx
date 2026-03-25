@@ -12,6 +12,25 @@ vi.stubGlobal('api', {
   restoreBackup: mockRestoreBackup,
 });
 
+// Mock TactileButton
+vi.mock('../../../components/TactileButton', () => ({
+  TactileButton: ({
+    children,
+    onClick,
+    disabled,
+    className,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+    disabled?: boolean;
+    className?: string;
+  }) => (
+    <button onClick={onClick} disabled={disabled} className={className}>
+      {children}
+    </button>
+  ),
+}));
+
 import { DataManagerBackups } from '../DataManagerBackups';
 
 const SAMPLE_BACKUPS: BackupEntry[] = [

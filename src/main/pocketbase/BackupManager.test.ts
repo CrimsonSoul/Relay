@@ -89,27 +89,19 @@ describe('BackupManager', () => {
       expect(result).toBe(join(backupsDir, backupName));
     });
 
-    it('returns null when no PocketBase client is set', async () => {
+    it('throws when no PocketBase client is set', async () => {
       const manager = new BackupManager(dataDir);
-      const result = await manager.backup();
-      expect(result).toBeNull();
+      await expect(manager.backup()).rejects.toThrow('PocketBase client not ready');
     });
 
-    it('returns null and logs error when PB API throws', async () => {
-      const { loggers } = await import('../logger');
+    it('throws when PB API fails', async () => {
       const manager = new BackupManager(dataDir);
       const pb = {
         backups: { create: vi.fn().mockRejectedValue(new Error('API error')) },
       } as unknown as import('pocketbase').default;
       manager.setPocketBase(pb);
 
-      const result = await manager.backup();
-
-      expect(result).toBeNull();
-      expect(loggers.backup.error).toHaveBeenCalledWith(
-        'Backup failed',
-        expect.objectContaining({ error: expect.any(Error) }),
-      );
+      await expect(manager.backup()).rejects.toThrow('API error');
     });
 
     it('prunes old backups after a successful backup', async () => {

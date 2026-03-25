@@ -21,25 +21,18 @@ export class BackupManager {
     this.pb = pb;
   }
 
-  async backup(): Promise<string | null> {
+  async backup(): Promise<string> {
+    if (!this.pb) {
+      throw new Error('PocketBase client not ready — try again in a moment');
+    }
+
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const backupName = `${timestamp}.zip`;
 
-    try {
-      if (this.pb) {
-        // Use PocketBase backup API for a consistent snapshot
-        await this.pb.backups.create(backupName);
-        logger.info('Backup created via PB API', { name: backupName });
-      } else {
-        logger.warn('No PocketBase client — skipping backup');
-        return null;
-      }
-      this.pruneOldBackups();
-      return join(this.backupsDir, backupName);
-    } catch (err) {
-      logger.error('Backup failed', { error: err });
-      return null;
-    }
+    await this.pb.backups.create(backupName);
+    logger.info('Backup created via PB API', { name: backupName });
+    this.pruneOldBackups();
+    return join(this.backupsDir, backupName);
   }
 
   /**
