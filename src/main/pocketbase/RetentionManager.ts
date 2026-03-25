@@ -12,6 +12,7 @@ export class RetentionManager {
     await this.cleanBridgeHistory();
     await this.cleanAlertHistory();
     await this.cleanConflictLog();
+    await this.cleanOncallDismissals();
     logger.info('Retention cleanup complete');
   }
 
@@ -88,6 +89,21 @@ export class RetentionManager {
       await this.batchDelete('alert_history', pinnedExcess);
     } catch (err) {
       logger.error('Alert history cleanup failed', { error: err });
+    }
+  }
+
+  private async cleanOncallDismissals(): Promise<void> {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .replace('T', ' ');
+    try {
+      const old = await this.pb
+        .collection('oncall_dismissals')
+        .getFullList({ filter: `created < "${sevenDaysAgo}"`, batch: 200 });
+      if (old.length > 0) logger.info('Cleaning oncall dismissals', { expired: old.length });
+      await this.batchDelete('oncall_dismissals', old);
+    } catch (err) {
+      logger.error('Oncall dismissals cleanup failed', { error: err });
     }
   }
 
