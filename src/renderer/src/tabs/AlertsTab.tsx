@@ -11,6 +11,8 @@ import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
+import { compactText } from './alerts/compactEngine';
+import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
@@ -35,6 +37,8 @@ export const AlertsTab: React.FC = () => {
   const historyModal = useModalState();
   const [updateNumber, setUpdateNumber] = useState(0); // 0 = off, 1+ = "UPDATE #N"
   const [customTimestamp, setCustomTimestamp] = useState('');
+  const [isCompact, setIsCompact] = useState(false);
+  const [isEnhanced, setIsEnhanced] = useState(false);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
@@ -234,6 +238,31 @@ export const AlertsTab: React.FC = () => {
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
 
+  /**
+   * Apply compact rules to HTML while preserving markup (including data-hl spans).
+   */
+  function compactHtml(html: string): string {
+    // eslint-disable-next-line sonarjs/slow-regex -- splitting on HTML tags; input is sanitized, no ReDoS risk
+    const parts = html.split(/(<[^>]*>)/g);
+    return parts
+      .map((part) => {
+        if (part.startsWith('<')) return part;
+        return compactText(part);
+      })
+      .join('');
+  }
+
+  const enhancedBodyHtml = useMemo(() => {
+    let html = sanitizeHtml(bodyHtml);
+    if (isCompact) {
+      html = compactHtml(html);
+    }
+    if (isEnhanced) {
+      html = enhanceHtml(html);
+    }
+    return html;
+  }, [bodyHtml, isCompact, isEnhanced]);
+
   return (
     <div className="alerts-tab">
       <CollapsibleHeader>
@@ -368,6 +397,10 @@ export const AlertsTab: React.FC = () => {
           logoDataUrl={logoDataUrl}
           onSetLogo={handleSetLogo}
           onRemoveLogo={handleRemoveLogo}
+          isCompact={isCompact}
+          setIsCompact={setIsCompact}
+          isEnhanced={isEnhanced}
+          setIsEnhanced={setIsEnhanced}
         />
 
         {/* Right Panel — Preview */}
@@ -380,6 +413,9 @@ export const AlertsTab: React.FC = () => {
           formattedDate={formattedDate}
           bodyHtml={bodyHtml}
           logoDataUrl={logoDataUrl}
+          enhancedBodyHtml={enhancedBodyHtml}
+          isEnhanced={isEnhanced}
+          isCompact={isCompact}
         />
       </div>
 

@@ -22,6 +22,10 @@ export interface AlertFormProps {
   logoDataUrl: string | null;
   onSetLogo: () => void;
   onRemoveLogo: () => void;
+  isCompact: boolean;
+  setIsCompact: (v: boolean) => void;
+  isEnhanced: boolean;
+  setIsEnhanced: (v: boolean) => void;
 }
 
 export interface AlertFormHandle {
@@ -47,6 +51,10 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       logoDataUrl,
       onSetLogo,
       onRemoveLogo,
+      isCompact,
+      setIsCompact,
+      isEnhanced,
+      setIsEnhanced,
     },
     ref,
   ) => {
@@ -83,7 +91,14 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             />
           </div>
 
-          <AlertBodyEditor ref={bodyEditorRef} setBodyHtml={setBodyHtml} />
+          <AlertBodyEditor
+            ref={bodyEditorRef}
+            setBodyHtml={setBodyHtml}
+            isCompact={isCompact}
+            setIsCompact={setIsCompact}
+            isEnhanced={isEnhanced}
+            setIsEnhanced={setIsEnhanced}
+          />
 
           {/* Sender */}
           <div className="alerts-field">

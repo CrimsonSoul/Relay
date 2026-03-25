@@ -7,10 +7,23 @@ export interface AlertBodyEditorHandle {
 
 interface AlertBodyEditorProps {
   setBodyHtml: (s: string) => void;
+  isCompact: boolean;
+  setIsCompact: (v: boolean) => void;
+  isEnhanced: boolean;
+  setIsEnhanced: (v: boolean) => void;
 }
 
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
-  ({ setBodyHtml }, ref) => {
+  (
+    {
+      setBodyHtml,
+      isCompact: _isCompact,
+      setIsCompact: _setIsCompact,
+      isEnhanced: _isEnhanced,
+      setIsEnhanced: _setIsEnhanced,
+    },
+    ref,
+  ) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
