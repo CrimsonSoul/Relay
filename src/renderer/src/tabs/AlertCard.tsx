@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
+import { EventTimeBanner } from './alerts/EventTimeBanner';
 
 /** Convert an image data URL to an all-white version (preserving alpha). */
 function makeWhite(dataUrl: string): Promise<string> {
@@ -41,6 +42,8 @@ export interface AlertCardProps {
   enhancedBodyHtml?: string;
   isEnhanced?: boolean;
   isCompact?: boolean;
+  eventTimeStart?: string;
+  eventTimeEnd?: string;
 }
 
 export const AlertCard: React.FC<AlertCardProps> = ({
@@ -55,6 +58,8 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   enhancedBodyHtml,
   isEnhanced,
   isCompact,
+  eventTimeStart,
+  eventTimeEnd,
 }) => {
   const colors = SEVERITY_COLORS[severity];
   const hasContent = hasVisibleText(bodyHtml);
@@ -130,6 +135,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           <div className="alerts-email-header">
             <div className="alerts-email-subject">{displaySubject}</div>
           </div>
+          <EventTimeBanner severity={severity} startTime={eventTimeStart} endTime={eventTimeEnd} />
           <div
             className="alerts-email-meta"
             ref={metaRef}

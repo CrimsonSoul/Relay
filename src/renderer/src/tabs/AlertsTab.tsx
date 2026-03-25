@@ -36,7 +36,9 @@ export const AlertsTab: React.FC = () => {
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
   const [updateNumber, setUpdateNumber] = useState(0); // 0 = off, 1+ = "UPDATE #N"
-  const [customTimestamp, setCustomTimestamp] = useState('');
+  const [eventTimeStart, setEventTimeStart] = useState('');
+  const [eventTimeEnd, setEventTimeEnd] = useState('');
+  const [eventTimeSourceTz, setEventTimeSourceTz] = useState('America/Chicago');
   const [isCompact, setIsCompact] = useState(false);
   const [isEnhanced, setIsEnhanced] = useState(false);
   const pinPromptModal = useModalState();
@@ -63,23 +65,44 @@ export const AlertsTab: React.FC = () => {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    if (customTimestamp) return;
     const id = setInterval(() => setNow(new Date()), 15_000);
     return () => clearInterval(id);
-  }, [customTimestamp]);
+  }, []);
 
   const formattedDate = useMemo(() => {
-    const date = customTimestamp ? new Date(customTimestamp) : now;
-    if (customTimestamp && Number.isNaN(date.getTime())) return 'Invalid date';
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-  }, [customTimestamp, now]);
+    return (
+      now.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        timeZone: 'America/Chicago',
+      }) +
+      ' · ' +
+      now.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'America/Chicago',
+      })
+    );
+  }, [now]);
+
+  function localToIso(datetimeLocal: string, sourceTz: string): string {
+    if (!datetimeLocal) return '';
+    const systemLocal = new Date(datetimeLocal);
+    if (Number.isNaN(systemLocal.getTime())) return '';
+    const inSourceTz = new Date(systemLocal.toLocaleString('en-US', { timeZone: sourceTz }));
+    const offsetMs = systemLocal.getTime() - inSourceTz.getTime();
+    return new Date(systemLocal.getTime() + offsetMs).toISOString();
+  }
+
+  const eventTimeStartIso = useMemo(
+    () => localToIso(eventTimeStart, eventTimeSourceTz),
+    [eventTimeStart, eventTimeSourceTz],
+  );
+  const eventTimeEndIso = useMemo(
+    () => localToIso(eventTimeEnd, eventTimeSourceTz),
+    [eventTimeEnd, eventTimeSourceTz],
+  );
 
   const captureCard = useCallback(async (): Promise<HTMLCanvasElement> => {
     if (!cardRef.current) throw new Error('Card ref not available');
@@ -160,7 +183,8 @@ export const AlertsTab: React.FC = () => {
     setSender(entry.sender);
     setRecipient(entry.recipient ?? '');
     setUpdateNumber(0);
-    setCustomTimestamp('');
+    setEventTimeStart('');
+    setEventTimeEnd('');
   }, []);
 
   const handleClear = useCallback(() => {
@@ -171,7 +195,8 @@ export const AlertsTab: React.FC = () => {
     setSender('');
     setRecipient('');
     setUpdateNumber(0);
-    setCustomTimestamp('');
+    setEventTimeStart('');
+    setEventTimeEnd('');
     // logoDataUrl is intentionally NOT cleared — it's a persistent setting
   }, []);
 
@@ -392,8 +417,12 @@ export const AlertsTab: React.FC = () => {
           setRecipient={setRecipient}
           updateNumber={updateNumber}
           setUpdateNumber={setUpdateNumber}
-          customTimestamp={customTimestamp}
-          setCustomTimestamp={setCustomTimestamp}
+          eventTimeStart={eventTimeStart}
+          setEventTimeStart={setEventTimeStart}
+          eventTimeEnd={eventTimeEnd}
+          setEventTimeEnd={setEventTimeEnd}
+          eventTimeSourceTz={eventTimeSourceTz}
+          setEventTimeSourceTz={setEventTimeSourceTz}
           logoDataUrl={logoDataUrl}
           onSetLogo={handleSetLogo}
           onRemoveLogo={handleRemoveLogo}
@@ -416,6 +445,8 @@ export const AlertsTab: React.FC = () => {
           enhancedBodyHtml={enhancedBodyHtml}
           isEnhanced={isEnhanced}
           isCompact={isCompact}
+          eventTimeStart={eventTimeStartIso}
+          eventTimeEnd={eventTimeEndIso}
         />
       </div>
 

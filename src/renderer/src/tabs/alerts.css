@@ -984,3 +984,86 @@
   background: rgba(124, 92, 252, 0.15);
   color: #a78bfa;
 }
+
+/* Event Time Banner — amber strip below subject */
+.alerts-email-event-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 36px;
+  background: linear-gradient(135deg, #fff8e1 0%, #fff3cd 100%);
+  border-bottom: 1px solid #f0dca0;
+  font-size: 12.5px;
+}
+
+.alerts-email-event-time-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.alerts-email-event-time-label {
+  font-weight: 700;
+  color: #856404;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+
+.alerts-email-event-time-value {
+  color: #6d5200;
+  font-weight: 500;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+}
+
+/* Event Time inputs */
+.alerts-event-time-inputs {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.alerts-event-time-input-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.alerts-event-time-sublabel {
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.alerts-event-time-tz {
+  min-width: 110px;
+  font-size: 11px;
+}
+
+.alerts-event-time-clear {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  align-self: flex-end;
+  margin-bottom: 2px;
+  transition: all 0.15s;
+}
+
+.alerts-event-time-clear:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-border-primary);
+}
+
+.alerts-event-time-hint {
+  font-size: 10.5px;
+  color: var(--color-text-quaternary);
+  margin-top: 3px;
+}

@@ -17,8 +17,12 @@ export interface AlertFormProps {
   setRecipient: (s: string) => void;
   updateNumber: number;
   setUpdateNumber: (n: number) => void;
-  customTimestamp: string;
-  setCustomTimestamp: (s: string) => void;
+  eventTimeStart: string;
+  setEventTimeStart: (s: string) => void;
+  eventTimeEnd: string;
+  setEventTimeEnd: (s: string) => void;
+  eventTimeSourceTz: string;
+  setEventTimeSourceTz: (s: string) => void;
   logoDataUrl: string | null;
   onSetLogo: () => void;
   onRemoveLogo: () => void;
@@ -46,8 +50,12 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       setRecipient,
       updateNumber,
       setUpdateNumber,
-      customTimestamp,
-      setCustomTimestamp,
+      eventTimeStart,
+      setEventTimeStart,
+      eventTimeEnd,
+      setEventTimeEnd,
+      eventTimeSourceTz,
+      setEventTimeSourceTz,
       logoDataUrl,
       onSetLogo,
       onRemoveLogo,
@@ -167,30 +175,74 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             </div>
           </div>
 
-          {/* Timestamp Override */}
+          {/* Event Time — replaces old timestamp override */}
           <div className="alerts-field">
-            <label className="alerts-field-label" htmlFor="alerts-timestamp">
-              Date / Time <span className="alerts-optional-tag">OPTIONAL</span>
-            </label>
-            <div className="alerts-timestamp-controls">
-              <input
-                id="alerts-timestamp"
-                type="datetime-local"
-                className={`alerts-input alerts-input-datetime${customTimestamp ? '' : ' is-empty'}`}
-                value={customTimestamp}
-                onChange={(e) => setCustomTimestamp(e.target.value)}
-              />
-              {customTimestamp && (
+            <span className="alerts-field-label">
+              Event Time <span className="alerts-optional-tag">OPTIONAL</span>
+            </span>
+            <div className="alerts-event-time-inputs">
+              <div className="alerts-event-time-input-group">
+                <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-start">
+                  Start
+                </label>
+                <input
+                  id="alerts-event-time-start"
+                  type="datetime-local"
+                  className="alerts-input alerts-input-datetime"
+                  value={eventTimeStart}
+                  onChange={(e) => setEventTimeStart(e.target.value)}
+                />
+              </div>
+              <div className="alerts-event-time-input-group">
+                <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-end">
+                  End <span className="alerts-optional-tag">OPTIONAL</span>
+                </label>
+                <input
+                  id="alerts-event-time-end"
+                  type="datetime-local"
+                  className="alerts-input alerts-input-datetime"
+                  value={eventTimeEnd}
+                  onChange={(e) => setEventTimeEnd(e.target.value)}
+                />
+              </div>
+              <div className="alerts-event-time-input-group">
+                <label className="alerts-event-time-sublabel" htmlFor="alerts-event-time-tz">
+                  Source TZ
+                </label>
+                <select
+                  id="alerts-event-time-tz"
+                  className="alerts-input alerts-event-time-tz"
+                  value={eventTimeSourceTz}
+                  onChange={(e) => setEventTimeSourceTz(e.target.value)}
+                >
+                  <option value="America/Chicago">CT (CST/CDT)</option>
+                  <option value="America/New_York">ET (EST/EDT)</option>
+                  <option value="America/Denver">MT (MST/MDT)</option>
+                  <option value="America/Los_Angeles">PT (PST/PDT)</option>
+                  <option value="UTC">UTC</option>
+                  <option value="Europe/London">GMT/BST</option>
+                  <option value="Europe/Berlin">CET/CEST</option>
+                  <option value="Asia/Tokyo">JST</option>
+                  <option value="Asia/Kolkata">IST</option>
+                  <option value="Australia/Sydney">AEST/AEDT</option>
+                </select>
+              </div>
+              {(eventTimeStart || eventTimeEnd) && (
                 <button
                   type="button"
-                  className="alerts-timestamp-reset"
-                  onClick={() => setCustomTimestamp('')}
-                  title="Reset to current time"
+                  className="alerts-event-time-clear"
+                  onClick={() => {
+                    setEventTimeStart('');
+                    setEventTimeEnd('');
+                  }}
                 >
-                  Reset
+                  Clear
                 </button>
               )}
             </div>
+            <span className="alerts-event-time-hint">
+              Enter times in the source timezone — they&apos;ll display as Central Time on the card
+            </span>
           </div>
 
           <AlertLogoUpload
