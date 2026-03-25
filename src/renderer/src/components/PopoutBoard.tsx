@@ -14,8 +14,7 @@ interface PopoutBoardProps {
 }
 
 export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) => {
-  const { localOnCall, weekRange, dismissedAlerts, getAlertKey, dayOfWeek, teams, tick } =
-    usePersonnel(onCall);
+  const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, tick } = usePersonnel(onCall);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -58,7 +57,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
 
   const renderAlerts = () =>
     alertConfigs
-      .filter((c) => c.day === dayOfWeek && !dismissedAlerts.has(getAlertKey(c.type)))
+      .filter((c) => c.day === dayOfWeek && !dismissedAlerts.has(c.type))
       .map((c) => {
         const isDanger = c.tone === 'danger';
         return (

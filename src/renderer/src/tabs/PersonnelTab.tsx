@@ -36,7 +36,6 @@ export const PersonnelTab: React.FC<{
     weekRange,
     dismissedAlerts,
     dismissAlert,
-    getAlertKey,
     dayOfWeek,
     teams,
     handleUpdateRows,
@@ -135,9 +134,7 @@ export const PersonnelTab: React.FC<{
 
   const renderAlerts = () =>
     alertConfigs
-      .filter(
-        (config) => config.day === dayOfWeek && !dismissedAlerts.has(getAlertKey(config.type)),
-      )
+      .filter((config) => config.day === dayOfWeek && !dismissedAlerts.has(config.type))
       .map((config) => {
         const isDanger = config.tone === 'danger';
         return (
