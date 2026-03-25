@@ -193,6 +193,34 @@ describe('sanitizeHtml', () => {
       );
     });
   });
+
+  describe('highlight spans', () => {
+    it('preserves span with known data-hl value', () => {
+      const input = '<span data-hl="deadline">60 days</span>';
+      expect(sanitizeHtml(input)).toBe('<span data-hl="deadline">60 days</span>');
+    });
+
+    it('strips span with unknown data-hl value', () => {
+      const input = '<span data-hl="evil">text</span>';
+      expect(sanitizeHtml(input)).toBe('text');
+    });
+
+    it('strips span with no data-hl attribute', () => {
+      const input = '<span class="foo">text</span>';
+      expect(sanitizeHtml(input)).toBe('text');
+    });
+
+    it('preserves nested content inside highlight span', () => {
+      const input = '<span data-hl="warning"><b>critical</b> issue</span>';
+      expect(sanitizeHtml(input)).toBe('<span data-hl="warning"><b>critical</b> issue</span>');
+    });
+
+    it('strips data-hl span that also has other attributes', () => {
+      const input = '<span data-hl="deadline" onclick="alert(1)">text</span>';
+      // Should keep data-hl but strip onclick
+      expect(sanitizeHtml(input)).toBe('<span data-hl="deadline">text</span>');
+    });
+  });
 });
 
 describe('hasVisibleText', () => {

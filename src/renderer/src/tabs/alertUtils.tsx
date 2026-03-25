@@ -1,4 +1,5 @@
 import React from 'react';
+import { HIGHLIGHT_TYPES } from './alerts/highlightColors';
 
 export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
 
@@ -81,6 +82,13 @@ export function sanitizeHtml(html: string): string {
     if (allowed.includes(tag)) {
       if (tag === 'br') return '<br>';
       return `<${tag}>${children}</${tag}>`;
+    }
+    // Allow <span data-hl="knownType"> for highlight support
+    if (tag === 'span') {
+      const hlType = el.getAttribute('data-hl');
+      if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
+        return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
+      }
     }
     return children;
   };
