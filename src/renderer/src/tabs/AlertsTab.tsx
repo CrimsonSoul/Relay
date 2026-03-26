@@ -118,20 +118,26 @@ export const AlertsTab: React.FC = () => {
 
   const captureCard = useCallback(async (): Promise<HTMLCanvasElement> => {
     if (!cardRef.current) throw new Error('Card ref not available');
-    // Force card to render at full width regardless of viewport
+    // Clone the card off-screen so the visible preview never jumps
     const el = cardRef.current;
-    const prev = el.style.minWidth;
-    el.style.minWidth = '700px';
+    const clone = el.cloneNode(true) as HTMLDivElement;
+    clone.style.position = 'fixed';
+    clone.style.left = '-9999px';
+    clone.style.top = '0';
+    clone.style.minWidth = '700px';
+    clone.style.maxWidth = '700px';
+    clone.style.zIndex = '-1';
+    document.body.appendChild(clone);
     try {
       const { default: html2canvas } = await import('html2canvas');
-      return await html2canvas(el, {
+      return await html2canvas(clone, {
         scale: 3,
         useCORS: true,
         backgroundColor: null,
         logging: false,
       });
     } finally {
-      el.style.minWidth = prev;
+      document.body.removeChild(clone);
     }
   }, []);
 
@@ -141,14 +147,26 @@ export const AlertsTab: React.FC = () => {
       setIsCapturing(true);
       try {
         const hiRes = await captureCard();
-        // Scale 3x capture back to 1x for a crisp but normal-sized image
-        const w = Math.round(hiRes.width / 3);
-        const h = Math.round(hiRes.height / 3);
+        // Step-downsample 3x → 1.5x → 1x for sharper text than a single jump
+        const halfW = Math.round(hiRes.width / 2);
+        const halfH = Math.round(hiRes.height / 2);
+        const mid = document.createElement('canvas');
+        mid.width = halfW;
+        mid.height = halfH;
+        const midCtx = mid.getContext('2d')!;
+        midCtx.imageSmoothingEnabled = true;
+        midCtx.imageSmoothingQuality = 'high';
+        midCtx.drawImage(hiRes, 0, 0, halfW, halfH);
+
+        const finalW = Math.round(hiRes.width / 3);
+        const finalH = Math.round(hiRes.height / 3);
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = finalW;
+        canvas.height = finalH;
         const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(hiRes, 0, 0, w, h);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(mid, 0, 0, finalW, finalH);
         const dataUrl = canvas.toDataURL('image/png');
         await action(dataUrl);
       } catch {
