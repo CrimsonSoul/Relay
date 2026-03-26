@@ -10,13 +10,13 @@ export interface AlertBodyEditorHandle {
 interface AlertBodyEditorProps {
   setBodyHtml: (s: string) => void;
   isCompact: boolean;
-  setIsCompact: (v: boolean) => void;
+  onToggleCompact: () => void;
   isEnhanced: boolean;
-  setIsEnhanced: (v: boolean) => void;
+  onToggleEnhanced: () => void;
 }
 
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
-  ({ setBodyHtml, isCompact, setIsCompact, isEnhanced, setIsEnhanced }, ref) => {
+  ({ setBodyHtml, isCompact, onToggleCompact, isEnhanced, onToggleEnhanced }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
@@ -256,7 +256,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               title="Compact — strip filler phrases"
               onMouseDown={(e) => {
                 e.preventDefault();
-                setIsCompact(!isCompact);
+                onToggleCompact();
               }}
             >
               <svg
@@ -281,7 +281,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               title="Enhance — auto-highlight key info"
               onMouseDown={(e) => {
                 e.preventDefault();
-                setIsEnhanced(!isEnhanced);
+                onToggleEnhanced();
               }}
             >
               <svg

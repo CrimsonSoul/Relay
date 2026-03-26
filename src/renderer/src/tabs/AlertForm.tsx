@@ -30,9 +30,9 @@ export interface AlertFormProps {
   onSetFooterLogo: () => void;
   onRemoveFooterLogo: () => void;
   isCompact: boolean;
-  setIsCompact: (v: boolean) => void;
+  onToggleCompact: () => void;
   isEnhanced: boolean;
-  setIsEnhanced: (v: boolean) => void;
+  onToggleEnhanced: () => void;
 }
 
 export interface AlertFormHandle {
@@ -66,9 +66,9 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       onSetFooterLogo,
       onRemoveFooterLogo,
       isCompact,
-      setIsCompact,
+      onToggleCompact,
       isEnhanced,
-      setIsEnhanced,
+      onToggleEnhanced,
     },
     ref,
   ) => {
@@ -109,9 +109,9 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             ref={bodyEditorRef}
             setBodyHtml={setBodyHtml}
             isCompact={isCompact}
-            setIsCompact={setIsCompact}
+            onToggleCompact={onToggleCompact}
             isEnhanced={isEnhanced}
-            setIsEnhanced={setIsEnhanced}
+            onToggleEnhanced={onToggleEnhanced}
           />
 
           {/* Sender */}

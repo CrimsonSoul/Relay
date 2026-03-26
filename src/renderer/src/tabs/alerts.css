@@ -652,7 +652,6 @@
   max-width: 120px;
   object-fit: contain;
   opacity: 0.45;
-  filter: grayscale(1);
 }
 
 .alerts-email-footer-spacer {
@@ -668,7 +667,8 @@
 }
 
 /* Highlight pill styles (used in card body) */
-.alerts-email-body [data-hl='deadline'] {
+.alerts-email-body [data-hl='deadline'],
+.alerts-editable-body [data-hl='deadline'] {
   background: #fff3cd;
   padding: 1px 5px;
   border-radius: 3px;
@@ -676,7 +676,8 @@
   color: #856404;
 }
 
-.alerts-email-body [data-hl='warning'] {
+.alerts-email-body [data-hl='warning'],
+.alerts-editable-body [data-hl='warning'] {
   background: #fee2e2;
   padding: 1px 5px;
   border-radius: 3px;
@@ -684,7 +685,8 @@
   color: #991b1b;
 }
 
-.alerts-email-body [data-hl='success'] {
+.alerts-email-body [data-hl='success'],
+.alerts-editable-body [data-hl='success'] {
   background: #d1fae5;
   padding: 1px 5px;
   border-radius: 3px;
@@ -692,12 +694,14 @@
   color: #065f46;
 }
 
-.alerts-email-body [data-hl='number'] {
+.alerts-email-body [data-hl='number'],
+.alerts-editable-body [data-hl='number'] {
   font-weight: 700;
   color: #1565c0;
 }
 
-.alerts-email-body [data-hl='service'] {
+.alerts-email-body [data-hl='service'],
+.alerts-editable-body [data-hl='service'] {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 0.9em;
   background: #f0f0f5;

@@ -3,6 +3,30 @@ import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from '.
 import type { Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
 
+/** Convert an image data URL to grayscale (preserving alpha). */
+function makeGrayscale(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const { data } = imageData;
+      for (let i = 0; i < data.length; i += 4) {
+        const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        data[i] = data[i + 1] = data[i + 2] = lum;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
 /** Convert an image data URL to an all-white version (preserving alpha). */
 function makeWhite(dataUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -39,10 +63,6 @@ export interface AlertCardProps {
   bodyHtml: string;
   logoDataUrl: string | null;
   footerLogoDataUrl?: string | null;
-  /** When true, bodyHtml has been processed by compact+enhance pipeline */
-  enhancedBodyHtml?: string;
-  isEnhanced?: boolean;
-  isCompact?: boolean;
   eventTimeStart?: string;
   eventTimeEnd?: string;
 }
@@ -57,9 +77,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   bodyHtml,
   logoDataUrl,
   footerLogoDataUrl,
-  enhancedBodyHtml,
-  isEnhanced,
-  isCompact,
   eventTimeStart,
   eventTimeEnd,
 }) => {
@@ -77,6 +94,17 @@ export const AlertCard: React.FC<AlertCardProps> = ({
       .catch(() => setWhiteLogoUrl(null));
   }, [logoDataUrl]);
 
+  const [grayFooterLogoUrl, setGrayFooterLogoUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!footerLogoDataUrl) {
+      setGrayFooterLogoUrl(null);
+      return;
+    }
+    void makeGrayscale(footerLogoDataUrl)
+      .then(setGrayFooterLogoUrl)
+      .catch(() => setGrayFooterLogoUrl(null));
+  }, [footerLogoDataUrl]);
+
   // Always sanitize HTML at the render boundary to prevent XSS
   const safeHtml = useMemo(
     () => (hasContent ? sanitizeHtml(bodyHtml) : 'Your message will appear here...'),
@@ -85,29 +113,42 @@ export const AlertCard: React.FC<AlertCardProps> = ({
 
   const metaRef = useRef<HTMLDivElement>(null);
   const [metaFontSize, setMetaFontSize] = useState(13);
+  const [metaWrap, setMetaWrap] = useState(false);
+  const [metaWidth, setMetaWidth] = useState(0);
 
   useEffect(() => {
     if (!metaRef.current) return;
+    const ro = new ResizeObserver(([entry]) => setMetaWidth(entry.contentRect.width));
+    ro.observe(metaRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!metaRef.current || metaWidth === 0) return;
     const el = metaRef.current;
-    // Reset to base size to measure natural width
-    el.style.fontSize = '13px';
-    const overflow = el.scrollWidth > el.clientWidth;
-    if (!overflow) {
-      setMetaFontSize(13);
-      return;
-    }
-    // Try smaller sizes
-    for (const size of [11, 9.5]) {
-      el.style.fontSize = `${size}px`;
-      if (el.scrollWidth <= el.clientWidth) {
+    // Measure off-screen to avoid rendering intermediate sizes
+    const probe = el.cloneNode(true) as HTMLDivElement;
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.width = `${metaWidth}px`;
+    probe.style.pointerEvents = 'none';
+    // Force nowrap on probe so scrollWidth detects single-line overflow
+    const inner = probe.querySelector('.alerts-email-meta-center') as HTMLDivElement | null;
+    if (inner) inner.style.whiteSpace = 'nowrap';
+    el.parentElement!.appendChild(probe);
+    for (const size of [13, 11, 9.5]) {
+      probe.style.fontSize = `${size}px`;
+      if (probe.scrollWidth <= probe.clientWidth) {
+        el.parentElement!.removeChild(probe);
         setMetaFontSize(size);
+        setMetaWrap(false);
         return;
       }
     }
+    el.parentElement!.removeChild(probe);
     setMetaFontSize(9.5);
-  }, [displaySender, displayRecipient]);
-
-  const renderedBody = (isEnhanced || isCompact) && enhancedBodyHtml ? enhancedBodyHtml : safeHtml;
+    setMetaWrap(true);
+  }, [displaySender, displayRecipient, metaWidth]);
 
   return (
     <div className="alerts-preview">
@@ -141,13 +182,20 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           <div
             className="alerts-email-meta"
             ref={metaRef}
-            style={{ fontSize: `${metaFontSize}px` }}
+            style={{ fontSize: `${metaFontSize}px`, overflow: metaWrap ? 'visible' : undefined }}
           >
-            <div className="alerts-email-meta-center">
+            <div
+              className="alerts-email-meta-center"
+              style={
+                metaWrap
+                  ? { whiteSpace: 'normal', flexWrap: 'wrap', justifyContent: 'center' }
+                  : undefined
+              }
+            >
               <div className="alerts-email-meta-item">
                 FROM <span>{displaySender}</span>
               </div>
-              <span className="alerts-email-meta-dot" />
+              {!metaWrap && <span className="alerts-email-meta-dot" />}
               <div className="alerts-email-meta-item">
                 TO <span>{displayRecipient}</span>
               </div>
@@ -155,11 +203,11 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           </div>
           <div
             className={`alerts-email-body${hasContent ? '' : ' empty'}`}
-            dangerouslySetInnerHTML={{ __html: renderedBody }}
+            dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
           <div className="alerts-email-footer">
-            {footerLogoDataUrl ? (
-              <img src={footerLogoDataUrl} alt="" className="alerts-email-footer-logo" />
+            {grayFooterLogoUrl ? (
+              <img src={grayFooterLogoUrl} alt="" className="alerts-email-footer-logo" />
             ) : (
               <div className="alerts-email-footer-spacer" />
             )}

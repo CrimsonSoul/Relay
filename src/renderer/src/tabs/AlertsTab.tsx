@@ -42,6 +42,7 @@ export const AlertsTab: React.FC = () => {
   const [eventTimeSourceTz, setEventTimeSourceTz] = useState('America/Chicago');
   const [isCompact, setIsCompact] = useState(false);
   const [isEnhanced, setIsEnhanced] = useState(false);
+  const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
@@ -204,6 +205,9 @@ export const AlertsTab: React.FC = () => {
     setUpdateNumber(0);
     setEventTimeStart('');
     setEventTimeEnd('');
+    setIsCompact(false);
+    setIsEnhanced(false);
+    originalBodyRef.current = null;
   }, []);
 
   const handleClear = useCallback(() => {
@@ -216,6 +220,9 @@ export const AlertsTab: React.FC = () => {
     setUpdateNumber(0);
     setEventTimeStart('');
     setEventTimeEnd('');
+    setIsCompact(false);
+    setIsEnhanced(false);
+    originalBodyRef.current = null;
     // logoDataUrl is intentionally NOT cleared — it's a persistent setting
   }, []);
 
@@ -319,16 +326,48 @@ export const AlertsTab: React.FC = () => {
       .join('');
   }
 
-  const enhancedBodyHtml = useMemo(() => {
-    let html = sanitizeHtml(bodyHtml);
-    if (isCompact) {
-      html = compactHtml(html);
+  const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
+    let result = sanitizeHtml(html);
+    if (compact) result = compactHtml(result);
+    if (enhanced) result = enhanceHtml(result);
+    return result;
+  }, []);
+
+  const handleToggleCompact = useCallback(() => {
+    const nextCompact = !isCompact;
+    if (!nextCompact && !isEnhanced) {
+      // Both off — restore original
+      const original = originalBodyRef.current ?? bodyHtml;
+      originalBodyRef.current = null;
+      setBodyHtml(original);
+      formRef.current?.setEditorContent(original);
+    } else {
+      // Save original if first toggle on
+      if (originalBodyRef.current === null) originalBodyRef.current = bodyHtml;
+      const transformed = applyTransforms(originalBodyRef.current, nextCompact, isEnhanced);
+      setBodyHtml(transformed);
+      formRef.current?.setEditorContent(transformed);
     }
-    if (isEnhanced) {
-      html = enhanceHtml(html);
+    setIsCompact(nextCompact);
+  }, [isCompact, isEnhanced, bodyHtml, applyTransforms]);
+
+  const handleToggleEnhanced = useCallback(() => {
+    const nextEnhanced = !isEnhanced;
+    if (!isCompact && !nextEnhanced) {
+      // Both off — restore original
+      const original = originalBodyRef.current ?? bodyHtml;
+      originalBodyRef.current = null;
+      setBodyHtml(original);
+      formRef.current?.setEditorContent(original);
+    } else {
+      // Save original if first toggle on
+      if (originalBodyRef.current === null) originalBodyRef.current = bodyHtml;
+      const transformed = applyTransforms(originalBodyRef.current, isCompact, nextEnhanced);
+      setBodyHtml(transformed);
+      formRef.current?.setEditorContent(transformed);
     }
-    return html;
-  }, [bodyHtml, isCompact, isEnhanced]);
+    setIsEnhanced(nextEnhanced);
+  }, [isCompact, isEnhanced, bodyHtml, applyTransforms]);
 
   return (
     <div className="alerts-tab">
@@ -472,9 +511,9 @@ export const AlertsTab: React.FC = () => {
           onSetFooterLogo={handleSetFooterLogo}
           onRemoveFooterLogo={handleRemoveFooterLogo}
           isCompact={isCompact}
-          setIsCompact={setIsCompact}
+          onToggleCompact={handleToggleCompact}
           isEnhanced={isEnhanced}
-          setIsEnhanced={setIsEnhanced}
+          onToggleEnhanced={handleToggleEnhanced}
         />
 
         {/* Right Panel — Preview */}
@@ -488,9 +527,6 @@ export const AlertsTab: React.FC = () => {
           bodyHtml={bodyHtml}
           logoDataUrl={logoDataUrl}
           footerLogoDataUrl={footerLogoDataUrl}
-          enhancedBodyHtml={enhancedBodyHtml}
-          isEnhanced={isEnhanced}
-          isCompact={isCompact}
           eventTimeStart={eventTimeStartIso}
           eventTimeEnd={eventTimeEndIso}
         />
