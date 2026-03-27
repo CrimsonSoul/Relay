@@ -20,6 +20,7 @@ import { useDirectory } from '../hooks/useDirectory';
 import { useDirectoryKeyboard } from '../hooks/useDirectoryKeyboard';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
 type Props = {
   contacts: Contact[];
@@ -171,6 +172,9 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     [filtered, groupMap, focusedIndex, setFocusedIndex, setContextMenu],
   );
 
+  const activeFilterCount =
+    filters.selectedTags.size + filters.activeExtras.size + (filters.hasNotesFilter ? 1 : 0);
+
   return (
     <div className="tab-layout">
       <div className="tab-split-layout">
@@ -297,6 +301,22 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
           </div>
         </div>
       </div>
+
+      <StatusBar
+        left={<StatusBarLive />}
+        center={
+          <span>
+            Showing {filtered.length} of {contacts.length}
+          </span>
+        }
+        right={
+          filters.isAnyFilterActive ? (
+            <span>
+              {activeFilterCount} {activeFilterCount !== 1 ? 'filters' : 'filter'} active
+            </span>
+          ) : undefined
+        }
+      />
 
       <ScrollController
         listRef={listRef}
