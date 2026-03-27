@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Sans — All Tabs</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Instrument+Sans:wght@400;500;600;700&family=Overpass+Mono:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #070810;
+    --surface: #0c0e15;
+    --surface-hover: #10131b;
+    --raised: #151821;
+    --border: rgba(255,255,255,0.055);
+    --border-subtle: rgba(255,255,255,0.03);
+    --text: #d8dce6;
+    --text-strong: #eef0f6;
+    --dim: #6e7a90;
+    --muted: #374058;
+    --signal: #e11d48;
+    --signal-text: #fb7185;
+    --signal-dim: rgba(225,29,72,0.10);
+    --signal-glow: rgba(225,29,72,0.05);
+    --online: #10b981;
+    --online-dim: rgba(16,185,129,0.10);
+    --warn: #eab308;
+    --warn-dim: rgba(234,179,8,0.10);
+    --warn-text: #fbbf24;
+    --danger: #ef4444;
+    --danger-dim: rgba(239,68,68,0.10);
+    --blue: #38bdf8;
+    --blue-dim: rgba(56,189,248,0.10);
+    --purple: #c084fc;
+    --purple-dim: rgba(192,132,252,0.10);
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34,211,238,0.10);
+    --orange: #fb923c;
+    --orange-dim: rgba(251,146,60,0.10);
+  }
+
+  body {
+    background: #0a0a0c;
+    color: #c8ccd4;
+    font-family: 'Instrument Sans', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Page chrome ─── */
+  .page-header {
+    padding: 48px 64px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .page-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    font-weight: 400;
+    color: #f0f2f5;
+  }
+  .page-header p {
+    margin-top: 8px;
+    font-size: 15px;
+    color: #6b7280;
+    max-width: 760px;
+  }
+
+  .tabs-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 80px;
+    padding: 64px;
+  }
+
+  .tab-section {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .tab-meta { position: sticky; top: 40px; }
+  .tab-label {
+    font-family: 'Overpass Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #4b5563;
+    margin-bottom: 12px;
+  }
+  .tab-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: #e5e7eb;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+  .tab-desc {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.7;
+  }
+
+  .mockup-frame {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #111;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+  .mockup-titlebar {
+    height: 36px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 7px;
+  }
+  .mockup-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .separator {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 20%, rgba(255,255,255,0.06) 80%, transparent);
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+
+  /* ─── Shared component styles ─── */
+  .ss-font { font-family: 'Instrument Sans', sans-serif; }
+  .ss-mono { font-family: 'JetBrains Mono', monospace; }
+
+  .ss-toolbar {
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .ss-toolbar-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+  .ss-toolbar-badge {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 3px 14px;
+    border-radius: 8px;
+  }
+  .ss-toolbar-right {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .ss-btn {
+    padding: 9px 20px;
+    font-size: 14px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.15s;
+  }
+  .ss-btn:hover {
+    color: var(--text);
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.02);
+  }
+  .ss-btn.primary {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #fff;
+    font-weight: 700;
+  }
+  .ss-btn.primary:hover { background: #be123c; }
+
+  .ss-statusbar {
+    padding: 10px 28px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .ss-statusbar .live {
+    display: flex; align-items: center; gap: 8px; color: var(--dim);
+  }
+  .ss-statusbar .live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--online);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .ss-statusbar .sep { width:1px; height:14px; background:var(--border); }
+  .ss-statusbar .right { margin-left: auto; }
+
+  .ss-tag {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  .page-footer {
+    padding: 48px 64px 64px;
+    text-align: center;
+    color: #374151;
+    font-size: 13px;
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     ALERTS TAB
+     Split view: form left, live preview right
+     ══════════════════════════════════════════════════════════════ */
+
+  .alerts-tab {
+    background: var(--bg);
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Instrument Sans', sans-serif;
+    color: var(--text);
+  }
+  .alerts-body {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  /* Form side */
+  .alerts-form {
+    padding: 28px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    border-right: 1px solid var(--border);
+  }
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .form-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .form-input {
+    padding: 10px 16px;
+    font-size: 16px;
+    font-family: 'Instrument Sans', sans-serif;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus { border-color: var(--signal); }
+  .form-input::placeholder { color: var(--muted); }
+  .form-select {
+    padding: 10px 16px;
+    font-size: 16px;
+    font-family: 'Instrument Sans', sans-serif;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    appearance: none;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%236e7a90'%3E%3Cpath d='M6 8.5L1.5 4h9z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  .form-textarea {
+    padding: 14px 16px;
+    font-size: 15px;
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    resize: none;
+    min-height: 140px;
+    line-height: 1.6;
+    transition: border-color 0.15s;
+  }
+  .form-textarea:focus { border-color: var(--signal); }
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* Severity selector */
+  .severity-options {
+    display: flex;
+    gap: 8px;
+  }
+  .severity-option {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .severity-option:hover { border-color: rgba(255,255,255,0.12); }
+  .severity-option.critical {
+    border-color: var(--signal);
+    background: var(--signal-dim);
+    color: var(--signal-text);
+  }
+
+  /* Preview side */
+  .alerts-preview {
+    padding: 28px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    background: rgba(255,255,255,0.008);
+  }
+  .preview-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .alert-card-preview {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .alert-card-banner {
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .alert-card-banner.critical-banner {
+    background: var(--signal-dim);
+    color: var(--signal-text);
+    border-bottom: 2px solid rgba(225,29,72,0.2);
+  }
+  .alert-card-banner .banner-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--signal);
+    animation: pulse 1.5s infinite;
+  }
+  .alert-card-body {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .alert-card-subject {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-strong);
+    line-height: 1.3;
+  }
+  .alert-card-meta {
+    display: flex;
+    gap: 24px;
+    font-size: 14px;
+    color: var(--dim);
+  }
+  .alert-card-meta .meta-label {
+    color: var(--muted);
+    margin-right: 6px;
+  }
+  .alert-card-content {
+    font-size: 16px;
+    color: var(--text);
+    line-height: 1.7;
+    padding: 16px;
+    background: var(--bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+  }
+  .alert-card-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     PERSONNEL / ON-CALL TAB
+     Drag-and-drop team cards in a grid
+     ══════════════════════════════════════════════════════════════ */
+
+  .personnel-tab {
+    background: var(--bg);
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Instrument Sans', sans-serif;
+    color: var(--text);
+  }
+  .personnel-body {
+    flex: 1;
+    padding: 24px 28px;
+    overflow-y: auto;
+  }
+  .personnel-week {
+    font-size: 15px;
+    color: var(--dim);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .personnel-week strong {
+    color: var(--text);
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .team-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 16px;
+    align-content: start;
+  }
+  .team-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: box-shadow 0.2s, border-color 0.2s;
+  }
+  .team-card:hover {
+    border-color: rgba(255,255,255,0.08);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .team-card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .team-card-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-strong);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .team-card-name .team-dot {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .team-card-count {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .team-card-body {
+    padding: 0;
+  }
+  .team-person {
+    padding: 14px 20px;
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.12s;
+  }
+  .team-person:last-child { border-bottom: none; }
+  .team-person:hover { background: var(--surface-hover); }
+  .team-person-avatar {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .team-person-info { min-width: 0; }
+  .team-person-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .team-person-role {
+    font-size: 13px;
+    color: var(--dim);
+    margin-top: 1px;
+  }
+  .team-person-shift {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     DIRECTORY / PEOPLE TAB
+     Virtualized list + detail panel
+     ══════════════════════════════════════════════════════════════ */
+
+  .directory-tab {
+    background: var(--bg);
+    min-height: 640px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr auto;
+    font-family: 'Instrument Sans', sans-serif;
+    color: var(--text);
+  }
+  .directory-tab .ss-toolbar {
+    grid-column: 1 / -1;
+  }
+  .directory-tab .ss-statusbar {
+    grid-column: 1 / -1;
+  }
+
+  /* Search bar */
+  .dir-search-row {
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    grid-column: 1 / -1;
+    background: var(--surface);
+  }
+  .dir-search {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 16px;
+    font-family: 'Instrument Sans', sans-serif;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .dir-search:focus { border-color: var(--signal); }
+  .dir-filter-btn {
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .dir-filter-btn:hover { border-color: rgba(255,255,255,0.12); color: var(--text); }
+  .dir-filter-btn.active {
+    background: var(--signal-dim);
+    border-color: rgba(225,29,72,0.2);
+    color: var(--signal-text);
+  }
+
+  /* Contact list */
+  .dir-list {
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+  }
+  .dir-row {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    gap: 14px;
+    padding: 12px 28px;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .dir-row:hover { background: var(--surface-hover); }
+  .dir-row.selected { background: var(--signal-glow); }
+  .dir-avatar {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .dir-row-info { min-width: 0; }
+  .dir-row-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dir-row-sub {
+    font-size: 14px;
+    color: var(--dim);
+    margin-top: 2px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .dir-row-sub .dot { color: var(--muted); font-size: 10px; }
+  .dir-row-tags {
+    display: flex; gap: 4px; flex-shrink: 0;
+  }
+
+  /* Detail panel */
+  .dir-detail {
+    padding: 28px 24px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    background: var(--surface);
+  }
+  .dir-detail-head { text-align: center; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .dir-detail-avatar {
+    width: 64px; height: 64px;
+    border-radius: 14px;
+    margin: 0 auto 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .dir-detail-name { font-size: 20px; font-weight: 700; color: var(--text-strong); }
+  .dir-detail-title { font-size: 15px; color: var(--dim); margin-top: 4px; }
+
+  .dir-detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dir-detail-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .dir-detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .dir-detail-field .key { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .dir-detail-field .val { font-size: 16px; color: var(--text); font-weight: 500; }
+  .dir-detail-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dir-detail-pill {
+    font-size: 12px; font-weight: 600;
+    padding: 4px 12px; border-radius: 6px;
+  }
+  .dir-detail-actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dir-detail-btn {
+    padding: 10px;
+    font-size: 14px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 8px;
+    text-align: center;
+    transition: all 0.12s;
+  }
+  .dir-detail-btn:hover { border-color: rgba(255,255,255,0.12); color: var(--text); }
+  .dir-detail-btn.accent {
+    background: var(--signal-dim);
+    border-color: rgba(225,29,72,0.2);
+    color: var(--signal-text);
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     STATUS TAB
+     Provider cards + event feed
+     ══════════════════════════════════════════════════════════════ */
+
+  .status-tab {
+    background: var(--bg);
+    min-height: 640px;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Instrument Sans', sans-serif;
+    color: var(--text);
+  }
+  .status-body {
+    flex: 1;
+    padding: 24px 28px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* Provider summary cards */
+  .provider-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .provider-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.15s;
+    cursor: pointer;
+  }
+  .provider-card:hover { border-color: rgba(255,255,255,0.1); }
+  .provider-card.active { border-color: var(--signal); }
+  .provider-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .provider-name {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text-strong);
+  }
+  .provider-status-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .provider-card-detail {
+    font-size: 14px;
+    color: var(--dim);
+  }
+
+  /* Section label */
+  .status-section-label {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* Events feed */
+  .events-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .event-item {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 14px;
+    align-items: start;
+    transition: background 0.12s;
+  }
+  .event-item:hover { background: var(--surface-hover); }
+  .event-severity {
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-radius: 6px;
+    white-space: nowrap;
+    margin-top: 2px;
+  }
+  .event-info { min-width: 0; }
+  .event-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-strong);
+    line-height: 1.3;
+  }
+  .event-desc {
+    font-size: 14px;
+    color: var(--dim);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .event-provider {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .event-time {
+    font-size: 13px;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+    margin-top: 3px;
+  }
+
+  /* Filter buttons */
+  .status-filters {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .status-filter {
+    padding: 7px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .status-filter:hover { border-color: rgba(255,255,255,0.1); color: var(--text); }
+  .status-filter.active {
+    background: var(--signal-dim);
+    border-color: rgba(225,29,72,0.2);
+    color: var(--signal-text);
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Signal Sans — Tab Designs</h1>
+  <p>Four additional tabs in the Signal Sans design language. Same palette, same typography, same TV-readable sizing — adapted to each tab's unique purpose.</p>
+</div>
+
+<div class="tabs-grid">
+
+  <!-- ═══ ALERTS TAB ═══ -->
+  <div class="tab-section">
+    <div class="tab-meta">
+      <div class="tab-label">Tab</div>
+      <div class="tab-name">Alerts</div>
+      <div class="tab-desc">Split-pane alert composer. Form on the left, live preview on the right. Severity selector uses color-coded buttons — impossible to miss even at TV distance. Preview renders exactly what recipients will see.</div>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="alerts-tab">
+        <div class="ss-toolbar">
+          <span class="ss-toolbar-title">Alert Composer</span>
+          <div class="ss-toolbar-right">
+            <button class="ss-btn">Reset</button>
+            <button class="ss-btn">History</button>
+            <button class="ss-btn">Pin Template</button>
+            <button class="ss-btn">Save PNG</button>
+            <button class="ss-btn primary">Copy for Outlook</button>
+          </div>
+        </div>
+        <div class="alerts-body">
+          <div class="alerts-form">
+            <div class="form-group">
+              <span class="form-label">Severity</span>
+              <div class="severity-options">
+                <div class="severity-option critical">Critical</div>
+                <div class="severity-option" style="color:var(--warn-text);border-color:var(--border);">Warning</div>
+                <div class="severity-option" style="color:var(--blue);border-color:var(--border);">Info</div>
+                <div class="severity-option" style="color:var(--online);border-color:var(--border);">Resolved</div>
+              </div>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Subject</span>
+              <input class="form-input" value="Core API latency exceeding SLA thresholds" readonly>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <span class="form-label">Sender</span>
+                <input class="form-input" value="NOC Team" readonly>
+              </div>
+              <div class="form-group">
+                <span class="form-label">Event Time</span>
+                <input class="form-input" value="2026-03-27 14:32 UTC" readonly>
+              </div>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Recipient</span>
+              <select class="form-select">
+                <option>Operations Team — 24 contacts</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <span class="form-label">Body (HTML)</span>
+              <textarea class="form-textarea" readonly>API response times on us-east-1 have exceeded 2000ms for the past 15 minutes.
+
+Affected services:
+- Payment processing
+- User authentication
+- Dashboard API
+
+Impact: ~12% of requests timing out.
+ETA for resolution: Investigating.</textarea>
+            </div>
+          </div>
+          <div class="alerts-preview">
+            <span class="preview-label">Live Preview</span>
+            <div class="alert-card-preview">
+              <div class="alert-card-banner critical-banner">
+                <div class="banner-dot"></div>
+                Critical Alert
+              </div>
+              <div class="alert-card-body">
+                <div class="alert-card-subject">Core API latency exceeding SLA thresholds</div>
+                <div class="alert-card-meta">
+                  <span><span class="meta-label">From</span>NOC Team</span>
+                  <span><span class="meta-label">Time</span>2026-03-27 14:32 UTC</span>
+                  <span><span class="meta-label">To</span>Operations Team</span>
+                </div>
+                <div class="alert-card-content">
+                  API response times on us-east-1 have exceeded 2000ms for the past 15 minutes.<br><br>
+                  Affected services:<br>
+                  • Payment processing<br>
+                  • User authentication<br>
+                  • Dashboard API<br><br>
+                  Impact: ~12% of requests timing out.<br>
+                  ETA for resolution: Investigating.
+                </div>
+              </div>
+              <div class="alert-card-footer">
+                <span>Relay Alert System</span>
+                <span>ref: NOC-20260327-1432</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ PERSONNEL TAB ═══ -->
+  <div class="tab-section">
+    <div class="tab-meta">
+      <div class="tab-label">Tab</div>
+      <div class="tab-name">Personnel</div>
+      <div class="tab-desc">On-call board with draggable team cards. Each card shows the current rotation with roles and shift times. Week range at the top for context. Cards are large enough to scan from across the room on the TV display.</div>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="personnel-tab">
+        <div class="ss-toolbar">
+          <span class="ss-toolbar-title">On-Call Board</span>
+          <span class="ss-toolbar-badge" style="background:var(--signal-dim);color:var(--signal-text);">Week 13</span>
+          <div class="ss-toolbar-right">
+            <button class="ss-btn">Copy All</button>
+            <button class="ss-btn">Export CSV</button>
+            <button class="ss-btn">Pop Out</button>
+            <button class="ss-btn primary">Add Card</button>
+          </div>
+        </div>
+        <div class="personnel-body">
+          <div class="personnel-week">
+            <strong>Mar 24 – Mar 30, 2026</strong>
+            <span style="color:var(--muted);">·</span>
+            <span>Current rotation</span>
+          </div>
+          <div class="team-grid">
+            <!-- SRE -->
+            <div class="team-card">
+              <div class="team-card-header">
+                <div class="team-card-name">
+                  <div class="team-dot" style="background:var(--signal);"></div>
+                  SRE
+                </div>
+                <span class="team-card-count">3 on-call</span>
+              </div>
+              <div class="team-card-body">
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--signal-dim);color:var(--signal-text);">MC</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Marcus Chen</div>
+                    <div class="team-person-role">Primary — Incident Commander</div>
+                  </div>
+                  <div class="team-person-shift">06:00–18:00</div>
+                </div>
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--signal-dim);color:var(--signal-text);">PS</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Priya Sharma</div>
+                    <div class="team-person-role">Secondary — Infrastructure</div>
+                  </div>
+                  <div class="team-person-shift">06:00–18:00</div>
+                </div>
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--signal-dim);color:var(--signal-text);">AH</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Amir Hassan</div>
+                    <div class="team-person-role">Night Shift</div>
+                  </div>
+                  <div class="team-person-shift">18:00–06:00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Support -->
+            <div class="team-card">
+              <div class="team-card-header">
+                <div class="team-card-name">
+                  <div class="team-dot" style="background:var(--blue);"></div>
+                  Support
+                </div>
+                <span class="team-card-count">2 on-call</span>
+              </div>
+              <div class="team-card-body">
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--blue-dim);color:var(--blue);">SM</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Sarah Mitchell</div>
+                    <div class="team-person-role">Tier 1 Lead</div>
+                  </div>
+                  <div class="team-person-shift">08:00–20:00</div>
+                </div>
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--blue-dim);color:var(--blue);">DK</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">David Kim</div>
+                    <div class="team-person-role">Tier 2 Escalation</div>
+                  </div>
+                  <div class="team-person-shift">08:00–20:00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- NOC -->
+            <div class="team-card">
+              <div class="team-card-header">
+                <div class="team-card-name">
+                  <div class="team-dot" style="background:var(--purple);"></div>
+                  NOC
+                </div>
+                <span class="team-card-count">2 on-call</span>
+              </div>
+              <div class="team-card-body">
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--purple-dim);color:var(--purple);">EV</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Elena Vasquez</div>
+                    <div class="team-person-role">Network Operations</div>
+                  </div>
+                  <div class="team-person-shift">06:00–18:00</div>
+                </div>
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--purple-dim);color:var(--purple);">TW</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Thomas Wright</div>
+                    <div class="team-person-role">Network Operations</div>
+                  </div>
+                  <div class="team-person-shift">18:00–06:00</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Security -->
+            <div class="team-card">
+              <div class="team-card-header">
+                <div class="team-card-name">
+                  <div class="team-dot" style="background:var(--orange);"></div>
+                  Security
+                </div>
+                <span class="team-card-count">2 on-call</span>
+              </div>
+              <div class="team-card-body">
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--orange-dim);color:var(--orange);">JO</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">James Okafor</div>
+                    <div class="team-person-role">SecOps Lead</div>
+                  </div>
+                  <div class="team-person-shift">24/7</div>
+                </div>
+                <div class="team-person">
+                  <div class="team-person-avatar" style="background:var(--orange-dim);color:var(--orange);">LP</div>
+                  <div class="team-person-info">
+                    <div class="team-person-name">Lisa Park</div>
+                    <div class="team-person-role">Compliance</div>
+                  </div>
+                  <div class="team-person-shift">08:00–17:00</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ss-statusbar">
+          <div class="live"><div class="live-dot"></div> Synced</div>
+          <div class="sep"></div>
+          <span>Last updated 5 min ago</span>
+          <span class="right">4 teams · 9 on-call</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ DIRECTORY TAB ═══ -->
+  <div class="tab-section">
+    <div class="tab-meta">
+      <div class="tab-label">Tab</div>
+      <div class="tab-name">Directory</div>
+      <div class="tab-desc">Contact browser with search, filters, and a detail panel. Two-line rows from the Compose tab carry over here. Click any contact to see full details on the right. Filters are toggle-buttons — clear at a glance which are active.</div>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="directory-tab">
+        <div class="ss-toolbar">
+          <span class="ss-toolbar-title">Directory</span>
+          <span class="ss-toolbar-badge" style="background:var(--signal-dim);color:var(--signal-text);">96 contacts</span>
+          <div class="ss-toolbar-right">
+            <button class="ss-btn">Import</button>
+            <button class="ss-btn primary">Add Contact</button>
+          </div>
+        </div>
+        <div class="dir-search-row">
+          <input class="dir-search" placeholder="Search by name, email, title..." readonly>
+          <button class="dir-filter-btn active">Has Email</button>
+          <button class="dir-filter-btn">Has Phone</button>
+          <button class="dir-filter-btn">Has Title</button>
+        </div>
+        <div class="dir-list">
+          <div class="dir-row selected">
+            <div class="dir-avatar" style="background:var(--signal-dim);color:var(--signal-text);">MC</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Marcus Chen</div>
+              <div class="dir-row-sub">
+                <span>m.chen@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Ops Director</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--signal-dim);color:var(--signal-text);">OPS</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--signal-dim);color:var(--signal-text);">PS</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Priya Sharma</div>
+              <div class="dir-row-sub">
+                <span>p.sharma@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Lead Engineer</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--signal-dim);color:var(--signal-text);">OPS</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--blue-dim);color:var(--blue);">YT</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Yuki Tanaka</div>
+              <div class="dir-row-sub">
+                <span>y.tanaka@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Field Lead — West</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--blue-dim);color:var(--blue);">FIELD</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--signal-dim);color:var(--signal-text);">JO</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">James Okafor</div>
+              <div class="dir-row-sub">
+                <span>j.okafor@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Systems Analyst</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--signal-dim);color:var(--signal-text);">OPS</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--blue-dim);color:var(--blue);">EV</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Elena Vasquez</div>
+              <div class="dir-row-sub">
+                <span>e.vasquez@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Field Lead — East</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--blue-dim);color:var(--blue);">FIELD</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--purple-dim);color:var(--purple);">DK</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">David Kim</div>
+              <div class="dir-row-sub">
+                <span>d.kim@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Logistics Coordinator</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--purple-dim);color:var(--purple);">HQ</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--purple-dim);color:var(--purple);">SM</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Sarah Mitchell</div>
+              <div class="dir-row-sub">
+                <span>s.mitchell@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Comms Officer</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--purple-dim);color:var(--purple);">HQ</span>
+            </div>
+          </div>
+          <div class="dir-row">
+            <div class="dir-avatar" style="background:var(--signal-dim);color:var(--signal-text);">AH</div>
+            <div class="dir-row-info">
+              <div class="dir-row-name">Amir Hassan</div>
+              <div class="dir-row-sub">
+                <span>a.hassan@relay.ops</span>
+                <span class="dot">·</span>
+                <span>Security Lead</span>
+              </div>
+            </div>
+            <div class="dir-row-tags">
+              <span class="ss-tag" style="background:var(--signal-dim);color:var(--signal-text);">OPS</span>
+            </div>
+          </div>
+        </div>
+        <div class="dir-detail">
+          <div class="dir-detail-head">
+            <div class="dir-detail-avatar" style="background:var(--signal-dim);color:var(--signal-text);">MC</div>
+            <div class="dir-detail-name">Marcus Chen</div>
+            <div class="dir-detail-title">Operations Director</div>
+          </div>
+          <div class="dir-detail-section">
+            <div class="dir-detail-label">Contact</div>
+            <div class="dir-detail-field">
+              <span class="key">Email</span>
+              <span class="val">m.chen@relay.ops</span>
+            </div>
+            <div class="dir-detail-field">
+              <span class="key">Phone</span>
+              <span class="val">(415) 555-0142</span>
+            </div>
+          </div>
+          <div class="dir-detail-section">
+            <div class="dir-detail-label">Groups</div>
+            <div class="dir-detail-pills">
+              <span class="dir-detail-pill" style="background:var(--signal-dim);color:var(--signal-text);">Operations</span>
+              <span class="dir-detail-pill" style="background:var(--blue-dim);color:var(--blue);">Field Leads</span>
+            </div>
+          </div>
+          <div class="dir-detail-section">
+            <div class="dir-detail-label">Source</div>
+            <div class="dir-detail-field">
+              <span class="val" style="font-size:14px;color:var(--dim);">Imported from CSV — Mar 12</span>
+            </div>
+          </div>
+          <div class="dir-detail-actions">
+            <button class="dir-detail-btn accent">Add to Compose</button>
+            <button class="dir-detail-btn">Edit Contact</button>
+          </div>
+        </div>
+        <div class="ss-statusbar">
+          <div class="live"><div class="live-dot"></div> Connected</div>
+          <div class="sep"></div>
+          <span>Showing 96 of 96</span>
+          <span class="right">1 filter active</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ STATUS TAB ═══ -->
+  <div class="tab-section">
+    <div class="tab-meta">
+      <div class="tab-label">Tab</div>
+      <div class="tab-name">Status</div>
+      <div class="tab-desc">Cloud service status at a glance. Provider cards at the top with traffic-light indicators. Below, a chronological event feed with severity badges. Great for the TV — the colored dots and severity labels pop at distance.</div>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="status-tab">
+        <div class="ss-toolbar">
+          <span class="ss-toolbar-title">Service Status</span>
+          <span class="ss-toolbar-badge" style="background:var(--warn-dim);color:var(--warn-text);">1 Degraded</span>
+          <div class="ss-toolbar-right">
+            <button class="ss-btn">Refresh</button>
+          </div>
+        </div>
+        <div class="status-body">
+          <!-- Provider cards -->
+          <div class="provider-grid">
+            <div class="provider-card">
+              <div class="provider-card-top">
+                <span class="provider-name">AWS</span>
+                <div class="provider-status-dot" style="background:var(--warn);box-shadow:0 0 8px rgba(234,179,8,0.4);"></div>
+              </div>
+              <div class="provider-card-detail">1 service degraded</div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-card-top">
+                <span class="provider-name">Azure</span>
+                <div class="provider-status-dot" style="background:var(--online);"></div>
+              </div>
+              <div class="provider-card-detail">All services operational</div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-card-top">
+                <span class="provider-name">GCP</span>
+                <div class="provider-status-dot" style="background:var(--online);"></div>
+              </div>
+              <div class="provider-card-detail">All services operational</div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-card-top">
+                <span class="provider-name">Cloudflare</span>
+                <div class="provider-status-dot" style="background:var(--online);"></div>
+              </div>
+              <div class="provider-card-detail">All services operational</div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-card-top">
+                <span class="provider-name">Datadog</span>
+                <div class="provider-status-dot" style="background:var(--online);"></div>
+              </div>
+              <div class="provider-card-detail">All services operational</div>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div style="display:flex;align-items:center;gap:16px;">
+            <span class="status-section-label">Recent Events</span>
+            <div class="status-filters">
+              <button class="status-filter active">All</button>
+              <button class="status-filter">AWS</button>
+              <button class="status-filter">Azure</button>
+              <button class="status-filter">GCP</button>
+            </div>
+          </div>
+
+          <!-- Events -->
+          <div class="events-feed">
+            <div class="event-item">
+              <div class="event-severity" style="background:var(--warn-dim);color:var(--warn-text);">Degraded</div>
+              <div class="event-info">
+                <div class="event-title">Elevated API error rates — us-east-1</div>
+                <div class="event-desc">Increased error rates for API Gateway in us-east-1. Investigating root cause. Other regions unaffected.</div>
+                <div class="event-provider">AWS · API Gateway</div>
+              </div>
+              <div class="event-time">14:32 UTC</div>
+            </div>
+            <div class="event-item">
+              <div class="event-severity" style="background:var(--online-dim);color:var(--online);">Resolved</div>
+              <div class="event-info">
+                <div class="event-title">Cloud SQL connectivity issues — europe-west1</div>
+                <div class="event-desc">Intermittent connection failures to Cloud SQL instances resolved. Root cause: maintenance window overrun.</div>
+                <div class="event-provider">GCP · Cloud SQL</div>
+              </div>
+              <div class="event-time">12:15 UTC</div>
+            </div>
+            <div class="event-item">
+              <div class="event-severity" style="background:var(--online-dim);color:var(--online);">Resolved</div>
+              <div class="event-info">
+                <div class="event-title">CDN cache purge delays — Global</div>
+                <div class="event-desc">Cache invalidation requests were delayed by up to 10 minutes. Issue resolved, purge times back to normal.</div>
+                <div class="event-provider">Cloudflare · CDN</div>
+              </div>
+              <div class="event-time">09:44 UTC</div>
+            </div>
+            <div class="event-item">
+              <div class="event-severity" style="background:var(--blue-dim);color:var(--blue);">Info</div>
+              <div class="event-info">
+                <div class="event-title">Planned maintenance — Azure SQL Database</div>
+                <div class="event-desc">Scheduled maintenance window for Azure SQL Database in West US 2. Expected duration: 2 hours.</div>
+                <div class="event-provider">Azure · SQL Database</div>
+              </div>
+              <div class="event-time">Mar 28 02:00</div>
+            </div>
+          </div>
+        </div>
+        <div class="ss-statusbar">
+          <div class="live"><div class="live-dot"></div> Auto-refreshing</div>
+          <div class="sep"></div>
+          <span>Last updated 2 min ago</span>
+          <span class="right">5 providers monitored</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  Signal Sans — Complete Tab System
+</div>
+
+</body>
+</html>

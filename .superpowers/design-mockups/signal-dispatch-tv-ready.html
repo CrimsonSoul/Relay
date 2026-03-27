@@ -1,0 +1,1473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Signal Dispatch — TV-Ready Variations</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=IBM+Plex+Mono:wght@400;500;600;700&family=Instrument+Sans:wght@400;500;600;700&family=Overpass+Mono:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0c;
+    color: #c8ccd4;
+    font-family: 'Instrument Sans', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Page chrome ─── */
+  .page-header {
+    padding: 48px 64px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .page-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    font-weight: 400;
+    color: #f0f2f5;
+  }
+  .page-header p {
+    margin-top: 8px;
+    font-size: 15px;
+    color: #6b7280;
+    max-width: 760px;
+  }
+  .page-header .constraint {
+    margin-top: 16px;
+    padding: 12px 18px;
+    background: rgba(225,29,72,0.06);
+    border: 1px solid rgba(225,29,72,0.15);
+    border-radius: 8px;
+    font-family: 'Overpass Mono', monospace;
+    font-size: 13px;
+    color: #fb7185;
+    display: inline-block;
+  }
+
+  .directions {
+    display: flex;
+    flex-direction: column;
+    gap: 80px;
+    padding: 64px;
+  }
+
+  .direction {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .direction-meta { position: sticky; top: 40px; }
+  .direction-number {
+    font-family: 'Overpass Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #4b5563;
+    margin-bottom: 12px;
+  }
+  .direction-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: #e5e7eb;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+  .direction-desc {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.7;
+    margin-bottom: 24px;
+  }
+  .direction-traits {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .direction-traits li {
+    font-size: 12px;
+    font-family: 'Overpass Mono', monospace;
+    color: #9ca3af;
+    padding-left: 16px;
+    position: relative;
+  }
+  .direction-traits li::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: #4b5563;
+  }
+  .direction-traits li em {
+    font-style: normal;
+    color: #e5e7eb;
+  }
+
+  .mockup-frame {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #111;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+  .mockup-titlebar {
+    height: 36px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 7px;
+  }
+  .mockup-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .separator {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 20%, rgba(255,255,255,0.06) 80%, transparent);
+  }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     A1 — DEEP BLACK OPS (TV-Ready)
+
+     Type floor: 14px labels, 18px body, 22px names
+     Row height: 56px
+     Sidebar: 240px
+     ══════════════════════════════════════════════════════════════ */
+
+  .a1 {
+    --bg: #050507;
+    --surface: #0a0b0f;
+    --border: rgba(255,255,255,0.05);
+    --text: #d4d8e0;
+    --dim: #6b7280;
+    --muted: #343a48;
+    --signal: #e11d48;
+    --signal-dim: rgba(225,29,72,0.1);
+    --online: #10b981;
+    --warn: #eab308;
+
+    background: var(--bg);
+    min-height: 620px;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 1fr auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--text);
+  }
+
+  .a1-sidebar {
+    grid-row: 1 / -1;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .a1-sidebar-head {
+    padding: 20px 20px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .a1-grp {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-left: 3px solid transparent;
+  }
+  .a1-grp:hover { background: rgba(255,255,255,0.015); }
+  .a1-grp.on {
+    background: var(--signal-dim);
+    border-left-color: var(--signal);
+  }
+  .a1-grp-check {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--muted);
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .a1-grp.on .a1-grp-check {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #fff;
+  }
+  .a1-grp-label {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--dim);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a1-grp.on .a1-grp-label { color: var(--text); }
+  .a1-grp-n {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .a1-sidebar-spacer { flex: 1; }
+  .a1-sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .a1-sidebar-footer span { display: flex; justify-content: space-between; }
+  .a1-sidebar-footer .val { color: var(--dim); }
+
+  .a1-main-area {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .a1-toolbar {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--surface);
+  }
+  .a1-toolbar-label {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .a1-toolbar-pipe {
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+  }
+  .a1-toolbar-stat {
+    font-size: 15px;
+    color: var(--signal);
+    font-weight: 600;
+  }
+  .a1-toolbar-right {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .a1-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    transition: all 0.1s;
+    border-radius: 3px;
+  }
+  .a1-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.12); }
+  .a1-btn.hot {
+    background: var(--signal);
+    border-color: var(--signal);
+    color: #fff;
+  }
+
+  .a1-table { flex: 1; overflow-y: auto; }
+  .a1-row {
+    display: grid;
+    grid-template-columns: 36px 28px 1.2fr 1.5fr 1fr 0.7fr 60px;
+    align-items: center;
+    padding: 0 24px;
+    height: 56px;
+    border-bottom: 1px solid rgba(255,255,255,0.025);
+    transition: background 0.08s;
+    gap: 8px;
+  }
+  .a1-row:hover { background: rgba(255,255,255,0.012); }
+  .a1-row.thead {
+    height: 40px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .a1-row-idx {
+    font-size: 14px;
+    color: var(--muted);
+    text-align: right;
+    padding-right: 4px;
+  }
+  .a1-row-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    justify-self: center;
+  }
+  .a1-row-name {
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a1-row-email {
+    color: var(--dim);
+    font-size: 16px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a1-row-title {
+    color: var(--muted);
+    font-size: 15px;
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a1-tag {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 3px 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .a1-row-x {
+    font-size: 16px;
+    color: var(--muted);
+    text-align: right;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.08s;
+    font-weight: 700;
+  }
+  .a1-row:hover .a1-row-x { opacity: 1; color: var(--signal); }
+
+  .a1-statusbar {
+    padding: 10px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .a1-statusbar .live {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .a1-statusbar .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--online);
+    animation: a1pulse 2s infinite;
+  }
+  @keyframes a1pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .a1-statusbar .sep { color: rgba(255,255,255,0.06); }
+  .a1-statusbar .key {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     A2 — PHOSPHOR TERMINAL (TV-Ready)
+
+     Type floor: 14px labels, 18px body, 20px names
+     Entry height: 72px (two-line)
+     ══════════════════════════════════════════════════════════════ */
+
+  .a2 {
+    --bg: #07090a;
+    --surface: #0b0e10;
+    --border: rgba(0,255,136,0.06);
+    --text: #b8d4c0;
+    --dim: #4a7a5a;
+    --muted: #243830;
+    --glow: #00ff88;
+    --glow-dim: rgba(0,255,136,0.08);
+    --amber: #ffb347;
+    --amber-dim: rgba(255,179,71,0.1);
+
+    background: var(--bg);
+    min-height: 620px;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    font-family: 'Fira Code', monospace;
+    font-size: 16px;
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+  }
+  .a2::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 3px,
+      rgba(0,255,136,0.012) 3px,
+      rgba(0,255,136,0.012) 6px
+    );
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .a2-sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+  }
+  .a2-sidebar-head {
+    padding: 20px 20px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--glow);
+    border-bottom: 1px solid var(--border);
+    text-shadow: 0 0 12px rgba(0,255,136,0.3);
+  }
+  .a2-grp {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    border-bottom: 1px solid rgba(0,255,136,0.02);
+  }
+  .a2-grp:hover { background: var(--glow-dim); }
+  .a2-grp.on { background: var(--glow-dim); }
+  .a2-grp-marker {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 600;
+    width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .a2-grp.on .a2-grp-marker {
+    color: var(--glow);
+    text-shadow: 0 0 8px rgba(0,255,136,0.5);
+  }
+  .a2-grp-name {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--dim);
+    flex: 1;
+  }
+  .a2-grp.on .a2-grp-name { color: var(--text); }
+  .a2-grp-ct {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .a2-main {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+  }
+  .a2-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .a2-header-prompt {
+    color: var(--glow);
+    font-weight: 700;
+    text-shadow: 0 0 10px rgba(0,255,136,0.3);
+    font-size: 18px;
+  }
+  .a2-header-path {
+    color: var(--dim);
+    font-weight: 400;
+    font-size: 16px;
+  }
+  .a2-header-cursor {
+    display: inline-block;
+    width: 10px;
+    height: 20px;
+    background: var(--glow);
+    animation: a2blink 1s step-end infinite;
+    opacity: 0.7;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+  @keyframes a2blink {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 0; }
+  }
+  .a2-header-right {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .a2-btn {
+    padding: 8px 18px;
+    font-size: 14px;
+    font-family: 'Fira Code', monospace;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.12s;
+  }
+  .a2-btn:hover {
+    color: var(--glow);
+    border-color: rgba(0,255,136,0.2);
+    box-shadow: 0 0 8px rgba(0,255,136,0.08);
+  }
+  .a2-btn.hot {
+    background: rgba(0,255,136,0.12);
+    border-color: rgba(0,255,136,0.3);
+    color: var(--glow);
+    text-shadow: 0 0 6px rgba(0,255,136,0.3);
+  }
+
+  .a2-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .a2-entry {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    padding: 0 24px;
+    min-height: 72px;
+    align-items: center;
+    border-bottom: 1px solid rgba(0,255,136,0.025);
+    transition: background 0.1s;
+    gap: 16px;
+  }
+  .a2-entry:hover { background: var(--glow-dim); }
+  .a2-entry-id {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .a2-entry-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 0;
+  }
+  .a2-entry-line1 {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .a2-entry-name {
+    font-weight: 700;
+    color: var(--text);
+    font-size: 20px;
+  }
+  .a2-entry-tag {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 10px;
+    border-radius: 3px;
+  }
+  .a2-entry-line2 {
+    display: flex;
+    gap: 24px;
+    font-size: 15px;
+    color: var(--dim);
+  }
+  .a2-entry-line2 .lbl {
+    color: var(--muted);
+    margin-right: 6px;
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════
+     A3 — SIGNAL REFINED (TV-Ready)
+
+     Type floor: 14px labels, 17px body, 20px names
+     Row height: 54px
+     Detail panel: 300px
+     ══════════════════════════════════════════════════════════════ */
+
+  .a3 {
+    --bg: #090a0e;
+    --surface: #0e1014;
+    --raised: #13151b;
+    --border: rgba(255,255,255,0.06);
+    --text: #dce0e8;
+    --dim: #737d8e;
+    --muted: #3b4252;
+    --accent: #f472b6;
+    --accent-dim: rgba(244,114,182,0.1);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.1);
+
+    background: var(--bg);
+    min-height: 620px;
+    display: grid;
+    grid-template-columns: 260px 1fr 300px;
+    font-family: 'Source Code Pro', monospace;
+    font-size: 16px;
+    color: var(--text);
+  }
+
+  .a3-sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .a3-sidebar-head {
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .a3-sidebar-head span {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .a3-sidebar-head .ct {
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .a3-grp {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .a3-grp:hover { background: rgba(255,255,255,0.02); }
+  .a3-grp.on { background: var(--accent-dim); }
+  .a3-grp-pip {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    border: 2px solid var(--muted);
+  }
+  .a3-grp.on .a3-grp-pip { border-color: var(--accent); background: var(--accent); }
+  .a3-grp-name {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--dim);
+    flex: 1;
+  }
+  .a3-grp.on .a3-grp-name { color: var(--text); }
+  .a3-grp-num {
+    font-size: 14px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  .a3-center {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .a3-topbar {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .a3-topbar-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .a3-topbar-badge {
+    font-size: 14px;
+    font-weight: 700;
+    background: var(--accent-dim);
+    color: var(--accent);
+    padding: 3px 14px;
+    border-radius: 12px;
+  }
+  .a3-topbar-right {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+  .a3-btn {
+    padding: 8px 18px;
+    font-size: 14px;
+    font-family: 'Source Code Pro', monospace;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 5px;
+    transition: all 0.12s;
+  }
+  .a3-btn:hover { border-color: rgba(255,255,255,0.12); color: var(--text); }
+  .a3-btn.hot {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0e1014;
+    font-weight: 700;
+  }
+
+  .a3-list { flex: 1; overflow-y: auto; }
+  .a3-row {
+    display: grid;
+    grid-template-columns: 1.2fr 1.6fr 0.7fr 50px;
+    align-items: center;
+    padding: 0 24px;
+    height: 54px;
+    border-bottom: 1px solid rgba(255,255,255,0.025);
+    transition: background 0.08s;
+    cursor: pointer;
+    gap: 8px;
+  }
+  .a3-row:hover { background: rgba(255,255,255,0.015); }
+  .a3-row.selected { background: var(--accent-dim); }
+  .a3-row.thead {
+    height: 40px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    cursor: default;
+  }
+  .a3-row-name {
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a3-row-email {
+    color: var(--dim);
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .a3-tag {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    display: inline-block;
+    width: fit-content;
+  }
+  .a3-row-x {
+    text-align: right;
+    font-size: 18px;
+    color: var(--muted);
+    opacity: 0;
+    transition: opacity 0.08s;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .a3-row:hover .a3-row-x { opacity: 1; }
+
+  /* Detail panel */
+  .a3-detail {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    padding: 28px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    overflow-y: auto;
+  }
+  .a3-detail-head {
+    text-align: center;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .a3-detail-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    margin: 0 auto 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .a3-detail-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .a3-detail-title {
+    font-size: 15px;
+    color: var(--dim);
+    margin-top: 4px;
+  }
+  .a3-detail-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .a3-detail-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .a3-detail-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .a3-detail-field .key {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .a3-detail-field .val {
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .a3-detail-groups {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .a3-detail-pill {
+    font-size: 13px;
+    font-weight: 600;
+    padding: 4px 14px;
+    border-radius: 5px;
+  }
+  .a3-detail-actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .a3-detail-btn {
+    padding: 10px;
+    font-size: 14px;
+    font-family: 'Source Code Pro', monospace;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--dim);
+    cursor: pointer;
+    border-radius: 5px;
+    text-align: center;
+    transition: all 0.12s;
+  }
+  .a3-detail-btn:hover { border-color: rgba(255,255,255,0.12); color: var(--text); }
+  .a3-detail-btn.danger:hover { border-color: rgba(239,68,68,0.3); color: #ef4444; }
+
+  .page-footer {
+    padding: 48px 64px 64px;
+    text-align: center;
+    color: #374151;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Signal Dispatch — TV-Ready</h1>
+  <p>Same three variations, now sized for dual-distance readability. All type is scaled up with a 14px floor for labels, 16-18px body, and 18-22px names. Row heights, padding, and touch targets increased proportionally.</p>
+  <div class="constraint">CONSTRAINT: readable at 8ft on 55" 1080p + comfortable at desk on 24" 1080p</div>
+</div>
+
+<div class="directions">
+
+  <!-- ═══ A1: Deep Black Ops ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Variation A1</div>
+      <div class="direction-name">Deep Black Ops</div>
+      <div class="direction-desc">Maximum density — but now every element clears the TV-readability bar. Names at 18px bold, emails at 16px, tags at 13px bold. 56px rows give breathing room without losing the packed feel.</div>
+      <ul class="direction-traits">
+        <li>Names: <em>18px bold</em></li>
+        <li>Body: <em>16px regular</em></li>
+        <li>Labels/tags: <em>13-14px bold</em></li>
+        <li>Row height: <em>56px</em></li>
+        <li>Sidebar: <em>240px</em></li>
+        <li>Status bar: <em>14px</em></li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="a1">
+        <div class="a1-sidebar">
+          <div class="a1-sidebar-head">Groups</div>
+          <div class="a1-grp on">
+            <div class="a1-grp-check">✓</div>
+            <span class="a1-grp-label">Operations Team</span>
+            <span class="a1-grp-n">24</span>
+          </div>
+          <div class="a1-grp on">
+            <div class="a1-grp-check">✓</div>
+            <span class="a1-grp-label">Field Leads</span>
+            <span class="a1-grp-n">8</span>
+          </div>
+          <div class="a1-grp on">
+            <div class="a1-grp-check">✓</div>
+            <span class="a1-grp-label">HQ Staff</span>
+            <span class="a1-grp-n">12</span>
+          </div>
+          <div class="a1-grp">
+            <div class="a1-grp-check"></div>
+            <span class="a1-grp-label">Contractors</span>
+            <span class="a1-grp-n">31</span>
+          </div>
+          <div class="a1-grp">
+            <div class="a1-grp-check"></div>
+            <span class="a1-grp-label">External</span>
+            <span class="a1-grp-n">15</span>
+          </div>
+          <div class="a1-grp">
+            <div class="a1-grp-check"></div>
+            <span class="a1-grp-label">Board</span>
+            <span class="a1-grp-n">6</span>
+          </div>
+          <div class="a1-sidebar-spacer"></div>
+          <div class="a1-sidebar-footer">
+            <span>Total contacts <span class="val">96</span></span>
+            <span>Selected <span class="val" style="color:#e11d48;">38</span></span>
+            <span>Last bridge <span class="val">2h ago</span></span>
+          </div>
+        </div>
+        <div class="a1-main-area">
+          <div class="a1-toolbar">
+            <span class="a1-toolbar-label">Composition</span>
+            <span class="a1-toolbar-pipe">│</span>
+            <span class="a1-toolbar-stat">38 recipients</span>
+            <span class="a1-toolbar-pipe">│</span>
+            <span style="font-size:14px;color:#343a48;">sorted by name ↑</span>
+            <div class="a1-toolbar-right">
+              <button class="a1-btn">Undo</button>
+              <button class="a1-btn">Reset</button>
+              <button class="a1-btn">History</button>
+              <button class="a1-btn">Copy</button>
+              <button class="a1-btn hot">Draft</button>
+            </div>
+          </div>
+          <div class="a1-table">
+            <div class="a1-row thead">
+              <span>#</span><span></span><span>Name</span><span>Email</span><span>Title</span><span>Group</span><span></span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">01</span>
+              <div class="a1-row-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.4)"></div>
+              <span class="a1-row-name">Marcus Chen</span>
+              <span class="a1-row-email">m.chen@relay.ops</span>
+              <span class="a1-row-title">Ops Director</span>
+              <span class="a1-tag" style="background:rgba(225,29,72,0.1);color:#fb7185;">OPS</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">02</span>
+              <div class="a1-row-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.4)"></div>
+              <span class="a1-row-name">Priya Sharma</span>
+              <span class="a1-row-email">p.sharma@relay.ops</span>
+              <span class="a1-row-title">Lead Engineer</span>
+              <span class="a1-tag" style="background:rgba(225,29,72,0.1);color:#fb7185;">OPS</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">03</span>
+              <div class="a1-row-dot" style="background:#eab308"></div>
+              <span class="a1-row-name">Yuki Tanaka</span>
+              <span class="a1-row-email">y.tanaka@relay.ops</span>
+              <span class="a1-row-title">Field Lead — West</span>
+              <span class="a1-tag" style="background:rgba(14,165,233,0.1);color:#38bdf8;">FIELD</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">04</span>
+              <div class="a1-row-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.4)"></div>
+              <span class="a1-row-name">James Okafor</span>
+              <span class="a1-row-email">j.okafor@relay.ops</span>
+              <span class="a1-row-title">Systems Analyst</span>
+              <span class="a1-tag" style="background:rgba(225,29,72,0.1);color:#fb7185;">OPS</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">05</span>
+              <div class="a1-row-dot" style="background:#343a48"></div>
+              <span class="a1-row-name">Elena Vasquez</span>
+              <span class="a1-row-email">e.vasquez@relay.ops</span>
+              <span class="a1-row-title">Field Lead — East</span>
+              <span class="a1-tag" style="background:rgba(14,165,233,0.1);color:#38bdf8;">FIELD</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">06</span>
+              <div class="a1-row-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.4)"></div>
+              <span class="a1-row-name">David Kim</span>
+              <span class="a1-row-email">d.kim@relay.ops</span>
+              <span class="a1-row-title">Logistics Coord.</span>
+              <span class="a1-tag" style="background:rgba(168,85,247,0.1);color:#c084fc;">HQ</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">07</span>
+              <div class="a1-row-dot" style="background:#10b981;box-shadow:0 0 6px rgba(16,185,129,0.4)"></div>
+              <span class="a1-row-name">Sarah Mitchell</span>
+              <span class="a1-row-email">s.mitchell@relay.ops</span>
+              <span class="a1-row-title">Comms Officer</span>
+              <span class="a1-tag" style="background:rgba(168,85,247,0.1);color:#c084fc;">HQ</span>
+              <span class="a1-row-x">×</span>
+            </div>
+            <div class="a1-row">
+              <span class="a1-row-idx">08</span>
+              <div class="a1-row-dot" style="background:#eab308"></div>
+              <span class="a1-row-name">Amir Hassan</span>
+              <span class="a1-row-email">a.hassan@relay.ops</span>
+              <span class="a1-row-title">Security Lead</span>
+              <span class="a1-tag" style="background:rgba(225,29,72,0.1);color:#fb7185;">OPS</span>
+              <span class="a1-row-x">×</span>
+            </div>
+          </div>
+          <div class="a1-statusbar">
+            <div class="live"><div class="live-dot"></div> Connected</div>
+            <span class="sep">│</span>
+            <span><span class="key">⌘K</span> search</span>
+            <span><span class="key">⌘C</span> copy</span>
+            <span><span class="key">⌘D</span> draft</span>
+            <span><span class="key">⌘Z</span> undo</span>
+            <span class="sep">│</span>
+            <span style="margin-left:auto;">38 of 96 selected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ A2: Phosphor Terminal ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Variation A2</div>
+      <div class="direction-name">Phosphor Terminal</div>
+      <div class="direction-desc">Green phosphor glow scales well to TV — the glow effect actually improves at distance by creating a natural halo around text. Two-line entries at 72px height give each contact room to breathe.</div>
+      <ul class="direction-traits">
+        <li>Names: <em>20px bold</em></li>
+        <li>Body/fields: <em>15-16px</em></li>
+        <li>Labels: <em>14px</em></li>
+        <li>Entry height: <em>72px</em></li>
+        <li>Sidebar: <em>260px</em></li>
+        <li>Glow helps TV readability</li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="a2">
+        <div class="a2-sidebar">
+          <div class="a2-sidebar-head">// GROUPS</div>
+          <div class="a2-grp on">
+            <span class="a2-grp-marker">[×]</span>
+            <span class="a2-grp-name">Operations Team</span>
+            <span class="a2-grp-ct">24</span>
+          </div>
+          <div class="a2-grp on">
+            <span class="a2-grp-marker">[×]</span>
+            <span class="a2-grp-name">Field Leads</span>
+            <span class="a2-grp-ct">8</span>
+          </div>
+          <div class="a2-grp on">
+            <span class="a2-grp-marker">[×]</span>
+            <span class="a2-grp-name">HQ Staff</span>
+            <span class="a2-grp-ct">12</span>
+          </div>
+          <div class="a2-grp">
+            <span class="a2-grp-marker">[ ]</span>
+            <span class="a2-grp-name">Contractors</span>
+            <span class="a2-grp-ct">31</span>
+          </div>
+          <div class="a2-grp">
+            <span class="a2-grp-marker">[ ]</span>
+            <span class="a2-grp-name">External Partners</span>
+            <span class="a2-grp-ct">15</span>
+          </div>
+          <div class="a2-grp">
+            <span class="a2-grp-marker">[ ]</span>
+            <span class="a2-grp-name">Board Members</span>
+            <span class="a2-grp-ct">6</span>
+          </div>
+        </div>
+        <div class="a2-main">
+          <div class="a2-header">
+            <span class="a2-header-prompt">relay</span>
+            <span class="a2-header-path">~/compose/bridge — 38 recipients</span>
+            <span class="a2-header-cursor"></span>
+            <div class="a2-header-right">
+              <button class="a2-btn">undo</button>
+              <button class="a2-btn">reset</button>
+              <button class="a2-btn">copy</button>
+              <button class="a2-btn hot">draft bridge</button>
+            </div>
+          </div>
+          <div class="a2-list">
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x01</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">Marcus Chen</span>
+                  <span class="a2-entry-tag" style="background:rgba(0,255,136,0.08);color:#00ff88;">OPS</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>m.chen@relay.ops</span>
+                  <span><span class="lbl">title:</span>Ops Director</span>
+                  <span><span class="lbl">tel:</span>(415) 555-0142</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x02</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">Priya Sharma</span>
+                  <span class="a2-entry-tag" style="background:rgba(0,255,136,0.08);color:#00ff88;">OPS</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>p.sharma@relay.ops</span>
+                  <span><span class="lbl">title:</span>Lead Engineer</span>
+                  <span><span class="lbl">tel:</span>(415) 555-0298</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x03</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">Yuki Tanaka</span>
+                  <span class="a2-entry-tag" style="background:rgba(255,179,71,0.1);color:#ffb347;">FIELD</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>y.tanaka@relay.ops</span>
+                  <span><span class="lbl">title:</span>Field Lead — West</span>
+                  <span><span class="lbl">tel:</span>(503) 555-0177</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x04</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">James Okafor</span>
+                  <span class="a2-entry-tag" style="background:rgba(0,255,136,0.08);color:#00ff88;">OPS</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>j.okafor@relay.ops</span>
+                  <span><span class="lbl">title:</span>Systems Analyst</span>
+                  <span><span class="lbl">tel:</span>(212) 555-0334</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x05</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">Elena Vasquez</span>
+                  <span class="a2-entry-tag" style="background:rgba(255,179,71,0.1);color:#ffb347;">FIELD</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>e.vasquez@relay.ops</span>
+                  <span><span class="lbl">title:</span>Field Lead — East</span>
+                  <span><span class="lbl">tel:</span>(305) 555-0421</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x06</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">David Kim</span>
+                  <span class="a2-entry-tag" style="background:rgba(96,165,250,0.1);color:#60a5fa;">HQ</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>d.kim@relay.ops</span>
+                  <span><span class="lbl">title:</span>Logistics Coord.</span>
+                  <span><span class="lbl">tel:</span>(415) 555-0567</span>
+                </div>
+              </div>
+            </div>
+            <div class="a2-entry">
+              <span class="a2-entry-id">0x07</span>
+              <div class="a2-entry-body">
+                <div class="a2-entry-line1">
+                  <span class="a2-entry-name">Sarah Mitchell</span>
+                  <span class="a2-entry-tag" style="background:rgba(96,165,250,0.1);color:#60a5fa;">HQ</span>
+                </div>
+                <div class="a2-entry-line2">
+                  <span><span class="lbl">mail:</span>s.mitchell@relay.ops</span>
+                  <span><span class="lbl">title:</span>Comms Officer</span>
+                  <span><span class="lbl">tel:</span>(415) 555-0890</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ A3: Signal Refined ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Variation A3</div>
+      <div class="direction-name">Signal Refined</div>
+      <div class="direction-desc">The three-panel layout benefits most from larger type — the detail panel becomes genuinely useful at TV distance, not just a decorative sidebar. Names and values are all legible at 8ft.</div>
+      <ul class="direction-traits">
+        <li>Names: <em>18-20px bold</em></li>
+        <li>Body: <em>15-16px</em></li>
+        <li>Labels: <em>13-14px bold</em></li>
+        <li>Row height: <em>54px</em></li>
+        <li>Detail panel: <em>300px</em></li>
+        <li>Avatar: <em>64px / 22px initials</em></li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="a3">
+        <div class="a3-sidebar">
+          <div class="a3-sidebar-head">
+            <span>Groups</span>
+            <span class="ct">3 / 6</span>
+          </div>
+          <div class="a3-grp on">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">Operations Team</span>
+            <span class="a3-grp-num">24</span>
+          </div>
+          <div class="a3-grp on">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">Field Leads</span>
+            <span class="a3-grp-num">8</span>
+          </div>
+          <div class="a3-grp on">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">HQ Staff</span>
+            <span class="a3-grp-num">12</span>
+          </div>
+          <div class="a3-grp">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">Contractors</span>
+            <span class="a3-grp-num">31</span>
+          </div>
+          <div class="a3-grp">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">External Partners</span>
+            <span class="a3-grp-num">15</span>
+          </div>
+          <div class="a3-grp">
+            <div class="a3-grp-pip"></div>
+            <span class="a3-grp-name">Board Members</span>
+            <span class="a3-grp-num">6</span>
+          </div>
+        </div>
+        <div class="a3-center">
+          <div class="a3-topbar">
+            <span class="a3-topbar-title">Composition</span>
+            <span class="a3-topbar-badge">38</span>
+            <div class="a3-topbar-right">
+              <button class="a3-btn">Undo</button>
+              <button class="a3-btn">History</button>
+              <button class="a3-btn">Copy</button>
+              <button class="a3-btn hot">Draft Bridge</button>
+            </div>
+          </div>
+          <div class="a3-list">
+            <div class="a3-row thead">
+              <span>Name</span><span>Email</span><span>Group</span><span></span>
+            </div>
+            <div class="a3-row selected">
+              <span class="a3-row-name">Marcus Chen</span>
+              <span class="a3-row-email">m.chen@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(244,114,182,0.1);color:#f472b6;">OPS</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Priya Sharma</span>
+              <span class="a3-row-email">p.sharma@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(244,114,182,0.1);color:#f472b6;">OPS</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Yuki Tanaka</span>
+              <span class="a3-row-email">y.tanaka@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(96,165,250,0.1);color:#60a5fa;">FIELD</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">James Okafor</span>
+              <span class="a3-row-email">j.okafor@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(244,114,182,0.1);color:#f472b6;">OPS</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Elena Vasquez</span>
+              <span class="a3-row-email">e.vasquez@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(96,165,250,0.1);color:#60a5fa;">FIELD</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">David Kim</span>
+              <span class="a3-row-email">d.kim@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(168,85,247,0.1);color:#c084fc;">HQ</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Sarah Mitchell</span>
+              <span class="a3-row-email">s.mitchell@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(168,85,247,0.1);color:#c084fc;">HQ</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Amir Hassan</span>
+              <span class="a3-row-email">a.hassan@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(244,114,182,0.1);color:#f472b6;">OPS</span>
+              <span class="a3-row-x">×</span>
+            </div>
+            <div class="a3-row">
+              <span class="a3-row-name">Lisa Park</span>
+              <span class="a3-row-email">l.park@relay.ops</span>
+              <span class="a3-tag" style="background:rgba(168,85,247,0.1);color:#c084fc;">HQ</span>
+              <span class="a3-row-x">×</span>
+            </div>
+          </div>
+        </div>
+        <div class="a3-detail">
+          <div class="a3-detail-head">
+            <div class="a3-detail-avatar" style="background:rgba(244,114,182,0.15);color:#f472b6;">MC</div>
+            <div class="a3-detail-name">Marcus Chen</div>
+            <div class="a3-detail-title">Operations Director</div>
+          </div>
+          <div class="a3-detail-section">
+            <div class="a3-detail-label">Contact</div>
+            <div class="a3-detail-field">
+              <span class="key">Email</span>
+              <span class="val">m.chen@relay.ops</span>
+            </div>
+            <div class="a3-detail-field">
+              <span class="key">Phone</span>
+              <span class="val">(415) 555-0142</span>
+            </div>
+          </div>
+          <div class="a3-detail-section">
+            <div class="a3-detail-label">Groups</div>
+            <div class="a3-detail-groups">
+              <span class="a3-detail-pill" style="background:rgba(244,114,182,0.1);color:#f472b6;">Operations</span>
+              <span class="a3-detail-pill" style="background:rgba(96,165,250,0.1);color:#60a5fa;">Field Leads</span>
+            </div>
+          </div>
+          <div class="a3-detail-section">
+            <div class="a3-detail-label">Source</div>
+            <div class="a3-detail-field">
+              <span class="val" style="font-size:14px;color:var(--dim);">Imported from CSV — Mar 12</span>
+            </div>
+          </div>
+          <div class="a3-detail-actions">
+            <button class="a3-detail-btn">Copy Email</button>
+            <button class="a3-detail-btn danger">Remove from Composition</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  Signal Dispatch — TV-Ready Variations
+</div>
+
+</body>
+</html>

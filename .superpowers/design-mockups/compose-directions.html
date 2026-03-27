@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relay Compose Tab — Design Directions</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600;9..144,700&family=Overpass+Mono:wght@400;600;700&family=Syne:wght@400;500;600;700;800&family=Archivo:wght@400;500;600;700;800;900&family=Newsreader:opsz,wght@6..72,300;6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --page-bg: #0a0a0c;
+    --page-text: #c8ccd4;
+  }
+
+  body {
+    background: var(--page-bg);
+    color: var(--page-text);
+    font-family: 'Instrument Sans', sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Page Chrome ─── */
+  .page-header {
+    padding: 48px 64px 32px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .page-header h1 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 42px;
+    font-weight: 400;
+    color: #f0f2f5;
+    letter-spacing: -0.5px;
+  }
+  .page-header p {
+    margin-top: 8px;
+    font-size: 15px;
+    color: #6b7280;
+    max-width: 680px;
+  }
+
+  .directions {
+    display: flex;
+    flex-direction: column;
+    gap: 80px;
+    padding: 64px;
+  }
+
+  /* ─── Direction Section ─── */
+  .direction {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .direction-meta {
+    position: sticky;
+    top: 40px;
+  }
+  .direction-number {
+    font-family: 'Overpass Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #4b5563;
+    margin-bottom: 12px;
+  }
+  .direction-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: #e5e7eb;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+  .direction-desc {
+    font-size: 14px;
+    color: #6b7280;
+    line-height: 1.7;
+    margin-bottom: 24px;
+  }
+  .direction-traits {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .direction-traits li {
+    font-size: 12px;
+    font-family: 'Overpass Mono', monospace;
+    color: #9ca3af;
+    padding-left: 16px;
+    position: relative;
+  }
+  .direction-traits li::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: #4b5563;
+  }
+
+  .mockup-frame {
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #111;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+  .mockup-titlebar {
+    height: 36px;
+    background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 7px;
+  }
+  .mockup-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .separator {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06) 20%, rgba(255,255,255,0.06) 80%, transparent);
+  }
+
+  /* ══════════════════════════════════════════════
+     DIRECTION A — "SIGNAL DISPATCH"
+     Editorial / High-Information-Density
+     Bloomberg Terminal meets field operations
+     ══════════════════════════════════════════════ */
+
+  .da {
+    --da-bg: #08090b;
+    --da-surface: #0d0f13;
+    --da-border: rgba(255,255,255,0.07);
+    --da-text: #d1d5db;
+    --da-dim: #6b7280;
+    --da-muted: #374151;
+    --da-signal: #e11d48;
+    --da-signal-dim: rgba(225, 29, 72, 0.15);
+    --da-cold: #0ea5e9;
+    --da-cold-dim: rgba(14, 165, 233, 0.12);
+    --da-warm: #f59e0b;
+
+    background: var(--da-bg);
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--da-text);
+  }
+
+  /* Sidebar */
+  .da-sidebar {
+    background: var(--da-surface);
+    border-right: 1px solid var(--da-border);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .da-sidebar-header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--da-border);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--da-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .da-sidebar-header .count {
+    font-size: 10px;
+    color: var(--da-signal);
+    letter-spacing: 0;
+    font-weight: 500;
+  }
+  .da-group {
+    padding: 10px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .da-group:hover { background: rgba(255,255,255,0.02); }
+  .da-group.active {
+    background: var(--da-signal-dim);
+    border-left: 2px solid var(--da-signal);
+    padding-left: 16px;
+  }
+  .da-group-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--da-muted);
+    flex-shrink: 0;
+  }
+  .da-group.active .da-group-indicator { background: var(--da-signal); box-shadow: 0 0 8px rgba(225,29,72,0.4); }
+  .da-group-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--da-dim);
+  }
+  .da-group.active .da-group-name { color: var(--da-text); }
+  .da-group-count {
+    margin-left: auto;
+    font-size: 10px;
+    color: var(--da-muted);
+    font-weight: 400;
+  }
+
+  /* Main content */
+  .da-main {
+    display: flex;
+    flex-direction: column;
+  }
+  .da-toolbar {
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--da-border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: var(--da-surface);
+  }
+  .da-toolbar-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--da-text);
+    letter-spacing: 0.5px;
+  }
+  .da-toolbar-count {
+    font-size: 11px;
+    color: var(--da-signal);
+    background: var(--da-signal-dim);
+    padding: 2px 10px;
+    border-radius: 3px;
+    font-weight: 500;
+  }
+  .da-toolbar-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+  }
+  .da-btn {
+    padding: 5px 12px;
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px solid var(--da-border);
+    background: transparent;
+    color: var(--da-dim);
+    cursor: pointer;
+    transition: all 0.12s;
+    border-radius: 3px;
+  }
+  .da-btn:hover { color: var(--da-text); border-color: rgba(255,255,255,0.15); }
+  .da-btn.primary {
+    background: var(--da-signal);
+    border-color: var(--da-signal);
+    color: #fff;
+  }
+  .da-btn.primary:hover { background: #be123c; }
+
+  /* Recipient rows */
+  .da-list {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--da-bg);
+  }
+  .da-row {
+    display: grid;
+    grid-template-columns: 28px 1.2fr 1.5fr 0.8fr 0.7fr 80px;
+    align-items: center;
+    padding: 0 24px;
+    height: 44px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    transition: background 0.1s;
+  }
+  .da-row:hover { background: rgba(255,255,255,0.015); }
+  .da-row-status {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+  .da-row-name {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--da-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .da-row-email {
+    color: var(--da-dim);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .da-row-title {
+    color: var(--da-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .da-row-group {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 2px;
+    display: inline-block;
+    width: fit-content;
+  }
+  .da-row-remove {
+    font-size: 10px;
+    color: var(--da-muted);
+    cursor: pointer;
+    text-align: right;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .da-row:hover .da-row-remove { opacity: 1; }
+  .da-row-header {
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--da-muted);
+    border-bottom: 1px solid var(--da-border);
+    height: 32px;
+    background: var(--da-surface);
+  }
+
+  /* ══════════════════════════════════════════════
+     DIRECTION B — "WARM ANALOG"
+     Textured warmth, stationery & craft
+     Like a well-loved leather notebook
+     ══════════════════════════════════════════════ */
+
+  .db {
+    --db-bg: #1a1714;
+    --db-surface: #211e19;
+    --db-card: #28241e;
+    --db-border: rgba(210, 180, 140, 0.1);
+    --db-text: #e8dcc8;
+    --db-dim: #a89880;
+    --db-muted: #6b5f50;
+    --db-accent: #c2956b;
+    --db-accent-dim: rgba(194, 149, 107, 0.15);
+    --db-ink: #e2c9a0;
+
+    background: var(--db-bg);
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 14px;
+    color: var(--db-text);
+    position: relative;
+  }
+  .db::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      url("data:image/svg+xml,%3Csvg width='400' height='400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+  .db > * { position: relative; z-index: 1; }
+
+  /* Sidebar */
+  .db-sidebar {
+    background: var(--db-surface);
+    border-right: 1px solid var(--db-border);
+    padding: 24px 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .db-sidebar-title {
+    font-family: 'Fraunces', serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--db-muted);
+    padding: 0 24px 20px;
+    border-bottom: 1px solid var(--db-border);
+    margin-bottom: 8px;
+  }
+  .db-group {
+    padding: 12px 24px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .db-group:hover { background: rgba(194,149,107,0.05); }
+  .db-group.active {
+    background: var(--db-accent-dim);
+  }
+  .db-group-swatch {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+  }
+  .db-group-info { flex: 1; }
+  .db-group-name {
+    font-family: 'Fraunces', serif;
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--db-dim);
+    line-height: 1.3;
+  }
+  .db-group.active .db-group-name { color: var(--db-text); }
+  .db-group-sub {
+    font-size: 11px;
+    color: var(--db-muted);
+    margin-top: 2px;
+  }
+
+  /* Main */
+  .db-main {
+    display: flex;
+    flex-direction: column;
+    padding: 24px 28px;
+    gap: 20px;
+  }
+  .db-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .db-header-left {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .db-header h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--db-ink);
+    letter-spacing: -0.3px;
+  }
+  .db-header .count {
+    font-size: 12px;
+    color: var(--db-muted);
+    font-family: 'Newsreader', serif;
+    font-style: italic;
+  }
+  .db-header-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .db-btn {
+    padding: 7px 18px;
+    font-size: 12px;
+    font-family: 'Instrument Sans', sans-serif;
+    font-weight: 600;
+    border: 1px solid var(--db-border);
+    background: transparent;
+    color: var(--db-dim);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+  }
+  .db-btn:hover { border-color: var(--db-accent); color: var(--db-accent); }
+  .db-btn.primary {
+    background: var(--db-accent);
+    border-color: var(--db-accent);
+    color: #1a1714;
+    font-weight: 700;
+  }
+
+  /* Cards */
+  .db-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+    flex: 1;
+    overflow-y: auto;
+    align-content: start;
+  }
+  .db-card {
+    background: var(--db-card);
+    border: 1px solid var(--db-border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .db-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: 12px 12px 0 0;
+    opacity: 0.6;
+  }
+  .db-card:hover {
+    border-color: rgba(194,149,107,0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+  }
+  .db-card-top {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+  .db-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .db-card-name {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: var(--db-ink);
+    line-height: 1.2;
+  }
+  .db-card-title {
+    font-size: 12px;
+    color: var(--db-muted);
+    margin-top: 2px;
+  }
+  .db-card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--db-border);
+  }
+  .db-card-detail {
+    font-size: 12px;
+    color: var(--db-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .db-card-detail .label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--db-muted);
+    width: 40px;
+    flex-shrink: 0;
+  }
+  .db-card-group-pills {
+    display: flex;
+    gap: 6px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .db-pill {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    text-transform: uppercase;
+  }
+
+  /* ══════════════════════════════════════════════
+     DIRECTION C — "KINETIC GRID"
+     Bold geometric, high energy
+     Bauhaus meets modern dashboard
+     ══════════════════════════════════════════════ */
+
+  .dc {
+    --dc-bg: #0c0c10;
+    --dc-surface: #14141a;
+    --dc-border: rgba(255,255,255,0.06);
+    --dc-text: #eaedf3;
+    --dc-dim: #7a8194;
+    --dc-muted: #3d4254;
+    --dc-pop: #6366f1;
+    --dc-pop-dim: rgba(99, 102, 241, 0.12);
+    --dc-hot: #f43f5e;
+    --dc-lime: #84cc16;
+    --dc-lime-dim: rgba(132, 204, 22, 0.1);
+
+    background: var(--dc-bg);
+    min-height: 520px;
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    font-family: 'Archivo', sans-serif;
+    font-size: 13px;
+    color: var(--dc-text);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Thin icon rail */
+  .dc-rail {
+    background: var(--dc-surface);
+    border-right: 1px solid var(--dc-border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+    gap: 4px;
+  }
+  .dc-rail-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--dc-muted);
+  }
+  .dc-rail-icon:hover { background: rgba(255,255,255,0.04); color: var(--dc-dim); }
+  .dc-rail-icon.active {
+    background: var(--dc-pop-dim);
+    color: var(--dc-pop);
+  }
+  .dc-rail-spacer { flex: 1; }
+
+  /* Main area */
+  .dc-main {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .dc-topbar {
+    display: flex;
+    align-items: center;
+    padding: 14px 28px;
+    gap: 16px;
+    border-bottom: 1px solid var(--dc-border);
+    background: var(--dc-surface);
+  }
+  .dc-topbar-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--dc-text);
+  }
+  .dc-topbar-badge {
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--dc-pop);
+    color: #fff;
+    padding: 3px 12px;
+    border-radius: 20px;
+  }
+  .dc-topbar-search {
+    margin-left: auto;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--dc-border);
+    border-radius: 8px;
+    padding: 7px 16px;
+    font-family: 'Archivo', sans-serif;
+    font-size: 12px;
+    color: var(--dc-dim);
+    width: 220px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .dc-topbar-search:focus { border-color: var(--dc-pop); }
+  .dc-topbar-actions {
+    display: flex;
+    gap: 6px;
+  }
+  .dc-btn {
+    padding: 7px 16px;
+    font-size: 12px;
+    font-family: 'Archivo', sans-serif;
+    font-weight: 700;
+    border: none;
+    background: rgba(255,255,255,0.05);
+    color: var(--dc-dim);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.12s;
+  }
+  .dc-btn:hover { background: rgba(255,255,255,0.08); color: var(--dc-text); }
+  .dc-btn.primary {
+    background: var(--dc-pop);
+    color: #fff;
+  }
+  .dc-btn.primary:hover { background: #4f46e5; }
+
+  /* Content: sidebar + list */
+  .dc-content {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    overflow: hidden;
+  }
+  .dc-groups-panel {
+    border-right: 1px solid var(--dc-border);
+    padding: 16px 0;
+    overflow-y: auto;
+    background: rgba(255,255,255,0.01);
+  }
+  .dc-groups-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--dc-muted);
+    padding: 8px 20px;
+  }
+  .dc-gitem {
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-left: 3px solid transparent;
+  }
+  .dc-gitem:hover { background: rgba(255,255,255,0.02); }
+  .dc-gitem.active {
+    background: var(--dc-pop-dim);
+    border-left-color: var(--dc-pop);
+  }
+  .dc-gitem-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .dc-gitem-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--dc-dim);
+  }
+  .dc-gitem.active .dc-gitem-text { color: var(--dc-text); }
+  .dc-gitem-num {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--dc-muted);
+    font-family: 'Overpass Mono', monospace;
+  }
+
+  /* Contact list — chunky rows */
+  .dc-list {
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .dc-contact {
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    transition: background 0.12s;
+    cursor: pointer;
+  }
+  .dc-contact:hover { background: rgba(255,255,255,0.025); }
+  .dc-contact-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Syne', sans-serif;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .dc-contact-info { min-width: 0; }
+  .dc-contact-name {
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--dc-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dc-contact-meta {
+    font-size: 12px;
+    color: var(--dc-dim);
+    display: flex;
+    gap: 12px;
+    margin-top: 2px;
+  }
+  .dc-contact-meta span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dc-contact-pills {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .dc-cpill {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border-radius: 6px;
+  }
+
+  /* ─── Footer ─── */
+  .page-footer {
+    padding: 48px 64px 64px;
+    text-align: center;
+    color: #374151;
+    font-size: 13px;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Relay Compose Tab</h1>
+  <p>Three design directions that move away from the current dark+amber template feel. Each explores a different personality while keeping the same functionality: group selection, recipient list, and action toolbar.</p>
+</div>
+
+<div class="directions">
+
+  <!-- ═══ DIRECTION A: Signal Dispatch ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Direction A</div>
+      <div class="direction-name">Signal Dispatch</div>
+      <div class="direction-desc">High information density. Every pixel earns its place. Monospaced typography creates a utilitarian, operations-center feel. Red signal color replaces amber for urgency without warmth.</div>
+      <ul class="direction-traits">
+        <li>IBM Plex Mono throughout</li>
+        <li>Table rows, not cards</li>
+        <li>Signal red accent (#E11D48)</li>
+        <li>Tight, data-dense layout</li>
+        <li>Status indicators per contact</li>
+        <li>Bloomberg / ops-center energy</li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="da">
+        <div class="da-sidebar">
+          <div class="da-sidebar-header">
+            Groups <span class="count">3 active</span>
+          </div>
+          <div class="da-group active">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">Operations Team</span>
+            <span class="da-group-count">24</span>
+          </div>
+          <div class="da-group active">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">Field Leads</span>
+            <span class="da-group-count">8</span>
+          </div>
+          <div class="da-group active">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">HQ Staff</span>
+            <span class="da-group-count">12</span>
+          </div>
+          <div class="da-group">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">Contractors</span>
+            <span class="da-group-count">31</span>
+          </div>
+          <div class="da-group">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">External Partners</span>
+            <span class="da-group-count">15</span>
+          </div>
+          <div class="da-group">
+            <div class="da-group-indicator"></div>
+            <span class="da-group-name">Board Members</span>
+            <span class="da-group-count">6</span>
+          </div>
+        </div>
+        <div class="da-main">
+          <div class="da-toolbar">
+            <span class="da-toolbar-title">COMPOSITION</span>
+            <span class="da-toolbar-count">38 recipients</span>
+            <div class="da-toolbar-actions">
+              <button class="da-btn">Undo</button>
+              <button class="da-btn">Reset</button>
+              <button class="da-btn">History</button>
+              <button class="da-btn">Copy</button>
+              <button class="da-btn primary">Draft Bridge</button>
+            </div>
+          </div>
+          <div class="da-list">
+            <div class="da-row da-row-header">
+              <span></span>
+              <span>Name</span>
+              <span>Email</span>
+              <span>Title</span>
+              <span>Group</span>
+              <span></span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">Marcus Chen</span>
+              <span class="da-row-email">m.chen@relay.ops</span>
+              <span class="da-row-title">Ops Director</span>
+              <span class="da-row-group" style="background: rgba(225,29,72,0.12); color: #fb7185;">OPS</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">Priya Sharma</span>
+              <span class="da-row-email">p.sharma@relay.ops</span>
+              <span class="da-row-title">Lead Engineer</span>
+              <span class="da-row-group" style="background: rgba(225,29,72,0.12); color: #fb7185;">OPS</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: var(--da-warm)"></div>
+              <span class="da-row-name">Yuki Tanaka</span>
+              <span class="da-row-email">y.tanaka@relay.ops</span>
+              <span class="da-row-title">Field Lead — West</span>
+              <span class="da-row-group" style="background: rgba(14,165,233,0.12); color: #38bdf8;">FIELD</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">James Okafor</span>
+              <span class="da-row-email">j.okafor@relay.ops</span>
+              <span class="da-row-title">Systems Analyst</span>
+              <span class="da-row-group" style="background: rgba(225,29,72,0.12); color: #fb7185;">OPS</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: var(--da-muted)"></div>
+              <span class="da-row-name">Elena Vasquez</span>
+              <span class="da-row-email">e.vasquez@relay.ops</span>
+              <span class="da-row-title">Field Lead — East</span>
+              <span class="da-row-group" style="background: rgba(14,165,233,0.12); color: #38bdf8;">FIELD</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">David Kim</span>
+              <span class="da-row-email">d.kim@relay.ops</span>
+              <span class="da-row-title">Logistics Coord.</span>
+              <span class="da-row-group" style="background: rgba(168,85,247,0.12); color: #c084fc;">HQ</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">Sarah Mitchell</span>
+              <span class="da-row-email">s.mitchell@relay.ops</span>
+              <span class="da-row-title">Comms Officer</span>
+              <span class="da-row-group" style="background: rgba(168,85,247,0.12); color: #c084fc;">HQ</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: var(--da-warm)"></div>
+              <span class="da-row-name">Amir Hassan</span>
+              <span class="da-row-email">a.hassan@relay.ops</span>
+              <span class="da-row-title">Security Lead</span>
+              <span class="da-row-group" style="background: rgba(225,29,72,0.12); color: #fb7185;">OPS</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">Lisa Park</span>
+              <span class="da-row-email">l.park@relay.ops</span>
+              <span class="da-row-title">HR Director</span>
+              <span class="da-row-group" style="background: rgba(168,85,247,0.12); color: #c084fc;">HQ</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+            <div class="da-row">
+              <div class="da-row-status" style="background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.4)"></div>
+              <span class="da-row-name">Thomas Wright</span>
+              <span class="da-row-email">t.wright@relay.ops</span>
+              <span class="da-row-title">Field Lead — South</span>
+              <span class="da-row-group" style="background: rgba(14,165,233,0.12); color: #38bdf8;">FIELD</span>
+              <span class="da-row-remove">REMOVE</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ DIRECTION B: Warm Analog ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Direction B</div>
+      <div class="direction-name">Warm Analog</div>
+      <div class="direction-desc">Rich textures and serif typography evoke craft and care. Card-based layout with warm earth tones replaces the cold dark+amber formula. Feels like a curated address book, not a spreadsheet.</div>
+      <ul class="direction-traits">
+        <li>Fraunces serif + Instrument Sans</li>
+        <li>Card grid, not rows</li>
+        <li>Warm earth palette (#C2956B)</li>
+        <li>Noise texture overlay</li>
+        <li>Rounded, generous spacing</li>
+        <li>Stationery / leather notebook feel</li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="db">
+        <div class="db-sidebar">
+          <div class="db-sidebar-title">Collections</div>
+          <div class="db-group active">
+            <div class="db-group-swatch" style="background: #8b5e3c;"></div>
+            <div class="db-group-info">
+              <div class="db-group-name">Operations Team</div>
+              <div class="db-group-sub">24 contacts</div>
+            </div>
+          </div>
+          <div class="db-group active">
+            <div class="db-group-swatch" style="background: #5c7a5e;"></div>
+            <div class="db-group-info">
+              <div class="db-group-name">Field Leads</div>
+              <div class="db-group-sub">8 contacts</div>
+            </div>
+          </div>
+          <div class="db-group">
+            <div class="db-group-swatch" style="background: #6b5c7a;"></div>
+            <div class="db-group-info">
+              <div class="db-group-name">HQ Staff</div>
+              <div class="db-group-sub">12 contacts</div>
+            </div>
+          </div>
+          <div class="db-group">
+            <div class="db-group-swatch" style="background: #7a6b5c;"></div>
+            <div class="db-group-info">
+              <div class="db-group-name">Contractors</div>
+              <div class="db-group-sub">31 contacts</div>
+            </div>
+          </div>
+          <div class="db-group">
+            <div class="db-group-swatch" style="background: #5c6b7a;"></div>
+            <div class="db-group-info">
+              <div class="db-group-name">External Partners</div>
+              <div class="db-group-sub">15 contacts</div>
+            </div>
+          </div>
+        </div>
+        <div class="db-main">
+          <div class="db-header">
+            <div class="db-header-left">
+              <h2>Composition</h2>
+              <span class="count">32 recipients selected</span>
+            </div>
+            <div class="db-header-actions">
+              <button class="db-btn">History</button>
+              <button class="db-btn">Copy All</button>
+              <button class="db-btn primary">Draft Bridge</button>
+            </div>
+          </div>
+          <div class="db-grid">
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#8b5e3c;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(139,94,60,0.2); color: #c2956b;">MC</div>
+                <div>
+                  <div class="db-card-name">Marcus Chen</div>
+                  <div class="db-card-title">Operations Director</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> m.chen@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (415) 555-0142</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(139,94,60,0.15); color: #c2956b;">Operations</span>
+              </div>
+            </div>
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#5c7a5e;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(92,122,94,0.2); color: #8aad8c;">PS</div>
+                <div>
+                  <div class="db-card-name">Priya Sharma</div>
+                  <div class="db-card-title">Lead Engineer</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> p.sharma@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (415) 555-0298</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(92,122,94,0.15); color: #8aad8c;">Operations</span>
+                <span class="db-pill" style="background: rgba(92,122,94,0.15); color: #8aad8c;">Field Leads</span>
+              </div>
+            </div>
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#5c7a5e;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(92,122,94,0.2); color: #8aad8c;">YT</div>
+                <div>
+                  <div class="db-card-name">Yuki Tanaka</div>
+                  <div class="db-card-title">Field Lead — West Region</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> y.tanaka@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (503) 555-0177</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(92,122,94,0.15); color: #8aad8c;">Field Leads</span>
+              </div>
+            </div>
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#8b5e3c;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(139,94,60,0.2); color: #c2956b;">JO</div>
+                <div>
+                  <div class="db-card-name">James Okafor</div>
+                  <div class="db-card-title">Systems Analyst</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> j.okafor@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (212) 555-0334</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(139,94,60,0.15); color: #c2956b;">Operations</span>
+              </div>
+            </div>
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#5c7a5e;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(92,122,94,0.2); color: #8aad8c;">EV</div>
+                <div>
+                  <div class="db-card-name">Elena Vasquez</div>
+                  <div class="db-card-title">Field Lead — East Region</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> e.vasquez@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (305) 555-0421</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(92,122,94,0.15); color: #8aad8c;">Field Leads</span>
+              </div>
+            </div>
+            <div class="db-card">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;background:#6b5c7a;border-radius:12px 12px 0 0;opacity:0.6"></div>
+              <div class="db-card-top">
+                <div class="db-avatar" style="background: rgba(107,92,122,0.2); color: #9d8ab5;">DK</div>
+                <div>
+                  <div class="db-card-name">David Kim</div>
+                  <div class="db-card-title">Logistics Coordinator</div>
+                </div>
+              </div>
+              <div class="db-card-details">
+                <div class="db-card-detail"><span class="label">Email</span> d.kim@relay.ops</div>
+                <div class="db-card-detail"><span class="label">Phone</span> (415) 555-0567</div>
+              </div>
+              <div class="db-card-group-pills">
+                <span class="db-pill" style="background: rgba(107,92,122,0.15); color: #9d8ab5;">HQ Staff</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="separator">
+
+  <!-- ═══ DIRECTION C: Kinetic Grid ═══ -->
+  <div class="direction">
+    <div class="direction-meta">
+      <div class="direction-number">Direction C</div>
+      <div class="direction-name">Kinetic Grid</div>
+      <div class="direction-desc">Bold geometric shapes and high-energy typography. A collapsed icon rail frees up space. Indigo accent feels modern without being cold. Chunky contact rows with squared avatars break the card monotony.</div>
+      <ul class="direction-traits">
+        <li>Syne display + Archivo body</li>
+        <li>Icon rail instead of wide sidebar</li>
+        <li>Indigo accent (#6366F1)</li>
+        <li>Squared avatars, chunky rows</li>
+        <li>Bold weight hierarchy</li>
+        <li>Bauhaus / dashboard energy</li>
+      </ul>
+    </div>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot"></div><div class="mockup-dot"></div><div class="mockup-dot"></div>
+      </div>
+      <div class="dc">
+        <div class="dc-rail">
+          <div class="dc-rail-icon" style="color: var(--dc-dim);">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="dc-rail-icon active">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+          <div class="dc-rail-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </div>
+          <div class="dc-rail-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.2.65.77 1.09 1.45 1.09H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+          </div>
+          <div class="dc-rail-spacer"></div>
+        </div>
+        <div class="dc-main">
+          <div class="dc-topbar">
+            <span class="dc-topbar-title">Compose</span>
+            <span class="dc-topbar-badge">38</span>
+            <input class="dc-topbar-search" placeholder="Search recipients..." readonly>
+            <div class="dc-topbar-actions">
+              <button class="dc-btn">Copy</button>
+              <button class="dc-btn">History</button>
+              <button class="dc-btn primary">Draft Bridge</button>
+            </div>
+          </div>
+          <div class="dc-content">
+            <div class="dc-groups-panel">
+              <div class="dc-groups-label">Groups</div>
+              <div class="dc-gitem active">
+                <div class="dc-gitem-dot" style="background: var(--dc-pop);"></div>
+                <span class="dc-gitem-text">Operations</span>
+                <span class="dc-gitem-num">24</span>
+              </div>
+              <div class="dc-gitem active">
+                <div class="dc-gitem-dot" style="background: var(--dc-lime);"></div>
+                <span class="dc-gitem-text">Field Leads</span>
+                <span class="dc-gitem-num">8</span>
+              </div>
+              <div class="dc-gitem">
+                <div class="dc-gitem-dot" style="background: var(--dc-hot);"></div>
+                <span class="dc-gitem-text">HQ Staff</span>
+                <span class="dc-gitem-num">12</span>
+              </div>
+              <div class="dc-gitem">
+                <div class="dc-gitem-dot" style="background: #f59e0b;"></div>
+                <span class="dc-gitem-text">Contractors</span>
+                <span class="dc-gitem-num">31</span>
+              </div>
+              <div class="dc-gitem">
+                <div class="dc-gitem-dot" style="background: #06b6d4;"></div>
+                <span class="dc-gitem-text">External</span>
+                <span class="dc-gitem-num">15</span>
+              </div>
+            </div>
+            <div class="dc-list">
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-pop-dim); color: var(--dc-pop);">MC</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Marcus Chen</div>
+                  <div class="dc-contact-meta">
+                    <span>m.chen@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Ops Director</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-pop-dim); color: var(--dc-pop);">OPS</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-pop-dim); color: var(--dc-pop);">PS</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Priya Sharma</div>
+                  <div class="dc-contact-meta">
+                    <span>p.sharma@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Lead Engineer</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-pop-dim); color: var(--dc-pop);">OPS</span>
+                  <span class="dc-cpill" style="background: var(--dc-lime-dim); color: var(--dc-lime);">FIELD</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-lime-dim); color: var(--dc-lime);">YT</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Yuki Tanaka</div>
+                  <div class="dc-contact-meta">
+                    <span>y.tanaka@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Field Lead — West</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-lime-dim); color: var(--dc-lime);">FIELD</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-pop-dim); color: var(--dc-pop);">JO</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">James Okafor</div>
+                  <div class="dc-contact-meta">
+                    <span>j.okafor@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Systems Analyst</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-pop-dim); color: var(--dc-pop);">OPS</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-lime-dim); color: var(--dc-lime);">EV</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Elena Vasquez</div>
+                  <div class="dc-contact-meta">
+                    <span>e.vasquez@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Field Lead — East</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-lime-dim); color: var(--dc-lime);">FIELD</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: rgba(244,63,94,0.12); color: var(--dc-hot);">DK</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">David Kim</div>
+                  <div class="dc-contact-meta">
+                    <span>d.kim@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Logistics Coord.</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: rgba(244,63,94,0.12); color: var(--dc-hot);">HQ</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: rgba(244,63,94,0.12); color: var(--dc-hot);">SM</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Sarah Mitchell</div>
+                  <div class="dc-contact-meta">
+                    <span>s.mitchell@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Comms Officer</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: rgba(244,63,94,0.12); color: var(--dc-hot);">HQ</span>
+                </div>
+              </div>
+              <div class="dc-contact">
+                <div class="dc-contact-avatar" style="background: var(--dc-pop-dim); color: var(--dc-pop);">AH</div>
+                <div class="dc-contact-info">
+                  <div class="dc-contact-name">Amir Hassan</div>
+                  <div class="dc-contact-meta">
+                    <span>a.hassan@relay.ops</span>
+                    <span style="color: var(--dc-muted)">Security Lead</span>
+                  </div>
+                </div>
+                <div class="dc-contact-pills">
+                  <span class="dc-cpill" style="background: var(--dc-pop-dim); color: var(--dc-pop);">OPS</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  Relay Design Explorations — Pick a direction, mix elements, or ask for variations
+</div>
+
+</body>
+</html>
