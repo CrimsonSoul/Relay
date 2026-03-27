@@ -43,7 +43,12 @@ export const CategorySelect: React.FC<{
     <option value="contacts">Contacts</option>
     <option value="servers">Servers</option>
     <option value="oncall">On-Call</option>
-    <option value="groups">Groups</option>
+    <option value="groups">Bridge Groups</option>
+    <option value="bridge_history">Bridge History</option>
+    <option value="alert_history">Alert History</option>
+    <option value="notes">Notes</option>
+    <option value="saved_locations">Saved Locations</option>
+    <option value="standalone_notes">Standalone Notes</option>
   </select>
 );
 
@@ -58,5 +63,6 @@ export const FormatSelect: React.FC<{
   >
     <option value="json">JSON</option>
     <option value="csv">CSV</option>
+    <option value="excel">Excel</option>
   </select>
 );

@@ -4,6 +4,18 @@ import { useServers } from '../useServers';
 import type { Contact, Server } from '@shared/ipc';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 
+// Mock SearchContext
+const mockServerDebouncedQuery = { value: '' };
+vi.mock('../../contexts/SearchContext', () => ({
+  useSearchContext: () => ({ debouncedQuery: mockServerDebouncedQuery.value }),
+}));
+
+// Mock PocketBase server service
+const mockDeleteServer = vi.fn();
+vi.mock('../../services/serverService', () => ({
+  deleteServer: (...args: unknown[]) => mockDeleteServer(...args),
+}));
+
 describe('useServers', () => {
   const servers: Server[] = [
     {
@@ -15,7 +27,7 @@ describe('useServers', () => {
       contact: 'alpha@test.com',
       os: 'Linux',
       _searchString: 'alpha finance core owner a linux',
-      raw: {},
+      raw: { id: 'pb-1' },
     },
     {
       name: 'Bravo',
@@ -26,7 +38,7 @@ describe('useServers', () => {
       contact: 'bravo@test.com',
       os: 'Windows',
       _searchString: 'bravo it infra owner b windows',
-      raw: {},
+      raw: { id: 'pb-2' },
     },
   ];
 
@@ -43,40 +55,27 @@ describe('useServers', () => {
 
   beforeEach(() => {
     vi.useRealTimers();
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer: vi.fn().mockResolvedValue(true),
-    };
+    vi.clearAllMocks();
   });
 
   it('builds contact lookup and filters/sorts servers', () => {
-    vi.useFakeTimers();
-    const { result } = renderHook(() => useServers(servers, contacts));
+    const { result, rerender } = renderHook(() => useServers(servers, contacts));
 
     expect(result.current.contactLookup.get('alpha@test.com')?.name).toBe('Alice');
     expect(result.current.contactLookup.get('alice')?.email).toBe('alpha@test.com');
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Alpha', 'Bravo']);
 
-    act(() => {
-      result.current.setSearch('bravo');
-    });
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
+    mockServerDebouncedQuery.value = 'bravo';
+    rerender();
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo']);
 
-    act(() => {
-      result.current.setSearch('');
-    });
-    act(() => {
-      vi.advanceTimersByTime(350);
-    });
+    mockServerDebouncedQuery.value = '';
+    rerender();
     act(() => {
       result.current.setSortKey('name');
       result.current.setSortOrder('desc');
     });
     expect(result.current.filteredServers.map((s) => s.name)).toEqual(['Bravo', 'Alpha']);
-
-    vi.useRealTimers();
   });
 
   it('opens context menu and clears it on global click', () => {
@@ -101,10 +100,7 @@ describe('useServers', () => {
   });
 
   it('handles delete/edit flows and modal helpers', async () => {
-    const removeServer = vi.fn().mockResolvedValue(true);
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer,
-    };
+    mockDeleteServer.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
@@ -115,7 +111,7 @@ describe('useServers', () => {
     await act(async () => {
       await result.current.handleDelete();
     });
-    expect(removeServer).toHaveBeenCalledWith('Alpha');
+    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
     expect(result.current.contextMenu).toBeNull();
 
     act(() => {
@@ -135,10 +131,7 @@ describe('useServers', () => {
   });
 
   it('swallows server delete errors', async () => {
-    const removeServer = vi.fn().mockRejectedValue(new Error('boom'));
-    (globalThis as Window & { api?: { removeServer: (name: string) => Promise<boolean> } }).api = {
-      removeServer,
-    };
+    mockDeleteServer.mockRejectedValue(new Error('boom'));
 
     const { result } = renderHook(() => useServers(servers, contacts));
 
@@ -146,6 +139,6 @@ describe('useServers', () => {
       await result.current.deleteServer(servers[0]);
     });
 
-    expect(removeServer).toHaveBeenCalledWith('Alpha');
+    expect(mockDeleteServer).toHaveBeenCalledWith('pb-1');
   });
 });

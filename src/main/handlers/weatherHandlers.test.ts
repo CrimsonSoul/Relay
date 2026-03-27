@@ -40,14 +40,17 @@ describe('weatherHandlers', () => {
   });
 
   it('returns weather payload for valid coordinates', async () => {
+    const weatherData = {
+      current_weather: { temperature: 75 },
+      hourly: { temperature_2m: [75] },
+      daily: { temperature_2m_max: [80] },
+    };
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
-      json: async () => ({ current_weather: { temperature: 75 } }),
+      json: async () => weatherData,
     } as Response);
 
-    await expect(handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7)).resolves.toEqual({
-      current_weather: { temperature: 75 },
-    });
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7)).resolves.toEqual(weatherData);
   });
 
   it('returns weather error for invalid coordinates', async () => {

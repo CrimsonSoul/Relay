@@ -88,10 +88,9 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         setIsSearching(false);
       }
       setActiveSavedLocation(saved);
-      onManualRefresh(saved.lat, saved.lon);
       setShowLocationMenu(false);
     },
-    [onLocationChange, onManualRefresh],
+    [onLocationChange],
   );
 
   const handleOpenRename = useCallback((saved: SavedLocation) => {

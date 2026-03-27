@@ -1,0 +1,406 @@
+/* ============================================================================
+   Sidebar Toggle Handle (Assembler)
+   ============================================================================ */
+
+.sidebar-toggle-handle {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 100;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.sidebar-toggle-handle:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-right-color: var(--color-accent);
+}
+
+.sidebar-toggle-handle:hover .sidebar-toggle-handle-icon {
+  color: var(--color-accent);
+}
+
+.sidebar-toggle-handle-icon {
+  transition:
+    transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.2s;
+  color: var(--color-text-tertiary);
+}
+
+.sidebar-toggle-handle-icon--collapsed {
+  transform: rotate(180deg);
+}
+
+/* ============================================================================
+   Assembler Sidebar
+   ============================================================================ */
+
+.assembler-sidebar {
+  display: flex;
+  padding: 0;
+  height: 100%;
+  position: relative;
+  background: transparent;
+  z-index: 20;
+  min-height: 0;
+}
+
+.assembler-sidebar-inner {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: visible;
+}
+
+.assembler-sidebar-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background-color: var(--color-bg-card);
+  background-image: var(--surface-pattern);
+  background-size: var(--surface-pattern-size);
+  background-position: var(--surface-pattern-position);
+  animation: detailPanelFadeIn 0.2s ease-out;
+}
+
+.assembler-sidebar-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  width: 100%;
+}
+
+.assembler-sidebar-groups-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.assembler-sidebar-groups-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.assembler-sidebar-add-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 4px;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.assembler-sidebar-add-btn:hover {
+  color: var(--color-accent);
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.15);
+}
+
+.assembler-sidebar-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: visible;
+}
+
+.assembler-sidebar-empty {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  font-style: italic;
+  padding: 8px 4px;
+}
+
+/* ============================================================================
+   Bridge History Modal
+   ============================================================================ */
+
+.bridge-history-content {
+  padding: 24px;
+  min-width: 480px;
+  max-width: 600px;
+}
+
+.bridge-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.bridge-history-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.bridge-history-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--color-text-tertiary);
+}
+
+.bridge-history-empty-icon {
+  font-size: var(--text-2xl);
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+
+.bridge-history-empty-text {
+  margin: 0;
+  font-size: var(--text-base);
+}
+
+.bridge-history-list {
+  max-height: 400px;
+  overflow-y: auto;
+  margin: 0 -24px;
+  padding: 0 24px;
+}
+
+.bridge-history-entry {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  background: var(--color-bg-surface-elevated);
+  border: 1px solid var(--color-border-subtle);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bridge-history-entry:hover {
+  background: var(--color-bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.bridge-history-entry-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bridge-history-entry-date {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-tertiary);
+}
+
+.bridge-history-entry-count {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-card-hover);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 8px;
+}
+
+.bridge-history-entry-note {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin-bottom: 6px;
+}
+
+.bridge-history-entry-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bridge-history-entry-group-tag {
+  font-size: var(--text-xs);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(120, 53, 15, 0.72);
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+}
+
+.bridge-history-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+/* ============================================================================
+   Save Group Modal
+   ============================================================================ */
+
+.save-group-content {
+  padding: 24px;
+  min-width: 360px;
+}
+
+.save-group-title {
+  margin: 0 0 10px 0;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.save-group-description {
+  margin: 0 0 24px 0;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+}
+
+.save-group-contacts {
+  margin-bottom: 20px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-surface);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.save-group-contacts-header {
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--color-border-subtle);
+  position: sticky;
+  top: 0;
+  background: var(--color-bg-surface);
+}
+
+.save-group-contacts-item {
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-border-subtle);
+  font-family: monospace;
+}
+
+.save-group-input-wrapper {
+  margin-bottom: 20px;
+}
+
+.save-group-error {
+  margin: 8px 0 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-danger);
+}
+
+.save-group-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* ============================================================================
+   Add Contact Modal
+   ============================================================================ */
+
+.add-contact-field {
+  margin-bottom: 20px;
+}
+
+.add-contact-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ============================================================================
+   Bridge Reminder Modal
+   ============================================================================ */
+
+.bridge-reminder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bridge-reminder-message {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.bridge-reminder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* ============================================================================
+   Composition List (Assembler)
+   ============================================================================ */
+
+.composition-list-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--color-text-tertiary);
+}
+
+.composition-list-empty-icon {
+  font-size: var(--text-3xl);
+  opacity: 0.1;
+}
+
+.composition-list-container {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ============================================================================
+   Assembler Layout
+   ============================================================================ */
+
+.assembler-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  overflow: visible;
+}

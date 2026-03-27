@@ -29,81 +29,97 @@
     padding: 0 20px !important;
   }
 
-  .world-clock-container {
-    gap: 16px !important;
-  }
-
-  .world-clock-secondary {
-    gap: 10px !important;
-  }
-
-  .world-clock-label {
-    display: none !important;
-  }
-
-  .world-clock-details {
-    font-size: var(--text-xs) !important;
+  .platform-win32 .app-header {
+    padding-right: 156px !important;
   }
 }
 
-@media (max-width: 768px) {
-  .world-clock-container {
-    gap: 12px !important;
-  }
-
-  .world-clock-secondary {
-    display: none !important;
-  }
-}
-
-/* On-Call Board Grid */
-.oncall-grid {
+/* Shared Responsive Grid */
+.relay-grid {
   display: grid;
   list-style: none;
   margin: 0;
   padding-left: 0;
-  grid-template-columns: repeat(auto-fill, minmax(550px, 1fr));
-  justify-content: center;
-  gap: 24px;
-  padding-bottom: 40px;
-  align-items: stretch;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-min-col, 280px), 1fr));
+  gap: var(--grid-gap, 16px);
+  padding-bottom: var(--grid-pb, 0);
+  align-items: var(--grid-align, start);
 }
 
-.oncall-grid-item {
+.relay-grid-item {
   height: 100%;
 }
 
+/* On-Call Board variant */
+.relay-grid--oncall {
+  --grid-min-col: 550px;
+  --grid-gap: 24px;
+  --grid-pb: 40px;
+  --grid-align: stretch;
+  justify-content: center;
+}
+
+/* Notes variant */
+.relay-grid--notes {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px;
+}
+
+.notes-masonry-columns {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.notes-masonry-column {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Wider gaps for large font mode (10ft viewing) */
+.relay-grid--notes[data-font-size='lg'] .notes-masonry-columns {
+  gap: 20px;
+}
+
+.relay-grid--notes[data-font-size='lg'] .notes-masonry-column {
+  gap: 20px;
+}
+
 /* Fixed 2-Column Grid for Pop-out (View Only) */
-.oncall-grid-masonry {
-  display: grid;
-  list-style: none;
-  margin: 0;
-  padding-left: 0;
+.relay-grid--masonry {
+  --grid-gap: 24px;
+  --grid-pb: 40px;
+  --grid-align: stretch;
   grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-  padding-bottom: 40px;
-  align-items: stretch;
 }
 
 @media (max-width: 899px) {
-  .oncall-grid {
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 16px;
+  .relay-grid--oncall {
+    --grid-min-col: 350px;
+    --grid-gap: 16px;
   }
-  .oncall-grid-masonry {
+  .relay-grid--masonry {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 599px) {
-  .oncall-grid {
+  .relay-grid--oncall {
     grid-template-columns: 1fr;
-    gap: 12px;
+    --grid-gap: 12px;
+  }
+
+  .notes-masonry-columns {
+    flex-direction: column;
   }
 }
 
-/* Auto-hide sidebars when content area is narrow */
-@media (max-width: 900px) {
+/* Auto-hide sidebars earlier when content area gets cramped */
+@media (max-width: 1120px) {
   .assembler-sidebar {
     display: none;
   }
@@ -114,6 +130,41 @@
 
   .detail-panel {
     display: none;
+  }
+
+  .tab-split-layout {
+    display: block;
+  }
+}
+
+/* Keep tab header button rows usable on narrower widths */
+@media (max-width: 1280px) {
+  .collapsible-header {
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .collapsible-header-left {
+    min-width: 0;
+  }
+
+  .collapsible-header-right {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .collapsible-header-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .collapsible-header .list-toolbar {
+    width: auto;
+  }
+
+  .collapsible-header .tactile-button {
+    padding: 0 12px;
   }
 }
 

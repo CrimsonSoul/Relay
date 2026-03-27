@@ -69,7 +69,7 @@ export default defineConfig({
       outDir: 'dist/renderer',
       minify: 'esbuild',
       cssCodeSplit: true,
-      chunkSizeWarningLimit: 1000,
+      chunkSizeWarningLimit: 500,
       rollupOptions: {
         output: {
           manualChunks: {

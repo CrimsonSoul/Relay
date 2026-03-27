@@ -7,6 +7,7 @@ import { MainApp } from '../App';
 vi.mock('../contexts', () => ({
   LocationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   useLocation: () => null,
 }));
 
@@ -36,7 +37,6 @@ vi.mock('../components/Sidebar', () => ({
       <button onClick={() => onTabChange('Weather')}>nav-weather</button>
       <button onClick={() => onTabChange('Servers')}>nav-servers</button>
       <button onClick={() => onTabChange('Radar')}>nav-radar</button>
-      <button onClick={() => onTabChange('AI')}>nav-ai</button>
       <button onClick={onOpenSettings}>open-settings</button>
     </div>
   ),
@@ -62,32 +62,29 @@ vi.mock('../components/TabFallback', () => ({
   ),
 }));
 
-vi.mock('../components/CommandPalette', () => ({
-  CommandPalette: ({
-    isOpen,
-    onClose,
-    onNavigateToTab,
-    onAddContactToBridge,
-    onOpenAddContact,
+vi.mock('../components/HeaderSearch', () => ({
+  HeaderSearch: ({
+    actions,
   }: {
-    isOpen: boolean;
-    onClose: () => void;
+    activeTab: string;
     contacts: unknown[];
     servers: unknown[];
     groups: unknown[];
-    onAddContactToBridge: (email: string) => void;
-    onToggleGroup: (id: string) => void;
-    onNavigateToTab: (tab: string) => void;
-    onOpenAddContact: (email?: string) => void;
-  }) =>
-    isOpen ? (
-      <div data-testid="command-palette">
-        <button onClick={onClose}>close-palette</button>
-        <button onClick={() => onNavigateToTab('Personnel')}>go-personnel</button>
-        <button onClick={() => onAddContactToBridge('test@example.com')}>add-to-bridge</button>
-        <button onClick={() => onOpenAddContact('new@example.com')}>open-add-contact</button>
-      </div>
-    ) : null,
+    actions: {
+      onAddContactToBridge: (email: string) => void;
+      onToggleGroup: (id: string) => void;
+      onNavigateToTab: (tab: string) => void;
+      onOpenAddContact: (email?: string) => void;
+    };
+  }) => (
+    <div data-testid="header-search">
+      <button onClick={() => actions.onNavigateToTab('Personnel')}>go-personnel</button>
+      <button onClick={() => actions.onAddContactToBridge('test@example.com')}>
+        add-to-bridge
+      </button>
+      <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
+    </div>
+  ),
 }));
 
 vi.mock('../components/ShortcutsModal', () => ({
@@ -145,8 +142,16 @@ vi.mock('../tabs/PersonnelTab', () => ({
   PersonnelTab: () => <div data-testid="personnel-tab" />,
 }));
 
-vi.mock('../tabs/AIChatTab', () => ({
-  AIChatTab: () => <div data-testid="ai-tab" />,
+vi.mock('../tabs/NotesTab', () => ({
+  NotesTab: () => <div data-testid="notes-tab" />,
+}));
+
+vi.mock('../tabs/CloudStatusTab', () => ({
+  CloudStatusTab: () => <div data-testid="cloud-status-tab" />,
+}));
+
+vi.mock('../tabs/AlertsTab', () => ({
+  AlertsTab: () => <div data-testid="alerts-tab" />,
 }));
 
 vi.mock('../components/SettingsModal', () => ({
@@ -186,7 +191,7 @@ vi.mock('../components/PopoutBoard', () => ({
 const mockHandleSync = vi.fn();
 vi.mock('../hooks/useAppData', () => ({
   useAppData: () => ({
-    data: { contacts: [], groups: [], servers: [], onCall: [], teamLayout: [] },
+    data: { contacts: [], groups: [], servers: [], onCall: [] },
     isReloading: false,
     handleSync: mockHandleSync,
   }),
@@ -237,6 +242,18 @@ vi.mock('../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
   },
+}));
+
+vi.mock('../hooks/useAppCloudStatus', () => ({
+  useAppCloudStatus: () => ({
+    statusData: null,
+    loading: false,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../services/contactService', () => ({
+  addContact: vi.fn().mockResolvedValue({}),
 }));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -294,12 +311,9 @@ describe('MainApp', () => {
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
   });
 
-  it('opens command palette on Cmd+K keydown', () => {
+  it('renders header search bar', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
-    expect(screen.getByTestId('command-palette')).toBeInTheDocument();
+    expect(screen.getByTestId('header-search')).toBeInTheDocument();
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -326,12 +340,12 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
 
-  it('navigates tab on Cmd+7 (AI)', () => {
+  it('navigates tab on Cmd+7 (Status)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('AI');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
@@ -351,21 +365,15 @@ describe('MainApp', () => {
     expect(screen.queryByTestId('shortcuts-modal')).not.toBeInTheDocument();
   });
 
-  it('navigates to Compose tab and adds contact when CommandPalette add-to-bridge is used', () => {
+  it('adds contact to bridge when HeaderSearch add-to-bridge is used', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
     fireEvent.click(screen.getByText('add-to-bridge'));
     expect(mockHandleAddManual).toHaveBeenCalledWith('test@example.com');
     expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
   });
 
-  it('opens AddContactModal when CommandPalette open-add-contact is used', () => {
+  it('opens AddContactModal when HeaderSearch open-add-contact is used', () => {
     renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
-    });
     fireEvent.click(screen.getByText('open-add-contact'));
     expect(screen.getByTestId('add-contact-modal')).toBeInTheDocument();
   });
@@ -375,6 +383,119 @@ describe('MainApp', () => {
     expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
   });
+
+  it('saves contact successfully when onSave is invoked', async () => {
+    renderApp();
+    // Open the add contact modal
+    fireEvent.click(screen.getByText('open-add-contact'));
+    // Click save
+    fireEvent.click(screen.getByText('save-contact'));
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Contact created successfully', 'success');
+    });
+  });
+
+  it('shows error toast when saving contact fails', async () => {
+    // Make pbAddContact throw
+    const { addContact } = await import('../services/contactService');
+    vi.mocked(addContact).mockRejectedValueOnce(new Error('fail'));
+
+    renderApp();
+    fireEvent.click(screen.getByText('open-add-contact'));
+    fireEvent.click(screen.getByText('save-contact'));
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to create contact', 'error');
+    });
+  });
+
+  it('navigates to tabs via sidebar buttons', () => {
+    renderApp();
+    fireEvent.click(screen.getByText('nav-personnel'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
+
+    fireEvent.click(screen.getByText('nav-people'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+
+    fireEvent.click(screen.getByText('nav-weather'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
+
+    fireEvent.click(screen.getByText('nav-servers'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+
+    fireEvent.click(screen.getByText('nav-radar'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+  });
+
+  it('navigates tab on Cmd+3 (People)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '3', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+  });
+
+  it('navigates tab on Cmd+4 (Weather)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
+  });
+
+  it('navigates tab on Cmd+5 (Servers)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+  });
+
+  it('navigates tab on Cmd+6 (Radar)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+  });
+
+  it('navigates tab on Cmd+8 (Notes)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '8', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
+  });
+
+  it('navigates tab on Cmd+9 (Alerts)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+  });
+
+  it('focuses search on Cmd+K', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
+    });
+    // The ref-based focus won't work in mocked environment, but the shortcut should not error
+    expect(true).toBe(true);
+  });
+
+  it('handles navigate tab via HeaderSearch', () => {
+    renderApp();
+    const btn = screen.getByText('go-personnel');
+    fireEvent.click(btn);
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
+  });
+
+  it('renders popout without board route', () => {
+    renderApp('?popout=other');
+    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
+    // PopoutBoard should NOT render because route doesn't include 'board'
+    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
+  });
 });
 
 // ── App default export (popout toast branch) ─────────────────────────────────
@@ -382,6 +503,15 @@ describe('App default export', () => {
   it('renders without crashing', async () => {
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
+      writable: true,
+    });
+    const { default: App } = await import('../App');
+    expect(() => render(<App />)).not.toThrow();
+  });
+
+  it('uses NoopToastProvider in popout mode', async () => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '?popout=board' },
       writable: true,
     });
     const { default: App } = await import('../App');

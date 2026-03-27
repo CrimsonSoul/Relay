@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { Contact, BridgeGroup } from '@shared/ipc';
-import { useDebounce } from './useDebounce';
 import { useDirectoryContacts } from './useDirectoryContacts';
+import { useSearchContext } from '../contexts/SearchContext';
 
 type SortConfig = { key: keyof Contact | 'groups'; direction: 'asc' | 'desc' };
 
@@ -21,8 +21,7 @@ export function useDirectory(
   groups: BridgeGroup[],
   onAddToAssembler: (contact: Contact) => void,
 ) {
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const { debouncedQuery: debouncedSearch } = useSearchContext();
   const [recentlyAdded, setRecentlyAdded] = useState<Set<string>>(new Set());
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -55,12 +54,15 @@ export function useDirectory(
     return { groupMap, groupStringMap };
   }, [groups]);
 
-  const handleSort = (key: keyof Contact | 'groups') =>
-    setSortConfig((cur) =>
-      cur.key === key
-        ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' },
-    );
+  const handleSort = useCallback(
+    (key: keyof Contact | 'groups') =>
+      setSortConfig((cur) =>
+        cur.key === key
+          ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' }
+          : { key, direction: 'asc' },
+      ),
+    [setSortConfig],
+  );
 
   const { getEffectiveContacts } = contactOps;
   const effectiveContacts = useMemo(() => getEffectiveContacts(), [getEffectiveContacts]);
@@ -125,8 +127,6 @@ export function useDirectory(
     contactOps.handleCreateContact(contact);
 
   return {
-    search,
-    setSearch,
     filtered,
     recentlyAdded,
     isAddModalOpen,

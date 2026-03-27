@@ -1,5 +1,4 @@
 import { loggers } from '../logger';
-import { FileManager } from '../FileManager';
 
 interface GlobalWithGC {
   gc?: () => void;
@@ -9,7 +8,7 @@ interface GlobalWithGC {
  * Sets up periodic maintenance tasks. Returns a cleanup function
  * that should be called on app shutdown to clear the interval.
  */
-export function setupMaintenanceTasks(getFileManager: () => FileManager | null): () => void {
+export function setupMaintenanceTasks(): () => void {
   // Periodic maintenance task (runs every 24 hours)
   const intervalId = setInterval(
     () => {
@@ -30,11 +29,6 @@ export function setupMaintenanceTasks(getFileManager: () => FileManager | null):
         } catch (e) {
           loggers.main.warn('Failed to trigger manual GC', { error: e });
         }
-      }
-
-      const fileManager = getFileManager();
-      if (fileManager) {
-        void fileManager.performBackup('periodic');
       }
     },
     24 * 60 * 60 * 1000,

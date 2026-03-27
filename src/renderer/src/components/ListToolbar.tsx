@@ -1,13 +1,9 @@
 import React from 'react';
-import { SearchInput } from './SearchInput';
 import { TactileButton } from './TactileButton';
 
 type SortOption = { value: string; label: string };
 
 type ListToolbarProps = {
-  search: string;
-  onSearchChange: (value: string) => void;
-  placeholder?: string;
   sortDirection: 'asc' | 'desc';
   onToggleSortDirection: () => void;
   sortKey?: string;
@@ -17,9 +13,6 @@ type ListToolbarProps = {
 };
 
 export const ListToolbar: React.FC<ListToolbarProps> = ({
-  search,
-  onSearchChange,
-  placeholder = 'Search...',
   sortDirection,
   onToggleSortDirection,
   sortKey,
@@ -28,12 +21,7 @@ export const ListToolbar: React.FC<ListToolbarProps> = ({
   children,
 }) => {
   return (
-    <div className="list-toolbar">
-      <SearchInput
-        placeholder={placeholder}
-        value={search}
-        onChange={(e) => onSearchChange(e.target.value)}
-      />
+    <div className="list-toolbar list-toolbar--sort-only">
       {children}
       {sortOptions && sortOptions.length > 0 && onSortKeyChange ? (
         <div className="list-toolbar-sort">

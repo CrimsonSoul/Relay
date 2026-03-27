@@ -4,45 +4,46 @@ System design for the Relay Electron desktop application.
 
 ## Stack
 
-| Layer          | Technology               | Version             |
-| -------------- | ------------------------ | ------------------- |
-| Shell          | Electron                 | 40                  |
-| Renderer       | React                    | 19                  |
-| Language       | TypeScript               | 5.9 (strict)        |
-| Build          | Vite + electron-vite     | 7 / 5               |
-| Validation     | Zod                      | 4                   |
-| File Watching  | Chokidar                 | 5                   |
-| Virtualization | react-window + AutoSizer | 2                   |
-| Drag & Drop    | @dnd-kit                 | core 6, sortable 10 |
+| Layer          | Technology                   | Version             |
+| -------------- | ---------------------------- | ------------------- |
+| Shell          | Electron                     | 40                  |
+| Renderer       | React                        | 19                  |
+| Language       | TypeScript                   | 5.9 (strict)        |
+| Build          | Vite + electron-vite         | 7 / 5               |
+| Validation     | Zod                          | 4                   |
+| Database       | PocketBase (embedded SQLite) | 0.26                |
+| SDK            | pocketbase                   | 0.26                |
+| Virtualization | react-window + AutoSizer     | 2                   |
+| Drag & Drop    | @dnd-kit                     | core 6, sortable 10 |
 
 ## Process Model
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  Main Process (Node.js)                             │
-│                                                     │
-│  ┌──────────┐  ┌────────────┐  ┌────────────────┐  │
-│  │ Handlers │──│ Operations │──│ File Lock      │  │
-│  │ (IPC)    │  │ (Logic)    │  │ (Atomic I/O)   │  │
-│  └────┬─────┘  └────────────┘  └───────┬────────┘  │
-│       │                                │            │
-│  ┌────┴─────┐  ┌────────────┐  ┌──────┴─────────┐  │
-│  │ Zod      │  │ FileWatcher│  │ JSON Files     │  │
-│  │ Validate │  │ (chokidar) │  │ (data root)    │  │
-│  └──────────┘  └─────┬──────┘  └────────────────┘  │
-│                      │                              │
-│  ┌───────────────────┴──────────────────────────┐   │
-│  │ FileEmitter (pushes changes to all windows)  │   │
-│  └──────────────────────────────────────────────┘   │
-└─────────────────────┬───────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  Main Process (Node.js)                                     │
+│                                                             │
+│  ┌──────────┐  ┌──────────────────┐  ┌──────────────────┐  │
+│  │ Handlers │  │ PocketBaseProcess│  │ AppConfig        │  │
+│  │ (IPC)    │  │ (lifecycle)      │  │ (config.json)    │  │
+│  └────┬─────┘  └────────┬─────────┘  └──────────────────┘  │
+│       │                 │                                   │
+│  ┌────┴──────────────┐  │  ┌──────────────────────────────┐ │
+│  │ OfflineCache      │  │  │ PocketBase binary            │ │
+│  │ PendingChanges    │  └──│ (embedded Go server,         │ │
+│  │ SyncManager       │     │  localhost only)             │ │
+│  └───────────────────┘     └──────────────────────────────┘ │
+└─────────────────────┬───────────────────────────────────────┘
                       │ contextBridge (preload)
-┌─────────────────────┴───────────────────────────────┐
-│  Renderer Process (Chromium)                        │
-│                                                     │
-│  window.api.*  →  Hooks  →  Components  →  Tabs    │
-│                                                     │
-│  No Node.js access. No fs. No electron imports.     │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────┴───────────────────────────────────────┐
+│  Renderer Process (Chromium)                                │
+│                                                             │
+│  window.api.*  →  Hooks  →  Components  →  Tabs            │
+│                                                             │
+│  Data CRUD: direct HTTP calls to PocketBase REST API        │
+│  (bypasses IPC entirely for all collection reads/writes)    │
+│                                                             │
+│  No Node.js access. No fs. No electron imports.            │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Main Process
@@ -53,21 +54,22 @@ Responsibilities:
 
 - Window creation and lifecycle management
 - IPC handler registration (delegated to handler modules)
-- File system access (all reads/writes go through `fileLock.ts`)
+- PocketBase process lifecycle (start, health check, crash recovery)
 - External API proxying (weather, geolocation)
 - HTTP 401 interception and credential management
+- Offline cache reads/writes on behalf of the renderer
 - Structured logging with rotation
 
 Key services:
 
-- **FileManager** (`FileManager.ts`): Orchestrates data loading, caching, and change detection
-- **FileWatcher** (`FileWatcher.ts`): Chokidar-based file change monitoring
-- **FileEmitter** (`FileEmitter.ts`): Pushes data updates to renderer windows
-- **DataCacheManager** (`DataCacheManager.ts`): In-memory cache to avoid redundant disk reads
-- **FileSystemService** (`FileSystemService.ts`): Low-level file system abstraction
-- **CredentialManager** (`credentialManager.ts`): Encrypts/decrypts credentials with Electron safeStorage
-- **RateLimiter** (`rateLimiter.ts`): Prevents excessive API calls
-- **Logger** (`logger.ts`): Structured logging with file rotation, error categorization, sensitive data sanitization
+- **PocketBaseProcess** (`pocketbase/PocketBaseProcess.ts`): Spawns and manages the embedded PocketBase binary. Polls `/api/health` until ready. Restarts on crash (up to 3 attempts). Sends SIGTERM on Unix / `taskkill /F` on Windows at shutdown.
+- **AppConfig** (`config/AppConfig.ts`): Reads and writes `config.json` (mode, port/serverUrl, secret). Encrypts the secret at rest using Electron `safeStorage` when available.
+- **OfflineCache** (`cache/OfflineCache.ts`): Local `better-sqlite3` database storing a snapshot of each PocketBase collection. Used as a fallback data source when PocketBase is unreachable.
+- **PendingChanges** (`cache/PendingChanges.ts`): `better-sqlite3` queue of write operations made while offline. Each entry records the collection, action (create/update/delete), payload, and timestamp.
+- **SyncManager** (`cache/SyncManager.ts`): Replays the `PendingChanges` queue against PocketBase on reconnect. Detects conflicts by comparing server `updated` timestamps against the client timestamp; logs conflicts to a `conflict_log` collection and applies last-write-wins.
+- **CredentialManager** (`credentialManager.ts`): Encrypts/decrypts proxy credentials with Electron `safeStorage`.
+- **RateLimiter** (`rateLimiter.ts`): Prevents excessive API calls.
+- **Logger** (`logger.ts`): Structured logging with file rotation, error categorization, sensitive data sanitization.
 
 ### Preload
 
@@ -75,7 +77,7 @@ Entry point: `src/preload/index.ts`
 
 Exposes a typed `window.api` object via `contextBridge.exposeInMainWorld`. Every method maps to an `ipcRenderer.invoke` or `ipcRenderer.on` call. The renderer never imports Electron or Node.js modules directly.
 
-The full API surface is defined by the `BridgeAPI` type in `src/shared/ipc.ts`.
+The full API surface is defined by the `BridgeAPI` type in `src/shared/ipc.ts`. The bridge is intentionally narrow: it covers window management, weather/location APIs, auth, clipboard, setup, cache/sync, logging, and PocketBase bootstrap. All data CRUD (contacts, servers, on-call, etc.) bypasses IPC entirely — the renderer calls the PocketBase REST API directly via the `pocketbase` SDK.
 
 ### Renderer
 
@@ -83,7 +85,9 @@ Entry point: `src/renderer/src/App.tsx`
 
 React application with sidebar navigation and 7 tabs. Uses the "mount once, keep alive" pattern — once a tab is visited, it stays in the DOM (hidden via CSS) to preserve state and scroll position. Only the Compose tab loads eagerly; others use `React.lazy`.
 
-State is managed through custom hooks (one per feature domain) that call `window.api` methods and manage local React state. Context providers handle cross-cutting concerns (location, notes).
+State is managed through custom hooks (one per feature domain) that call the PocketBase SDK directly for data operations, and `window.api` methods for system-level operations. Context providers handle cross-cutting concerns (location, notes, connection state).
+
+The renderer's PocketBase client is initialized in `src/renderer/src/services/pocketbase.ts`. This module exports `initPocketBase`, `authenticate`, `getPb`, and connection-state helpers (`onConnectionStateChange`, `isOnline`, `startHealthCheck`). Services under `src/renderer/src/services/` (e.g. `contactService.ts`, `serverService.ts`, `oncallService.ts`) build on `getPb()` to call collection endpoints directly.
 
 ### Shared
 
@@ -95,60 +99,69 @@ Contains TypeScript types, IPC channel definitions, Zod validation schemas, and 
 
 ### Storage Format
 
-All data is stored as JSON files in a user-configurable data directory:
+All application data is stored in PocketBase's embedded SQLite database. The following collections are defined:
 
-| File                  | Contents                                              |
-| --------------------- | ----------------------------------------------------- |
-| `contacts.json`       | Contact records (name, email, phone, title)           |
-| `servers.json`        | Server records (name, business area, owner, OS, etc.) |
-| `oncall.json`         | On-call records (team, role, name, contact)           |
-| `bridgeGroups.json`   | Bridge group presets (name, contact emails)           |
-| `bridgeHistory.json`  | Bridge history log (groups, contacts, timestamp)      |
-| `notes.json`          | Contact and server notes with tags                    |
-| `savedLocations.json` | Weather saved locations                               |
+| Collection        | Contents                                              |
+| ----------------- | ----------------------------------------------------- |
+| `contacts`        | Contact records (name, email, phone, title)           |
+| `servers`         | Server records (name, business area, owner, OS, etc.) |
+| `bridge_groups`   | Bridge group presets (name, contact emails)           |
+| `on_call`         | On-call records (team, role, name, contact)           |
+| `on_call_layout`  | Drag-and-drop grid layout for the on-call board       |
+| `bridge_history`  | Bridge composition log (groups, contacts, timestamp)  |
+| `alert_history`   | Alert composition log                                 |
+| `notes`           | Contact and server notes with tags                    |
+| `saved_locations` | Weather saved locations                               |
 
-Legacy CSV files (`contacts.csv`, `servers.csv`) are supported for import but not used as primary storage.
+Schema migrations live in `src/main/pocketbase/migrations/` and are applied automatically on startup via the `--migrationsDir` flag.
 
-### Atomic Writes
+### Database Access Pattern
 
-All write operations use `modifyJsonWithLock` from `fileLock.ts`:
+The renderer talks to PocketBase directly over HTTP (localhost). There is no IPC proxy for collection reads or writes — the `pocketbase` SDK in the renderer process issues REST calls to `http://127.0.0.1:<port>`. PocketBase provides ACID transactions and enforces record-level access rules.
 
-1. Acquire in-memory lock for the file path (prevents concurrent writes)
-2. Read current file contents
-3. Pass to caller's callback function
-4. Write callback return value to a temporary file
-5. Rename temp file over original (atomic on all platforms)
-6. Release lock
+The main process holds a separate `PocketBase` client instance used only by `SyncManager` for replaying the offline queue.
 
-If any step fails, the temp file is cleaned up and the original remains untouched.
+### Offline Fallback
 
-### File Watching
+When PocketBase is unreachable the renderer falls back to data cached in `OfflineCache`. Writes made offline are recorded in `PendingChanges`. On reconnect the renderer calls `window.api.syncPending()`, which triggers `SyncManager.syncAll()` in the main process to flush the queue.
 
-`FileWatcher` monitors the data directory with chokidar. When a JSON data file changes on disk (from an external editor, another instance, or a sync tool), `FileEmitter` pushes the updated data to all renderer windows via IPC. The `DataCacheManager` invalidates its cache for the affected file.
+### Realtime Subscriptions
 
-### Backups
+The renderer uses the PocketBase SDK's realtime subscription API (`pb.collection(...).subscribe(...)`) to receive push updates from the server. This replaces the chokidar file-watcher used in the previous architecture.
 
-`BackupOperations` creates timestamped backups during critical operations (bulk imports, migrations). Backups are stored alongside the data files.
+### Crash Safety
+
+The PocketBase binary uses SQLite WAL mode. If the process is terminated unexpectedly, SQLite's WAL recovery ensures data integrity on the next startup. `PocketBaseProcess.killSync()` is called during Electron's `before-quit` event to release the WAL lock cleanly before exit.
 
 ## IPC Contracts
 
 ### Channel Naming
 
-Channels follow the `domain:action` convention:
+Channels follow the `domain:action` convention and are defined as string constants in `IPC_CHANNELS` (`src/shared/ipc.ts`).
+
+### Current IPC Surface
+
+Data CRUD for all collections is handled directly by the renderer via the PocketBase REST API — it does **not** go through IPC. IPC is used only for:
 
 ```
-contacts:get, contacts:add, contacts:update, contacts:delete
-servers:get, servers:add, ...
-oncall:get, oncall:add, oncall:deleteByTeam, ...
-groups:get, groups:save, groups:update, groups:delete
-history:get, history:add, history:delete, history:clear
-notes:get, notes:setContact, notes:setServer
-locations:get, locations:save, locations:setDefault, ...
+window:minimize, window:maximize, window:close, window:isMaximized,
+window:maximizeChange, window:openAux
+fs:openPath, shell:openExternal
+auth:requested, auth:submit, auth:cancel, auth:useCached
 weather:get, weather:search, weather:alerts
-data:export, data:import, data:stats
+location:ip
+cloudstatus:get
+radar:data, config:registerRadarUrl
+clipboard:write, clipboard:writeImage
+alert:saveImage, alert:saveCompanyLogo, alert:getCompanyLogo, alert:removeCompanyLogo
+drag:started, drag:stopped
+oncall:alertDismissed
+setup:getConfig, setup:saveConfig, setup:isConfigured
+cache:read, cache:write, cache:snapshot
+sync:pending
+pb:getUrl, pb:getSecret, pb:start
+logger:toMain, metrics:logBridge
 ```
-
-All channels are defined as string constants in `IPC_CHANNELS` (`src/shared/ipc.ts`).
 
 ### Validation
 
@@ -221,7 +234,9 @@ Webview creation is intercepted by `will-attach-webview` in the main process. On
 
 ### Credential Management
 
-Sensitive credentials (proxy auth, cached passwords) are encrypted using Electron's `safeStorage` API in the main process. The renderer never handles raw credentials — it submits them via IPC with a one-time nonce, and the main process encrypts and stores them.
+Sensitive credentials (proxy auth, cached passwords, PocketBase secret) are encrypted using Electron's `safeStorage` API in the main process. The renderer never handles raw credentials — it submits them via IPC with a one-time nonce, and the main process encrypts and stores them.
+
+The PocketBase secret stored in `config.json` is encrypted at rest via `AppConfig.save()` when `safeStorage.isEncryptionAvailable()` returns true; a plaintext fallback is used only in headless/CI environments.
 
 ### Path Validation
 

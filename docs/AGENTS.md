@@ -2,7 +2,7 @@
 
 ## Overview
 
-Electron desktop app for operations teams. Manages contacts, servers, on-call schedules, bridge communications, weather monitoring, and AI chat from a single interface. All data is stored locally as JSON files.
+Electron desktop app for operations teams. Manages contacts, servers, on-call schedules, bridge communications, weather monitoring, and AI chat from a single interface. All application data is stored in an embedded PocketBase instance (SQLite), replacing the previous JSON file storage.
 
 ## Tech Stack
 
@@ -14,7 +14,8 @@ Electron desktop app for operations teams. Manages contacts, servers, on-call sc
 - **Styling**: Vanilla CSS (no CSS-in-JS, no CSS modules)
 - **Virtualization**: react-window 2 + react-virtualized-auto-sizer 2
 - **Drag & Drop**: @dnd-kit/core 6 + @dnd-kit/sortable 10
-- **File Watching**: Chokidar 5
+- **Database**: PocketBase (embedded SQLite, REST API)
+- **Offline Storage**: better-sqlite3 (OfflineCache + PendingChanges)
 - **Linting**: ESLint 9 (flat config) + eslint-plugin-jsx-a11y
 - **Formatting**: Prettier 3
 - **Git Hooks**: Husky 9 + lint-staged 16
@@ -23,73 +24,81 @@ Electron desktop app for operations teams. Manages contacts, servers, on-call sc
 
 ### Process Separation
 
-- **Main** (`src/main/`): Node.js — business logic, file I/O, IPC handlers
-- **Renderer** (`src/renderer/`): React UI — no Node.js access
-- **Preload** (`src/preload/`): Secure bridge via `contextBridge` — exposes typed `window.api`
+- **Main** (`src/main/`): Node.js — PocketBase lifecycle, auth, backup, sync, IPC handlers
+- **Renderer** (`src/renderer/`): React UI — calls PocketBase REST API directly via service modules
+- **Preload** (`src/preload/`): Secure bridge via `contextBridge` — exposes typed `window.api` for non-data IPC
 - **Shared** (`src/shared/`): Types, IPC channel definitions, Zod schemas, phone utilities
 
 ### Business Logic
 
-All business logic lives in **Operations** modules (`src/main/operations/`), not in IPC handlers. Handlers validate input and delegate to operations. Operations use `readWithLock` / `modifyJsonWithLock` from `src/main/fileLock.ts` for atomic file access.
+Data CRUD is handled entirely in the renderer via service modules in `src/renderer/src/services/`. Services call the PocketBase REST API directly using the PB SDK — no IPC round-trip for data operations.
+
+The main process handles the PocketBase server lifecycle (`PocketBaseProcess`), config management (`AppConfig`), offline caching (`OfflineCache`, `PendingChanges`), conflict resolution on reconnect (`SyncManager`), and API-based backups (`BackupManager`).
+
+IPC handlers remain for non-data operations: weather API proxy, cloud status polling, window management, auth credential prompts, location lookup, logging bridge, and setup/config.
 
 ### Data Flow
 
 ```
-Renderer hook -> window.api.method() -> IPC channel -> Handler (validates with Zod)
-  -> Operation (reads/writes JSON via fileLock) -> Handler returns result -> Hook updates state
+Renderer service -> getPb().collection('x').getList() -> PocketBase REST API -> SQLite
 ```
 
-External file changes are detected by `FileWatcher` (chokidar) -> `FileEmitter` -> renderer via IPC push.
+For offline resilience:
+
+```
+Renderer (offline) -> window.api.cacheRead(collection) -> OfflineCache (local SQLite)
+On reconnect       -> SyncManager.syncAll(pendingChanges) -> PocketBase REST API
+```
 
 ## Key Directories
 
-| Directory                                | Purpose                                                                |
-| ---------------------------------------- | ---------------------------------------------------------------------- |
-| `src/main/handlers/`                     | IPC handler registration and Zod input validation                      |
-| `src/main/operations/`                   | Core business logic (pure functions, file I/O via fileLock)            |
-| `src/main/operations/__tests__/`         | Operation unit tests                                                   |
-| `src/renderer/src/tabs/`                 | Tab components (Compose, On-Call, People, Servers, Weather, Radar, AI) |
-| `src/renderer/src/hooks/`                | Custom React hooks (22 hooks, one per feature domain)                  |
-| `src/renderer/src/hooks/__tests__/`      | Hook unit tests                                                        |
-| `src/renderer/src/components/`           | Reusable UI components (modals, cards, search, sidebar, toast)         |
-| `src/renderer/src/components/__tests__/` | Component unit tests                                                   |
-| `src/renderer/src/styles/`               | Global CSS (theme.css, components.css, modals.css, animations.css)     |
-| `src/renderer/src/utils/`                | Renderer utilities (logger, secureStorage, timeParsing, colors)        |
-| `src/renderer/src/contexts/`             | React context providers (LocationContext, NotesContext)                |
-| `src/shared/`                            | IPC types, channel definitions, Zod schemas, phone utilities           |
+| Directory                                | Purpose                                                                 |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `src/main/handlers/`                     | IPC handler registration and Zod input validation                       |
+| `src/main/pocketbase/`                   | PocketBase process management, backup, and retention                    |
+| `src/main/cache/`                        | Offline cache (OfflineCache), write queue (PendingChanges), SyncManager |
+| `src/main/config/`                       | AppConfig — reads/writes encrypted relay config                         |
+| `src/renderer/src/services/`             | PocketBase service modules — all data CRUD (contacts, servers, etc.)    |
+| `src/renderer/src/tabs/`                 | Tab components (Compose, On-Call, People, Servers, Weather, Radar, AI)  |
+| `src/renderer/src/hooks/`                | Custom React hooks (one per feature domain)                             |
+| `src/renderer/src/hooks/__tests__/`      | Hook unit tests                                                         |
+| `src/renderer/src/components/`           | Reusable UI components (modals, cards, search, sidebar, toast)          |
+| `src/renderer/src/components/__tests__/` | Component unit tests                                                    |
+| `src/renderer/src/styles/`               | Global CSS (theme.css, components.css, modals.css, animations.css)      |
+| `src/renderer/src/utils/`                | Renderer utilities (logger, secureStorage, timeParsing, colors)         |
+| `src/renderer/src/contexts/`             | React context providers (LocationContext, NotesContext)                 |
+| `src/shared/`                            | IPC types, channel definitions, Zod schemas, phone utilities            |
 
-## Operations Modules
+## Renderer Service Modules
 
-| Module                       | Domain                                           |
-| ---------------------------- | ------------------------------------------------ |
-| `ContactJsonOperations.ts`   | Contact CRUD (contacts.json)                     |
-| `ServerJsonOperations.ts`    | Server CRUD (servers.json)                       |
-| `OnCallJsonOperations.ts`    | On-call team CRUD, rename, reorder (oncall.json) |
-| `PresetOperations.ts`        | Bridge group presets (bridgeGroups.json)         |
-| `BridgeHistoryOperations.ts` | Bridge history log                               |
-| `NotesOperations.ts`         | Contact and server notes                         |
-| `SavedLocationOperations.ts` | Weather saved locations                          |
-| `DataImportOperations.ts`    | CSV and JSON import with validation              |
-| `DataExportOperations.ts`    | JSON and CSV export                              |
-| `BackupOperations.ts`        | Automatic backups                                |
-| `FileContext.ts`             | Shared JSON file name constants                  |
-| `idUtils.ts`                 | ID generation                                    |
+| Module                    | Domain                                             |
+| ------------------------- | -------------------------------------------------- |
+| `pocketbase.ts`           | PB client init, auth, health check, error handling |
+| `contactService.ts`       | Contact CRUD                                       |
+| `serverService.ts`        | Server CRUD                                        |
+| `oncallService.ts`        | On-call team CRUD and reorder                      |
+| `oncallLayoutService.ts`  | On-call board layout persistence                   |
+| `bridgeGroupService.ts`   | Bridge group preset CRUD                           |
+| `bridgeHistoryService.ts` | Bridge history log                                 |
+| `notesService.ts`         | Contact and server notes                           |
+| `savedLocationService.ts` | Weather saved locations                            |
+| `alertHistoryService.ts`  | Alert history log                                  |
+| `importExportService.ts`  | CSV and JSON import/export                         |
 
 ## Handler Modules
 
-| Module                  | Domain                                           |
-| ----------------------- | ------------------------------------------------ |
-| `authHandlers.ts`       | HTTP 401 interception, credential prompts        |
-| `configHandlers.ts`     | App settings, data folder management             |
-| `dataHandlers.ts`       | Data lifecycle (load, reload, subscribe)         |
-| `dataRecordHandlers.ts` | CRUD for contacts, servers, on-call records      |
-| `featureHandlers.ts`    | Groups, history, notes, locations, import/export |
-| `fileHandlers.ts`       | File open, external URLs                         |
-| `locationHandlers.ts`   | IP geolocation                                   |
-| `loggerHandlers.ts`     | Renderer-to-main log bridge                      |
-| `weatherHandlers.ts`    | Weather API proxy                                |
-| `windowHandlers.ts`     | Window management, clipboard, drag sync          |
-| `ipcHelpers.ts`         | Shared handler utilities                         |
+| Module                | Domain                                           |
+| --------------------- | ------------------------------------------------ |
+| `authHandlers.ts`     | HTTP 401 interception, credential prompts        |
+| `cacheHandlers.ts`    | Offline cache read/write, pending change sync    |
+| `cloudStatus/`        | Cloud service status polling (Google, RSS, etc.) |
+| `configHandlers.ts`   | App settings management                          |
+| `locationHandlers.ts` | IP geolocation                                   |
+| `loggerHandlers.ts`   | Renderer-to-main log bridge                      |
+| `setupHandlers.ts`    | Initial setup — save/load relay config           |
+| `weatherHandlers.ts`  | Weather API proxy                                |
+| `windowHandlers.ts`   | Window management, clipboard, drag sync          |
+| `ipcHelpers.ts`       | Shared handler utilities                         |
 
 ## Commands
 
@@ -114,14 +123,12 @@ External file changes are detected by `FileWatcher` (chokidar) -> `FileEmitter` 
 
 Follow this order — each step depends on the previous:
 
-1. **Types**: Define types and IPC channel in `src/shared/ipc.ts`
-2. **Validation**: Add Zod schema in `src/shared/ipcValidation.ts`
-3. **Operation**: Implement logic in `src/main/operations/NewDomainOperations.ts`
-4. **Handler**: Register IPC handler in `src/main/handlers/` (validate input, delegate to operation)
-5. **Preload**: Add method to `BridgeAPI` type in `src/shared/ipc.ts`, expose in `src/preload/index.ts`
-6. **Hook**: Create `src/renderer/src/hooks/useNewDomain.ts` that calls `window.api.method()`
-7. **Component**: Build UI in `src/renderer/src/tabs/` or `src/renderer/src/components/`
-8. **Tests**: Add unit tests for operation, hook, and component
+1. **Types**: Define TypeScript types in the relevant service file or `src/shared/ipc.ts` if IPC is needed
+2. **Service**: Implement data CRUD in `src/renderer/src/services/NewDomainService.ts` using `getPb()`, `requireOnline()`, and `handleApiError()`
+3. **Hook**: Create `src/renderer/src/hooks/useNewDomain.ts` that calls the service functions
+4. **Component**: Build UI in `src/renderer/src/tabs/` or `src/renderer/src/components/`
+5. **Tests**: Add unit tests for the service (mock PB SDK) and hook
+6. **IPC (if needed)**: For non-data operations, add channel to `src/shared/ipc.ts`, handler in `src/main/handlers/`, and expose in `src/preload/index.ts`
 
 ## Code Patterns
 
@@ -132,46 +139,73 @@ Use the structured logging system. Never use `console.log` in production code.
 ```typescript
 // Main process
 import { loggers } from '../logger';
-loggers.fileManager.info('File saved', { path });
-loggers.fileManager.warn('Validation failed', { reason });
-loggers.fileManager.error('Write failed', { error: getErrorMessage(err) });
+loggers.main.info('PocketBase started', { port });
+loggers.sync.warn('Sync conflict', { collection, id });
+loggers.backup.error('Backup failed', { error: getErrorMessage(err) });
 
 // Renderer
 import { loggers } from '../utils/logger';
 loggers.app.info('Tab switched', { tab });
 ```
 
-Available loggers: `app`, `fileManager`, `ipc`, `auth`, `weather`, `radar`.
+Available loggers: `app`, `main`, `sync`, `backup`, `ipc`, `auth`, `weather`, `radar`.
 
-### File Operations
+### PocketBase Service Pattern
 
-All JSON reads and writes go through the file lock to prevent corruption:
+All data CRUD uses the PocketBase SDK in renderer service modules:
 
 ```typescript
-import { readWithLock, modifyJsonWithLock } from '../../fileLock';
+import { getPb, handleApiError, requireOnline } from './pocketbase';
 
-// Read
-const data = await readWithLock<MyType[]>(filePath, []);
+// Read (works offline via collection subscription or cache)
+const records = await getPb().collection('myDomain').getFullList<MyRecord>();
 
-// Read-modify-write (atomic)
-await modifyJsonWithLock<MyType[]>(filePath, [], (current) => {
-  return [...current, newItem];
-});
+// Write (requires online)
+export async function addRecord(data: MyInput): Promise<MyRecord> {
+  requireOnline();
+  try {
+    return await getPb().collection('myDomain').create<MyRecord>(data);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+// Update
+export async function updateRecord(id: string, data: Partial<MyInput>): Promise<MyRecord> {
+  requireOnline();
+  try {
+    return await getPb().collection('myDomain').update<MyRecord>(id, data);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+// Delete
+export async function deleteRecord(id: string): Promise<void> {
+  requireOnline();
+  try {
+    await getPb().collection('myDomain').delete(id);
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
 ```
 
 ### IPC Validation (Zod 4)
 
+IPC is only used for non-data operations (weather, window, auth, etc.):
+
 ```typescript
 import { z } from 'zod';
+import { validateIpcDataSafe } from '../../shared/ipcValidation';
 
-// Define schema (Zod 4 syntax)
 const MyInputSchema = z.object({
   name: z.string().min(1),
   count: z.number().int(),
 });
-
-// Validate in handler
-import { validateIpcDataSafe } from '../../shared/ipcValidation';
 
 ipcMain.handle('my-channel', (_, payload) => {
   const data = validateIpcDataSafe(MyInputSchema, payload, 'my-channel');
@@ -225,36 +259,24 @@ const wrapper = ({ children }) => <NoopToastProvider>{children}</NoopToastProvid
 const { result } = renderHook(() => useMyHook(), { wrapper });
 ```
 
-### Mocking `window.api` in Renderer Tests
+### Mocking PocketBase SDK in Service Tests
 
 ```typescript
-const mockApi = {
-  getContacts: vi.fn().mockResolvedValue([]),
-  // ... other methods
+vi.mock('../pocketbase', () => ({
+  getPb: vi.fn(),
+  requireOnline: vi.fn(),
+  handleApiError: vi.fn(),
+}));
+
+const mockCollection = {
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  getFullList: vi.fn(),
 };
 
 beforeEach(() => {
-  (window as Window & { api: typeof mockApi }).api = mockApi as unknown as Window['api'];
-});
-```
-
-### Mocking File Operations in Operation Tests
-
-```typescript
-vi.mock('../../fileLock', () => ({
-  readWithLock: vi.fn(),
-  modifyJsonWithLock: vi.fn(),
-}));
-vi.mock('../../logger', () => ({
-  loggers: { fileManager: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
-}));
-vi.mock('./idUtils', () => ({
-  generateId: vi.fn(() => 'test-id'),
-}));
-
-// For modifyJsonWithLock: capture the callback and test it
-(modifyJsonWithLock as Mock).mockImplementation(async (_path, _default, callback) => {
-  return callback(existingData);
+  (getPb as Mock).mockReturnValue({ collection: () => mockCollection });
 });
 ```
 
@@ -276,6 +298,7 @@ vi.mock('../../components/Modal', () => ({
 - **Webviews**: Creation locked to HTTPS allowlist. Navigation and `window.open()` blocked.
 - **Credentials**: Use Electron's `safeStorage` in main process. Never store secrets in renderer.
 - **Path Validation**: All file paths validated against traversal attacks (`src/main/pathValidation.ts`).
+- **Filter Escaping**: Use `escapeFilter()` from `pocketbase.ts` for all PB filter values.
 - **Sensitive Data**: Automatically sanitized from log output.
 - **No `any`**: `@typescript-eslint/no-explicit-any` is `error` in main/preload, `warn` in renderer.
 - **No `@ts-ignore`**: Zero `@ts-ignore` or `@ts-expect-error` directives in production code.
@@ -287,7 +310,7 @@ All of these must pass before merging:
 - `npm run typecheck` — 0 TypeScript errors
 - `npm run lint` — 0 ESLint errors (includes jsx-a11y)
 - `npm test` — all tests pass (unit + renderer)
-- Coverage thresholds enforced (main: 52/52/38/52, renderer: 78/76/67/79)
+- Coverage thresholds enforced (main: 80/80/75/80, renderer: 80/80/75/80)
 - Pre-commit hooks run automatically (eslint --fix + prettier --write)
 
 ## Documentation

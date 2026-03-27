@@ -1,177 +1,134 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppData } from '../useAppData';
-import { AppData, DataError } from '@shared/ipc';
 
-// Mock data
-const mockInitialData: AppData = {
-  groups: [],
-  contacts: [],
-  servers: [],
-  onCall: [],
-  lastUpdated: 1000,
-};
+vi.mock('../../utils/logger', () => ({
+  loggers: {
+    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  },
+}));
 
-const mockUpdateData: AppData = {
-  groups: [{ id: '1', name: 'Group 1', contacts: [] }],
-  contacts: [],
-  servers: [],
-  onCall: [],
-  lastUpdated: 2000,
-};
+// Track refetch functions
+const mockRefetchContacts = vi.fn().mockResolvedValue(undefined);
+const mockRefetchServers = vi.fn().mockResolvedValue(undefined);
+const mockRefetchGroups = vi.fn().mockResolvedValue(undefined);
+const mockRefetchOncall = vi.fn().mockResolvedValue(undefined);
+
+// Mock useCollection to return data for each collection
+const collectionData: Record<string, { data: unknown[]; loading: boolean; error: string | null }> =
+  {
+    contacts: { data: [], loading: false, error: null },
+    servers: { data: [], loading: false, error: null },
+    bridge_groups: { data: [], loading: false, error: null },
+    oncall: { data: [], loading: false, error: null },
+  };
+
+vi.mock('../useCollection', () => ({
+  useCollection: (name: string) => {
+    const cd = collectionData[name] || { data: [], loading: false, error: null };
+    const refetchMap: Record<string, ReturnType<typeof vi.fn>> = {
+      contacts: mockRefetchContacts,
+      servers: mockRefetchServers,
+      bridge_groups: mockRefetchGroups,
+      oncall: mockRefetchOncall,
+    };
+    return { ...cd, refetch: refetchMap[name] || vi.fn() };
+  },
+}));
 
 describe('useAppData', () => {
   const showToast = vi.fn();
 
-  // Mock globalThis.api
-  const mockApi = {
-    getInitialData: vi.fn(),
-    subscribeToData: vi.fn(),
-    onReloadStart: vi.fn(),
-    onReloadComplete: vi.fn(),
-    onDataError: vi.fn(),
-    reloadData: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi;
-
-    mockApi.getInitialData.mockResolvedValue(mockInitialData);
-    mockApi.subscribeToData.mockReturnValue(vi.fn()); // Returns unsubscribe
-    mockApi.onReloadStart.mockReturnValue(vi.fn());
-    mockApi.onReloadComplete.mockReturnValue(vi.fn());
-    mockApi.onDataError.mockReturnValue(vi.fn());
+    // Set globalThis.api so useAppData doesn't enter dev mock mode
+    (globalThis as Window & { api?: unknown }).api = {};
+    collectionData.contacts = { data: [], loading: false, error: null };
+    collectionData.servers = { data: [], loading: false, error: null };
+    collectionData.bridge_groups = { data: [], loading: false, error: null };
+    collectionData.oncall = { data: [], loading: false, error: null };
   });
 
-  it('fetches initial data on mount', async () => {
+  it('returns empty data when collections are empty', () => {
     const { result } = renderHook(() => useAppData(showToast));
 
-    await waitFor(() => {
-      expect(result.current.data).toEqual(mockInitialData);
-    });
+    expect(result.current.data.contacts).toEqual([]);
+    expect(result.current.data.servers).toEqual([]);
+    expect(result.current.data.groups).toEqual([]);
+    expect(result.current.data.onCall).toEqual([]);
   });
 
-  it('updates data when subscription fires', async () => {
-    let dataCallback: (data: AppData) => void = () => {};
-    mockApi.subscribeToData.mockImplementation((cb: (data: AppData) => void) => {
-      dataCallback = cb;
-      return vi.fn();
-    });
-
-    const { result } = renderHook(() => useAppData(showToast));
-
-    // Wait for initial load
-    await waitFor(() => expect(result.current.data).toEqual(mockInitialData));
-
-    await act(async () => {
-      dataCallback(mockUpdateData);
-    });
-
-    expect(result.current.data).toEqual(mockUpdateData);
-  });
-
-  it('handles reload lifecycle', async () => {
-    let startCallback: () => void = () => {};
-    let completeCallback: (success: boolean) => void = () => {};
-
-    mockApi.onReloadStart.mockImplementation((cb: () => void) => {
-      startCallback = cb;
-      return vi.fn();
-    });
-    mockApi.onReloadComplete.mockImplementation((cb: (s: boolean) => void) => {
-      completeCallback = cb;
-      return vi.fn();
-    });
-
-    const { result } = renderHook(() => useAppData(showToast));
-
-    // Wait for initial load
-    await waitFor(() => expect(result.current.data).toEqual(mockInitialData));
-
-    await act(async () => {
-      startCallback();
-    });
-    expect(result.current.isReloading).toBe(true);
-
-    await act(async () => {
-      completeCallback(true);
-    });
-
-    // Should still be true due to minimum duration
-    expect(result.current.isReloading).toBe(true);
-
-    // Wait for minimum duration (900ms)
-    await waitFor(
-      () => {
-        expect(result.current.isReloading).toBe(false);
-      },
-      { timeout: 2000 },
-    );
-  });
-
-  it('handles data errors and shows toast', async () => {
-    mockApi.getInitialData.mockResolvedValue(null);
-    let errorCallback: (error: DataError) => void = () => {};
-    mockApi.onDataError.mockImplementation((cb: (error: DataError) => void) => {
-      errorCallback = cb;
-      return vi.fn();
-    });
-
-    renderHook(() => useAppData(showToast));
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    const mockError: DataError = {
-      type: 'validation',
-      message: 'Invalid data',
-      file: 'contacts.json',
+  it('transforms PocketBase records to app types', () => {
+    collectionData.contacts = {
+      data: [
+        {
+          id: 'c1',
+          name: 'Alice',
+          email: 'alice@test.com',
+          phone: '555',
+          title: 'Eng',
+          created: '2026-01-01T00:00:00Z',
+          updated: '2026-01-01T00:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
+    };
+    collectionData.servers = {
+      data: [
+        {
+          id: 's1',
+          name: 'web-01',
+          businessArea: 'IT',
+          lob: 'Core',
+          comment: '',
+          owner: 'alice@test.com',
+          contact: 'bob@test.com',
+          os: 'Linux',
+          created: '2026-01-01T00:00:00Z',
+          updated: '2026-01-01T00:00:00Z',
+        },
+      ],
+      loading: false,
+      error: null,
     };
 
-    act(() => {
-      errorCallback(mockError);
-    });
+    const { result } = renderHook(() => useAppData(showToast));
 
-    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Invalid data'), 'error');
+    expect(result.current.data.contacts).toHaveLength(1);
+    expect(result.current.data.contacts[0].name).toBe('Alice');
+    expect(result.current.data.servers).toHaveLength(1);
+    expect(result.current.data.servers[0].name).toBe('web-01');
   });
 
-  it('force clears stuck sync indicator after timeout', async () => {
-    // We'll use a shorter timeout for testing if we could, but here it's 5s.
-    // Let's use fake timers JUST for this test and advance them.
-    vi.useFakeTimers();
-    mockApi.getInitialData.mockResolvedValue(null);
-    let startCallback: () => void = () => {};
-    mockApi.onReloadStart.mockImplementation((cb: () => void) => {
-      startCallback = cb;
-      return vi.fn();
-    });
+  it('shows loading when collections are loading', () => {
+    collectionData.contacts = { data: [], loading: true, error: null };
 
     const { result } = renderHook(() => useAppData(showToast));
-    await act(async () => {
-      await Promise.resolve();
-    });
 
-    act(() => {
-      startCallback();
-    });
     expect(result.current.isReloading).toBe(true);
-
-    act(() => {
-      vi.advanceTimersByTime(6000);
-    });
-
-    expect(result.current.isReloading).toBe(false);
-    vi.useRealTimers();
   });
 
-  it('calls reloadData when handleSync is triggered', async () => {
+  it('calls refetch on all collections when handleSync is triggered', async () => {
     const { result } = renderHook(() => useAppData(showToast));
 
     await act(async () => {
       await result.current.handleSync();
     });
 
-    expect(mockApi.reloadData).toHaveBeenCalled();
+    expect(mockRefetchContacts).toHaveBeenCalled();
+    expect(mockRefetchServers).toHaveBeenCalled();
+    expect(mockRefetchGroups).toHaveBeenCalled();
+    expect(mockRefetchOncall).toHaveBeenCalled();
+  });
+
+  it('shows error toast when collection has an error', async () => {
+    collectionData.contacts = { data: [], loading: false, error: 'Network error' };
+
+    renderHook(() => useAppData(showToast));
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Contacts: Network error', 'error');
+    });
   });
 });

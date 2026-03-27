@@ -136,6 +136,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     handleAddWrapper: dir.handleAddWrapper,
     setContextMenu: dir.setContextMenu,
     listContainerRef,
+    rowHeight: ROW_HEIGHT,
   });
 
   const { contextMenu, setContextMenu } = dir;
@@ -208,6 +209,28 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
             {filtered.length > 0 && <div className="match-count">{filtered.length} contacts</div>}
+            <ListToolbar
+              sortDirection={dir.sortConfig.direction}
+              onToggleSortDirection={() =>
+                dir.setSortConfig((prev) => ({
+                  ...prev,
+                  direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                }))
+              }
+              sortKey={dir.sortConfig.key}
+              sortOptions={[
+                { value: 'name', label: 'Name' },
+                { value: 'email', label: 'Email' },
+                { value: 'title', label: 'Title' },
+                { value: 'phone', label: 'Phone' },
+              ]}
+              onSortKeyChange={(key) =>
+                dir.setSortConfig((prev) => ({
+                  ...prev,
+                  key: key as 'name' | 'email' | 'title' | 'phone',
+                }))
+              }
+            />
             <TactileButton
               variant="primary"
               className="btn-collapsible"
@@ -233,32 +256,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               ADD CONTACT
             </TactileButton>
           </CollapsibleHeader>
-
-          <ListToolbar
-            search={dir.search}
-            onSearchChange={dir.setSearch}
-            placeholder="Search Recipients"
-            sortDirection={dir.sortConfig.direction}
-            onToggleSortDirection={() =>
-              dir.setSortConfig((prev) => ({
-                ...prev,
-                direction: prev.direction === 'asc' ? 'desc' : 'asc',
-              }))
-            }
-            sortKey={dir.sortConfig.key}
-            sortOptions={[
-              { value: 'name', label: 'Name' },
-              { value: 'email', label: 'Email' },
-              { value: 'title', label: 'Title' },
-              { value: 'phone', label: 'Phone' },
-            ]}
-            onSortKeyChange={(key) =>
-              dir.setSortConfig((prev) => ({
-                ...prev,
-                key: key as 'name' | 'email' | 'title' | 'phone',
-              }))
-            }
-          />
 
           {(dir.filtered.length > 0 || filters.isAnyFilterActive) && (
             <ListFilters

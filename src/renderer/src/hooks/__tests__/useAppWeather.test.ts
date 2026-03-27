@@ -123,6 +123,44 @@ describe('useAppWeather', () => {
     });
   });
 
+  it('still restores cached weather and alerts when saved location is malformed', async () => {
+    const alerts: WeatherAlert[] = [
+      {
+        id: 'a2',
+        event: 'Wind Advisory',
+        headline: 'Wind Advisory',
+        severity: 'Moderate',
+        urgency: 'Expected',
+        certainty: 'Likely',
+        effective: '',
+        expires: '',
+        senderName: '',
+        areaDesc: '',
+        description: '',
+      },
+    ];
+
+    secureStorageMock.setItemSync('weather_location', {
+      latitude: 'not-a-number',
+      longitude: -97,
+      name: 'Broken Location',
+    });
+    secureStorageMock.setItemSync('cached_weather_data', {
+      version: 2,
+      fetchedAt: Date.now(),
+      data: weatherData,
+    });
+    secureStorageMock.setItemSync('cached_weather_alerts', alerts);
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await waitFor(() => {
+      expect(result.current.weatherLocation).toBeNull();
+      expect(result.current.weatherData?.timezone).toBe('America/Chicago');
+      expect(result.current.weatherAlerts).toEqual(alerts);
+    });
+  });
+
   it('hydrates location from device location when no saved location exists', async () => {
     const { result } = renderHook(() =>
       useAppWeather(

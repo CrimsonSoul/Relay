@@ -23,6 +23,10 @@ test-results/
 coverage/
 playwright-report/
 
+# Static analysis working directories
+.scannerwork/
+coderabbit-reports/
+
 # Generated data files
 *.xlsx
 resources/*.xlsx
@@ -41,3 +45,12 @@ data/*.json
 
 # Local Electron Binaries
 .electron/
+
+# Local git worktrees
+.worktrees/
+
+# PocketBase
+resources/pocketbase/
+dev-data/
+.superpowers/
+docs/superpowers/

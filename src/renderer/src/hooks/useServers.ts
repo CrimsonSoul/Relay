@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Server, Contact } from '@shared/ipc';
-import { useDebounce } from './useDebounce';
+import { useSearchContext } from '../contexts/SearchContext';
+import { deleteServer as pbDeleteServer } from '../services/serverService';
 
 export function useServers(servers: Server[], contacts: Contact[]) {
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
+  const { debouncedQuery: debouncedSearch } = useSearchContext();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [sortKey, setSortKey] = useState<'name' | 'businessArea' | 'lob' | 'owner' | 'os'>('name');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; server: Server } | null>(
@@ -38,10 +38,13 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     });
   }, [servers, debouncedSearch, sortOrder, sortKey]);
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, server: Server) => {
-    e.preventDefault();
-    setContextMenu({ x: e.clientX, y: e.clientY, server });
-  }, []);
+  const handleContextMenu = useCallback(
+    (e: Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>, server: Server) => {
+      e.preventDefault();
+      setContextMenu({ x: e.clientX, y: e.clientY, server });
+    },
+    [],
+  );
 
   useEffect(() => {
     if (contextMenu) {
@@ -51,42 +54,50 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     }
   }, [contextMenu]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (contextMenu) {
       try {
-        await globalThis.api?.removeServer(contextMenu.server.name);
+        const serverId = contextMenu.server.raw?.id;
+        if (serverId) {
+          await pbDeleteServer(serverId);
+        }
       } catch {
-        // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
+        // Errors surface via useCollection realtime updates
       }
       setContextMenu(null);
     }
-  };
-  const handleEdit = () => {
+  }, [contextMenu]);
+
+  const handleEdit = useCallback(() => {
     if (contextMenu) {
       setEditingServer(contextMenu.server);
       setIsAddModalOpen(true);
       setContextMenu(null);
     }
-  };
-  const editServer = (server: Server) => {
+  }, [contextMenu]);
+
+  const editServer = useCallback((server: Server) => {
     setEditingServer(server);
     setIsAddModalOpen(true);
-  };
-  const deleteServer = async (server: Server) => {
+  }, []);
+
+  const deleteServer = useCallback(async (server: Server) => {
     try {
-      await globalThis.api?.removeServer(server.name);
+      const serverId = server.raw?.id;
+      if (serverId) {
+        await pbDeleteServer(serverId);
+      }
     } catch {
-      // Errors surface via the DATA_ERROR IPC event and are shown as toasts by useAppData
+      // Errors surface via useCollection realtime updates
     }
-  };
-  const openAddModal = () => {
+  }, []);
+
+  const openAddModal = useCallback(() => {
     setEditingServer(undefined);
     setIsAddModalOpen(true);
-  };
+  }, []);
 
   return {
-    search,
-    setSearch,
     sortOrder,
     setSortOrder,
     sortKey,

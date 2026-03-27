@@ -7,6 +7,7 @@ import { TabButton } from './data-manager/SharedComponents';
 import { DataManagerOverview } from './data-manager/DataManagerOverview';
 import { DataManagerImport } from './data-manager/DataManagerImport';
 import { DataManagerExport } from './data-manager/DataManagerExport';
+import { DataManagerBackups } from './data-manager/DataManagerBackups';
 import { loggers } from '../utils/logger';
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
   onClose: () => void;
 };
 
-type TabId = 'overview' | 'import' | 'export';
+type TabId = 'overview' | 'import' | 'export' | 'backups';
 
 export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -89,6 +90,9 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <TabButton active={activeTab === 'export'} onClick={() => setActiveTab('export')}>
             Export
           </TabButton>
+          <TabButton active={activeTab === 'backups'} onClick={() => setActiveTab('backups')}>
+            Backups
+          </TabButton>
         </div>
 
         <div role="tabpanel" aria-label={`${activeTab} panel`}>
@@ -115,6 +119,7 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
               onExport={handleExport}
             />
           )}
+          {activeTab === 'backups' && <DataManagerBackups />}
         </div>
       </div>
     </Modal>

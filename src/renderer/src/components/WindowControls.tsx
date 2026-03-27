@@ -17,7 +17,7 @@ export const WindowControls = () => {
       });
 
     // Listen for maximize/unmaximize events from main process
-    const handleMaximizeChange = (_event: unknown, maximized: boolean) => {
+    const handleMaximizeChange = (maximized: boolean) => {
       setIsMaximized(maximized);
     };
 

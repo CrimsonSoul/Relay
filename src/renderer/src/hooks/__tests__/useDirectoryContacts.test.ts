@@ -8,6 +8,18 @@ import type { Contact } from '@shared/ipc';
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
+// Mock PocketBase contact service
+const mockAddContact = vi.fn();
+const mockUpdateContact = vi.fn();
+const mockDeleteContact = vi.fn();
+const mockFindContactByEmail = vi.fn();
+vi.mock('../../services/contactService', () => ({
+  addContact: (...args: unknown[]) => mockAddContact(...args),
+  updateContact: (...args: unknown[]) => mockUpdateContact(...args),
+  deleteContact: (...args: unknown[]) => mockDeleteContact(...args),
+  findContactByEmail: (...args: unknown[]) => mockFindContactByEmail(...args),
+}));
+
 const makeContact = (email: string, name?: string): Contact => ({
   name: name || email.split('@')[0],
   email,
@@ -24,14 +36,8 @@ describe('useDirectoryContacts', () => {
     makeContact('charlie@test.com', 'Charlie'),
   ];
 
-  const mockApi = {
-    addContact: vi.fn(),
-    removeContact: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
   });
 
   it('returns contacts unchanged initially', () => {
@@ -41,7 +47,7 @@ describe('useDirectoryContacts', () => {
   });
 
   it('handles optimistic create and merges with existing', async () => {
-    mockApi.addContact.mockResolvedValue({ success: true });
+    mockAddContact.mockResolvedValue({ id: 'new-1', name: 'Dave', email: 'dave@test.com' });
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -59,12 +65,11 @@ describe('useDirectoryContacts', () => {
     const effective = result.current.getEffectiveContacts();
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('dave@test.com');
-    // New contact should be at the beginning (optimistic adds are prepended)
     expect(effective[0].email).toBe('dave@test.com');
   });
 
-  it('rolls back optimistic create on API failure', async () => {
-    mockApi.addContact.mockResolvedValue({ success: false, error: 'Duplicate' });
+  it('rolls back optimistic create on service failure', async () => {
+    mockAddContact.mockRejectedValue(new Error('Duplicate'));
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -80,7 +85,20 @@ describe('useDirectoryContacts', () => {
   });
 
   it('handles optimistic update', async () => {
-    mockApi.addContact.mockResolvedValue({ success: true });
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'c1',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '',
+      title: '',
+    });
+    mockUpdateContact.mockResolvedValue({
+      id: 'c1',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '',
+      title: 'Lead Engineer',
+    });
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -93,8 +111,8 @@ describe('useDirectoryContacts', () => {
     expect(alice?.title).toBe('Lead Engineer');
   });
 
-  it('rolls back optimistic update on API failure', async () => {
-    mockApi.addContact.mockResolvedValue({ success: false, error: 'Error' });
+  it('rolls back optimistic update on service failure', async () => {
+    mockFindContactByEmail.mockRejectedValue(new Error('Error'));
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -109,15 +127,15 @@ describe('useDirectoryContacts', () => {
 
     const effective = result.current.getEffectiveContacts();
     const alice = effective.find((c) => c.email === 'alice@test.com');
-    expect(alice?.title).toBe(''); // Original value
+    expect(alice?.title).toBe('');
   });
 
   it('handles optimistic delete', async () => {
-    mockApi.removeContact.mockResolvedValue({ success: true });
+    mockFindContactByEmail.mockResolvedValue({ id: 'c1', name: 'Alice', email: 'alice@test.com' });
+    mockDeleteContact.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
-    // Set up delete confirmation
     act(() => {
       result.current.setDeleteConfirmation(contacts[0]); // Alice
     });
@@ -131,8 +149,9 @@ describe('useDirectoryContacts', () => {
     expect(emails).not.toContain('alice@test.com');
   });
 
-  it('rolls back optimistic delete on API failure', async () => {
-    mockApi.removeContact.mockResolvedValue({ success: false, error: 'Not found' });
+  it('rolls back optimistic delete on service failure', async () => {
+    mockFindContactByEmail.mockResolvedValue({ id: 'c1', name: 'Alice', email: 'alice@test.com' });
+    mockDeleteContact.mockRejectedValue(new Error('Not found'));
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -149,10 +168,7 @@ describe('useDirectoryContacts', () => {
     expect(emails).toContain('alice@test.com');
   });
 
-  it('deduplicates contacts by email', async () => {
-    mockApi.addContact.mockResolvedValue({ success: true });
-
-    // Create a contact that has the same email as an existing one
+  it('deduplicates contacts by email', () => {
     const dupeContacts = [...contacts, makeContact('alice@test.com', 'Alice Duplicate')];
 
     const { result } = renderHook(() => useDirectoryContacts(dupeContacts), { wrapper });
@@ -168,7 +184,6 @@ describe('useDirectoryContacts', () => {
       initialProps: { contacts },
     });
 
-    // The internal optimistic state should reset when contacts change
     const newContacts = [...contacts, makeContact('dave@test.com', 'Dave')];
     rerender({ contacts: newContacts });
 
@@ -183,8 +198,8 @@ describe('useDirectoryContacts', () => {
       await result.current.handleDeleteContact();
     });
 
-    // Should not have called the API
-    expect(mockApi.removeContact).not.toHaveBeenCalled();
+    expect(mockFindContactByEmail).not.toHaveBeenCalled();
+    expect(mockDeleteContact).not.toHaveBeenCalled();
   });
 
   it('manages editing contact state', () => {
@@ -204,22 +219,21 @@ describe('useDirectoryContacts', () => {
   });
 
   it('handleUpdateContact skips optimistic update when email is missing', async () => {
-    mockApi.addContact.mockResolvedValue({ success: true });
+    mockFindContactByEmail.mockResolvedValue(null);
+    mockAddContact.mockResolvedValue({ id: 'new-1' });
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
-    // Update without email — should not crash, guard: `if (updated.email)`
     await act(async () => {
       await result.current.handleUpdateContact({ title: 'Lead' });
     });
 
-    // Effective contacts unchanged since no email to match
     const effective = result.current.getEffectiveContacts();
     expect(effective).toHaveLength(3);
   });
 
-  it('handleDeleteContact rolls back on API exception', async () => {
-    mockApi.removeContact.mockRejectedValue(new Error('Network error'));
+  it('handleDeleteContact rolls back on service exception', async () => {
+    mockFindContactByEmail.mockRejectedValue(new Error('Network error'));
 
     const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
 
@@ -231,7 +245,6 @@ describe('useDirectoryContacts', () => {
       await result.current.handleDeleteContact();
     });
 
-    // Should have been rolled back
     const effective = result.current.getEffectiveContacts();
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('bob@test.com');

@@ -3,9 +3,12 @@ import { Server } from '@shared/ipc';
 import { Tooltip } from './Tooltip';
 import { getPlatformColor } from './shared/PersonInfo';
 
+/** Minimal mouse-event shape shared by native MouseEvent and React.MouseEvent */
+type ContextMenuEvent = Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY'>;
+
 interface ServerCardProps {
   server: Server;
-  onContextMenu: (e: React.MouseEvent, server: Server) => void;
+  onContextMenu: (e: ContextMenuEvent, server: Server) => void;
   style?: React.CSSProperties;
   selected?: boolean;
   onRowClick?: () => void;
@@ -24,7 +27,7 @@ export const ServerCard = memo(
 
       const handleContextMenu = (event: MouseEvent) => {
         event.preventDefault();
-        onContextMenu(event as unknown as React.MouseEvent, server);
+        onContextMenu(event, server);
       };
 
       node.addEventListener('contextmenu', handleContextMenu);
@@ -37,11 +40,13 @@ export const ServerCard = memo(
         <div className="accent-strip" style={{ background: osInfo.text }} />
         <div
           className="server-card-os-badge"
-          style={{
-            background: osInfo.bg,
-            border: `1px solid ${osInfo.border}`,
-            color: osInfo.text,
-          }}
+          style={
+            {
+              '--badge-bg': osInfo.bg,
+              '--badge-border': osInfo.border,
+              '--badge-text': osInfo.text,
+            } as React.CSSProperties
+          }
         >
           <svg
             width="20"
@@ -95,3 +100,5 @@ export const ServerCard = memo(
     );
   },
 );
+
+ServerCard.displayName = 'ServerCard';

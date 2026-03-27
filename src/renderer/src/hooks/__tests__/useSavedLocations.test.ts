@@ -1,6 +1,10 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSavedLocations } from '../useSavedLocations';
+
+vi.mock('../../components/Toast', () => ({
+  useToast: () => ({ showToast: vi.fn() }),
+}));
 
 vi.mock('../../utils/logger', () => ({
   loggers: {
@@ -9,208 +13,200 @@ vi.mock('../../utils/logger', () => ({
   },
 }));
 
+// Mock useCollection
+const mockRefetch = vi.fn();
+const mockCollectionData = { current: [] as unknown[] };
+vi.mock('../useCollection', () => ({
+  useCollection: () => ({
+    data: mockCollectionData.current,
+    loading: false,
+    error: null,
+    refetch: mockRefetch,
+  }),
+}));
+
+// Mock PocketBase saved location service
+const mockAddLocation = vi.fn();
+const mockUpdateLocation = vi.fn();
+const mockDeleteLocation = vi.fn();
+const mockSetDefaultLocation = vi.fn();
+vi.mock('../../services/savedLocationService', () => ({
+  addLocation: (...args: unknown[]) => mockAddLocation(...args),
+  updateLocation: (...args: unknown[]) => mockUpdateLocation(...args),
+  deleteLocation: (...args: unknown[]) => mockDeleteLocation(...args),
+  setDefaultLocation: (...args: unknown[]) => mockSetDefaultLocation(...args),
+}));
+
+const makeRecord = (id: string, name: string, lat: number, lon: number, isDefault: boolean) => ({
+  id,
+  name,
+  lat,
+  lon,
+  isDefault,
+  created: '2026-01-01T00:00:01Z',
+  updated: '2026-01-01T00:00:01Z',
+});
+
 describe('useSavedLocations', () => {
-  const initial = [
-    { id: '1', name: 'Austin, TX', latitude: 30.2, longitude: -97.7, isDefault: true },
-    { id: '2', name: 'Denver, CO', latitude: 39.7, longitude: -104.9, isDefault: false },
-  ];
-
-  const mockApi = {
-    getSavedLocations: vi.fn(),
-    saveLocation: vi.fn(),
-    deleteLocation: vi.fn(),
-    setDefaultLocation: vi.fn(),
-    clearDefaultLocation: vi.fn(),
-    updateLocation: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockApi.getSavedLocations.mockResolvedValue(initial);
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+    mockCollectionData.current = [
+      makeRecord('1', 'Austin, TX', 30.2, -97.7, true),
+      makeRecord('2', 'Denver, CO', 39.7, -104.9, false),
+    ];
   });
 
-  it('loads locations on mount and exposes default location', async () => {
+  it('loads locations from useCollection and exposes default location', () => {
     const { result } = renderHook(() => useSavedLocations());
 
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.locations).toEqual(initial);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.locations).toHaveLength(2);
     expect(result.current.getDefaultLocation()?.id).toBe('1');
   });
 
-  it('saves, updates, sets default, clears default, and deletes locations', async () => {
+  it('saves a location via PocketBase service', async () => {
+    const savedRecord = makeRecord('3', 'Seattle, WA', 47.6, -122.3, true);
+    mockAddLocation.mockResolvedValue(savedRecord);
+
     const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    const saved = {
-      id: '3',
-      name: 'Seattle, WA',
-      latitude: 47.6,
-      longitude: -122.3,
-      isDefault: true,
-    };
-
-    mockApi.saveLocation.mockResolvedValue(saved);
-    mockApi.updateLocation.mockResolvedValue(true);
-    mockApi.setDefaultLocation.mockResolvedValue(true);
-    mockApi.clearDefaultLocation.mockResolvedValue(true);
-    mockApi.deleteLocation.mockResolvedValue(true);
-
+    let saved: unknown;
     await act(async () => {
-      await result.current.saveLocation({
-        name: saved.name,
-        latitude: saved.latitude,
-        longitude: saved.longitude,
-        isDefault: saved.isDefault,
+      saved = await result.current.saveLocation({
+        name: 'Seattle, WA',
+        lat: 47.6,
+        lon: -122.3,
+        isDefault: true,
       });
     });
 
-    expect(result.current.locations.find((l) => l.id === '1')?.isDefault).toBe(false);
-    expect(result.current.locations.find((l) => l.id === '3')?.isDefault).toBe(true);
-
-    await act(async () => {
-      await result.current.updateLocation('3', { name: 'Seattle, Washington' });
-    });
-    expect(result.current.locations.find((l) => l.id === '3')?.name).toBe('Seattle, Washington');
-
-    await act(async () => {
-      await result.current.setDefaultLocation('2');
-    });
-    expect(result.current.locations.find((l) => l.id === '2')?.isDefault).toBe(true);
-
-    await act(async () => {
-      await result.current.clearDefaultLocation('2');
-    });
-    expect(result.current.locations.find((l) => l.id === '2')?.isDefault).toBe(false);
-
-    await act(async () => {
-      await result.current.deleteLocation('1');
-    });
-    expect(result.current.locations.find((l) => l.id === '1')).toBeUndefined();
+    expect(saved).not.toBeNull();
+    expect(mockAddLocation).toHaveBeenCalled();
   });
 
-  it('returns fallback values when API is missing or methods throw', async () => {
+  it('returns null when saveLocation fails', async () => {
+    mockAddLocation.mockRejectedValue(new Error('save-fail'));
+
     const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    (globalThis as Window & { api?: typeof mockApi }).api = undefined;
-
-    let saveResult: unknown;
-    let deleteResult = true;
-    let setDefaultResult = true;
+    let saved: unknown;
     await act(async () => {
-      saveResult = await result.current.saveLocation({
+      saved = await result.current.saveLocation({
         name: 'Nowhere',
-        latitude: 0,
-        longitude: 0,
-        isDefault: false,
-      });
-      deleteResult = await result.current.deleteLocation('x');
-      setDefaultResult = await result.current.setDefaultLocation('x');
-    });
-
-    expect(saveResult).toBeNull();
-    expect(deleteResult).toBe(false);
-    expect(setDefaultResult).toBe(false);
-
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
-    mockApi.updateLocation.mockRejectedValue(new Error('boom'));
-
-    let updateResult = true;
-    await act(async () => {
-      updateResult = await result.current.updateLocation('2', { name: 'Broken' });
-    });
-    expect(updateResult).toBe(false);
-  });
-
-  it('saveLocation appends without clearing defaults when isDefault is false', async () => {
-    const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    const saved = {
-      id: '3',
-      name: 'Dallas, TX',
-      latitude: 32.7,
-      longitude: -96.7,
-      isDefault: false,
-    };
-    mockApi.saveLocation.mockResolvedValue(saved);
-
-    await act(async () => {
-      await result.current.saveLocation({
-        name: saved.name,
-        latitude: saved.latitude,
-        longitude: saved.longitude,
+        lat: 0,
+        lon: 0,
         isDefault: false,
       });
     });
 
-    // Existing default (id=1) should remain default
-    expect(result.current.locations.find((l) => l.id === '1')?.isDefault).toBe(true);
-    // New location appended
-    expect(result.current.locations.find((l) => l.id === '3')?.name).toBe('Dallas, TX');
+    expect(saved).toBeNull();
   });
 
-  it('catch paths return false/null for saveLocation, deleteLocation, setDefaultLocation, clearDefaultLocation', async () => {
+  it('updates a location via PocketBase service', async () => {
+    mockUpdateLocation.mockResolvedValue({ id: '1', name: 'Austin, Texas' });
+
     const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    mockApi.saveLocation.mockRejectedValue(new Error('save-fail'));
-    mockApi.deleteLocation.mockRejectedValue(new Error('delete-fail'));
-    mockApi.setDefaultLocation.mockRejectedValue(new Error('setdefault-fail'));
-    mockApi.clearDefaultLocation.mockRejectedValue(new Error('cleardefault-fail'));
-
-    let saveRes: unknown;
-    let deleteRes = true;
-    let setDefaultRes = true;
-    let clearDefaultRes = true;
-
+    let success = false;
     await act(async () => {
-      saveRes = await result.current.saveLocation({
-        name: 'X',
-        latitude: 0,
-        longitude: 0,
-        isDefault: false,
-      });
-      deleteRes = await result.current.deleteLocation('1');
-      setDefaultRes = await result.current.setDefaultLocation('1');
-      clearDefaultRes = await result.current.clearDefaultLocation('1');
+      success = await result.current.updateLocation('1', { name: 'Austin, Texas' });
     });
 
-    expect(saveRes).toBeNull();
-    expect(deleteRes).toBe(false);
-    expect(setDefaultRes).toBe(false);
-    expect(clearDefaultRes).toBe(false);
+    expect(success).toBe(true);
+    expect(mockUpdateLocation).toHaveBeenCalledWith('1', { name: 'Austin, Texas' });
   });
 
-  it('clearDefaultLocation and updateLocation return false when API not available', async () => {
+  it('returns false when updateLocation fails', async () => {
+    mockUpdateLocation.mockRejectedValue(new Error('boom'));
+
     const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    (globalThis as Window & { api?: typeof mockApi }).api = undefined;
-
-    let clearRes = true;
-    let updateRes = true;
+    let success = true;
     await act(async () => {
-      clearRes = await result.current.clearDefaultLocation('1');
-      updateRes = await result.current.updateLocation('1', { name: 'New Name' });
+      success = await result.current.updateLocation('2', { name: 'Broken' });
     });
 
-    expect(clearRes).toBe(false);
-    expect(updateRes).toBe(false);
+    expect(success).toBe(false);
   });
 
-  it('loadLocations logs error when getSavedLocations throws', async () => {
-    const { loggers } = await import('../../utils/logger');
-    mockApi.getSavedLocations.mockRejectedValue(new Error('load-fail'));
+  it('deletes a location via PocketBase service', async () => {
+    mockDeleteLocation.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useSavedLocations());
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(loggers.location.error).toHaveBeenCalledWith(
-      'Failed to load saved locations',
-      expect.objectContaining({ error: expect.any(Error) }),
-    );
-    expect(result.current.locations).toEqual([]);
+    let success = false;
+    await act(async () => {
+      success = await result.current.deleteLocation('1');
+    });
+
+    expect(success).toBe(true);
+    expect(mockDeleteLocation).toHaveBeenCalledWith('1');
+  });
+
+  it('returns false when deleteLocation fails', async () => {
+    mockDeleteLocation.mockRejectedValue(new Error('delete-fail'));
+
+    const { result } = renderHook(() => useSavedLocations());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.deleteLocation('1');
+    });
+
+    expect(success).toBe(false);
+  });
+
+  it('sets default location via PocketBase service', async () => {
+    mockSetDefaultLocation.mockResolvedValue({ id: '2', isDefault: true });
+
+    const { result } = renderHook(() => useSavedLocations());
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.setDefaultLocation('2');
+    });
+
+    expect(success).toBe(true);
+    expect(mockSetDefaultLocation).toHaveBeenCalledWith('2');
+  });
+
+  it('returns false when setDefaultLocation fails', async () => {
+    mockSetDefaultLocation.mockRejectedValue(new Error('setdefault-fail'));
+
+    const { result } = renderHook(() => useSavedLocations());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.setDefaultLocation('1');
+    });
+
+    expect(success).toBe(false);
+  });
+
+  it('clears default location via PocketBase updateLocation', async () => {
+    mockUpdateLocation.mockResolvedValue({ id: '1', isDefault: false });
+
+    const { result } = renderHook(() => useSavedLocations());
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.clearDefaultLocation('1');
+    });
+
+    expect(success).toBe(true);
+    expect(mockUpdateLocation).toHaveBeenCalledWith('1', { isDefault: false });
+  });
+
+  it('returns false when clearDefaultLocation fails', async () => {
+    mockUpdateLocation.mockRejectedValue(new Error('clear-fail'));
+
+    const { result } = renderHook(() => useSavedLocations());
+
+    let success = true;
+    await act(async () => {
+      success = await result.current.clearDefaultLocation('1');
+    });
+
+    expect(success).toBe(false);
   });
 });

@@ -5,9 +5,7 @@ import { ContextMenu } from '../../components/ContextMenu';
 import { SaveGroupModal } from './SaveGroupModal';
 import { loggers } from '../../utils/logger';
 
-type AssemblerSidebarProps = {
-  groups: BridgeGroup[];
-  selectedGroupIds: string[];
+export type SidebarGroupActions = {
   onToggleGroup: (groupId: string) => void;
   onSaveGroup: (
     group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>,
@@ -17,7 +15,12 @@ type AssemblerSidebarProps = {
     updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>,
   ) => Promise<boolean | undefined>;
   onDeleteGroup: (id: string) => Promise<boolean | undefined>;
-  onImportFromCsv: () => Promise<boolean | undefined>;
+};
+
+type AssemblerSidebarProps = {
+  groups: BridgeGroup[];
+  selectedGroupIds: string[];
+  actions: SidebarGroupActions;
   // For updating a group with current selection
   currentEmails?: string[];
 };
@@ -25,13 +28,10 @@ type AssemblerSidebarProps = {
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
   groups,
   selectedGroupIds,
-  onToggleGroup,
-  onSaveGroup,
-  onUpdateGroup,
-  onDeleteGroup,
-  onImportFromCsv: _onImportFromCsv,
+  actions,
   currentEmails = [],
 }) => {
+  const { onToggleGroup, onSaveGroup, onUpdateGroup, onDeleteGroup } = actions;
   const [groupContextMenu, setGroupContextMenu] = useState<{
     x: number;
     y: number;

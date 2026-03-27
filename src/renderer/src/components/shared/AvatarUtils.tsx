@@ -6,13 +6,16 @@ export const GroupPill = ({ group }: { group: string }) => {
   return (
     <span
       className="group-pill"
-      style={{
-        color: c.text,
-        background: c.bg,
-        borderColor: c.border,
-      }}
+      style={
+        {
+          '--pill-text': c.text,
+          '--pill-bg': c.bg,
+          '--pill-border': c.border,
+          '--pill-fill': c.fill,
+        } as React.CSSProperties
+      }
     >
-      <span className="group-pill-accent" style={{ background: c.fill }} />
+      <span className="group-pill-accent" />
       {group.toUpperCase()}
     </span>
   );

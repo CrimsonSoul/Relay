@@ -1,17 +1,38 @@
-import { app, BrowserWindow, session, dialog } from 'electron';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { FileManager } from './FileManager';
+import { app, BrowserWindow, session, dialog, ipcMain } from 'electron';
+import { join } from 'node:path';
 import { loggers } from './logger';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { AppConfig, type ServerConfig, type ClientConfig } from './config/AppConfig';
+import { OfflineCache } from './cache/OfflineCache';
+import { PendingChanges } from './cache/PendingChanges';
+import { SyncManager } from './cache/SyncManager';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 import { validateEnv } from './env';
-import { state, getDataRoot, getBundledDataPath, setupIpc, setupPermissions } from './app/appState';
+import {
+  getMainWindow,
+  getDataRoot,
+  setupIpc,
+  setupPermissions,
+  getAppConfig,
+  setAppConfig,
+  getCurrentDataRoot,
+  setCurrentDataRoot,
+  getPbProcess,
+  setPbProcess,
+  getRetentionManager,
+  setRetentionManager,
+  getOfflineCache,
+  setOfflineCache,
+  getPendingChanges,
+  setPendingChanges,
+  setSyncManager,
+} from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
-import { setupWindowListeners, ALLOWED_AUX_ROUTES } from './handlers/windowHandlers';
+import { createWindow, createAuxWindow } from './app/windowFactory';
+import { setupErrorHandlers } from './app/errorHandlers';
+import { startPocketBase } from './app/pocketbaseBootstrap';
 import { isTrustedWebviewUrl } from './securityPolicy';
+import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -28,9 +49,10 @@ const gotLock = app.requestSingleInstanceLock();
 if (gotLock) {
   app.on('second-instance', () => {
     // Someone tried to run a second instance, we should focus our window.
-    if (state.mainWindow) {
-      if (state.mainWindow.isMinimized()) state.mainWindow.restore();
-      state.mainWindow.focus();
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
 
@@ -68,195 +90,7 @@ if (gotLock) {
     });
   });
 
-  async function createWindow() {
-    state.mainWindow = new BrowserWindow({
-      width: 960,
-      height: 800,
-      minWidth: 400,
-      minHeight: 600,
-      center: true,
-      backgroundColor: '#060608',
-      titleBarStyle: 'hidden',
-      trafficLightPosition: { x: 12, y: 12 },
-      show: false,
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webviewTag: true,
-        webSecurity: true,
-        allowRunningInsecureContent: false,
-        experimentalFeatures: false,
-        ...(process.platform === 'win32' && {
-          spellcheck: false,
-          enableWebSQL: false,
-        }),
-      },
-    });
-
-    setupWindowListeners(state.mainWindow);
-
-    state.mainWindow.on('close', () => {
-      // Close all other windows when the main window is closed
-      BrowserWindow.getAllWindows().forEach((win) => {
-        if (win !== state.mainWindow) win.close();
-      });
-    });
-
-    const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
-
-    // Set Content Security Policy
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [
-            "default-src 'self'; " +
-              `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
-              "style-src 'self' 'unsafe-inline'; " +
-              "img-src 'self' data: https://api.weather.gov https://*.rainviewer.com; " +
-              "connect-src 'self' https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; " +
-              "font-src 'self' data:; " +
-              "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
-              "object-src 'none'; " +
-              "base-uri 'self'; " +
-              "form-action 'self';",
-          ],
-          'X-Content-Type-Options': ['nosniff'],
-          'X-Frame-Options': ['DENY'],
-          'X-XSS-Protection': ['1; mode=block'],
-          'Referrer-Policy': ['strict-origin-when-cross-origin'],
-        },
-      });
-    });
-
-    // Initialize data BEFORE loading the renderer so IPC handlers have
-    // a ready FileManager when the renderer starts making requests.
-    loggers.main.info('Starting data initialization...');
-    try {
-      state.currentDataRoot = await getDataRoot();
-      loggers.main.info('Data root:', { path: state.currentDataRoot });
-      state.fileManager = new FileManager(state.currentDataRoot, getBundledDataPath());
-      state.fileManager.init();
-      loggers.main.info('FileManager initialized successfully');
-    } catch (error) {
-      loggers.main.error('Failed to initialize data', { error });
-    }
-
-    state.mainWindow.once('ready-to-show', () => {
-      state.mainWindow?.show();
-      state.mainWindow?.focus();
-      loggers.main.debug('ready-to-show fired');
-    });
-
-    if (isDev) {
-      await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
-    } else {
-      const indexPath = join(__dirname, '../renderer/index.html');
-      state.mainWindow.loadFile(indexPath).catch((err) => {
-        loggers.main.error('Failed to load local index.html', {
-          path: indexPath,
-          error: err.message,
-        });
-        throw err;
-      });
-    }
-
-    state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-      delete webPreferences.preload;
-      webPreferences.nodeIntegration = false;
-      webPreferences.contextIsolation = true;
-      webPreferences.sandbox = true;
-      webPreferences.webSecurity = true;
-      webPreferences.allowRunningInsecureContent = false;
-
-      if (!isTrustedWebviewUrl(params.src)) {
-        loggers.security.warn(`Blocked WebView navigation to non-allowlisted URL: ${params.src}`);
-        event.preventDefault();
-      }
-    });
-
-    // Prevent the main window from navigating away (H-1: navigation hijacking defense)
-    state.mainWindow.webContents.on('will-navigate', (event, url) => {
-      // Allow dev server and local file reloads
-      if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
-      if (url.startsWith('file://')) return;
-      loggers.security.warn(`Blocked main window navigation to: ${url}`);
-      event.preventDefault();
-    });
-
-    // Block window.open() from the renderer (H-1)
-    state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-      loggers.security.warn(`Blocked window.open() attempt: ${url}`);
-      return { action: 'deny' };
-    });
-
-    state.mainWindow.on('closed', () => {
-      state.mainWindow = null;
-      if (state.fileManager) {
-        state.fileManager.destroy();
-        state.fileManager = null;
-      }
-    });
-  }
-
-  async function createAuxWindow(route: string) {
-    if (!ALLOWED_AUX_ROUTES.has(route)) {
-      loggers.security.warn(`Blocked aux window with invalid route: ${route}`);
-      return;
-    }
-    const auxWindow = new BrowserWindow({
-      width: 960,
-      height: 800,
-      backgroundColor: '#060608',
-      title: 'Relay - On-Call Board',
-      titleBarStyle: 'hidden',
-      trafficLightPosition: { x: 12, y: 12 },
-      webPreferences: {
-        preload: join(__dirname, '../preload/index.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        webSecurity: true,
-      },
-    });
-
-    setupWindowListeners(auxWindow);
-
-    // Prevent aux window navigation hijacking
-    auxWindow.webContents.on('will-navigate', (event, url) => {
-      if (
-        !app.isPackaged &&
-        process.env.ELECTRON_RENDERER_URL &&
-        url.startsWith(process.env.ELECTRON_RENDERER_URL)
-      )
-        return;
-      if (url.startsWith('file://')) return;
-      loggers.security.warn(`Blocked aux window navigation to: ${url}`);
-      event.preventDefault();
-    });
-    auxWindow.webContents.setWindowOpenHandler(({ url }) => {
-      loggers.security.warn(`Blocked aux window.open() attempt: ${url}`);
-      return { action: 'deny' };
-    });
-
-    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-      const url = `${process.env.ELECTRON_RENDERER_URL}?popout=${route}`;
-      loggers.main.info(`Loading aux window URL: ${url}`);
-      await auxWindow.loadURL(url);
-    } else {
-      const indexPath = join(__dirname, '../renderer/index.html');
-      const url = `file://${indexPath}?popout=${route}`;
-      loggers.main.info(`Loading aux window file URL: ${url}`);
-      await auxWindow.loadURL(url);
-    }
-
-    // Emit current data to the new window
-    if (state.fileManager) {
-      await state.fileManager.readAndEmit();
-    }
-  }
+  const configDataDir = join(app.getPath('userData'), 'data');
 
   const bootstrap = async () => {
     try {
@@ -270,17 +104,126 @@ if (gotLock) {
       setupPermissions(session.fromPartition('persist:weather'));
       setupPermissions(session.fromPartition('persist:dispatcher-radar'));
 
-      setupIpc(createAuxWindow);
+      // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
+      // NOT in any custom dataRoot.
+      setAppConfig(new AppConfig(configDataDir));
+
+      // Resolve data root before loading the renderer
+      loggers.main.info('Starting data initialization...');
+      try {
+        setCurrentDataRoot(await getDataRoot());
+        loggers.main.info('Data root:', { path: getCurrentDataRoot() });
+      } catch (error) {
+        loggers.main.error('Failed to initialize data root', { error });
+      }
+
+      if (!getCurrentDataRoot()) {
+        dialog.showErrorBox(
+          'Critical Startup Error',
+          'Failed to initialize data root directory. The application cannot continue.',
+        );
+        app.quit();
+        return;
+      }
+
+      // Start PocketBase if already configured in server mode
+      const relayConfig = getAppConfig()!.load();
+      if (relayConfig && relayConfig.mode === 'server') {
+        await startPocketBase(relayConfig as ServerConfig, configDataDir);
+      }
+
+      // Initialize offline cache infrastructure for client mode.
+      // All three components (cache, pending, sync) are initialized together so
+      // they're either all available or none — preventing silent data loss from
+      // a half-initialized state.
+      if (relayConfig && relayConfig.mode === 'client') {
+        const clientConfig = relayConfig as ClientConfig;
+        try {
+          const PocketBase = (await import('pocketbase')).default;
+          const syncPb = new PocketBase(clientConfig.serverUrl);
+          await syncPb
+            .collection('_pb_users_auth_')
+            .authWithPassword('relay@relay.app', clientConfig.secret);
+
+          setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
+          setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));
+          // SyncManager is pre-built infrastructure for future offline-write support.
+          // Currently it processes pending changes when explicitly triggered via IPC,
+          // but no production code path enqueues changes into PendingChanges yet.
+          setSyncManager(new SyncManager(syncPb));
+          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
+        } catch (syncErr) {
+          loggers.pocketbase.warn(
+            'Could not initialize offline infrastructure — will retry on reconnect',
+            {
+              error: syncErr,
+            },
+          );
+        }
+      }
+
+      // Register PocketBase IPC handlers
+      ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
+        if (getPbProcess()?.isRunning()) {
+          // Server mode: renderer connects to localhost, not 0.0.0.0
+          return getPbProcess()!.getLocalUrl();
+        }
+        const config = getAppConfig()?.load();
+        if (config?.mode === 'client') {
+          return config.serverUrl;
+        }
+        return null;
+      });
+
+      // Start PocketBase on demand (called after first-time setup)
+      ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
+        const config = getAppConfig()?.load();
+        if (!config || config.mode !== 'server') return false;
+        return startPocketBase(config as ServerConfig, configDataDir);
+      });
+
+      // Intentional: the plaintext passphrase is sent to the renderer for PB SDK auth.
+      // This is an accepted tradeoff for the shared-passphrase LAN use case. The renderer
+      // is sandboxed + context-isolated, and the passphrase is already known to all operators
+      // who use the tool. If the threat model ever includes untrusted renderer content,
+      // switch to a token-exchange approach where main authenticates and passes only the
+      // PB auth token (not the master passphrase).
+      ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {
+        const config = getAppConfig()?.load();
+        return config?.secret ?? null;
+      });
+
+      const restartPb = async (): Promise<boolean> => {
+        const config = getAppConfig()?.load();
+        if (!config || config.mode !== 'server') return false;
+        return startPocketBase(config as ServerConfig, configDataDir);
+      };
+      setupIpc(createAuxWindow, restartPb);
       await createWindow();
-      const cleanupMaintenance = setupMaintenanceTasks(() => state.fileManager);
+      startPeriodicCleanup();
+      const cleanupMaintenance = setupMaintenanceTasks();
 
       // Graceful shutdown: clean up file watchers, timers, etc.
       app.on('before-quit', () => {
         loggers.main.info('App quitting — cleaning up resources');
+        stopPeriodicCleanup();
         cleanupMaintenance();
-        if (state.fileManager) {
-          state.fileManager.destroy();
-          state.fileManager = null;
+        // PocketBase cleanup — synchronous kill to ensure process dies before app exits
+        if (getRetentionManager()) {
+          getRetentionManager()!.stop();
+          setRetentionManager(null);
+        }
+        if (getPbProcess()) {
+          getPbProcess()!.killSync();
+          setPbProcess(null);
+        }
+        if (getOfflineCache()) {
+          getOfflineCache()!.close();
+          setOfflineCache(null);
+        }
+        if (getPendingChanges()) {
+          getPendingChanges()!.close();
+          setPendingChanges(null);
         }
       });
 
@@ -288,6 +231,7 @@ if (gotLock) {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow().catch((error_) => {
             loggers.main.error('Failed to create window on app activate', { error: error_ });
+            app.quit();
           });
         }
       });
@@ -308,17 +252,7 @@ if (gotLock) {
   }); // NOSONAR: top-level await can deadlock Electron startup on some macOS versions.
 
   // Global Exception Handlers
-  process.on('uncaughtException', (error) => {
-    loggers.main.error('Uncaught Exception', { error: error.message, stack: error.stack });
-    dialog.showErrorBox('Startup Error', `Relay encountered a critical error:\n\n${error.message}`);
-    app.quit();
-  });
-
-  process.on('unhandledRejection', (reason: unknown) => {
-    loggers.main.error('Unhandled Rejection', {
-      reason: reason instanceof Error ? reason.message : String(reason),
-    });
-  });
+  setupErrorHandlers();
 } else {
   app.quit();
 }

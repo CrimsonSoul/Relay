@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { OnCallRow, Contact, TeamLayout } from '@shared/ipc';
+import { OnCallRow, Contact } from '@shared/ipc';
 import { CollapsibleHeader, useCollapsibleHeader } from './CollapsibleHeader';
 import { TeamCard } from './personnel/TeamCard';
 import { usePersonnel } from '../hooks/usePersonnel';
@@ -11,16 +11,10 @@ import { useOnCallBoard } from '../hooks/useOnCallBoard';
 interface PopoutBoardProps {
   onCall: OnCallRow[];
   contacts: Contact[];
-  teamLayout?: TeamLayout;
 }
 
-export const PopoutBoard: React.FC<PopoutBoardProps> = ({
-  onCall,
-  contacts,
-  teamLayout: _teamLayout,
-}) => {
-  const { localOnCall, weekRange, dismissedAlerts, getAlertKey, currentDay, teams, tick } =
-    usePersonnel(onCall);
+export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) => {
+  const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, tick } = usePersonnel(onCall);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -63,7 +57,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
   const renderAlerts = () =>
     alertConfigs
-      .filter((c) => c.day === currentDay && !dismissedAlerts.has(getAlertKey(c.type)))
+      .filter((c) => c.day === dayOfWeek && !dismissedAlerts.has(c.type))
       .map((c) => {
         const isDanger = c.tone === 'danger';
         return (
@@ -168,11 +162,11 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
 
       <ul
         ref={animationParent}
-        className={`oncall-grid-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        className={`relay-grid relay-grid--masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         aria-label="On-Call Teams"
       >
         {teams.map((team, idx) => (
-          <li key={team} className="oncall-grid-item animate-card-entrance">
+          <li key={team} className="relay-grid-item animate-card-entrance">
             <TeamCard
               team={team}
               index={idx}

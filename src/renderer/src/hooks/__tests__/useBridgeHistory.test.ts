@@ -1,88 +1,97 @@
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { useBridgeHistory } from '../useBridgeHistory';
 import { NoopToastProvider } from '../../components/Toast';
-import type { BridgeHistoryEntry } from '@shared/ipc';
 
-// Mock logger
 vi.mock('../../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   },
 }));
 
+// Mock useCollection
+const mockRefetch = vi.fn();
+const mockCollectionData = { current: [] as unknown[] };
+vi.mock('../useCollection', () => ({
+  useCollection: () => ({
+    data: mockCollectionData.current,
+    loading: false,
+    error: null,
+    refetch: mockRefetch,
+  }),
+}));
+
+// Mock PocketBase bridge history service
+const mockAddBridgeHistory = vi.fn();
+const mockDeleteBridgeHistory = vi.fn();
+const mockClearBridgeHistory = vi.fn();
+vi.mock('../../services/bridgeHistoryService', () => ({
+  addBridgeHistory: (...args: unknown[]) => mockAddBridgeHistory(...args),
+  deleteBridgeHistory: (...args: unknown[]) => mockDeleteBridgeHistory(...args),
+  clearBridgeHistory: (...args: unknown[]) => mockClearBridgeHistory(...args),
+}));
+
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
 
+const makeRecord = (overrides: Record<string, unknown> = {}) => ({
+  id: 'h1',
+  note: 'First bridge',
+  groups: ['Network'],
+  contacts: ['a@test.com', 'b@test.com'],
+  recipientCount: 2,
+  created: '2026-01-01T00:00:01Z',
+  updated: '2026-01-01T00:00:01Z',
+  ...overrides,
+});
+
 describe('useBridgeHistory', () => {
-  const mockHistory: BridgeHistoryEntry[] = [
-    {
-      id: 'h1',
-      timestamp: 1000,
-      note: 'First bridge',
-      groups: ['Network'],
-      contacts: ['a@test.com', 'b@test.com'],
-      recipientCount: 2,
-    },
-    {
-      id: 'h2',
-      timestamp: 2000,
-      note: '',
-      groups: [],
-      contacts: ['c@test.com'],
-      recipientCount: 1,
-    },
-  ];
-
-  const mockApi = {
-    getBridgeHistory: vi.fn(),
-    addBridgeHistory: vi.fn(),
-    deleteBridgeHistory: vi.fn(),
-    clearBridgeHistory: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
-    mockApi.getBridgeHistory.mockResolvedValue(mockHistory);
+    mockCollectionData.current = [
+      makeRecord({ id: 'h1', created: '2026-01-01T00:00:01Z' }),
+      makeRecord({
+        id: 'h2',
+        note: '',
+        groups: [],
+        contacts: ['c@test.com'],
+        recipientCount: 1,
+        created: '2026-01-01T00:00:02Z',
+      }),
+    ];
   });
 
-  it('loads history on mount', async () => {
+  it('loads history from useCollection', () => {
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
 
-    await waitFor(() => {
-      expect(result.current.history).toEqual(mockHistory);
-      expect(result.current.loading).toBe(false);
-    });
+    expect(result.current.history).toHaveLength(2);
+    expect(result.current.history[0].id).toBe('h1');
+    expect(result.current.loading).toBe(false);
   });
 
-  it('returns empty array when API returns null', async () => {
-    mockApi.getBridgeHistory.mockResolvedValue(null);
-
+  it('returns empty array when no records', () => {
+    mockCollectionData.current = [];
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-
-    await waitFor(() => {
-      expect(result.current.history).toEqual([]);
-    });
+    expect(result.current.history).toEqual([]);
   });
 
-  it('adds a history entry and prepends to state', async () => {
-    const newEntry: BridgeHistoryEntry = {
+  it('adds a history entry via PocketBase service', async () => {
+    const newRecord = makeRecord({
       id: 'h3',
-      timestamp: 3000,
       note: 'New bridge',
       groups: ['Database'],
       contacts: ['d@test.com'],
       recipientCount: 1,
-    };
-    mockApi.addBridgeHistory.mockResolvedValue(newEntry);
+      created: '2026-01-01T00:00:03Z',
+    });
+    mockAddBridgeHistory.mockResolvedValue(newRecord);
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let returned: unknown = null;
     await act(async () => {
-      await result.current.addHistory({
+      returned = await result.current.addHistory({
         note: 'New bridge',
         groups: ['Database'],
         contacts: ['d@test.com'],
@@ -90,118 +99,79 @@ describe('useBridgeHistory', () => {
       });
     });
 
-    expect(result.current.history).toHaveLength(3);
-    expect(result.current.history[0]).toEqual(newEntry); // Prepended
+    expect(returned).not.toBeNull();
+    expect(mockAddBridgeHistory).toHaveBeenCalled();
   });
 
-  it('adds a history entry when API returns an IpcResult wrapper', async () => {
-    const newEntry: BridgeHistoryEntry = {
-      id: 'h4',
-      timestamp: 4000,
-      note: 'Wrapped bridge',
-      groups: ['SRE'],
-      contacts: ['ops@test.com'],
-      recipientCount: 1,
-    };
-    mockApi.addBridgeHistory.mockResolvedValue({ success: true, data: newEntry });
+  it('handles addHistory failure and returns null', async () => {
+    mockAddBridgeHistory.mockRejectedValue(new Error('write failed'));
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let returned: unknown = 'not-null';
     await act(async () => {
-      await result.current.addHistory({
-        note: 'Wrapped bridge',
-        groups: ['SRE'],
-        contacts: ['ops@test.com'],
-        recipientCount: 1,
-      });
-    });
-
-    expect(result.current.history).toHaveLength(3);
-    expect(result.current.history[0]).toEqual(newEntry);
-  });
-
-  it('handles add history failure', async () => {
-    mockApi.addBridgeHistory.mockResolvedValue(null);
-
-    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    await act(async () => {
-      await result.current.addHistory({
-        note: '',
+      returned = await result.current.addHistory({
+        note: 'bad write',
         groups: [],
         contacts: ['d@test.com'],
         recipientCount: 1,
       });
     });
 
-    expect(result.current.history).toHaveLength(2); // No new entry
+    expect(returned).toBeNull();
   });
 
-  it('deletes a history entry from state', async () => {
-    mockApi.deleteBridgeHistory.mockResolvedValue({ success: true });
+  it('deletes a history entry via PocketBase service', async () => {
+    mockDeleteBridgeHistory.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let success = false;
     await act(async () => {
-      await result.current.deleteHistory('h1');
+      success = await result.current.deleteHistory('h1');
     });
 
-    expect(result.current.history).toHaveLength(1);
-    expect(result.current.history[0].id).toBe('h2');
+    expect(success).toBe(true);
+    expect(mockDeleteBridgeHistory).toHaveBeenCalledWith('h1');
   });
 
-  it('does not delete on API failure', async () => {
-    mockApi.deleteBridgeHistory.mockResolvedValue(false);
+  it('handles deleteHistory failure', async () => {
+    mockDeleteBridgeHistory.mockRejectedValue(new Error('delete failed'));
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let success = true;
     await act(async () => {
-      await result.current.deleteHistory('h1');
+      success = await result.current.deleteHistory('h1');
     });
 
-    expect(result.current.history).toHaveLength(2);
+    expect(success).toBe(false);
   });
 
-  it('clears all history', async () => {
-    mockApi.clearBridgeHistory.mockResolvedValue({ success: true });
+  it('clears all history via PocketBase service', async () => {
+    mockClearBridgeHistory.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let success = false;
     await act(async () => {
-      await result.current.clearHistory();
+      success = await result.current.clearHistory();
     });
 
-    expect(result.current.history).toEqual([]);
+    expect(success).toBe(true);
+    expect(mockClearBridgeHistory).toHaveBeenCalled();
   });
 
-  it('does not clear on API failure', async () => {
-    mockApi.clearBridgeHistory.mockResolvedValue(false);
+  it('handles clearHistory failure', async () => {
+    mockClearBridgeHistory.mockRejectedValue(new Error('clear failed'));
 
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-    await waitFor(() => expect(result.current.loading).toBe(false));
 
+    let success = true;
     await act(async () => {
-      await result.current.clearHistory();
+      success = await result.current.clearHistory();
     });
 
-    expect(result.current.history).toHaveLength(2);
-  });
-
-  it('handles exception during loadHistory', async () => {
-    mockApi.getBridgeHistory.mockRejectedValue(new Error('Network error'));
-
-    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
-
-    await waitFor(() => {
-      expect(result.current.loading).toBe(false);
-    });
-
-    // Should fall back to empty array and not crash
-    expect(result.current.history).toEqual([]);
+    expect(success).toBe(false);
   });
 });

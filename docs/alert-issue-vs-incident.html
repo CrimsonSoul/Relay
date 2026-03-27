@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alert Naming Comparison — Issue vs Incident</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&family=Sora:wght@300;400;500;600;700;800&display=swap');
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --doc-bg: #f4f3f0;
+        --doc-text: #1a1a2e;
+        --doc-muted: #6b6b7b;
+        --doc-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.07), 0 1px 4px rgba(0, 0, 0, 0.04);
+      }
+
+      html {
+        font-size: 16px;
+      }
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background: var(--doc-bg);
+        color: var(--doc-text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .doc-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 60px 32px 120px;
+      }
+
+      .doc-cover {
+        text-align: center;
+        padding: 80px 24px 64px;
+        margin-bottom: 56px;
+        border-bottom: 2px solid #ccc;
+      }
+      .doc-cover h1 {
+        font-family: 'Playfair Display', serif;
+        font-size: 42px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        color: #111;
+        margin-bottom: 16px;
+      }
+      .doc-cover .subtitle {
+        font-size: 17px;
+        color: var(--doc-muted);
+        max-width: 560px;
+        margin: 0 auto 32px;
+        line-height: 1.5;
+      }
+      .doc-cover .date-line {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #999;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .option-section {
+        margin-bottom: 80px;
+      }
+      .option-label {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #ddd;
+      }
+      .option-number {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        background: #d32f2f;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        position: relative;
+        top: 3px;
+      }
+      .option-name {
+        font-family: 'Sora', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        color: #111;
+        letter-spacing: -0.02em;
+      }
+      .option-desc {
+        font-size: 14px;
+        color: var(--doc-muted);
+        margin-bottom: 28px;
+        max-width: 700px;
+        line-height: 1.55;
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-bottom: 8px;
+      }
+      .card-cell {
+        background: #eae9e6;
+        border-radius: 14px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .card-cell-label {
+        font-family: 'Outfit', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 14px;
+        padding: 3px 12px;
+        border-radius: 4px;
+      }
+      .card-cell-label.issue {
+        background: #ffebee;
+        color: #c62828;
+      }
+      .card-cell-label.maint {
+        background: #fffde7;
+        color: #827717;
+      }
+      .card-cell-label.info {
+        background: #e3f2fd;
+        color: #0d47a1;
+      }
+      .card-cell-label.resolved {
+        background: #e8f5e9;
+        color: #1b5e20;
+      }
+
+      .alert-card {
+        width: 100%;
+        max-width: 520px;
+        font-family: 'DM Sans', sans-serif;
+        color: #1a1a2e;
+        overflow: hidden;
+        font-size: 13px;
+      }
+
+      /* ===== Current Style ===== */
+      .s1 {
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        border: 2px solid var(--banner);
+      }
+      .s1 .hdr {
+        padding: 10px 24px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--banner);
+      }
+      .s1 .sev-block {
+        display: flex;
+        flex-direction: column;
+        line-height: 1;
+      }
+      .s1 .sev-pre {
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.6);
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+      .s1 .sev-lbl {
+        font-family: 'Outfit', sans-serif;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.95);
+        text-transform: uppercase;
+      }
+      .s1 .ico-w {
+        display: flex;
+        justify-content: center;
+        margin-top: -20px;
+        margin-bottom: -4px;
+        position: relative;
+        z-index: 1;
+      }
+      .s1 .ico {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid var(--banner);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .s1 .ico svg {
+        width: 22px;
+        height: 22px;
+      }
+      .s1 .subj-w {
+        padding: 10px 24px 16px;
+        border-bottom: 1px solid #eaeaea;
+        text-align: center;
+      }
+      .s1 .subj {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+      }
+      .s1 .meta {
+        padding: 10px 24px;
+        background: #fafafa;
+        border-bottom: 1px solid #eaeaea;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .s1 .mi {
+        font-size: 11px;
+        color: #777;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+      .s1 .mi span {
+        color: #222;
+        font-weight: 600;
+        text-transform: none;
+      }
+      .s1 .dt {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #555;
+        white-space: nowrap;
+      }
+      .s1 .body {
+        padding: 18px 24px 24px;
+        font-size: 12.5px;
+        background: #f7f7f8;
+        line-height: 1.7;
+        color: #2d2d2d;
+      }
+      .s1 .ft {
+        height: 5px;
+        background: var(--banner);
+      }
+
+      /* Shared logo placeholder */
+      .lp-w {
+        display: inline-block;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+        .doc-wrapper {
+          padding: 20px;
+        }
+        .card-cell {
+          break-inside: avoid;
+        }
+        .option-section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="doc-wrapper">
+      <div class="doc-cover">
+        <h1>Alert Naming Comparison</h1>
+        <p class="subtitle">
+          Side-by-side comparison of "ISSUE" vs "INCIDENT" as the replacement for the former "MAJOR"
+          severity, shown using the current card style across all severity levels.
+        </p>
+        <p class="date-line">Relay &mdash; March 2026</p>
+      </div>
+
+      <div id="app"></div>
+    </div>
+
+    <script>
+      const SEVERITIES_ISSUE = [
+        { key: 'ISSUE', banner: '#d32f2f', badgeBg: '#ffebee', badgeText: '#c62828' },
+        { key: 'MAINTENANCE', banner: '#f9a825', badgeBg: '#fffde7', badgeText: '#827717' },
+        { key: 'INFO', banner: '#1565c0', badgeBg: '#e3f2fd', badgeText: '#0d47a1' },
+        { key: 'RESOLVED', banner: '#2e7d32', badgeBg: '#e8f5e9', badgeText: '#1b5e20' },
+      ];
+
+      const SEVERITIES_INCIDENT = [
+        { key: 'INCIDENT', banner: '#d32f2f', badgeBg: '#ffebee', badgeText: '#c62828' },
+        { key: 'MAINTENANCE', banner: '#f9a825', badgeBg: '#fffde7', badgeText: '#827717' },
+        { key: 'INFO', banner: '#1565c0', badgeBg: '#e3f2fd', badgeText: '#0d47a1' },
+        { key: 'RESOLVED', banner: '#2e7d32', badgeBg: '#e8f5e9', badgeText: '#1b5e20' },
+      ];
+
+      const ALERT_DATA = {
+        ISSUE: {
+          subject: 'Network Core Switch Failure \u2014 Building 3',
+          sender: 'IT Infrastructure',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 2:47 PM',
+          body: 'We are currently experiencing a critical network outage affecting all wired and wireless connectivity in Building 3. The core switch serving floors 2\u20136 has failed and our network engineering team is on-site performing emergency diagnostics.<br><br>Affected services include VPN access, internal file shares, VoIP phones, and badge readers on impacted floors. A hardware replacement is en route with an estimated arrival of 4:30 PM.',
+        },
+        INCIDENT: {
+          subject: 'Network Core Switch Failure \u2014 Building 3',
+          sender: 'IT Infrastructure',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 2:47 PM',
+          body: 'We are currently experiencing a critical network outage affecting all wired and wireless connectivity in Building 3. The core switch serving floors 2\u20136 has failed and our network engineering team is on-site performing emergency diagnostics.<br><br>Affected services include VPN access, internal file shares, VoIP phones, and badge readers on impacted floors. A hardware replacement is en route with an estimated arrival of 4:30 PM.',
+        },
+        MAINTENANCE: {
+          subject: 'Scheduled Database Maintenance \u2014 Saturday 11 PM',
+          sender: 'Database Operations',
+          recipient: 'All Employees',
+          date: 'Mar 4, 2026, 3:00 PM',
+          body: 'A planned maintenance window is scheduled for Saturday, March 7 from 11:00 PM to 2:00 AM EST. During this time, internal applications relying on the Oracle and SQL Server clusters will be unavailable.<br><br>Affected systems: HR Portal, Timekeeping, Expense Reports, and the Inventory Management dashboard. Please complete any pending submissions before 10:30 PM Saturday.',
+        },
+        INFO: {
+          subject: 'New VPN Client v4.2 Now Available',
+          sender: 'IT Security',
+          recipient: 'All Employees',
+          date: 'Mar 3, 2026, 9:00 AM',
+          body: 'Version 4.2 of the GlobalProtect VPN client is now available in the Software Center. This update includes improved connection reliability and a fix for the disconnect-on-sleep issue reported last month.<br><br>The update will be pushed automatically over the next 7 days. If you would like to install it sooner, open Software Center and search for "GlobalProtect." No restart is required.',
+        },
+        RESOLVED: {
+          subject: 'RESOLVED \u2014 Building 3 Network Connectivity Restored',
+          sender: 'IT Infrastructure',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 5:12 PM',
+          body: 'The network outage affecting Building 3 has been fully resolved. The failed core switch has been replaced and all services\u2014including VPN, file shares, VoIP, and badge readers\u2014are confirmed operational.<br><br>If you continue to experience connectivity issues, please restart your device. Contact the Service Desk at x4357 if problems persist. We apologize for the disruption and thank you for your patience.',
+        },
+      };
+
+      const ICONS = {
+        ISSUE:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3" fill="currentFill"/><path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="#fff"/></svg>',
+        INCIDENT:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3" fill="currentFill"/><path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="#fff"/></svg>',
+        MAINTENANCE:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" fill="currentFill"/></svg>',
+        INFO: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentFill"/><circle cx="12" cy="8.5" r="1.2" fill="#fff"/><path d="M12 11v5" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>',
+        RESOLVED:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentFill"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      };
+
+      const cssClass = {
+        ISSUE: 'issue',
+        INCIDENT: 'issue',
+        MAINTENANCE: 'maint',
+        INFO: 'info',
+        RESOLVED: 'resolved',
+      };
+
+      function icon(sev, color) {
+        return ICONS[sev].replace('currentFill', color);
+      }
+
+      function logo(w, h, bg, txt) {
+        return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" rx="3" fill="${bg}"/><text x="${w / 2}" y="${h * 0.7}" text-anchor="middle" fill="${txt}" font-family="'Outfit',sans-serif" font-size="${Math.max(8, h * 0.4)}" font-weight="700" letter-spacing="0.08em">LOGO</text></svg>`;
+      }
+
+      function renderCard(s, severities) {
+        const sev = severities.find((x) => x.key === s);
+        const a = ALERT_DATA[s];
+        return `<div class="alert-card s1" style="--banner:${sev.banner};--badge-bg:${sev.badgeBg};--badge-text:${sev.badgeText}">
+    <div class="hdr"><div class="sev-block"><span class="sev-pre">ALERT</span><span class="sev-lbl">${s}</span></div>${logo(80, 22, 'rgba(255,255,255,0.25)', '#fff')}</div>
+    <div class="ico-w"><div class="ico">${icon(s, sev.banner)}</div></div>
+    <div class="subj-w"><div class="subj">${a.subject}</div></div>
+    <div class="meta"><div style="display:flex;gap:18px"><div class="mi">FROM <span>${a.sender}</span></div><div class="mi">TO <span>${a.recipient}</span></div></div><div class="dt">${a.date}</div></div>
+    <div class="body">${a.body}</div><div class="ft"></div></div>`;
+      }
+
+      const app = document.getElementById('app');
+      let html = '';
+
+      // Option A: ISSUE
+      html += `<section class="option-section">
+  <div class="option-label"><span class="option-number">A</span><span class="option-name">Alert ISSUE</span></div>
+  <p class="option-desc">Uses "ISSUE" as the primary severity label. Straightforward and broadly understood — implies something is wrong that needs attention without prescribing a specific response framework.</p>
+  <div class="card-grid">`;
+      for (const sev of SEVERITIES_ISSUE) {
+        html += `<div class="card-cell">
+    <span class="card-cell-label ${cssClass[sev.key]}">${sev.key}</span>
+    ${renderCard(sev.key, SEVERITIES_ISSUE)}
+  </div>`;
+      }
+      html += `</div></section>`;
+
+      // Option B: INCIDENT
+      html += `<section class="option-section">
+  <div class="option-label"><span class="option-number">B</span><span class="option-name">Alert INCIDENT</span></div>
+  <p class="option-desc">Uses "INCIDENT" as the primary severity label. Carries a stronger operational weight — aligns with ITIL/ITSM terminology and implies a formal response process is underway.</p>
+  <div class="card-grid">`;
+      for (const sev of SEVERITIES_INCIDENT) {
+        html += `<div class="card-cell">
+    <span class="card-cell-label ${cssClass[sev.key]}">${sev.key}</span>
+    ${renderCard(sev.key, SEVERITIES_INCIDENT)}
+  </div>`;
+      }
+      html += `</div></section>`;
+
+      app.innerHTML = html;
+    </script>
+  </body>
+</html>

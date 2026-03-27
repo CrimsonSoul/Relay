@@ -1,119 +1,111 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { SavedLocation } from '@shared/ipc';
+import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
+import { useCollection } from './useCollection';
+import {
+  addLocation as pbAddLocation,
+  updateLocation as pbUpdateLocation,
+  deleteLocation as pbDeleteLocation,
+  setDefaultLocation as pbSetDefaultLocation,
+} from '../services/savedLocationService';
+import type { SavedLocationRecord } from '../services/savedLocationService';
+
+function toSavedLocation(r: SavedLocationRecord): SavedLocation {
+  return {
+    id: r.id,
+    name: r.name,
+    lat: r.lat,
+    lon: r.lon,
+    isDefault: r.isDefault,
+  };
+}
 
 export function useSavedLocations() {
-  const [locations, setLocations] = useState<SavedLocation[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { showToast } = useToast();
+  const {
+    data: locationRecords,
+    loading,
+    refetch: reloadLocations,
+  } = useCollection<SavedLocationRecord>('saved_locations', { sort: '-created' });
 
-  const loadLocations = useCallback(async () => {
-    try {
-      const data = await globalThis.api?.getSavedLocations();
-      setLocations(data || []);
-    } catch (e) {
-      loggers.location.error('Failed to load saved locations', { error: e });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const locations = useMemo(() => locationRecords.map(toSavedLocation), [locationRecords]);
 
-  useEffect(() => {
-    loadLocations().catch((error_) => {
-      loggers.location.error('Failed to run initial saved-locations load', { error: error_ });
-    });
-  }, [loadLocations]);
-
-  const saveLocation = useCallback(async (location: Omit<SavedLocation, 'id'>) => {
-    try {
-      if (!globalThis.api) {
-        loggers.api.error('[useSavedLocations] API not available');
+  const saveLocation = useCallback(
+    async (location: Omit<SavedLocation, 'id'>) => {
+      try {
+        const created = await pbAddLocation({
+          name: location.name,
+          lat: location.lat,
+          lon: location.lon,
+          isDefault: location.isDefault || false,
+        });
+        return toSavedLocation(created);
+      } catch (e) {
+        loggers.location.error('[useSavedLocations] Failed to save location', { error: e });
+        showToast('Failed to save location', 'error');
         return null;
       }
-      const result = await globalThis.api.saveLocation(location);
-      if (result) {
-        // If new location is default, update existing
-        if (result.isDefault) {
-          setLocations((prev) => [...prev.map((l) => ({ ...l, isDefault: false })), result]);
-        } else {
-          setLocations((prev) => [...prev, result]);
-        }
-      }
-      return result;
-    } catch (e) {
-      loggers.location.error('[useSavedLocations] Failed to save location', { error: e });
-      return null;
-    }
-  }, []);
+    },
+    [showToast],
+  );
 
-  const deleteLocation = useCallback(async (id: string) => {
-    try {
-      if (!globalThis.api) {
-        loggers.api.error('[useSavedLocations] API not available');
+  const deleteLocation = useCallback(
+    async (id: string) => {
+      try {
+        await pbDeleteLocation(id);
+        return true;
+      } catch (e) {
+        loggers.location.error('[useSavedLocations] Failed to delete location', { error: e });
+        showToast('Failed to delete location', 'error');
         return false;
       }
-      const success = await globalThis.api.deleteLocation(id);
-      if (success) {
-        setLocations((prev) => prev.filter((l) => l.id !== id));
-      }
-      return success ?? false;
-    } catch (e) {
-      loggers.location.error('[useSavedLocations] Failed to delete location', { error: e });
-      return false;
-    }
-  }, []);
+    },
+    [showToast],
+  );
 
-  const setDefaultLocation = useCallback(async (id: string) => {
-    try {
-      if (!globalThis.api) {
-        loggers.api.error('[useSavedLocations] API not available');
+  const setDefaultLocation = useCallback(
+    async (id: string) => {
+      try {
+        await pbSetDefaultLocation(id);
+        return true;
+      } catch (e) {
+        loggers.location.error('[useSavedLocations] Failed to set default location', { error: e });
+        showToast('Failed to set default location', 'error');
         return false;
       }
-      const success = await globalThis.api.setDefaultLocation(id);
-      if (success) {
-        setLocations((prev) => prev.map((l) => ({ ...l, isDefault: l.id === id })));
-      }
-      return success ?? false;
-    } catch (e) {
-      loggers.location.error('[useSavedLocations] Failed to set default location', { error: e });
-      return false;
-    }
-  }, []);
+    },
+    [showToast],
+  );
 
-  const clearDefaultLocation = useCallback(async (id: string) => {
-    try {
-      if (!globalThis.api) {
-        loggers.api.error('[useSavedLocations] API not available');
+  const clearDefaultLocation = useCallback(
+    async (id: string) => {
+      try {
+        await pbUpdateLocation(id, { isDefault: false });
+        return true;
+      } catch (e) {
+        loggers.location.error('[useSavedLocations] Failed to clear default location', {
+          error: e,
+        });
+        showToast('Failed to clear default location', 'error');
         return false;
       }
-      const success = await globalThis.api.clearDefaultLocation(id);
-      if (success) {
-        setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, isDefault: false } : l)));
-      }
-      return success ?? false;
-    } catch (e) {
-      loggers.location.error('[useSavedLocations] Failed to clear default location', { error: e });
-      return false;
-    }
-  }, []);
+    },
+    [showToast],
+  );
 
   const updateLocation = useCallback(
     async (id: string, updates: Partial<Omit<SavedLocation, 'id'>>) => {
       try {
-        if (!globalThis.api) {
-          loggers.api.error('[useSavedLocations] API not available');
-          return false;
-        }
-        const success = await globalThis.api.updateLocation(id, updates);
-        if (success) {
-          setLocations((prev) => prev.map((l) => (l.id === id ? { ...l, ...updates } : l)));
-        }
-        return success ?? false;
+        await pbUpdateLocation(id, updates);
+        return true;
       } catch (e) {
         loggers.location.error('[useSavedLocations] Failed to update location', { error: e });
+        showToast('Failed to update location', 'error');
         return false;
       }
     },
-    [],
+    [showToast],
   );
 
   const getDefaultLocation = useCallback(() => {
@@ -129,6 +121,6 @@ export function useSavedLocations() {
     clearDefaultLocation,
     updateLocation,
     getDefaultLocation,
-    reloadLocations: loadLocations,
+    reloadLocations,
   };
 }

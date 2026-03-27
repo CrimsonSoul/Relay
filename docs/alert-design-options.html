@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alert Card Design Options — Relay</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700;800&family=Sora:wght@300;400;500;600;700;800&display=swap');
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --doc-bg: #f4f3f0;
+        --doc-text: #1a1a2e;
+        --doc-muted: #6b6b7b;
+        --doc-card-shadow: 0 4px 24px rgba(0, 0, 0, 0.07), 0 1px 4px rgba(0, 0, 0, 0.04);
+      }
+
+      html {
+        font-size: 16px;
+      }
+      body {
+        font-family: 'DM Sans', sans-serif;
+        background: var(--doc-bg);
+        color: var(--doc-text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .doc-wrapper {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 60px 32px 120px;
+      }
+
+      .doc-cover {
+        text-align: center;
+        padding: 80px 24px 64px;
+        margin-bottom: 56px;
+        border-bottom: 2px solid #ccc;
+      }
+      .doc-cover h1 {
+        font-family: 'Playfair Display', serif;
+        font-size: 42px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.15;
+        color: #111;
+        margin-bottom: 16px;
+      }
+      .doc-cover .subtitle {
+        font-size: 17px;
+        color: var(--doc-muted);
+        max-width: 560px;
+        margin: 0 auto 32px;
+        line-height: 1.5;
+      }
+      .doc-cover .date-line {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #999;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .doc-toc {
+        margin-bottom: 64px;
+        padding: 32px 36px;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: var(--doc-card-shadow);
+      }
+      .doc-toc h2 {
+        font-family: 'Sora', sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--doc-muted);
+        margin-bottom: 20px;
+      }
+      .doc-toc ol {
+        list-style: none;
+        counter-reset: toc;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px 32px;
+      }
+      .doc-toc li {
+        counter-increment: toc;
+        font-size: 15px;
+        font-weight: 500;
+        color: #333;
+      }
+      .doc-toc li::before {
+        content: counter(toc, decimal-leading-zero) '.';
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        color: #d32f2f;
+        font-weight: 600;
+        margin-right: 10px;
+      }
+
+      .option-section {
+        margin-bottom: 80px;
+      }
+      .option-label {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        margin-bottom: 24px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #ddd;
+      }
+      .option-number {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        font-weight: 600;
+        color: #fff;
+        background: #d32f2f;
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        position: relative;
+        top: 3px;
+      }
+      .option-name {
+        font-family: 'Sora', sans-serif;
+        font-size: 22px;
+        font-weight: 700;
+        color: #111;
+        letter-spacing: -0.02em;
+      }
+      .option-desc {
+        font-size: 14px;
+        color: var(--doc-muted);
+        margin-bottom: 28px;
+        max-width: 700px;
+        line-height: 1.55;
+      }
+
+      /* Card grid — shows all 5 severities */
+      .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        margin-bottom: 8px;
+      }
+      .card-grid .card-cell:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+        justify-self: center;
+        max-width: 540px;
+      }
+      .card-cell {
+        background: #eae9e6;
+        border-radius: 14px;
+        padding: 24px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .card-cell-label {
+        font-family: 'Outfit', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        margin-bottom: 14px;
+        padding: 3px 12px;
+        border-radius: 4px;
+      }
+      .card-cell-label.major {
+        background: #ffebee;
+        color: #c62828;
+      }
+      .card-cell-label.minor {
+        background: #fff3e0;
+        color: #bf360c;
+      }
+      .card-cell-label.maint {
+        background: #fffde7;
+        color: #827717;
+      }
+      .card-cell-label.info {
+        background: #e3f2fd;
+        color: #0d47a1;
+      }
+      .card-cell-label.resolved {
+        background: #e8f5e9;
+        color: #1b5e20;
+      }
+
+      .alert-card {
+        width: 100%;
+        max-width: 520px;
+        font-family: 'DM Sans', sans-serif;
+        color: #1a1a2e;
+        overflow: hidden;
+        font-size: 13px;
+      }
+
+      /* ===== STYLE 1 — Current ===== */
+      .s1 {
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        border: 2px solid var(--banner);
+      }
+      .s1 .hdr {
+        padding: 10px 24px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background: var(--banner);
+      }
+      .s1 .sev-block {
+        display: flex;
+        flex-direction: column;
+        line-height: 1;
+      }
+      .s1 .sev-pre {
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.6);
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+      .s1 .sev-lbl {
+        font-family: 'Outfit', sans-serif;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.95);
+        text-transform: uppercase;
+      }
+      .s1 .ico-w {
+        display: flex;
+        justify-content: center;
+        margin-top: -20px;
+        margin-bottom: -4px;
+        position: relative;
+        z-index: 1;
+      }
+      .s1 .ico {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: #fff;
+        border: 3px solid var(--banner);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .s1 .ico svg {
+        width: 22px;
+        height: 22px;
+      }
+      .s1 .subj-w {
+        padding: 10px 24px 16px;
+        border-bottom: 1px solid #eaeaea;
+        text-align: center;
+      }
+      .s1 .subj {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+      }
+      .s1 .meta {
+        padding: 10px 24px;
+        background: #fafafa;
+        border-bottom: 1px solid #eaeaea;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .s1 .mi {
+        font-size: 11px;
+        color: #777;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+      .s1 .mi span {
+        color: #222;
+        font-weight: 600;
+        text-transform: none;
+      }
+      .s1 .dt {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        color: #555;
+        white-space: nowrap;
+      }
+      .s1 .body {
+        padding: 18px 24px 24px;
+        font-size: 12.5px;
+        background: #f7f7f8;
+        line-height: 1.7;
+        color: #2d2d2d;
+      }
+      .s1 .ft {
+        height: 5px;
+        background: var(--banner);
+      }
+
+      /* ===== STYLE 2 — Left Rail ===== */
+      .s2 {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08);
+        border-left: 5px solid var(--banner);
+      }
+      .s2 .top {
+        padding: 18px 22px 14px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .s2 .subj {
+        font-size: 16px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+      }
+      .s2 .badge {
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 3px 10px;
+        border-radius: 4px;
+        background: var(--badge-bg);
+        color: var(--badge-text);
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .s2 .mr {
+        padding: 0 22px 12px;
+        display: flex;
+        gap: 16px;
+        font-size: 11px;
+        color: #888;
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .s2 .mr strong {
+        color: #444;
+        font-weight: 500;
+      }
+      .s2 .div {
+        height: 1px;
+        background: #eee;
+        margin: 0 22px;
+      }
+      .s2 .body {
+        padding: 14px 22px 20px;
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+      }
+      .s2 .btm {
+        padding: 10px 22px;
+        border-top: 1px solid #f0f0f0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .s2 .btm .ts {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #aaa;
+      }
+
+      /* ===== STYLE 3 — Boxed Header ===== */
+      .s3 {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
+        text-align: center;
+      }
+      .s3 .bw {
+        padding: 20px 24px 0;
+        display: flex;
+        justify-content: center;
+      }
+      .s3 .pill {
+        font-family: 'Outfit', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding: 6px 20px;
+        border-radius: 24px;
+        background: var(--banner);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .s3 .pill svg {
+        width: 12px;
+        height: 12px;
+        flex-shrink: 0;
+      }
+      .s3 .subj {
+        padding: 14px 24px 6px;
+        font-size: 18px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+      }
+      .s3 .mc {
+        padding: 4px 24px 16px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #999;
+      }
+      .s3 .mc span {
+        color: #555;
+      }
+      .s3 .div {
+        height: 1px;
+        background: #eee;
+        margin: 0 24px;
+      }
+      .s3 .body {
+        padding: 16px 24px 14px;
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+        text-align: left;
+      }
+      .s3 .ft {
+        padding: 12px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #f0f0f0;
+        font-size: 10px;
+        color: #aaa;
+      }
+      .s3 .ft .d {
+        font-family: 'JetBrains Mono', monospace;
+      }
+
+      /* ===== STYLE 4 — Corporate Letterhead ===== */
+      .s4 {
+        background: #fff;
+        border-radius: 4px;
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
+        border: 1px solid #ddd;
+      }
+      .s4 .lh {
+        padding: 20px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 2px solid var(--banner);
+      }
+      .s4 .lh-r {
+        text-align: right;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #777;
+        line-height: 1.6;
+      }
+      .s4 .sl {
+        padding: 12px 24px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--badge-bg);
+        border-bottom: 1px solid #eee;
+      }
+      .s4 .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--banner);
+        flex-shrink: 0;
+      }
+      .s4 .st {
+        font-family: 'Outfit', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--badge-text);
+      }
+      .s4 .sa {
+        padding: 18px 24px 14px;
+      }
+      .s4 .subj {
+        font-size: 17px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        margin-bottom: 10px;
+      }
+      .s4 .mt {
+        font-size: 11px;
+        color: #666;
+        line-height: 2;
+      }
+      .s4 .mt .lb {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px;
+        text-transform: uppercase;
+        color: #999;
+        letter-spacing: 0.06em;
+        display: inline-block;
+        width: 48px;
+      }
+      .s4 .body {
+        padding: 14px 24px 24px;
+        font-size: 12.5px;
+        line-height: 1.75;
+        color: #333;
+        border-top: 1px solid #eee;
+      }
+      .s4 .fb {
+        height: 4px;
+        background: var(--banner);
+      }
+
+      /* ===== STYLE 5 — Full Bleed Banner ===== */
+      .s5 {
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      .s5 .hero {
+        background: var(--banner);
+        padding: 28px 24px 24px;
+        color: #fff;
+        position: relative;
+      }
+      .s5 .hero::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 5px;
+        background: rgba(0, 0, 0, 0.15);
+      }
+      .s5 .ht {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .s5 .tag {
+        font-family: 'Outfit', sans-serif;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 4px 12px;
+        border-radius: 4px;
+      }
+      .s5 .hl {
+        opacity: 0.85;
+      }
+      .s5 .hs {
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+      }
+      .s5 .hm {
+        margin-top: 12px;
+        font-size: 11px;
+        opacity: 0.75;
+        font-family: 'JetBrains Mono', monospace;
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+      .s5 .body {
+        padding: 20px 24px 24px;
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+      }
+
+      /* ===== STYLE 6 — Compact Notification ===== */
+      .s6 {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+        border: 1px solid #e8e8e8;
+      }
+      .s6 .rt {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 18px;
+        border-bottom: 1px solid #f0f0f0;
+      }
+      .s6 .ism {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        background: var(--banner);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .s6 .ism svg {
+        width: 14px;
+        height: 14px;
+      }
+      .s6 .rtt {
+        flex: 1;
+        min-width: 0;
+      }
+      .s6 .rtt .subj {
+        font-size: 13px;
+        font-weight: 700;
+        color: #111;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .s6 .rtt .met {
+        font-size: 10px;
+        color: #999;
+        font-family: 'JetBrains Mono', monospace;
+        margin-top: 1px;
+      }
+      .s6 .sm {
+        font-family: 'Outfit', sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 2px 8px;
+        border-radius: 3px;
+        background: var(--badge-bg);
+        color: var(--badge-text);
+        white-space: nowrap;
+      }
+      .s6 .body {
+        padding: 12px 18px;
+        font-size: 12px;
+        line-height: 1.6;
+        color: #444;
+      }
+      .s6 .fr {
+        padding: 8px 18px;
+        border-top: 1px solid #f0f0f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 10px;
+        color: #bbb;
+      }
+
+      /* ===== STYLE 7 — Gradient Sweep ===== */
+      .s7 {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+      }
+      .s7 .gt {
+        height: 90px;
+        background: var(--gradient);
+        position: relative;
+        display: flex;
+        align-items: flex-end;
+        padding: 0 24px 12px;
+        justify-content: space-between;
+      }
+      .s7 .gt .sl {
+        font-family: 'Outfit', sans-serif;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #fff;
+        background: rgba(0, 0, 0, 0.15);
+        padding: 3px 10px;
+        border-radius: 4px;
+      }
+      .s7 .gt .la {
+        opacity: 0.8;
+      }
+      .s7 .cnt {
+        padding: 18px 24px 24px;
+      }
+      .s7 .subj {
+        font-size: 18px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        margin-bottom: 10px;
+      }
+      .s7 .ml {
+        font-size: 11px;
+        color: #888;
+        font-family: 'JetBrains Mono', monospace;
+        margin-bottom: 14px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .s7 .ml strong {
+        color: #444;
+        font-weight: 500;
+      }
+      .s7 .body {
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+      }
+
+      /* ===== STYLE 8 — Split Panel ===== */
+      .s8 {
+        display: flex;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.09);
+        overflow: hidden;
+        background: #fff;
+        min-height: 220px;
+      }
+      .s8 .left {
+        width: 140px;
+        background: var(--banner);
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 14px;
+        flex-shrink: 0;
+        text-align: center;
+        gap: 8px;
+      }
+      .s8 .left .si {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .s8 .left .si svg {
+        width: 20px;
+        height: 20px;
+      }
+      .s8 .left .svt {
+        font-family: 'Outfit', sans-serif;
+        font-size: 15px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .s8 .left .svs {
+        font-size: 9px;
+        opacity: 0.6;
+        font-family: 'JetBrains Mono', monospace;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .s8 .right {
+        flex: 1;
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+      }
+      .s8 .subj {
+        font-size: 16px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        margin-bottom: 10px;
+      }
+      .s8 .met {
+        font-size: 10px;
+        color: #888;
+        font-family: 'JetBrains Mono', monospace;
+        margin-bottom: 12px;
+        line-height: 1.8;
+      }
+      .s8 .met strong {
+        color: #555;
+        font-weight: 500;
+      }
+      .s8 .body {
+        font-size: 12px;
+        line-height: 1.7;
+        color: #333;
+        flex: 1;
+        padding-top: 12px;
+        border-top: 1px solid #eee;
+      }
+
+      /* ===== STYLE 9 — Outlined Minimal ===== */
+      .s9 {
+        background: #fff;
+        border: 1.5px solid #ddd;
+        border-radius: 8px;
+        padding: 22px 24px;
+      }
+      .s9 .tr {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .s9 .pill {
+        font-family: 'Outfit', sans-serif;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        padding: 4px 14px;
+        border-radius: 20px;
+        border: 2px solid var(--banner);
+        color: var(--banner);
+        background: transparent;
+      }
+      .s9 .subj {
+        font-size: 19px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+        margin-bottom: 12px;
+      }
+      .s9 .mr {
+        font-size: 11px;
+        color: #999;
+        font-family: 'JetBrains Mono', monospace;
+        display: flex;
+        gap: 14px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .s9 .mr span span {
+        color: #444;
+        font-weight: 500;
+      }
+      .s9 .body {
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+        padding-top: 14px;
+        border-top: 1.5px solid #eee;
+      }
+      .s9 .fl {
+        margin-top: 16px;
+        padding-top: 12px;
+        border-top: 1.5px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+        color: #bbb;
+      }
+
+      /* ===== STYLE 10 — Banded Rows ===== */
+      .s10 {
+        background: #fff;
+        border-radius: 6px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+        border: 1px solid #ddd;
+        overflow: hidden;
+      }
+      .s10 .bh {
+        background: var(--banner);
+        padding: 10px 22px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: #fff;
+      }
+      .s10 .bh .sv {
+        font-family: 'Outfit', sans-serif;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .s10 .bh .dt {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        opacity: 0.7;
+      }
+      .s10 .band {
+        padding: 10px 22px;
+      }
+      .s10 .band.alt {
+        background: #f8f8f8;
+      }
+      .s10 .bl {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #999;
+        margin-bottom: 2px;
+      }
+      .s10 .bv {
+        font-size: 13px;
+        color: #222;
+        font-weight: 500;
+      }
+      .s10 .bv.sv {
+        font-size: 15px;
+        font-weight: 700;
+        color: #111;
+        line-height: 1.3;
+      }
+      .s10 .bb {
+        padding: 14px 22px 20px;
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: #333;
+        border-top: 2px solid var(--banner);
+      }
+      .s10 .bfb {
+        padding: 8px 22px;
+        background: #f4f4f4;
+        border-top: 1px solid #eee;
+        display: flex;
+        justify-content: flex-end;
+      }
+
+      /* Shared logo placeholder */
+      .lp-w {
+        display: inline-block;
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+        .doc-wrapper {
+          padding: 20px;
+        }
+        .card-cell {
+          break-inside: avoid;
+        }
+        .option-section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="doc-wrapper">
+      <div class="doc-cover">
+        <h1>Alert Card Design Options</h1>
+        <p class="subtitle">
+          Ten visual styles for IT alert email cards, each shown across all five severity levels.
+          All designs use the same data fields and support clipboard screenshot capture.
+        </p>
+        <p class="date-line">Relay &mdash; March 2026</p>
+      </div>
+      <nav class="doc-toc">
+        <h2>Designs</h2>
+        <ol>
+          <li>Current (Baseline)</li>
+          <li>Left Rail</li>
+          <li>Boxed Header</li>
+          <li>Corporate Letterhead</li>
+          <li>Full Bleed Banner</li>
+          <li>Compact Notification</li>
+          <li>Gradient Sweep</li>
+          <li>Split Panel</li>
+          <li>Outlined Minimal</li>
+          <li>Banded Rows</li>
+        </ol>
+      </nav>
+
+      <div id="app"></div>
+    </div>
+
+    <script>
+      // ── Data ──
+      const SEVERITIES = [
+        {
+          key: 'MAJOR',
+          banner: '#d32f2f',
+          badgeBg: '#ffebee',
+          badgeText: '#c62828',
+          gradient: 'linear-gradient(135deg, #d32f2f 0%, #ff8a80 60%, #fff 100%)',
+        },
+        {
+          key: 'MINOR',
+          banner: '#e65100',
+          badgeBg: '#fff3e0',
+          badgeText: '#bf360c',
+          gradient: 'linear-gradient(135deg, #e65100 0%, #ffab91 60%, #fff 100%)',
+        },
+        {
+          key: 'MAINTENANCE',
+          banner: '#f9a825',
+          badgeBg: '#fffde7',
+          badgeText: '#827717',
+          gradient: 'linear-gradient(135deg, #f9a825 0%, #fff176 60%, #fff 100%)',
+        },
+        {
+          key: 'INFO',
+          banner: '#1565c0',
+          badgeBg: '#e3f2fd',
+          badgeText: '#0d47a1',
+          gradient: 'linear-gradient(135deg, #1565c0 0%, #90caf9 60%, #fff 100%)',
+        },
+        {
+          key: 'RESOLVED',
+          banner: '#2e7d32',
+          badgeBg: '#e8f5e9',
+          badgeText: '#1b5e20',
+          gradient: 'linear-gradient(135deg, #2e7d32 0%, #a5d6a7 60%, #fff 100%)',
+        },
+      ];
+
+      const ALERTS = {
+        MAJOR: {
+          subject: 'Network Core Switch Failure \u2014 Building 3',
+          sender: 'IT Infrastructure',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 2:47 PM',
+          body: 'We are currently experiencing a critical network outage affecting all wired and wireless connectivity in Building 3. The core switch serving floors 2\u20136 has failed and our network engineering team is on-site performing emergency diagnostics.<br><br>Affected services include VPN access, internal file shares, VoIP phones, and badge readers on impacted floors. A hardware replacement is en route with an estimated arrival of 4:30 PM.',
+        },
+        MINOR: {
+          subject: 'Intermittent Email Delivery Delays',
+          sender: 'IT Messaging Team',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 10:15 AM',
+          body: 'Some users are experiencing delays of 15\u201330 minutes when sending or receiving email via Outlook and OWA. The issue is isolated to one of our mail transport servers and does not affect calendar or Teams functionality.<br><br>Our team has identified the bottleneck and is applying a configuration change. No action is required on your part. Emails are not lost and will be delivered once the queue clears.',
+        },
+        MAINTENANCE: {
+          subject: 'Scheduled Database Maintenance \u2014 Saturday 11 PM',
+          sender: 'Database Operations',
+          recipient: 'All Employees',
+          date: 'Mar 4, 2026, 3:00 PM',
+          body: 'A planned maintenance window is scheduled for Saturday, March 7 from 11:00 PM to 2:00 AM EST. During this time, internal applications relying on the Oracle and SQL Server clusters will be unavailable.<br><br>Affected systems: HR Portal, Timekeeping, Expense Reports, and the Inventory Management dashboard. Please complete any pending submissions before 10:30 PM Saturday.',
+        },
+        INFO: {
+          subject: 'New VPN Client v4.2 Now Available',
+          sender: 'IT Security',
+          recipient: 'All Employees',
+          date: 'Mar 3, 2026, 9:00 AM',
+          body: 'Version 4.2 of the GlobalProtect VPN client is now available in the Software Center. This update includes improved connection reliability and a fix for the disconnect-on-sleep issue reported last month.<br><br>The update will be pushed automatically over the next 7 days. If you would like to install it sooner, open Software Center and search for "GlobalProtect." No restart is required.',
+        },
+        RESOLVED: {
+          subject: 'RESOLVED \u2014 Building 3 Network Connectivity Restored',
+          sender: 'IT Infrastructure',
+          recipient: 'All Employees',
+          date: 'Mar 5, 2026, 5:12 PM',
+          body: 'The network outage affecting Building 3 has been fully resolved. The failed core switch has been replaced and all services\u2014including VPN, file shares, VoIP, and badge readers\u2014are confirmed operational.<br><br>If you continue to experience connectivity issues, please restart your device. Contact the Service Desk at x4357 if problems persist. We apologize for the disruption and thank you for your patience.',
+        },
+      };
+
+      const ICONS = {
+        MAJOR:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3" fill="currentFill"/><path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="#fff"/></svg>',
+        MINOR:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentFill"/><path d="M12 8v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="16" r="1.2" fill="#fff"/></svg>',
+        MAINTENANCE:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" fill="currentFill"/></svg>',
+        INFO: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentFill"/><circle cx="12" cy="8.5" r="1.2" fill="#fff"/><path d="M12 11v5" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/></svg>',
+        RESOLVED:
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="currentFill"/><path d="M8 12l3 3 5-5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      };
+
+      // Smaller inverted icons (white outline on colored bg)
+      const ICONS_INV = {
+        MAJOR:
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3" fill="#fff"/><path d="M12 9v4" stroke="currentBannerColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="currentBannerColor"/></svg>',
+        MINOR:
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#fff"/><path d="M12 8v4" stroke="currentBannerColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="16" r="1.2" fill="currentBannerColor"/></svg>',
+        MAINTENANCE:
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" fill="#fff"/></svg>',
+        INFO: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#fff"/><circle cx="12" cy="8.5" r="1.2" fill="currentBannerColor"/><path d="M12 11v5" stroke="currentBannerColor" stroke-width="2.5" stroke-linecap="round"/></svg>',
+        RESOLVED:
+          '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="#fff"/><path d="M8 12l3 3 5-5" stroke="currentBannerColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+      };
+
+      function icon(sev, color) {
+        return ICONS[sev].replace('currentFill', color);
+      }
+      function iconInv(sev, color) {
+        return ICONS_INV[sev].replaceAll('currentBannerColor', color);
+      }
+
+      function logo(w, h, bg, txt) {
+        return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" rx="3" fill="${bg}"/><text x="${w / 2}" y="${h * 0.7}" text-anchor="middle" fill="${txt}" font-family="'Outfit',sans-serif" font-size="${Math.max(8, h * 0.4)}" font-weight="700" letter-spacing="0.08em">LOGO</text></svg>`;
+      }
+
+      const cssClass = {
+        MAJOR: 'major',
+        MINOR: 'minor',
+        MAINTENANCE: 'maint',
+        INFO: 'info',
+        RESOLVED: 'resolved',
+      };
+
+      // ── Style renderers ──
+      // Each returns HTML string for a given severity key
+      const styles = {
+        s1(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s1" style="--banner:${sev.banner};--badge-bg:${sev.badgeBg};--badge-text:${sev.badgeText}">
+      <div class="hdr"><div class="sev-block"><span class="sev-pre">ALERT</span><span class="sev-lbl">${s}</span></div>${logo(80, 22, 'rgba(255,255,255,0.25)', '#fff')}</div>
+      <div class="ico-w"><div class="ico">${icon(s, sev.banner)}</div></div>
+      <div class="subj-w"><div class="subj">${a.subject}</div></div>
+      <div class="meta"><div style="display:flex;gap:18px"><div class="mi">FROM <span>${a.sender}</span></div><div class="mi">TO <span>${a.recipient}</span></div></div><div class="dt">${a.date}</div></div>
+      <div class="body">${a.body}</div><div class="ft"></div></div>`;
+        },
+        s2(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s2" style="--banner:${sev.banner};--badge-bg:${sev.badgeBg};--badge-text:${sev.badgeText}">
+      <div class="top"><div class="subj">${a.subject}</div><div class="badge">${s}</div></div>
+      <div class="mr"><span>From: <strong>${a.sender}</strong></span><span>To: <strong>${a.recipient}</strong></span></div>
+      <div class="div"></div><div class="body">${a.body}</div>
+      <div class="btm">${logo(64, 18, '#eee', '#aaa')}<span class="ts">${a.date}</span></div></div>`;
+        },
+        s3(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s3" style="--banner:${sev.banner}">
+      <div class="bw"><div class="pill">${iconInv(s, sev.banner)} ${s} ALERT</div></div>
+      <div class="subj">${a.subject}</div>
+      <div class="mc">From <span>${a.sender}</span> &bull; To <span>${a.recipient}</span></div>
+      <div class="div"></div><div class="body">${a.body}</div>
+      <div class="ft">${logo(56, 16, '#eee', '#bbb')}<span class="d">${a.date}</span></div></div>`;
+        },
+        s4(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s4" style="--banner:${sev.banner};--badge-bg:${sev.badgeBg};--badge-text:${sev.badgeText}">
+      <div class="lh">${logo(72, 20, '#eee', '#999')}<div class="lh-r">Information Technology<br>Internal Communication</div></div>
+      <div class="sl"><div class="dot"></div><span class="st">${s} Alert</span></div>
+      <div class="sa"><div class="subj">${a.subject}</div><div class="mt"><div><span class="lb">From:</span> ${a.sender}</div><div><span class="lb">To:</span> ${a.recipient}</div><div><span class="lb">Date:</span> ${a.date}</div></div></div>
+      <div class="body">${a.body}</div><div class="fb"></div></div>`;
+        },
+        s5(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s5" style="--banner:${sev.banner}">
+      <div class="hero"><div class="ht"><span class="tag">${s} ALERT</span>${logo(72, 20, 'rgba(255,255,255,0.25)', '#fff')}</div>
+      <div class="hs">${a.subject}</div>
+      <div class="hm"><span>From: ${a.sender}</span><span>To: ${a.recipient}</span><span>${a.date}</span></div></div>
+      <div class="body">${a.body}</div></div>`;
+        },
+        s6(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s6" style="--banner:${sev.banner};--badge-bg:${sev.badgeBg};--badge-text:${sev.badgeText}">
+      <div class="rt"><div class="ism">${iconInv(s, sev.banner)}</div><div class="rtt"><div class="subj">${a.subject}</div><div class="met">${a.sender} &rarr; ${a.recipient}</div></div><span class="sm">${s}</span></div>
+      <div class="body">${a.body}</div>
+      <div class="fr">${logo(48, 14, '#eee', '#bbb')}<span>${a.date}</span></div></div>`;
+        },
+        s7(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s7" style="--banner:${sev.banner};--gradient:${sev.gradient}">
+      <div class="gt"><span class="sl">${s}</span>${logo(64, 18, 'rgba(255,255,255,0.3)', '#fff')}</div>
+      <div class="cnt"><div class="subj">${a.subject}</div>
+      <div class="ml"><span>From: <strong>${a.sender}</strong></span><span>To: <strong>${a.recipient}</strong></span><span>${a.date}</span></div>
+      <div class="body">${a.body}</div></div></div>`;
+        },
+        s8(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s8" style="--banner:${sev.banner}">
+      <div class="left"><div class="si">${iconInv(s, sev.banner)}</div><div class="svt">${s}</div><div class="svs">Alert</div>${logo(56, 16, 'rgba(255,255,255,0.2)', 'rgba(255,255,255,0.7)')}</div>
+      <div class="right"><div class="subj">${a.subject}</div>
+      <div class="met"><div>From: <strong>${a.sender}</strong></div><div>To: <strong>${a.recipient}</strong></div><div>${a.date}</div></div>
+      <div class="body">${a.body}</div></div></div>`;
+        },
+        s9(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s9" style="--banner:${sev.banner}">
+      <div class="tr"><span class="pill">${s}</span>${logo(64, 18, '#eee', '#aaa')}</div>
+      <div class="subj">${a.subject}</div>
+      <div class="mr"><span>From: <span>${a.sender}</span></span><span>To: <span>${a.recipient}</span></span></div>
+      <div class="body">${a.body}</div>
+      <div class="fl"><span>${a.date}</span><span style="font-family:'JetBrains Mono',monospace">Relay Alert System</span></div></div>`;
+        },
+        s10(s) {
+          const sev = SEVERITIES.find((x) => x.key === s),
+            a = ALERTS[s];
+          return `<div class="alert-card s10" style="--banner:${sev.banner}">
+      <div class="bh"><span class="sv">${s} ALERT</span><span class="dt">${a.date}</span></div>
+      <div class="band alt"><div class="bl">Subject</div><div class="bv sv">${a.subject}</div></div>
+      <div class="band"><div class="bl">From</div><div class="bv">${a.sender}</div></div>
+      <div class="band alt"><div class="bl">To</div><div class="bv">${a.recipient}</div></div>
+      <div class="bb">${a.body}</div>
+      <div class="bfb">${logo(56, 14, '#ddd', '#999')}</div></div>`;
+        },
+      };
+
+      const DESIGNS = [
+        {
+          id: 's1',
+          num: '01',
+          name: 'Current (Baseline)',
+          desc: 'The existing production design. Colored banner header with floating severity icon, centered subject, metadata row, and tinted body area.',
+        },
+        {
+          id: 's2',
+          num: '02',
+          name: 'Left Rail',
+          desc: 'A thick colored left border acts as the primary severity indicator. No top banner \u2014 clean and scannable with subject prominent.',
+        },
+        {
+          id: 's3',
+          num: '03',
+          name: 'Boxed Header',
+          desc: 'Severity in a bold pill badge at top-center. Centered composition with generous whitespace creates an announcement feel.',
+        },
+        {
+          id: 's4',
+          num: '04',
+          name: 'Corporate Letterhead',
+          desc: 'Formal business communication style. Logo top-left like a letterhead, severity as a subtle tinted bar. Conservative and enterprise-friendly.',
+        },
+        {
+          id: 's5',
+          num: '05',
+          name: 'Full Bleed Banner',
+          desc: 'A large, immersive colored hero takes up nearly half the card. Subject and severity live inside the banner for maximum visual impact.',
+        },
+        {
+          id: 's6',
+          num: '06',
+          name: 'Compact Notification',
+          desc: 'Dense, notification-style card. Icon, subject, and badge on a single row with body below. Great for rapid scanning.',
+        },
+        {
+          id: 's7',
+          num: '07',
+          name: 'Gradient Sweep',
+          desc: 'Diagonal gradient from severity color into white. Modern SaaS-inspired feel with a soft, contemporary transition into content.',
+        },
+        {
+          id: 's8',
+          num: '08',
+          name: 'Split Panel',
+          desc: '30/70 left-right split. Colored left panel holds severity icon and label, white right panel presents content. Strong visual hierarchy.',
+        },
+        {
+          id: 's9',
+          num: '09',
+          name: 'Outlined Minimal',
+          desc: 'No color fills \u2014 just thin borders and a colored outline pill for severity. Relies on typography and spacing for hierarchy.',
+        },
+        {
+          id: 's10',
+          num: '10',
+          name: 'Banded Rows',
+          desc: 'Alternating gray/white row bands for each data field. Industrial and utilitarian \u2014 every field in its own lane.',
+        },
+      ];
+
+      const app = document.getElementById('app');
+      let html = '';
+
+      for (const d of DESIGNS) {
+        html += `<section class="option-section">
+    <div class="option-label"><span class="option-number">${d.num}</span><span class="option-name">${d.name}</span></div>
+    <p class="option-desc">${d.desc}</p>
+    <div class="card-grid">`;
+        for (const sev of SEVERITIES) {
+          html += `<div class="card-cell">
+      <span class="card-cell-label ${cssClass[sev.key]}">${sev.key}</span>
+      ${styles[d.id](sev.key)}
+    </div>`;
+        }
+        html += `</div></section>`;
+      }
+
+      app.innerHTML = html;
+    </script>
+  </body>
+</html>

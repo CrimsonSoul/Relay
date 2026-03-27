@@ -34,6 +34,32 @@ const credentialCache = new Map<
 const NONCE_EXPIRY_MS = 5 * 60 * 1000;
 // Credential cache expiry (30 minutes)
 const CREDENTIAL_CACHE_EXPIRY_MS = 30 * 60 * 1000;
+// Periodic cleanup interval (60 seconds)
+const CLEANUP_INTERVAL_MS = 60 * 1000;
+
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start periodic cleanup of expired nonces and credentials.
+ * Called once during app startup — idempotent.
+ */
+export function startPeriodicCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    cleanupExpiredNonces();
+    cleanupExpiredCredentials();
+  }, CLEANUP_INTERVAL_MS);
+}
+
+/**
+ * Stop periodic cleanup. Called during app shutdown.
+ */
+export function stopPeriodicCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+}
 
 /**
  * Generate a secure random nonce for auth request validation
@@ -144,7 +170,6 @@ export function cacheCredentials(host: string, username: string, password: strin
     const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to cache credentials', {
       error: err.message,
-      stack: err.stack,
       category: ErrorCategory.AUTH,
       host,
     });
@@ -171,7 +196,6 @@ export function getCachedCredentials(host: string): { username: string; password
     const err = error instanceof Error ? error : new Error(String(error));
     loggers.security.error('Failed to decrypt cached credentials', {
       error: err.message,
-      stack: err.stack,
       category: ErrorCategory.AUTH,
       host,
     });

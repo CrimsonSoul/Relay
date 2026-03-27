@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { vi } from 'vitest';
 
@@ -143,5 +143,78 @@ describe('ErrorBoundary Component', () => {
 
     expect(screen.getByText('Something went wrong')).toBeInTheDocument();
     expect(screen.queryByText('Normal Component')).not.toBeInTheDocument();
+  });
+
+  it('renders ReactNode fallback when provided', () => {
+    const ThrowError = () => {
+      throw new Error('Test error');
+    };
+
+    render(
+      <ErrorBoundary fallback={<div data-testid="custom-fallback">Custom fallback</div>}>
+        <ThrowError />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByTestId('custom-fallback')).toBeInTheDocument();
+    expect(screen.getByText('Custom fallback')).toBeInTheDocument();
+    // Default error UI should NOT be shown
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+  });
+
+  it('renders function fallback with reset callback when provided', () => {
+    let shouldThrow = true;
+    const MaybeThrow = () => {
+      if (shouldThrow) throw new Error('Test error');
+      return <div>Recovered content</div>;
+    };
+
+    const FallbackFn = (reset: () => void) => (
+      <div>
+        <span>Function fallback rendered</span>
+        <button onClick={reset}>Reset</button>
+      </div>
+    );
+
+    render(
+      <ErrorBoundary fallback={FallbackFn}>
+        <MaybeThrow />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText('Function fallback rendered')).toBeInTheDocument();
+    expect(screen.queryByText('Something went wrong')).not.toBeInTheDocument();
+
+    // Stop throwing before reset
+    shouldThrow = false;
+
+    // Click reset to clear error state
+    fireEvent.click(screen.getByText('Reset'));
+
+    expect(screen.getByText('Recovered content')).toBeInTheDocument();
+  });
+
+  it('resets error state when Try Again button is clicked', () => {
+    let shouldThrow = true;
+    const MaybeThrow = () => {
+      if (shouldThrow) throw new Error('Test error');
+      return <div>Normal after reset</div>;
+    };
+
+    render(
+      <ErrorBoundary>
+        <MaybeThrow />
+      </ErrorBoundary>,
+    );
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+
+    // Stop throwing before reset
+    shouldThrow = false;
+
+    // Click "Try Again"
+    fireEvent.click(screen.getByText('Try Again'));
+
+    expect(screen.getByText('Normal after reset')).toBeInTheDocument();
   });
 });

@@ -12,19 +12,20 @@ export default defineConfig({
     },
   },
   test: {
+    // globals required for @testing-library/jest-dom which expects global `expect`
+    globals: true,
     environment: 'jsdom',
     include: ['src/renderer/**/*.test.tsx', 'src/renderer/**/*.test.ts'],
     setupFiles: ['src/renderer/test/setup.ts'],
-    globals: true,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
       reportsDirectory: 'coverage/renderer',
       thresholds: {
-        lines: 78,
-        functions: 76,
-        branches: 67,
-        statements: 79,
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
       },
       exclude: [
         'node_modules/**',
@@ -32,7 +33,12 @@ export default defineConfig({
         '**/*.test.ts',
         '**/*.test.tsx',
         'src/main/**',
+        'src/shared/**',
         'src/renderer/test/**',
+        'src/renderer/src/main.tsx',
+        'src/renderer/src/vite-env.d.ts',
+        'src/renderer/src/tabs/notes/index.ts',
+        'src/renderer/src/utils/mockData.ts',
       ],
     },
   },

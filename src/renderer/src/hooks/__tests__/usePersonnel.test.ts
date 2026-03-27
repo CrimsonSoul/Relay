@@ -1,9 +1,52 @@
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
-import { usePersonnel } from '../usePersonnel';
 import { NoopToastProvider } from '../../components/Toast';
 import type { OnCallRow } from '@shared/ipc';
+
+const mockDismissAlert = vi.fn().mockResolvedValue({ id: 'rec1' });
+vi.mock('../../services/oncallDismissalService', () => ({
+  dismissAlert: (...args: unknown[]) => mockDismissAlert(...args),
+}));
+
+// Mock useCollection to return dismissal records
+const mockDismissalRecords: Array<{
+  id: string;
+  alertType: string;
+  dateKey: string;
+  collectionId: string;
+  collectionName: string;
+  created: string;
+  updated: string;
+}> = [];
+vi.mock('../useCollection', () => ({
+  useCollection: (name: string) => {
+    if (name === 'oncall_dismissals') {
+      return { data: mockDismissalRecords, loading: false, error: null, refetch: vi.fn() };
+    }
+    return { data: [], loading: false, error: null, refetch: vi.fn() };
+  },
+}));
+
+vi.mock('../../utils/logger', () => ({
+  loggers: {
+    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  },
+}));
+
+// Mock PocketBase oncall service
+const mockReplaceTeamRecords = vi.fn();
+const mockDeleteOnCallByTeam = vi.fn();
+const mockRenameTeam = vi.fn();
+const mockReorderTeams = vi.fn();
+vi.mock('../../services/oncallService', () => ({
+  replaceTeamRecords: (...args: unknown[]) => mockReplaceTeamRecords(...args),
+  deleteOnCallByTeam: (...args: unknown[]) => mockDeleteOnCallByTeam(...args),
+  renameTeam: (...args: unknown[]) => mockRenameTeam(...args),
+  reorderTeams: (...args: unknown[]) => mockReorderTeams(...args),
+}));
+
+import { usePersonnel } from '../usePersonnel';
 
 const wrapper = ({ children }: { children: React.ReactNode }) =>
   React.createElement(NoopToastProvider, null, children);
@@ -25,21 +68,9 @@ describe('usePersonnel', () => {
     makeRow('Database', 'Backup', 'Dave'),
   ];
 
-  const mockApi = {
-    updateOnCallTeam: vi.fn(),
-    removeOnCallTeam: vi.fn(),
-    renameOnCallTeam: vi.fn(),
-    reorderOnCallTeams: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis.window as unknown as { api: typeof mockApi }).api = mockApi;
-    localStorage.clear();
-  });
-
-  afterEach(() => {
-    localStorage.clear();
+    mockDismissalRecords.length = 0;
   });
 
   it('initializes with provided on-call rows', () => {
@@ -62,7 +93,7 @@ describe('usePersonnel', () => {
   });
 
   it('handles updating team rows optimistically', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -81,7 +112,7 @@ describe('usePersonnel', () => {
   });
 
   it('preserves team order when updating rows', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -91,13 +122,12 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Database', updatedDatabaseRows);
     });
 
-    // Network should still come before Database
     const teams = Array.from(new Set(result.current.localOnCall.map((r) => r.team)));
     expect(teams).toEqual(['Network', 'Database']);
   });
 
   it('handles removing a team', async () => {
-    mockApi.removeOnCallTeam.mockResolvedValue({ success: true });
+    mockDeleteOnCallByTeam.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -110,7 +140,7 @@ describe('usePersonnel', () => {
   });
 
   it('shows error toast on remove team API failure', async () => {
-    mockApi.removeOnCallTeam.mockResolvedValue(false);
+    mockDeleteOnCallByTeam.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -118,12 +148,12 @@ describe('usePersonnel', () => {
       await result.current.handleRemoveTeam('Database');
     });
 
-    // When API returns falsy, the team is NOT removed (if block not entered)
+    // Team should still exist since API failed
     expect(result.current.teams).toEqual(['Network', 'Database']);
   });
 
   it('handles renaming a team', async () => {
-    mockApi.renameOnCallTeam.mockResolvedValue({ success: true });
+    mockRenameTeam.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -136,7 +166,7 @@ describe('usePersonnel', () => {
   });
 
   it('does not rename team on API failure', async () => {
-    mockApi.renameOnCallTeam.mockResolvedValue(false);
+    mockRenameTeam.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -149,8 +179,8 @@ describe('usePersonnel', () => {
   });
 
   it('handles adding a new team', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
-    mockApi.reorderOnCallTeams.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
+    mockReorderTeams.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -162,7 +192,7 @@ describe('usePersonnel', () => {
   });
 
   it('rolls back add team on API failure', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue(false);
+    mockReplaceTeamRecords.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -174,11 +204,10 @@ describe('usePersonnel', () => {
   });
 
   it('handles reordering teams', async () => {
-    mockApi.reorderOnCallTeams.mockResolvedValue({ success: true });
+    mockReorderTeams.mockResolvedValue(undefined);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
-    // Swap Network (index 0) and Database (index 1)
     await act(async () => {
       await result.current.handleReorderTeams(0, 1);
     });
@@ -187,7 +216,7 @@ describe('usePersonnel', () => {
   });
 
   it('rolls back reorder on API failure', async () => {
-    mockApi.reorderOnCallTeams.mockResolvedValue(false);
+    mockReorderTeams.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -205,31 +234,31 @@ describe('usePersonnel', () => {
       await result.current.handleReorderTeams(0, 0);
     });
 
-    expect(mockApi.reorderOnCallTeams).not.toHaveBeenCalled();
+    expect(mockReorderTeams).not.toHaveBeenCalled();
   });
 
   it('provides a weekRange string with date range and year', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
-    // Format: "Month Day - Month Day, Year" e.g. "February 2 - February 8, 2026"
     expect(result.current.weekRange).toMatch(/^[A-Za-z]+ \d{1,2} - [A-Za-z]+ \d{1,2}, \d{4}$/);
   });
 
-  it('dismisses alerts and persists to localStorage', () => {
+  it('dismisses alerts optimistically and persists to PB', () => {
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
     act(() => {
       result.current.dismissAlert('general');
     });
 
-    const key = result.current.getAlertKey('general');
-    expect(result.current.dismissedAlerts.has(key)).toBe(true);
-    expect(localStorage.getItem(`dismissed-${key}`)).toBe('true');
+    expect(result.current.dismissedAlerts.has('general')).toBe(true);
+    expect(mockDismissAlert).toHaveBeenCalledWith(
+      'general',
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
   });
 
   it('handleUpdateRows auto-dismisses general alert on Monday', async () => {
-    // Mock Date to be a Monday (day=1)
     vi.setSystemTime(new Date(2026, 1, 2, 10, 0, 0)); // Feb 2, 2026 is a Monday
-    mockApi.updateOnCallTeam.mockResolvedValue({ success: true });
+    mockReplaceTeamRecords.mockResolvedValue([]);
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -237,12 +266,11 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Network', [makeRow('Network', 'Primary', 'Alice')]);
     });
 
-    const key = result.current.getAlertKey('general');
-    expect(result.current.dismissedAlerts.has(key)).toBe(true);
+    expect(result.current.dismissedAlerts.has('general')).toBe(true);
   });
 
-  it('handleUpdateRows does not roll back on API failure (only toasts)', async () => {
-    mockApi.updateOnCallTeam.mockResolvedValue(false);
+  it('handleUpdateRows rolls back on API failure and toasts', async () => {
+    mockReplaceTeamRecords.mockRejectedValue(new Error('Failed'));
 
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
@@ -252,17 +280,38 @@ describe('usePersonnel', () => {
       await result.current.handleUpdateRows('Network', updatedRows);
     });
 
-    // Optimistic update should remain (no rollback in the code)
     const networkRows = result.current.localOnCall.filter((r) => r.team === 'Network');
-    expect(networkRows).toHaveLength(1);
-    expect(networkRows[0]!.name).toBe('Zara');
+    expect(networkRows).toHaveLength(2);
+    expect(networkRows[0]!.name).toBe('Alice');
+    expect(networkRows[1]!.name).toBe('Bob');
   });
 
-  it('getAlertKey generates date-based key', () => {
-    vi.setSystemTime(new Date(2026, 1, 6, 12, 0, 0)); // Feb 6, 2026
+  it('dismissedAlerts reflects PB records for today', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    mockDismissalRecords.push(
+      {
+        id: 'r1',
+        alertType: 'oracle',
+        dateKey: today,
+        collectionId: '',
+        collectionName: 'oncall_dismissals',
+        created: '',
+        updated: '',
+      },
+      {
+        id: 'r2',
+        alertType: 'sql',
+        dateKey: '2020-01-01',
+        collectionId: '',
+        collectionName: 'oncall_dismissals',
+        created: '',
+        updated: '',
+      },
+    );
+
     const { result } = renderHook(() => usePersonnel(initialRows), { wrapper });
 
-    const key = result.current.getAlertKey('general');
-    expect(key).toBe('2026-1-6-general');
+    expect(result.current.dismissedAlerts.has('oracle')).toBe(true);
+    expect(result.current.dismissedAlerts.has('sql')).toBe(false);
   });
 });

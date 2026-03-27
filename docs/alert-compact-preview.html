@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compact + Enhance — Alert Card</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Montserrat:wght@600;700;800;900&display=swap');
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #1a1a2e;
+        --surface: #232340;
+        --text-muted: #8888aa;
+      }
+
+      body {
+        font-family: 'IBM Plex Sans', sans-serif;
+        background: var(--bg);
+        color: #fff;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        max-width: 1500px;
+        margin: 0 auto;
+        padding: 48px 32px 120px;
+      }
+
+      .page-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 24px;
+        font-weight: 800;
+        margin-bottom: 8px;
+      }
+
+      .page-subtitle {
+        font-size: 14px;
+        color: var(--text-muted);
+        margin-bottom: 48px;
+        max-width: 700px;
+      }
+
+      .scenario {
+        margin-bottom: 64px;
+      }
+
+      .scenario-header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 6px;
+      }
+
+      .scenario-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .scenario-severity {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        padding: 3px 10px;
+        border-radius: 10px;
+        color: #fff;
+      }
+
+      .scenario-desc {
+        font-size: 13px;
+        color: #999;
+        margin-bottom: 20px;
+      }
+
+      .cards-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 24px;
+        align-items: start;
+      }
+
+      .card-col-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .toggle-icon {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 9px;
+        white-space: nowrap;
+      }
+
+      .toggle-off {
+        background: rgba(255, 255, 255, 0.06);
+        color: #888;
+      }
+      .toggle-enhance {
+        background: rgba(124, 92, 252, 0.15);
+        color: #7c5cfc;
+      }
+      .toggle-compact {
+        background: rgba(59, 130, 246, 0.15);
+        color: #60a5fa;
+      }
+      .toggle-both {
+        background: linear-gradient(135deg, rgba(124, 92, 252, 0.15), rgba(59, 130, 246, 0.15));
+        color: #a78bfa;
+      }
+
+      /* ============ EMAIL CARD ============ */
+
+      .email-card {
+        background: #ffffff;
+        width: 100%;
+        border-radius: 10px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        font-family: 'IBM Plex Sans', sans-serif;
+        color: #1a1a2e;
+      }
+
+      .email-severity-header {
+        padding: 10px 24px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .email-severity-block {
+        display: flex;
+        flex-direction: column;
+        line-height: 1;
+      }
+
+      .email-severity-prefix {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: 2px;
+      }
+
+      .email-severity-label {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.95);
+      }
+
+      .email-icon-wrapper {
+        display: flex;
+        justify-content: center;
+        margin-top: -18px;
+        margin-bottom: -2px;
+        position: relative;
+        z-index: 1;
+      }
+
+      .email-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow:
+          0 2px 4px rgba(0, 0, 0, 0.08),
+          0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .email-icon svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .email-header {
+        padding: 8px 24px 14px;
+        border-bottom: 1px solid #eaeaea;
+        text-align: center;
+      }
+
+      .email-subject {
+        font-size: 17px;
+        font-weight: 700;
+        color: #111118;
+        line-height: 1.3;
+        letter-spacing: -0.02em;
+      }
+
+      .email-meta {
+        padding: 8px 24px;
+        background: #fafafa;
+        border-bottom: 1px solid #eaeaea;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .email-meta-item {
+        font-size: 10px;
+        color: #777;
+        font-family: 'IBM Plex Mono', monospace;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .email-meta-item span {
+        color: #222;
+        font-weight: 600;
+        text-transform: none;
+      }
+
+      .email-meta-dot {
+        width: 3px;
+        height: 3px;
+        border-radius: 50%;
+        background: #bbb;
+      }
+
+      .email-body {
+        padding: 18px 24px 24px;
+        font-size: 13px;
+        background: #f7f7f8;
+        line-height: 1.7;
+        color: #2d2d2d;
+        word-break: break-word;
+      }
+
+      .email-footer {
+        padding: 10px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid #eaeaea;
+        background: #fafafa;
+      }
+
+      .email-footer-logo {
+        height: 16px;
+        width: 50px;
+        border-radius: 3px;
+        background: #e0e0e0;
+        opacity: 0.4;
+      }
+
+      .email-footer-timestamp {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        color: #888;
+      }
+
+      /* ============ ENHANCE STYLES ============ */
+
+      .hl-deadline {
+        background: #fff3cd;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: 600;
+        color: #856404;
+      }
+      .hl-action {
+        font-weight: 700;
+        color: #1a1a2e;
+      }
+      .hl-number {
+        font-weight: 700;
+        color: #1565c0;
+      }
+      .hl-warning {
+        background: #fee2e2;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: 600;
+        color: #991b1b;
+      }
+      .hl-success {
+        background: #d1fae5;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: 600;
+        color: #065f46;
+      }
+      .hl-service {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 11px;
+        background: #f0f0f5;
+        padding: 1px 5px;
+        border-radius: 3px;
+        color: #333;
+      }
+      .hl-url {
+        color: #1565c0;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+
+      .enhanced-list {
+        margin: 8px 0;
+        padding-left: 18px;
+      }
+      .enhanced-list li {
+        margin: 3px 0;
+      }
+      .enhanced-section-label {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #999;
+        margin-top: 12px;
+        margin-bottom: 3px;
+      }
+
+      /* ============ TOOLBAR ============ */
+
+      .toolbar-demo {
+        margin-top: 48px;
+        padding: 28px 32px;
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .toolbar-demo h3 {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 16px;
+      }
+
+      .toolbar-mockup {
+        display: flex;
+        gap: 2px;
+        padding: 6px 8px;
+        background: #1a1a2e;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        align-items: center;
+        width: fit-content;
+      }
+
+      .tb-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 28px;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: #888;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .tb-sep {
+        width: 1px;
+        height: 16px;
+        background: rgba(255, 255, 255, 0.1);
+        margin: 0 6px;
+      }
+
+      .tb-toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 12px;
+        border-radius: 5px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+
+      .tb-enhance {
+        border: 1px solid rgba(124, 92, 252, 0.3);
+        background: rgba(124, 92, 252, 0.08);
+        color: #a78bfa;
+      }
+
+      .tb-enhance.active {
+        background: rgba(124, 92, 252, 0.2);
+        border-color: #7c5cfc;
+        color: #c4b5fd;
+      }
+
+      .tb-compact {
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        background: rgba(59, 130, 246, 0.08);
+        color: #60a5fa;
+      }
+
+      .tb-compact.active {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: #3b82f6;
+        color: #93c5fd;
+      }
+
+      .tb-toggle svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      /* ============ RULES ============ */
+
+      .rules-section {
+        margin-top: 48px;
+        padding: 28px 32px;
+        background: var(--surface);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .rules-section h3 {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+
+      .rules-section .subtitle {
+        font-size: 13px;
+        color: #999;
+        margin-bottom: 16px;
+      }
+
+      .rules-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      .rules-table th {
+        text-align: left;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 8px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .rules-table td {
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        color: #ccc;
+        vertical-align: top;
+      }
+
+      .rules-table tr:last-child td {
+        border: none;
+      }
+
+      .rule-before {
+        color: #ef4444;
+        text-decoration: line-through;
+        opacity: 0.7;
+      }
+      .rule-after {
+        color: #22c55e;
+      }
+
+      /* ============ WORD COUNT ============ */
+
+      .word-count {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        margin-top: 8px;
+        padding: 4px 10px;
+        border-radius: 4px;
+        width: fit-content;
+      }
+
+      .wc-original {
+        background: rgba(255, 255, 255, 0.05);
+        color: #888;
+      }
+      .wc-compact {
+        background: rgba(34, 197, 94, 0.1);
+        color: #22c55e;
+      }
+
+      @media (max-width: 1100px) {
+        .cards-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="page-title">Compact + Enhance</div>
+      <p class="page-subtitle">
+        Two independent toggles that compose together. Compact rewrites verbose corporate phrasing
+        into tighter text using pattern-matched rules. Enhance adds visual highlights. Both preserve
+        the original — toggle off to revert.
+      </p>
+
+      <!-- ===== SCENARIO 1: Password Reminder (verbose corporate) ===== -->
+      <div class="scenario">
+        <div class="scenario-header">
+          <span class="scenario-title">Password Expiry Reminder</span>
+          <span class="scenario-severity" style="background: #f9a825">MAINTENANCE</span>
+        </div>
+        <div class="scenario-desc">
+          A typical verbose corporate IT alert. Compact strips the filler; Enhance highlights key
+          info; together they produce a scannable, tight alert.
+        </div>
+        <div class="cards-row">
+          <!-- ORIGINAL -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-off">ORIGINAL</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #f9a825">
+              <div class="email-severity-header" style="background: #f9a825">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">MAINTENANCE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #f9a825">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"
+                      fill="#f9a825"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Password Expiry Reminder</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Security</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Employees</span></div>
+              </div>
+              <div class="email-body">
+                Please be advised that your network password will expire in 60 days. In order to
+                maintain uninterrupted access to company systems, all employees are required to
+                update their password before May 24, 2026. Failure to do so will result in account
+                lockout and you will need to contact IT support to regain access. You can change
+                your password by visiting the self-service portal at password.company.com. If you
+                require any assistance or have any questions, please do not hesitate to reach out to
+                the IT Help Desk at extension 4357. Please remember that you should not share your
+                password with anyone under any circumstances.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-original">96 WORDS</div>
+          </div>
+
+          <!-- COMPACT ONLY -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #f9a825">
+              <div class="email-severity-header" style="background: #f9a825">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">MAINTENANCE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #f9a825">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"
+                      fill="#f9a825"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Password Expiry Reminder</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Security</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Employees</span></div>
+              </div>
+              <div class="email-body">
+                Your network password expires in 60 days. Update before May 24, 2026 to avoid
+                account lockout. Change your password at password.company.com or contact IT Help
+                Desk at ext. 4357. Do not share your password with anyone.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">38 WORDS · 60% SHORTER</div>
+          </div>
+
+          <!-- COMPACT + ENHANCE -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+              <span class="toggle-icon toggle-enhance">&#10024; ENHANCE</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #f9a825">
+              <div class="email-severity-header" style="background: #f9a825">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">MAINTENANCE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #f9a825">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"
+                      fill="#f9a825"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Password Expiry Reminder</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Security</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Employees</span></div>
+              </div>
+              <div class="email-body">
+                Your network password expires in <span class="hl-deadline">60 days</span>. Update
+                before <span class="hl-deadline">May 24, 2026</span> to avoid
+                <span class="hl-warning">account lockout</span>. Change your password at
+                <span class="hl-url">password.company.com</span> or contact IT Help Desk at
+                <span class="hl-number">ext. 4357</span>.
+
+                <span class="hl-action">Do not</span> share your password with anyone.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">38 WORDS · 60% SHORTER + ENHANCED</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SCENARIO 2: Outage (verbose) ===== -->
+      <div class="scenario">
+        <div class="scenario-header">
+          <span class="scenario-title">Service Outage</span>
+          <span class="scenario-severity" style="background: #d32f2f">ISSUE</span>
+        </div>
+        <div class="scenario-desc">
+          Wordy incident report. Compact strips filler and restructures; Enhance highlights affected
+          systems and metrics.
+        </div>
+        <div class="cards-row">
+          <!-- ORIGINAL -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-off">ORIGINAL</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #d32f2f">
+              <div class="email-severity-header" style="background: #d32f2f">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">ISSUE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #d32f2f">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3"
+                      fill="#d32f2f"
+                    />
+                    <path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                    <circle cx="12" cy="17" r="1.2" fill="#fff" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header"><div class="email-subject">API Gateway Outage</div></div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>Platform Ops</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>Engineering</span></div>
+              </div>
+              <div class="email-body">
+                We wanted to make you aware that we are currently experiencing a complete outage of
+                the API Gateway service in the us-east-1 region. This issue began at approximately
+                14:15 UTC today. The services that are currently affected by this outage include the
+                Payment API, the User Authentication Service, and the Notification Pipeline. At this
+                point in time, the current error rate has reached 100% and p99 latency is exceeding
+                30 seconds. Our engineering team is actively investigating the root cause of this
+                issue. We estimate that the time to resolution will be approximately 2 hours from
+                now. Please note that all deployments have been frozen until further notice while we
+                work to resolve this situation. We will provide updates as more information becomes
+                available.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-original">147 WORDS</div>
+          </div>
+
+          <!-- COMPACT ONLY -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #d32f2f">
+              <div class="email-severity-header" style="background: #d32f2f">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">ISSUE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #d32f2f">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3"
+                      fill="#d32f2f"
+                    />
+                    <path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                    <circle cx="12" cy="17" r="1.2" fill="#fff" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header"><div class="email-subject">API Gateway Outage</div></div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>Platform Ops</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>Engineering</span></div>
+              </div>
+              <div class="email-body">
+                Complete outage of API Gateway in us-east-1 since 14:15 UTC. Affected: Payment API,
+                User Auth Service, Notification Pipeline. Error rate: 100%. P99 latency: >30s.
+                Investigating. ETA to resolution: ~2 hours. All deployments frozen until further
+                notice.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">37 WORDS · 75% SHORTER</div>
+          </div>
+
+          <!-- COMPACT + ENHANCE -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+              <span class="toggle-icon toggle-enhance">&#10024; ENHANCE</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #d32f2f">
+              <div class="email-severity-header" style="background: #d32f2f">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">ISSUE</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #d32f2f">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="m21.73 18-8-14a2 2 0 00-3.48 0l-8 14A2 2 0 004 21h16a2 2 0 001.73-3"
+                      fill="#d32f2f"
+                    />
+                    <path d="M12 9v4" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                    <circle cx="12" cy="17" r="1.2" fill="#fff" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header"><div class="email-subject">API Gateway Outage</div></div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>Platform Ops</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>Engineering</span></div>
+              </div>
+              <div class="email-body">
+                <span class="hl-warning">Complete outage</span> of
+                <span class="hl-service">API Gateway</span> in
+                <span class="hl-service">us-east-1</span> since
+                <span class="hl-deadline">14:15 UTC</span>.
+
+                <div class="enhanced-section-label">Affected</div>
+                <ul class="enhanced-list">
+                  <li><span class="hl-service">Payment API</span></li>
+                  <li><span class="hl-service">User Auth Service</span></li>
+                  <li><span class="hl-service">Notification Pipeline</span></li>
+                </ul>
+                Error rate: <span class="hl-warning">100%</span>. P99 latency:
+                <span class="hl-number">&gt;30s</span>. Investigating. ETA:
+                <span class="hl-deadline">~2 hours</span>.
+                <span class="hl-action">All deployments frozen</span> until further notice.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 2:30 PM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">37 WORDS · 75% SHORTER + ENHANCED</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== SCENARIO 3: Info announcement (corporate fluff) ===== -->
+      <div class="scenario">
+        <div class="scenario-header">
+          <span class="scenario-title">System Migration Notice</span>
+          <span class="scenario-severity" style="background: #1565c0">INFO</span>
+        </div>
+        <div class="scenario-desc">
+          HR/IT announcement style — maximum corporate padding. Compact strips it down to what
+          actually matters.
+        </div>
+        <div class="cards-row">
+          <!-- ORIGINAL -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-off">ORIGINAL</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #1565c0">
+              <div class="email-severity-header" style="background: #1565c0">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">INFO</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #1565c0">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" fill="#1565c0" />
+                    <circle cx="12" cy="8.5" r="1.2" fill="#fff" />
+                    <path d="M12 11v5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Email Migration to M365</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Department</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Staff</span></div>
+              </div>
+              <div class="email-body">
+                We are pleased to inform you that as part of our ongoing efforts to improve and
+                modernize our technology infrastructure, the IT Department will be migrating all
+                email accounts from our current on-premises Exchange server to Microsoft 365 cloud
+                services. This migration is scheduled to take place over the weekend of April 5-6,
+                2026. During this migration window, you may experience brief interruptions to your
+                email service lasting approximately 15-30 minutes. We kindly ask that you ensure all
+                important emails are saved prior to the migration. If you are currently using any
+                custom email rules or filters, please note that these will need to be recreated
+                after the migration is complete. For any questions or concerns regarding this
+                migration, please don't hesitate to contact the IT Help Desk at helpdesk@company.com
+                or extension 4357. We appreciate your patience and cooperation during this
+                transition.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 10:00 AM</div>
+              </div>
+            </div>
+            <div class="word-count wc-original">161 WORDS</div>
+          </div>
+
+          <!-- COMPACT -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #1565c0">
+              <div class="email-severity-header" style="background: #1565c0">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">INFO</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #1565c0">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" fill="#1565c0" />
+                    <circle cx="12" cy="8.5" r="1.2" fill="#fff" />
+                    <path d="M12 11v5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Email Migration to M365</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Department</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Staff</span></div>
+              </div>
+              <div class="email-body">
+                Email migrating from Exchange to Microsoft 365 on April 5-6, 2026. Expect brief
+                interruptions (15-30 min). Before migration: save important emails. After: recreate
+                custom rules/filters. Questions: helpdesk@company.com or ext. 4357.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 10:00 AM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">33 WORDS · 80% SHORTER</div>
+          </div>
+
+          <!-- COMPACT + ENHANCE -->
+          <div>
+            <div class="card-col-label">
+              <span class="toggle-icon toggle-compact">&#8600; COMPACT</span>
+              <span class="toggle-icon toggle-enhance">&#10024; ENHANCE</span>
+            </div>
+            <div class="email-card" style="border: 2px solid #1565c0">
+              <div class="email-severity-header" style="background: #1565c0">
+                <div class="email-severity-block">
+                  <span class="email-severity-prefix">ALERT</span>
+                  <span class="email-severity-label">INFO</span>
+                </div>
+              </div>
+              <div class="email-icon-wrapper">
+                <div class="email-icon" style="border: 3px solid #1565c0">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" fill="#1565c0" />
+                    <circle cx="12" cy="8.5" r="1.2" fill="#fff" />
+                    <path d="M12 11v5" stroke="#fff" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                </div>
+              </div>
+              <div class="email-header">
+                <div class="email-subject">Email Migration to M365</div>
+              </div>
+              <div class="email-meta">
+                <div class="email-meta-item">FROM <span>IT Department</span></div>
+                <span class="email-meta-dot"></span>
+                <div class="email-meta-item">TO <span>All Staff</span></div>
+              </div>
+              <div class="email-body">
+                Email migrating from <span class="hl-service">Exchange</span> to
+                <span class="hl-service">Microsoft 365</span> on
+                <span class="hl-deadline">April 5-6, 2026</span>. Expect brief interruptions (<span
+                  class="hl-number"
+                  >15-30 min</span
+                >).
+
+                <div class="enhanced-section-label">Action Required</div>
+                Before migration: save important emails. After: recreate custom rules/filters.
+                Questions: <span class="hl-url">helpdesk@company.com</span> or
+                <span class="hl-number">ext. 4357</span>.
+              </div>
+              <div class="email-footer">
+                <div class="email-footer-logo"></div>
+                <div class="email-footer-timestamp">Mar 25, 2026 · 10:00 AM</div>
+              </div>
+            </div>
+            <div class="word-count wc-compact">33 WORDS · 80% SHORTER + ENHANCED</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== TOOLBAR ===== -->
+      <div class="toolbar-demo">
+        <h3>Toolbar — Two Independent Toggles</h3>
+        <p style="font-size: 13px; color: #aaa; margin-bottom: 16px">
+          Each toggle works independently. Pipeline order: original → compact (if on) → enhance (if
+          on). Toggling either off instantly reverts that step. Original text is always preserved
+          untouched.
+        </p>
+        <div class="toolbar-mockup">
+          <div class="tb-btn"><strong>B</strong></div>
+          <div class="tb-btn"><em>I</em></div>
+          <div class="tb-btn" style="text-decoration: underline">U</div>
+          <div class="tb-sep"></div>
+          <div class="tb-btn">&#8226;</div>
+          <div class="tb-btn">1.</div>
+          <div class="tb-sep"></div>
+          <div class="tb-toggle tb-compact active">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline points="4 14 10 14 10 20" />
+              <polyline points="20 10 14 10 14 4" />
+              <line x1="14" y1="10" x2="21" y2="3" />
+              <line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+            COMPACT
+          </div>
+          <div class="tb-toggle tb-enhance active">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+            </svg>
+            ENHANCE
+          </div>
+        </div>
+        <p style="font-size: 12px; color: #666; margin-top: 12px">
+          Pipeline: <span style="color: #888">originalHtml</span> →
+          <span style="color: #60a5fa">compactText()</span> →
+          <span style="color: #a78bfa">enhanceHtml()</span> → preview
+        </p>
+      </div>
+
+      <!-- ===== COMPACT RULES ===== -->
+      <div class="rules-section">
+        <h3>Compact Rules Engine</h3>
+        <p class="subtitle">
+          Pattern-matched phrase replacements. Runs on the plain text extracted from the body HTML
+          before enhance is applied.
+        </p>
+        <table class="rules-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Matches</th>
+              <th>Becomes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Throat-clearing</td>
+              <td>
+                <span class="rule-before">Please be advised that</span>,
+                <span class="rule-before">We wanted to make you aware that</span>,
+                <span class="rule-before">We are pleased to inform you that</span>
+              </td>
+              <td><span class="rule-after">(removed)</span></td>
+            </tr>
+            <tr>
+              <td>Filler phrases</td>
+              <td>
+                <span class="rule-before">at this point in time</span>,
+                <span class="rule-before">as part of our ongoing efforts to</span>,
+                <span class="rule-before">in order to</span>
+              </td>
+              <td>
+                <span class="rule-after">now</span>, <span class="rule-after">(removed)</span>,
+                <span class="rule-after">to</span>
+              </td>
+            </tr>
+            <tr>
+              <td>Passive → Active</td>
+              <td>
+                <span class="rule-before">you may experience</span>,
+                <span class="rule-before">will be migrating</span>,
+                <span class="rule-before">are currently affected</span>
+              </td>
+              <td>
+                <span class="rule-after">expect</span>, <span class="rule-after">migrating</span>,
+                <span class="rule-after">affected</span>
+              </td>
+            </tr>
+            <tr>
+              <td>Wordy constructions</td>
+              <td>
+                <span class="rule-before">Failure to do so will result in</span>,
+                <span class="rule-before">please don't hesitate to</span>,
+                <span class="rule-before">We appreciate your patience and cooperation</span>
+              </td>
+              <td>
+                <span class="rule-after">Otherwise:</span>,
+                <span class="rule-after">(removed)</span>, <span class="rule-after">(removed)</span>
+              </td>
+            </tr>
+            <tr>
+              <td>Redundant qualifiers</td>
+              <td>
+                <span class="rule-before">approximately</span>,
+                <span class="rule-before">any and all</span>,
+                <span class="rule-before">each and every</span>,
+                <span class="rule-before">under any circumstances</span>
+              </td>
+              <td>
+                <span class="rule-after">~</span>, <span class="rule-after">all</span>,
+                <span class="rule-after">every</span>, <span class="rule-after">(removed)</span>
+              </td>
+            </tr>
+            <tr>
+              <td>Sentence merging</td>
+              <td><span class="rule-before">...service. This issue began at...</span></td>
+              <td><span class="rule-after">...service since [time].</span></td>
+            </tr>
+            <tr>
+              <td>Trailing padding</td>
+              <td>
+                <span class="rule-before"
+                  >We will provide updates as more information becomes available.</span
+                >
+              </td>
+              <td><span class="rule-after">(removed — implied by alert system)</span></td>
+            </tr>
+            <tr>
+              <td>Contact blocks</td>
+              <td>
+                <span class="rule-before"
+                  >If you require any assistance or have any questions, please do not hesitate to
+                  reach out to the IT Help Desk at extension 4357</span
+                >
+              </td>
+              <td><span class="rule-after">Contact: IT Help Desk, ext. 4357</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </body>
+</html>

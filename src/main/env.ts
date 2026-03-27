@@ -92,8 +92,11 @@ export function validateEnv(): void {
       category: ErrorCategory.VALIDATION,
     });
 
-    // In production, we might want to fail fast for CRITICAL env vars
-    // For now, we just log them.
+    // Fail fast on critical validation errors (required vars missing or invalid)
+    const criticalErrors = errors.filter((e) => e.startsWith('Missing required'));
+    if (criticalErrors.length > 0) {
+      throw new Error(`Critical environment validation failed: ${criticalErrors.join('; ')}`);
+    }
   } else {
     loggers.main.info('Environment variables validated successfully');
   }

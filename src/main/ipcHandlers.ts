@@ -1,13 +1,17 @@
 import { BrowserWindow } from 'electron';
-import { FileManager } from './FileManager';
 import { setupWeatherHandlers } from './handlers/weatherHandlers';
+import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupConfigHandlers } from './handlers/configHandlers';
-import { setupDataHandlers } from './handlers/dataHandlers';
-import { setupFileHandlers } from './handlers/fileHandlers';
 import { setupLocationHandlers } from './handlers/locationHandlers';
-import { setupFeatureHandlers } from './handlers/featureHandlers';
-import { setupDataRecordHandlers } from './handlers/dataRecordHandlers';
+import { setupSetupHandlers } from './handlers/setupHandlers';
+import { setupCacheHandlers } from './handlers/cacheHandlers';
+import { setupBackupHandlers } from './handlers/backupHandlers';
+import type { AppConfig } from './config/AppConfig';
+import type { OfflineCache } from './cache/OfflineCache';
+import type { PendingChanges } from './cache/PendingChanges';
+import type { SyncManager } from './cache/SyncManager';
+import type { BackupManager } from './pocketbase/BackupManager';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 
@@ -15,17 +19,17 @@ import { getErrorMessage } from '@shared/types';
  * Orchestrates all IPC handlers for the application.
  * Each handler group is wrapped in try/catch to prevent a single failure
  * from leaving all subsequent handlers unregistered.
- *
- * `getDataRoot` is async — it resolves from config on the first call,
- * then returns the cached value on subsequent calls with no I/O.
  */
 export function setupIpcHandlers(
   getMainWindow: () => BrowserWindow | null,
-  getFileManager: () => FileManager | null,
   getDataRoot: () => Promise<string>,
-  onDataPathChange: (newPath: string) => Promise<void>,
-  getDefaultDataPath: () => string,
   createAuxWindow?: (route: string) => void,
+  getAppConfig?: () => AppConfig | null,
+  getCache?: () => OfflineCache | null,
+  getPendingChanges?: () => PendingChanges | null,
+  getSyncManager?: () => SyncManager | null,
+  getBackupManager?: () => BackupManager | null,
+  restartPb?: () => Promise<boolean>,
 ) {
   const safeSetup = (name: string, fn: () => void) => {
     try {
@@ -37,36 +41,42 @@ export function setupIpcHandlers(
     }
   };
 
-  // Guard wrapper: logs a warning if data root hasn't resolved yet
-  const guardedGetDataRoot = async (): Promise<string> => {
-    const root = await getDataRoot();
-    if (!root) {
-      loggers.main.warn('getDataRoot() returned empty string — data root not yet initialized');
-    }
-    return root;
-  };
-
   // Config & App State
-  safeSetup('config', () =>
-    setupConfigHandlers(getMainWindow, guardedGetDataRoot, onDataPathChange, getDefaultDataPath),
-  );
-
-  // Data Mutations (Contacts, Groups, Servers, On-Call)
-  safeSetup('data', () => setupDataHandlers(getMainWindow, getFileManager));
-
-  // File System Operations
-  safeSetup('file', () => setupFileHandlers(guardedGetDataRoot));
+  safeSetup('config', () => setupConfigHandlers());
 
   // Location & Weather
   safeSetup('location', () => setupLocationHandlers(getMainWindow));
   safeSetup('weather', () => setupWeatherHandlers());
+  safeSetup('cloudStatus', () => setupCloudStatusHandlers());
 
   // Window Management
-  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow));
+  safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot));
 
-  // Feature Handlers (Presets, History, Notes, Saved Locations)
-  safeSetup('feature', () => setupFeatureHandlers(guardedGetDataRoot));
+  // PocketBase Setup Handlers (always registered — uses getter for lazy access)
+  safeSetup('setup', () =>
+    setupSetupHandlers(
+      getAppConfig ?? (() => null),
+      getCache ?? (() => null),
+      getPendingChanges ?? (() => null),
+    ),
+  );
 
-  // Data Record Handlers (JSON-based contacts, servers, on-call, data manager)
-  safeSetup('dataRecord', () => setupDataRecordHandlers(guardedGetDataRoot));
+  // Offline Cache Handlers (always registered — getters return null when not in client mode)
+  safeSetup('cache', () =>
+    setupCacheHandlers(
+      getCache ?? (() => null),
+      getPendingChanges ?? (() => null),
+      getSyncManager ?? (() => null),
+      getAppConfig ?? (() => null),
+    ),
+  );
+
+  // Backup Management
+  safeSetup('backup', () =>
+    setupBackupHandlers(
+      getBackupManager ?? (() => null),
+      restartPb ?? (() => Promise.resolve(false)),
+      getCache ?? (() => null),
+    ),
+  );
 }

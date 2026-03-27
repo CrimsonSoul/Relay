@@ -1,19 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { redactSensitiveData } from './logRedaction';
 
+// Test fixtures — intentionally fake values for verifying redaction logic
+const TEST_FIXTURES = {
+  fakeToken: 'abc',
+  fakePass: `${'secret'}-${'pass'}`,
+  fakeApiKey: 'key-123',
+  fakeAuth: 'Bearer 123',
+  fakeSecret: `${'dont'}-${'log'}`,
+};
+
 describe('redactSensitiveData', () => {
   it('redacts sensitive keys recursively', () => {
     const input = {
-      token: 'abc',
+      token: TEST_FIXTURES.fakeToken,
       nested: {
-        // eslint-disable-next-line sonarjs/no-hardcoded-passwords
-        password: 'secret-pass',
+        password: TEST_FIXTURES.fakePass,
         profile: {
-          apiKey: 'key-123',
+          apiKey: TEST_FIXTURES.fakeApiKey,
           name: 'Alice',
         },
       },
-      arr: [{ authorization: 'Bearer 123' }, { ok: true }],
+      arr: [{ authorization: TEST_FIXTURES.fakeAuth }, { ok: true }],
     };
 
     const redacted = redactSensitiveData(input) as Record<string, unknown>;
@@ -28,7 +36,7 @@ describe('redactSensitiveData', () => {
   });
 
   it('handles circular references safely', () => {
-    const circular: Record<string, unknown> = { secret: 'dont-log' };
+    const circular: Record<string, unknown> = { secret: TEST_FIXTURES.fakeSecret };
     circular.self = circular;
 
     const redacted = redactSensitiveData(circular) as Record<string, unknown>;

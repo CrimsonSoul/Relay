@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { BridgeGroup, BridgeHistoryEntry, Contact } from '@shared/ipc';
+import { BridgeGroup, BridgeHistoryEntry } from '@shared/ipc';
 import { AddContactModal } from '../components/AddContactModal';
 import { TactileButton } from '../components/TactileButton';
 import { ContextMenu } from '../components/ContextMenu';
@@ -19,6 +19,7 @@ import { useAssembler } from '../hooks/useAssembler';
 import { useGroups } from '../hooks/useGroups';
 import { useBridgeHistory } from '../hooks/useBridgeHistory';
 import { useToast } from '../components/Toast';
+import { useModalState } from '../hooks/useModalState';
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const {
@@ -34,11 +35,11 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   } = props;
   const asm = useAssembler(props);
   const { showToast } = useToast();
-  const { saveGroup, updateGroup, deleteGroup, importFromCsv } = useGroups();
+  const { saveGroup, updateGroup, deleteGroup } = useGroups();
   const { history, addHistory, deleteHistory, clearHistory } = useBridgeHistory();
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const historyModal = useModalState();
   // SaveGroupModal is only opened from bridge history "Save as Group" action
-  const [isSaveGroupOpen, setIsSaveGroupOpen] = useState(false);
+  const saveGroupModal = useModalState();
   const [historyContacts, setHistoryContacts] = useState<string[]>([]);
   const [groupSelectorEmail, setGroupSelectorEmail] = useState<string | null>(null);
 
@@ -147,10 +148,13 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Handle "Save as Group" from bridge history context menu:
   // captures the entry's contacts and opens the save group modal
-  const handleHistoryEntryToGroup = useCallback((entry: BridgeHistoryEntry) => {
-    setHistoryContacts(entry.contacts);
-    setIsSaveGroupOpen(true);
-  }, []);
+  const handleHistoryEntryToGroup = useCallback(
+    (entry: BridgeHistoryEntry) => {
+      setHistoryContacts(entry.contacts);
+      saveGroupModal.open();
+    },
+    [saveGroupModal],
+  );
 
   // Current emails for the sidebar (all recipients, not search-filtered)
   const currentEmails = useMemo(() => asm.allRecipients.map((l) => l.email), [asm.allRecipients]);
@@ -161,11 +165,12 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         <AssemblerSidebar
           groups={groups}
           selectedGroupIds={selectedGroupIds}
-          onToggleGroup={onToggleGroup}
-          onSaveGroup={saveGroup}
-          onUpdateGroup={updateGroup}
-          onDeleteGroup={deleteGroup}
-          onImportFromCsv={importFromCsv}
+          actions={{
+            onToggleGroup,
+            onSaveGroup: saveGroup,
+            onUpdateGroup: updateGroup,
+            onDeleteGroup: deleteGroup,
+          }}
           currentEmails={currentEmails}
         />
         <div className="tab-main-content">
@@ -223,7 +228,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                setIsHistoryOpen(true);
+                historyModal.open();
               }}
               icon={
                 <svg
@@ -264,6 +269,28 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             >
               COPY
             </TactileButton>
+            <ListToolbar
+              sortDirection={asm.sortConfig.direction}
+              onToggleSortDirection={() =>
+                asm.setSortConfig((prev) => ({
+                  ...prev,
+                  direction: prev.direction === 'asc' ? 'desc' : 'asc',
+                }))
+              }
+              sortKey={asm.sortConfig.key}
+              sortOptions={[
+                { value: 'name', label: 'Name' },
+                { value: 'email', label: 'Email' },
+                { value: 'title', label: 'Title' },
+                { value: 'phone', label: 'Phone' },
+              ]}
+              onSortKeyChange={(key) =>
+                asm.setSortConfig((prev) => ({
+                  ...prev,
+                  key: key as 'name' | 'email' | 'title' | 'phone',
+                }))
+              }
+            />
             <TactileButton
               onClick={() => asm.setIsBridgeReminderOpen(true)}
               variant="primary"
@@ -288,32 +315,6 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             </TactileButton>
           </CollapsibleHeader>
 
-          <ListToolbar
-            search={asm.search}
-            onSearchChange={asm.setSearch}
-            placeholder="Search Recipients"
-            sortDirection={asm.sortConfig.direction}
-            onToggleSortDirection={() =>
-              asm.setSortConfig((prev) => ({
-                ...prev,
-                direction: prev.direction === 'asc' ? 'desc' : 'asc',
-              }))
-            }
-            sortKey={asm.sortConfig.key}
-            sortOptions={[
-              { value: 'name', label: 'Name' },
-              { value: 'email', label: 'Email' },
-              { value: 'title', label: 'Title' },
-              { value: 'phone', label: 'Phone' },
-            ]}
-            onSortKeyChange={(key) =>
-              asm.setSortConfig((prev) => ({
-                ...prev,
-                key: key as 'name' | 'email' | 'title' | 'phone',
-              }))
-            }
-          />
-
           <div className="tab-list-container">
             <CompositionList
               log={asm.log}
@@ -336,9 +337,9 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         onConfirm={handleDraftBridgeWithHistory}
       />
       <SaveGroupModal
-        isOpen={isSaveGroupOpen}
+        isOpen={saveGroupModal.isOpen}
         onClose={() => {
-          setIsSaveGroupOpen(false);
+          saveGroupModal.close();
           setHistoryContacts([]);
         }}
         onSave={handleSaveHistoryAsGroup}
@@ -348,99 +349,103 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         contacts={historyContacts}
       />
       <BridgeHistoryModal
-        isOpen={isHistoryOpen}
-        onClose={() => setIsHistoryOpen(false)}
+        isOpen={historyModal.isOpen}
+        onClose={historyModal.close}
         history={history}
         onLoad={handleLoadFromHistory}
         onDelete={deleteHistory}
         onClear={clearHistory}
         onSaveAsGroup={handleHistoryEntryToGroup}
       />
-      {asm.compositionContextMenu && (
-        <ContextMenu
-          x={asm.compositionContextMenu.x}
-          y={asm.compositionContextMenu.y}
-          onClose={() => asm.setCompositionContextMenu(null)}
-          items={[
-            ...(asm.compositionContextMenu.isUnknown
-              ? [
-                  {
-                    label: 'Save to Contacts',
-                    onClick: () => {
-                      asm.handleAddToContacts(asm.compositionContextMenu!.email);
-                      asm.setCompositionContextMenu(null);
-                    },
-                    icon: (
-                      <svg
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <title>Save Contact</title>
-                        <path d="M19 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                        <path d="M16 11h6m-3-3v6"></path>
-                      </svg>
-                    ),
+      {asm.compositionContextMenu &&
+        (() => {
+          const { email, isUnknown, x, y } = asm.compositionContextMenu;
+          return (
+            <ContextMenu
+              x={x}
+              y={y}
+              onClose={() => asm.setCompositionContextMenu(null)}
+              items={[
+                ...(isUnknown
+                  ? [
+                      {
+                        label: 'Save to Contacts',
+                        onClick: () => {
+                          asm.handleAddToContacts(email);
+                          asm.setCompositionContextMenu(null);
+                        },
+                        icon: (
+                          <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <title>Save Contact</title>
+                            <path d="M19 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M16 11h6m-3-3v6"></path>
+                          </svg>
+                        ),
+                      },
+                    ]
+                  : []),
+                {
+                  label: 'Manage Groups',
+                  onClick: () => {
+                    setGroupSelectorEmail(email);
+                    asm.setCompositionContextMenu(null);
                   },
-                ]
-              : []),
-            {
-              label: 'Manage Groups',
-              onClick: () => {
-                setGroupSelectorEmail(asm.compositionContextMenu!.email);
-                asm.setCompositionContextMenu(null);
-              },
-              icon: (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                </svg>
-              ),
-            },
-            {
-              label: 'Remove from List',
-              onClick: () => {
-                onRemoveManual(asm.compositionContextMenu!.email);
-                asm.setCompositionContextMenu(null);
-              },
-              danger: true,
-              icon: (
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <title>Remove Contact</title>
-                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
-              ),
-            },
-          ]}
-        />
-      )}
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
+                      <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                  ),
+                },
+                {
+                  label: 'Remove from List',
+                  onClick: () => {
+                    onRemoveManual(email);
+                    asm.setCompositionContextMenu(null);
+                  },
+                  danger: true,
+                  icon: (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <title>Remove Contact</title>
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  ),
+                },
+              ]}
+            />
+          );
+        })()}
       {groupSelectorEmail && (
         <Modal
           isOpen={true}
@@ -449,7 +454,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           width="400px"
         >
           <GroupSelector
-            contact={{ email: groupSelectorEmail } as unknown as Contact}
+            contact={{ email: groupSelectorEmail }}
             groups={groups}
             onClose={() => setGroupSelectorEmail(null)}
           />

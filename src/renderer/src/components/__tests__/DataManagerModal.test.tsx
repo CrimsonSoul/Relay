@@ -70,7 +70,8 @@ describe('DataManagerModal', () => {
 
   it('does not render when isOpen is false', () => {
     render(<DataManagerModal isOpen={false} onClose={onClose} />);
-    expect(screen.queryByText('Data Manager')).not.toBeInTheDocument();
+    const dialog = document.querySelector('dialog');
+    expect(!dialog || !dialog.hasAttribute('open')).toBe(true);
   });
 
   it('renders when isOpen is true', () => {

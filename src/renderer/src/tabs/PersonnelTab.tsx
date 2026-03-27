@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { OnCallRow, Contact, TeamLayout } from '@shared/ipc';
+import { useModalState } from '../hooks/useModalState';
+import { OnCallRow, Contact } from '@shared/ipc';
 import { TactileButton } from '../components/TactileButton';
 import { Modal } from '../components/Modal';
 import { Input } from '../components/Input';
@@ -29,15 +30,13 @@ import { useOnCallBoard } from '../hooks/useOnCallBoard';
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
-  teamLayout?: TeamLayout;
-}> = ({ onCall, contacts, teamLayout: _teamLayout }) => {
+}> = ({ onCall, contacts }) => {
   const {
     localOnCall,
     weekRange,
     dismissedAlerts,
     dismissAlert,
-    getAlertKey,
-    currentDay,
+    dayOfWeek,
     teams,
     handleUpdateRows,
     handleRemoveTeam,
@@ -46,7 +45,7 @@ export const PersonnelTab: React.FC<{
     handleReorderTeams,
     tick,
   } = usePersonnel(onCall);
-  const [isAddingTeam, setIsAddingTeam] = useState(false);
+  const addTeamModal = useModalState();
   const [newTeamName, setNewTeamName] = useState('');
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -106,15 +105,23 @@ export const PersonnelTab: React.FC<{
   };
 
   const handleExportCsv = useCallback(async () => {
-    const result = await globalThis.api?.exportData({
-      format: 'csv',
-      category: 'oncall',
-      includeMetadata: false,
-    });
-    if (result) {
-      showToast('Exported successfully', 'success');
-    } else {
-      showToast('Export failed', 'error');
+    try {
+      const { exportToCsv } = await import('../services/importExportService');
+      const csv = await exportToCsv('oncall');
+      if (!csv) {
+        showToast('No on-call data to export', 'info');
+        return;
+      }
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `oncall-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('On-call data exported', 'success');
+    } catch (err) {
+      showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
   }, [showToast]);
 
@@ -127,9 +134,7 @@ export const PersonnelTab: React.FC<{
 
   const renderAlerts = () =>
     alertConfigs
-      .filter(
-        (config) => config.day === currentDay && !dismissedAlerts.has(getAlertKey(config.type)),
-      )
+      .filter((config) => config.day === dayOfWeek && !dismissedAlerts.has(config.type))
       .map((config) => {
         const isDanger = config.tone === 'danger';
         return (
@@ -148,7 +153,7 @@ export const PersonnelTab: React.FC<{
         );
       });
 
-  const isAnyModalOpen = !!(isAddingTeam || renamingTeam || confirmDelete);
+  const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
     <div ref={scrollContainerRef} className="personnel-tab-root">
@@ -239,7 +244,7 @@ export const PersonnelTab: React.FC<{
           variant="primary"
           aria-label="Add Card"
           className="btn-collapsible"
-          onClick={() => setIsAddingTeam(true)}
+          onClick={addTeamModal.open}
           icon={
             <svg
               width="20"
@@ -289,11 +294,11 @@ export const PersonnelTab: React.FC<{
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <ul
             ref={animationParent}
-            className="oncall-grid stagger-children"
+            className="relay-grid relay-grid--oncall stagger-children"
             aria-label="Sortable On-Call Teams"
           >
             {teams.map((team, idx) => (
-              <li key={team} className="oncall-grid-item animate-card-entrance">
+              <li key={team} className="relay-grid-item animate-card-entrance">
                 <SortableTeamCard
                   team={team}
                   index={idx}
@@ -312,7 +317,7 @@ export const PersonnelTab: React.FC<{
           </ul>
         </SortableContext>
         <div aria-live="polite" className="sr-only">
-          {isDragging ? `Dragging team ${isDragging}` : ''}
+          {isDragging ? 'Dragging team' : ''}
         </div>
       </DndContext>
 
@@ -356,8 +361,8 @@ export const PersonnelTab: React.FC<{
       </Modal>
 
       <Modal
-        isOpen={isAddingTeam}
-        onClose={() => setIsAddingTeam(false)}
+        isOpen={addTeamModal.isOpen}
+        onClose={addTeamModal.close}
         title="Add New Card"
         width="400px"
       >
@@ -371,12 +376,12 @@ export const PersonnelTab: React.FC<{
               if (e.key === 'Enter' && newTeamName.trim()) {
                 void handleAddTeam(newTeamName.trim());
                 setNewTeamName('');
-                setIsAddingTeam(false);
+                addTeamModal.close();
               }
             }}
           />
           <div className="modal-form-actions">
-            <TactileButton variant="secondary" onClick={() => setIsAddingTeam(false)}>
+            <TactileButton variant="secondary" onClick={() => addTeamModal.close()}>
               Cancel
             </TactileButton>
             <TactileButton
@@ -385,7 +390,7 @@ export const PersonnelTab: React.FC<{
                 if (newTeamName.trim()) {
                   void handleAddTeam(newTeamName.trim());
                   setNewTeamName('');
-                  setIsAddingTeam(false);
+                  addTeamModal.close();
                 }
               }}
             >

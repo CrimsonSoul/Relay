@@ -1,4 +1,4 @@
-import React, { createContext, useContext, ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, ReactNode } from 'react';
 import { useNotes } from '../hooks/useNotes';
 import type { NotesData, NoteEntry, IpcResult } from '@shared/ipc';
 
@@ -23,8 +23,28 @@ type NotesContextType = {
 const NotesContext = createContext<NotesContextType | null>(null);
 
 export function NotesProvider({ children }: { readonly children: ReactNode }) {
-  const notesState = useNotes();
-  return <NotesContext.Provider value={notesState}>{children}</NotesContext.Provider>;
+  const {
+    notes,
+    loading,
+    setContactNote,
+    setServerNote,
+    getContactNote,
+    getServerNote,
+    reloadNotes,
+  } = useNotes();
+  const value = useMemo<NotesContextType>(
+    () => ({
+      notes,
+      loading,
+      setContactNote,
+      setServerNote,
+      getContactNote,
+      getServerNote,
+      reloadNotes,
+    }),
+    [notes, loading, setContactNote, setServerNote, getContactNote, getServerNote, reloadNotes],
+  );
+  return <NotesContext.Provider value={value}>{children}</NotesContext.Provider>;
 }
 
 export function useNotesContext() {

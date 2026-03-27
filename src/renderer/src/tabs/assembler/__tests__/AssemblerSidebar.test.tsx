@@ -12,15 +12,18 @@ const makeGroup = (id: string, name: string, contacts: string[] = []): BridgeGro
   updatedAt: new Date().toISOString(),
 });
 
-const defaultProps = {
-  groups: [],
-  selectedGroupIds: [],
+const defaultActions = {
   onToggleGroup: vi.fn(),
   onSaveGroup: vi.fn().mockResolvedValue(null),
   onUpdateGroup: vi.fn().mockResolvedValue(true),
   onDeleteGroup: vi.fn().mockResolvedValue(true),
-  onImportFromCsv: vi.fn().mockResolvedValue(true),
-  currentEmails: [],
+};
+
+const defaultProps = {
+  groups: [] as BridgeGroup[],
+  selectedGroupIds: [] as string[],
+  actions: { ...defaultActions },
+  currentEmails: [] as string[],
 };
 
 describe('AssemblerSidebar', () => {
@@ -47,7 +50,13 @@ describe('AssemblerSidebar', () => {
   it('calls onToggleGroup when a group is clicked', () => {
     const onToggleGroup = vi.fn();
     const groups = [makeGroup('g1', 'MyGroup')];
-    render(<AssemblerSidebar {...defaultProps} groups={groups} onToggleGroup={onToggleGroup} />);
+    render(
+      <AssemblerSidebar
+        {...defaultProps}
+        groups={groups}
+        actions={{ ...defaultActions, onToggleGroup }}
+      />,
+    );
     fireEvent.click(screen.getByRole('treeitem', { name: /MyGroup/ }));
     expect(onToggleGroup).toHaveBeenCalledWith('g1');
   });
@@ -71,7 +80,13 @@ describe('AssemblerSidebar', () => {
   it('calls onToggleGroup when "Load Group" context menu item is clicked', () => {
     const onToggleGroup = vi.fn();
     const groups = [makeGroup('g1', 'TeamA')];
-    render(<AssemblerSidebar {...defaultProps} groups={groups} onToggleGroup={onToggleGroup} />);
+    render(
+      <AssemblerSidebar
+        {...defaultProps}
+        groups={groups}
+        actions={{ ...defaultActions, onToggleGroup }}
+      />,
+    );
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
     fireEvent.click(screen.getByText('Load Group'));
     expect(onToggleGroup).toHaveBeenCalledWith('g1');
@@ -88,7 +103,13 @@ describe('AssemblerSidebar', () => {
   it('calls onDeleteGroup when "Delete Group" context menu item is clicked', async () => {
     const onDeleteGroup = vi.fn().mockResolvedValue(true);
     const groups = [makeGroup('g1', 'TeamA')];
-    render(<AssemblerSidebar {...defaultProps} groups={groups} onDeleteGroup={onDeleteGroup} />);
+    render(
+      <AssemblerSidebar
+        {...defaultProps}
+        groups={groups}
+        actions={{ ...defaultActions, onDeleteGroup }}
+      />,
+    );
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
     fireEvent.click(screen.getByText('Delete Group'));
     expect(onDeleteGroup).toHaveBeenCalledWith('g1');
@@ -111,7 +132,7 @@ describe('AssemblerSidebar', () => {
         {...defaultProps}
         groups={groups}
         currentEmails={['a@b.com']}
-        onUpdateGroup={onUpdateGroup}
+        actions={{ ...defaultActions, onUpdateGroup }}
       />,
     );
     fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
@@ -167,7 +188,11 @@ describe('AssemblerSidebar', () => {
   it('calls onSaveGroup when save modal Save button is clicked', async () => {
     const onSaveGroup = vi.fn().mockResolvedValue({ id: 'new-g', name: 'New Group', contacts: [] });
     render(
-      <AssemblerSidebar {...defaultProps} onSaveGroup={onSaveGroup} currentEmails={['a@b.com']} />,
+      <AssemblerSidebar
+        {...defaultProps}
+        actions={{ ...defaultActions, onSaveGroup }}
+        currentEmails={['a@b.com']}
+      />,
     );
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
@@ -184,7 +209,7 @@ describe('AssemblerSidebar', () => {
 
   it('handles onSaveGroup returning null without crashing', async () => {
     const onSaveGroup = vi.fn().mockResolvedValue(null);
-    render(<AssemblerSidebar {...defaultProps} onSaveGroup={onSaveGroup} />);
+    render(<AssemblerSidebar {...defaultProps} actions={{ ...defaultActions, onSaveGroup }} />);
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
     const input = screen.getByRole('textbox');

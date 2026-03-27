@@ -22,11 +22,18 @@ files:
 directories:
   output: release
   buildResources: resources
-npmRebuild: false
+npmRebuild: true
 removePackageScripts: true
 extraResources:
   - from: resources
     to: data
+    filter:
+      - '**/*'
+      - '!pocketbase/**'
+  - from: 'resources/pocketbase/'
+    to: 'pocketbase/'
+    filter:
+      - '**/*'
 win:
   target:
     - target: portable
@@ -35,7 +42,7 @@ win:
   artifactName: 'Relay.exe'
   icon: build/icon.ico
   requestedExecutionLevel: 'asInvoker'
-compression: 'normal'
+compression: 'maximum'
 electronDownload:
   cache: '.electron'
 

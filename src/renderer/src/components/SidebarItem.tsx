@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import React, { memo } from 'react';
 import { getColorForString } from '../utils/colors';
 import { Tooltip } from './Tooltip';
 
@@ -35,22 +35,21 @@ export const SidebarItem = memo(
           onContextMenu={handleContextMenu}
           className={`sidebar-item${active ? ' sidebar-item--active' : ''}`}
         >
-          <div className="sidebar-item-inner">
-            <span
-              className="sidebar-item-label"
-              style={{
-                color: color.text,
-                background: color.bg,
-                borderColor: color.border,
-              }}
-            >
-              <span className="sidebar-item-accent" style={{ background: color.fill }} />
+          <div
+            className="sidebar-item-inner"
+            style={
+              {
+                '--item-text': color.text,
+                '--item-bg': color.bg,
+                '--item-border': color.border,
+                '--item-fill': color.fill,
+              } as React.CSSProperties
+            }
+          >
+            <span className="sidebar-item-label">
+              <span className="sidebar-item-accent" />
               <span className="sidebar-item-name">{label}</span>
-              {count !== undefined && (
-                <span className="sidebar-item-count" style={{ color: color.text }}>
-                  {count}
-                </span>
-              )}
+              {count !== undefined && <span className="sidebar-item-count">{count}</span>}
             </span>
           </div>
         </button>

@@ -7,6 +7,7 @@ import { secureStorage } from '../utils/secureStorage';
 import { loggers } from '../utils/logger';
 import { ErrorCategory } from '@shared/logging';
 import { useMounted } from './useMounted';
+import { usePolling } from './usePolling';
 
 const WEATHER_POLLING_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const WEATHER_CACHE_KEY = 'cached_weather_data';
@@ -39,7 +40,6 @@ const loadCachedWeather = (): WeatherData | null => {
     return isWeatherDataUsable(cache.data) ? cache.data : null;
   }
 
-  // Legacy cache format (raw WeatherData) is discarded to avoid timezone issues
   return null;
 };
 
@@ -64,6 +64,7 @@ export function useAppWeather(
   const [weatherAlerts, setWeatherAlerts] = useState<WeatherAlert[]>([]);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const lastAlertIdsRef = useRef<Set<string>>(new Set());
+  const missingApiLoggedRef = useRef(false);
 
   // Restore Weather Location and Cached Data (Stale-while-revalidate)
   useEffect(() => {
@@ -73,12 +74,17 @@ export function useAppWeather(
       // Defensively handle both 'latitude' (new) and 'lat' (legacy) keys
       const loc = savedLocation as Record<string, unknown>;
       const sanitized: Location = {
-        latitude: Number(loc.latitude ?? loc.lat),
-        longitude: Number(loc.longitude ?? loc.lon),
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
         name: (typeof loc.name === 'string' ? loc.name : undefined) || 'Saved Location',
       };
-      if (Number.isNaN(sanitized.latitude) || Number.isNaN(sanitized.longitude)) return;
-      if (mounted.current) setWeatherLocation(sanitized);
+      if (
+        !Number.isNaN(sanitized.latitude) &&
+        !Number.isNaN(sanitized.longitude) &&
+        mounted.current
+      ) {
+        setWeatherLocation(sanitized);
+      }
     }
 
     // 2. Restore cached weather data and alerts for SWR
@@ -160,7 +166,11 @@ export function useAppWeather(
       try {
         const api = globalThis.api;
         if (!api) {
-          throw new Error('api is not available on globalThis');
+          if (!missingApiLoggedRef.current) {
+            loggers.weather.info('Weather polling disabled: API bridge not available');
+            missingApiLoggedRef.current = true;
+          }
+          return;
         }
         const [wData, aData] = await Promise.all([
           api.getWeather(lat, lon),
@@ -205,41 +215,38 @@ export function useAppWeather(
     }
   }, [weatherLocation]);
 
-  // Weather Polling
+  // Fetch on location change
   const lastFetchedLocationRef = useRef<string>('');
 
   useEffect(() => {
     if (!weatherLocation) return;
 
     const locKey = `${weatherLocation.latitude},${weatherLocation.longitude}`;
-    const isNewLocation = lastFetchedLocationRef.current !== locKey;
+    if (lastFetchedLocationRef.current === locKey) return;
 
-    if (isNewLocation) {
-      if (mounted.current) {
-        setWeatherData(null);
-        setWeatherAlerts([]);
-      }
-      fetchWeather(
-        weatherLocation.latitude,
-        weatherLocation.longitude,
-        false, // Not silent for new location
-      ).catch((error_) => {
-        loggers.weather.error('[Weather] Failed to fetch weather for new location', {
-          error: error_,
-        });
-      });
-      lastFetchedLocationRef.current = locKey;
+    if (mounted.current) {
+      setWeatherData(null);
+      setWeatherAlerts([]);
     }
-
-    const interval = setInterval(() => {
-      fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
-        loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+    fetchWeather(
+      weatherLocation.latitude,
+      weatherLocation.longitude,
+      false, // Not silent for new location
+    ).catch((error_) => {
+      loggers.weather.error('[Weather] Failed to fetch weather for new location', {
+        error: error_,
       });
-    }, WEATHER_POLLING_INTERVAL_MS);
+    });
+    lastFetchedLocationRef.current = locKey;
+  }, [weatherLocation, fetchWeather, mounted]);
 
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mounted is a stable ref, including it would cause unnecessary re-runs
-  }, [weatherLocation, fetchWeather]);
+  // Background polling
+  usePolling(() => {
+    if (!weatherLocation) return;
+    fetchWeather(weatherLocation.latitude, weatherLocation.longitude, true).catch((error_) => {
+      loggers.weather.error('[Weather] Background polling failed', { error: error_ });
+    });
+  }, WEATHER_POLLING_INTERVAL_MS);
 
   return {
     weatherLocation,

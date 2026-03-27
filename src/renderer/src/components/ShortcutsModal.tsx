@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { useFocusTrap } from '../hooks/useFocusTrap';
+import React from 'react';
+import { Modal } from './Modal';
 
 type ShortcutsModalProps = {
   isOpen: boolean;
@@ -20,13 +19,15 @@ const shortcuts = [
       { keys: `${modKey} + 4`, description: 'Go to Weather' },
       { keys: `${modKey} + 5`, description: 'Go to Servers' },
       { keys: `${modKey} + 6`, description: 'Go to Radar' },
-      { keys: `${modKey} + 7`, description: 'Go to AI Chat' },
+      { keys: `${modKey} + 7`, description: 'Go to Service Status' },
+      { keys: `${modKey} + 8`, description: 'Go to Notes' },
+      { keys: `${modKey} + 9`, description: 'Go to Alerts' },
     ],
   },
   {
     category: 'Actions',
     items: [
-      { keys: `${modKey} + K`, description: 'Open Command Palette' },
+      { keys: `${modKey} + K`, description: 'Focus Search' },
       { keys: `${modKey} + Shift + C`, description: 'Copy Bridge (in Compose)' },
       { keys: `${modKey} + ,`, description: 'Open Settings' },
       { keys: `${modKey} + ?`, description: 'Show Shortcuts' },
@@ -43,78 +44,23 @@ const shortcuts = [
 ];
 
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose }) => {
-  const focusTrapRef = useFocusTrap<HTMLDialogElement>(isOpen);
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    },
-    [onClose],
-  );
-
-  useEffect(() => {
-    if (!isOpen) return;
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleKeyDown]);
-
-  if (!isOpen) return null;
-
-  return createPortal(
-    <div className="shortcuts-modal-overlay animate-fade-in">
-      <button
-        type="button"
-        className="overlay-hitbox"
-        aria-label="Close shortcuts modal backdrop"
-        onClick={onClose}
-      />
-      <dialog
-        ref={focusTrapRef}
-        open
-        className="shortcuts-modal animate-scale-in"
-        aria-modal="true"
-        aria-labelledby="shortcuts-modal-title"
-      >
-        <div className="shortcuts-modal-header">
-          <div className="shortcuts-modal-header-left">
-            <div className="shortcuts-modal-icon-box">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
-                <path d="M6 8h.001" />
-                <path d="M10 8h.001" />
-                <path d="M14 8h.001" />
-                <path d="M18 8h.001" />
-                <path d="M8 12h.001" />
-                <path d="M12 12h.001" />
-                <path d="M16 12h.001" />
-                <path d="M7 16h10" />
-              </svg>
-            </div>
-            <div id="shortcuts-modal-title" className="shortcuts-modal-title">
-              Keyboard Shortcuts
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="shortcuts-modal-close-btn"
-          >
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      bare
+      overlayClassName="shortcuts-modal-overlay"
+      dialogClassName="shortcuts-modal"
+      dialogProps={{
+        'aria-labelledby': 'shortcuts-modal-title',
+      }}
+    >
+      <div className="shortcuts-modal-header">
+        <div className="shortcuts-modal-header-left">
+          <div className="shortcuts-modal-icon-box">
             <svg
-              width="20"
-              height="20"
+              width="18"
+              height="18"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -122,33 +68,62 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
+              <rect x="2" y="4" width="20" height="16" rx="2" ry="2" />
+              <path d="M6 8h.001" />
+              <path d="M10 8h.001" />
+              <path d="M14 8h.001" />
+              <path d="M18 8h.001" />
+              <path d="M8 12h.001" />
+              <path d="M12 12h.001" />
+              <path d="M16 12h.001" />
+              <path d="M7 16h10" />
             </svg>
-          </button>
+          </div>
+          <div id="shortcuts-modal-title" className="shortcuts-modal-title">
+            Keyboard Shortcuts
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="shortcuts-modal-close-btn"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
 
-        <div className="shortcuts-modal-content">
-          {shortcuts.map((section) => (
-            <div key={section.category} className="shortcuts-modal-category">
-              <div className="shortcuts-modal-category-title">{section.category}</div>
-              <div className="shortcuts-modal-items">
-                {section.items.map((item) => (
-                  <div key={item.keys} className="shortcuts-modal-item">
-                    <span className="shortcuts-modal-item-desc">{item.description}</span>
-                    <span className="shortcuts-modal-key">{item.keys}</span>
-                  </div>
-                ))}
-              </div>
+      <div className="shortcuts-modal-content">
+        {shortcuts.map((section) => (
+          <div key={section.category} className="shortcuts-modal-category">
+            <div className="shortcuts-modal-category-title">{section.category}</div>
+            <div className="shortcuts-modal-items">
+              {section.items.map((item) => (
+                <div key={item.keys} className="shortcuts-modal-item">
+                  <span className="shortcuts-modal-item-desc">{item.description}</span>
+                  <span className="shortcuts-modal-key">{item.keys}</span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
 
-        <div className="shortcuts-modal-footer">
-          Press <kbd className="shortcuts-modal-kbd">Esc</kbd> to close
-        </div>
-      </dialog>
-    </div>,
-    document.body,
+      <div className="shortcuts-modal-footer">
+        Press <kbd className="shortcuts-modal-kbd">Esc</kbd> to close
+      </div>
+    </Modal>
   );
 };

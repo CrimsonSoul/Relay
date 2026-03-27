@@ -10,6 +10,7 @@ interface DirectoryKeyboardProps {
   handleAddWrapper: (contact: Contact) => void;
   setContextMenu: (menu: { x: number; y: number; contact: Contact } | null) => void;
   listContainerRef: React.RefObject<HTMLDivElement | null>;
+  rowHeight: number;
 }
 
 export function useDirectoryKeyboard({
@@ -20,6 +21,7 @@ export function useDirectoryKeyboard({
   handleAddWrapper,
   setContextMenu,
   listContainerRef,
+  rowHeight,
 }: DirectoryKeyboardProps) {
   const handleListKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -67,7 +69,7 @@ export function useDirectoryKeyboard({
             if (listContainer) {
               const rect = listContainer.getBoundingClientRect();
               const scrollTop = listRef.current?.element?.scrollTop || 0;
-              const rowTop = focusedIndex * 40 - scrollTop;
+              const rowTop = focusedIndex * rowHeight - scrollTop;
               setContextMenu({ x: rect.left + 100, y: rect.top + rowTop + 20, contact });
             }
           }
@@ -85,6 +87,7 @@ export function useDirectoryKeyboard({
       setContextMenu,
       listRef,
       listContainerRef,
+      rowHeight,
     ],
   );
 

@@ -42,7 +42,7 @@ describe('useRadar', () => {
     const { result } = renderHook(() => useRadar({ latitude: 1, longitude: 2, name: 'A' }));
 
     act(() => {
-      result.current.webviewRef.current = webview as unknown as never;
+      result.current.webviewRef.current = webview as unknown as Electron.WebviewTag;
       result.current.handleRefresh();
     });
 
@@ -80,7 +80,7 @@ describe('useRadar', () => {
     });
 
     act(() => {
-      result.current.webviewRef.current = webview as unknown as never;
+      result.current.webviewRef.current = webview as unknown as Electron.WebviewTag;
       rerender({ location: { latitude: 3, longitude: 4, name: 'B' } });
     });
 

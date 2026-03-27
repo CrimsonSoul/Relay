@@ -1,43 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import {
-  IPC_CHANNELS,
-  type BridgeAPI,
-  type AppData,
-  type AuthRequest,
-  type RadarSnapshot,
-  type DataError,
-} from '@shared/ipc';
+import { IPC_CHANNELS, type BridgeAPI, type AuthRequest, type RadarSnapshot } from '@shared/ipc';
 
 const api: BridgeAPI = {
+  /** Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_PATH, path),
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
-  importGroupsFromCsv: () => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_GROUPS_FROM_CSV),
-  subscribeToData: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: AppData) => callback(data);
-    ipcRenderer.on(IPC_CHANNELS.DATA_UPDATED, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_UPDATED, handler);
-  },
-
-  onReloadStart: (callback) => {
-    const handler = () => callback();
-    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_STARTED, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_RELOAD_STARTED, handler);
-  },
-
-  onReloadComplete: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, success: boolean) => callback(success);
-    ipcRenderer.on(IPC_CHANNELS.DATA_RELOAD_COMPLETED, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_RELOAD_COMPLETED, handler);
-  },
-
-  onDataError: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, error: DataError) => callback(error);
-    ipcRenderer.on(IPC_CHANNELS.DATA_ERROR, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.DATA_ERROR, handler);
-  },
-
-  getInitialData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_GET_INITIAL),
-  reloadData: () => ipcRenderer.invoke(IPC_CHANNELS.DATA_RELOAD),
 
   onAuthRequested: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, request: AuthRequest) => {
@@ -66,25 +33,11 @@ const api: BridgeAPI = {
   },
 
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
+  getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
   getWeather: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER, lat, lon),
   searchLocation: (query) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_LOCATION, query),
   getWeatherAlerts: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER_ALERTS, lat, lon),
-  addContact: (contact) => ipcRenderer.invoke(IPC_CHANNELS.ADD_CONTACT, contact),
-  removeContact: (email) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_CONTACT, email),
-  addServer: (server) => ipcRenderer.invoke(IPC_CHANNELS.ADD_SERVER, server),
-  removeServer: (name) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_SERVER, name),
-  changeDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.CHANGE_DATA_FOLDER),
-  resetDataFolder: () => ipcRenderer.invoke(IPC_CHANNELS.RESET_DATA_FOLDER),
-  getDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_PATH),
   registerRadarUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.REGISTER_RADAR_URL, url),
-  updateOnCallTeam: (team, rows) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_TEAM, team, rows),
-  removeOnCallTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_ONCALL_TEAM, team),
-  renameOnCallTeam: (oldName, newName) =>
-    ipcRenderer.invoke(IPC_CHANNELS.RENAME_ONCALL_TEAM, oldName, newName),
-  reorderOnCallTeams: (teamOrder, layout) =>
-    ipcRenderer.invoke(IPC_CHANNELS.REORDER_ONCALL_TEAMS, teamOrder, layout),
-  saveAllOnCall: (rows) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALL_ONCALL, rows),
-  generateDummyData: () => ipcRenderer.invoke(IPC_CHANNELS.GENERATE_DUMMY_DATA),
   getIpLocation: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IP_LOCATION),
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
 
@@ -102,61 +55,56 @@ const api: BridgeAPI = {
     };
   },
 
-  // Bridge Groups
-  getGroups: () => ipcRenderer.invoke(IPC_CHANNELS.GET_GROUPS),
-  saveGroup: (group) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_GROUP, group),
-  updateGroup: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_GROUP, id, updates),
-  deleteGroup: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_GROUP, id),
-  // Bridge History
-  getBridgeHistory: () => ipcRenderer.invoke(IPC_CHANNELS.GET_BRIDGE_HISTORY),
-  addBridgeHistory: (entry) => ipcRenderer.invoke(IPC_CHANNELS.ADD_BRIDGE_HISTORY, entry),
-  deleteBridgeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_BRIDGE_HISTORY, id),
-  clearBridgeHistory: () => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_BRIDGE_HISTORY),
-  // Notes
-  getNotes: () => ipcRenderer.invoke(IPC_CHANNELS.GET_NOTES),
-  setContactNote: (email, note, tags) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SET_CONTACT_NOTE, email, note, tags),
-  setServerNote: (name, note, tags) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SET_SERVER_NOTE, name, note, tags),
-  // Saved Locations
-  getSavedLocations: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SAVED_LOCATIONS),
-  saveLocation: (location) => ipcRenderer.invoke(IPC_CHANNELS.SAVE_LOCATION, location),
-  deleteLocation: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_LOCATION, id),
-  setDefaultLocation: (id) => ipcRenderer.invoke(IPC_CHANNELS.SET_DEFAULT_LOCATION, id),
-  clearDefaultLocation: (id) => ipcRenderer.invoke(IPC_CHANNELS.CLEAR_DEFAULT_LOCATION, id),
-  updateLocation: (id, updates) => ipcRenderer.invoke(IPC_CHANNELS.UPDATE_LOCATION, id, updates),
-  // Contact Records (JSON)
-  getContacts: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CONTACTS),
-  addContactRecord: (contact) => ipcRenderer.invoke(IPC_CHANNELS.ADD_CONTACT_RECORD, contact),
-  updateContactRecord: (id, updates) =>
-    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_CONTACT_RECORD, id, updates),
-  deleteContactRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_CONTACT_RECORD, id),
-  // Server Records (JSON)
-  getServers: () => ipcRenderer.invoke(IPC_CHANNELS.GET_SERVERS),
-  addServerRecord: (server) => ipcRenderer.invoke(IPC_CHANNELS.ADD_SERVER_RECORD, server),
-  updateServerRecord: (id, updates) =>
-    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_SERVER_RECORD, id, updates),
-  deleteServerRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_SERVER_RECORD, id),
-  // OnCall Records (JSON)
-  getOnCall: () => ipcRenderer.invoke(IPC_CHANNELS.GET_ONCALL),
-  addOnCallRecord: (record) => ipcRenderer.invoke(IPC_CHANNELS.ADD_ONCALL_RECORD, record),
-  updateOnCallRecord: (id, updates) =>
-    ipcRenderer.invoke(IPC_CHANNELS.UPDATE_ONCALL_RECORD, id, updates),
-  deleteOnCallRecord: (id) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_RECORD, id),
-  deleteOnCallByTeam: (team) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_ONCALL_BY_TEAM, team),
-  // Data Manager
-  exportData: (options) => ipcRenderer.invoke(IPC_CHANNELS.EXPORT_DATA, options),
-  importData: (category) => ipcRenderer.invoke(IPC_CHANNELS.IMPORT_DATA, category),
-  getDataStats: () => ipcRenderer.invoke(IPC_CHANNELS.GET_DATA_STATS),
+  // On-Call Alert Dismissal Sync
+  notifyAlertDismissed: (type) => ipcRenderer.send(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type),
+  onAlertDismissed: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, type: string) => callback(type);
+    ipcRenderer.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler);
+    };
+  },
+
   // Clipboard
   writeClipboard: (text) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text),
+  writeClipboardImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, dataUrl),
+  // Alerts
+  saveAlertImage: (dataUrl, suggestedName) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),
+  saveCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_COMPANY_LOGO),
+  getCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.GET_COMPANY_LOGO),
+  removeCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_COMPANY_LOGO),
+  saveFooterLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_FOOTER_LOGO),
+  getFooterLogo: () => ipcRenderer.invoke(IPC_CHANNELS.GET_FOOTER_LOGO),
+  removeFooterLogo: () => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_FOOTER_LOGO),
+  // Setup
+  getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_CONFIG),
+  saveConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_SAVE_CONFIG, config),
+  isConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_CONFIGURED),
+  // Cache (offline)
+  cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
+  cacheWrite: (collection: string, action: string, record: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_WRITE, collection, action, record),
+  cacheSnapshot: (collection: string, records: unknown[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT, collection, records),
+  // Sync
+  syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
+  // PocketBase
+  getPbUrl: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_URL),
+  getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),
+  startPocketBase: () => ipcRenderer.invoke(IPC_CHANNELS.PB_START),
+
+  // Backups
+  listBackups: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST),
+  createBackup: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE),
+  restoreBackup: (name: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, name),
+
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
   windowMaximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
   isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
   onMaximizeChange: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) =>
-      callback(_event, maximized);
+    const handler = (_event: Electron.IpcRendererEvent, maximized: boolean) => callback(maximized);
     ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
   },

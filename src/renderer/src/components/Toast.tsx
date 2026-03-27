@@ -111,8 +111,8 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               aria-label="Dismiss notification"
             >
               <svg
-                width="12"
-                height="12"
+                width="18"
+                height="18"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"

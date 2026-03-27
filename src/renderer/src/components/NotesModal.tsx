@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import type { NoteEntry } from '@shared/ipc';
 import { TagBadge } from './notes/TagBadge';
 import { TagInput } from './notes/TagInput';
-import { useFocusTrap } from '../hooks/useFocusTrap';
+import { Modal } from './Modal';
 
 type NotesModalProps = {
   isOpen: boolean;
@@ -29,7 +28,6 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   const [tags, setTags] = useState<string[]>(existingNote?.tags || []);
   const [saving, setSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const focusTrapRef = useFocusTrap<HTMLDialogElement>(isOpen);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,20 +37,6 @@ export const NotesModal: React.FC<NotesModalProps> = ({
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [isOpen, existingNote]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
 
   const handleAddTag = () => {
     const trimmed = tagInput.trim().toLowerCase();
@@ -85,128 +69,120 @@ export const NotesModal: React.FC<NotesModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
-  return createPortal(
-    <div className="modal-overlay animate-fade-in">
-      <button
-        type="button"
-        className="overlay-hitbox"
-        aria-label="Close modal backdrop"
-        onClick={onClose}
-      />
-      <dialog
-        ref={focusTrapRef}
-        open
-        data-entity-id={entityId}
-        className="modal-container animate-scale-in"
-        aria-modal="true"
-        aria-labelledby="notes-modal-title"
-      >
-        {/* Header */}
-        <div className="modal-header">
-          <div className="modal-icon-wrapper">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <title>Notes Icon</title>
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
-          </div>
-          <div className="notes-title-flex">
-            <div id="notes-modal-title" className="modal-title-main">
-              {entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
-            </div>
-            <div className="modal-title-sub">{entityName}</div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="modal-close-btn"
-            aria-label="Close modal"
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      bare
+      overlayClassName="modal-overlay"
+      dialogClassName="modal-container"
+      dialogProps={{
+        'data-entity-id': entityId,
+        'aria-labelledby': 'notes-modal-title',
+      }}
+    >
+      {/* Header */}
+      <div className="modal-header">
+        <div className="modal-icon-wrapper">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <title>Close</title>
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+            <title>Notes Icon</title>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
         </div>
-
-        {/* Content */}
-        <div className="modal-content">
-          {/* Note textarea */}
-          <div className="notes-textarea-wrapper">
-            <label className="modal-label" htmlFor="note-textarea">
-              Note
-            </label>
-            <textarea
-              id="note-textarea"
-              ref={textareaRef}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={`Add a note about this ${entityType}...`}
-              className="modal-textarea"
-            />
+        <div className="notes-title-flex">
+          <div id="notes-modal-title" className="modal-title-main">
+            {entityType === 'contact' ? 'Contact Notes' : 'Server Notes'}
           </div>
+          <div className="modal-title-sub">{entityName}</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="modal-close-btn"
+          aria-label="Close modal"
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <title>Close</title>
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
 
-          {/* Tags */}
-          <div>
-            <label className="modal-label" htmlFor="tag-input-field">
-              Tags
-            </label>
-
-            {/* Tag list */}
-            {tags.length > 0 && (
-              <div className="tag-list">
-                {tags.map((tag) => (
-                  <TagBadge key={tag} tag={tag} onRemove={handleRemoveTag} />
-                ))}
-              </div>
-            )}
-
-            {/* Tag input */}
-            <TagInput
-              id="tag-input-field"
-              value={tagInput}
-              onChange={setTagInput}
-              onAdd={handleAddTag}
-              onKeyDown={handleKeyDown}
-            />
-          </div>
+      {/* Content */}
+      <div className="modal-content">
+        {/* Note textarea */}
+        <div className="notes-textarea-wrapper">
+          <label className="modal-label" htmlFor="note-textarea">
+            Note
+          </label>
+          <textarea
+            id="note-textarea"
+            ref={textareaRef}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={`Add a note about this ${entityType}...`}
+            className="modal-textarea"
+          />
         </div>
 
-        {/* Footer */}
-        <div className="modal-footer">
-          <button type="button" onClick={onClose} className="btn-cancel">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSave} disabled={saving} className="btn-save">
-            {saving ? 'Saving...' : 'Save Notes'}
-          </button>
+        {/* Tags */}
+        <div>
+          <label className="modal-label" htmlFor="tag-input-field">
+            Tags
+          </label>
+
+          {/* Tag list */}
+          {tags.length > 0 && (
+            <div className="tag-list">
+              {tags.map((tag) => (
+                <TagBadge key={tag} tag={tag} onRemove={handleRemoveTag} />
+              ))}
+            </div>
+          )}
+
+          {/* Tag input */}
+          <TagInput
+            id="tag-input-field"
+            value={tagInput}
+            onChange={setTagInput}
+            onAdd={handleAddTag}
+            onKeyDown={handleKeyDown}
+          />
         </div>
-      </dialog>
-    </div>,
-    document.body,
+      </div>
+
+      {/* Footer */}
+      <div className="modal-footer">
+        <button type="button" onClick={onClose} className="btn-cancel">
+          Cancel
+        </button>
+        <button type="button" onClick={handleSave} disabled={saving} className="btn-save">
+          {saving ? 'Saving...' : 'Save Notes'}
+        </button>
+      </div>
+    </Modal>
   );
 };

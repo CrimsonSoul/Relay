@@ -11,6 +11,12 @@ vi.mock('../../../utils/logger', () => ({
   },
 }));
 
+// Mock the PocketBase bridge group service
+const mockUpdateGroup = vi.fn();
+vi.mock('../../../services/bridgeGroupService', () => ({
+  updateGroup: (...args: unknown[]) => mockUpdateGroup(...args),
+}));
+
 const makeContact = (email: string): Contact => ({
   name: email.split('@')[0],
   email,
@@ -36,13 +42,8 @@ describe('GroupSelector', () => {
     makeGroup('g3', 'Support', []),
   ];
 
-  const mockApi = {
-    updateGroup: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
-    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
   });
 
   it('renders group names', () => {
@@ -54,62 +55,70 @@ describe('GroupSelector', () => {
 
   it('shows checkmark for groups the contact belongs to', () => {
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
-    // Alice is in Engineering, should have checkmark
-    const checkmarks = screen.getAllByText('✓');
+    const checkmarks = screen.getAllByText('\u2713');
     expect(checkmarks).toHaveLength(1); // Only Engineering
   });
 
   it('toggles contact into a group (add)', async () => {
-    mockApi.updateGroup.mockResolvedValue({ success: true });
+    mockUpdateGroup.mockResolvedValue({
+      id: 'g2',
+      name: 'Leadership',
+      contacts: ['charlie@test.com', 'alice@test.com'],
+    });
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
 
-    // Click on Leadership (alice is NOT a member)
     fireEvent.click(screen.getByText('Leadership'));
 
     await waitFor(() => {
-      expect(mockApi.updateGroup).toHaveBeenCalledWith('g2', {
+      expect(mockUpdateGroup).toHaveBeenCalledWith('g2', {
         contacts: ['charlie@test.com', 'alice@test.com'],
       });
     });
   });
 
   it('toggles contact into a group from keyboard', async () => {
-    mockApi.updateGroup.mockResolvedValue({ success: true });
+    mockUpdateGroup.mockResolvedValue({
+      id: 'g2',
+      name: 'Leadership',
+      contacts: ['charlie@test.com', 'alice@test.com'],
+    });
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
 
     fireEvent.keyDown(screen.getByText('Leadership'), { key: 'Enter' });
 
     await waitFor(() => {
-      expect(mockApi.updateGroup).toHaveBeenCalledWith('g2', {
+      expect(mockUpdateGroup).toHaveBeenCalledWith('g2', {
         contacts: ['charlie@test.com', 'alice@test.com'],
       });
     });
   });
 
   it('toggles contact out of a group (remove)', async () => {
-    mockApi.updateGroup.mockResolvedValue({ success: true });
+    mockUpdateGroup.mockResolvedValue({
+      id: 'g1',
+      name: 'Engineering',
+      contacts: ['bob@test.com'],
+    });
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
 
-    // Click on Engineering (alice IS a member)
     fireEvent.click(screen.getByText('Engineering'));
 
     await waitFor(() => {
-      expect(mockApi.updateGroup).toHaveBeenCalledWith('g1', {
-        contacts: ['bob@test.com'], // alice removed
+      expect(mockUpdateGroup).toHaveBeenCalledWith('g1', {
+        contacts: ['bob@test.com'],
       });
     });
   });
 
   it('rolls back on API failure and calls onError', async () => {
-    mockApi.updateGroup.mockResolvedValue(false);
+    mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
     const onError = vi.fn();
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
 
-    // Try to add to Leadership
     fireEvent.click(screen.getByText('Leadership'));
 
     await waitFor(() => {
@@ -118,12 +127,11 @@ describe('GroupSelector', () => {
   });
 
   it('rolls back on API failure for remove and calls onError', async () => {
-    mockApi.updateGroup.mockResolvedValue(false);
+    mockUpdateGroup.mockRejectedValue(new Error('Update failed'));
     const onError = vi.fn();
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
 
-    // Try to remove from Engineering
     fireEvent.click(screen.getByText('Engineering'));
 
     await waitFor(() => {
@@ -131,8 +139,8 @@ describe('GroupSelector', () => {
     });
   });
 
-  it('handles missing API and surfaces add failure message', async () => {
-    delete (globalThis as Window & { api?: typeof mockApi }).api;
+  it('handles thrown error and surfaces add failure message', async () => {
+    mockUpdateGroup.mockRejectedValue(new Error('Network error'));
     const onError = vi.fn();
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} onError={onError} />);
@@ -145,29 +153,23 @@ describe('GroupSelector', () => {
   });
 
   it('prevents concurrent updates', async () => {
-    // Create a promise that won't resolve immediately
     let resolveUpdate: () => void;
-    mockApi.updateGroup.mockReturnValue(
-      new Promise<{ success: boolean }>((resolve) => {
-        resolveUpdate = () => resolve({ success: true });
+    mockUpdateGroup.mockReturnValue(
+      new Promise<{ id: string }>((resolve) => {
+        resolveUpdate = () => resolve({ id: 'g2' });
       }),
     );
 
     render(<GroupSelector contact={contact} groups={groups} onClose={vi.fn()} />);
 
-    // Click one group
     fireEvent.click(screen.getByText('Leadership'));
-
-    // Try clicking another while first is pending
     fireEvent.click(screen.getByText('Support'));
 
-    // Only one API call should have been made
-    expect(mockApi.updateGroup).toHaveBeenCalledTimes(1);
+    expect(mockUpdateGroup).toHaveBeenCalledTimes(1);
 
-    // Resolve the first call
     resolveUpdate!();
     await waitFor(() => {
-      expect(mockApi.updateGroup).toHaveBeenCalledTimes(1);
+      expect(mockUpdateGroup).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -182,7 +184,6 @@ describe('GroupSelector', () => {
 
     render(<GroupSelector contact={upperContact} groups={[groupWithLower]} onClose={vi.fn()} />);
 
-    // Should still show checkmark (case-insensitive match)
-    expect(screen.getByText('✓')).toBeInTheDocument();
+    expect(screen.getByText('\u2713')).toBeInTheDocument();
   });
 });

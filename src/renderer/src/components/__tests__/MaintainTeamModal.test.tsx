@@ -38,7 +38,8 @@ describe('MaintainTeamModal', () => {
         onSave={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/Edit Card/)).toBeNull();
+    const dialog = document.querySelector('dialog');
+    expect(!dialog || !dialog.hasAttribute('open')).toBe(true);
   });
 
   it('renders modal with team name in title', () => {

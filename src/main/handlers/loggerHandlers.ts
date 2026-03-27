@@ -21,6 +21,9 @@ export function setupLoggerHandlers(): void {
     }
   });
 
+  // Renderer-to-main log bridge: all renderer logs are routed through loggers.bridge
+  // to distinguish them from main-process logs. The renderer module name is included
+  // in the message prefix (e.g., "[weather] fetch failed") for filtering.
   ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (_event, entry) => {
     try {
       // Rate-limit renderer logging to prevent log flooding
@@ -35,7 +38,9 @@ export function setupLoggerHandlers(): void {
         return;
       }
 
-      const { level, module, message, data } = validated.data;
+      const { level, message, data } = validated.data;
+      // Sanitize renderer-controlled module name: allow only alphanumeric, dots, hyphens; truncate to 50 chars
+      const module = validated.data.module.replaceAll(/[^a-zA-Z0-9.-]/g, '').slice(0, 50);
 
       // Map level string to logger method
       switch (level.toUpperCase()) {

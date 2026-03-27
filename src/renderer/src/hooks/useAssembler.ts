@@ -2,9 +2,9 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { useToast } from '../components/Toast';
-import { useDebounce } from './useDebounce';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
+import { addContact as pbAddContact } from '../services/contactService';
 
 interface AssemblerState {
   groups: BridgeGroup[];
@@ -37,38 +37,30 @@ export function useAssembler({
     isUnknown: boolean;
   } | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
 
-  const contactMap = useMemo(() => {
-    const map = new Map<string, Contact>();
-    contacts.forEach((c) => map.set(c.email.toLowerCase(), c));
-    return map;
-  }, [contacts]);
+  // Build all lookup maps in a single pass to reduce dependency chains
+  const { contactMap, emailToGroupsMap, groupStringMap } = useMemo(() => {
+    const contactMap = new Map<string, Contact>();
+    contacts.forEach((c) => contactMap.set(c.email.toLowerCase(), c));
 
-  // Create a map of email -> group names for display
-  const emailToGroupsMap = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const emailToGroupsMap = new Map<string, string[]>();
     groups.forEach((group) => {
       group.contacts.forEach((email) => {
         const lowerEmail = email.toLowerCase();
-        if (!map.has(lowerEmail)) {
-          map.set(lowerEmail, []);
+        if (!emailToGroupsMap.has(lowerEmail)) {
+          emailToGroupsMap.set(lowerEmail, []);
         }
-        map.get(lowerEmail)!.push(group.name);
+        emailToGroupsMap.get(lowerEmail)!.push(group.name);
       });
     });
-    return map;
-  }, [groups]);
 
-  // Create a simple groupMap for display (email -> groups list as string)
-  const groupStringMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const groupStringMap = new Map<string, string>();
     emailToGroupsMap.forEach((groupNames, email) => {
-      map.set(email, groupNames.join(', '));
+      groupStringMap.set(email, groupNames.join(', '));
     });
-    return map;
-  }, [emailToGroupsMap]);
+
+    return { contactMap, emailToGroupsMap, groupStringMap };
+  }, [contacts, groups]);
 
   const allRecipients = useMemo(() => {
     // Get all emails from selected groups
@@ -76,12 +68,15 @@ export function useAssembler({
       const group = groups.find((g) => g.id === id);
       return group ? group.contacts : [];
     });
+    // Convert to Sets for O(1) lookups inside the filter/map loop
+    const removeSet = new Set(manualRemoves);
+    const addSet = new Set(manualAdds);
     // Create union without mutating in useMemo
     const unionSet = new Set([...fromGroups, ...manualAdds]);
-    const filtered = Array.from(unionSet).filter((email) => !manualRemoves.includes(email));
+    const filtered = Array.from(unionSet).filter((email) => !removeSet.has(email));
     const result = filtered.map((email) => ({
       email,
-      source: manualAdds.includes(email) ? 'manual' : 'group',
+      source: addSet.has(email) ? 'manual' : 'group',
     }));
 
     return result.sort((a, b) => {
@@ -113,32 +108,18 @@ export function useAssembler({
     });
   }, [groups, selectedGroupIds, manualAdds, manualRemoves, contactMap, sortConfig, groupStringMap]);
 
-  const log = useMemo(() => {
-    if (!debouncedSearch) return allRecipients;
-    const q = debouncedSearch.toLowerCase();
-    return allRecipients.filter((entry) => {
-      const contact = contactMap.get(entry.email.toLowerCase());
-      const searchStr = [
-        contact?.name || entry.email.split('@')[0],
-        entry.email,
-        contact?.title || '',
-        contact?.phone || '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return searchStr.includes(q);
-    });
-  }, [allRecipients, debouncedSearch, contactMap]);
+  const log = allRecipients;
 
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     const success = await globalThis.api?.writeClipboard(log.map((m) => m.email).join('; '));
     if (success) {
       showToast('Copied to clipboard', 'success');
     } else {
       showToast('Failed to copy to clipboard', 'error');
     }
-  };
-  const executeDraftBridge = () => {
+  }, [log, showToast]);
+
+  const executeDraftBridge = useCallback(() => {
     const date = new Date();
     const params = new URLSearchParams({
       subject: `${date.getMonth() + 1}/${date.getDate()} -`,
@@ -146,11 +127,13 @@ export function useAssembler({
     });
     globalThis.api
       ?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`)
+      ?.then(() => {
+        showToast('Bridge drafted', 'success');
+      })
       ?.catch((error_) => {
         showToast(`Failed to open Teams draft: ${getErrorMessage(error_)}`, 'error');
       });
-    showToast('Bridge drafted', 'success');
-  };
+  }, [log, showToast]);
   const handleQuickAdd = useCallback(
     (email: string) => {
       onAddManual(email);
@@ -197,24 +180,24 @@ export function useAssembler({
     ],
   );
 
-  const handleContactSaved = async (contact: Partial<Contact>) => {
-    if (!globalThis.api) {
-      showToast('API not available', 'error');
-      return;
-    }
-    try {
-      const success = await globalThis.api.addContact(contact);
-      if (success) {
+  const handleContactSaved = useCallback(
+    async (contact: Partial<Contact>) => {
+      try {
+        await pbAddContact({
+          name: contact.name || '',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          title: contact.title || '',
+        });
         if (contact.email) onAddManual(contact.email);
         showToast('Contact created successfully', 'success');
-      } else {
+      } catch (e) {
+        loggers.app.error('[useAssembler] Failed to save contact', { error: e });
         showToast('Failed to create contact', 'error');
       }
-    } catch (e) {
-      loggers.app.error('[useAssembler] Failed to save contact', { error: e });
-      showToast('Failed to create contact', 'error');
-    }
-  };
+    },
+    [onAddManual, showToast],
+  );
 
   return {
     sortConfig,
@@ -228,8 +211,6 @@ export function useAssembler({
     setCompositionContextMenu,
     isHeaderCollapsed,
     setIsHeaderCollapsed,
-    search,
-    setSearch,
     contactMap,
     groupMap: emailToGroupsMap,
     allRecipients,
