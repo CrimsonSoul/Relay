@@ -19,19 +19,22 @@ Data CRUD lives in `src/renderer/src/services/`, separated from UI hooks. Each d
 
 ### Current Service Modules
 
-| Module               | File                      | Domain                                          |
-| -------------------- | ------------------------- | ----------------------------------------------- |
-| PocketBase client    | `pocketbase.ts`           | Client init, auth, health check, error handling |
-| contactService       | `contactService.ts`       | Contact CRUD                                    |
-| serverService        | `serverService.ts`        | Server CRUD                                     |
-| oncallService        | `oncallService.ts`        | On-call team CRUD and reorder                   |
-| oncallLayoutService  | `oncallLayoutService.ts`  | On-call board layout persistence                |
-| bridgeGroupService   | `bridgeGroupService.ts`   | Bridge group preset CRUD                        |
-| bridgeHistoryService | `bridgeHistoryService.ts` | Bridge history log                              |
-| notesService         | `notesService.ts`         | Contact and server notes                        |
-| savedLocationService | `savedLocationService.ts` | Weather saved locations                         |
-| alertHistoryService  | `alertHistoryService.ts`  | Alert history log                               |
-| importExportService  | `importExportService.ts`  | CSV and JSON import/export                      |
+| Module                 | File                        | Domain                                                  |
+| ---------------------- | --------------------------- | ------------------------------------------------------- |
+| PocketBase client      | `pocketbase.ts`             | Client init, auth, health check, error handling         |
+| pbErrors               | `pbErrors.ts`               | PocketBase error type guards (e.g. 404 not-found check) |
+| crudServiceFactory     | `crudServiceFactory.ts`     | Generic CRUD service factory (`createCrudService<T>`)   |
+| contactService         | `contactService.ts`         | Contact CRUD                                            |
+| serverService          | `serverService.ts`          | Server CRUD                                             |
+| oncallService          | `oncallService.ts`          | On-call team CRUD and reorder                           |
+| oncallDismissalService | `oncallDismissalService.ts` | On-call alert dismissal persistence                     |
+| bridgeGroupService     | `bridgeGroupService.ts`     | Bridge group preset CRUD                                |
+| bridgeHistoryService   | `bridgeHistoryService.ts`   | Bridge history log                                      |
+| notesService           | `notesService.ts`           | Contact and server notes                                |
+| standaloneNoteService  | `standaloneNoteService.ts`  | Standalone notepad CRUD and reorder                     |
+| savedLocationService   | `savedLocationService.ts`   | Weather saved locations                                 |
+| alertHistoryService    | `alertHistoryService.ts`    | Alert history log                                       |
+| importExportService    | `importExportService.ts`    | CSV and JSON import/export                              |
 
 ### Adding a New Service
 
@@ -92,6 +95,29 @@ export async function remove(id: string): Promise<void> {
   }
 }
 ```
+
+### CRUD Service Factory
+
+For new domains with standard CRUD operations, use `createCrudService<T>` from `crudServiceFactory.ts` to avoid boilerplate:
+
+```typescript
+import { createCrudService } from './crudServiceFactory';
+
+export interface MyRecord {
+  id: string;
+  name: string;
+  created: string;
+  updated: string;
+}
+
+const crud = createCrudService<MyRecord>('my_collection');
+
+export const addRecord = (data: Partial<MyRecord>) => crud.create(data);
+export const updateRecord = (id: string, data: Partial<MyRecord>) => crud.update(id, data);
+export const deleteRecord = (id: string) => crud.remove(id);
+```
+
+The factory provides `getAll`, `getOne`, `create`, `update`, and `remove` — all with proper `requireOnline()` guards and `handleApiError()` wrapping. `getOne` returns `null` on 404 instead of throwing (uses `isPbNotFoundError` from `pbErrors.ts`).
 
 ### Why This Pattern?
 
@@ -189,7 +215,31 @@ return () => {
 };
 ```
 
-The `useCollection` hook in `src/renderer/src/hooks/useCollection.ts` provides a generic subscription wrapper.
+The `useCollection` hook in `src/renderer/src/hooks/useCollection.ts` provides a generic subscription wrapper. It fetches the full collection on mount, subscribes to realtime SSE events, maintains sort order via a parsed comparator, and falls back to the offline cache when the connection is lost. On reconnect, it automatically flushes pending offline writes and re-subscribes.
+
+### useOptimisticList
+
+When a hook needs to apply optimistic UI updates while receiving realtime pushes from `useCollection`, wrap the data with `useOptimisticList`:
+
+```typescript
+import { useOptimisticList } from './useOptimisticList';
+import { useCollection } from './useCollection';
+
+const { data: records } = useCollection<MyRecord>('my_collection', { sort: 'sortOrder' });
+const { data, setData, startMutation, finishMutation } = useOptimisticList(records);
+
+async function handleAdd(input: MyInput) {
+  startMutation();
+  setData((prev) => [optimisticRecord, ...prev]); // Optimistic update
+  try {
+    await addRecord(input);
+  } finally {
+    finishMutation(); // Releases lock — queued external updates apply
+  }
+}
+```
+
+While mutations are in-flight, external realtime updates are queued. Once all mutations settle, the queued data is applied. This prevents realtime SSE events from overwriting optimistic UI state.
 
 ## Offline Cache and Pending Changes
 
@@ -201,41 +251,65 @@ The main process maintains two local SQLite databases (via better-sqlite3) for o
 
 Cache updates are triggered via `window.api.cacheSnapshot(collection, records)` after a successful PB fetch. Pending writes are queued via `window.api.cacheWrite(collection, action, record)` when the renderer is offline.
 
+### Cache Handler Validation
+
+Cache handlers (`src/main/handlers/cacheHandlers.ts`) validate all inputs against allowlists before touching the database:
+
+- **Collection allowlist**: A `VALID_COLLECTIONS` set restricts which collection names are accepted. Any unrecognised collection name is rejected and logged as an error.
+- **Action allowlist**: A `VALID_ACTIONS` set (`create`, `update`, `delete`) validates mutation types.
+- **Record shape check**: Write operations verify the record is a non-null, non-array object.
+
+This prevents the renderer from reading or writing arbitrary collections through the cache IPC bridge.
+
 ## Renderer Patterns
 
 ### Tab Architecture
 
 Tabs use a "mount once, keep alive" pattern. Once a tab is visited, its component stays in the DOM (hidden via `display: none`) to preserve scroll position and state. Only the Compose tab is eagerly loaded; all others use `React.lazy` with `Suspense`.
 
+Current tabs: Compose, On-Call (Personnel), People (Directory), Servers, Weather, Radar, Alerts, Notes, Cloud Status.
+
 ### Hook-per-Domain
 
 Each feature domain has a dedicated hook in `src/renderer/src/hooks/`:
 
-| Hook                   | Tab     | Purpose                                     |
-| ---------------------- | ------- | ------------------------------------------- |
-| `useAssembler`         | Compose | Contact/group selection, draft bridge, copy |
-| `useAppAssembler`      | Compose | Tab state, settings, cross-tab integration  |
-| `useBridgeHistory`     | Compose | Bridge history CRUD                         |
-| `useGroups`            | Compose | Group preset CRUD                           |
-| `usePersonnel`         | On-Call | Team grid, alerts, reminders                |
-| `useOnCallBoard`       | On-Call | Board interactions, clipboard, animations   |
-| `useDirectory`         | People  | Search, pagination, tab state               |
-| `useDirectoryContacts` | People  | Contact data, add/edit/delete               |
-| `useDirectoryKeyboard` | People  | Keyboard navigation (arrows, context menu)  |
-| `useServers`           | Servers | Server data, search, selection              |
-| `useAppWeather`        | Weather | Weather data, alerts, location              |
-| `useWeatherLocation`   | Weather | Location selection state                    |
-| `useSavedLocations`    | Weather | Saved location CRUD                         |
-| `useAppData`           | Global  | Data loading, reload, sync                  |
-| `useNotes`             | Global  | Contact/server notes                        |
-| `useCommandSearch`     | Global  | Command palette search                      |
-| `useDataManager`       | Global  | Import/export                               |
-| `useCollection`        | Global  | Generic PB realtime subscription wrapper    |
-| `usePolling`           | Global  | Generic polling loop                        |
-| `useDebounce`          | Utility | Debounced values                            |
-| `useFocusTrap`         | Utility | Modal focus trapping                        |
-| `useMounted`           | Utility | Mount state tracking                        |
-| `useOnClickOutside`    | Utility | Click-outside detection                     |
+| Hook                   | Tab          | Purpose                                           |
+| ---------------------- | ------------ | ------------------------------------------------- |
+| `useAssembler`         | Compose      | Contact/group selection, draft bridge, copy       |
+| `useAppAssembler`      | Compose      | Tab state, settings, cross-tab integration        |
+| `useBridgeHistory`     | Compose      | Bridge history CRUD                               |
+| `useGroups`            | Compose      | Group preset CRUD                                 |
+| `usePersonnel`         | On-Call      | Team grid, alerts, reminders                      |
+| `useOnCallBoard`       | On-Call      | Board interactions, clipboard, animations         |
+| `useOnCallManager`     | On-Call      | Team CRUD, rename, reorder                        |
+| `useAlertDismissal`    | On-Call      | Daily alert dismissal with optimistic updates     |
+| `useDirectory`         | People       | Search, pagination, tab state                     |
+| `useDirectoryContacts` | People       | Contact data, add/edit/delete                     |
+| `useDirectoryKeyboard` | People       | Keyboard navigation (arrows, context menu)        |
+| `useServers`           | Servers      | Server data, search, selection                    |
+| `useAppWeather`        | Weather      | Weather data, alerts, location                    |
+| `useWeatherLocation`   | Weather      | Location selection state                          |
+| `useSavedLocations`    | Weather      | Saved location CRUD                               |
+| `useAlertHistory`      | Alerts       | Alert history CRUD with pin/label                 |
+| `useNotepad`           | Notes        | Notepad state, font size, search integration      |
+| `useNoteStorage`       | Notes        | Standalone note CRUD, reorder, optimistic queue   |
+| `useAppCloudStatus`    | Cloud Status | Cloud provider status polling and aggregation     |
+| `useAppData`           | Global       | Data loading, reload, sync                        |
+| `useNotes`             | Global       | Contact/server entity notes                       |
+| `useCommandSearch`     | Global       | Command palette search                            |
+| `useDataManager`       | Global       | Import/export                                     |
+| `useCollection`        | Global       | Generic PB realtime subscription wrapper          |
+| `useOptimisticList`    | Global       | Optimistic list updates with queued external sync |
+| `useHistory`           | Global       | Generic history hook for PB-backed collections    |
+| `useListFilters`       | Global       | Filter definitions with predicate-based matching  |
+| `usePolling`           | Global       | Generic polling loop                              |
+| `usePocketBase`        | Global       | PB client init, auth, connection state            |
+| `useKeyboardShortcuts` | Global       | Global keyboard shortcut bindings                 |
+| `useDebounce`          | Utility      | Debounced values                                  |
+| `useFocusTrap`         | Utility      | Modal focus trapping                              |
+| `useModalState`        | Utility      | Open/close/toggle state for modals                |
+| `useMounted`           | Utility      | Mount state tracking                              |
+| `useOnClickOutside`    | Utility      | Click-outside detection                           |
 
 ### Virtual Lists
 
@@ -319,8 +393,8 @@ Enforced in both vitest configs — CI fails if coverage drops below:
 
 | Suite       | Lines | Functions | Branches | Statements |
 | ----------- | ----- | --------- | -------- | ---------- |
-| Main/Shared | 80%   | 80%       | 75%      | 80%        |
-| Renderer    | 80%   | 80%       | 75%      | 80%        |
+| Main/Shared | 80%   | 80%       | 80%      | 80%        |
+| Renderer    | 80%   | 80%       | 80%      | 80%        |
 
 ### Testing PB Services
 

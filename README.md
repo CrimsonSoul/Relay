@@ -2,7 +2,7 @@
 
 Relay is an Electron desktop command center for operations teams managing people, systems, and incident bridge communications.
 
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2040-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%205.9-2ea043)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2041-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%205.9-2ea043)
 
 ## Snapshot
 
@@ -24,8 +24,10 @@ Relay is an Electron desktop command center for operations teams managing people
 - **On-Call Board** — Drag-and-drop team/role scheduling with week navigation and popout display mode
 - **People & Servers** — Searchable directories with inline notes, tags, and quick-action menus
 - **Weather** — Live conditions, NWS alerts, saved locations, and an embedded radar tab
-- **AI Chat** — Sandboxed webviews for Gemini, ChatGPT, Claude, and Copilot with isolated sessions
-- **Global Layer** — Command palette, keyboard shortcuts modal, import/export manager, toast notifications
+- **Alerts** — Build and capture alert cards with severity levels, compact/enhance text processing, highlight colors, event time banners, and screenshot capture
+- **Notes** — Create, edit, reorder, and tag standalone notes with rich content parsing and color coding
+- **Cloud Status** — Monitor cloud provider status pages (AWS, Azure, M365, GitHub, Cloudflare, Google Cloud, Claude, ChatGPT, Salesforce)
+- **Global Layer** — Command palette, keyboard shortcuts modal, import/export manager, backup/restore, toast notifications
 
 ## Architecture
 
@@ -40,7 +42,7 @@ Business logic stays in operations modules; handlers validate inputs and delegat
 
 | Layer          | Technology                                      |
 | -------------- | ----------------------------------------------- |
-| Desktop shell  | Electron 40                                     |
+| Desktop shell  | Electron 41                                     |
 | Frontend       | React 19 + TypeScript 5.9                       |
 | Build          | Vite 7 + electron-vite 5                        |
 | Validation     | Zod 4                                           |
@@ -66,8 +68,8 @@ npm run test:electron  # Playwright integration tests
 
 Coverage thresholds are enforced:
 
-- Main/shared: lines 80%, functions 80%, branches 75%
-- Renderer: lines 80%, functions 80%, branches 75%
+- Main/shared: lines 80%, functions 80%, branches 80%, statements 80%
+- Renderer: lines 80%, functions 80%, branches 80%, statements 80%
 
 ## Security
 
@@ -82,8 +84,12 @@ Coverage thresholds are enforced:
 
 - `src/main/operations/`: core data and business logic
 - `src/main/handlers/`: IPC handler registration and input validation
-- `src/renderer/src/tabs/`: feature tabs (Compose, On-Call, People, Servers, Weather, Radar, AI)
+- `src/renderer/src/tabs/`: feature tabs (Compose, Alerts, On-Call, People, Servers, Weather, Radar, Notes, Cloud Status)
+- `src/renderer/src/tabs/alerts/`: alert sub-components (severity selector, body editor, compact/enhance engines, highlight colors, event time banner)
+- `src/renderer/src/tabs/notes/`: note sub-components (card, editor, toolbar, content parser/renderer)
 - `src/renderer/src/hooks/`: feature-focused state and side-effect hooks
+- `src/main/handlers/cloudStatus/`: cloud status provider fetchers (Google, AWS/Azure/GitHub/Cloudflare via RSS, Salesforce, Statuspage)
+- `src/main/handlers/backupHandlers.ts`: PocketBase backup create/restore with cache invalidation
 - `docs/`: architecture decisions, logging guide, security notes, troubleshooting
 
 ## License

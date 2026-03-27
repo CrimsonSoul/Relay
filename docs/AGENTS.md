@@ -52,53 +52,57 @@ On reconnect       -> SyncManager.syncAll(pendingChanges) -> PocketBase REST API
 
 ## Key Directories
 
-| Directory                                | Purpose                                                                 |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| `src/main/handlers/`                     | IPC handler registration and Zod input validation                       |
-| `src/main/pocketbase/`                   | PocketBase process management, backup, and retention                    |
-| `src/main/cache/`                        | Offline cache (OfflineCache), write queue (PendingChanges), SyncManager |
-| `src/main/config/`                       | AppConfig — reads/writes encrypted relay config                         |
-| `src/renderer/src/services/`             | PocketBase service modules — all data CRUD (contacts, servers, etc.)    |
-| `src/renderer/src/tabs/`                 | Tab components (Compose, On-Call, People, Servers, Weather, Radar, AI)  |
-| `src/renderer/src/hooks/`                | Custom React hooks (one per feature domain)                             |
-| `src/renderer/src/hooks/__tests__/`      | Hook unit tests                                                         |
-| `src/renderer/src/components/`           | Reusable UI components (modals, cards, search, sidebar, toast)          |
-| `src/renderer/src/components/__tests__/` | Component unit tests                                                    |
-| `src/renderer/src/styles/`               | Global CSS (theme.css, components.css, modals.css, animations.css)      |
-| `src/renderer/src/utils/`                | Renderer utilities (logger, secureStorage, timeParsing, colors)         |
-| `src/renderer/src/contexts/`             | React context providers (LocationContext, NotesContext)                 |
-| `src/shared/`                            | IPC types, channel definitions, Zod schemas, phone utilities            |
+| Directory                                | Purpose                                                                                         |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `src/main/handlers/`                     | IPC handler registration and Zod input validation                                               |
+| `src/main/pocketbase/`                   | PocketBase process management, backup, and retention                                            |
+| `src/main/cache/`                        | Offline cache (OfflineCache), write queue (PendingChanges), SyncManager                         |
+| `src/main/config/`                       | AppConfig — reads/writes encrypted relay config                                                 |
+| `src/renderer/src/services/`             | PocketBase service modules — all data CRUD (contacts, servers, etc.)                            |
+| `src/renderer/src/tabs/`                 | Tab components (Compose, On-Call, People, Servers, Weather, Radar, Alerts, Notes, Cloud Status) |
+| `src/renderer/src/hooks/`                | Custom React hooks (one per feature domain)                                                     |
+| `src/renderer/src/hooks/__tests__/`      | Hook unit tests                                                                                 |
+| `src/renderer/src/components/`           | Reusable UI components (modals, cards, search, sidebar, toast)                                  |
+| `src/renderer/src/components/__tests__/` | Component unit tests                                                                            |
+| `src/renderer/src/styles/`               | Global CSS (theme.css, components.css, modals.css, animations.css)                              |
+| `src/renderer/src/utils/`                | Renderer utilities (logger, secureStorage, timeParsing, colors)                                 |
+| `src/renderer/src/contexts/`             | React context providers (LocationContext, NotesContext, SearchContext)                          |
+| `src/shared/`                            | IPC types, channel definitions, Zod schemas, phone utilities                                    |
 
 ## Renderer Service Modules
 
-| Module                    | Domain                                             |
-| ------------------------- | -------------------------------------------------- |
-| `pocketbase.ts`           | PB client init, auth, health check, error handling |
-| `contactService.ts`       | Contact CRUD                                       |
-| `serverService.ts`        | Server CRUD                                        |
-| `oncallService.ts`        | On-call team CRUD and reorder                      |
-| `oncallLayoutService.ts`  | On-call board layout persistence                   |
-| `bridgeGroupService.ts`   | Bridge group preset CRUD                           |
-| `bridgeHistoryService.ts` | Bridge history log                                 |
-| `notesService.ts`         | Contact and server notes                           |
-| `savedLocationService.ts` | Weather saved locations                            |
-| `alertHistoryService.ts`  | Alert history log                                  |
-| `importExportService.ts`  | CSV and JSON import/export                         |
+| Module                      | Domain                                                  |
+| --------------------------- | ------------------------------------------------------- |
+| `pocketbase.ts`             | PB client init, auth, health check, error handling      |
+| `pbErrors.ts`               | PocketBase error type guards (e.g. 404 not-found check) |
+| `crudServiceFactory.ts`     | Generic CRUD service factory (`createCrudService<T>`)   |
+| `contactService.ts`         | Contact CRUD                                            |
+| `serverService.ts`          | Server CRUD                                             |
+| `oncallService.ts`          | On-call team CRUD and reorder                           |
+| `oncallDismissalService.ts` | On-call alert dismissal persistence                     |
+| `bridgeGroupService.ts`     | Bridge group preset CRUD                                |
+| `bridgeHistoryService.ts`   | Bridge history log                                      |
+| `notesService.ts`           | Contact and server notes                                |
+| `standaloneNoteService.ts`  | Standalone notepad CRUD and reorder                     |
+| `savedLocationService.ts`   | Weather saved locations                                 |
+| `alertHistoryService.ts`    | Alert history log                                       |
+| `importExportService.ts`    | CSV and JSON import/export                              |
 
 ## Handler Modules
 
-| Module                | Domain                                           |
-| --------------------- | ------------------------------------------------ |
-| `authHandlers.ts`     | HTTP 401 interception, credential prompts        |
-| `cacheHandlers.ts`    | Offline cache read/write, pending change sync    |
-| `cloudStatus/`        | Cloud service status polling (Google, RSS, etc.) |
-| `configHandlers.ts`   | App settings management                          |
-| `locationHandlers.ts` | IP geolocation                                   |
-| `loggerHandlers.ts`   | Renderer-to-main log bridge                      |
-| `setupHandlers.ts`    | Initial setup — save/load relay config           |
-| `weatherHandlers.ts`  | Weather API proxy                                |
-| `windowHandlers.ts`   | Window management, clipboard, drag sync          |
-| `ipcHelpers.ts`       | Shared handler utilities                         |
+| Module                | Domain                                                             |
+| --------------------- | ------------------------------------------------------------------ |
+| `authHandlers.ts`     | HTTP 401 interception, credential prompts                          |
+| `backupHandlers.ts`   | Backup list, create, restore (with PB restart and cache clear)     |
+| `cacheHandlers.ts`    | Offline cache read/write/snapshot, pending change sync             |
+| `cloudStatus/`        | Cloud service status polling (Google, Salesforce, RSS, Statuspage) |
+| `configHandlers.ts`   | App settings management                                            |
+| `locationHandlers.ts` | IP geolocation                                                     |
+| `loggerHandlers.ts`   | Renderer-to-main log bridge                                        |
+| `setupHandlers.ts`    | Initial setup — save/load relay config                             |
+| `weatherHandlers.ts`  | Weather API proxy                                                  |
+| `windowHandlers.ts`   | Window management, clipboard, drag sync                            |
+| `ipcHelpers.ts`       | Shared handler utilities                                           |
 
 ## Commands
 
@@ -131,6 +135,41 @@ Follow this order — each step depends on the previous:
 6. **IPC (if needed)**: For non-data operations, add channel to `src/shared/ipc.ts`, handler in `src/main/handlers/`, and expose in `src/preload/index.ts`
 
 ## Code Patterns
+
+### PocketBase Collections
+
+The `CollectionBootstrap` (`src/main/pocketbase/CollectionBootstrap.ts`) ensures these collections exist on startup. Unknown collections are pruned automatically.
+
+| Collection          | Purpose                                    |
+| ------------------- | ------------------------------------------ |
+| `contacts`          | People directory entries                   |
+| `servers`           | Server inventory                           |
+| `oncall`            | On-call team rosters                       |
+| `bridge_groups`     | Bridge group presets                       |
+| `bridge_history`    | Bridge composition history log             |
+| `alert_history`     | Alert history entries                      |
+| `notes`             | Entity-attached notes (contact or server)  |
+| `saved_locations`   | Weather saved locations                    |
+| `standalone_notes`  | Notepad sticky notes                       |
+| `oncall_dismissals` | On-call alert dismissal tracking (per day) |
+| `conflict_log`      | Offline sync conflict audit log            |
+
+### App State (Main Process)
+
+Main process state is managed via `src/main/app/appState.ts` using a getter/setter pattern over a module-scoped `AppState` object. Each field has a dedicated getter and setter function (e.g. `getMainWindow()`, `setMainWindow()`). Setters log state changes at debug level. IPC handlers receive state via getter closures passed during setup, rather than importing the state module directly.
+
+```typescript
+// Access state in handlers
+export function setupIpc() {
+  setupIpcHandlers(
+    () => state.mainWindow,
+    getDataRoot,
+    () => state.appConfig,
+    () => state.offlineCache,
+    // ... getter closures for each dependency
+  );
+}
+```
 
 ### Logging
 
@@ -310,7 +349,7 @@ All of these must pass before merging:
 - `npm run typecheck` — 0 TypeScript errors
 - `npm run lint` — 0 ESLint errors (includes jsx-a11y)
 - `npm test` — all tests pass (unit + renderer)
-- Coverage thresholds enforced (main: 80/80/75/80, renderer: 80/80/75/80)
+- Coverage thresholds enforced (main: 80/80/80/80, renderer: 80/80/80/80)
 - Pre-commit hooks run automatically (eslint --fix + prettier --write)
 
 ## Documentation

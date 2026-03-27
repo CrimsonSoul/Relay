@@ -6,7 +6,7 @@ System design for the Relay Electron desktop application.
 
 | Layer          | Technology                   | Version             |
 | -------------- | ---------------------------- | ------------------- |
-| Shell          | Electron                     | 40                  |
+| Shell          | Electron                     | 41                  |
 | Renderer       | React                        | 19                  |
 | Language       | TypeScript                   | 5.9 (strict)        |
 | Build          | Vite + electron-vite         | 7 / 5               |
@@ -55,9 +55,10 @@ Responsibilities:
 - Window creation and lifecycle management
 - IPC handler registration (delegated to handler modules)
 - PocketBase process lifecycle (start, health check, crash recovery)
-- External API proxying (weather, geolocation)
+- External API proxying (weather, geolocation, cloud status)
 - HTTP 401 interception and credential management
 - Offline cache reads/writes on behalf of the renderer
+- Backup creation and restoration with cache invalidation
 - Structured logging with rotation
 
 Key services:
@@ -77,13 +78,13 @@ Entry point: `src/preload/index.ts`
 
 Exposes a typed `window.api` object via `contextBridge.exposeInMainWorld`. Every method maps to an `ipcRenderer.invoke` or `ipcRenderer.on` call. The renderer never imports Electron or Node.js modules directly.
 
-The full API surface is defined by the `BridgeAPI` type in `src/shared/ipc.ts`. The bridge is intentionally narrow: it covers window management, weather/location APIs, auth, clipboard, setup, cache/sync, logging, and PocketBase bootstrap. All data CRUD (contacts, servers, on-call, etc.) bypasses IPC entirely — the renderer calls the PocketBase REST API directly via the `pocketbase` SDK.
+The full API surface is defined by the `BridgeAPI` type in `src/shared/ipc.ts`. The bridge is intentionally narrow: it covers window management, weather/location APIs, cloud status, auth, clipboard, alert image/logo management, setup, cache/sync, backups, logging, and PocketBase bootstrap. All data CRUD (contacts, servers, on-call, etc.) bypasses IPC entirely — the renderer calls the PocketBase REST API directly via the `pocketbase` SDK.
 
 ### Renderer
 
 Entry point: `src/renderer/src/App.tsx`
 
-React application with sidebar navigation and 7 tabs. Uses the "mount once, keep alive" pattern — once a tab is visited, it stays in the DOM (hidden via CSS) to preserve state and scroll position. Only the Compose tab loads eagerly; others use `React.lazy`.
+React application with sidebar navigation and 9 tabs. Uses the "mount once, keep alive" pattern — once a tab is visited, it stays in the DOM (hidden via CSS) to preserve state and scroll position. Only the Compose tab loads eagerly; others use `React.lazy`.
 
 State is managed through custom hooks (one per feature domain) that call the PocketBase SDK directly for data operations, and `window.api` methods for system-level operations. Context providers handle cross-cutting concerns (location, notes, connection state).
 
@@ -101,17 +102,19 @@ Contains TypeScript types, IPC channel definitions, Zod validation schemas, and 
 
 All application data is stored in PocketBase's embedded SQLite database. The following collections are defined:
 
-| Collection        | Contents                                              |
-| ----------------- | ----------------------------------------------------- |
-| `contacts`        | Contact records (name, email, phone, title)           |
-| `servers`         | Server records (name, business area, owner, OS, etc.) |
-| `bridge_groups`   | Bridge group presets (name, contact emails)           |
-| `on_call`         | On-call records (team, role, name, contact)           |
-| `on_call_layout`  | Drag-and-drop grid layout for the on-call board       |
-| `bridge_history`  | Bridge composition log (groups, contacts, timestamp)  |
-| `alert_history`   | Alert composition log                                 |
-| `notes`           | Contact and server notes with tags                    |
-| `saved_locations` | Weather saved locations                               |
+| Collection          | Contents                                                       |
+| ------------------- | -------------------------------------------------------------- |
+| `contacts`          | Contact records (name, email, phone, title)                    |
+| `servers`           | Server records (name, business area, owner, OS, etc.)          |
+| `oncall`            | On-call records (team, role, name, contact, sort order)        |
+| `bridge_groups`     | Bridge group presets (name, contact emails)                    |
+| `bridge_history`    | Bridge composition log (groups, contacts, timestamp)           |
+| `alert_history`     | Alert composition log (severity, subject, body, sender, label) |
+| `notes`             | Contact and server notes with tags (entityType, entityKey)     |
+| `standalone_notes`  | Standalone notes with title, content, color, tags, sort order  |
+| `saved_locations`   | Weather saved locations                                        |
+| `oncall_dismissals` | On-call alert dismissal tracking (alertType, dateKey)          |
+| `conflict_log`      | Sync conflict records (collection, recordId, overwritten data) |
 
 Schema migrations live in `src/main/pocketbase/migrations/` and are applied automatically on startup via the `--migrationsDir` flag.
 
@@ -124,6 +127,13 @@ The main process holds a separate `PocketBase` client instance used only by `Syn
 ### Offline Fallback
 
 When PocketBase is unreachable the renderer falls back to data cached in `OfflineCache`. Writes made offline are recorded in `PendingChanges`. On reconnect the renderer calls `window.api.syncPending()`, which triggers `SyncManager.syncAll()` in the main process to flush the queue.
+
+The offline cache is invalidated (cleared) in two scenarios to prevent stale data from being served:
+
+- **Reconfiguration**: When the user saves a new configuration via setup, the cache is cleared so stale data from a previous server does not persist.
+- **Backup restore**: After restoring a PocketBase backup, the cache is cleared so it does not serve data from the pre-restore state.
+
+The `SyncManager` and `PendingChanges` queue provide the infrastructure for future offline-write support. Currently, the sync pipeline replays queued writes on reconnect and logs conflicts to the `conflict_log` collection using a last-write-wins strategy.
 
 ### Realtime Subscriptions
 
@@ -153,13 +163,15 @@ location:ip
 cloudstatus:get
 radar:data, config:registerRadarUrl
 clipboard:write, clipboard:writeImage
-alert:saveImage, alert:saveCompanyLogo, alert:getCompanyLogo, alert:removeCompanyLogo
+alert:saveImage, alert:saveCompanyLogo, alert:getCompanyLogo, alert:removeCompanyLogo,
+alert:saveFooterLogo, alert:getFooterLogo, alert:removeFooterLogo
 drag:started, drag:stopped
 oncall:alertDismissed
 setup:getConfig, setup:saveConfig, setup:isConfigured
 cache:read, cache:write, cache:snapshot
 sync:pending
 pb:getUrl, pb:getSecret, pb:start
+backup:list, backup:create, backup:restore
 logger:toMain, metrics:logBridge
 ```
 
@@ -214,9 +226,23 @@ Dashboard showing current conditions, hourly forecast, daily forecast, and sever
 
 Embedded weather radar via webview. The webview source is locked to an HTTPS allowlist. Webview creation is validated by the `will-attach-webview` handler in the main process.
 
-### AI Chat (AIChatTab)
+### Alerts (AlertsTab)
 
-Sandboxed access to Gemini and ChatGPT via webview. Session data is automatically cleared when leaving the tab. Webviews run in strict isolation with no access to app data or the main process.
+Build and capture alert cards for incident communications. Each alert has a severity level (Issue, Maintenance, Info, Resolved) with corresponding color coding. The body editor supports compact and enhance text processing engines, inline highlight colors via a highlight popover, and event time banners. Completed alerts can be captured as screenshots via `html2canvas` and saved to disk or clipboard. Company and footer logos can be uploaded and persisted.
+
+Sub-components: `AlertForm`, `AlertCard`, `AlertSeveritySelector`, `AlertBodyEditor`, `AlertLogoUpload`, `EventTimeBanner`, `HighlightPopover`, `AlertHistoryModal`
+
+Alert history is saved to the `alert_history` collection. Entries can be pinned and labeled for quick reference.
+
+### Notes (NotesTab)
+
+Standalone note-taking with color-coded cards (amber, blue, green, red, purple, slate). Notes support titles, rich content with parsed formatting (via `noteContentParser`), and tags. Notes can be created, edited, reordered via drag-and-drop, and filtered by tag. Data is stored in the `standalone_notes` collection with a `sortOrder` field for persistent ordering.
+
+Sub-components: `NoteCard`, `NoteEditor`, `NoteToolbar`, `NoteContentRenderer`
+
+### Cloud Status (CloudStatusTab)
+
+Monitors status pages for cloud providers: AWS, Azure, Microsoft 365, GitHub, Cloudflare, Google Cloud, Claude (Anthropic), ChatGPT (OpenAI), and Salesforce. Status data is fetched via IPC (`cloudstatus:get`) from the main process, which aggregates feeds from multiple provider-specific fetchers (RSS, Statuspage API, Google-specific, Salesforce-specific). Each incident shows severity (info, warning, error, resolved), description, and link to the provider's status page.
 
 ## Security
 

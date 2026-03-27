@@ -27,6 +27,21 @@ Relay is a desktop application built with Electron that handles sensitive operat
 - Exposes only explicitly defined APIs via `contextBridge`
 - No direct access to Node.js or Electron APIs from renderer
 
+### Rate Limiting
+
+IPC operations are protected by a token-bucket rate limiter (`src/main/rateLimiter.ts`). Each bucket has a configurable burst capacity and per-second refill rate:
+
+| Bucket            | Burst | Refill    | Scope                                     |
+| ----------------- | ----- | --------- | ----------------------------------------- |
+| `fileImport`      | 5     | 1 per 10s | CSV/file import operations                |
+| `dataMutation`    | 100   | 10/s      | CRUD operations (add/remove/update)       |
+| `dataReload`      | 3     | 1 per 2s  | Full data reload requests                 |
+| `fsOperations`    | 10    | 2/s       | Open-path, open-external shell operations |
+| `network`         | 10    | 1/s       | Outbound network requests                 |
+| `rendererLogging` | 60    | 20/s      | Renderer-to-main log forwarding           |
+
+When a bucket is exhausted the request is rejected and a `retryAfterMs` value is returned. Rate-limit events are logged to the `ipc` logger.
+
 ### Content Security Policy (CSP)
 
 The application enforces a strict Content Security Policy:
@@ -87,9 +102,11 @@ frame-src 'self' [trusted domains];
 **Authentication Flow:**
 
 1. HTTP 401 challenges are intercepted by the main process
-2. User is prompted securely via IPC
-3. Credentials can be optionally cached (encrypted)
-4. Nonce-based request validation prevents replay attacks
+2. A secure nonce (32 random bytes, hex-encoded) is generated and associated with the auth callback
+3. User is prompted securely via IPC; the renderer must present the correct nonce to complete auth
+4. Nonces are one-time-use and expire after 5 minutes — expired/invalid nonces are rejected
+5. Credentials can be optionally cached in-memory using `safeStorage` encryption (30-minute TTL, refreshed on use)
+6. Periodic cleanup (every 60 seconds) prunes expired nonces and cached credentials
 
 ### Input Validation
 
@@ -107,11 +124,54 @@ frame-src 'self' [trusted domains];
 - Rate limiting on sensitive operations
 - Implemented in: `src/shared/ipcValidation.ts`, `src/main/ipcHandlersValidation.ts`
 
+**Cache Handler Validation:**
+
+- Cache IPC handlers (`CACHE_READ`, `CACHE_WRITE`, `CACHE_SNAPSHOT`) validate the `collection` parameter against a hard-coded allowlist of known collection names (e.g. `contacts`, `servers`, `oncall`, `notes`, `alert_history`, etc.)
+- `CACHE_WRITE` additionally validates the `action` parameter against an allowlist of `create | update | delete` and rejects non-object records
+- Invalid requests are logged and silently dropped — no data is returned or written
+- Implemented in: `src/main/handlers/cacheHandlers.ts`
+
+**Backup Restore Validation:**
+
+- Backup filenames are validated with a strict regex (`/^[\w.-]+\.zip$/`) and explicitly reject path traversal sequences (`..`)
+- This prevents an attacker from tricking the restore handler into overwriting arbitrary files outside the backup directory
+- After a successful restore, the offline cache is invalidated to prevent serving stale data
+- Implemented in: `src/main/handlers/backupHandlers.ts`
+
 **Data Validation:**
 
 - CSV imports are validated for encoding, structure, and content
 - Phone numbers, emails, and other fields are sanitized
 - Size limits enforced on file uploads and imports
+
+### Error Handling
+
+**Uncaught Exceptions:**
+
+- Uncaught exceptions display a synchronous dialog with **Quit** and **Continue** buttons (default: Quit)
+- Choosing "Continue" logs a warning and lets the user keep working — useful for non-fatal errors that would otherwise force-quit the app
+- The error message is shown to the user in the dialog
+
+**Unhandled Promise Rejections:**
+
+- Tracked with a rolling-window counter (3 rejections within 60 seconds triggers a notification)
+- When the threshold is exceeded, a stability warning is broadcast to all renderer windows via `app:error-notification`
+- The counter resets after each notification to prevent spam
+
+Implemented in: `src/main/app/errorHandlers.ts`
+
+### Log Redaction
+
+All structured log data passes through PII redaction (`src/shared/logRedaction.ts`) before being written:
+
+- **Key-based redaction:** Fields matching sensitive key patterns (`password`, `token`, `api_key`, `secret`, `email`, `phone`, `address`, etc.) are replaced with `[REDACTED]`
+- **String-value scanning:** All string values (including `Error.message` and `Error.stack`) are scanned for email addresses and phone numbers, which are replaced with `[REDACTED_EMAIL]` and `[REDACTED_PHONE]` respectively
+- **Error objects:** `Error` instances are serialized to `{ name, message, stack }` with PII redaction applied to `message` and `stack`
+- **Circular reference protection:** Object graphs with circular references are safely handled with `[Circular]` placeholders
+
+### Auxiliary Window Limits
+
+The app enforces a hard limit of **5 simultaneous auxiliary windows** (`MAX_AUX_WINDOWS` in `src/main/app/windowFactory.ts`). When the limit is reached, further `createAuxWindow` requests are silently rejected with a warning log. Destroyed windows are cleaned up before each check.
 
 ### Data Integrity
 
@@ -282,6 +342,15 @@ Organizations using this application should assess their specific compliance req
 
 ## Version History
 
+- **1.1.0** (2026-03-27): Updated to reflect current codebase
+  - Documented cache handler validation (collection allowlist, action validation)
+  - Documented backup restore filename validation (path traversal protection)
+  - Documented rate limiter buckets with current configuration
+  - Documented uncaughtException "Continue" option and unhandled rejection threshold
+  - Documented PII log redaction (including Error message/stack scanning)
+  - Documented auxiliary window limit (max 5)
+  - Updated credential management with nonce expiry, cache TTL, and cleanup details
+
 - **1.0.0** (2026-01-24): Initial security documentation
   - Documented current security architecture
   - Established threat model
@@ -289,6 +358,6 @@ Organizations using this application should assess their specific compliance req
 
 ---
 
-**Last Updated:** 2026-01-24  
-**Reviewed By:** Security Agent  
-**Next Review:** 2026-07-24
+**Last Updated:** 2026-03-27
+**Reviewed By:** Security Agent
+**Next Review:** 2026-09-27
