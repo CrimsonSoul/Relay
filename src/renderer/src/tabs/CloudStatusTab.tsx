@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { TabFallback } from '../components/TabFallback';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { ProviderIcon } from '../components/icons/ProviderIcons';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
@@ -333,6 +334,11 @@ export const CloudStatusTab: React.FC<{
           )}
         </span>
       </div>
+
+      <StatusBar
+        left={<StatusBarLive label="Auto-refreshing" />}
+        right={<span>{CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored</span>}
+      />
     </div>
   );
 };
