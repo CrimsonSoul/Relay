@@ -26,6 +26,7 @@ import {
 } from '@dnd-kit/sortable';
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
@@ -414,6 +415,14 @@ export const PersonnelTab: React.FC<{
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
+      <StatusBar
+        left={<StatusBarLive label="Synced" />}
+        right={
+          <span>
+            {teams.length} {teams.length === 1 ? 'team' : 'teams'}
+          </span>
+        }
+      />
     </div>
   );
 };
