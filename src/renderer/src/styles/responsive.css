@@ -194,7 +194,6 @@
 
 /* High Visibility Focus */
 :focus-visible {
-  outline: 3px solid rgba(225, 29, 72, 0.6) !important;
-  outline-offset: 3px !important;
-  border-radius: 8px !important;
+  outline: 3px solid var(--color-accent) !important;
+  outline-offset: 2px !important;
 }
