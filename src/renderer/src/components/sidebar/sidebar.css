@@ -184,9 +184,6 @@
 .sidebar {
   width: var(--sidebar-width-collapsed);
   background-color: var(--chrome-bg);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
-  background-position: var(--chrome-pattern-position);
   border-right: 1px solid rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;

@@ -254,9 +254,6 @@ body {
   justify-content: space-between;
   padding: 0 32px;
   background-color: var(--chrome-bg);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
-  background-position: var(--chrome-pattern-position);
   -webkit-app-region: drag;
   flex-shrink: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);

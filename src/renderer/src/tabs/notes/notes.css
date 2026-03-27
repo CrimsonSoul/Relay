@@ -183,9 +183,6 @@
 .note-card {
   position: relative;
   background-color: var(--color-bg-card);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size, 200px 200px);
-  background-position: var(--surface-pattern-position);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 10px;
   padding: 16px 20px;
@@ -440,8 +437,6 @@
   display: flex;
   flex-direction: column;
   background-color: var(--color-bg-chrome);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   box-shadow: var(--shadow-modal);

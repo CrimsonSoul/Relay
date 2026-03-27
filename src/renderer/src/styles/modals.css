@@ -25,9 +25,6 @@
   width: 100%;
   max-width: 520px;
   background-color: var(--color-bg-surface-opaque);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   padding: 0;
@@ -280,9 +277,6 @@
   margin: 0;
   padding: 0;
   background-color: var(--color-bg-surface-opaque);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   border: var(--border-medium);
   border-radius: var(--radius-xl);
   max-width: 90vw;
@@ -352,9 +346,6 @@
 /* Search Dropdown (anchored to header search bar) */
 .search-dropdown {
   background-color: var(--color-bg-chrome);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
-  background-position: var(--chrome-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   box-shadow: var(--shadow-modal);

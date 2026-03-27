@@ -227,9 +227,6 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 10px;
   background-color: var(--color-bg-card);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
 }
 
 .alerts-form-section {
@@ -463,9 +460,6 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 10px;
   background-color: var(--color-bg-card);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   overflow: hidden;
 }
 

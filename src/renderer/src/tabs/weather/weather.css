@@ -28,9 +28,6 @@
   width: 100%;
   max-width: 420px;
   background-color: var(--color-bg-surface-opaque);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   box-shadow: var(--shadow-modal);

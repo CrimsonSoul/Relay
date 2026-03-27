@@ -528,9 +528,6 @@ input.tactile-input.tactile-input:focus {
   z-index: 9999;
   transform: translateX(-50%);
   background-color: var(--color-bg-chrome);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
-  background-position: var(--chrome-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   box-shadow: var(--shadow-modal);
@@ -585,9 +582,6 @@ input.tactile-input.tactile-input:focus {
   align-items: center;
   padding: 0 32px;
   background-color: var(--chrome-bg);
-  background-image: var(--chrome-pattern);
-  background-size: var(--chrome-pattern-size);
-  background-position: var(--chrome-pattern-position);
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
@@ -703,9 +697,6 @@ body.modal-open {
   width: 100%;
   max-width: 520px;
   background-color: var(--color-bg-surface-opaque);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
   box-shadow: var(--shadow-modal);
@@ -1155,9 +1146,6 @@ body.modal-open {
   margin-bottom: 12px;
   padding: 8px 12px;
   background-color: var(--color-bg-card);
-  background-image: var(--surface-pattern);
-  background-size: var(--surface-pattern-size);
-  background-position: var(--surface-pattern-position);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   flex-shrink: 0;
