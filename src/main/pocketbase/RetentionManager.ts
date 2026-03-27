@@ -38,7 +38,17 @@ export class RetentionManager {
   ): Promise<void> {
     for (let i = 0; i < records.length; i += chunkSize) {
       const chunk = records.slice(i, i + chunkSize);
-      await Promise.all(chunk.map((r) => this.pb.collection(collection).delete(r.id)));
+      const results = await Promise.allSettled(
+        chunk.map((r) => this.pb.collection(collection).delete(r.id)),
+      );
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          logger.error('Failed to delete record during retention cleanup', {
+            collection,
+            error: result.reason,
+          });
+        }
+      }
     }
   }
 

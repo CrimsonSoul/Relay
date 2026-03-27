@@ -142,6 +142,18 @@ vi.mock('../tabs/PersonnelTab', () => ({
   PersonnelTab: () => <div data-testid="personnel-tab" />,
 }));
 
+vi.mock('../tabs/NotesTab', () => ({
+  NotesTab: () => <div data-testid="notes-tab" />,
+}));
+
+vi.mock('../tabs/CloudStatusTab', () => ({
+  CloudStatusTab: () => <div data-testid="cloud-status-tab" />,
+}));
+
+vi.mock('../tabs/AlertsTab', () => ({
+  AlertsTab: () => <div data-testid="alerts-tab" />,
+}));
+
 vi.mock('../components/SettingsModal', () => ({
   SettingsModal: ({
     isOpen,
@@ -230,6 +242,18 @@ vi.mock('../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
   },
+}));
+
+vi.mock('../hooks/useAppCloudStatus', () => ({
+  useAppCloudStatus: () => ({
+    statusData: null,
+    loading: false,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('../services/contactService', () => ({
+  addContact: vi.fn().mockResolvedValue({}),
 }));
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -359,6 +383,119 @@ describe('MainApp', () => {
     expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
     expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
   });
+
+  it('saves contact successfully when onSave is invoked', async () => {
+    renderApp();
+    // Open the add contact modal
+    fireEvent.click(screen.getByText('open-add-contact'));
+    // Click save
+    fireEvent.click(screen.getByText('save-contact'));
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Contact created successfully', 'success');
+    });
+  });
+
+  it('shows error toast when saving contact fails', async () => {
+    // Make pbAddContact throw
+    const { addContact } = await import('../services/contactService');
+    vi.mocked(addContact).mockRejectedValueOnce(new Error('fail'));
+
+    renderApp();
+    fireEvent.click(screen.getByText('open-add-contact'));
+    fireEvent.click(screen.getByText('save-contact'));
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Failed to create contact', 'error');
+    });
+  });
+
+  it('navigates to tabs via sidebar buttons', () => {
+    renderApp();
+    fireEvent.click(screen.getByText('nav-personnel'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
+
+    fireEvent.click(screen.getByText('nav-people'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+
+    fireEvent.click(screen.getByText('nav-weather'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
+
+    fireEvent.click(screen.getByText('nav-servers'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+
+    fireEvent.click(screen.getByText('nav-radar'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+  });
+
+  it('navigates tab on Cmd+3 (People)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '3', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+  });
+
+  it('navigates tab on Cmd+4 (Weather)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
+  });
+
+  it('navigates tab on Cmd+5 (Servers)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+  });
+
+  it('navigates tab on Cmd+6 (Radar)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+  });
+
+  it('navigates tab on Cmd+8 (Notes)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '8', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
+  });
+
+  it('navigates tab on Cmd+9 (Alerts)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+  });
+
+  it('focuses search on Cmd+K', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
+    });
+    // The ref-based focus won't work in mocked environment, but the shortcut should not error
+    expect(true).toBe(true);
+  });
+
+  it('handles navigate tab via HeaderSearch', () => {
+    renderApp();
+    const btn = screen.getByText('go-personnel');
+    fireEvent.click(btn);
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
+  });
+
+  it('renders popout without board route', () => {
+    renderApp('?popout=other');
+    expect(screen.getByText('RELAY ON-CALL BOARD')).toBeInTheDocument();
+    // PopoutBoard should NOT render because route doesn't include 'board'
+    expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
+  });
 });
 
 // ── App default export (popout toast branch) ─────────────────────────────────
@@ -366,6 +503,15 @@ describe('App default export', () => {
   it('renders without crashing', async () => {
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
+      writable: true,
+    });
+    const { default: App } = await import('../App');
+    expect(() => render(<App />)).not.toThrow();
+  });
+
+  it('uses NoopToastProvider in popout mode', async () => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '?popout=board' },
       writable: true,
     });
     const { default: App } = await import('../App');

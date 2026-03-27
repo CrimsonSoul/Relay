@@ -2,7 +2,7 @@ import { app, BrowserWindow } from 'electron';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
-import { state } from './appState';
+import { getMainWindow, setMainWindow } from './appState';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
 import { isTrustedWebviewUrl } from '../securityPolicy';
 import { setupSecurityHeaders } from './securityHeaders';
@@ -15,7 +15,7 @@ const mainDir = dirname(fileURLToPath(import.meta.url));
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
 
-  state.mainWindow = new BrowserWindow({
+  const mainWindow = new BrowserWindow({
     width: 960,
     height: 800,
     minWidth: 400,
@@ -41,32 +41,33 @@ export async function createWindow(): Promise<void> {
       }),
     },
   });
+  setMainWindow(mainWindow);
 
-  setupWindowListeners(state.mainWindow);
+  setupWindowListeners(mainWindow);
 
   // Configure spellchecker languages
-  state.mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);
+  mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);
 
-  state.mainWindow.on('close', () => {
+  mainWindow.on('close', () => {
     // Close all other windows when the main window is closed
     BrowserWindow.getAllWindows().forEach((win) => {
-      if (win !== state.mainWindow) win.close();
+      if (win !== getMainWindow()) win.close();
     });
   });
 
   setupSecurityHeaders(isDev);
 
-  state.mainWindow.once('ready-to-show', () => {
-    state.mainWindow?.show();
-    state.mainWindow?.focus();
+  mainWindow.once('ready-to-show', () => {
+    getMainWindow()?.show();
+    getMainWindow()?.focus();
     loggers.main.debug('ready-to-show fired');
   });
 
   if (isDev) {
-    await state.mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
+    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
   } else {
     const indexPath = join(mainDir, '../renderer/index.html');
-    state.mainWindow.loadFile(indexPath).catch((err) => {
+    mainWindow.loadFile(indexPath).catch((err) => {
       loggers.main.error('Failed to load local index.html', {
         path: indexPath,
         error: err.message,
@@ -75,7 +76,7 @@ export async function createWindow(): Promise<void> {
     });
   }
 
-  state.mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
@@ -91,7 +92,7 @@ export async function createWindow(): Promise<void> {
 
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)
   const allowedFilePath = join(mainDir, '../renderer/');
-  state.mainWindow.webContents.on('will-navigate', (event, url) => {
+  mainWindow.webContents.on('will-navigate', (event, url) => {
     // Allow dev server and local file reloads
     if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
     // Only allow file:// navigation within the app's renderer directory
@@ -104,23 +105,45 @@ export async function createWindow(): Promise<void> {
   });
 
   // Block window.open() from the renderer (H-1)
-  state.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     loggers.security.warn(`Blocked window.open() attempt: ${url}`);
     return { action: 'deny' };
   });
 
-  setupContextMenu(state.mainWindow);
+  setupContextMenu(mainWindow);
 
-  state.mainWindow.on('closed', () => {
-    state.mainWindow = null;
+  mainWindow.on('closed', () => {
+    setMainWindow(null);
   });
 }
+
+const MAX_AUX_WINDOWS = 5;
+/** Track open aux windows by route so we can focus existing ones and enforce limits. */
+const auxWindows = new Map<string, BrowserWindow>();
 
 export async function createAuxWindow(route: string): Promise<void> {
   if (!ALLOWED_AUX_ROUTES.has(route)) {
     loggers.security.warn(`Blocked aux window with invalid route: ${route}`);
     return;
   }
+
+  // If an aux window for this route already exists, focus it instead
+  const existing = auxWindows.get(route);
+  if (existing && !existing.isDestroyed()) {
+    existing.focus();
+    return;
+  }
+
+  // Enforce max aux window limit
+  // Clean up destroyed entries first
+  for (const [r, win] of auxWindows) {
+    if (win.isDestroyed()) auxWindows.delete(r);
+  }
+  if (auxWindows.size >= MAX_AUX_WINDOWS) {
+    loggers.main.warn(`Aux window limit reached (${MAX_AUX_WINDOWS}), not opening: ${route}`);
+    return;
+  }
+
   const auxWindow = new BrowserWindow({
     width: 960,
     height: 800,
@@ -138,6 +161,12 @@ export async function createAuxWindow(route: string): Promise<void> {
   });
 
   setupWindowListeners(auxWindow);
+
+  // Track aux window and clean up on close
+  auxWindows.set(route, auxWindow);
+  auxWindow.on('closed', () => {
+    auxWindows.delete(route);
+  });
 
   // Prevent aux window navigation hijacking
   const auxAllowedFilePath = join(mainDir, '../renderer/');

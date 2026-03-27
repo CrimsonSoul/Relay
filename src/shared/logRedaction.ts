@@ -9,7 +9,7 @@ const CIRCULAR = '[Circular]';
 const EMAIL_PATTERN =
   // eslint-disable-next-line sonarjs/slow-regex -- applied to short, bounded log strings; backtracking risk is negligible
   /[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,6}/g;
-const PHONE_PATTERN = /(?:\+?\d[\d\s\-().]{5,}\d)/g;
+const PHONE_PATTERN = /(?:\+?\d(?:[\d\s\-().]*\d){6,})/g;
 
 const SENSITIVE_KEY_PATTERNS = [
   /password/i,
@@ -48,8 +48,8 @@ function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: value.message,
-      stack: value.stack,
+      message: redactPiiInString(value.message),
+      stack: value.stack ? redactPiiInString(value.stack) : undefined,
     };
   }
 

@@ -24,6 +24,7 @@ export async function fetchGoogleCloudProvider(): Promise<CloudStatusItem[]> {
   const res = await fetch(GOOGLE_CLOUD_INCIDENTS_URL, {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${GOOGLE_CLOUD_INCIDENTS_URL}`);

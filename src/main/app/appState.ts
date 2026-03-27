@@ -30,7 +30,7 @@ export interface AppState {
   syncManager: SyncManager | null;
 }
 
-export const state: AppState = {
+const state: AppState = {
   mainWindow: null,
   currentDataRoot: '',
   appConfig: null,
@@ -42,6 +42,82 @@ export const state: AppState = {
   pendingChanges: null,
   syncManager: null,
 };
+
+const log = loggers.main;
+
+// --- Getters ---
+export function getMainWindow() {
+  return state.mainWindow;
+}
+export function getCurrentDataRoot() {
+  return state.currentDataRoot;
+}
+export function getAppConfig() {
+  return state.appConfig;
+}
+export function getPbProcess() {
+  return state.pbProcess;
+}
+export function getBackupManager() {
+  return state.backupManager;
+}
+export function getRetentionManager() {
+  return state.retentionManager;
+}
+export function getPbClient() {
+  return state.pbClient;
+}
+export function getOfflineCache() {
+  return state.offlineCache;
+}
+export function getPendingChanges() {
+  return state.pendingChanges;
+}
+export function getSyncManager() {
+  return state.syncManager;
+}
+
+// --- Setters ---
+export function setMainWindow(win: BrowserWindow | null) {
+  log.debug('appState.mainWindow changed');
+  state.mainWindow = win;
+}
+export function setCurrentDataRoot(root: string) {
+  log.debug('appState.currentDataRoot changed', { path: root });
+  state.currentDataRoot = root;
+}
+export function setAppConfig(config: AppConfig | null) {
+  log.debug('appState.appConfig changed');
+  state.appConfig = config;
+}
+export function setPbProcess(proc: PocketBaseProcess | null) {
+  log.debug('appState.pbProcess changed');
+  state.pbProcess = proc;
+}
+export function setBackupManager(mgr: BackupManager | null) {
+  log.debug('appState.backupManager changed');
+  state.backupManager = mgr;
+}
+export function setRetentionManager(mgr: RetentionManager | null) {
+  log.debug('appState.retentionManager changed');
+  state.retentionManager = mgr;
+}
+export function setPbClient(client: PocketBase | null) {
+  log.debug('appState.pbClient changed');
+  state.pbClient = client;
+}
+export function setOfflineCache(cache: OfflineCache | null) {
+  log.debug('appState.offlineCache changed');
+  state.offlineCache = cache;
+}
+export function setPendingChanges(changes: PendingChanges | null) {
+  log.debug('appState.pendingChanges changed');
+  state.pendingChanges = changes;
+}
+export function setSyncManager(mgr: SyncManager | null) {
+  log.debug('appState.syncManager changed');
+  state.syncManager = mgr;
+}
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
 export const getBundledDataPath = () =>

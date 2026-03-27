@@ -68,8 +68,12 @@ export class BackupManager {
       }))
       .sort((a, b) => b.mtime - a.mtime);
     for (const file of files.slice(this.maxBackups)) {
-      rmSync(file.path);
-      logger.info('Pruned old backup', { path: file.path });
+      try {
+        rmSync(file.path);
+        logger.info('Pruned old backup', { path: file.path });
+      } catch (err) {
+        logger.warn('Failed to prune backup', { path: file.path, error: err });
+      }
     }
   }
 

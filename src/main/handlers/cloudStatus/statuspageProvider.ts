@@ -34,6 +34,7 @@ export async function fetchStatuspageProvider(
     cache: 'no-store',
     headers: { Accept: 'application/json' },
     redirect: 'follow',
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);

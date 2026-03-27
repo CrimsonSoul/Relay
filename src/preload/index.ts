@@ -58,10 +58,10 @@ const api: BridgeAPI = {
   // On-Call Alert Dismissal Sync
   notifyAlertDismissed: (type) => ipcRenderer.send(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type),
   onAlertDismissed: (callback) => {
-    const handler = (_event: unknown, type: string) => callback(type);
-    ipcRenderer.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler as never);
+    const handler = (_event: Electron.IpcRendererEvent, type: string) => callback(type);
+    ipcRenderer.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler);
     return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler as never);
+      ipcRenderer.removeListener(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, handler);
     };
   },
 

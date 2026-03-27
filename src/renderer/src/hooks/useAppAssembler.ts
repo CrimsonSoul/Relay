@@ -1,10 +1,8 @@
 import { useState, useCallback } from 'react';
-import { Contact } from '@shared/ipc';
-
-export type Tab = 'Compose' | 'Personnel' | 'People' | 'Servers' | 'Radar' | 'Weather' | 'AI';
+import { Contact, TabName } from '@shared/ipc';
 
 export function useAppAssembler() {
-  const [activeTab, setActiveTab] = useState<Tab>('Compose');
+  const [activeTab, setActiveTab] = useState<TabName>('Compose');
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
@@ -49,7 +47,7 @@ export function useAppAssembler() {
     });
   }, []);
 
-  const handleTabChange = useCallback((tab: Tab) => {
+  const handleTabChange = useCallback((tab: TabName) => {
     setActiveTab(tab);
   }, []);
 

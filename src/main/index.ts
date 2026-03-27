@@ -8,12 +8,31 @@ import { SyncManager } from './cache/SyncManager';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 import { validateEnv } from './env';
-import { state, getDataRoot, setupIpc, setupPermissions } from './app/appState';
+import {
+  getMainWindow,
+  getDataRoot,
+  setupIpc,
+  setupPermissions,
+  getAppConfig,
+  setAppConfig,
+  getCurrentDataRoot,
+  setCurrentDataRoot,
+  getPbProcess,
+  setPbProcess,
+  getRetentionManager,
+  setRetentionManager,
+  getOfflineCache,
+  setOfflineCache,
+  getPendingChanges,
+  setPendingChanges,
+  setSyncManager,
+} from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { isTrustedWebviewUrl } from './securityPolicy';
+import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -30,9 +49,10 @@ const gotLock = app.requestSingleInstanceLock();
 if (gotLock) {
   app.on('second-instance', () => {
     // Someone tried to run a second instance, we should focus our window.
-    if (state.mainWindow) {
-      if (state.mainWindow.isMinimized()) state.mainWindow.restore();
-      state.mainWindow.focus();
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
     }
   });
 
@@ -86,19 +106,28 @@ if (gotLock) {
 
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
-      state.appConfig = new AppConfig(configDataDir);
+      setAppConfig(new AppConfig(configDataDir));
 
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
       try {
-        state.currentDataRoot = await getDataRoot();
-        loggers.main.info('Data root:', { path: state.currentDataRoot });
+        setCurrentDataRoot(await getDataRoot());
+        loggers.main.info('Data root:', { path: getCurrentDataRoot() });
       } catch (error) {
         loggers.main.error('Failed to initialize data root', { error });
       }
 
+      if (!getCurrentDataRoot()) {
+        dialog.showErrorBox(
+          'Critical Startup Error',
+          'Failed to initialize data root directory. The application cannot continue.',
+        );
+        app.quit();
+        return;
+      }
+
       // Start PocketBase if already configured in server mode
-      const relayConfig = state.appConfig.load();
+      const relayConfig = getAppConfig()!.load();
       if (relayConfig && relayConfig.mode === 'server') {
         await startPocketBase(relayConfig as ServerConfig, configDataDir);
       }
@@ -116,9 +145,12 @@ if (gotLock) {
             .collection('_pb_users_auth_')
             .authWithPassword('relay@relay.app', clientConfig.secret);
 
-          state.offlineCache = new OfflineCache(join(configDataDir, 'cache.db'));
-          state.pendingChanges = new PendingChanges(join(configDataDir, 'pending_changes.db'));
-          state.syncManager = new SyncManager(syncPb);
+          setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
+          setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));
+          // SyncManager is pre-built infrastructure for future offline-write support.
+          // Currently it processes pending changes when explicitly triggered via IPC,
+          // but no production code path enqueues changes into PendingChanges yet.
+          setSyncManager(new SyncManager(syncPb));
           loggers.pocketbase.info('Client-mode offline infrastructure initialized');
         } catch (syncErr) {
           loggers.pocketbase.warn(
@@ -132,11 +164,11 @@ if (gotLock) {
 
       // Register PocketBase IPC handlers
       ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
-        if (state.pbProcess?.isRunning()) {
+        if (getPbProcess()?.isRunning()) {
           // Server mode: renderer connects to localhost, not 0.0.0.0
-          return state.pbProcess.getLocalUrl();
+          return getPbProcess()!.getLocalUrl();
         }
-        const config = state.appConfig?.load();
+        const config = getAppConfig()?.load();
         if (config?.mode === 'client') {
           return config.serverUrl;
         }
@@ -145,7 +177,7 @@ if (gotLock) {
 
       // Start PocketBase on demand (called after first-time setup)
       ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
-        const config = state.appConfig?.load();
+        const config = getAppConfig()?.load();
         if (!config || config.mode !== 'server') return false;
         return startPocketBase(config as ServerConfig, configDataDir);
       });
@@ -157,39 +189,41 @@ if (gotLock) {
       // switch to a token-exchange approach where main authenticates and passes only the
       // PB auth token (not the master passphrase).
       ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {
-        const config = state.appConfig?.load();
+        const config = getAppConfig()?.load();
         return config?.secret ?? null;
       });
 
       const restartPb = async (): Promise<boolean> => {
-        const config = state.appConfig?.load();
+        const config = getAppConfig()?.load();
         if (!config || config.mode !== 'server') return false;
         return startPocketBase(config as ServerConfig, configDataDir);
       };
       setupIpc(createAuxWindow, restartPb);
       await createWindow();
+      startPeriodicCleanup();
       const cleanupMaintenance = setupMaintenanceTasks();
 
       // Graceful shutdown: clean up file watchers, timers, etc.
       app.on('before-quit', () => {
         loggers.main.info('App quitting — cleaning up resources');
+        stopPeriodicCleanup();
         cleanupMaintenance();
         // PocketBase cleanup — synchronous kill to ensure process dies before app exits
-        if (state.retentionManager) {
-          state.retentionManager.stop();
-          state.retentionManager = null;
+        if (getRetentionManager()) {
+          getRetentionManager()!.stop();
+          setRetentionManager(null);
         }
-        if (state.pbProcess) {
-          state.pbProcess.killSync();
-          state.pbProcess = null;
+        if (getPbProcess()) {
+          getPbProcess()!.killSync();
+          setPbProcess(null);
         }
-        if (state.offlineCache) {
-          state.offlineCache.close();
-          state.offlineCache = null;
+        if (getOfflineCache()) {
+          getOfflineCache()!.close();
+          setOfflineCache(null);
         }
-        if (state.pendingChanges) {
-          state.pendingChanges.close();
-          state.pendingChanges = null;
+        if (getPendingChanges()) {
+          getPendingChanges()!.close();
+          setPendingChanges(null);
         }
       });
 
@@ -197,6 +231,7 @@ if (gotLock) {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow().catch((error_) => {
             loggers.main.error('Failed to create window on app activate', { error: error_ });
+            app.quit();
           });
         }
       });

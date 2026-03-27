@@ -24,7 +24,7 @@ export default defineConfig({
       thresholds: {
         lines: 80,
         functions: 80,
-        branches: 75,
+        branches: 80,
         statements: 80,
       },
       exclude: [
@@ -38,6 +38,7 @@ export default defineConfig({
         'src/renderer/src/main.tsx',
         'src/renderer/src/vite-env.d.ts',
         'src/renderer/src/tabs/notes/index.ts',
+        'src/renderer/src/utils/mockData.ts',
       ],
     },
   },

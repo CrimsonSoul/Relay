@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { AppData, Contact, Server, BridgeGroup, OnCallRow } from '@shared/ipc';
+import { AppData, Contact, Server, OnCallRow } from '@shared/ipc';
 import { useCollection } from './useCollection';
 import type { ContactRecord } from '../services/contactService';
 import type { ServerRecord } from '../services/serverService';
 import type { BridgeGroupRecord } from '../services/bridgeGroupService';
+import { toGroup } from '../utils/transforms';
 import type { OnCallRecord } from '../services/oncallService';
 import { loggers } from '../utils/logger';
 import { getDevMockData } from '../utils/mockData';
@@ -41,17 +42,6 @@ function toServer(r: ServerRecord): Server {
       createdAt: new Date(r.created).getTime(),
       updatedAt: new Date(r.updated).getTime(),
     },
-  };
-}
-
-/** Convert a PocketBase BridgeGroupRecord to the app BridgeGroup type. */
-function toGroup(r: BridgeGroupRecord): BridgeGroup {
-  return {
-    id: r.id,
-    name: r.name,
-    contacts: r.contacts || [],
-    createdAt: new Date(r.created).getTime(),
-    updatedAt: new Date(r.updated).getTime(),
   };
 }
 

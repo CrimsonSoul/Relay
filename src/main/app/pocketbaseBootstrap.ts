@@ -6,7 +6,15 @@ import { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { BackupManager } from '../pocketbase/BackupManager';
 import { RetentionManager } from '../pocketbase/RetentionManager';
 import { ensureCollections } from '../pocketbase/CollectionBootstrap';
-import { state } from './appState';
+import {
+  getPbProcess,
+  setPbProcess,
+  getRetentionManager,
+  setRetentionManager,
+  setBackupManager,
+  setPbClient,
+} from './appState';
+import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
 /**
  * Ensure superuser and app user exist with the correct passphrase.
@@ -102,13 +110,13 @@ const doStartPocketBase = async (
   configDataDir: string,
 ): Promise<boolean> => {
   // If PB is already running (reconfigure), stop it so we can re-upsert credentials
-  if (state.pbProcess?.isRunning()) {
+  if (getPbProcess()?.isRunning()) {
     loggers.pocketbase.info('Stopping PocketBase for reconfigure');
-    if (state.retentionManager) {
-      state.retentionManager.stop();
-      state.retentionManager = null;
+    if (getRetentionManager()) {
+      getRetentionManager()!.stop();
+      setRetentionManager(null);
     }
-    await state.pbProcess.stop();
+    await getPbProcess()!.stop();
   }
 
   try {
@@ -130,38 +138,47 @@ const doStartPocketBase = async (
     // Upsert superuser via CLI BEFORE starting PB (no auth/server needed)
     ensureSuperuserSync(binaryPath, pbDataDir, serverConfig.secret);
 
-    state.pbProcess = new PocketBaseProcess({
+    const pbProcess = new PocketBaseProcess({
       binaryPath,
       dataDir: pbDataDir,
       host: '0.0.0.0',
       port: serverConfig.port,
     });
+    setPbProcess(pbProcess);
 
-    state.pbProcess.onCrash((error) => {
+    pbProcess.onCrash((error) => {
       loggers.pocketbase.error('PocketBase crashed', { error });
+      // Notify all renderer windows immediately so they can show an error
+      // state without waiting for the next health check poll.
+      broadcastToAllWindows('pb:crashed', { error });
     });
 
-    await state.pbProcess.start();
-    loggers.pocketbase.info('PocketBase started', { url: state.pbProcess.getUrl() });
+    await pbProcess.start();
+    loggers.pocketbase.info('PocketBase started', { url: pbProcess.getUrl() });
 
     // Ensure app user exists for remote client auth (superuser is localhost-only)
-    await ensureAppUser(state.pbProcess.getLocalUrl(), serverConfig.secret);
+    await ensureAppUser(pbProcess.getLocalUrl(), serverConfig.secret);
+
+    // Ensure collections exist before returning success — the renderer
+    // depends on them being available immediately after bootstrap resolves.
+    const localUrl = pbProcess.getLocalUrl();
+    const PocketBase = (await import('pocketbase')).default;
+    const pb = new PocketBase(localUrl);
+    await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
+    await ensureCollections(pb);
+    setPbClient(pb);
 
     // Fire-and-forget: backup and retention run in the background
-    // so the UI can proceed as soon as PB is up and the app user is ready.
-    const localUrl = state.pbProcess.getLocalUrl();
+    // so the UI can proceed as soon as PB is up and collections are ready.
     void (async () => {
-      state.backupManager = new BackupManager(configDataDir);
+      const backupMgr = new BackupManager(configDataDir);
+      setBackupManager(backupMgr);
       try {
-        const PocketBase = (await import('pocketbase')).default;
-        const pb = new PocketBase(localUrl);
-        await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
-        await ensureCollections(pb);
-        state.pbClient = pb;
-        state.backupManager.setPocketBase(pb);
-        await state.backupManager.backup();
-        state.retentionManager = new RetentionManager(pb);
-        state.retentionManager.startSchedule();
+        backupMgr.setPocketBase(pb);
+        await backupMgr.backup();
+        const retentionMgr = new RetentionManager(pb);
+        setRetentionManager(retentionMgr);
+        retentionMgr.startSchedule();
         loggers.pocketbase.info('Backup and retention managers started');
       } catch (retErr) {
         loggers.pocketbase.error('Failed to start backup/retention managers', {

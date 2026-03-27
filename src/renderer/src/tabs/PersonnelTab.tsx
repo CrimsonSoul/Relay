@@ -317,7 +317,7 @@ export const PersonnelTab: React.FC<{
           </ul>
         </SortableContext>
         <div aria-live="polite" className="sr-only">
-          {isDragging ? `Dragging team ${isDragging}` : ''}
+          {isDragging ? 'Dragging team' : ''}
         </div>
       </DndContext>
 

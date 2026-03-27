@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import type { SavedLocation } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
@@ -29,7 +29,7 @@ export function useSavedLocations() {
     refetch: reloadLocations,
   } = useCollection<SavedLocationRecord>('saved_locations', { sort: '-created' });
 
-  const locations = locationRecords.map(toSavedLocation);
+  const locations = useMemo(() => locationRecords.map(toSavedLocation), [locationRecords]);
 
   const saveLocation = useCallback(
     async (location: Omit<SavedLocation, 'id'>) => {

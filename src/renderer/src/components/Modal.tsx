@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { Tooltip } from './Tooltip';
@@ -30,6 +30,8 @@ export const Modal: React.FC<Props> = ({
   dialogClassName = 'modal-dialog-generic',
   dialogProps,
 }) => {
+  const titleId = useId();
+
   // Focus trap to prevent focus from leaving modal
   const focusTrapRef = useFocusTrap<HTMLDialogElement>(isOpen);
 
@@ -76,7 +78,7 @@ export const Modal: React.FC<Props> = ({
         className={`${dialogClassName} animate-scale-in`}
         style={{ width }}
         aria-modal="true"
-        aria-labelledby={title ? 'generic-modal-title' : undefined}
+        aria-labelledby={title ? titleId : undefined}
         {...dialogProps}
       >
         {bare ? (
@@ -86,7 +88,7 @@ export const Modal: React.FC<Props> = ({
             <div className="modal-accent-line" />
 
             <div className="modal-header-generic">
-              <h2 id="generic-modal-title" className="modal-title-generic">
+              <h2 id={titleId} className="modal-title-generic">
                 {title}
               </h2>
               <Tooltip content="Close" position="left">

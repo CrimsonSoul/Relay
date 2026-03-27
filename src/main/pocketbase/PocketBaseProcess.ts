@@ -1,4 +1,4 @@
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import { spawn, execFileSync, type ChildProcess } from 'child_process';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -91,8 +91,22 @@ export class PocketBaseProcess {
         resolve();
       }, 10000);
 
+      // Force kill after 5s if still alive — process.kill is synchronous,
+      // so the 'exit' event fires immediately after
+      const forceKillTimeout = setTimeout(() => {
+        if (this.child?.pid) {
+          logger.warn('PocketBase did not exit gracefully, force killing');
+          try {
+            process.kill(this.child.pid, 'SIGKILL');
+          } catch {
+            // already dead
+          }
+        }
+      }, 5000);
+
       this.child!.once('exit', () => {
         clearTimeout(safetyTimeout);
+        clearTimeout(forceKillTimeout);
         this.child = null;
         this.stopping = false;
         resolve();
@@ -106,19 +120,6 @@ export class PocketBaseProcess {
       } else {
         this.child!.kill('SIGTERM');
       }
-
-      // Force kill after 5s if still alive — process.kill is synchronous,
-      // so the 'exit' event fires immediately after
-      setTimeout(() => {
-        if (this.child?.pid) {
-          logger.warn('PocketBase did not exit gracefully, force killing');
-          try {
-            process.kill(this.child.pid, 'SIGKILL');
-          } catch {
-            // already dead
-          }
-        }
-      }, 5000);
     });
   }
 
@@ -130,8 +131,7 @@ export class PocketBaseProcess {
 
     try {
       if (process.platform === 'win32') {
-        // eslint-disable-next-line sonarjs/os-command
-        execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+        execFileSync('taskkill', ['/F', '/T', '/PID', pid.toString()], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
       } else {
         process.kill(pid, 'SIGKILL');
       }

@@ -53,7 +53,13 @@ export function setupIpcHandlers(
   safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot));
 
   // PocketBase Setup Handlers (always registered — uses getter for lazy access)
-  safeSetup('setup', () => setupSetupHandlers(getAppConfig ?? (() => null)));
+  safeSetup('setup', () =>
+    setupSetupHandlers(
+      getAppConfig ?? (() => null),
+      getCache ?? (() => null),
+      getPendingChanges ?? (() => null),
+    ),
+  );
 
   // Offline Cache Handlers (always registered — getters return null when not in client mode)
   safeSetup('cache', () =>
@@ -70,6 +76,7 @@ export function setupIpcHandlers(
     setupBackupHandlers(
       getBackupManager ?? (() => null),
       restartPb ?? (() => Promise.resolve(false)),
+      getCache ?? (() => null),
     ),
   );
 }

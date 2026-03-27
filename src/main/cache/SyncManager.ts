@@ -9,6 +9,12 @@ export interface SyncResult {
   overwrittenData?: Record<string, unknown>;
 }
 
+/**
+ * SyncManager — infrastructure prepared for future offline-write support.
+ * Processes PendingChange entries against the PocketBase server. Currently
+ * only triggered via the SYNC_PENDING IPC channel; no production code path
+ * enqueues changes into PendingChanges yet.
+ */
 export class SyncManager {
   constructor(private pb: PocketBase) {}
 
@@ -64,20 +70,34 @@ export class SyncManager {
         conflict = true;
         overwrittenData = { ...serverRecord };
 
-        await this.pb.collection('conflict_log').create({
-          collection,
-          recordId,
-          overwrittenData: serverRecord,
-          overwrittenBy: 'client',
-        });
+        // Wrap conflict_log write in its own try/catch so logging failure
+        // doesn't prevent the sync from completing.
+        try {
+          await this.pb.collection('conflict_log').create({
+            collection,
+            recordId,
+            overwrittenData: serverRecord,
+            overwrittenBy: 'client',
+          });
+        } catch (logErr) {
+          logger.error('Failed to write conflict log entry', {
+            collection,
+            recordId,
+            error: logErr,
+          });
+        }
 
         logger.warn('Conflict detected during sync', { collection, recordId });
       }
-    } catch {
-      // Record not found on server — apply as create
-      const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
-      await this.pb.collection(collection).create(createData);
-      return { conflict: false };
+    } catch (err: unknown) {
+      // Distinguish 404 (record not found → create) from other errors (rethrow)
+      const status = (err as { status?: number })?.status;
+      if (status === 404) {
+        const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
+        await this.pb.collection(collection).create(createData);
+        return { conflict: false };
+      }
+      throw err;
     }
 
     // Apply the client's version (last-write-wins)
@@ -95,8 +115,12 @@ export class SyncManager {
   private async applyDelete(collection: string, recordId: string): Promise<SyncResult> {
     try {
       await this.pb.collection(collection).delete(recordId);
-    } catch {
-      // Already deleted
+    } catch (err: unknown) {
+      // Only swallow 404 (already deleted); let network/auth errors propagate
+      const status = (err as { status?: number })?.status;
+      if (status !== 404) {
+        throw err;
+      }
     }
     return { conflict: false };
   }
@@ -104,21 +128,37 @@ export class SyncManager {
   async syncAll(
     changes: PendingChange[],
     onProgress?: (processed: number, total: number) => void,
-  ): Promise<{ total: number; conflicts: number; errors: string[] }> {
+  ): Promise<{
+    total: number;
+    conflicts: number;
+    synced: number[];
+    failed: { changeId: number; error: string }[];
+    errors: string[];
+  }> {
     let conflicts = 0;
-    const errors: string[] = [];
+    const synced: number[] = [];
+    const failed: { changeId: number; error: string }[] = [];
 
     for (let i = 0; i < changes.length; i++) {
       try {
         const result = await this.applyChange(changes[i]);
         if (result.conflict) conflicts++;
+        synced.push(changes[i].id);
       } catch (err) {
-        errors.push(`Failed to sync ${changes[i].collection}/${changes[i].action}: ${err}`);
+        const errorMsg = `Failed to sync ${changes[i].collection}/${changes[i].action}: ${err}`;
+        failed.push({ changeId: changes[i].id, error: errorMsg });
         logger.error('Sync error', { change: changes[i], error: err });
       }
       onProgress?.(i + 1, changes.length);
     }
 
-    return { total: changes.length, conflicts, errors };
+    // Keep errors array for backward compatibility
+    return {
+      total: changes.length,
+      conflicts,
+      synced,
+      failed,
+      errors: failed.map((f) => f.error),
+    };
   }
 }

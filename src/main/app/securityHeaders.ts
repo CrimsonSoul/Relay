@@ -1,5 +1,5 @@
 import { session } from 'electron';
-import { state } from './appState';
+import { getAppConfig } from './appState';
 
 /**
  * Install the CSP and security response headers on session.defaultSession.
@@ -16,7 +16,7 @@ export function setupSecurityHeaders(isDev: boolean): void {
     // Build connect-src entries for PocketBase (HTTP + WebSocket).
     // Both schemes are needed: HTTP for REST API calls, WS for realtime subscriptions.
     const pbConnectSrc = (() => {
-      const config = state.appConfig?.load();
+      const config = getAppConfig()?.load();
       if (config?.mode === 'server') {
         return `http://127.0.0.1:${config.port} ws://127.0.0.1:${config.port}`;
       }

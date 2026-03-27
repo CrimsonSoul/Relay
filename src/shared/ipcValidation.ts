@@ -197,12 +197,34 @@ export const SearchQuerySchema = z
   .refine((s) => !/[<>{}`;|$\\]/.test(s), 'Invalid characters in search query');
 
 export const ExportOptionsSchema = z.object({
-  format: z.enum(['json', 'csv']),
-  category: z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']),
+  format: z.enum(['json', 'csv', 'excel']),
+  category: z.enum([
+    'contacts',
+    'servers',
+    'oncall',
+    'groups',
+    'bridge_history',
+    'alert_history',
+    'notes',
+    'saved_locations',
+    'standalone_notes',
+    'all',
+  ]),
   includeMetadata: z.boolean().optional(),
 });
 
-export const DataCategorySchema = z.enum(['contacts', 'servers', 'oncall', 'groups', 'all']);
+export const DataCategorySchema = z.enum([
+  'contacts',
+  'servers',
+  'oncall',
+  'groups',
+  'bridge_history',
+  'alert_history',
+  'notes',
+  'saved_locations',
+  'standalone_notes',
+  'all',
+]);
 
 // ==================== Note Schemas ====================
 export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();

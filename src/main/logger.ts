@@ -293,14 +293,26 @@ class Logger implements ILogger {
 
       // Write main log queue (async)
       while (this.writeQueue.length > 0) {
-        const batch = this.writeQueue.splice(0, LOG_BATCH_SIZE).join('\n') + '\n';
-        await fsPromises.appendFile(this.currentLogFile, batch);
+        const batchItems = this.writeQueue.splice(0, LOG_BATCH_SIZE);
+        try {
+          await fsPromises.appendFile(this.currentLogFile, batchItems.join('\n') + '\n');
+        } catch (e) {
+          // Push failed batch back to front of queue so entries are not lost
+          this.writeQueue.unshift(...batchItems);
+          throw e;
+        }
       }
 
       // Write error log queue (async)
       while (this.errorQueue.length > 0) {
-        const batch = this.errorQueue.splice(0, LOG_BATCH_SIZE).join('\n') + '\n';
-        await fsPromises.appendFile(this.errorLogFile, batch);
+        const batchItems = this.errorQueue.splice(0, LOG_BATCH_SIZE);
+        try {
+          await fsPromises.appendFile(this.errorLogFile, batchItems.join('\n') + '\n');
+        } catch (e) {
+          // Push failed batch back to front of queue so entries are not lost
+          this.errorQueue.unshift(...batchItems);
+          throw e;
+        }
       }
     } catch (e) {
       console.error('[Logger] Failed to write to log file:', e);
@@ -435,4 +447,5 @@ export const loggers = {
   sync: logger.createChild('Sync'),
   backup: logger.createChild('Backup'),
   retention: logger.createChild('Retention'),
+  cache: logger.createChild('Cache'),
 };

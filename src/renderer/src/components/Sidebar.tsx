@@ -1,4 +1,5 @@
 import React from 'react';
+import { TabName } from '@shared/ipc';
 import { SidebarButton } from './sidebar/SidebarButton';
 import {
   ComposeIcon,
@@ -14,25 +15,14 @@ import {
   AppIcon,
 } from './sidebar/SidebarIcons';
 
-type Tab =
-  | 'Compose'
-  | 'Alerts'
-  | 'Personnel'
-  | 'People'
-  | 'Radar'
-  | 'Servers'
-  | 'Weather'
-  | 'Notes'
-  | 'Status';
-
 interface SidebarProps {
-  activeTab: Tab;
-  onTabChange: (tab: Tab) => void;
+  activeTab: TabName;
+  onTabChange: (tab: TabName) => void;
   onOpenSettings: () => void;
 }
 
 // Moved outside component to avoid recreation every render
-const navItems: { label: string; tab: Tab; icon: React.ReactNode }[] = [
+const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
   { label: 'Alerts', tab: 'Alerts', icon: <AlertsIcon /> },
   { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },

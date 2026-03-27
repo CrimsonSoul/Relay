@@ -20,6 +20,7 @@ export async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
   const res = await fetch(SALESFORCE_ACTIVE_URL, {
     cache: 'no-store',
     headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${SALESFORCE_ACTIVE_URL}`);

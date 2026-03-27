@@ -128,6 +128,13 @@ export function useNoteStorage() {
   const [notes, setNotes] = useState<StandaloneNote[]>([]);
   const initializedRef = useRef(false);
 
+  // Sequential queue to prevent persistence race conditions
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+
+  function enqueue(fn: () => Promise<void>): void {
+    queueRef.current = queueRef.current.then(fn, fn);
+  }
+
   useEffect(() => {
     if (!loading && pbNotes.length > 0) {
       setNotes(pbNotes);
@@ -150,7 +157,7 @@ export function useNoteStorage() {
         updatedAt: now,
       };
       setNotes((prev) => [optimistic, ...prev]);
-      void persistAddNote(note, tempId, setNotes, refetch);
+      enqueue(() => persistAddNote(note, tempId, setNotes, refetch));
 
       return optimistic;
     },
@@ -162,7 +169,7 @@ export function useNoteStorage() {
       setNotes((prev) =>
         prev.map((n) => (n.id === id ? { ...n, ...updates, updatedAt: Date.now() } : n)),
       );
-      void persistUpdateNote(id, updates, refetch);
+      enqueue(() => persistUpdateNote(id, updates, refetch));
     },
     [refetch],
   );
@@ -170,7 +177,7 @@ export function useNoteStorage() {
   const deleteNote = useCallback(
     (id: string) => {
       setNotes((prev) => prev.filter((n) => n.id !== id));
-      void persistDeleteNote(id, refetch);
+      enqueue(() => persistDeleteNote(id, refetch));
     },
     [refetch],
   );
@@ -192,7 +199,7 @@ export function useNoteStorage() {
       const updated = [...prev];
       updated.splice(idx + 1, 0, copy);
       const sourceIdx = updated.findIndex((n) => n.id === id);
-      void persistDuplicateNote(copy, tempId, sourceIdx + 1, setNotes);
+      enqueue(() => persistDuplicateNote(copy, tempId, sourceIdx + 1, setNotes));
       return updated;
     });
   }, []);
@@ -222,7 +229,7 @@ export function useNoteStorage() {
       }
 
       if (reordered !== prev) {
-        void persistSortOrder(reordered);
+        enqueue(() => persistSortOrder(reordered));
       }
       return reordered;
     });
@@ -255,7 +262,7 @@ export function useNoteStorage() {
         return byId.get(nextId) ?? note;
       });
 
-      void persistSortOrder(reordered);
+      enqueue(() => persistSortOrder(reordered));
       return reordered;
     });
   }, []);

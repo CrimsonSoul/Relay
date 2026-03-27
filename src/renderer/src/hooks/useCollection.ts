@@ -180,6 +180,7 @@ export function useCollection<T extends RecordModel>(
 
   // Subscribe to realtime changes — re-runs on reconnect via connectGeneration
   useEffect(() => {
+    let cancelled = false;
     void fetchData();
 
     if (!connectedRef.current) return;
@@ -195,14 +196,19 @@ export function useCollection<T extends RecordModel>(
       const unsubscribe = await getPb()
         .collection(collectionName)
         .subscribe('*', (e) => handleRealtimeEvent(collectionName, e.action, e.record));
+      if (cancelled) {
+        void unsubscribe();
+        return;
+      }
       subscriptionRef.current = unsubscribe;
     }
 
-    subscribe().catch((err: unknown) => {
+    void subscribe().catch((err: unknown) => {
       handleApiError(err);
     });
 
     return () => {
+      cancelled = true;
       subscriptionRef.current?.();
       subscriptionRef.current = null;
     };

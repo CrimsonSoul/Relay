@@ -68,12 +68,15 @@ export function useAssembler({
       const group = groups.find((g) => g.id === id);
       return group ? group.contacts : [];
     });
+    // Convert to Sets for O(1) lookups inside the filter/map loop
+    const removeSet = new Set(manualRemoves);
+    const addSet = new Set(manualAdds);
     // Create union without mutating in useMemo
     const unionSet = new Set([...fromGroups, ...manualAdds]);
-    const filtered = Array.from(unionSet).filter((email) => !manualRemoves.includes(email));
+    const filtered = Array.from(unionSet).filter((email) => !removeSet.has(email));
     const result = filtered.map((email) => ({
       email,
-      source: manualAdds.includes(email) ? 'manual' : 'group',
+      source: addSet.has(email) ? 'manual' : 'group',
     }));
 
     return result.sort((a, b) => {
@@ -177,21 +180,24 @@ export function useAssembler({
     ],
   );
 
-  const handleContactSaved = async (contact: Partial<Contact>) => {
-    try {
-      await pbAddContact({
-        name: contact.name || '',
-        email: contact.email || '',
-        phone: contact.phone || '',
-        title: contact.title || '',
-      });
-      if (contact.email) onAddManual(contact.email);
-      showToast('Contact created successfully', 'success');
-    } catch (e) {
-      loggers.app.error('[useAssembler] Failed to save contact', { error: e });
-      showToast('Failed to create contact', 'error');
-    }
-  };
+  const handleContactSaved = useCallback(
+    async (contact: Partial<Contact>) => {
+      try {
+        await pbAddContact({
+          name: contact.name || '',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          title: contact.title || '',
+        });
+        if (contact.email) onAddManual(contact.email);
+        showToast('Contact created successfully', 'success');
+      } catch (e) {
+        loggers.app.error('[useAssembler] Failed to save contact', { error: e });
+        showToast('Failed to create contact', 'error');
+      }
+    },
+    [onAddManual, showToast],
+  );
 
   return {
     sortConfig,

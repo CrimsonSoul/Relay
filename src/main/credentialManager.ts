@@ -34,6 +34,32 @@ const credentialCache = new Map<
 const NONCE_EXPIRY_MS = 5 * 60 * 1000;
 // Credential cache expiry (30 minutes)
 const CREDENTIAL_CACHE_EXPIRY_MS = 30 * 60 * 1000;
+// Periodic cleanup interval (60 seconds)
+const CLEANUP_INTERVAL_MS = 60 * 1000;
+
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * Start periodic cleanup of expired nonces and credentials.
+ * Called once during app startup — idempotent.
+ */
+export function startPeriodicCleanup(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    cleanupExpiredNonces();
+    cleanupExpiredCredentials();
+  }, CLEANUP_INTERVAL_MS);
+}
+
+/**
+ * Stop periodic cleanup. Called during app shutdown.
+ */
+export function stopPeriodicCleanup(): void {
+  if (cleanupTimer) {
+    clearInterval(cleanupTimer);
+    cleanupTimer = null;
+  }
+}
 
 /**
  * Generate a secure random nonce for auth request validation

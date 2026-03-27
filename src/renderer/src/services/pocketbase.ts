@@ -1,4 +1,5 @@
 import PocketBase from 'pocketbase';
+import { loggers } from '../utils/logger';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
 
@@ -35,7 +36,7 @@ function setConnectionState(state: ConnectionState): void {
   stateListeners.forEach((fn) => fn(state));
 }
 
-export async function authenticate(secret: string): Promise<boolean> {
+export async function authenticate(secret: string, skipHealthRestart = false): Promise<boolean> {
   const pb = getPb();
   setStoredSecret(secret);
 
@@ -45,10 +46,12 @@ export async function authenticate(secret: string): Promise<boolean> {
   try {
     await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
     setConnectionState('online');
-    startHealthCheck();
+    if (!skipHealthRestart) startHealthCheck();
     return true;
   } catch (appErr) {
-    console.warn('App user auth failed, trying superuser fallback', appErr);
+    loggers.network.warn('App user auth failed, trying superuser fallback', {
+      error: appErr instanceof Error ? appErr.message : String(appErr),
+    });
   }
 
   // Fall back to superuser (localhost only — useful during initial setup
@@ -56,10 +59,12 @@ export async function authenticate(secret: string): Promise<boolean> {
   try {
     await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
     setConnectionState('online');
-    startHealthCheck();
+    if (!skipHealthRestart) startHealthCheck();
     return true;
   } catch (suErr) {
-    console.error('All auth methods failed', suErr);
+    loggers.network.error('All auth methods failed', {
+      error: suErr instanceof Error ? suErr.message : String(suErr),
+    });
     return false;
   }
 }
@@ -84,18 +89,21 @@ export function startHealthCheck(intervalMs = 30000): void {
     try {
       const res = await fetch(`${getPb().baseURL}/api/health`);
       if (res.ok && connectionState !== 'online') {
-        setConnectionState('reconnecting');
-        // Re-authenticate if token expired during offline period
+        // Re-authenticate if token expired during offline period.
+        // Do NOT emit 'reconnecting' — subscribers listen for state changes
+        // and would resubscribe before auth is complete.
         if (!getPb().authStore.isValid && storedSecret) {
-          const reauthed = await authenticate(storedSecret);
+          const reauthed = await authenticate(storedSecret, true);
           if (!reauthed) {
-            console.warn('Re-authentication failed on reconnect');
+            loggers.network.warn('Re-authentication failed on reconnect');
             return;
           }
+          // authenticate already sets state to 'online' on success
         } else if (!getPb().authStore.isValid) {
           return;
+        } else {
+          setConnectionState('online');
         }
-        setConnectionState('online');
       } else if (!res.ok && connectionState === 'online') {
         setConnectionState('offline');
       }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useReducer, useRef, useCallback, useMemo, useEffect } from 'react';
 // html2canvas is dynamically imported on demand to reduce initial bundle size
 import { TactileButton } from '../components/TactileButton';
 import { CollapsibleHeader } from '../components/CollapsibleHeader';
@@ -22,26 +22,128 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/montserrat/800.css';
 
+interface AlertFormState {
+  severity: Severity;
+  subject: string;
+  bodyHtml: string;
+  sender: string;
+  recipient: string;
+  updateNumber: number;
+  eventTimeStart: string;
+  eventTimeEnd: string;
+  eventTimeSourceTz: string;
+  isCompact: boolean;
+  isEnhanced: boolean;
+}
+
+type AlertFormAction =
+  | { type: 'SET_FIELD'; field: keyof AlertFormState; value: AlertFormState[keyof AlertFormState] }
+  | { type: 'RESET' }
+  | { type: 'LOAD_HISTORY'; entry: AlertHistoryEntry };
+
+const initialFormState: AlertFormState = {
+  severity: 'INFO',
+  subject: '',
+  bodyHtml: '',
+  sender: '',
+  recipient: '',
+  updateNumber: 0,
+  eventTimeStart: '',
+  eventTimeEnd: '',
+  eventTimeSourceTz: 'America/Chicago',
+  isCompact: false,
+  isEnhanced: false,
+};
+
+function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
+  switch (action.type) {
+    case 'SET_FIELD':
+      return { ...state, [action.field]: action.value };
+    case 'RESET':
+      return initialFormState;
+    case 'LOAD_HISTORY':
+      return {
+        ...initialFormState,
+        severity: action.entry.severity,
+        subject: action.entry.subject,
+        bodyHtml: sanitizeHtml(action.entry.bodyHtml),
+        sender: action.entry.sender,
+        recipient: action.entry.recipient ?? '',
+      };
+    default:
+      return state;
+  }
+}
+
 export const AlertsTab: React.FC = () => {
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<AlertFormHandle>(null);
 
-  const [severity, setSeverity] = useState<Severity>('INFO');
-  const [subject, setSubject] = useState('');
-  const [bodyHtml, setBodyHtml] = useState('');
-  const [sender, setSender] = useState('');
-  const [recipient, setRecipient] = useState('');
+  const [form, dispatch] = useReducer(formReducer, initialFormState);
+  const {
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+    updateNumber,
+    eventTimeStart,
+    eventTimeEnd,
+    eventTimeSourceTz,
+    isCompact,
+    isEnhanced,
+  } = form;
+
+  const setSeverity = useCallback(
+    (v: Severity) => dispatch({ type: 'SET_FIELD', field: 'severity', value: v }),
+    [],
+  );
+  const setSubject = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'subject', value: v }),
+    [],
+  );
+  const setBodyHtml = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: v }),
+    [],
+  );
+  const setSender = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'sender', value: v }),
+    [],
+  );
+  const setRecipient = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'recipient', value: v }),
+    [],
+  );
+  const setUpdateNumber = useCallback(
+    (v: number) => dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: v }),
+    [],
+  );
+  const setEventTimeStart = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeStart', value: v }),
+    [],
+  );
+  const setEventTimeEnd = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeEnd', value: v }),
+    [],
+  );
+  const setEventTimeSourceTz = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeSourceTz', value: v }),
+    [],
+  );
+  const setIsCompact = useCallback(
+    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isCompact', value: v }),
+    [],
+  );
+  const setIsEnhanced = useCallback(
+    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: v }),
+    [],
+  );
+
   const [isCapturing, setIsCapturing] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
-  const [updateNumber, setUpdateNumber] = useState(0); // 0 = off, 1+ = "UPDATE #N"
-  const [eventTimeStart, setEventTimeStart] = useState('');
-  const [eventTimeEnd, setEventTimeEnd] = useState('');
-  const [eventTimeSourceTz, setEventTimeSourceTz] = useState('America/Chicago');
-  const [isCompact, setIsCompact] = useState(false);
-  const [isEnhanced, setIsEnhanced] = useState(false);
   const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
@@ -213,33 +315,14 @@ export const AlertsTab: React.FC = () => {
   );
 
   const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
-    setSeverity(entry.severity);
-    setSubject(entry.subject);
-    const safeBody = sanitizeHtml(entry.bodyHtml);
-    setBodyHtml(safeBody);
-    formRef.current?.setEditorContent(safeBody);
-    setSender(entry.sender);
-    setRecipient(entry.recipient ?? '');
-    setUpdateNumber(0);
-    setEventTimeStart('');
-    setEventTimeEnd('');
-    setIsCompact(false);
-    setIsEnhanced(false);
+    dispatch({ type: 'LOAD_HISTORY', entry });
+    formRef.current?.setEditorContent(sanitizeHtml(entry.bodyHtml));
     originalBodyRef.current = null;
   }, []);
 
   const handleClear = useCallback(() => {
-    setSeverity('INFO');
-    setSubject('');
-    setBodyHtml('');
+    dispatch({ type: 'RESET' });
     formRef.current?.setEditorContent('');
-    setSender('');
-    setRecipient('');
-    setUpdateNumber(0);
-    setEventTimeStart('');
-    setEventTimeEnd('');
-    setIsCompact(false);
-    setIsEnhanced(false);
     originalBodyRef.current = null;
     // logoDataUrl is intentionally NOT cleared — it's a persistent setting
   }, []);
@@ -367,7 +450,7 @@ export const AlertsTab: React.FC = () => {
       formRef.current?.setEditorContent(transformed);
     }
     setIsCompact(nextCompact);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms]);
+  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsCompact]);
 
   const handleToggleEnhanced = useCallback(() => {
     const nextEnhanced = !isEnhanced;
@@ -385,7 +468,7 @@ export const AlertsTab: React.FC = () => {
       formRef.current?.setEditorContent(transformed);
     }
     setIsEnhanced(nextEnhanced);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms]);
+  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsEnhanced]);
 
   return (
     <div className="alerts-tab">

@@ -54,7 +54,7 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     }
   }, [contextMenu]);
 
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (contextMenu) {
       try {
         const serverId = contextMenu.server.raw?.id;
@@ -66,19 +66,22 @@ export function useServers(servers: Server[], contacts: Contact[]) {
       }
       setContextMenu(null);
     }
-  };
-  const handleEdit = () => {
+  }, [contextMenu]);
+
+  const handleEdit = useCallback(() => {
     if (contextMenu) {
       setEditingServer(contextMenu.server);
       setIsAddModalOpen(true);
       setContextMenu(null);
     }
-  };
-  const editServer = (server: Server) => {
+  }, [contextMenu]);
+
+  const editServer = useCallback((server: Server) => {
     setEditingServer(server);
     setIsAddModalOpen(true);
-  };
-  const deleteServer = async (server: Server) => {
+  }, []);
+
+  const deleteServer = useCallback(async (server: Server) => {
     try {
       const serverId = server.raw?.id;
       if (serverId) {
@@ -87,11 +90,12 @@ export function useServers(servers: Server[], contacts: Contact[]) {
     } catch {
       // Errors surface via useCollection realtime updates
     }
-  };
-  const openAddModal = () => {
+  }, []);
+
+  const openAddModal = useCallback(() => {
     setEditingServer(undefined);
     setIsAddModalOpen(true);
-  };
+  }, []);
 
   return {
     sortOrder,

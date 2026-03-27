@@ -95,7 +95,14 @@ export class AppConfig {
   }
 
   isConfigured(): boolean {
-    return this.load() !== null;
+    if (!existsSync(this.configPath)) return false;
+    try {
+      const raw = readFileSync(this.configPath, 'utf-8');
+      JSON.parse(raw);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   getDataDir(): string {

@@ -1,4 +1,7 @@
 import Database from 'better-sqlite3';
+import { loggers } from '../logger';
+
+const logger = loggers.sync;
 
 export class OfflineCache {
   private db: Database.Database;
@@ -6,6 +9,7 @@ export class OfflineCache {
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
     this.db.pragma('journal_mode = WAL');
+    this.db.pragma('busy_timeout = 5000');
     this.init();
   }
 
@@ -21,26 +25,42 @@ export class OfflineCache {
   }
 
   writeCollection(collection: string, records: Record<string, unknown>[]): void {
-    const deleteStmt = this.db.prepare('DELETE FROM cache WHERE collection = ?');
-    const insertStmt = this.db.prepare(
-      'INSERT INTO cache (collection, record_id, data) VALUES (?, ?, ?)',
-    );
+    try {
+      const deleteStmt = this.db.prepare('DELETE FROM cache WHERE collection = ?');
+      const insertStmt = this.db.prepare(
+        'INSERT INTO cache (collection, record_id, data) VALUES (?, ?, ?)',
+      );
 
-    const transaction = this.db.transaction(() => {
-      deleteStmt.run(collection);
-      for (const record of records) {
-        const id = (record as { id?: string }).id || '';
-        insertStmt.run(collection, id, JSON.stringify(record));
-      }
-    });
+      const transaction = this.db.transaction(() => {
+        deleteStmt.run(collection);
+        for (const record of records) {
+          const id = (record as { id?: string }).id || '';
+          insertStmt.run(collection, id, JSON.stringify(record));
+        }
+      });
 
-    transaction();
+      transaction();
+    } catch (err) {
+      logger.error('Failed to write collection to cache', { collection, error: err });
+    }
   }
 
   readCollection(collection: string): Record<string, unknown>[] {
-    const stmt = this.db.prepare('SELECT data FROM cache WHERE collection = ?');
-    const rows = stmt.all(collection) as { data: string }[];
-    return rows.map((row) => JSON.parse(row.data));
+    try {
+      const stmt = this.db.prepare('SELECT data FROM cache WHERE collection = ?');
+      const rows = stmt.all(collection) as { data: string }[];
+      return rows.flatMap((row) => {
+        try {
+          return [JSON.parse(row.data)];
+        } catch {
+          logger.warn('Corrupt cache row skipped', { collection });
+          return [];
+        }
+      });
+    } catch (err) {
+      logger.error('Failed to read collection from cache', { collection, error: err });
+      return [];
+    }
   }
 
   updateRecord(
@@ -48,20 +68,32 @@ export class OfflineCache {
     action: 'create' | 'update' | 'delete',
     record: Record<string, unknown>,
   ): void {
-    const id = (record as { id?: string }).id || '';
+    try {
+      const id = (record as { id?: string }).id || '';
 
-    switch (action) {
-      case 'create':
-      case 'update':
-        this.db
-          .prepare('INSERT OR REPLACE INTO cache (collection, record_id, data) VALUES (?, ?, ?)')
-          .run(collection, id, JSON.stringify(record));
-        break;
-      case 'delete':
-        this.db
-          .prepare('DELETE FROM cache WHERE collection = ? AND record_id = ?')
-          .run(collection, id);
-        break;
+      switch (action) {
+        case 'create':
+        case 'update':
+          this.db
+            .prepare('INSERT OR REPLACE INTO cache (collection, record_id, data) VALUES (?, ?, ?)')
+            .run(collection, id, JSON.stringify(record));
+          break;
+        case 'delete':
+          this.db
+            .prepare('DELETE FROM cache WHERE collection = ? AND record_id = ?')
+            .run(collection, id);
+          break;
+      }
+    } catch (err) {
+      logger.error('Failed to update record in cache', { collection, action, error: err });
+    }
+  }
+
+  clear(): void {
+    try {
+      this.db.exec('DELETE FROM cache');
+    } catch (err) {
+      logger.error('Failed to clear offline cache', { error: err });
     }
   }
 

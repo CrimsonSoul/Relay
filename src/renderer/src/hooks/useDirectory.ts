@@ -54,12 +54,15 @@ export function useDirectory(
     return { groupMap, groupStringMap };
   }, [groups]);
 
-  const handleSort = (key: keyof Contact | 'groups') =>
-    setSortConfig((cur) =>
-      cur.key === key
-        ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' }
-        : { key, direction: 'asc' },
-    );
+  const handleSort = useCallback(
+    (key: keyof Contact | 'groups') =>
+      setSortConfig((cur) =>
+        cur.key === key
+          ? { key, direction: cur.direction === 'asc' ? 'desc' : 'asc' }
+          : { key, direction: 'asc' },
+      ),
+    [setSortConfig],
+  );
 
   const { getEffectiveContacts } = contactOps;
   const effectiveContacts = useMemo(() => getEffectiveContacts(), [getEffectiveContacts]);

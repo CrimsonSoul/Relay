@@ -93,6 +93,7 @@ export async function fetchRssProvider(
   const res = await fetch(url, {
     cache: 'no-store',
     headers: { Accept: 'application/rss+xml, application/xml, text/xml' },
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);

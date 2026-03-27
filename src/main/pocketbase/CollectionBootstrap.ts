@@ -199,15 +199,25 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   }
 
   // --- Prune stale collections ---
-  let pruned = 0;
-  for (const col of existingCollections) {
-    if (col.name.startsWith('_') || col.name === 'users') continue;
-    if (KNOWN_NAMES.has(col.name)) continue;
+  // Identify unknown collections not in the schema (excluding system and users).
+  const staleCols = existingCollections.filter(
+    (col) => !col.name.startsWith('_') && col.name !== 'users' && !KNOWN_NAMES.has(col.name),
+  );
 
+  if (staleCols.length > 0) {
+    const staleNames = staleCols.map((c) => c.name);
+    logger.warn(
+      `About to prune ${staleCols.length} unknown collection(s) not in schema: ${staleNames.join(', ')}. ` +
+        'If this is unexpected, restore from a PocketBase backup.',
+    );
+  }
+
+  let pruned = 0;
+  for (const col of staleCols) {
     try {
       await pb.collections.delete(col.id);
       pruned++;
-      logger.info(`Pruned stale collection: ${col.name}`);
+      logger.warn(`Pruned stale collection: ${col.name}`);
     } catch (err) {
       logger.error(`Failed to prune collection: ${col.name}`, { error: err });
     }
