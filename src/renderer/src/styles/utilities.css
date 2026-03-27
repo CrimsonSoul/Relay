@@ -54,12 +54,6 @@
   word-break: break-word;
 }
 
-/* Weather tab uses a denser type scale for forecast grids */
-.weather-font-surface,
-.weather-font-surface * {
-  font-family: var(--font-family-weather);
-}
-
 /* Hover Background Utility */
 .hover-bg {
   transition: background-color var(--transition-fast);

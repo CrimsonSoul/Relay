@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { TabFallback } from '../components/TabFallback';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { StatusBar } from '../components/StatusBar';
 import {
   WeatherAlertCard,
   HourlyForecast,
@@ -136,8 +137,20 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
     ? 'weather-forecast-column weather-scroll-container weather-tab-forecast-column'
     : 'weather-forecast-column weather-scroll-container weather-tab-forecast-column weather-forecast-column--hidden';
 
+  const statusLeft = location ? <span>{location.name}</span> : <span>No location set</span>;
+
+  const statusRight = weather ? (
+    <span>
+      {Math.round(weather.current_weather.temperature)}°F &middot; Updated{' '}
+      {new Date(weather.current_weather.time).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })}
+    </span>
+  ) : undefined;
+
   return (
-    <div className="weather-font-surface weather-scroll-container weather-tab-layout">
+    <div className="weather-scroll-container weather-tab-layout">
       <WeatherHeader
         location={location}
         activeSavedLocation={activeSavedLocation}
@@ -210,6 +223,8 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
         </div>
         <RadarPanel location={location} />
       </div>
+
+      <StatusBar left={statusLeft} right={statusRight} />
     </div>
   );
 };
