@@ -178,35 +178,51 @@ export const StatusIcon = () => (
   </svg>
 );
 
-export const AppIcon = () => (
-  <svg
-    width="32"
-    height="32"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="none"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <defs>
-      <linearGradient id="appIconGrad" x1="4" y1="6" x2="20" y2="18" gradientUnits="userSpaceOnUse">
-        <stop stopColor="#FCD34D" />
-        <stop offset="1" stopColor="#F59E0B" />
-      </linearGradient>
-    </defs>
-    <path
-      d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5"
-      stroke="url(#appIconGrad)"
-      strokeWidth="2.5"
-    />
-    <path
-      d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6"
-      stroke="url(#appIconGrad)"
-      strokeWidth="2.5"
-    />
-    <path d="M7 12h10" stroke="url(#appIconGrad)" strokeWidth="2.5" />
-    <circle cx="12" cy="12" r="2" fill="url(#appIconGrad)">
-      <animate attributeName="opacity" values="1;0.4;1" dur="2.5s" repeatCount="indefinite" />
-    </circle>
-  </svg>
-);
+export function AppIcon() {
+  return (
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+      <rect
+        x="1"
+        y="7.5"
+        width="7"
+        height="7"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        fill="none"
+      />
+      <circle cx="4.5" cy="11" r="1.2" fill="currentColor" />
+      <rect
+        x="16"
+        y="7.5"
+        width="7"
+        height="7"
+        rx="1.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        fill="none"
+      />
+      <circle cx="19.5" cy="11" r="1.2" fill="currentColor" />
+      <line
+        x1="8.5"
+        y1="11"
+        x2="15.5"
+        y2="11"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <circle cx="12" cy="11" r="1.3" fill="white">
+        <animateMotion
+          dur="1.8s"
+          repeatCount="indefinite"
+          path="M-3,0 L3,0"
+          keyTimes="0;0.45;0.55;1"
+          keyPoints="0;1;1;0"
+          calcMode="spline"
+          keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"
+        />
+      </circle>
+    </svg>
+  );
+}

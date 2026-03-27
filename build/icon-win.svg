@@ -1,71 +1,14 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Background gradient matching app theme -->
-    <linearGradient id="bg_gradient" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0c0e14"/>
-      <stop offset="1" stop-color="#060608"/>
-    </linearGradient>
-
-    <!-- Amber accent gradient -->
-    <linearGradient id="accent_gradient" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#fbbf24"/>
-      <stop offset="1" stop-color="#f59e0b"/>
-    </linearGradient>
-
-    <!-- Amber glow filter -->
-    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="10" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
-
-    <!-- Dot pattern layer 1: 23px grid, 0.12 opacity -->
-    <pattern id="dots1" x="0" y="0" width="23" height="23" patternUnits="userSpaceOnUse">
-      <circle cx="11.5" cy="11.5" r="1.2" fill="#f59e0b" opacity="0.12"/>
-    </pattern>
-
-    <!-- Dot pattern layer 2: 29px grid, offset, 0.09 opacity -->
-    <pattern id="dots2" x="13" y="19" width="29" height="29" patternUnits="userSpaceOnUse">
-      <circle cx="14.5" cy="14.5" r="1" fill="#f59e0b" opacity="0.09"/>
-    </pattern>
-
-    <!-- Dot pattern layer 3: 37px grid, offset, 0.07 opacity -->
-    <pattern id="dots3" x="7" y="31" width="37" height="37" patternUnits="userSpaceOnUse">
-      <circle cx="18.5" cy="18.5" r="0.8" fill="#f59e0b" opacity="0.07"/>
-    </pattern>
-
-    <!-- Clip to rounded rect shape -->
-    <clipPath id="shape">
-      <rect width="512" height="512" rx="115"/>
-    </clipPath>
-  </defs>
-
-  <g clip-path="url(#shape)">
-    <!-- Background -->
-    <rect width="512" height="512" fill="url(#bg_gradient)"/>
-
-    <!-- Dot pattern layers -->
-    <rect width="512" height="512" fill="url(#dots1)"/>
-    <rect width="512" height="512" fill="url(#dots2)"/>
-    <rect width="512" height="512" fill="url(#dots3)"/>
-
-    <!-- Subtle inner border -->
-    <rect x="2" y="2" width="508" height="508" rx="113" stroke="rgba(255,255,255,0.08)" stroke-width="4" fill="none"/>
-  </g>
-
-  <!-- Icon: Chain-link / Relay brackets -->
-  <g transform="translate(88, 88) scale(14)" stroke="url(#accent_gradient)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- Right bracket with glow -->
-    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5" filter="url(#glow)" stroke-opacity="0.5"/>
-    <path d="M16 6c2 0 3.5 1.5 3.5 3.5v5c0 2-1.5 3.5-3.5 3.5"/>
-
-    <!-- Left bracket with glow -->
-    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6" filter="url(#glow)" stroke-opacity="0.5"/>
-    <path d="M8 18c-2 0-3.5-1.5-3.5-3.5v-5C4.5 7.5 6 6 8 6"/>
-
-    <!-- Center connection line -->
-    <path d="M7 12h10"/>
-
-    <!-- Central node -->
-    <circle cx="12" cy="12" r="1.5" fill="url(#accent_gradient)" stroke="none"/>
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="56" fill="#0a0c12"/>
+  <rect x="1" y="1" width="254" height="254" rx="55" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+  <g transform="translate(128, 128)">
+    <rect x="-72" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="-54" cy="0" r="6" fill="#e11d48"/>
+    <rect x="36" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="54" cy="0" r="6" fill="#e11d48"/>
+    <line x1="-34" y1="0" x2="34" y2="0" stroke="#fb7185" stroke-width="5" stroke-linecap="round"/>
+    <circle r="7" fill="#fff">
+      <animateMotion dur="1.8s" repeatCount="indefinite" path="M-30,0 L30,0" keyTimes="0;0.45;0.55;1" keyPoints="0;1;1;0" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"/>
+    </circle>
   </g>
 </svg>

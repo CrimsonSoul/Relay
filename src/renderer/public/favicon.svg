@@ -1,5 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#080a0e" />
-  <circle cx="32" cy="32" r="21" fill="none" stroke="#f59e0b" stroke-width="6" />
-  <path d="M20 32h24" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" />
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="56" fill="#0a0c12"/>
+  <rect x="1" y="1" width="254" height="254" rx="55" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+  <g transform="translate(128, 128)">
+    <rect x="-72" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="-54" cy="0" r="6" fill="#e11d48"/>
+    <rect x="36" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="54" cy="0" r="6" fill="#e11d48"/>
+    <line x1="-34" y1="0" x2="34" y2="0" stroke="#fb7185" stroke-width="5" stroke-linecap="round"/>
+    <circle r="7" fill="#fff">
+      <animateMotion dur="1.8s" repeatCount="indefinite" path="M-30,0 L30,0" keyTimes="0;0.45;0.55;1" keyPoints="0;1;1;0" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"/>
+    </circle>
+  </g>
 </svg>
