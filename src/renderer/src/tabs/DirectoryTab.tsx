@@ -28,7 +28,7 @@ type Props = {
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
-const ROW_HEIGHT = 80;
+const ROW_HEIGHT = 72;
 
 const ScrollController = ({
   listRef,

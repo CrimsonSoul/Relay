@@ -31,7 +31,7 @@ interface ServerVirtualRowData {
   onRowClick: (index: number) => void;
 }
 
-const ROW_HEIGHT = 80;
+const ROW_HEIGHT = 72;
 
 const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
   const { servers, onContextMenu, selectedIndex, onRowClick } = data;

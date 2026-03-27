@@ -39,8 +39,10 @@ export const getInitials = (name: string, email: string) => {
 interface AvatarProps {
   name: string;
   email: string;
+  className?: string;
 }
 
-export const Avatar: React.FC<AvatarProps> = ({ name, email }) => {
-  return <div className="avatar">{getInitials(name, email)}</div>;
+export const Avatar: React.FC<AvatarProps> = ({ name, email, className }) => {
+  const cls = ['avatar', className].filter(Boolean).join(' ');
+  return <div className={cls}>{getInitials(name, email)}</div>;
 };

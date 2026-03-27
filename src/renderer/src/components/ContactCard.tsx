@@ -1,7 +1,5 @@
 import { memo } from 'react';
-import { AMBER } from '../utils/colors';
-import { Tooltip } from './Tooltip';
-import { Avatar } from './shared/AvatarUtils';
+import { Avatar, GroupPill } from './shared/AvatarUtils';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 
 type ContactRowProps = {
@@ -26,19 +24,15 @@ type ContactRowProps = {
   onNotesClick?: () => void;
 };
 
-const isValidName = (name: string) => name && name.replaceAll(/[.\s\-_]/g, '').length > 0;
-
 export const ContactCard = memo(
   ({
     name,
     email,
     title,
     phone,
-    avatarColor,
     action,
     style,
     className,
-    sourceLabel,
     groups = [],
     selected,
     onContextMenu,
@@ -47,66 +41,54 @@ export const ContactCard = memo(
     tags,
     onNotesClick,
   }: ContactRowProps) => {
-    const color = avatarColor || AMBER.fill;
-    const displayName = isValidName(name) ? name : email;
-    const rootClassName = ['contact-card', className].filter(Boolean).join(' ');
-    let notesLabel = 'Add Note';
-    if (hasNotes) {
-      notesLabel = tags?.length ? `Notes (${tags.length})` : 'Notes';
-    }
-
     return (
-      <div className={rootClassName} style={style}>
-        <button
-          type="button"
-          onClick={onRowClick}
-          onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
-          className={`card-surface contact-card-body${selected ? ' contact-card-body--selected' : ''}`}
-        >
-          <div className="accent-strip" style={{ background: color }} />
-          <Avatar name={name} email={email} />
-          <div className="contact-card-info">
-            <div className="contact-card-name-row">
-              <Tooltip content={displayName}>
-                <span className="text-balance break-word contact-card-name">{displayName}</span>
-              </Tooltip>
-              {sourceLabel && <span className="contact-card-source-label">{sourceLabel}</span>}
-            </div>
-            <div className="contact-card-meta">
-              {title && (
-                <Tooltip content={title}>
-                  <span className="break-word contact-card-tooltip-span">{title}</span>
-                </Tooltip>
-              )}
-              {title && <span className="contact-card-meta-separator">|</span>}
-              <Tooltip content={email}>
-                <span className="break-word contact-card-tooltip-span--faded">{email}</span>
-              </Tooltip>
-            </div>
+      <div
+        className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${className || ''}`}
+        style={style}
+        onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
+        onClick={onRowClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onRowClick?.();
+        }}
+      >
+        <Avatar name={name} email={email} className="contact-entry-avatar" />
+        <div className="contact-entry-body">
+          <div className="contact-entry-line1">
+            <span className="contact-entry-name">{name || email}</span>
+            {tags && tags.length > 0 && <GroupPill group={tags[0]} />}
           </div>
-          {phone && (
-            <div className="contact-card-right">
-              <span className="contact-card-phone">{formatPhoneNumber(phone)}</span>
-            </div>
-          )}
-        </button>
-        {(action || onNotesClick) && (
-          <div className="row-actions contact-card-actions">
-            {onNotesClick && (
-              <button
-                type="button"
-                className="contact-card-notes-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onNotesClick();
-                }}
-              >
-                {notesLabel}
-              </button>
+          <div className="contact-entry-line2">
+            {email && <span>{email}</span>}
+            {title && (
+              <>
+                <span className="contact-entry-dot">·</span>
+                <span>{title}</span>
+              </>
             )}
-            {action}
+            {phone && (
+              <>
+                <span className="contact-entry-dot">·</span>
+                <span className="contact-entry-phone">{formatPhoneNumber(phone)}</span>
+              </>
+            )}
           </div>
-        )}
+        </div>
+        <div className="contact-entry-actions">
+          {action}
+          {hasNotes && onNotesClick && (
+            <button
+              className="contact-entry-notes-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNotesClick();
+              }}
+            >
+              📝
+            </button>
+          )}
+        </div>
       </div>
     );
   },
