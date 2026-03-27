@@ -112,8 +112,8 @@
 
 .assembler-sidebar-add-btn:hover {
   color: var(--color-accent);
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent-dim);
 }
 
 .assembler-sidebar-group-list {

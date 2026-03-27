@@ -173,7 +173,7 @@
 
 .cloud-status-provider__indicator--warning {
   background: var(--color-warning);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 12px var(--color-warning-subtle);
 }
 
 .cloud-status-provider__indicator--error {

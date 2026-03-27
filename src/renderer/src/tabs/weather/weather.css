@@ -115,11 +115,11 @@
 }
 
 .hourly-forecast-item--now {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-dim);
 }
 
 .hourly-forecast-item--now:hover {
-  background: rgba(245, 158, 11, 0.25);
+  background: rgba(225, 29, 72, 0.2);
 }
 
 .hourly-forecast-time {
@@ -309,12 +309,12 @@
 }
 
 .daily-forecast-item--today {
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent-dim);
 }
 
 .daily-forecast-item--today:hover {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-dim);
 }
 
 .daily-forecast-day {
@@ -503,7 +503,7 @@
 .weather-save-location-btn {
   width: 100%;
   padding: 16px;
-  background: rgba(245, 158, 11, 0.05);
+  background: var(--color-accent-subtle);
   border: none;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--color-accent);

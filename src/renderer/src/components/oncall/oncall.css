@@ -385,7 +385,7 @@
 }
 
 .personnel-alert-btn--info {
-  color: #fcd34d;
+  color: var(--color-accent-text);
 }
 
 .personnel-alert-btn--danger {
@@ -400,7 +400,7 @@
 }
 
 .personnel-alert-indicator--info {
-  background: #fbbf24;
+  background: var(--color-accent-hover);
 }
 
 .personnel-alert-indicator--danger {
@@ -576,7 +576,7 @@
    ============================================================================ */
 
 .popout-alert-chip--info {
-  color: #fcd34d;
+  color: var(--color-accent-text);
 }
 
 .popout-alert-chip--danger {
@@ -584,7 +584,7 @@
 }
 
 .popout-alert-indicator--info {
-  background: #fbbf24;
+  background: var(--color-accent-hover);
 }
 
 .popout-alert-indicator--danger {

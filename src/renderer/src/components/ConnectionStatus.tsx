@@ -22,10 +22,10 @@ export function ConnectionStatus() {
   };
 
   const colors: Record<ConnectionState, string> = {
-    connecting: '#f59e0b',
+    connecting: '#e11d48',
     online: '#10b981',
     offline: '#ef4444',
-    reconnecting: '#f59e0b',
+    reconnecting: '#e11d48',
   };
 
   return (

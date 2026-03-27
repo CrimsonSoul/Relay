@@ -147,8 +147,8 @@
 .detail-panel-tag {
   font-size: var(--text-xs);
   color: var(--color-accent);
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-subtle);
+  border: 1px solid var(--color-accent-dim);
   padding: 2px 8px;
   border-radius: 4px;
 }
@@ -194,13 +194,13 @@
 
 .detail-panel-action-btn--primary {
   color: var(--color-accent);
-  border-color: rgba(245, 158, 11, 0.2);
+  border-color: rgba(225, 29, 72, 0.2);
 }
 
 .detail-panel-action-btn--primary:hover {
   color: var(--color-accent);
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.3);
+  background: var(--color-accent-subtle);
+  border-color: rgba(225, 29, 72, 0.3);
 }
 
 .detail-panel-action-btn--danger {

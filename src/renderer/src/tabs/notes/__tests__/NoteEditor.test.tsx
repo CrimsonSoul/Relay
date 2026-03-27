@@ -24,7 +24,7 @@ vi.mock('../../../components/TactileButton', () => ({
 
 vi.mock('../../../hooks/useNotepad', () => ({
   NOTE_COLORS: [
-    { value: 'amber', label: 'Amber', hex: '#f59e0b' },
+    { value: 'amber', label: 'Amber', hex: '#e11d48' },
     { value: 'blue', label: 'Blue', hex: '#3b82f6' },
   ],
 }));

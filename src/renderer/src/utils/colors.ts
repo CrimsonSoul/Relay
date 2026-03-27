@@ -30,10 +30,10 @@ const PALETTE: ColorScheme[] = [
 ];
 
 export const AMBER: ColorScheme = {
-  bg: 'rgba(245, 158, 11, 0.15)',
-  border: 'rgba(245, 158, 11, 0.3)',
-  text: '#FCD34D',
-  fill: '#F59E0B',
+  bg: 'rgba(225, 29, 72, 0.15)',
+  border: 'rgba(225, 29, 72, 0.3)',
+  text: '#fb7185',
+  fill: '#e11d48',
 };
 
 export const getColorForString = (str: string): ColorScheme => {

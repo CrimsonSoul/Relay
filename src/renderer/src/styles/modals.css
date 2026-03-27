@@ -51,7 +51,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-dim);
   color: var(--color-accent);
   display: flex;
   align-items: center;
@@ -120,7 +120,7 @@
 
 .modal-textarea:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
 }
 
 /* Tag Styles */
@@ -136,7 +136,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-dim);
   color: var(--color-accent-hover);
   border-radius: 6px;
   font-size: var(--text-sm);
@@ -176,7 +176,7 @@
 
 .tag-input:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
 }
 
 .tag-add-btn {
@@ -196,12 +196,12 @@
 }
 
 .tag-add-btn:not(:disabled) {
-  background: rgba(245, 158, 11, 0.15);
+  background: var(--color-accent-dim);
   color: var(--color-accent-hover);
 }
 
 .tag-add-btn:not(:disabled):hover {
-  background: rgba(245, 158, 11, 0.25);
+  background: rgba(225, 29, 72, 0.2);
 }
 
 /* Modal Footer */
@@ -402,8 +402,8 @@
 }
 
 .search-dropdown-item.is-selected .search-dropdown-hitbox {
-  background: rgba(245, 158, 11, 0.08);
-  border-color: rgba(245, 158, 11, 0.25);
+  background: var(--color-accent-subtle);
+  border-color: rgba(225, 29, 72, 0.2);
 }
 
 .search-dropdown-result-icon {
