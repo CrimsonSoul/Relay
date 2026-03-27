@@ -19,6 +19,7 @@ import { useToast } from '../components/Toast';
 import { ContextMenu } from '../components/ContextMenu';
 import { NoteCard, NoteCardOverlay, NoteEditor, NoteToolbar } from './notes';
 import { TactileButton } from '../components/TactileButton';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
 export const NotesTab: React.FC = () => {
   const pad = useNotepad();
@@ -340,6 +341,15 @@ export const NotesTab: React.FC = () => {
           onClose={() => setContextMenu(null)}
         />
       )}
+
+      <StatusBar
+        left={<StatusBarLive />}
+        right={
+          <span>
+            {pad.totalCount} {pad.totalCount === 1 ? 'note' : 'notes'}
+          </span>
+        }
+      />
     </div>
   );
 };

@@ -15,6 +15,7 @@ import { NotesModal } from '../components/NotesModal';
 import { useServers } from '../hooks/useServers';
 import { useListFilters, type FilterDef } from '../hooks/useListFilters';
 import { useNotesContext } from '../contexts';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
 interface ServersTabProps {
   servers: Server[];
@@ -342,6 +343,15 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         entityName={notesServer?.name || ''}
         existingNote={notesServer ? getServerNote(notesServer.name) : undefined}
         onSave={(note, tags) => setServerNote(notesServer!.name, note, tags)}
+      />
+
+      <StatusBar
+        left={<StatusBarLive />}
+        right={
+          <span>
+            Showing {displayedServers.length} of {servers.length}
+          </span>
+        }
       />
     </div>
   );

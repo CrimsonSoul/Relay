@@ -5,6 +5,7 @@ import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertForm } from './AlertForm';
@@ -679,6 +680,8 @@ export const AlertsTab: React.FC = () => {
           </div>
         </div>
       </Modal>
+
+      <StatusBar left={<StatusBarLive />} right={<span>Alert Composer</span>} />
     </div>
   );
 };
