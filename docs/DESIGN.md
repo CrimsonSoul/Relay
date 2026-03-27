@@ -291,6 +291,12 @@ For custom surfaces that aren't cards, apply the pattern tokens directly:
 | Toolbars / CollapsibleHeader           | `--surface-pattern`                     | 55%       |
 | Modals                                 | `--surface-pattern`                     | 55%       |
 | Command palette                        | `--surface-pattern`                     | 55%       |
+| Alert composer panel                   | `--surface-pattern` (direct)            | 55%       |
+| Alert preview panel                    | `--surface-pattern` (direct)            | 55%       |
+| Note cards                             | `--surface-pattern` (direct)            | 55%       |
+| Note editor modal                      | `--chrome-pattern`                      | Full      |
+| Cloud status provider cards            | None (plain `--color-bg-card`)          | —         |
+| Cloud status incident items            | None (plain `--color-bg-card`)          | —         |
 | Toasts                                 | None                                    | —         |
 | Content area background                | None                                    | —         |
 | Dropdowns / Combobox menus             | None                                    | —         |
@@ -413,6 +419,137 @@ Small colored pill showing group membership. Colors are dynamically generated pe
 ### Command Palette
 
 Overlay search dialog (z-index 10002). Surface pattern bg, amber-highlighted matches, keyboard-navigable result list.
+
+### Alerts Tab
+
+The Alerts tab is a two-panel layout for composing and previewing styled alert emails.
+
+**AlertForm (Composer Panel):**
+
+- Left panel with surface-pattern background (`--surface-pattern` applied directly, not via `.card-surface`)
+- Form fields use `.alerts-input` — dark `--color-bg-app` background, subtle border, amber focus ring
+- Body editor is a `contentEditable` area with a formatting toolbar (bold, italic, underline, highlights)
+- Toolbar buttons (`.alerts-fmt-btn`) use ghost styling with `--color-text-secondary`, active state adds inset box-shadow
+- Toolbar separator is a thin 1px vertical divider
+
+**AlertSeveritySelector:**
+
+- 5-column grid of severity buttons (`.alerts-sev-btn`) using mono font, uppercase
+- Each severity has a distinct active color scheme via `data-sev` attribute:
+  - `ISSUE` — red (`#ef5350` border/text, `rgba(211,47,47,0.12)` background)
+  - `MAINTENANCE` — amber (`#fbbf24` border/text, `rgba(202,138,4,0.12)` background)
+  - `INFO` — blue (`#60a5fa` border/text, `rgba(37,99,235,0.12)` background)
+  - `RESOLVED` — green (`#66bb6a` border/text, `rgba(46,125,50,0.12)` background)
+- Default/inactive state uses `--color-bg-app` with subtle border
+
+**AlertCard (Email Preview):**
+
+- Right panel renders a **forced light-theme** email card (white background, `#1a1a2e` text) for accurate PNG capture
+- Uses `IBM Plex Sans` / `IBM Plex Mono` / `Montserrat` fonts — not the app's Space Grotesk
+- Severity banner at top uses `--email-banner` CSS variable for dynamic color
+- Circular icon overlay straddles banner/header boundary (`margin-top: -26px`)
+- Meta row uses `#fafafa` background with centered sender/time separated by a dot divider
+- Body area has `#f7f7f8` background, pre-wrap whitespace, 1.7 line-height
+- Footer shows logo + timestamp on `#fafafa` background
+
+**HighlightPopover:**
+
+- Dropdown for applying inline semantic highlights in the body editor
+- Five highlight types with colored swatches: deadline (amber), warning (red), success (green), number (blue bold), service (mono/gray)
+- Popover positioned absolutely below trigger, 8px border-radius, heavy shadow
+
+**EventTimeBanner:**
+
+- Optional amber strip below the email subject showing event start/end times
+- Light amber gradient background (`#fff8e1` to `#fff3cd`), gold text
+- Uses `IBM Plex Mono` for the timestamp value
+
+**Alert History Modal:**
+
+- Scrollable list of past alerts with severity pill badges (`.alert-history-entry-severity`)
+- Severity pill uses `--severity-color` CSS variable for dynamic background
+- Pinned entries have a 3px amber left border
+- Section labels use mono font, uppercase, quaternary color
+
+Styles in: `src/renderer/src/tabs/alerts.css`
+
+### Notes Tab
+
+A card grid for creating, editing, and organizing notes with drag-and-drop reordering.
+
+**NoteCard:**
+
+- Uses surface-pattern background directly (not `.card-surface` — applies the tokens inline)
+- Subtle border (`rgba(255,255,255,0.06)`), 10px border-radius
+- Hover state: lifts 2px (`translateY(-2px)`), stronger border, 24px blur shadow
+- Grab cursor for drag-and-drop; dragging state reduces opacity to 0.25 with dashed border
+- Drag overlay has amber-tinted border and grabbing cursor
+- Drop target highlights with amber border glow and `scale(1.02)`
+- **Color tint variants**: `.note-card--amber`, `--blue`, `--green`, `--red`, `--purple`, `--slate` — each applies a `rgba(..., 0.04)` background tint
+- Copy button appears on hover (top-right, fades in), turns amber when copied
+- Footer shows tag pills and relative timestamp
+
+**NoteEditor (Modal):**
+
+- 720px wide modal with chrome-pattern background (`--chrome-pattern`, not surface-pattern)
+- Title input: large (`--text-xl`), semibold, dark translucent background
+- Content textarea: `--text-base`, 1.6 line-height, min-height 360px
+- Tag system: amber pills with inline remove button, free-text input to add
+- Color picker: row of circular swatches (22px), selected swatch gets primary-text border + scale
+- Footer with delete (left) and save (right) actions separated by `space-between`
+
+**NoteToolbar:**
+
+- Search input + tag filter pills + font-size toggle + "New Note" button
+- Font-size toggle is a segmented control (sm/md/lg) with `--color-bg-surface-elevated` background
+- Active size button uses amber accent: `rgba(245,158,11,0.12)` background, `--color-accent` text
+- Tag filter pills are rounded (`999px`), active state matches the amber accent pattern
+- Font size applies to the entire grid via `data-font-size` attribute with CSS overrides for sm/lg
+
+**Note content rendering:**
+
+- Bullet items: flex row with 5px circular dot (`--color-text-tertiary`) + text
+- Numbered items: flex row with right-aligned number + text
+- Blank lines render as `0.75em` spacers
+
+Styles in: `src/renderer/src/tabs/notes/notes.css`
+
+### Cloud Status Tab
+
+Displays cloud provider health dashboards with provider summary cards and an incident feed.
+
+**Provider Summary Cards:**
+
+- Grid layout (`repeat(auto-fill, minmax(195px, 1fr))`)
+- Card bg uses `--color-bg-card`, `--radius-lg` border-radius
+- Header row: provider name (with optional icon) + status indicator dot
+- Status indicator is a 16px circle with color-coded glow shadow:
+  - OK: `--color-accent-green` with green glow
+  - Warning: `--color-warning` with amber glow
+  - Error: `--color-danger` with red glow
+  - Unknown: `--color-text-tertiary`, no glow
+- Status text matches indicator color
+
+**Incident Feed (Status Items):**
+
+- Expandable accordion items with clickable header
+- Severity badge (`.cloud-status-item__severity`) uses semantic color tokens:
+  - Error: `--color-danger-subtle` bg, `--color-danger` text
+  - Warning: `--color-warning-subtle` bg, `--color-warning` text
+  - Resolved: `--color-accent-green-subtle` bg, `--color-accent-green` text
+  - Info: `--color-accent-subtle` bg, `--color-accent` text
+- Chevron rotates 180deg when expanded
+- Body section has pre-wrap description text and amber-colored external links
+
+**Filter Bar:**
+
+- Pill-style filter buttons (36px height, 10px radius) with `--color-bg-chrome` background
+- Active filter gets amber border (`--color-accent`) and elevated background
+- Refresh button with spinning animation when loading
+
+**New color token used:** `--color-warning-subtle: rgba(245, 158, 11, 0.15)` — defined in `theme.css` for warning badge backgrounds.
+
+Styles in: `src/renderer/src/tabs/cloud-status.css`
 
 ---
 
@@ -583,3 +720,6 @@ export const MyCard = memo(({ name, style, selected, onRowClick }: MyCardProps) 
 | `src/renderer/src/styles/app-icon.css`              | App icon specific styles                                   |
 | `src/renderer/src/utils/colors.ts`                  | `getColorForString()` — deterministic color generation     |
 | `src/renderer/src/components/shared/PersonInfo.tsx` | `getPlatformColor()` — OS-based color mapping              |
+| `src/renderer/src/tabs/alerts.css`                  | Alert composer, email card preview, highlight popover      |
+| `src/renderer/src/tabs/notes/notes.css`             | Note cards, note editor modal, note toolbar                |
+| `src/renderer/src/tabs/cloud-status.css`            | Cloud provider cards, incident feed, status filters        |
