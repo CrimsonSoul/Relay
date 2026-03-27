@@ -1,6 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { BridgeGroup } from '@shared/ipc';
-import { SidebarItem } from '../../components/SidebarItem';
 import { ContextMenu } from '../../components/ContextMenu';
 import { SaveGroupModal } from './SaveGroupModal';
 import { loggers } from '../../utils/logger';
@@ -119,6 +118,15 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
 
   const existingNames = useMemo(() => groups.map((g) => g.name), [groups]);
 
+  const totalContacts = useMemo(() => new Set(groups.flatMap((g) => g.contacts)).size, [groups]);
+
+  const selectedCount = useMemo(
+    () =>
+      new Set(groups.filter((g) => selectedGroupIds.includes(g.id)).flatMap((g) => g.contacts))
+        .size,
+    [groups, selectedGroupIds],
+  );
+
   return (
     <>
       <div className="assembler-sidebar">
@@ -148,20 +156,54 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                 </button>
               </div>
               <div className="assembler-sidebar-group-list">
-                {sortedGroups.map((group) => (
-                  <SidebarItem
-                    key={group.id}
-                    label={group.name}
-                    count={group.contacts.length}
-                    active={selectedGroupIds.includes(group.id)}
-                    onClick={() => onToggleGroup(group.id)}
-                    onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
-                  />
-                ))}
+                {sortedGroups.map((group) => {
+                  const isSelected = selectedGroupIds.includes(group.id);
+                  return (
+                    <div
+                      key={group.id}
+                      className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onToggleGroup(group.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') onToggleGroup(group.id);
+                      }}
+                      onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
+                    >
+                      <div className="sig-grp-check">
+                        <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
+                          <polyline
+                            points="3.5 8.5 6.5 11.5 12.5 4.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </div>
+                      <div className="sig-grp-info">
+                        <div className="sig-grp-name">{group.name}</div>
+                        <div className="sig-grp-sub">{group.contacts.length} contacts</div>
+                      </div>
+                    </div>
+                  );
+                })}
                 {sortedGroups.length === 0 && (
                   <div className="assembler-sidebar-empty">No groups yet.</div>
                 )}
               </div>
+            </div>
+            <div className="sig-sidebar-footer">
+              <span>
+                Total contacts <span className="sig-sidebar-footer-val">{totalContacts}</span>
+              </span>
+              <span>
+                Selected{' '}
+                <span className="sig-sidebar-footer-val sig-sidebar-footer-val--accent">
+                  {selectedCount}
+                </span>
+              </span>
             </div>
           </div>
         </div>
