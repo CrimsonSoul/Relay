@@ -20,6 +20,7 @@ import { useGroups } from '../hooks/useGroups';
 import { useBridgeHistory } from '../hooks/useBridgeHistory';
 import { useToast } from '../components/Toast';
 import { useModalState } from '../hooks/useModalState';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
 export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
   const {
@@ -324,6 +325,11 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           </div>
         </div>
       </div>
+
+      <StatusBar
+        left={<StatusBarLive />}
+        right={<span>{asm.allRecipients.length} selected</span>}
+      />
 
       <AddContactModal
         isOpen={asm.isAddContactModalOpen}
