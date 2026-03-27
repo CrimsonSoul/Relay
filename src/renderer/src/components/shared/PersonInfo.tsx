@@ -6,9 +6,9 @@ export const getPlatformColor = (os: string = '') => {
   const lower = os.toLowerCase();
   if (lower.includes('win'))
     return {
-      bg: 'rgba(245, 158, 11, 0.1)',
-      border: 'rgba(245, 158, 11, 0.2)',
-      text: '#FBBF24',
+      bg: 'rgba(56, 189, 248, 0.1)',
+      border: 'rgba(56, 189, 248, 0.2)',
+      text: '#38BDF8',
       label: 'WINDOWS',
     };
   if (

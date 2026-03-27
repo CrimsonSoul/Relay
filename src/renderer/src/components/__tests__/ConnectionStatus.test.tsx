@@ -61,11 +61,11 @@ describe('ConnectionStatus', () => {
     expect(screen.getByText('Connecting...')).toBeInTheDocument();
   });
 
-  it('uses amber background color for connecting state', () => {
+  it('uses signal red background color for connecting state', () => {
     mockState = 'connecting';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Connecting...');
-    expect(banner.style.backgroundColor).toBe('rgb(245, 158, 11)');
+    expect(banner.style.backgroundColor).toBe('rgb(225, 29, 72)');
   });
 
   // ── Reconnecting State ──
@@ -76,11 +76,11 @@ describe('ConnectionStatus', () => {
     expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
   });
 
-  it('uses amber background color for reconnecting state', () => {
+  it('uses signal red background color for reconnecting state', () => {
     mockState = 'reconnecting';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Reconnecting...');
-    expect(banner.style.backgroundColor).toBe('rgb(245, 158, 11)');
+    expect(banner.style.backgroundColor).toBe('rgb(225, 29, 72)');
   });
 
   // ── State Transitions ──

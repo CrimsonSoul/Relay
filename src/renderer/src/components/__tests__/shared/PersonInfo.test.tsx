@@ -24,7 +24,7 @@ describe('getPlatformColor', () => {
   it('returns WINDOWS colors for windows OS', () => {
     const c = getPlatformColor('Windows 10');
     expect(c.label).toBe('WINDOWS');
-    expect(c.text).toBe('#FBBF24');
+    expect(c.text).toBe('#38BDF8');
   });
 
   it('returns LINUX colors for linux OS', () => {

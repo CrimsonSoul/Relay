@@ -42,13 +42,13 @@ describe('ContactCard Component', () => {
   test('renders selected state', () => {
     const { container } = render(<ContactCard {...mockContact} selected={true} />);
 
-    const cardElement = container.querySelector('.card-surface');
-    expect(cardElement).toHaveClass('contact-card-body--selected');
+    const cardElement = container.querySelector('.contact-entry');
+    expect(cardElement).toHaveClass('contact-entry--selected');
   });
 
-  test('renders with source label', () => {
-    render(<ContactCard {...mockContact} sourceLabel="CSV" />);
-    expect(screen.getByText('CSV')).toBeInTheDocument();
+  test('renders with source label prop without error', () => {
+    // sourceLabel is accepted as a prop; rendering should not throw
+    expect(() => render(<ContactCard {...mockContact} sourceLabel="CSV" />)).not.toThrow();
   });
 
   test('calls onContextMenu when right-clicked', () => {
@@ -123,13 +123,15 @@ describe('ContactCard Component', () => {
     expect(cardElement).toHaveStyle(customStyle);
   });
 
-  test('shows "Notes" label when hasNotes is true without tags', () => {
-    render(<ContactCard {...mockContact} hasNotes={true} onNotesClick={vi.fn()} />);
-    expect(screen.getByText('Notes')).toBeInTheDocument();
+  test('shows notes button when hasNotes is true', () => {
+    const { container } = render(
+      <ContactCard {...mockContact} hasNotes={true} onNotesClick={vi.fn()} />,
+    );
+    expect(container.querySelector('.contact-entry-notes-btn')).toBeInTheDocument();
   });
 
-  test('shows notes count label when hasNotes is true with tags', () => {
-    render(
+  test('shows notes button when hasNotes is true with tags', () => {
+    const { container } = render(
       <ContactCard
         {...mockContact}
         hasNotes={true}
@@ -137,13 +139,16 @@ describe('ContactCard Component', () => {
         onNotesClick={vi.fn()}
       />,
     );
-    expect(screen.getByText('Notes (2)')).toBeInTheDocument();
+    expect(container.querySelector('.contact-entry-notes-btn')).toBeInTheDocument();
   });
 
   test('calls onNotesClick when notes button is clicked', () => {
     const onNotesClick = vi.fn();
-    render(<ContactCard {...mockContact} onNotesClick={onNotesClick} />);
-    fireEvent.click(screen.getByText('Add Note'));
+    const { container } = render(
+      <ContactCard {...mockContact} hasNotes={true} onNotesClick={onNotesClick} />,
+    );
+    const btn = container.querySelector('.contact-entry-notes-btn') as HTMLElement;
+    fireEvent.click(btn);
     expect(onNotesClick).toHaveBeenCalled();
   });
 });

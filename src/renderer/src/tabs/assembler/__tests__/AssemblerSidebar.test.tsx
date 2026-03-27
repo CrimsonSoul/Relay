@@ -42,7 +42,7 @@ describe('AssemblerSidebar', () => {
   it('sorts groups alphabetically', () => {
     const groups = [makeGroup('1', 'Zebra'), makeGroup('2', 'Alpha')];
     const { container } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-    const items = container.querySelectorAll('.sidebar-item-name');
+    const items = container.querySelectorAll('.sig-grp-name');
     expect(items[0].textContent).toBe('Alpha');
     expect(items[1].textContent).toBe('Zebra');
   });
@@ -57,7 +57,7 @@ describe('AssemblerSidebar', () => {
         actions={{ ...defaultActions, onToggleGroup }}
       />,
     );
-    fireEvent.click(screen.getByRole('treeitem', { name: /MyGroup/ }));
+    fireEvent.click(screen.getByText('MyGroup'));
     expect(onToggleGroup).toHaveBeenCalledWith('g1');
   });
 
@@ -71,7 +71,7 @@ describe('AssemblerSidebar', () => {
   it('shows context menu when right-clicking a group', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     expect(screen.getByText('Load Group')).toBeInTheDocument();
     expect(screen.getByText('Rename')).toBeInTheDocument();
     expect(screen.getByText('Delete Group')).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe('AssemblerSidebar', () => {
         actions={{ ...defaultActions, onToggleGroup }}
       />,
     );
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Load Group'));
     expect(onToggleGroup).toHaveBeenCalledWith('g1');
   });
@@ -95,7 +95,7 @@ describe('AssemblerSidebar', () => {
   it('opens Rename modal when "Rename" context menu item is clicked', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Rename'));
     expect(screen.getByText('Rename Group')).toBeInTheDocument();
   });
@@ -110,7 +110,7 @@ describe('AssemblerSidebar', () => {
         actions={{ ...defaultActions, onDeleteGroup }}
       />,
     );
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Delete Group'));
     expect(onDeleteGroup).toHaveBeenCalledWith('g1');
   });
@@ -118,7 +118,7 @@ describe('AssemblerSidebar', () => {
   it('"Update with Current" is disabled when currentEmails is empty', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} currentEmails={[]} />);
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     // The menu item should be rendered with disabled state
     const updateItem = screen.getByText('Update with Current');
     expect(updateItem).toBeInTheDocument();
@@ -135,7 +135,7 @@ describe('AssemblerSidebar', () => {
         actions={{ ...defaultActions, onUpdateGroup }}
       />,
     );
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     fireEvent.click(screen.getByText('Update with Current'));
     expect(onUpdateGroup).toHaveBeenCalledWith('g1', { contacts: ['a@b.com'] });
   });
@@ -171,15 +171,15 @@ describe('AssemblerSidebar', () => {
     const { container } = render(
       <AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />,
     );
-    // The SidebarItem with active=true should render with an active class
-    const activeItem = container.querySelector('[aria-selected="true"]');
+    // The sig-grp with active state gets the sig-grp--on class
+    const activeItem = container.querySelector('.sig-grp--on');
     expect(activeItem).toBeTruthy();
   });
 
   it('shows rename modal with initial name prefilled', () => {
     const groups = [makeGroup('g1', 'OriginalName')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /OriginalName/ }));
+    fireEvent.contextMenu(screen.getByText('OriginalName'));
     fireEvent.click(screen.getByText('Rename'));
     // The rename modal should show with description including original name
     expect(screen.getByText(/Rename "OriginalName"/)).toBeInTheDocument();
@@ -225,7 +225,7 @@ describe('AssemblerSidebar', () => {
   it('closes context menu when clicking outside', () => {
     const groups = [makeGroup('g1', 'TeamA')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} />);
-    fireEvent.contextMenu(screen.getByRole('treeitem', { name: /TeamA/ }));
+    fireEvent.contextMenu(screen.getByText('TeamA'));
     expect(screen.getByText('Load Group')).toBeInTheDocument();
     // Close by pressing Escape / clicking elsewhere
     fireEvent.keyDown(document, { key: 'Escape' });

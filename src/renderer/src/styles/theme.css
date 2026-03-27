@@ -58,7 +58,7 @@
   --color-group-green: #10b981;
   --color-group-green-dim: rgba(16, 185, 129, 0.1);
   --color-group-warn: #eab308;
-  --color-group-warn-text: #fbbf24;
+  --color-group-warn-text: #fde047;
   --color-group-warn-dim: rgba(234, 179, 8, 0.1);
 
   /* Semantic Colors */
@@ -67,8 +67,8 @@
   --color-danger: #ef4444;
   --color-danger-hover: #f87171;
   --color-danger-subtle: rgba(239, 68, 68, 0.12);
-  --color-warning: #f59e0b;
-  --color-warning-subtle: rgba(245, 158, 11, 0.15);
+  --color-warning: #e11d48;
+  --color-warning-subtle: rgba(225, 29, 72, 0.15);
 
   /* Borders */
   --color-border: rgba(255, 255, 255, 0.055);
