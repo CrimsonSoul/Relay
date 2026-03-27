@@ -1110,7 +1110,89 @@ git commit -m "fix: visual QA cleanup — remaining amber refs and pattern artif
 
 ---
 
-### Task 16: Run Full Build Verification
+### Task 16: Update Relay App Icon — Bridge Design
+
+**Files:**
+- Modify: `src/renderer/src/components/sidebar/SidebarIcons.tsx`
+- Modify: `build/icon.svg`
+- Modify: `src/renderer/public/icon.svg`
+- Modify: `src/renderer/public/favicon.svg`
+
+- [ ] **Step 1: Read the current AppIcon component**
+
+Read `src/renderer/src/components/sidebar/SidebarIcons.tsx` and find the `AppIcon` export to understand its current SVG structure and viewBox.
+
+- [ ] **Step 2: Replace the AppIcon SVG with the Bridge design**
+
+Update the `AppIcon` component to render the Bridge icon. The icon is two node squares connected by a line with a pulse dot animating between them:
+
+```tsx
+export function AppIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect x="1" y="7.5" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.8" fill="none"/>
+      <circle cx="4.5" cy="11" r="1.2" fill="currentColor"/>
+      <rect x="16" y="7.5" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="1.8" fill="none"/>
+      <circle cx="19.5" cy="11" r="1.2" fill="currentColor"/>
+      <line x1="8.5" y1="11" x2="15.5" y2="11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+      <circle cx="12" cy="11" r="1.3" fill="white">
+        <animateMotion dur="1.8s" repeatCount="indefinite" path="M-3,0 L3,0" keyTimes="0;0.45;0.55;1" keyPoints="0;1;1;0" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"/>
+      </circle>
+    </svg>
+  );
+}
+```
+
+Adjust the viewBox and coordinates to match the existing icon's expected dimensions. The key elements are: two rounded squares (nodes) with filled dots inside, a connecting line, and an animated white pulse dot.
+
+- [ ] **Step 3: Update the full-size app icon SVGs**
+
+Update `build/icon.svg`, `src/renderer/public/icon.svg`, and `src/renderer/public/favicon.svg` with the Bridge design at 256x256:
+
+```svg
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="256" height="256" rx="56" fill="#0a0c12"/>
+  <rect x="1" y="1" width="254" height="254" rx="55" stroke="rgba(255,255,255,0.07)" stroke-width="2"/>
+  <g transform="translate(128, 128)">
+    <rect x="-72" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="-54" cy="0" r="6" fill="#e11d48"/>
+    <rect x="36" y="-18" width="36" height="36" rx="8" stroke="#e11d48" stroke-width="6" fill="none"/>
+    <circle cx="54" cy="0" r="6" fill="#e11d48"/>
+    <line x1="-34" y1="0" x2="34" y2="0" stroke="#fb7185" stroke-width="5" stroke-linecap="round"/>
+    <circle r="7" fill="#fff">
+      <animateMotion dur="1.8s" repeatCount="indefinite" path="M-30,0 L30,0" keyTimes="0;0.45;0.55;1" keyPoints="0;1;1;0" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1;0.4 0 0.2 1"/>
+    </circle>
+  </g>
+</svg>
+```
+
+- [ ] **Step 4: Regenerate the PNG and ICO build icons**
+
+```bash
+cd /Users/ryan/Apps/Relay
+# If the project has an icon generation script, run it. Otherwise:
+# The Electron build process typically generates these from icon.svg or icon.png
+# Check if build/icon.png needs manual regeneration
+```
+
+- [ ] **Step 5: Verify the icon renders in the sidebar**
+
+```bash
+npm run dev
+```
+
+Expected: The sidebar shows the Bridge icon with animated pulse dot. The app window icon should also show the new design.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/renderer/src/components/sidebar/SidebarIcons.tsx build/icon.svg src/renderer/public/icon.svg src/renderer/public/favicon.svg
+git commit -m "feat: update Relay icon to Bridge design"
+```
+
+---
+
+### Task 17: Run Full Build Verification
 
 **Files:** None (verification only)
 
@@ -1153,3 +1235,5 @@ Do one final walkthrough of all tabs. Confirm:
 - Two-line contact entries in Compose, Directory, Servers
 - No dot patterns on any surface
 - Buttons are appropriately sized for TV readability
+- Bridge icon in sidebar with animated pulse dot
+- App window icon shows Bridge design
