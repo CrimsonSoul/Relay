@@ -46,9 +46,11 @@ async function clearCollection(collection) {
 async function seed() {
   await auth();
 
-  // Clear oncall to re-seed with phone numbers
-  console.log('Clearing oncall...');
-  await clearCollection('oncall');
+  // Clear all collections to re-seed with proper timestamps
+  for (const col of ['oncall', 'alert_history', 'bridge_history', 'standalone_notes']) {
+    console.log(`Clearing ${col}...`);
+    await clearCollection(col);
+  }
 
   console.log('Seeding contacts...');
   const contacts = [

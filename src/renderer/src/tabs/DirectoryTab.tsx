@@ -172,9 +172,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     [filtered, groupMap, focusedIndex, setFocusedIndex, setContextMenu],
   );
 
-  const activeFilterCount =
-    filters.selectedTags.size + filters.activeExtras.size + (filters.hasNotesFilter ? 1 : 0);
-
   return (
     <div className="tab-layout">
       <div className="tab-split-layout">
