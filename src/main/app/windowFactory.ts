@@ -23,7 +23,7 @@ export async function createWindow(): Promise<void> {
     center: true,
     backgroundColor: '#060608',
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 28, y: 16 },
+    trafficLightPosition: { x: 35, y: 16 },
     show: false,
     webPreferences: {
       preload: join(mainDir, '../preload/index.cjs'),
@@ -150,7 +150,7 @@ export async function createAuxWindow(route: string): Promise<void> {
     backgroundColor: '#060608',
     title: 'Relay - On-Call Board',
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 28, y: 16 },
+    trafficLightPosition: { x: 35, y: 16 },
     webPreferences: {
       preload: join(mainDir, '../preload/index.cjs'),
       contextIsolation: true,
