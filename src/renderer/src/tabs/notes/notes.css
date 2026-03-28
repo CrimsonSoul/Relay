@@ -183,25 +183,20 @@
 .relay-grid--notes {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  width: 100%;
+  overflow-y: auto;
 }
 
 .notes-masonry-columns {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 16px;
-  overflow-y: auto;
-  flex: 1;
+  columns: 3 280px;
+  column-gap: 16px;
+  width: 100%;
+  padding-bottom: 16px;
 }
 
-.notes-masonry-column {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.notes-masonry-columns > .note-card {
+  break-inside: avoid;
+  margin-bottom: 16px;
 }
 
 /* --- Note Card --- */
