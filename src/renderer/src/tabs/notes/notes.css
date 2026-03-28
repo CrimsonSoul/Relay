@@ -193,7 +193,7 @@
 .notes-masonry-columns {
   display: flex;
   flex-wrap: wrap;
-  align-items: stretch;
+  align-items: flex-start;
   gap: 16px;
   padding: 4px 4px 16px;
 }
