@@ -265,15 +265,19 @@ export const NotesTab: React.FC = () => {
       >
         <div ref={gridRef} className="relay-grid--notes" data-font-size={pad.fontSize}>
           <div className="notes-masonry-columns stagger-children">
-            {pad.notes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                isDragActive={activeId === note.id}
-                isDropTarget={overId === note.id}
-                onClick={() => handleEditNote(note)}
-                onContextMenu={(e) => handleContextMenu(e, note)}
-              />
+            {noteColumns.map((column, columnIndex) => (
+              <div className="notes-masonry-column" key={columnIndex}>
+                {column.map((note) => (
+                  <NoteCard
+                    key={note.id}
+                    note={note}
+                    isDragActive={activeId === note.id}
+                    isDropTarget={overId === note.id}
+                    onClick={() => handleEditNote(note)}
+                    onContextMenu={(e) => handleContextMenu(e, note)}
+                  />
+                ))}
+              </div>
             ))}
           </div>
         </div>
