@@ -186,13 +186,21 @@
    ============================================================================ */
 
 .team-row {
+  padding: 14px 20px;
   display: grid;
-  gap: 10px;
+  grid-template-columns: 36px 1fr auto;
+  gap: 12px;
   align-items: center;
-  padding: 8px 8px;
-  border-radius: 8px;
-  position: relative;
-  background: transparent;
+  border-bottom: 1px solid var(--color-border-subtle);
+  transition: background 0.12s;
+}
+
+.team-row:last-child {
+  border-bottom: none;
+}
+
+.team-row:hover {
+  background: var(--color-bg-card-hover);
 }
 
 .team-row--active {
@@ -510,14 +518,16 @@
    ============================================================================ */
 
 .team-card-body {
-  padding: 16px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  height: 100%;
-  box-sizing: border-box;
-  cursor: grab;
-  border-top: 2px solid var(--team-color-fill, rgba(255, 255, 255, 0.1));
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.team-card-body:hover {
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .team-card-body--readonly {
@@ -528,11 +538,13 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .team-card-name {
-  font-size: var(--text-xl);
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--team-color, var(--color-text-primary));
   overflow-wrap: break-word;
@@ -544,9 +556,9 @@
 .team-card-rows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0;
   flex-grow: 1;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .team-card-empty {

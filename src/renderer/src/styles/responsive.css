@@ -52,7 +52,7 @@
 
 /* On-Call Board variant */
 .relay-grid--oncall {
-  --grid-min-col: 550px;
+  --grid-min-col: 340px;
   --grid-gap: 24px;
   --grid-pb: 40px;
   --grid-align: stretch;
