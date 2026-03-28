@@ -242,7 +242,7 @@
 
 .weather-alert-description {
   font-size: var(--text-base);
-  color: var(--color-text-tertiary);
+  color: var(--color-text-secondary);
   margin: 0 0 10px;
   line-height: 1.5;
   white-space: pre-wrap;
