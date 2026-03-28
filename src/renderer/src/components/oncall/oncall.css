@@ -186,12 +186,8 @@
    ============================================================================ */
 
 .team-row {
-  padding: 12px 20px;
-  display: grid;
-  grid-template-columns: 110px 1fr auto;
-  gap: 16px;
-  align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 10px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.025);
   transition: background 0.12s;
 }
 
@@ -200,36 +196,45 @@
 }
 
 .team-row:hover {
-  background: var(--color-bg-card-hover);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .team-row--active {
-  background: rgba(52, 211, 153, 0.04);
+  background: rgba(16, 185, 129, 0.04);
 }
 
 .team-row--primary {
   background: rgba(255, 255, 255, 0.02);
+  padding: 10px 20px;
 }
 
 .team-row--primary.team-row--active {
-  background: rgba(52, 211, 153, 0.06);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+.team-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.team-row-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
 }
 
 .team-row-role {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-text-tertiary);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 4px 10px;
-  border-radius: 4px;
-  text-align: center;
-  line-height: 1.2;
-  max-width: 110px;
+  letter-spacing: 0.4px;
+  color: var(--color-text-secondary);
+  background: none;
+  padding: 0;
+  border-radius: 0;
 }
 
 .team-row-name-wrapper {
@@ -249,20 +254,13 @@
 }
 
 .team-row-name {
-  color: var(--color-text-secondary);
-  font-size: 15px;
-  font-weight: 500;
-  min-width: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-primary);
 }
 
 .team-row-name--empty {
   color: var(--color-text-quaternary);
-}
-
-.team-row--primary .team-row-name {
-  color: var(--color-text-primary);
-  font-size: 16px;
-  font-weight: 600;
 }
 
 .team-row--active .team-row-name {
@@ -270,17 +268,16 @@
 }
 
 .team-row-phone {
-  color: var(--color-text-tertiary);
-  font-size: 13px;
+  font-size: 16px;
   font-family: var(--font-family-mono);
+  font-weight: 500;
+  color: var(--color-text-secondary);
   background: transparent;
   border: none;
   padding: 0;
-  margin: 0;
-  text-align: right;
-  white-space: nowrap;
   cursor: pointer;
   transition: color 0.15s;
+  white-space: nowrap;
 }
 
 .team-row-phone--empty {
@@ -294,31 +291,14 @@
 }
 
 .team-row-phone:not(.team-row-phone--empty):hover {
-  color: var(--color-accent-hover);
-}
-
-.team-row--primary .team-row-phone {
-  color: var(--color-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.team-row--active .team-row-phone {
-  color: var(--color-text-secondary);
-}
-
-.team-row--primary .team-row-phone:not(.team-row-phone--empty):hover {
-  color: var(--color-accent-hover);
+  color: var(--color-accent-text);
 }
 
 .team-row-time-window {
-  color: var(--color-text-tertiary);
-  font-size: 13px;
-  font-weight: 400;
-  text-align: right;
-  white-space: nowrap;
+  font-size: 12px;
   font-family: var(--font-family-mono);
-  letter-spacing: 0.02em;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
 }
 
 .team-row-time-window--active {
@@ -523,12 +503,12 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 20px;
+  padding: 14px 20px;
   border-bottom: 1px solid var(--border-default);
 }
 
 .team-card-name {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--team-color, var(--color-text-primary));
