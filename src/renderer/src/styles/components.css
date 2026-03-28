@@ -37,7 +37,7 @@
 .tactile-button--primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #000000 !important;
+  color: #ffffff !important;
 }
 
 .tactile-button--primary:hover {
@@ -278,6 +278,37 @@ input.tactile-input.tactile-input:focus {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   margin-right: auto;
+}
+
+/* Toolbar title group */
+.toolbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.3px;
+}
+
+.toolbar-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 8px;
+  background: var(--color-accent-dim);
+  color: var(--color-accent-text);
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  flex-shrink: 0;
 }
 
 /* ===========================
