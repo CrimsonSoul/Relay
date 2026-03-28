@@ -182,9 +182,9 @@
 
 .note-card {
   position: relative;
-  background-color: var(--color-bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
   padding: 16px 20px;
   cursor: grab;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -378,7 +378,7 @@
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-text-tertiary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-bg-surface-elevated);
   border-radius: 999px;
   padding: 2px 10px;
   white-space: nowrap;
