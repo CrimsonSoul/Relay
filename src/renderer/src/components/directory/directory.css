@@ -259,6 +259,7 @@
 
 .server-card-body--selected {
   background: var(--color-accent-subtle);
+  border-bottom-color: var(--color-accent);
 }
 
 .server-card-body .accent-strip {
@@ -490,6 +491,7 @@
 }
 .contact-entry--selected {
   background: var(--color-accent-subtle);
+  border-bottom-color: var(--color-accent);
 }
 
 .contact-entry-avatar.avatar {
