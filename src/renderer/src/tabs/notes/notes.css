@@ -189,15 +189,11 @@
 }
 
 .notes-masonry-columns {
-  columns: 3 280px;
-  column-gap: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
   width: 100%;
   padding-bottom: 16px;
-}
-
-.notes-masonry-columns > .note-card {
-  break-inside: avoid;
-  margin-bottom: 16px;
 }
 
 /* --- Note Card --- */
