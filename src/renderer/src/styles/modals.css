@@ -2,9 +2,9 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(7, 8, 16, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -24,12 +24,12 @@
 .modal-container {
   width: 100%;
   max-width: 520px;
-  background-color: var(--color-bg-surface-opaque);
-  border-radius: var(--radius-xl);
-  border: var(--border-medium);
+  background-color: var(--color-bg-surface);
+  border-radius: 14px;
+  border: 1px solid var(--color-border);
   padding: 0;
   margin: 0;
-  box-shadow: var(--shadow-modal);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   overflow: hidden;
   position: relative;
   z-index: 1;
@@ -37,12 +37,12 @@
 
 /* Modal Header */
 .modal-header {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  gap: 16px;
-  background: var(--color-bg-chrome);
+  justify-content: space-between;
+  background: transparent;
   border-top-left-radius: inherit;
   border-top-right-radius: inherit;
 }
