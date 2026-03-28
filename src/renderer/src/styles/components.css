@@ -1943,9 +1943,9 @@ body.modal-open {
   width: 40px;
   height: 40px;
   font-size: var(--text-xs);
-  background: rgba(120, 53, 15, 0.72);
-  color: #fde68a;
-  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: var(--color-accent-dim);
+  color: var(--color-accent-text);
+  border: 1px solid rgba(225, 29, 72, 0.25);
 }
 
 /* ============================================================================
