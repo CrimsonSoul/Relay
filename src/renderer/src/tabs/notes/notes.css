@@ -186,7 +186,8 @@
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 2px;
+  margin: 0 -24px;
+  padding: 0 24px;
 }
 
 .notes-masonry-columns {
@@ -194,17 +195,13 @@
   flex-wrap: wrap;
   align-items: stretch;
   gap: 16px;
-  padding: 0 0 16px;
+  padding: 4px 4px 16px;
 }
 
 .notes-masonry-columns > .note-card {
   flex: 1 1 340px;
   max-width: calc(50% - 8px);
-}
-
-.notes-masonry-columns .note-card {
   min-width: 0;
-  max-width: 100%;
 }
 
 /* --- Note Card --- */
