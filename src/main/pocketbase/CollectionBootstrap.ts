@@ -19,6 +19,8 @@ interface FieldDef {
   required?: boolean;
   values?: string[];
   maxSelect?: number;
+  onCreate?: boolean;
+  onUpdate?: boolean;
 }
 
 interface CollectionDef {
@@ -26,6 +28,12 @@ interface CollectionDef {
   type: 'base';
   fields: FieldDef[];
 }
+
+/** Autodate fields added to every collection for created/updated timestamps. */
+const AUTODATE_FIELDS: FieldDef[] = [
+  { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+  { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+];
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -184,7 +192,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
       await pb.collections.create({
         name: def.name,
         type: def.type,
-        fields: def.fields,
+        fields: [...def.fields, ...AUTODATE_FIELDS],
         listRule: AUTH_RULE,
         viewRule: AUTH_RULE,
         createRule: AUTH_RULE,
@@ -195,6 +203,28 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
       logger.info(`Created collection: ${def.name}`);
     } catch (err) {
       logger.error(`Failed to create collection: ${def.name}`, { error: err });
+    }
+  }
+
+  // --- Patch existing collections missing autodate fields ---
+  let patched = 0;
+  for (const def of COLLECTIONS) {
+    if (!existing.has(def.name)) continue;
+    try {
+      const col = existingCollections.find((c) => c.name === def.name) as { id: string; name: string; fields?: Array<{ name: string }> } | undefined;
+      if (!col) continue;
+      const colFull = await pb.collections.getOne(col.id);
+      const fieldNames = new Set(((colFull as unknown as { fields: Array<{ name: string }> }).fields || []).map((f: { name: string }) => f.name));
+      if (!fieldNames.has('created') || !fieldNames.has('updated')) {
+        const existingFields = (colFull as unknown as { fields: FieldDef[] }).fields || [];
+        await pb.collections.update(col.id, {
+          fields: [...existingFields, ...AUTODATE_FIELDS.filter((f) => !fieldNames.has(f.name))],
+        });
+        patched++;
+        logger.info(`Patched autodate fields on collection: ${def.name}`);
+      }
+    } catch (err) {
+      logger.error(`Failed to patch autodate fields on: ${def.name}`, { error: err });
     }
   }
 
@@ -223,8 +253,8 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
     }
   }
 
-  if (created > 0 || pruned > 0) {
-    logger.info(`Collection bootstrap complete: ${created} created, ${pruned} pruned`);
+  if (created > 0 || pruned > 0 || patched > 0) {
+    logger.info(`Collection bootstrap complete: ${created} created, ${patched} patched, ${pruned} pruned`);
   } else {
     logger.info('Collection bootstrap: all collections up to date');
   }
