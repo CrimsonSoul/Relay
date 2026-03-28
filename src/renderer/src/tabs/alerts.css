@@ -428,27 +428,27 @@
 }
 
 .alerts-sev-btn.active[data-sev='ISSUE'] {
-  background: rgba(211, 47, 47, 0.12);
-  border-color: #ef5350;
-  color: #ef5350;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+  color: #fca5a5;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {
-  background: rgba(202, 138, 4, 0.12);
-  border-color: #fbbf24;
-  color: #fbbf24;
+  background: rgba(251, 146, 60, 0.12);
+  border-color: #fb923c;
+  color: #fdba74;
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: #60a5fa;
-  color: #60a5fa;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  color: #38bdf8;
 }
 
 .alerts-sev-btn.active[data-sev='RESOLVED'] {
-  background: rgba(46, 125, 50, 0.12);
-  border-color: #66bb6a;
-  color: #66bb6a;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: #10b981;
+  color: #10b981;
 }
 
 /* --- Preview Panel (Right) --- */

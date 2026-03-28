@@ -258,7 +258,7 @@
 }
 
 .server-card-body--selected {
-  background: var(--color-accent-subtle);
+  background: var(--color-accent-dim);
   border-bottom-color: var(--color-accent);
 }
 
@@ -490,7 +490,7 @@
   background: var(--color-bg-card-hover);
 }
 .contact-entry--selected {
-  background: var(--color-accent-subtle);
+  background: var(--color-accent-dim);
   border-bottom-color: var(--color-accent);
 }
 

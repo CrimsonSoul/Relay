@@ -1870,32 +1870,24 @@ body.modal-open {
    ============================================================================ */
 
 .group-pill {
-  font-size: var(--text-xs);
-  padding: 4px 10px 4px 14px;
-  border-radius: 10px;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
   font-weight: 700;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   position: relative;
   overflow: hidden;
-  border: 1px solid transparent;
-  color: var(--pill-text);
-  background: var(--pill-bg);
-  border-color: var(--pill-border);
+  border: none;
+  color: var(--color-accent-text);
+  background: var(--color-accent-dim);
 }
 
 .group-pill-accent {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 10px 0 0 10px;
-  opacity: 0.8;
-  background: var(--pill-fill);
+  display: none;
 }
 
 /* ============================================================================
