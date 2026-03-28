@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 16px 24px;
+  padding: 16px 24px 0;
   overflow: hidden;
 }
 
@@ -183,7 +183,7 @@
 .relay-grid--notes {
   flex: 1;
   min-height: 0;
-  width: 100%;
+  min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -192,8 +192,11 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
-  width: 100%;
-  padding-bottom: 16px;
+  padding: 0 0 16px;
+}
+
+.notes-masonry-columns .note-card {
+  min-width: 0;
 }
 
 /* --- Note Card --- */
