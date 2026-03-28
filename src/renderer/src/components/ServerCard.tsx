@@ -35,7 +35,7 @@ export const ServerCard = memo(
     }, [onContextMenu, onRowClick, server]);
     const cardContent = (
       <div
-        className={`server-card-body card-surface${selected ? ' server-card-body--selected' : ''}`}
+        className={`server-card-body${selected ? ' server-card-body--selected' : ''}`}
       >
         <div className="accent-strip" style={{ background: osInfo.text }} />
         <div

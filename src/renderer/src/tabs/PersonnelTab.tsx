@@ -78,6 +78,37 @@ export const PersonnelTab: React.FC<{
 
   const [isDragging, setIsDragging] = useState(false);
 
+  // Masonry column distribution
+  const gridRef = React.useRef<HTMLUListElement | null>(null);
+  const [columnCount, setColumnCount] = useState(3);
+
+  const updateColumnCount = useCallback(() => {
+    const node = gridRef.current;
+    if (!node) return;
+    const width = node.clientWidth;
+    if (width < 1) return;
+    const minCol = 340;
+    const gap = 24;
+    const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
+    setColumnCount((prev) => (prev === next ? prev : next));
+  }, []);
+
+  React.useEffect(() => {
+    updateColumnCount();
+    const node = gridRef.current;
+    if (!node) return;
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
+    observer?.observe(node);
+    globalThis.addEventListener('resize', updateColumnCount);
+    return () => { observer?.disconnect(); globalThis.removeEventListener('resize', updateColumnCount); };
+  }, [updateColumnCount]);
+
+  const teamColumns = useMemo(() => {
+    const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
+    teams.forEach((team, i) => cols[i % cols.length].push(team));
+    return cols;
+  }, [teams, columnCount]);
+
   useEffect(() => {
     enableAnimations(!isDragging);
   }, [isDragging, enableAnimations]);
@@ -294,26 +325,30 @@ export const PersonnelTab: React.FC<{
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <ul
-            ref={animationParent}
-            className="relay-grid relay-grid--oncall stagger-children"
+            ref={(node) => { gridRef.current = node; if (animationParent) animationParent.current = node; }}
+            className="oncall-masonry stagger-children"
             aria-label="Sortable On-Call Teams"
           >
-            {teams.map((team, idx) => (
-              <li key={team} className="relay-grid-item animate-card-entrance">
-                <SortableTeamCard
-                  team={team}
-                  index={idx}
-                  rows={groupedOnCall.get(team) || []}
-                  contacts={contacts}
-                  onUpdateRows={handleUpdateRows}
-                  onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
-                  onRemoveTeam={handleRemoveTeam}
-                  setConfirm={setConfirmDelete}
-                  setMenu={setMenu}
-                  onCopyTeamInfo={handleCopyTeamInfo}
-                  tick={tick}
-                />
-              </li>
+            {teamColumns.map((column, colIdx) => (
+              <div className="oncall-masonry-column" key={colIdx}>
+                {column.map((team) => (
+                  <li key={team} className="oncall-masonry-item animate-card-entrance">
+                    <SortableTeamCard
+                      team={team}
+                      index={teams.indexOf(team)}
+                      rows={groupedOnCall.get(team) || []}
+                      contacts={contacts}
+                      onUpdateRows={handleUpdateRows}
+                      onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
+                      onRemoveTeam={handleRemoveTeam}
+                      setConfirm={setConfirmDelete}
+                      setMenu={setMenu}
+                      onCopyTeamInfo={handleCopyTeamInfo}
+                      tick={tick}
+                    />
+                  </li>
+                ))}
+              </div>
             ))}
           </ul>
         </SortableContext>
@@ -416,7 +451,7 @@ export const PersonnelTab: React.FC<{
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
       <StatusBar
-        left={<StatusBarLive label="Synced" />}
+        left={<StatusBarLive />}
         right={
           <span>
             {teams.length} {teams.length === 1 ? 'team' : 'teams'}

@@ -19,6 +19,8 @@ interface FieldDef {
   required?: boolean;
   values?: string[];
   maxSelect?: number;
+  onCreate?: boolean;
+  onUpdate?: boolean;
 }
 
 interface CollectionDef {
@@ -26,6 +28,12 @@ interface CollectionDef {
   type: 'base';
   fields: FieldDef[];
 }
+
+/** Autodate fields added to every collection for created/updated timestamps. */
+const AUTODATE_FIELDS: FieldDef[] = [
+  { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+  { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+];
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -159,32 +167,35 @@ const COLLECTIONS: CollectionDef[] = [
 
 const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
 
-/**
- * Ensure all required collections exist in PocketBase.
- * Creates missing collections with correct fields and auth rules.
- * Prunes stale collections not in the schema (skips system and users collections).
- */
-export async function ensureCollections(pb: PocketBase): Promise<void> {
-  let existingCollections: Array<{ id: string; name: string }>;
-  try {
-    existingCollections = await pb.collections.getFullList();
-  } catch (err) {
-    logger.error('Failed to list collections', { error: err });
-    return;
-  }
+/** Patch a single collection to add missing autodate fields. Returns true if patched. */
+async function patchAutodateFields(
+  pb: PocketBase,
+  colId: string,
+  colName: string,
+): Promise<boolean> {
+  const colFull = await pb.collections.getOne(colId);
+  const fields = (colFull as unknown as { fields: FieldDef[] }).fields || [];
+  const fieldNames = new Set(fields.map((f) => f.name));
+  const missing = AUTODATE_FIELDS.filter((f) => !fieldNames.has(f.name));
+  if (missing.length === 0) return false;
+  await pb.collections.update(colId, { fields: [...fields, ...missing] });
+  logger.info(`Patched autodate fields on collection: ${colName}`);
+  return true;
+}
 
-  const existing = new Set(existingCollections.map((c) => c.name));
-
-  // --- Create missing collections ---
+/** Create collections that don't exist yet. */
+async function createMissing(
+  pb: PocketBase,
+  existing: Set<string>,
+): Promise<number> {
   let created = 0;
   for (const def of COLLECTIONS) {
     if (existing.has(def.name)) continue;
-
     try {
       await pb.collections.create({
         name: def.name,
         type: def.type,
-        fields: def.fields,
+        fields: [...def.fields, ...AUTODATE_FIELDS],
         listRule: AUTH_RULE,
         viewRule: AUTH_RULE,
         createRule: AUTH_RULE,
@@ -197,21 +208,43 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
       logger.error(`Failed to create collection: ${def.name}`, { error: err });
     }
   }
+  return created;
+}
 
-  // --- Prune stale collections ---
-  // Identify unknown collections not in the schema (excluding system and users).
-  const staleCols = existingCollections.filter(
+/** Patch existing collections that are missing autodate fields. */
+async function patchExisting(
+  pb: PocketBase,
+  existing: Set<string>,
+  allCols: Array<{ id: string; name: string }>,
+): Promise<number> {
+  let patched = 0;
+  for (const def of COLLECTIONS) {
+    if (!existing.has(def.name)) continue;
+    const col = allCols.find((c) => c.name === def.name);
+    if (!col) continue;
+    try {
+      if (await patchAutodateFields(pb, col.id, def.name)) patched++;
+    } catch (err) {
+      logger.error(`Failed to patch autodate fields on: ${def.name}`, { error: err });
+    }
+  }
+  return patched;
+}
+
+/** Remove collections not in the schema (excluding system and users). */
+async function pruneStale(
+  pb: PocketBase,
+  allCols: Array<{ id: string; name: string }>,
+): Promise<number> {
+  const staleCols = allCols.filter(
     (col) => !col.name.startsWith('_') && col.name !== 'users' && !KNOWN_NAMES.has(col.name),
   );
-
   if (staleCols.length > 0) {
-    const staleNames = staleCols.map((c) => c.name);
     logger.warn(
-      `About to prune ${staleCols.length} unknown collection(s) not in schema: ${staleNames.join(', ')}. ` +
-        'If this is unexpected, restore from a PocketBase backup.',
+      `About to prune ${staleCols.length} unknown collection(s): ${staleCols.map((c) => c.name).join(', ')}. ` +
+        'If unexpected, restore from a PocketBase backup.',
     );
   }
-
   let pruned = 0;
   for (const col of staleCols) {
     try {
@@ -222,9 +255,29 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
       logger.error(`Failed to prune collection: ${col.name}`, { error: err });
     }
   }
+  return pruned;
+}
 
-  if (created > 0 || pruned > 0) {
-    logger.info(`Collection bootstrap complete: ${created} created, ${pruned} pruned`);
+/**
+ * Ensure all required collections exist in PocketBase.
+ * Creates missing collections, patches autodate fields, prunes stale collections.
+ */
+export async function ensureCollections(pb: PocketBase): Promise<void> {
+  let allCols: Array<{ id: string; name: string }>;
+  try {
+    allCols = await pb.collections.getFullList();
+  } catch (err) {
+    logger.error('Failed to list collections', { error: err });
+    return;
+  }
+
+  const existing = new Set(allCols.map((c) => c.name));
+  const created = await createMissing(pb, existing);
+  const patched = await patchExisting(pb, existing, allCols);
+  const pruned = await pruneStale(pb, allCols);
+
+  if (created > 0 || pruned > 0 || patched > 0) {
+    logger.info(`Collection bootstrap complete: ${created} created, ${patched} patched, ${pruned} pruned`);
   } else {
     logger.info('Collection bootstrap: all collections up to date');
   }

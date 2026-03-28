@@ -25,7 +25,7 @@ export const NotesTab: React.FC = () => {
   const pad = useNotepad();
   const { showToast } = useToast();
   const gridRef = React.useRef<HTMLDivElement | null>(null);
-  const [columnCount, setColumnCount] = useState(1);
+  const [columnCount, setColumnCount] = useState(3);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [overlayWidth, setOverlayWidth] = useState<number | undefined>();
@@ -65,6 +65,7 @@ export const NotesTab: React.FC = () => {
     const minColumnWidth = pad.fontSize === 'lg' ? 340 : 280;
     const gap = pad.fontSize === 'lg' ? 20 : 16;
     const width = node.clientWidth;
+    if (width < 1) return; // not laid out yet
     const nextCount = Math.max(1, Math.floor((width + gap) / (minColumnWidth + gap)));
     setColumnCount((prev) => (prev === nextCount ? prev : nextCount));
   }, [pad.fontSize]);

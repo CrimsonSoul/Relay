@@ -399,7 +399,7 @@
 
 .alerts-severity-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   border: none;
   margin: 0;
@@ -428,27 +428,27 @@
 }
 
 .alerts-sev-btn.active[data-sev='ISSUE'] {
-  background: rgba(211, 47, 47, 0.12);
-  border-color: #ef5350;
-  color: #ef5350;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: #ef4444;
+  color: #fca5a5;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {
-  background: rgba(202, 138, 4, 0.12);
-  border-color: #fbbf24;
-  color: #fbbf24;
+  background: rgba(251, 146, 60, 0.12);
+  border-color: #fb923c;
+  color: #fdba74;
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: #60a5fa;
-  color: #60a5fa;
+  background: rgba(56, 189, 248, 0.12);
+  border-color: #38bdf8;
+  color: #38bdf8;
 }
 
 .alerts-sev-btn.active[data-sev='RESOLVED'] {
-  background: rgba(46, 125, 50, 0.12);
-  border-color: #66bb6a;
-  color: #66bb6a;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: #10b981;
+  color: #10b981;
 }
 
 /* --- Preview Panel (Right) --- */
@@ -481,7 +481,7 @@
   border-radius: 10px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: var(--font-family-base);
   color: #1a1a2e;
   border: 2px solid var(--email-banner);
   border-bottom-width: 5px;
@@ -503,7 +503,7 @@
 }
 
 .alerts-email-severity-prefix {
-  font-family: 'Montserrat', sans-serif;
+  font-family: var(--font-family-base);
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.18em;
@@ -513,7 +513,7 @@
 }
 
 .alerts-email-severity-label {
-  font-family: 'Montserrat', sans-serif;
+  font-family: var(--font-family-base);
   font-size: 22px;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -586,7 +586,7 @@
 .alerts-email-meta-item {
   font-size: inherit;
   color: #777;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-family-mono);
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
@@ -653,7 +653,7 @@
 }
 
 .alerts-email-footer-timestamp {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-family-mono);
   font-size: 12px;
   color: #888;
   letter-spacing: 0.02em;
@@ -696,7 +696,7 @@
 
 .alerts-email-body [data-hl='service'],
 .alerts-editable-body [data-hl='service'] {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-family-mono);
   font-size: 0.9em;
   background: #f0f0f5;
   padding: 1px 6px;
@@ -1022,7 +1022,7 @@
 .alerts-email-event-time-value {
   color: #6d5200;
   font-weight: 500;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: var(--font-family-mono);
   font-size: 11.5px;
   letter-spacing: 0.01em;
 }

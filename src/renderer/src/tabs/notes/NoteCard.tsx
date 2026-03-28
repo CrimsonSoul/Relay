@@ -17,6 +17,7 @@ interface NoteCardOverlayProps {
 }
 
 function timeAgo(ts: number): string {
+  if (!ts || !Number.isFinite(ts)) return '';
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return 'just now';

@@ -262,7 +262,7 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
             <span className="alerts-field-label">
               Footer Logo <span className="alerts-optional-tag">OPTIONAL</span>
             </span>
-            <span className="alerts-field-hint">Shown at original colors in the card footer</span>
+            <span className="alerts-field-hint">Shown in grayscale in the card footer</span>
             <div className="alerts-logo-controls">
               {footerLogoDataUrl ? (
                 <>

@@ -176,9 +176,13 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
         />
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={asm.isHeaderCollapsed}>
-            {asm.allRecipients.length > 0 && (
-              <div className="match-count">{asm.allRecipients.length} recipients</div>
-            )}
+            <div className="toolbar-title-group">
+              <span className="toolbar-title">Recipients</span>
+              {asm.allRecipients.length > 0 && (
+                <span className="toolbar-badge">{asm.allRecipients.length}</span>
+              )}
+            </div>
+            <div className="toolbar-sep" />
             {manualRemoves.length > 0 && (
               <TactileButton
                 variant="ghost"
@@ -199,7 +203,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                   </svg>
                 }
               >
-                UNDO
+                Undo
               </TactileButton>
             )}
             <TactileButton
@@ -222,7 +226,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 </svg>
               }
             >
-              RESET
+              Reset
             </TactileButton>
             <TactileButton
               variant="ghost"
@@ -247,7 +251,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 </svg>
               }
             >
-              HISTORY
+              History
             </TactileButton>
             <TactileButton
               variant="ghost"
@@ -268,7 +272,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 </svg>
               }
             >
-              COPY
+              Copy All
             </TactileButton>
             <ListToolbar
               sortDirection={asm.sortConfig.direction}
@@ -312,7 +316,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 </svg>
               }
             >
-              DRAFT BRIDGE
+              Draft Bridge
             </TactileButton>
           </CollapsibleHeader>
 

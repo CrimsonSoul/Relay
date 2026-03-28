@@ -37,7 +37,7 @@
 .tactile-button--primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #000000 !important;
+  color: #ffffff !important;
 }
 
 .tactile-button--primary:hover {
@@ -205,7 +205,7 @@ input.tactile-input.tactile-input:focus {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  padding: 16px 24px;
+  padding: 16px 24px 0;
   background: transparent;
   overflow: hidden;
 }
@@ -278,6 +278,37 @@ input.tactile-input.tactile-input:focus {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   margin-right: auto;
+}
+
+/* Toolbar title group */
+.toolbar-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.toolbar-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.3px;
+}
+
+.toolbar-badge {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 8px;
+  background: var(--color-accent-dim);
+  color: var(--color-accent-text);
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  flex-shrink: 0;
 }
 
 /* ===========================
@@ -1064,13 +1095,12 @@ body.modal-open {
    =========================== */
 .collapsible-header {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  flex-shrink: 0;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .collapsible-header-left {
@@ -1810,17 +1840,17 @@ body.modal-open {
 }
 
 .cmd-icon--contact {
-  background: rgba(120, 53, 15, 0.72);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  color: #fde68a;
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
   font-size: var(--text-sm);
   font-weight: 700;
 }
 
 .cmd-icon--group {
-  background: rgba(120, 53, 15, 0.72);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  color: #fde68a;
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
 }
 
 .cmd-icon--server {
@@ -1840,32 +1870,24 @@ body.modal-open {
    ============================================================================ */
 
 .group-pill {
-  font-size: var(--text-xs);
-  padding: 4px 10px 4px 14px;
-  border-radius: 10px;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 6px;
   font-weight: 700;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   position: relative;
   overflow: hidden;
-  border: 1px solid transparent;
-  color: var(--pill-text);
-  background: var(--pill-bg);
-  border-color: var(--pill-border);
+  border: none;
+  color: var(--color-accent-text);
+  background: var(--color-accent-dim);
 }
 
 .group-pill-accent {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 10px 0 0 10px;
-  opacity: 0.8;
-  background: var(--pill-fill);
+  display: none;
 }
 
 /* ============================================================================
@@ -1913,9 +1935,9 @@ body.modal-open {
   width: 40px;
   height: 40px;
   font-size: var(--text-xs);
-  background: rgba(120, 53, 15, 0.72);
-  color: #fde68a;
-  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: var(--color-accent-dim);
+  color: var(--color-accent-text);
+  border: 1px solid rgba(225, 29, 72, 0.25);
 }
 
 /* ============================================================================

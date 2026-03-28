@@ -8,7 +8,7 @@ import { isTimeWindowActive } from '../../utils/timeParsing';
 interface TeamRowProps {
   row: OnCallRow;
   hasAnyTimeWindow: boolean;
-  gridTemplate: string;
+  gridTemplate?: string;
   tick?: number;
 }
 
@@ -28,7 +28,7 @@ const getRoleLabel = (role: string) => {
 };
 
 export const TeamRow: React.FC<TeamRowProps> = React.memo(
-  ({ row, hasAnyTimeWindow, gridTemplate, tick: _tick }) => {
+  ({ row, hasAnyTimeWindow, gridTemplate: _gridTemplate, tick: _tick }) => {
     const { showToast } = useToast();
     const isActive = isTimeWindowActive(row.timeWindow || '');
 
@@ -46,54 +46,52 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
     };
 
     const roleText = getRoleLabel(row.role);
+    const displayName = row.name || '—';
+    const phoneDisplay = formatPhoneNumber(row.contact);
     const rowClassName = `team-row${isActive ? ' team-row--active' : ''}${isPrimary ? ' team-row--primary' : ''}`;
+    const timeClasses = `team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${row.timeWindow ? '' : ' team-row-time-window--hidden'}`;
 
     return (
-      <div className={rowClassName} style={{ gridTemplateColumns: gridTemplate }}>
-        <Tooltip content={roleText}>
-          <div aria-hidden="true" className="team-row-role">
-            {roleText}
-          </div>
-        </Tooltip>
-
-        <Tooltip content={row.name} block>
+      <div className={rowClassName}>
+        <div className="team-row-top">
           <div className="team-row-name-wrapper">
-            {isActive && <div className="animate-active-indicator team-row-active-indicator" />}
-            <div className={`team-row-name${row.name ? '' : ' team-row-name--empty'}`}>
-              {row.name || '—'}
-            </div>
+            {isActive && <span className="team-row-active-indicator animate-active-indicator" />}
+            <Tooltip content={row.name || ''}>
+              <span className={`team-row-name${row.name ? '' : ' team-row-name--empty'}`}>
+                {displayName}
+              </span>
+            </Tooltip>
           </div>
-        </Tooltip>
-
-        <Tooltip content="Click to copy">
-          <button
-            type="button"
-            onClick={() => {
-              void handleCopyContact();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
+          <Tooltip content="Click to copy">
+            <button
+              type="button"
+              onClick={() => {
                 void handleCopyContact();
-              }
-            }}
-            className={`team-row-phone${row.contact ? '' : ' team-row-phone--empty'}`}
-            disabled={!row.contact}
-            aria-label={row.contact ? `Copy contact ${row.contact}` : 'No contact available'}
-          >
-            {formatPhoneNumber(row.contact)}
-          </button>
-        </Tooltip>
-
-        {hasAnyTimeWindow && (
-          <Tooltip content={row.timeWindow || ''}>
-            <div
-              className={`team-row-time-window${isActive ? ' team-row-time-window--active' : ''}${row.timeWindow ? '' : ' team-row-time-window--hidden'}`}
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  void handleCopyContact();
+                }
+              }}
+              className={`team-row-phone${row.contact ? '' : ' team-row-phone--empty'}`}
+              disabled={!row.contact}
+              aria-label={row.contact ? `Copy contact ${row.contact}` : 'No contact available'}
             >
-              {row.timeWindow || '\u00A0'}
-            </div>
+              {phoneDisplay}
+            </button>
           </Tooltip>
-        )}
+        </div>
+        <div className="team-row-bottom">
+          <Tooltip content={roleText}>
+            <span className="team-row-role">{roleText}</span>
+          </Tooltip>
+          {hasAnyTimeWindow && (
+            <Tooltip content={row.timeWindow || ''}>
+              <span className={timeClasses}>{row.timeWindow || '\u00A0'}</span>
+            </Tooltip>
+          )}
+        </div>
       </div>
     );
   },
