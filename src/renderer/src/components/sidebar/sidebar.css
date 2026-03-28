@@ -183,9 +183,7 @@
 }
 
 .sidebar-divider {
-  width: 56px;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  display: none;
   margin-bottom: 8px;
   flex-shrink: 0;
 }
