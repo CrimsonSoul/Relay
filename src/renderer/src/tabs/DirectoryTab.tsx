@@ -304,17 +304,10 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
 
       <StatusBar
         left={<StatusBarLive />}
-        center={
+        right={
           <span>
             Showing {filtered.length} of {contacts.length}
           </span>
-        }
-        right={
-          filters.isAnyFilterActive ? (
-            <span>
-              {activeFilterCount} {activeFilterCount !== 1 ? 'filters' : 'filter'} active
-            </span>
-          ) : undefined
         }
       />
 

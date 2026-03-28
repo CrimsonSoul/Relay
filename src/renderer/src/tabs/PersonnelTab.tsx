@@ -451,7 +451,7 @@ export const PersonnelTab: React.FC<{
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
       )}
       <StatusBar
-        left={<StatusBarLive label="Synced" />}
+        left={<StatusBarLive />}
         right={
           <span>
             {teams.length} {teams.length === 1 ? 'team' : 'teams'}

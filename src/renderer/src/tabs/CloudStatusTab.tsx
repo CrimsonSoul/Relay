@@ -336,7 +336,7 @@ export const CloudStatusTab: React.FC<{
       </div>
 
       <StatusBar
-        left={<StatusBarLive label="Auto-refreshing" />}
+        left={<StatusBarLive />}
         right={<span>{CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored</span>}
       />
     </div>
