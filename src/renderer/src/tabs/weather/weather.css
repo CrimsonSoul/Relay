@@ -27,9 +27,9 @@
 .weather-mini-modal {
   width: 100%;
   max-width: 420px;
-  background-color: var(--color-bg-surface-opaque);
+  background-color: var(--color-bg-surface);
   border-radius: var(--radius-xl);
-  border: var(--border-medium);
+  border: 1px solid var(--border-default);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
@@ -56,7 +56,7 @@
 
 .weather-mini-modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   justify-content: flex-end;
   gap: 12px;
@@ -69,9 +69,9 @@
   background: var(--color-bg-surface);
   border-radius: var(--radius-xl);
   padding: 20px;
-  border: var(--border-medium);
+  border: 1px solid var(--border-default);
   flex-shrink: 0;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .hourly-forecast-title {
@@ -169,7 +169,7 @@
 }
 
 .weather-alert-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .weather-alert-content {
@@ -215,8 +215,8 @@
 .weather-alert-urgent-badge {
   font-size: var(--text-xs);
   padding: 4px 12px;
-  border-radius: var(--radius-md);
-  background: rgba(220, 38, 38, 0.4);
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.35);
   color: #fff;
   text-transform: uppercase;
   font-weight: 800;
@@ -264,12 +264,12 @@
   background: var(--color-bg-surface);
   border-radius: var(--radius-xl);
   padding: 20px;
-  border: var(--border-medium);
+  border: 1px solid var(--border-default);
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .daily-forecast-title {
@@ -442,9 +442,9 @@
   width: 280px;
   padding: 12px;
   background: var(--color-bg-surface-2);
-  border: var(--border-medium);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -455,8 +455,8 @@
   width: 100%;
   height: 40px;
   padding: 0 14px;
-  background: var(--color-bg-chrome);
-  border: var(--border-medium);
+  background: var(--color-bg-surface);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--color-text-primary);
   font-size: var(--text-sm);
