@@ -77,15 +77,21 @@
   color: var(--color-text-secondary);
 }
 
+.detail-panel-avatar--server {
+  background: var(--color-accent-dim) !important;
+  border-color: rgba(225, 29, 72, 0.25) !important;
+  color: var(--color-accent-text) !important;
+}
+
 .detail-panel-os-badge {
   font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 3px 8px;
   border-radius: 4px;
-  background: var(--badge-bg);
-  border: 1px solid var(--badge-border);
-  color: var(--badge-text);
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
 }
 
 .detail-panel-fields {
@@ -260,16 +266,16 @@
 }
 
 .server-card-os-badge {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: var(--badge-bg);
-  border: 1px solid var(--badge-border);
-  color: var(--badge-text);
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
 }
 
 .server-card-info {
