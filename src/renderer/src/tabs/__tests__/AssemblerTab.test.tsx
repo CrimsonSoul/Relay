@@ -304,37 +304,38 @@ describe('AssemblerTab', () => {
       log: [{ email: 'a@example.com', source: 'group' }],
     };
     render(<AssemblerTab {...defaultProps} />);
-    expect(screen.getByText('1 recipients')).toBeInTheDocument();
+    expect(screen.getByText('Recipients')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
   });
 
   it('shows UNDO button when there are manual removes', () => {
     render(<AssemblerTab {...defaultProps} manualRemoves={['x@example.com']} />);
-    expect(screen.getByText('UNDO')).toBeInTheDocument();
+    expect(screen.getByText('Undo')).toBeInTheDocument();
   });
 
   it('calls onResetManual when RESET is clicked', () => {
     const onResetManual = vi.fn();
     render(<AssemblerTab {...defaultProps} onResetManual={onResetManual} />);
-    fireEvent.click(screen.getByText('RESET'));
+    fireEvent.click(screen.getByText('Reset'));
     expect(onResetManual).toHaveBeenCalled();
   });
 
   it('opens history modal when HISTORY is clicked', () => {
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     expect(screen.getByTestId('bridge-history-modal')).toBeInTheDocument();
   });
 
   it('closes history modal when close is clicked', () => {
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('close-history'));
     expect(screen.queryByTestId('bridge-history-modal')).not.toBeInTheDocument();
   });
 
   it('calls setIsBridgeReminderOpen when DRAFT BRIDGE is clicked', () => {
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('DRAFT BRIDGE'));
+    fireEvent.click(screen.getByText('Draft Bridge'));
     expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(true);
   });
 
@@ -353,13 +354,13 @@ describe('AssemblerTab', () => {
 
   it('calls handleCopy when COPY is clicked', () => {
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('COPY'));
+    fireEvent.click(screen.getByText('Copy All'));
     expect(mockHandleCopy).toHaveBeenCalled();
   });
 
   it('opens SaveGroupModal when "save-as-group" is triggered from history', () => {
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     expect(screen.getByTestId('save-group-modal')).toBeInTheDocument();
     expect(screen.getByText('Save as Group')).toBeInTheDocument();
@@ -368,7 +369,7 @@ describe('AssemblerTab', () => {
   it('calls saveGroup and showToast on successful group save from history', async () => {
     mockSaveGroup.mockResolvedValue({ id: 'g2', name: 'TestGroup', contacts: [] });
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     fireEvent.click(screen.getByText('save-group'));
     // Wait for async handler
@@ -383,7 +384,7 @@ describe('AssemblerTab', () => {
   it('shows error toast when saveGroup fails', async () => {
     mockSaveGroup.mockResolvedValue(null);
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     fireEvent.click(screen.getByText('save-group'));
     await vi.waitFor(() => {
@@ -401,7 +402,7 @@ describe('AssemblerTab', () => {
         onResetManual={onResetManual}
       />,
     );
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('load-history'));
     expect(onResetManual).toHaveBeenCalled();
     // Alpha is in groups, so g1 should be selected
@@ -463,7 +464,7 @@ describe('AssemblerTab', () => {
     };
 
     render(<AssemblerTab {...defaultProps} selectedGroupIds={['g1', 'missing-group']} />);
-    fireEvent.click(screen.getByText('COPY'));
+    fireEvent.click(screen.getByText('Copy All'));
 
     await vi.waitFor(() => {
       expect(mockShowToast).toHaveBeenCalledWith('Copy failed: copy failed', 'error');
@@ -500,7 +501,7 @@ describe('AssemblerTab', () => {
     const setManualAdds = vi.fn();
     render(<AssemblerTab {...defaultProps} setManualAdds={setManualAdds} />);
 
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('load-history-manual'));
 
     expect(setManualAdds).toHaveBeenCalledWith(['manual@example.com']);
@@ -541,7 +542,7 @@ describe('AssemblerTab', () => {
   it('closes save-group modal from history action', () => {
     render(<AssemblerTab {...defaultProps} />);
 
-    fireEvent.click(screen.getByText('HISTORY'));
+    fireEvent.click(screen.getByText('History'));
     fireEvent.click(screen.getByText('save-as-group'));
     expect(screen.getByTestId('save-group-modal')).toBeInTheDocument();
 
