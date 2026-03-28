@@ -178,6 +178,32 @@
   min-width: 22px;
 }
 
+/* --- Masonry Grid --- */
+
+.relay-grid--notes {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.notes-masonry-columns {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.notes-masonry-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 /* --- Note Card --- */
 
 .note-card {
