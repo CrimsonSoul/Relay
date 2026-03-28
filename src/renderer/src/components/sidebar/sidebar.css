@@ -1,7 +1,7 @@
 /* Sidebar App Icon */
 .sidebar-app-icon {
   width: 100%;
-  padding: 16px 0;
+  padding: 38px 0 12px;
   display: flex;
   flex-direction: column;
   align-items: center;
