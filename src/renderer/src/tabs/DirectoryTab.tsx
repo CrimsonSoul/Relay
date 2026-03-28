@@ -178,38 +178,6 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
   return (
     <div className="tab-layout">
       <div className="tab-split-layout">
-        {selectedContact ? (
-          <ContactDetailPanel
-            contact={selectedContact}
-            groups={selectedGroups}
-            noteText={selectedNote?.note}
-            tags={selectedNote?.tags}
-            onEditNotes={() => setNotesContact(selectedContact)}
-            onEdit={() => dir.setEditingContact(selectedContact)}
-            onDelete={() => dir.setDeleteConfirmation(selectedContact)}
-            onAddToAssembler={() => handleAddWrapper(selectedContact)}
-          />
-        ) : (
-          <div className="detail-panel detail-panel--empty">
-            <div className="detail-panel-placeholder">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.3"
-              >
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <span>Select a contact</span>
-            </div>
-          </div>
-        )}
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={dir.isHeaderCollapsed}>
             {filtered.length > 0 && <div className="match-count">{filtered.length} contacts</div>}
@@ -300,6 +268,38 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             )}
           </div>
         </div>
+        {selectedContact ? (
+          <ContactDetailPanel
+            contact={selectedContact}
+            groups={selectedGroups}
+            noteText={selectedNote?.note}
+            tags={selectedNote?.tags}
+            onEditNotes={() => setNotesContact(selectedContact)}
+            onEdit={() => dir.setEditingContact(selectedContact)}
+            onDelete={() => dir.setDeleteConfirmation(selectedContact)}
+            onAddToAssembler={() => handleAddWrapper(selectedContact)}
+          />
+        ) : (
+          <div className="detail-panel detail-panel--empty">
+            <div className="detail-panel-placeholder">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.3"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+              <span>Select a contact</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <StatusBar

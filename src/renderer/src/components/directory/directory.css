@@ -12,7 +12,7 @@
   background-color: var(--color-bg-card);
   animation: detailPanelFadeIn 0.2s ease-out;
   overflow: hidden;
-  margin-right: 16px;
+  margin-left: 16px;
 }
 
 .detail-panel--empty {

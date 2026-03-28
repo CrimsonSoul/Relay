@@ -137,42 +137,6 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   return (
     <div className="tab-layout">
       <div className="tab-split-layout">
-        {selectedServer ? (
-          <ServerDetailPanel
-            server={selectedServer}
-            contactLookup={h.contactLookup}
-            noteText={selectedNote?.note}
-            tags={selectedNote?.tags}
-            onEditNotes={() => setNotesServer(selectedServer)}
-            onEdit={() => h.editServer(selectedServer)}
-            onDelete={() => {
-              void h.deleteServer(selectedServer);
-              setSelectedIndex(0);
-            }}
-          />
-        ) : (
-          <div className="detail-panel detail-panel--empty">
-            <div className="detail-panel-placeholder">
-              <svg
-                width="32"
-                height="32"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.3"
-              >
-                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-                <line x1="6" y1="6" x2="6.01" y2="6" />
-                <line x1="6" y1="18" x2="6.01" y2="18" />
-              </svg>
-              <span>Select a server</span>
-            </div>
-          </div>
-        )}
         <div className="tab-main-content">
           <CollapsibleHeader isCollapsed={h.isHeaderCollapsed}>
             {displayedServers.length > 0 && (
@@ -259,6 +223,42 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             )}
           </section>
         </div>
+        {selectedServer ? (
+          <ServerDetailPanel
+            server={selectedServer}
+            contactLookup={h.contactLookup}
+            noteText={selectedNote?.note}
+            tags={selectedNote?.tags}
+            onEditNotes={() => setNotesServer(selectedServer)}
+            onEdit={() => h.editServer(selectedServer)}
+            onDelete={() => {
+              void h.deleteServer(selectedServer);
+              setSelectedIndex(0);
+            }}
+          />
+        ) : (
+          <div className="detail-panel detail-panel--empty">
+            <div className="detail-panel-placeholder">
+              <svg
+                width="32"
+                height="32"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.3"
+              >
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                <line x1="6" y1="6" x2="6.01" y2="6" />
+                <line x1="6" y1="18" x2="6.01" y2="18" />
+              </svg>
+              <span>Select a server</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {h.contextMenu && (
