@@ -616,3 +616,27 @@
   opacity: 0.8;
   height: 48px;
 }
+
+/* Masonry layout for team cards */
+.oncall-masonry {
+  display: flex;
+  gap: 24px;
+  padding: 4px 4px 40px;
+  list-style: none;
+  margin: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.oncall-masonry-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.oncall-masonry-item {
+  list-style: none;
+}
