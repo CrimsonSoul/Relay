@@ -105,30 +105,24 @@
 /* Provider summary cards */
 .cloud-status__summary {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
 }
 
 .cloud-status-provider {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 16px;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transition: border-color 0.15s;
   cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
 }
 
 .cloud-status-provider:hover {
-  border-color: var(--color-border);
-  background: var(--color-bg-card-hover, var(--color-bg-card));
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .cloud-status-provider__header {
@@ -239,15 +233,15 @@
 
 /* Individual status item */
 .cloud-status-item {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  transition: border-color 0.15s;
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 16px 20px;
+  transition: background 0.12s;
 }
 
 .cloud-status-item:hover {
-  border-color: var(--color-border-default, var(--color-border-subtle));
+  background: var(--color-bg-card-hover);
 }
 
 .cloud-status-item__header {
