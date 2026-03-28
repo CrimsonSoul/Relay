@@ -1840,17 +1840,17 @@ body.modal-open {
 }
 
 .cmd-icon--contact {
-  background: rgba(120, 53, 15, 0.72);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  color: #fde68a;
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
   font-size: var(--text-sm);
   font-weight: 700;
 }
 
 .cmd-icon--group {
-  background: rgba(120, 53, 15, 0.72);
-  border: 1px solid rgba(251, 191, 36, 0.45);
-  color: #fde68a;
+  background: var(--color-accent-dim);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: var(--color-accent-text);
 }
 
 .cmd-icon--server {

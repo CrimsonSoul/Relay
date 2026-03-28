@@ -238,25 +238,25 @@
 
 .server-card-body {
   width: 100%;
-  height: calc(100% - 8px);
   display: flex;
   align-items: center;
-  padding-left: 20px;
-  padding-right: 20px;
+  padding: 14px 28px;
   gap: 16px;
   cursor: default;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.12s;
+}
+
+.server-card-body:hover {
+  background: var(--color-bg-card-hover);
+}
+
+.server-card-body--selected {
+  background: var(--color-accent-subtle);
 }
 
 .server-card-body .accent-strip {
-  opacity: 0;
-}
-
-.server-card-body--selected .accent-strip {
-  opacity: 1;
-}
-
-.server-card-body:hover .accent-strip {
-  opacity: 0;
+  display: none;
 }
 
 .server-card-os-badge {
