@@ -64,9 +64,13 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
 }>;
 
 export const formatHistoryDate = (timestamp: number): string => {
-  if (!timestamp || !Number.isFinite(timestamp)) return 'Just now';
+  if (!timestamp || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  }
   const date = new Date(timestamp);
-  if (isNaN(date.getTime())) return 'Just now';
+  if (isNaN(date.getTime())) {
+    return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  }
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   const isYesterday = new Date(now.getTime() - 86400000).toDateString() === date.toDateString();
