@@ -234,16 +234,22 @@ describe('WeatherTab', () => {
 
   it('does not use radar-only class when weather data is present', () => {
     const weatherData = {
-      current: {
+      current_weather: {
         temperature: 72,
-        humidity: 50,
-        windSpeed: 10,
-        windDirection: 180,
-        weatherCode: 0,
-        time: '',
+        windspeed: 10,
+        winddirection: 180,
+        weathercode: 0,
+        time: '2026-03-30T12:00',
       },
-      hourly: [],
-      daily: [],
+      hourly: { time: [], temperature_2m: [], weathercode: [], precipitation_probability: [] },
+      daily: {
+        time: [],
+        weathercode: [],
+        temperature_2m_max: [],
+        temperature_2m_min: [],
+        wind_speed_10m_max: [],
+        precipitation_probability_max: [],
+      },
     };
     const { container } = render(<WeatherTab {...defaultProps} weather={weatherData as never} />);
     const tabBody = container.querySelector('.weather-tab-body');
@@ -567,16 +573,22 @@ describe('WeatherTab', () => {
 
   it('passes weather data to forecast components', () => {
     const weatherData = {
-      current: {
+      current_weather: {
         temperature: 72,
-        humidity: 50,
-        windSpeed: 10,
-        windDirection: 180,
-        weatherCode: 0,
-        time: '',
+        windspeed: 10,
+        winddirection: 180,
+        weathercode: 0,
+        time: '2026-03-30T12:00',
       },
-      hourly: [],
-      daily: [],
+      hourly: { time: [], temperature_2m: [], weathercode: [], precipitation_probability: [] },
+      daily: {
+        time: [],
+        weathercode: [],
+        temperature_2m_max: [],
+        temperature_2m_min: [],
+        wind_speed_10m_max: [],
+        precipitation_probability_max: [],
+      },
     };
     render(<WeatherTab {...defaultProps} weather={weatherData as never} />);
     expect(screen.getByTestId('hourly-forecast')).toHaveTextContent('has-weather');
