@@ -97,10 +97,14 @@ export const PersonnelTab: React.FC<{
     updateColumnCount();
     const node = gridRef.current;
     if (!node) return;
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
     observer?.observe(node);
     globalThis.addEventListener('resize', updateColumnCount);
-    return () => { observer?.disconnect(); globalThis.removeEventListener('resize', updateColumnCount); };
+    return () => {
+      observer?.disconnect();
+      globalThis.removeEventListener('resize', updateColumnCount);
+    };
   }, [updateColumnCount]);
 
   const teamColumns = useMemo(() => {
@@ -325,7 +329,10 @@ export const PersonnelTab: React.FC<{
       >
         <SortableContext items={teams} strategy={rectSortingStrategy}>
           <ul
-            ref={(node) => { gridRef.current = node; if (animationParent) animationParent.current = node; }}
+            ref={(node) => {
+              gridRef.current = node;
+              if (animationParent) animationParent.current = node;
+            }}
             className="oncall-masonry stagger-children"
             aria-label="Sortable On-Call Teams"
           >

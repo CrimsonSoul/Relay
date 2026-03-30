@@ -34,9 +34,7 @@ export const ServerCard = memo(
       return () => node.removeEventListener('contextmenu', handleContextMenu);
     }, [onContextMenu, onRowClick, server]);
     const cardContent = (
-      <div
-        className={`server-card-body${selected ? ' server-card-body--selected' : ''}`}
-      >
+      <div className={`server-card-body${selected ? ' server-card-body--selected' : ''}`}>
         <div className="accent-strip" style={{ background: osInfo.text }} />
         <div
           className="server-card-os-badge"

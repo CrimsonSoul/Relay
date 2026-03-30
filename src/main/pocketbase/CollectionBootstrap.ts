@@ -184,10 +184,7 @@ async function patchAutodateFields(
 }
 
 /** Create collections that don't exist yet. */
-async function createMissing(
-  pb: PocketBase,
-  existing: Set<string>,
-): Promise<number> {
+async function createMissing(pb: PocketBase, existing: Set<string>): Promise<number> {
   let created = 0;
   for (const def of COLLECTIONS) {
     if (existing.has(def.name)) continue;
@@ -277,7 +274,9 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   const pruned = await pruneStale(pb, allCols);
 
   if (created > 0 || pruned > 0 || patched > 0) {
-    logger.info(`Collection bootstrap complete: ${created} created, ${patched} patched, ${pruned} pruned`);
+    logger.info(
+      `Collection bootstrap complete: ${created} created, ${patched} patched, ${pruned} pruned`,
+    );
   } else {
     logger.info('Collection bootstrap: all collections up to date');
   }
