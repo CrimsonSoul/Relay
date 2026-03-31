@@ -5,6 +5,7 @@ import { useToast } from './Toast';
 import { getErrorMessage } from '@shared/types';
 import { secureStorage } from '../utils/secureStorage';
 import { RADAR_URL_KEY } from '../tabs/RadarTab';
+import { useTheme, type ThemePreference } from '../hooks/useTheme';
 
 type Props = {
   isOpen: boolean;
@@ -26,6 +27,7 @@ export const SettingsModal: React.FC<Props> = ({
   onOpenDataManager,
   onReconfigure,
 }) => {
+  const { preference, setPreference } = useTheme();
   const [radarUrl, setRadarUrl] = useState('');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
@@ -76,6 +78,24 @@ export const SettingsModal: React.FC<Props> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
       <div className="settings-body">
+        <div className="settings-section">
+          <div className="settings-section-heading">Appearance</div>
+          <div className="settings-button-row">
+            {(['system', 'light', 'dark'] as ThemePreference[]).map((opt) => (
+              <TactileButton
+                key={opt}
+                variant={preference === opt ? 'primary' : 'secondary'}
+                onClick={() => setPreference(opt)}
+                className="btn-flex-center"
+              >
+                {opt.charAt(0).toUpperCase() + opt.slice(1)}
+              </TactileButton>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-divider" />
+
         {onOpenDataManager && (
           <div className="settings-section">
             <div className="settings-section-heading">Data Management</div>

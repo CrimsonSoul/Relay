@@ -19,6 +19,11 @@ vi.mock('../components/Toast', () => ({
   useToast: () => ({ showToast: mockShowToast }),
 }));
 
+// ── mock useTheme hook ──────────────────────────────────────────────────────
+vi.mock('../hooks/useTheme', () => ({
+  useTheme: () => ({ preference: 'system' as const, setPreference: vi.fn() }),
+}));
+
 // ── mock heavy sub-components ────────────────────────────────────────────────
 vi.mock('../components/Sidebar', () => ({
   Sidebar: ({
