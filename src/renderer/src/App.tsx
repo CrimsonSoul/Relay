@@ -23,6 +23,7 @@ import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
+import { useTheme } from './hooks/useTheme';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -50,6 +51,7 @@ const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} 
 export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
   const { showToast } = useToast();
   const deviceLocation = useLocation();
+  useTheme();
 
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
