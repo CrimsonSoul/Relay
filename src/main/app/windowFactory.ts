@@ -145,7 +145,7 @@ export async function createAuxWindow(route: string): Promise<void> {
   }
 
   const auxWindow = new BrowserWindow({
-    width: 960,
+    width: 850,
     height: 800,
     backgroundColor: '#060608',
     title: 'Relay - On-Call Board',
