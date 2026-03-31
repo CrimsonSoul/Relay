@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { CollapsibleHeader, useCollapsibleHeader } from './CollapsibleHeader';
 import { TeamCard } from './personnel/TeamCard';
@@ -47,6 +47,41 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
       copyAllError: 'Failed to copy to clipboard',
     },
   });
+
+  // Masonry column distribution (matches PersonnelTab)
+  const gridRef = React.useRef<HTMLUListElement | null>(null);
+  const [columnCount, setColumnCount] = useState(3);
+
+  const updateColumnCount = useCallback(() => {
+    const node = gridRef.current;
+    if (!node) return;
+    const width = node.clientWidth;
+    if (width < 1) return;
+    const minCol = 340;
+    const gap = 24;
+    const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
+    setColumnCount((prev) => (prev === next ? prev : next));
+  }, []);
+
+  useEffect(() => {
+    updateColumnCount();
+    const node = gridRef.current;
+    if (!node) return;
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
+    observer?.observe(node);
+    globalThis.addEventListener('resize', updateColumnCount);
+    return () => {
+      observer?.disconnect();
+      globalThis.removeEventListener('resize', updateColumnCount);
+    };
+  }, [updateColumnCount]);
+
+  const teamColumns = useMemo(() => {
+    const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
+    teams.forEach((team, i) => cols[i % cols.length].push(team));
+    return cols;
+  }, [teams, columnCount]);
 
   const alertConfigs = [
     { day: 0, type: 'first-responder', label: 'Update First Responder', tone: 'info' },
@@ -161,27 +196,34 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
       )}
 
       <ul
-        ref={animationParent}
-        className={`relay-grid relay-grid--masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
+        ref={(node) => {
+          gridRef.current = node;
+          if (animationParent) animationParent.current = node;
+        }}
+        className={`oncall-masonry stagger-children${isKiosk ? ' oncall-grid--kiosk' : ''}`}
         aria-label="On-Call Teams"
       >
-        {teams.map((team, idx) => (
-          <li key={team} className="relay-grid-item animate-card-entrance">
-            <TeamCard
-              team={team}
-              index={idx}
-              rows={localOnCall.filter((r) => r.team === team)}
-              contacts={contacts}
-              onUpdateRows={() => {}}
-              onRenameTeam={() => {}}
-              onRemoveTeam={() => {}}
-              setConfirm={() => {}}
-              setMenu={setMenu}
-              onCopyTeamInfo={handleCopyTeamInfo}
-              isReadOnly={true}
-              tick={tick}
-            />
-          </li>
+        {teamColumns.map((column, colIdx) => (
+          <div className="oncall-masonry-column" key={colIdx}>
+            {column.map((team) => (
+              <li key={team} className="oncall-masonry-item animate-card-entrance">
+                <TeamCard
+                  team={team}
+                  index={teams.indexOf(team)}
+                  rows={localOnCall.filter((r) => r.team === team)}
+                  contacts={contacts}
+                  onUpdateRows={() => {}}
+                  onRenameTeam={() => {}}
+                  onRemoveTeam={() => {}}
+                  setConfirm={() => {}}
+                  setMenu={setMenu}
+                  onCopyTeamInfo={handleCopyTeamInfo}
+                  isReadOnly={true}
+                  tick={tick}
+                />
+              </li>
+            ))}
+          </div>
         ))}
       </ul>
 

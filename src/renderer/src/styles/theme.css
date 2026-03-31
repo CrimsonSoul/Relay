@@ -22,16 +22,16 @@
   --app-surface-3: #151821;
   --app-border: rgba(255, 255, 255, 0.055);
   --app-text: #eef0f6;
-  --app-muted: #6e7a90;
+  --app-muted: #8892a6;
   --app-accent: #e11d48;
   --app-accent-strong: #fb7185;
   --app-accent-soft: rgba(225, 29, 72, 0.1);
 
   /* Text */
   --color-text-primary: #eef0f6;
-  --color-text-secondary: #6e7a90;
-  --color-text-tertiary: #374058;
-  --color-text-quaternary: #6b7d96;
+  --color-text-secondary: #8892a6;
+  --color-text-tertiary: #546178;
+  --color-text-quaternary: #8892a6;
 
   /* Accent - Signal Red */
   --color-accent: #e11d48;
