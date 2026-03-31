@@ -7,7 +7,7 @@
    =========================== */
 .card-surface {
   background-color: var(--color-bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   position: relative;
   overflow: hidden;
@@ -16,7 +16,7 @@
 
 .card-surface:hover {
   background-color: var(--color-bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-border-strong);
 }
 
 /* Accent strip for left border */
@@ -60,9 +60,9 @@
 }
 
 .hover-bg:hover {
-  background-color: rgba(255, 255, 255, 0.06) !important;
+  background-color: var(--color-active-overlay) !important;
 }
 
 .hover-bg:active {
-  background-color: rgba(255, 255, 255, 0.03) !important;
+  background-color: var(--color-hover-overlay) !important;
 }

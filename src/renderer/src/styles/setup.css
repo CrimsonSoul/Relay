@@ -43,12 +43,12 @@
 
 .setup-close-btn:hover {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-active-overlay);
   border-color: var(--color-border-subtle);
 }
 
 .setup-close-btn:active {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
 }
 
 /* Close button for app-state screens */
@@ -74,12 +74,12 @@
 
 .app-state__close-btn:hover {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-active-overlay);
   border-color: var(--color-border-subtle);
 }
 
 .app-state__close-btn:active {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
 }
 
 /* =========================================
@@ -133,7 +133,7 @@
   flex: 1;
   position: relative;
   background-color: var(--color-bg-card);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   padding: var(--space-5) var(--space-5);
   display: flex;
@@ -171,7 +171,7 @@
 
 .setup-mode-card:hover {
   background-color: var(--color-bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-border-strong);
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -301,12 +301,12 @@
 
 .setup-config__back:hover {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-active-overlay);
   border-color: var(--color-border-subtle);
 }
 
 .setup-config__back:active {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
   transform: scale(0.97);
   transition-duration: 0.1s;
 }
@@ -407,7 +407,7 @@
 
 .setup-config__eye-toggle:hover {
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-active-overlay);
 }
 
 /* When clear button is visible, shift eye toggle left and widen input padding */

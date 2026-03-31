@@ -110,7 +110,7 @@
 }
 
 .hourly-forecast-item:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-border);
   transform: translateY(-2px);
 }
 
@@ -304,7 +304,7 @@
 }
 
 .daily-forecast-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
   transform: translateX(4px);
 }
 
@@ -348,7 +348,7 @@
   align-items: center;
   gap: 3px;
   color: var(--color-text-tertiary);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -505,7 +505,7 @@
   padding: 16px;
   background: var(--color-accent-subtle);
   border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--color-border);
   color: var(--color-accent);
   font-size: var(--text-sm);
   font-weight: 650;

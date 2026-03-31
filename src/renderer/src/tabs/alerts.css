@@ -64,7 +64,7 @@
 
 .alert-history-entry:hover {
   background: var(--color-bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-focus-ring);
 }
 
 .alert-history-entry-header {
@@ -147,7 +147,7 @@
 .alert-history-label-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--color-backdrop);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -224,7 +224,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   background-color: var(--color-bg-card);
 }
@@ -457,7 +457,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   background-color: var(--color-bg-card);
   overflow: hidden;

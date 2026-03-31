@@ -18,7 +18,7 @@
 }
 
 .sidebar-toggle-handle:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-hover-overlay);
   border-right-color: var(--color-accent);
 }
 
@@ -98,7 +98,7 @@
 
 .assembler-sidebar-add-btn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border);
   padding: 4px;
   cursor: pointer;
   color: var(--color-text-tertiary);
@@ -194,7 +194,7 @@
 
 .bridge-history-entry:hover {
   background: var(--color-bg-card-hover);
-  border-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-border-strong);
 }
 
 .bridge-history-entry-header {
@@ -245,7 +245,7 @@
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-hover-overlay-strong);
   color: var(--color-text-secondary);
 }
 
