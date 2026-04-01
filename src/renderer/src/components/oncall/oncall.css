@@ -94,6 +94,10 @@
   position: relative;
 }
 
+.popout-board > .oncall-masonry {
+  max-width: calc(100vw - var(--sidebar-width-collapsed));
+}
+
 .popout-board--kiosk {
   padding: 0;
 }
