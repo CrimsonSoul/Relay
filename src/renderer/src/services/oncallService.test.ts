@@ -38,6 +38,7 @@ const mockRequireOnline = vi.mocked(requireOnline);
 const sampleRecord: OnCallRecord = {
   id: 'oc1',
   team: 'TeamA',
+  teamId: 'team-a',
   role: 'Primary',
   name: 'Alice',
   contact: 'alice@example.com',
@@ -49,6 +50,7 @@ const sampleRecord: OnCallRecord = {
 
 const sampleInput: OnCallInput = {
   team: 'TeamA',
+  teamId: 'team-a',
   role: 'Primary',
   name: 'Alice',
   contact: 'alice@example.com',
@@ -147,6 +149,7 @@ describe('replaceTeamRecords', () => {
         contact: 'bob@example.com',
         timeWindow: '9-5',
         sortOrder: 0,
+        teamId: 'team-a',
       },
     ];
     const results = await replaceTeamRecords('TeamA', rows);
@@ -158,6 +161,7 @@ describe('replaceTeamRecords', () => {
       contact: 'bob@example.com',
       timeWindow: '9-5',
       sortOrder: 0,
+      teamId: 'team-a',
     });
   });
 

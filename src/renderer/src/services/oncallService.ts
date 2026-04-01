@@ -4,6 +4,7 @@ import { createCrudService } from './crudServiceFactory';
 export interface OnCallRecord {
   id: string;
   team: string;
+  teamId: string;
   role: string;
   name: string;
   contact: string;
