@@ -275,7 +275,7 @@
   font-size: 18px;
   font-family: var(--font-family-mono);
   font-weight: 500;
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
   background: transparent;
   border: none;
   padding: 0;
@@ -289,13 +289,13 @@
   cursor: default;
 }
 
-.team-row-phone:disabled {
-  color: var(--color-text-quaternary);
+.team-row-phone:disabled:not(.team-row-phone--empty) {
+  color: var(--color-text-primary);
   cursor: default;
 }
 
 .team-row-phone:not(.team-row-phone--empty):hover {
-  color: var(--color-accent-text);
+  color: var(--color-text-primary);
 }
 
 .team-row-time-window {
