@@ -75,6 +75,7 @@ describe('SettingsModal', () => {
     const mockApi = {
       getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090, secret: 'test' }),
       registerRadarUrl: vi.fn().mockReturnValue(Promise.resolve()),
+      clearConfig: vi.fn().mockResolvedValue(true),
     };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi;
   });
@@ -170,5 +171,20 @@ describe('SettingsModal', () => {
       'https://your-intranet/dashboard',
     ) as HTMLInputElement;
     expect(input.value).toBe('https://existing.com');
+  });
+
+  it('calls clearConfig and onReconfigure when Reconfigure is clicked', async () => {
+    const onClose = vi.fn();
+    const onReconfigure = vi.fn();
+    render(<SettingsModal {...defaultProps} onClose={onClose} onReconfigure={onReconfigure} />);
+    await waitFor(() => {
+      expect(screen.getByText('Reconfigure...')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Reconfigure...'));
+    await waitFor(() => {
+      expect(globalThis.api.clearConfig).toHaveBeenCalled();
+      expect(onClose).toHaveBeenCalled();
+      expect(onReconfigure).toHaveBeenCalled();
+    });
   });
 });

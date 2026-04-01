@@ -1,5 +1,5 @@
 import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -19,15 +19,21 @@ vi.mock('../../services/pocketbase', () => ({
     capturedStateListener = listener;
     return mockUnsubscribe;
   },
+  AUTH_TIMEOUT_MS: 15_000,
 }));
 
-import { usePocketBase } from '../usePocketBase';
+import { usePocketBase, CONNECTION_TIMEOUT_MS } from '../usePocketBase';
 
 describe('usePocketBase', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers();
     capturedStateListener = null;
     mockAuthenticate.mockResolvedValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('returns connecting state initially', () => {
@@ -82,8 +88,7 @@ describe('usePocketBase', () => {
 
     // Wait for the authenticate promise to resolve
     await act(async () => {
-      // flush promises
-      await new Promise((r) => setTimeout(r, 0));
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(result.current.error).toBe('Authentication failed. Check your passphrase.');
@@ -95,7 +100,7 @@ describe('usePocketBase', () => {
     const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'good-secret'));
 
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
+      await vi.advanceTimersByTimeAsync(0);
     });
 
     expect(result.current.error).toBeNull();
@@ -150,5 +155,59 @@ describe('usePocketBase', () => {
     rerender({ url: 'http://localhost:8090', secret: 'second' });
 
     expect(mockAuthenticate).toHaveBeenCalledWith('second');
+  });
+
+  // ── Connection timeout ──
+
+  it('sets timeout error when authenticate hangs beyond CONNECTION_TIMEOUT_MS', async () => {
+    // authenticate never resolves
+    mockAuthenticate.mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+
+    // Before timeout — no error
+    expect(result.current.error).toBeNull();
+
+    // Advance past the timeout
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    });
+
+    expect(result.current.error).toBe('Connection timed out. The server may be unreachable.');
+  });
+
+  it('clears connection timeout when authenticate resolves successfully', async () => {
+    mockAuthenticate.mockResolvedValue(true);
+
+    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+
+    // Let authenticate resolve
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Advance past the timeout — should NOT set error because it was cleared
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    });
+
+    expect(result.current.error).toBeNull();
+  });
+
+  it('clears connection timeout on unmount', async () => {
+    // authenticate never resolves
+    mockAuthenticate.mockReturnValue(new Promise(() => {}));
+
+    const { result, unmount } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+
+    unmount();
+
+    // Advance past timeout — should NOT set error (cleanup cleared the timer)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    });
+
+    // After unmount, state is stale but error should not have been set
+    expect(result.current.error).toBeNull();
   });
 });

@@ -66,4 +66,9 @@ export function setupSetupHandlers(
     const config = getAppConfig();
     return config ? config.isConfigured() : false;
   });
+  ipcMain.handle(IPC_CHANNELS.SETUP_CLEAR_CONFIG, () => {
+    const config = getAppConfig();
+    if (!config) return false;
+    return config.clear();
+  });
 }

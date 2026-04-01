@@ -3,6 +3,9 @@ import { loggers } from '../utils/logger';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
 
+/** Per-attempt timeout for authWithPassword calls. */
+export const AUTH_TIMEOUT_MS = 15_000;
+
 type StateListener = (state: ConnectionState) => void;
 
 let pb: PocketBase | null = null;
@@ -44,7 +47,7 @@ export async function authenticate(secret: string, skipHealthRestart = false): P
   // Superuser auth is restricted to localhost by PocketBase, so it would
   // fail for remote clients. Only fall back to superuser for local dev/setup.
   try {
-    await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+    await authWithTimeout(pb, '_pb_users_auth_', 'relay@relay.app', secret);
     setConnectionState('online');
     if (!skipHealthRestart) startHealthCheck();
     return true;
@@ -57,7 +60,7 @@ export async function authenticate(secret: string, skipHealthRestart = false): P
   // Fall back to superuser (localhost only — useful during initial setup
   // before the app user has been created)
   try {
-    await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+    await authWithTimeout(pb, '_superusers', 'admin@relay.app', secret);
     setConnectionState('online');
     if (!skipHealthRestart) startHealthCheck();
     return true;
@@ -67,6 +70,21 @@ export async function authenticate(secret: string, skipHealthRestart = false): P
     });
     return false;
   }
+}
+
+/** Wraps authWithPassword with an AbortController timeout so a hung server can't block forever. */
+function authWithTimeout(
+  pb: PocketBase,
+  collection: string,
+  email: string,
+  password: string,
+): Promise<unknown> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  return pb
+    .collection(collection)
+    .authWithPassword(email, password, { signal: controller.signal })
+    .finally(() => clearTimeout(timer));
 }
 
 /** Stored secret for re-authentication on reconnect. Cleared after 8 hours. */

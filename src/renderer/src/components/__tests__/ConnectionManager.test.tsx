@@ -69,6 +69,20 @@ describe('ConnectionManager', () => {
     expect(screen.getByLabelText('Close')).toBeInTheDocument();
   });
 
+  it('renders a Reconfigure button in connecting state', () => {
+    mockConnectionState = 'connecting';
+    const onReconfigure = vi.fn();
+    render(
+      <ConnectionManager {...defaultProps} onReconfigure={onReconfigure}>
+        <div>child</div>
+      </ConnectionManager>,
+    );
+    const btn = screen.getByText('Reconfigure');
+    expect(btn).toBeInTheDocument();
+    btn.click();
+    expect(onReconfigure).toHaveBeenCalledTimes(1);
+  });
+
   // ── Connected State ──
 
   it('renders children when connected (online)', () => {

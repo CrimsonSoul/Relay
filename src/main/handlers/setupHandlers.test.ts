@@ -20,6 +20,7 @@ describe('setupHandlers', () => {
     load: vi.fn(),
     save: vi.fn(),
     isConfigured: vi.fn(),
+    clear: vi.fn(),
   };
 
   const mockOfflineCache = {
@@ -277,6 +278,33 @@ describe('setupHandlers', () => {
       getAppConfig.mockReturnValueOnce(null as never);
 
       const result = handlers[IPC_CHANNELS.SETUP_IS_CONFIGURED]();
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('SETUP_CLEAR_CONFIG', () => {
+    it('delegates to appConfig.clear() and returns true', () => {
+      mockAppConfig.clear.mockReturnValue(true);
+
+      const result = handlers[IPC_CHANNELS.SETUP_CLEAR_CONFIG]();
+
+      expect(mockAppConfig.clear).toHaveBeenCalled();
+      expect(result).toBe(true);
+    });
+
+    it('returns false when appConfig is null', () => {
+      getAppConfig.mockReturnValueOnce(null as never);
+
+      const result = handlers[IPC_CHANNELS.SETUP_CLEAR_CONFIG]();
+
+      expect(result).toBe(false);
+    });
+
+    it('returns false when clear() fails', () => {
+      mockAppConfig.clear.mockReturnValue(false);
+
+      const result = handlers[IPC_CHANNELS.SETUP_CLEAR_CONFIG]();
 
       expect(result).toBe(false);
     });

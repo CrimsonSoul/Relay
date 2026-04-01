@@ -141,9 +141,17 @@ if (gotLock) {
         try {
           const PocketBase = (await import('pocketbase')).default;
           const syncPb = new PocketBase(clientConfig.serverUrl);
-          await syncPb
-            .collection('_pb_users_auth_')
-            .authWithPassword('relay@relay.app', clientConfig.secret);
+          const controller = new AbortController();
+          const authTimeout = setTimeout(() => controller.abort(), 15_000);
+          try {
+            await syncPb
+              .collection('_pb_users_auth_')
+              .authWithPassword('relay@relay.app', clientConfig.secret, {
+                signal: controller.signal,
+              });
+          } finally {
+            clearTimeout(authTimeout);
+          }
 
           setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
           setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { loggers } from '../logger';
 
@@ -101,6 +101,19 @@ export class AppConfig {
       JSON.parse(raw);
       return true;
     } catch {
+      return false;
+    }
+  }
+
+  /** Deletes the config file so the app returns to the setup screen on next load. */
+  clear(): boolean {
+    try {
+      if (existsSync(this.configPath)) {
+        unlinkSync(this.configPath);
+      }
+      return true;
+    } catch (err) {
+      loggers.main.error('Failed to clear config file', { path: this.configPath, error: err });
       return false;
     }
   }

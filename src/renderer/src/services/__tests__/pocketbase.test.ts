@@ -57,6 +57,7 @@ import {
   escapeFilter,
   setStoredSecret,
   isOnline,
+  AUTH_TIMEOUT_MS,
 } from '../pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -160,7 +161,11 @@ describe('pocketbase service', () => {
 
       expect(result).toBe(true);
       expect(getConnectionState()).toBe('online');
-      expect(mockAuthWithPassword).toHaveBeenCalledWith('relay@relay.app', 'my-secret');
+      expect(mockAuthWithPassword).toHaveBeenCalledWith(
+        'relay@relay.app',
+        'my-secret',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
     });
 
     it('falls back to superuser auth when app user fails', async () => {
@@ -173,7 +178,12 @@ describe('pocketbase service', () => {
       expect(result).toBe(true);
       expect(getConnectionState()).toBe('online');
       expect(mockAuthWithPassword).toHaveBeenCalledTimes(2);
-      expect(mockAuthWithPassword).toHaveBeenNthCalledWith(2, 'admin@relay.app', 'my-secret');
+      expect(mockAuthWithPassword).toHaveBeenNthCalledWith(
+        2,
+        'admin@relay.app',
+        'my-secret',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
       expect(networkWarn).toHaveBeenCalled();
     });
 
@@ -222,6 +232,45 @@ describe('pocketbase service', () => {
       await authenticate('secret', true);
 
       expect(setIntervalSpy.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('aborts auth attempt after AUTH_TIMEOUT_MS', async () => {
+      // authWithPassword never resolves — simulates a hung server
+      let capturedSignal: AbortSignal | undefined;
+      mockAuthWithPassword.mockImplementation(
+        (_email: string, _pass: string, opts?: { signal?: AbortSignal }) => {
+          capturedSignal = opts?.signal;
+          return new Promise((_resolve, reject) => {
+            opts?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('The operation was aborted', 'AbortError')),
+            );
+          });
+        },
+      );
+
+      const resultP = authenticate('my-secret');
+
+      // Fast-forward past the timeout
+      await vi.advanceTimersByTimeAsync(AUTH_TIMEOUT_MS + 1);
+      // Second attempt also times out
+      await vi.advanceTimersByTimeAsync(AUTH_TIMEOUT_MS + 1);
+
+      const result = await resultP;
+
+      expect(capturedSignal?.aborted).toBe(true);
+      expect(result).toBe(false);
+      expect(networkError).toHaveBeenCalled();
+    });
+
+    it('clears timeout timer when auth succeeds before timeout', async () => {
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+      mockAuthWithPassword.mockResolvedValueOnce({});
+
+      await authenticate('my-secret');
+
+      // clearTimeout should have been called by the .finally() in authWithTimeout
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      clearTimeoutSpy.mockRestore();
     });
   });
 

@@ -51,6 +51,9 @@ export function ConnectionManager({
         </button>
         <div className="app-state__spinner" />
         <p className="app-state__text">Connecting to server...</p>
+        <TactileButton variant="secondary" onClick={onReconfigure}>
+          Reconfigure
+        </TactileButton>
       </div>
     );
   }

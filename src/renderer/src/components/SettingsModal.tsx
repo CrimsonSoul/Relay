@@ -60,11 +60,11 @@ export const SettingsModal: React.FC<Props> = ({
   };
 
   const handleReconfigure = async () => {
-    // Clear config so the app shows the setup screen on reload
+    // Delete config on disk so the app returns to the setup screen on restart.
     try {
-      await globalThis.api?.saveConfig({ mode: 'unconfigured' });
+      await globalThis.api?.clearConfig();
     } catch {
-      // If save fails, clearing via reload will still show setup if PB can't connect
+      // Best-effort — onReconfigure() transitions to setup regardless.
     }
     onClose();
     onReconfigure?.();

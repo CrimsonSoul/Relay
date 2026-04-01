@@ -303,6 +303,7 @@ export type BridgeAPI = {
   // Setup
   getConfig: () => Promise<unknown>;
   saveConfig: (config: unknown) => Promise<boolean>;
+  clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
@@ -373,6 +374,7 @@ export const IPC_CHANNELS = {
   // Setup
   SETUP_GET_CONFIG: 'setup:getConfig',
   SETUP_SAVE_CONFIG: 'setup:saveConfig',
+  SETUP_CLEAR_CONFIG: 'setup:clearConfig',
   SETUP_IS_CONFIGURED: 'setup:isConfigured',
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
