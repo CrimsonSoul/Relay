@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AppData, Contact, Server, OnCallRow } from '@shared/ipc';
 import { useCollection } from './useCollection';
 import type { ContactRecord } from '../services/contactService';
@@ -6,6 +6,10 @@ import type { ServerRecord } from '../services/serverService';
 import type { BridgeGroupRecord } from '../services/bridgeGroupService';
 import { toGroup } from '../utils/transforms';
 import type { OnCallRecord } from '../services/oncallService';
+import {
+  initializeBoardSettings,
+  type BoardSettingsInitializationResult,
+} from '../services/oncallBoardSettingsService';
 import { loggers } from '../utils/logger';
 import { getDevMockData } from '../utils/mockData';
 
@@ -57,6 +61,25 @@ function toOnCallRow(r: OnCallRecord): OnCallRow {
   };
 }
 
+/** Board settings state exposed to consumers. */
+export type BoardSettingsState = {
+  record: BoardSettingsInitializationResult['record'];
+  recordId: BoardSettingsInitializationResult['recordId'];
+  effectiveTeamOrder: string[];
+  effectiveLocked: boolean;
+  status: BoardSettingsInitializationResult['status'] | 'loading';
+  errors: string[];
+};
+
+const INITIAL_BOARD_SETTINGS: BoardSettingsState = {
+  record: null,
+  recordId: null,
+  effectiveTeamOrder: [],
+  effectiveLocked: true, // locked-for-safety until init completes
+  status: 'loading',
+  errors: [],
+};
+
 export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 'info') => void) {
   // Dev browser preview: no PocketBase, use mock data
   const [isDevMode] = useState(() => !globalThis.api);
@@ -97,6 +120,40 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
   const isLoading = contactsLoading || serversLoading || groupsLoading || oncallLoading;
   const [isReloading, setIsReloading] = useState(false);
+
+  // --- Board settings initialization ---
+  const [boardSettings, setBoardSettings] = useState<BoardSettingsState>(INITIAL_BOARD_SETTINGS);
+  const initGenRef = useRef(0);
+
+  useEffect(() => {
+    // Don't initialize until oncall records have finished loading
+    if (oncallLoading) return;
+
+    const gen = ++initGenRef.current;
+
+    void initializeBoardSettings(oncallRecords).then(
+      (result) => {
+        if (gen !== initGenRef.current) return; // stale
+        setBoardSettings({
+          record: result.record,
+          recordId: result.recordId,
+          effectiveTeamOrder: result.effectiveTeamOrder,
+          effectiveLocked: result.effectiveLocked,
+          status: result.status,
+          errors: result.errors,
+        });
+      },
+      (err) => {
+        if (gen !== initGenRef.current) return; // stale
+        loggers.app.error('Board settings initialization failed', { error: err });
+        setBoardSettings({
+          ...INITIAL_BOARD_SETTINGS,
+          status: 'invalid',
+          errors: ['Board settings initialization failed'],
+        });
+      },
+    );
+  }, [oncallRecords, oncallLoading]);
 
   // Show errors as toasts (suppress PocketBase auto-cancellation errors)
   useEffect(() => {
@@ -144,5 +201,6 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     data,
     isReloading: isReloading || isLoading,
     handleSync,
+    boardSettings,
   };
 }

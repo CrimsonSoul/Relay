@@ -1,6 +1,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppData } from '../useAppData';
+import type { BoardSettingsInitializationResult } from '../../services/oncallBoardSettingsService';
 
 vi.mock('../../utils/logger', () => ({
   loggers: {
@@ -36,6 +37,34 @@ vi.mock('../useCollection', () => ({
   },
 }));
 
+// Mock board settings service
+const mockInitializeBoardSettings = vi.fn();
+vi.mock('../../services/oncallBoardSettingsService', () => ({
+  initializeBoardSettings: (...args: unknown[]) => mockInitializeBoardSettings(...args),
+}));
+
+// Default ready result
+function makeReadyResult(
+  overrides: Partial<BoardSettingsInitializationResult> = {},
+): BoardSettingsInitializationResult {
+  return {
+    record: {
+      id: 'bs1',
+      key: 'primary',
+      teamOrder: ['team-a', 'team-b'],
+      locked: false,
+      created: '2026-01-01T00:00:00Z',
+      updated: '2026-01-01T00:00:00Z',
+    },
+    recordId: 'bs1',
+    effectiveTeamOrder: ['team-a', 'team-b'],
+    effectiveLocked: false,
+    status: 'ready',
+    errors: [],
+    ...overrides,
+  };
+}
+
 describe('useAppData', () => {
   const showToast = vi.fn();
 
@@ -47,6 +76,7 @@ describe('useAppData', () => {
     collectionData.servers = { data: [], loading: false, error: null };
     collectionData.bridge_groups = { data: [], loading: false, error: null };
     collectionData.oncall = { data: [], loading: false, error: null };
+    mockInitializeBoardSettings.mockResolvedValue(makeReadyResult());
   });
 
   it('returns empty data when collections are empty', () => {
@@ -129,6 +159,110 @@ describe('useAppData', () => {
 
     await waitFor(() => {
       expect(showToast).toHaveBeenCalledWith('Contacts: Network error', 'error');
+    });
+  });
+
+  describe('board settings integration', () => {
+    it('calls initializeBoardSettings with oncall records', async () => {
+      const oncallRecords = [
+        {
+          id: 'oc1',
+          team: 'TeamA',
+          teamId: 'team-a',
+          role: 'Primary',
+          name: 'Alice',
+          contact: '555',
+          timeWindow: '',
+          sortOrder: 0,
+          created: '2026-01-01T00:00:00Z',
+          updated: '2026-01-01T00:00:00Z',
+        },
+      ];
+      collectionData.oncall = { data: oncallRecords, loading: false, error: null };
+
+      renderHook(() => useAppData(showToast));
+
+      await waitFor(() => {
+        expect(mockInitializeBoardSettings).toHaveBeenCalledWith(oncallRecords);
+      });
+    });
+
+    it('exposes board settings status when ready', async () => {
+      collectionData.oncall = { data: [], loading: false, error: null };
+      mockInitializeBoardSettings.mockResolvedValue(makeReadyResult());
+
+      const { result } = renderHook(() => useAppData(showToast));
+
+      await waitFor(() => {
+        expect(result.current.boardSettings).toBeDefined();
+        expect(result.current.boardSettings.status).toBe('ready');
+        expect(result.current.boardSettings.effectiveLocked).toBe(false);
+        expect(result.current.boardSettings.effectiveTeamOrder).toEqual(['team-a', 'team-b']);
+      });
+    });
+
+    it('exposes locked-for-safety defaults before initialization completes', () => {
+      // Make init never resolve during this test
+      mockInitializeBoardSettings.mockReturnValue(new Promise(() => {}));
+      collectionData.oncall = { data: [], loading: false, error: null };
+
+      const { result } = renderHook(() => useAppData(showToast));
+
+      // Before init resolves, should be locked-for-safety
+      expect(result.current.boardSettings.effectiveLocked).toBe(true);
+      expect(result.current.boardSettings.status).toBe('loading');
+    });
+
+    it('preserves oncall record teamId through to onCall rows', () => {
+      const oncallRecords = [
+        {
+          id: 'oc1',
+          team: 'TeamA',
+          teamId: 'team-a',
+          role: 'Primary',
+          name: 'Alice',
+          contact: '555',
+          timeWindow: '',
+          sortOrder: 0,
+          created: '2026-01-01T00:00:00Z',
+          updated: '2026-01-01T00:00:00Z',
+        },
+      ];
+      collectionData.oncall = { data: oncallRecords, loading: false, error: null };
+
+      const { result } = renderHook(() => useAppData(showToast));
+
+      expect(result.current.data.onCall).toHaveLength(1);
+      expect(result.current.data.onCall[0].id).toBe('oc1');
+    });
+
+    it('exposes board settings errors for non-ready states', async () => {
+      mockInitializeBoardSettings.mockResolvedValue(
+        makeReadyResult({
+          status: 'invalid',
+          effectiveLocked: true,
+          errors: ['Found 2 duplicate primary settings records'],
+        }),
+      );
+      collectionData.oncall = { data: [], loading: false, error: null };
+
+      const { result } = renderHook(() => useAppData(showToast));
+
+      await waitFor(() => {
+        expect(result.current.boardSettings.status).toBe('invalid');
+        expect(result.current.boardSettings.effectiveLocked).toBe(true);
+        expect(result.current.boardSettings.errors).toContain(
+          'Found 2 duplicate primary settings records',
+        );
+      });
+    });
+
+    it('does not call initializeBoardSettings while oncall is still loading', () => {
+      collectionData.oncall = { data: [], loading: true, error: null };
+
+      renderHook(() => useAppData(showToast));
+
+      expect(mockInitializeBoardSettings).not.toHaveBeenCalled();
     });
   });
 });
