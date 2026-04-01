@@ -25,7 +25,7 @@
   transform: translateY(-1px);
   background: var(--color-bg-surface-elevated);
   border-color: var(--color-border-strong);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .tactile-button:active {
@@ -137,7 +137,7 @@ input.tactile-input.tactile-input:focus {
 
 .lift-on-hover:hover {
   transform: translateY(-2px) !important;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: var(--shadow-sm) !important;
   z-index: 10;
 }
 
@@ -422,7 +422,7 @@ input.tactile-input.tactile-input:focus {
   background: var(--color-bg-surface-elevated);
   border: var(--border-medium);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+  box-shadow: var(--shadow-lg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   z-index: 99999;
@@ -559,7 +559,7 @@ input.tactile-input.tactile-input:focus {
   background-color: var(--color-bg-chrome);
   border-radius: var(--radius-xl);
   border: var(--border-medium);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--shadow-lg);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
@@ -670,7 +670,7 @@ body.modal-open {
   max-height: 200px;
   overflow-y: auto;
   z-index: 99999;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   padding: 4px;
 }
 
