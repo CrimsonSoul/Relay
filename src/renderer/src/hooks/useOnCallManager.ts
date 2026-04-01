@@ -6,9 +6,10 @@ import {
   replaceTeamRecords,
   deleteOnCallByTeam,
   renameTeam as pbRenameTeam,
-  reorderTeams as pbReorderTeams,
 } from '../services/oncallService';
+import { updatePrimaryBoardSettings } from '../services/oncallBoardSettingsService';
 import { useOptimisticList } from './useOptimisticList';
+import type { BoardSettingsState } from './useAppData';
 
 const getWeekRange = () => {
   const now = new Date();
@@ -23,7 +24,11 @@ const getWeekRange = () => {
   )}, ${sunday.getFullYear()}`;
 };
 
-export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: string) => void) {
+export function useOnCallManager(
+  onCall: OnCallRow[],
+  dismissAlert: (type: string) => void,
+  boardSettings: BoardSettingsState,
+) {
   const { showToast } = useToast();
   const {
     data: localOnCall,
@@ -42,18 +47,64 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
     return () => clearInterval(interval);
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // Derive teams from boardSettings.effectiveTeamOrder (teamId-based).
+  // Fall back to row-derived order when board settings are not ready.
+  // ---------------------------------------------------------------------------
   const teams = useMemo(() => {
-    const map = new Map<string, OnCallRow[]>();
-    localOnCall.forEach((row) => {
-      if (!map.has(row.team)) map.set(row.team, []);
-      map.get(row.team)?.push(row);
-    });
-    return Array.from(map.keys());
+    if (boardSettings.status === 'ready' && boardSettings.effectiveTeamOrder.length > 0) {
+      return boardSettings.effectiveTeamOrder;
+    }
+    // Fallback: derive unique teamIds from localOnCall in first-seen order
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const row of localOnCall) {
+      if (row.teamId && !seen.has(row.teamId)) {
+        seen.add(row.teamId);
+        order.push(row.teamId);
+      }
+    }
+    return order;
+  }, [boardSettings.status, boardSettings.effectiveTeamOrder, localOnCall]);
+
+  // Map teamId -> display name (first-seen team name for that teamId)
+  const teamIdToName = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of localOnCall) {
+      if (row.teamId && !map.has(row.teamId)) {
+        map.set(row.teamId, row.team);
+      }
+    }
+    return map;
   }, [localOnCall]);
 
   // Ref for teams to avoid stale closures in callbacks that depend on frequently-changing values
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
+
+  // ---------------------------------------------------------------------------
+  // Board lock toggle
+  // ---------------------------------------------------------------------------
+  const [isBoardLockTogglePending, setIsBoardLockTogglePending] = useState(false);
+
+  const toggleBoardLock = useCallback(async () => {
+    if (boardSettings.status !== 'ready' || !boardSettings.recordId) return;
+    setIsBoardLockTogglePending(true);
+    try {
+      await updatePrimaryBoardSettings(boardSettings.recordId, {
+        locked: !boardSettings.effectiveLocked,
+      });
+      // Realtime subscription will propagate the change
+    } catch {
+      showToast('Failed to toggle board lock', 'error');
+    } finally {
+      setIsBoardLockTogglePending(false);
+    }
+  }, [boardSettings.status, boardSettings.recordId, boardSettings.effectiveLocked, showToast]);
+
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
 
   const handleUpdateRows = useCallback(
     async (team: string, rows: OnCallRow[]) => {
@@ -69,11 +120,13 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       const previousList = [...dataRef.current];
 
       const buildReorderedList = (prev: OnCallRow[]) => {
-        const teamOrder = Array.from(new Set(prev.map((r) => r.team)));
-        if (!teamOrder.includes(team)) return [...prev, ...rows];
+        const teamOrder = Array.from(new Set(prev.map((r) => r.teamId)));
+        if (!teamOrder.includes(rows[0]?.teamId ?? '')) return [...prev, ...rows];
         const newFlatList: OnCallRow[] = [];
-        for (const t of teamOrder) {
-          newFlatList.push(...(t === team ? rows : prev.filter((r) => r.team === t)));
+        for (const tid of teamOrder) {
+          newFlatList.push(
+            ...(tid === (rows[0]?.teamId ?? '') ? rows : prev.filter((r) => r.teamId === tid)),
+          );
         }
         return newFlatList;
       };
@@ -83,6 +136,7 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         await replaceTeamRecords(
           team,
           rows.map((r, i) => ({
+            teamId: r.teamId,
             role: r.role,
             name: r.name,
             contact: r.contact,
@@ -106,6 +160,18 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       try {
         await deleteOnCallByTeam(team);
         setLocalOnCall((prev) => prev.filter((r) => r.team !== team));
+
+        // Also remove from board settings teamOrder
+        if (boardSettings.status === 'ready' && boardSettings.recordId) {
+          const removedTeamId = localOnCall.find((r) => r.team === team)?.teamId;
+          if (removedTeamId) {
+            const newTeamOrder = boardSettings.effectiveTeamOrder.filter(
+              (id) => id !== removedTeamId,
+            );
+            await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: newTeamOrder });
+          }
+        }
+
         showToast(`Removed ${team}`, 'success');
       } catch {
         showToast('Failed to remove team', 'error');
@@ -113,7 +179,16 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         finishMutation();
       }
     },
-    [showToast, startMutation, finishMutation, setLocalOnCall],
+    [
+      showToast,
+      startMutation,
+      finishMutation,
+      setLocalOnCall,
+      boardSettings.status,
+      boardSettings.recordId,
+      boardSettings.effectiveTeamOrder,
+      localOnCall,
+    ],
   );
 
   const handleRenameTeam = useCallback(
@@ -136,9 +211,11 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
 
   const handleAddTeam = useCallback(
     async (name: string) => {
+      const teamId = name.trim().toLowerCase();
       const initialRow: OnCallRow = {
         id: crypto.randomUUID(),
         team: name,
+        teamId,
         role: 'Primary',
         name: '',
         contact: '',
@@ -153,10 +230,15 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       // 2. Perform API calls
       try {
         await replaceTeamRecords(name, [
-          { role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
+          { teamId, role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
         ]);
-        const currentTeams = Array.from(new Set(nextList.map((r) => r.team)));
-        await pbReorderTeams(currentTeams);
+
+        // Append new teamId to board settings teamOrder
+        if (boardSettings.status === 'ready' && boardSettings.recordId) {
+          const newTeamOrder = [...boardSettings.effectiveTeamOrder, teamId];
+          await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: newTeamOrder });
+        }
+
         showToast(`Added team ${name}`, 'success');
       } catch (err: unknown) {
         // Rollback local state
@@ -167,9 +249,22 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         finishMutation();
       }
     },
-    [showToast, startMutation, finishMutation, dataRef, setLocalOnCall],
+    [
+      showToast,
+      startMutation,
+      finishMutation,
+      dataRef,
+      setLocalOnCall,
+      boardSettings.status,
+      boardSettings.recordId,
+      boardSettings.effectiveTeamOrder,
+    ],
   );
 
+  /**
+   * Reorder cards by updating the teamOrder in board settings.
+   * This NEVER touches member sortOrder — it only changes the card display order.
+   */
   const handleReorderTeams = useCallback(
     async (oldIndex: number, newIndex: number) => {
       if (oldIndex === newIndex) return;
@@ -179,10 +274,11 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       if (movedTeam === undefined) return;
       currentTeams.splice(newIndex, 0, movedTeam);
 
+      // Optimistically reorder the flat list by teamId order
       const current = dataRef.current;
       const newFlatList: OnCallRow[] = [];
-      currentTeams.forEach((t) => {
-        newFlatList.push(...current.filter((r) => r.team === t));
+      currentTeams.forEach((tid) => {
+        newFlatList.push(...current.filter((r) => r.teamId === tid));
       });
 
       startMutation();
@@ -190,8 +286,14 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
       setLocalOnCall(newFlatList);
 
       try {
-        await pbReorderTeams(currentTeams);
-        showToast('Teams reordered', 'success');
+        if (boardSettings.status === 'ready' && boardSettings.recordId) {
+          await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: currentTeams });
+          showToast('Teams reordered', 'success');
+        } else {
+          // Non-ready state: can't persist, rollback
+          setLocalOnCall(oldFlatList);
+          showToast('Board settings not ready', 'error');
+        }
       } catch {
         setLocalOnCall(oldFlatList);
         showToast('Failed to save team order', 'error');
@@ -199,18 +301,30 @@ export function useOnCallManager(onCall: OnCallRow[], dismissAlert: (type: strin
         finishMutation();
       }
     },
-    [showToast, startMutation, finishMutation, dataRef, setLocalOnCall],
+    [
+      showToast,
+      startMutation,
+      finishMutation,
+      dataRef,
+      setLocalOnCall,
+      boardSettings.status,
+      boardSettings.recordId,
+    ],
   );
 
   return {
     localOnCall,
     weekRange,
     teams,
+    teamIdToName,
     handleUpdateRows,
     handleRemoveTeam,
     handleRenameTeam,
     handleAddTeam,
     handleReorderTeams,
     setLocalOnCall,
+    boardSettings,
+    toggleBoardLock,
+    isBoardLockTogglePending,
   };
 }

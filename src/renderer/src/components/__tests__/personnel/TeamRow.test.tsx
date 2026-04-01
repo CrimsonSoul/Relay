@@ -12,6 +12,7 @@ vi.mock('../../Toast', () => ({
 const makeRow = (overrides: Partial<OnCallRow> = {}): OnCallRow => ({
   id: '1',
   team: 'Alpha',
+  teamId: 'alpha',
   role: 'Primary',
   name: 'Bob Jones',
   contact: '5551234567',

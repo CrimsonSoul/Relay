@@ -6,6 +6,8 @@ import { OnCallRow, Contact } from '@shared/ipc';
 import { ContextMenuItem } from '../ContextMenu';
 
 interface SortableTeamCardProps {
+  /** Stable card identity (teamId) used for DnD. */
+  id: string;
   team: string;
   index: number;
   rows: OnCallRow[];
@@ -17,11 +19,13 @@ interface SortableTeamCardProps {
   setMenu: (menu: { x: number; y: number; items: ContextMenuItem[] } | null) => void;
   onCopyTeamInfo: (team: string, rows: OnCallRow[]) => void;
   tick?: number;
+  disabled?: boolean;
 }
 
 export const SortableTeamCard: React.FC<SortableTeamCardProps> = (props) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: props.team,
+    id: props.id,
+    disabled: props.disabled,
   });
 
   const style = {

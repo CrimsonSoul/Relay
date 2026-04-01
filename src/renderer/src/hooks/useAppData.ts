@@ -54,6 +54,7 @@ function toOnCallRow(r: OnCallRecord): OnCallRow {
   return {
     id: r.id,
     team: r.team,
+    teamId: r.teamId,
     role: r.role,
     name: r.name,
     contact: r.contact,

@@ -62,6 +62,7 @@ export const ServerSchema = z.object({
 export const OnCallRowSchema = z.object({
   id: z.string().max(MAX_ID),
   team: z.string().min(1).max(MAX_NAME),
+  teamId: z.string().max(MAX_NAME),
   role: z.string().max(MAX_FIELD),
   name: z.string().max(MAX_NAME),
   contact: z.string().max(MAX_FIELD),

@@ -7,14 +7,17 @@ import { Tooltip } from './Tooltip';
 import { TactileButton } from './TactileButton';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
+import type { BoardSettingsState } from '../hooks/useAppData';
 
 interface PopoutBoardProps {
   onCall: OnCallRow[];
   contacts: Contact[];
+  boardSettings: BoardSettingsState;
 }
 
-export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) => {
-  const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, tick } = usePersonnel(onCall);
+export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, boardSettings }) => {
+  const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, teamIdToName, tick } =
+    usePersonnel(onCall, boardSettings);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);
@@ -33,13 +36,29 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
   }, [localOnCall]);
 
   const getTeamRows = useCallback(
-    (team: string) => localOnCall.filter((r) => r.team === team),
+    (teamId: string) => localOnCall.filter((r) => r.teamId === teamId),
     [localOnCall],
   );
 
+  // Display-name versions for copy helpers
+  const teamDisplayNames = useMemo(
+    () => teams.map((tid) => teamIdToName.get(tid) || tid),
+    [teams, teamIdToName],
+  );
+
+  const getTeamRowsByName = useCallback(
+    (teamName: string) => {
+      for (const [tid, name] of teamIdToName) {
+        if (name === teamName) return localOnCall.filter((r) => r.teamId === tid);
+      }
+      return [];
+    },
+    [teamIdToName, localOnCall],
+  );
+
   const { animationParent, handleCopyTeamInfo, handleCopyAllOnCall } = useOnCallBoard({
-    teams,
-    getTeamRows,
+    teams: teamDisplayNames,
+    getTeamRows: getTeamRowsByName,
     toastMessages: {
       copyTeamSuccess: (team) => `Copied ${team} on-call info`,
       copyTeamError: 'Failed to copy to clipboard',
@@ -79,7 +98,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
 
   const teamColumns = useMemo(() => {
     const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
-    teams.forEach((team, i) => cols[i % cols.length].push(team));
+    teams.forEach((teamId, i) => cols[i % cols.length].push(teamId));
     return cols;
   }, [teams, columnCount]);
 
@@ -205,24 +224,27 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts }) =>
       >
         {teamColumns.map((column, colIdx) => (
           <div className="oncall-masonry-column" key={colIdx}>
-            {column.map((team) => (
-              <li key={team} className="oncall-masonry-item animate-card-entrance">
-                <TeamCard
-                  team={team}
-                  index={teams.indexOf(team)}
-                  rows={localOnCall.filter((r) => r.team === team)}
-                  contacts={contacts}
-                  onUpdateRows={() => {}}
-                  onRenameTeam={() => {}}
-                  onRemoveTeam={() => {}}
-                  setConfirm={() => {}}
-                  setMenu={setMenu}
-                  onCopyTeamInfo={handleCopyTeamInfo}
-                  isReadOnly={true}
-                  tick={tick}
-                />
-              </li>
-            ))}
+            {column.map((teamId) => {
+              const teamName = teamIdToName.get(teamId) || teamId;
+              return (
+                <li key={teamId} className="oncall-masonry-item animate-card-entrance">
+                  <TeamCard
+                    team={teamName}
+                    index={teams.indexOf(teamId)}
+                    rows={getTeamRows(teamId)}
+                    contacts={contacts}
+                    onUpdateRows={() => {}}
+                    onRenameTeam={() => {}}
+                    onRemoveTeam={() => {}}
+                    setConfirm={() => {}}
+                    setMenu={setMenu}
+                    onCopyTeamInfo={handleCopyTeamInfo}
+                    isReadOnly={true}
+                    tick={tick}
+                  />
+                </li>
+              );
+            })}
           </div>
         ))}
       </ul>

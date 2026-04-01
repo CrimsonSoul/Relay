@@ -16,6 +16,7 @@ const hookWrapper = ({ children }: { children: React.ReactNode }) =>
 const makeRow = (overrides: Partial<OnCallRow> = {}): OnCallRow => ({
   id: 'row-1',
   team: 'Network',
+  teamId: 'network',
   role: 'Primary',
   name: '',
   contact: '',

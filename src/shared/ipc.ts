@@ -38,6 +38,7 @@ export type Server = {
 export type OnCallRow = {
   id: string;
   team: string;
+  teamId: string;
   role: string;
   name: string;
   contact: string;

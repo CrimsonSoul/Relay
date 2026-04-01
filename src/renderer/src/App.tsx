@@ -57,7 +57,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
 
-  const { data } = useAppData(showToast);
+  const { data, boardSettings } = useAppData(showToast);
 
   const {
     weatherLocation,
@@ -171,7 +171,11 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
           {popoutRoute?.includes('board') && (
             <ErrorBoundary fallback={errorFallback}>
               <Suspense fallback={<TabFallback />}>
-                <PopoutBoard onCall={data.onCall} contacts={data.contacts} />
+                <PopoutBoard
+                  onCall={data.onCall}
+                  contacts={data.contacts}
+                  boardSettings={boardSettings}
+                />
               </Suspense>
             </ErrorBoundary>
           )}
@@ -262,7 +266,11 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
               >
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <PersonnelTab onCall={data.onCall} contacts={data.contacts} />
+                    <PersonnelTab
+                      onCall={data.onCall}
+                      contacts={data.contacts}
+                      boardSettings={boardSettings}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </div>

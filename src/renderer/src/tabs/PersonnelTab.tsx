@@ -27,11 +27,13 @@ import {
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import type { BoardSettingsState } from '../hooks/useAppData';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
-}> = ({ onCall, contacts }) => {
+  boardSettings: BoardSettingsState;
+}> = ({ onCall, contacts, boardSettings }) => {
   const {
     localOnCall,
     weekRange,
@@ -39,13 +41,17 @@ export const PersonnelTab: React.FC<{
     dismissAlert,
     dayOfWeek,
     teams,
+    teamIdToName,
     handleUpdateRows,
     handleRemoveTeam,
     handleRenameTeam,
     handleAddTeam,
     handleReorderTeams,
+    boardSettings: bs,
+    toggleBoardLock,
+    isBoardLockTogglePending,
     tick,
-  } = usePersonnel(onCall);
+  } = usePersonnel(onCall, boardSettings);
   const addTeamModal = useModalState();
   const [newTeamName, setNewTeamName] = useState('');
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);
@@ -57,23 +63,38 @@ export const PersonnelTab: React.FC<{
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const { showToast } = useToast();
 
-  // Pre-group rows by team for performance
+  // Pre-group rows by teamId for performance
   const groupedOnCall = useMemo(() => {
     const map = new Map<string, OnCallRow[]>();
     localOnCall.forEach((row) => {
-      const existing = map.get(row.team) || [];
+      const existing = map.get(row.teamId) || [];
       existing.push(row);
-      map.set(row.team, existing);
+      map.set(row.teamId, existing);
     });
     return map;
   }, [localOnCall]);
 
-  const getTeamRows = useCallback((team: string) => groupedOnCall.get(team) || [], [groupedOnCall]);
+  // Display-name versions for copy helpers (useOnCallBoard uses team names in clipboard text)
+  const teamDisplayNames = useMemo(
+    () => teams.map((tid) => teamIdToName.get(tid) || tid),
+    [teams, teamIdToName],
+  );
+
+  const getTeamRowsByName = useCallback(
+    (teamName: string) => {
+      // Find teamId for this display name, then look up rows
+      for (const [tid, name] of teamIdToName) {
+        if (name === teamName) return groupedOnCall.get(tid) || [];
+      }
+      return [];
+    },
+    [teamIdToName, groupedOnCall],
+  );
 
   const { animationParent, enableAnimations, handleCopyTeamInfo, handleCopyAllOnCall } =
     useOnCallBoard({
-      teams,
-      getTeamRows,
+      teams: teamDisplayNames,
+      getTeamRows: getTeamRowsByName,
     });
 
   const [isDragging, setIsDragging] = useState(false);
@@ -109,7 +130,7 @@ export const PersonnelTab: React.FC<{
 
   const teamColumns = useMemo(() => {
     const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);
-    teams.forEach((team, i) => cols[i % cols.length].push(team));
+    teams.forEach((teamId, i) => cols[i % cols.length].push(teamId));
     return cols;
   }, [teams, columnCount]);
 
@@ -139,6 +160,9 @@ export const PersonnelTab: React.FC<{
       void handleReorderTeams(oldIndex, newIndex);
     }
   };
+
+  // Whether drag is disabled (board locked or not ready)
+  const isDragDisabled = bs.effectiveLocked || bs.status !== 'ready';
 
   const handleExportCsv = useCallback(async () => {
     try {
@@ -277,6 +301,51 @@ export const PersonnelTab: React.FC<{
           </TactileButton>
         )}
         <TactileButton
+          variant="ghost"
+          onClick={toggleBoardLock}
+          disabled={bs.status !== 'ready' || isBoardLockTogglePending}
+          title={
+            bs.effectiveLocked
+              ? 'Unlock Board (enable drag reorder)'
+              : 'Lock Board (disable drag reorder)'
+          }
+          aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
+          className="header-btn-mr"
+          icon={
+            bs.effectiveLocked ? (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+            ) : (
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+              </svg>
+            )
+          }
+        >
+          {bs.effectiveLocked ? 'LOCKED' : 'UNLOCKED'}
+        </TactileButton>
+        <TactileButton
           variant="primary"
           aria-label="Add Card"
           className="btn-collapsible"
@@ -306,7 +375,7 @@ export const PersonnelTab: React.FC<{
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={(event) => {
-          if (isAnyModalOpen) return;
+          if (isAnyModalOpen || isDragDisabled) return;
           const { active } = event;
           if (teams.includes(active.id as string)) {
             setIsDragging(true);
@@ -338,23 +407,28 @@ export const PersonnelTab: React.FC<{
           >
             {teamColumns.map((column, colIdx) => (
               <div className="oncall-masonry-column" key={colIdx}>
-                {column.map((team) => (
-                  <li key={team} className="oncall-masonry-item animate-card-entrance">
-                    <SortableTeamCard
-                      team={team}
-                      index={teams.indexOf(team)}
-                      rows={groupedOnCall.get(team) || []}
-                      contacts={contacts}
-                      onUpdateRows={handleUpdateRows}
-                      onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
-                      onRemoveTeam={handleRemoveTeam}
-                      setConfirm={setConfirmDelete}
-                      setMenu={setMenu}
-                      onCopyTeamInfo={handleCopyTeamInfo}
-                      tick={tick}
-                    />
-                  </li>
-                ))}
+                {column.map((teamId) => {
+                  const teamName = teamIdToName.get(teamId) || teamId;
+                  return (
+                    <li key={teamId} className="oncall-masonry-item animate-card-entrance">
+                      <SortableTeamCard
+                        id={teamId}
+                        team={teamName}
+                        index={teams.indexOf(teamId)}
+                        rows={groupedOnCall.get(teamId) || []}
+                        contacts={contacts}
+                        onUpdateRows={handleUpdateRows}
+                        onRenameTeam={(o, n) => setRenamingTeam({ old: o, new: n })}
+                        onRemoveTeam={handleRemoveTeam}
+                        setConfirm={setConfirmDelete}
+                        setMenu={setMenu}
+                        onCopyTeamInfo={handleCopyTeamInfo}
+                        tick={tick}
+                        disabled={isDragDisabled}
+                      />
+                    </li>
+                  );
+                })}
               </div>
             ))}
           </ul>

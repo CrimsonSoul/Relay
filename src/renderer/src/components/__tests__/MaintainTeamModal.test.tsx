@@ -19,6 +19,7 @@ const contacts: Contact[] = [
 const makeRow = (overrides: Partial<OnCallRow> = {}): OnCallRow => ({
   id: 'row-1',
   team: 'Alpha',
+  teamId: 'alpha',
   role: 'Primary',
   name: 'Bob',
   contact: '5559876543',
