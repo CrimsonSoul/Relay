@@ -104,6 +104,7 @@ describe('cacheHandlers', () => {
         'standalone_notes',
         'oncall_dismissals',
         'conflict_log',
+        'oncall_board_settings',
       ];
       for (const collection of validCollections) {
         mockCache.readCollection.mockReturnValue([]);

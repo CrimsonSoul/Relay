@@ -70,6 +70,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'contact' },
       { type: 'text', name: 'timeWindow' },
       { type: 'number', name: 'sortOrder' },
+      { type: 'text', name: 'teamId' },
     ],
   },
   {
@@ -163,23 +164,36 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'overwrittenBy' },
     ],
   },
+  {
+    name: 'oncall_board_settings',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'key', required: true },
+      { type: 'json', name: 'teamOrder' },
+      { type: 'bool', name: 'locked' },
+    ],
+  },
 ];
 
 const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
 
-/** Patch a single collection to add missing autodate fields. Returns true if patched. */
-async function patchAutodateFields(
+/** Patch a single collection to add any missing fields (schema + autodate). Returns true if patched. */
+async function patchMissingFields(
   pb: PocketBase,
   colId: string,
   colName: string,
+  expectedSchemaFields: FieldDef[],
 ): Promise<boolean> {
   const colFull = await pb.collections.getOne(colId);
   const fields = (colFull as unknown as { fields: FieldDef[] }).fields || [];
   const fieldNames = new Set(fields.map((f) => f.name));
-  const missing = AUTODATE_FIELDS.filter((f) => !fieldNames.has(f.name));
+  const allExpected = [...expectedSchemaFields, ...AUTODATE_FIELDS];
+  const missing = allExpected.filter((f) => !fieldNames.has(f.name));
   if (missing.length === 0) return false;
   await pb.collections.update(colId, { fields: [...fields, ...missing] });
-  logger.info(`Patched autodate fields on collection: ${colName}`);
+  logger.info(
+    `Patched fields on collection: ${colName} (+${missing.map((f) => f.name).join(', ')})`,
+  );
   return true;
 }
 
@@ -208,7 +222,7 @@ async function createMissing(pb: PocketBase, existing: Set<string>): Promise<num
   return created;
 }
 
-/** Patch existing collections that are missing autodate fields. */
+/** Patch existing collections that are missing schema or autodate fields. */
 async function patchExisting(
   pb: PocketBase,
   existing: Set<string>,
@@ -220,9 +234,9 @@ async function patchExisting(
     const col = allCols.find((c) => c.name === def.name);
     if (!col) continue;
     try {
-      if (await patchAutodateFields(pb, col.id, def.name)) patched++;
+      if (await patchMissingFields(pb, col.id, def.name, def.fields)) patched++;
     } catch (err) {
-      logger.error(`Failed to patch autodate fields on: ${def.name}`, { error: err });
+      logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
     }
   }
   return patched;

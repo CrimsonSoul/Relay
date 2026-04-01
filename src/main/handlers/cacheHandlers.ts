@@ -18,6 +18,7 @@ const VALID_COLLECTIONS = new Set([
   'standalone_notes',
   'oncall_dismissals',
   'conflict_log',
+  'oncall_board_settings',
 ]);
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);
