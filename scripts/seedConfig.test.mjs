@@ -12,8 +12,5 @@ test('getSuperuserPassword returns RELAY_SEED_SUPERUSER_PASSWORD', () => {
 });
 
 test('getSuperuserPassword throws when RELAY_SEED_SUPERUSER_PASSWORD is missing', () => {
-  assert.throws(
-    () => getSuperuserPassword({}),
-    /RELAY_SEED_SUPERUSER_PASSWORD/,
-  );
+  assert.throws(() => getSuperuserPassword({}), /RELAY_SEED_SUPERUSER_PASSWORD/);
 });

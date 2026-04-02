@@ -21,10 +21,16 @@ vi.mock('../../components/HistoryModal', () => ({
     title: string;
     emptyText: string;
     history: AlertHistoryEntry[];
-    renderEntry: (entry: AlertHistoryEntry, helpers: { formatDate: (ts: number) => string }) => React.ReactNode;
+    renderEntry: (
+      entry: AlertHistoryEntry,
+      helpers: { formatDate: (ts: number) => string },
+    ) => React.ReactNode;
     onClose: () => void;
     extraContent?: React.ReactNode;
-    getContextMenuItems?: (entry: AlertHistoryEntry, helpers: { closeMenu: () => void; closeModal: () => void }) => Array<{ label: string; onClick: () => void; danger?: boolean; icon?: React.ReactNode }>;
+    getContextMenuItems?: (
+      entry: AlertHistoryEntry,
+      helpers: { closeMenu: () => void; closeModal: () => void },
+    ) => Array<{ label: string; onClick: () => void; danger?: boolean; icon?: React.ReactNode }>;
     [key: string]: unknown;
   }) =>
     isOpen ? (
@@ -39,11 +45,17 @@ vi.mock('../../components/HistoryModal', () => ({
                 {renderEntry(entry, { formatDate: (ts: number) => new Date(ts).toISOString() })}
                 {getContextMenuItems && (
                   <div data-testid={`context-menu-${entry.id}`}>
-                    {getContextMenuItems(entry, { closeMenu: () => {}, closeModal: onClose }).map((item) => (
-                      <button key={item.label} data-testid={`ctx-${item.label}`} onClick={item.onClick}>
-                        {item.label}
-                      </button>
-                    ))}
+                    {getContextMenuItems(entry, { closeMenu: () => {}, closeModal: onClose }).map(
+                      (item) => (
+                        <button
+                          key={item.label}
+                          data-testid={`ctx-${item.label}`}
+                          onClick={item.onClick}
+                        >
+                          {item.label}
+                        </button>
+                      ),
+                    )}
                   </div>
                 )}
               </li>
@@ -126,19 +138,14 @@ describe('AlertHistoryModal', () => {
 
   it('shows (no subject) when subject is empty', () => {
     render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ id: 'e2', subject: '' })]}
-      />,
+      <AlertHistoryModal {...defaultProps} history={[makeEntry({ id: 'e2', subject: '' })]} />,
     );
     expect(screen.getByText('(no subject)')).toBeInTheDocument();
   });
 
   it('shows empty text when history is empty', () => {
     render(<AlertHistoryModal {...defaultProps} history={[]} />);
-    expect(
-      screen.getByText(/No alert history yet/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/No alert history yet/)).toBeInTheDocument();
   });
 
   it('calls onClose when close button is clicked', () => {
@@ -148,33 +155,18 @@ describe('AlertHistoryModal', () => {
   });
 
   it('renders pinned icon for pinned entries', () => {
-    render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ pinned: true })]}
-      />,
-    );
+    render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
     // The pin icon has a title attribute
     expect(screen.getByTitle('Pinned template')).toBeInTheDocument();
   });
 
   it('shows label instead of date for entries with a label', () => {
-    render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ label: 'My Template' })]}
-      />,
-    );
+    render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ label: 'My Template' })]} />);
     expect(screen.getByText('My Template')).toBeInTheDocument();
   });
 
   it('does not show sender line when sender is empty', () => {
-    render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ sender: '' })]}
-      />,
-    );
+    render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ sender: '' })]} />);
     expect(screen.queryByText(/From:/)).not.toBeInTheDocument();
   });
 
@@ -201,10 +193,7 @@ describe('AlertHistoryModal', () => {
 
   it('renders severity dot with correct color for INFO', () => {
     const { container } = render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ severity: 'INFO' })]}
-      />,
+      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'INFO' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
     expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#1565c0');
@@ -212,10 +201,7 @@ describe('AlertHistoryModal', () => {
 
   it('renders severity dot with correct color for RESOLVED', () => {
     const { container } = render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ severity: 'RESOLVED' })]}
-      />,
+      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'RESOLVED' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
     expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#2e7d32');
@@ -223,10 +209,7 @@ describe('AlertHistoryModal', () => {
 
   it('renders severity dot with correct color for MAINTENANCE', () => {
     const { container } = render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ severity: 'MAINTENANCE' })]}
-      />,
+      <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'MAINTENANCE' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
     expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#f9a825');
@@ -245,12 +228,7 @@ describe('AlertHistoryModal', () => {
   });
 
   it('does not show pin icon when entry is not pinned', () => {
-    render(
-      <AlertHistoryModal
-        {...defaultProps}
-        history={[makeEntry({ pinned: false })]}
-      />,
-    );
+    render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
     expect(screen.queryByTitle('Pinned template')).not.toBeInTheDocument();
   });
 
@@ -267,64 +245,34 @@ describe('AlertHistoryModal', () => {
     });
 
     it('renders Pin as Template for unpinned entries', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       expect(screen.getByTestId('ctx-Pin as Template')).toBeInTheDocument();
     });
 
     it('renders Unpin for pinned entries', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: true })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
       expect(screen.getByTestId('ctx-Unpin')).toBeInTheDocument();
     });
 
     it('calls onPin with true when Pin as Template is clicked', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
       expect(defaultProps.onPin).toHaveBeenCalledWith('entry-1', true);
     });
 
     it('calls onPin with false when Unpin is clicked', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: true })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
       fireEvent.click(screen.getByTestId('ctx-Unpin'));
       expect(defaultProps.onPin).toHaveBeenCalledWith('entry-1', false);
     });
 
     it('shows Rename option for pinned entries', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: true })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
       expect(screen.getByTestId('ctx-Rename')).toBeInTheDocument();
     });
 
     it('does not show Rename option for unpinned entries', () => {
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       expect(screen.queryByTestId('ctx-Rename')).not.toBeInTheDocument();
     });
 
@@ -341,12 +289,7 @@ describe('AlertHistoryModal', () => {
 
     it('opens label editor after successful pin', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       // Wait for the pin promise to resolve and label editor to appear
@@ -357,12 +300,7 @@ describe('AlertHistoryModal', () => {
 
     it('does not open label editor when pin returns false', async () => {
       defaultProps.onPin.mockResolvedValue(false);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       // Give the promise time to resolve
@@ -392,12 +330,7 @@ describe('AlertHistoryModal', () => {
   describe('label editor', () => {
     it('commits label on Save button click', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -415,12 +348,7 @@ describe('AlertHistoryModal', () => {
 
     it('commits label on Enter key in input', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -436,12 +364,7 @@ describe('AlertHistoryModal', () => {
 
     it('cancels label editing on Escape key in input', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -457,12 +380,7 @@ describe('AlertHistoryModal', () => {
 
     it('cancels label editing on Cancel button click', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -477,12 +395,7 @@ describe('AlertHistoryModal', () => {
 
     it('commits label when clicking overlay background', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -501,12 +414,7 @@ describe('AlertHistoryModal', () => {
 
     it('dismisses label editor on Escape key on overlay', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {
@@ -521,12 +429,7 @@ describe('AlertHistoryModal', () => {
 
     it('trims whitespace from label on commit', async () => {
       defaultProps.onPin.mockResolvedValue(true);
-      render(
-        <AlertHistoryModal
-          {...defaultProps}
-          history={[makeEntry({ pinned: false })]}
-        />,
-      );
+      render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: false })]} />);
       fireEvent.click(screen.getByTestId('ctx-Pin as Template'));
 
       await waitFor(() => {

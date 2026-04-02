@@ -288,7 +288,10 @@ describe('PersonnelTab — Pop Out button', () => {
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Pop Out Board' }));
-    expect((globalThis as Record<string, unknown> & { api: { openAuxWindow: ReturnType<typeof vi.fn> } }).api.openAuxWindow).toHaveBeenCalledWith('popout/board');
+    expect(
+      (globalThis as Record<string, unknown> & { api: { openAuxWindow: ReturnType<typeof vi.fn> } })
+        .api.openAuxWindow,
+    ).toHaveBeenCalledWith('popout/board');
   });
 });
 

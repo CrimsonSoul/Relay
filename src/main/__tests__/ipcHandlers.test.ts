@@ -88,7 +88,11 @@ describe('setupIpcHandlers', () => {
     const createAuxWindow = vi.fn();
     setupIpcHandlers(makeOpts({ getMainWindow, getDataRoot, createAuxWindow }));
 
-    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(getMainWindow, createAuxWindow, getDataRoot);
+    expect(mockSetupWindowHandlers).toHaveBeenCalledWith(
+      getMainWindow,
+      createAuxWindow,
+      getDataRoot,
+    );
   });
 
   it('passes cache-related getters to setup handlers', () => {

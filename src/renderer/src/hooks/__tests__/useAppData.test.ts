@@ -339,7 +339,10 @@ describe('useAppData', () => {
   it('does not allow concurrent syncs', async () => {
     let resolveContacts: () => void;
     mockRefetchContacts.mockImplementation(
-      () => new Promise<void>((resolve) => { resolveContacts = resolve; }),
+      () =>
+        new Promise<void>((resolve) => {
+          resolveContacts = resolve;
+        }),
     );
 
     const { result } = renderHook(() => useAppData(showToast));

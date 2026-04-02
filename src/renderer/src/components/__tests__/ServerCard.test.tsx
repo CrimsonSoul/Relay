@@ -99,11 +99,7 @@ describe('ServerCard', () => {
 
   it('applies custom style prop', () => {
     const { container } = render(
-      <ServerCard
-        server={makeServer()}
-        onContextMenu={vi.fn()}
-        style={{ height: '100px' }}
-      />,
+      <ServerCard server={makeServer()} onContextMenu={vi.fn()} style={{ height: '100px' }} />,
     );
 
     const card = container.querySelector('.server-card') as HTMLElement;

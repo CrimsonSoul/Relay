@@ -28,11 +28,7 @@ vi.mock('../services/importExportService', () => ({
 
 import { useDataManager } from './useDataManager';
 import { getPb } from '../services/pocketbase';
-import {
-  exportToJson,
-  exportToCsv,
-  exportToExcel,
-} from '../services/importExportService';
+import { exportToJson, exportToCsv, exportToExcel } from '../services/importExportService';
 import { loggers } from '../utils/logger';
 
 const mockedGetPb = vi.mocked(getPb);

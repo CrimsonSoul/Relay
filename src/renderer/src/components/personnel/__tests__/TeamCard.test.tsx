@@ -73,12 +73,7 @@ describe('TeamCard', () => {
   });
 
   it('shows empty state for a single row with no name and no contact', () => {
-    render(
-      <TeamCard
-        {...defaultProps()}
-        rows={[makeRow({ name: '', contact: '' })]}
-      />,
-    );
+    render(<TeamCard {...defaultProps()} rows={[makeRow({ name: '', contact: '' })]} />);
     expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();
   });
 
@@ -88,9 +83,7 @@ describe('TeamCard', () => {
   });
 
   it('applies readonly class when isReadOnly', () => {
-    const { container } = render(
-      <TeamCard {...defaultProps()} isReadOnly />,
-    );
+    const { container } = render(<TeamCard {...defaultProps()} isReadOnly />);
     const card = container.querySelector('.team-card-body');
     expect(card?.className).toContain('team-card-body--readonly');
   });
@@ -122,12 +115,7 @@ describe('TeamCard', () => {
   });
 
   it('handles rows with timeWindow (hasAnyTimeWindow branch)', () => {
-    render(
-      <TeamCard
-        {...defaultProps()}
-        rows={[makeRow({ timeWindow: '09:00-17:00' })]}
-      />,
-    );
+    render(<TeamCard {...defaultProps()} rows={[makeRow({ timeWindow: '09:00-17:00' })]} />);
     expect(screen.getByTestId('team-row-r1')).toBeInTheDocument();
   });
 
@@ -135,45 +123,30 @@ describe('TeamCard', () => {
     const setMenu = vi.fn();
     const onCopyTeamInfo = vi.fn();
     const { container } = render(
-      <TeamCard
-        {...defaultProps()}
-        setMenu={setMenu}
-        isReadOnly
-        onCopyTeamInfo={onCopyTeamInfo}
-      />,
+      <TeamCard {...defaultProps()} setMenu={setMenu} isReadOnly onCopyTeamInfo={onCopyTeamInfo} />,
     );
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
     expect(setMenu).toHaveBeenCalledWith(
       expect.objectContaining({
-        items: expect.arrayContaining([
-          expect.objectContaining({ label: 'Copy On-Call Info' }),
-        ]),
+        items: expect.arrayContaining([expect.objectContaining({ label: 'Copy On-Call Info' })]),
       }),
     );
   });
 
   it('opens context menu with readonly without onCopyTeamInfo', () => {
     const setMenu = vi.fn();
-    const { container } = render(
-      <TeamCard {...defaultProps()} setMenu={setMenu} isReadOnly />,
-    );
+    const { container } = render(<TeamCard {...defaultProps()} setMenu={setMenu} isReadOnly />);
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
-    expect(setMenu).toHaveBeenCalledWith(
-      expect.objectContaining({ items: [] }),
-    );
+    expect(setMenu).toHaveBeenCalledWith(expect.objectContaining({ items: [] }));
   });
 
   it('opens context menu in edit mode with onCopyTeamInfo', () => {
     const setMenu = vi.fn();
     const onCopyTeamInfo = vi.fn();
     const { container } = render(
-      <TeamCard
-        {...defaultProps()}
-        setMenu={setMenu}
-        onCopyTeamInfo={onCopyTeamInfo}
-      />,
+      <TeamCard {...defaultProps()} setMenu={setMenu} onCopyTeamInfo={onCopyTeamInfo} />,
     );
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
@@ -191,9 +164,7 @@ describe('TeamCard', () => {
 
   it('opens context menu in edit mode without onCopyTeamInfo', () => {
     const setMenu = vi.fn();
-    const { container } = render(
-      <TeamCard {...defaultProps()} setMenu={setMenu} />,
-    );
+    const { container } = render(<TeamCard {...defaultProps()} setMenu={setMenu} />);
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
     expect(setMenu).toHaveBeenCalledWith(
@@ -231,9 +202,7 @@ describe('TeamCard', () => {
 
   it('context menu Edit Team opens modal', () => {
     const setMenu = vi.fn();
-    const { container } = render(
-      <TeamCard {...defaultProps()} setMenu={setMenu} />,
-    );
+    const { container } = render(<TeamCard {...defaultProps()} setMenu={setMenu} />);
     const card = container.querySelector('.team-card-body')!;
     fireEvent.contextMenu(card);
     const editItem = setMenu.mock.calls[0][0].items.find(
@@ -278,21 +247,14 @@ describe('TeamCard', () => {
       (i: { label: string }) => i.label === 'Remove Team',
     );
     removeItem.onClick();
-    expect(setConfirm).toHaveBeenCalledWith(
-      expect.objectContaining({ team: 'Alpha' }),
-    );
+    expect(setConfirm).toHaveBeenCalledWith(expect.objectContaining({ team: 'Alpha' }));
     // Execute the confirm callback
     setConfirm.mock.calls[0][0].onConfirm();
     expect(onRemoveTeam).toHaveBeenCalledWith('Alpha');
   });
 
   it('handles null rows gracefully (rows || [] fallback)', () => {
-    render(
-      <TeamCard
-        {...defaultProps()}
-        rows={null as unknown as OnCallRow[]}
-      />,
-    );
+    render(<TeamCard {...defaultProps()} rows={null as unknown as OnCallRow[]} />);
     // Empty state should show since rows is null -> []
     expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();
   });

@@ -209,12 +209,16 @@ describe('Logger detailed coverage', () => {
 
   it('appendDataToParts handles array data', async () => {
     const { loggers } = await import('./logger');
-    expect(() => loggers.main.info('array data', [1, 2, 3] as unknown as Record<string, unknown>)).not.toThrow();
+    expect(() =>
+      loggers.main.info('array data', [1, 2, 3] as unknown as Record<string, unknown>),
+    ).not.toThrow();
   });
 
   it('appendDataToParts handles primitive data', async () => {
     const { loggers } = await import('./logger');
-    expect(() => loggers.main.info('string data', 'just a string' as unknown as Record<string, unknown>)).not.toThrow();
+    expect(() =>
+      loggers.main.info('string data', 'just a string' as unknown as Record<string, unknown>),
+    ).not.toThrow();
   });
 
   it('appendDataToParts skips empty object data', async () => {
@@ -234,9 +238,7 @@ describe('Logger detailed coverage', () => {
 
   it('appendErrorContextToParts includes performance duration', async () => {
     const { loggers } = await import('./logger');
-    expect(() =>
-      loggers.main.warn('perf test', { duration: 150 }),
-    ).not.toThrow();
+    expect(() => loggers.main.warn('perf test', { duration: 150 })).not.toThrow();
   });
 
   it('shouldLog filters out messages below configured level', async () => {
@@ -275,9 +277,7 @@ describe('Logger detailed coverage', () => {
     loggers.main.error('disk full test');
     await new Promise((r) => setTimeout(r, 30));
     // The console.error fallback should have been called for the write failure
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('disk full'),
-    );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('disk full'));
     consoleSpy.mockRestore();
   });
 

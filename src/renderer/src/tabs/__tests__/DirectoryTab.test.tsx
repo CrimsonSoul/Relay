@@ -61,21 +61,15 @@ vi.mock('../../components/Modal', () => ({
 }));
 
 vi.mock('../../components/TactileButton', () => ({
-  TactileButton: ({
-    children,
-    onClick,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-  }) => <button onClick={onClick}>{children}</button>,
+  TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{children}</button>
+  ),
 }));
 
 vi.mock('../../components/CollapsibleHeader', () => ({
-  CollapsibleHeader: ({
-    children,
-  }: {
-    children: React.ReactNode;
-  }) => <div data-testid="collapsible-header">{children}</div>,
+  CollapsibleHeader: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="collapsible-header">{children}</div>
+  ),
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
@@ -95,10 +89,19 @@ vi.mock('../../components/directory/VirtualRow', () => ({
 }));
 
 vi.mock('../../components/directory/DeleteConfirmationModal', () => ({
-  DeleteConfirmationModal: ({ contact, onConfirm }: { contact: Contact | null; onClose: () => void; onConfirm: () => void }) =>
+  DeleteConfirmationModal: ({
+    contact,
+    onConfirm,
+  }: {
+    contact: Contact | null;
+    onClose: () => void;
+    onConfirm: () => void;
+  }) =>
     contact ? (
       <div data-testid="delete-modal">
-        <button data-testid="delete-confirm" onClick={onConfirm}>Confirm Delete</button>
+        <button data-testid="delete-confirm" onClick={onConfirm}>
+          Confirm Delete
+        </button>
       </div>
     ) : null,
 }));
@@ -126,12 +129,24 @@ vi.mock('../../components/directory/DirectoryContextMenu', () => ({
     hasNotes: boolean;
   }) => (
     <div data-testid="context-menu">
-      <button data-testid="ctx-close" onClick={onClose}>Close</button>
-      <button data-testid="ctx-add-composer" onClick={onAddToComposer}>Add to Composer</button>
-      <button data-testid="ctx-manage-groups" onClick={onManageGroups}>Manage Groups</button>
-      <button data-testid="ctx-edit" onClick={onEditContact}>Edit</button>
-      <button data-testid="ctx-delete" onClick={onDeleteContact}>Delete</button>
-      <button data-testid="ctx-notes" onClick={onEditNotes}>{hasNotes ? 'Edit Notes' : 'Add Notes'}</button>
+      <button data-testid="ctx-close" onClick={onClose}>
+        Close
+      </button>
+      <button data-testid="ctx-add-composer" onClick={onAddToComposer}>
+        Add to Composer
+      </button>
+      <button data-testid="ctx-manage-groups" onClick={onManageGroups}>
+        Manage Groups
+      </button>
+      <button data-testid="ctx-edit" onClick={onEditContact}>
+        Edit
+      </button>
+      <button data-testid="ctx-delete" onClick={onDeleteContact}>
+        Delete
+      </button>
+      <button data-testid="ctx-notes" onClick={onEditNotes}>
+        {hasNotes ? 'Edit Notes' : 'Add Notes'}
+      </button>
     </div>
   ),
 }));
@@ -156,8 +171,11 @@ vi.mock('../../components/StatusBar', () => ({
 
 // Mock react-virtualized-auto-sizer
 vi.mock('react-virtualized-auto-sizer', () => ({
-  AutoSizer: ({ renderProp }: { renderProp: (size: { height: number; width: number }) => React.ReactNode }) =>
-    renderProp({ height: 600, width: 800 }),
+  AutoSizer: ({
+    renderProp,
+  }: {
+    renderProp: (size: { height: number; width: number }) => React.ReactNode;
+  }) => renderProp({ height: 600, width: 800 }),
 }));
 
 // Mock react-window

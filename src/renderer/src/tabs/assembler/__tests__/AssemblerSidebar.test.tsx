@@ -240,9 +240,7 @@ describe('AssemblerSidebar', () => {
 
   it('handles onSaveGroup throwing an error without crashing', async () => {
     const onSaveGroup = vi.fn().mockRejectedValue(new Error('save failed'));
-    render(
-      <AssemblerSidebar {...defaultProps} actions={{ ...defaultActions, onSaveGroup }} />,
-    );
+    render(<AssemblerSidebar {...defaultProps} actions={{ ...defaultActions, onSaveGroup }} />);
     const addBtn = document.querySelector('.assembler-sidebar-add-btn') as HTMLElement;
     fireEvent.click(addBtn);
     const input = screen.getByRole('textbox');
@@ -369,18 +367,14 @@ describe('AssemblerSidebar', () => {
       makeGroup('g1', 'TeamA', ['a@b.com', 'c@d.com']),
       makeGroup('g2', 'TeamB', ['a@b.com', 'e@f.com']),
     ];
-    render(
-      <AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />,
-    );
+    render(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />);
     // Selected unique contacts from g1: a@b.com, c@d.com = 2
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('shows 0 selected contacts when no groups are selected', () => {
     const groups = [makeGroup('g1', 'TeamA', ['a@b.com'])];
-    render(
-      <AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={[]} />,
-    );
+    render(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={[]} />);
     expect(screen.getByText('0')).toBeInTheDocument();
   });
 

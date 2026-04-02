@@ -405,9 +405,7 @@ describe('initializeBoardSettings — validation edge cases', () => {
   it('returns invalid when backfill encounters blank team names in backfillTeamIds', async () => {
     // Two rows without teamId — one has a blank team name
     // The pre-backfill check catches this first
-    const rows = [
-      makeOncallRow({ id: 'oc1', team: '   ', teamId: '', sortOrder: 0 }),
-    ];
+    const rows = [makeOncallRow({ id: 'oc1', team: '   ', teamId: '', sortOrder: 0 })];
 
     const result = await initializeBoardSettings(rows);
 

@@ -175,8 +175,7 @@ describe('AlertBodyEditor', () => {
 
     fireEvent.paste(editor, {
       clipboardData: {
-        getData: (type: string) =>
-          type === 'text/html' ? '<p>Pasted HTML</p>' : 'Pasted text',
+        getData: (type: string) => (type === 'text/html' ? '<p>Pasted HTML</p>' : 'Pasted text'),
       },
     });
 

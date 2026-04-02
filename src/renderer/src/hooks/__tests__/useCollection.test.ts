@@ -18,7 +18,9 @@ vi.mock('../../services/pocketbase', () => ({
   isOnline: vi.fn(() => true),
   onConnectionStateChange: vi.fn((cb: (state: string) => void) => {
     connectionChangeCallback = cb;
-    return () => { connectionChangeCallback = null; };
+    return () => {
+      connectionChangeCallback = null;
+    };
   }),
   handleApiError: vi.fn(),
 }));
@@ -283,7 +285,11 @@ describe('useCollection', () => {
       realtimeCallback({ action: 'create', record: makeRecord('new') });
     });
 
-    expect(cacheWriteMock).toHaveBeenCalledWith('test', 'create', expect.objectContaining({ id: 'new' }));
+    expect(cacheWriteMock).toHaveBeenCalledWith(
+      'test',
+      'create',
+      expect.objectContaining({ id: 'new' }),
+    );
   });
 
   it('does not subscribe when offline', async () => {
@@ -314,10 +320,7 @@ describe('useCollection', () => {
   });
 
   it('sorts records with custom sort option', async () => {
-    const records = [
-      makeRecord('2', { sortOrder: 2 }),
-      makeRecord('1', { sortOrder: 1 }),
-    ];
+    const records = [makeRecord('2', { sortOrder: 2 }), makeRecord('1', { sortOrder: 1 })];
     mockGetFullList.mockResolvedValue(records);
 
     const { result } = renderHook(() => useCollection('test', { sort: 'sortOrder' }));
@@ -393,10 +396,7 @@ describe('useCollection', () => {
   });
 
   it('handles null values in sort fields', async () => {
-    const records = [
-      makeRecord('1', { name: null }),
-      makeRecord('2', { name: 'alpha' }),
-    ];
+    const records = [makeRecord('1', { name: null }), makeRecord('2', { name: 'alpha' })];
     mockGetFullList.mockResolvedValue(records);
     let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
     mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
@@ -417,10 +417,7 @@ describe('useCollection', () => {
   });
 
   it('handles null values in descending sort (null sorts last in desc)', async () => {
-    const records = [
-      makeRecord('1', { name: 'alpha' }),
-      makeRecord('2', { name: null }),
-    ];
+    const records = [makeRecord('1', { name: 'alpha' }), makeRecord('2', { name: null })];
     mockGetFullList.mockResolvedValue(records);
     let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
     mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
@@ -457,7 +454,10 @@ describe('useCollection', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(3));
 
     act(() => {
-      realtimeCallback({ action: 'create', record: makeRecord('4', { category: 'a', sortOrder: 0 }) });
+      realtimeCallback({
+        action: 'create',
+        record: makeRecord('4', { category: 'a', sortOrder: 0 }),
+      });
     });
 
     expect(result.current.data).toHaveLength(4);
@@ -469,10 +469,7 @@ describe('useCollection', () => {
   });
 
   it('re-sorts after update event when comparator exists', async () => {
-    const records = [
-      makeRecord('1', { sortOrder: 1 }),
-      makeRecord('2', { sortOrder: 2 }),
-    ];
+    const records = [makeRecord('1', { sortOrder: 1 }), makeRecord('2', { sortOrder: 2 })];
     mockGetFullList.mockResolvedValue(records);
     let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
     mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {

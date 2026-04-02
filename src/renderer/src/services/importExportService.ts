@@ -102,7 +102,10 @@ async function upsertOne(
 
   if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
     const rawValue = data[uniqueKey];
-    const rawStr = typeof rawValue === 'object' && rawValue !== null ? JSON.stringify(rawValue) : String(rawValue as string | number | boolean);
+    const rawStr =
+      typeof rawValue === 'object' && rawValue !== null
+        ? JSON.stringify(rawValue)
+        : String(rawValue as string | number | boolean);
     const filterValue = escapeFilter(rawStr);
     let existing: { id: string } | null = null;
     try {
@@ -252,7 +255,10 @@ export async function exportToExcel(collection: CollectionName | 'all'): Promise
       col.eachCell?.({ includeEmpty: false }, (cell) => {
         let cellLen = 0;
         if (cell.value) {
-          cellLen = typeof cell.value === 'object' ? JSON.stringify(cell.value).length : String(cell.value).length;
+          cellLen =
+            typeof cell.value === 'object'
+              ? JSON.stringify(cell.value).length
+              : String(cell.value).length;
         }
         if (cellLen > maxLen) maxLen = cellLen;
       });

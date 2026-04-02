@@ -571,7 +571,9 @@ describe('MainApp', () => {
   });
 
   it('adds platform class to body on mount', () => {
-    (globalThis as Window & { api?: { platform: string } }).api = { platform: 'darwin' } as typeof globalThis.api;
+    (globalThis as Window & { api?: { platform: string } }).api = {
+      platform: 'darwin',
+    } as typeof globalThis.api;
     renderApp();
     expect(document.body.classList.contains('platform-darwin')).toBe(true);
   });

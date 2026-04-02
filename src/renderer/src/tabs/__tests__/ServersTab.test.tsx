@@ -49,13 +49,9 @@ vi.mock('../../components/AddServerModal', () => ({
 }));
 
 vi.mock('../../components/TactileButton', () => ({
-  TactileButton: ({
-    children,
-    onClick,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-  }) => <button onClick={onClick}>{children}</button>,
+  TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{children}</button>
+  ),
 }));
 
 vi.mock('../../components/ServerCard', () => ({
@@ -63,11 +59,9 @@ vi.mock('../../components/ServerCard', () => ({
 }));
 
 vi.mock('../../components/CollapsibleHeader', () => ({
-  CollapsibleHeader: ({
-    children,
-  }: {
-    children: React.ReactNode;
-  }) => <div data-testid="collapsible-header">{children}</div>,
+  CollapsibleHeader: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="collapsible-header">{children}</div>
+  ),
 }));
 
 vi.mock('../../components/ListToolbar', () => ({
@@ -98,8 +92,11 @@ vi.mock('../../components/StatusBar', () => ({
 
 // Mock react-virtualized-auto-sizer
 vi.mock('react-virtualized-auto-sizer', () => ({
-  AutoSizer: ({ renderProp }: { renderProp: (size: { height: number; width: number }) => React.ReactNode }) =>
-    renderProp({ height: 600, width: 800 }),
+  AutoSizer: ({
+    renderProp,
+  }: {
+    renderProp: (size: { height: number; width: number }) => React.ReactNode;
+  }) => renderProp({ height: 600, width: 800 }),
 }));
 
 // Mock react-window

@@ -19,7 +19,7 @@ import { loggers } from './logger';
 // fallback paths (obfuscation) since jsdom doesn't have full crypto.subtle.
 
 describe('secureStorage', () => {
-  let secureStorage: typeof import('./secureStorage')['secureStorage'];
+  let secureStorage: (typeof import('./secureStorage'))['secureStorage'];
 
   beforeEach(async () => {
     localStorage.clear();

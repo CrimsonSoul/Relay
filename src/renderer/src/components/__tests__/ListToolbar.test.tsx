@@ -76,13 +76,7 @@ describe('ListToolbar', () => {
   });
 
   it('renders sort button without dropdown when sortOptions is empty', () => {
-    render(
-      <ListToolbar
-        {...defaultProps}
-        sortOptions={[]}
-        onSortKeyChange={vi.fn()}
-      />,
-    );
+    render(<ListToolbar {...defaultProps} sortOptions={[]} onSortKeyChange={vi.fn()} />);
     expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
   });
 

@@ -71,9 +71,7 @@ describe('useBridgeHistory', () => {
   });
 
   it('defaults groups and contacts to empty arrays when falsy', () => {
-    mockCollectionData.current = [
-      makeRecord({ id: 'h_null', groups: null, contacts: undefined }),
-    ];
+    mockCollectionData.current = [makeRecord({ id: 'h_null', groups: null, contacts: undefined })];
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });
 
     expect(result.current.history).toHaveLength(1);

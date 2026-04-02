@@ -56,26 +56,20 @@ describe('CloudStatusTab', () => {
   });
 
   it('renders with empty status data', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     expect(screen.getByText('Recent Events')).toBeInTheDocument();
     expect(screen.getByText(/No recent events/)).toBeInTheDocument();
   });
 
   it('renders provider cards for all providers', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     // Should show "All services normal" for each provider (9 providers)
     const normalStatuses = screen.getAllByText('All services normal');
     expect(normalStatuses.length).toBe(9);
   });
 
   it('renders filter buttons including All', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     // The "All" filter button
     expect(screen.getByText('All')).toBeInTheDocument();
     // Filter area has provider short labels - AWS appears in both filter and provider card
@@ -88,9 +82,7 @@ describe('CloudStatusTab', () => {
   });
 
   it('renders refresh button', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     expect(screen.getByLabelText('Refresh cloud status')).toBeInTheDocument();
   });
 
@@ -102,9 +94,7 @@ describe('CloudStatusTab', () => {
   });
 
   it('disables refresh button while loading', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={true} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={true} refetch={vi.fn()} />);
     expect(screen.getByLabelText('Refresh cloud status')).toBeDisabled();
   });
 
@@ -241,8 +231,8 @@ describe('CloudStatusTab', () => {
 
     // Click AWS filter button (in the filters container, not the provider card)
     const filterContainer = screen.getByText('All').parentElement!;
-    const awsFilterBtn = Array.from(filterContainer.querySelectorAll('button')).find(
-      (btn) => btn.textContent?.includes('AWS'),
+    const awsFilterBtn = Array.from(filterContainer.querySelectorAll('button')).find((btn) =>
+      btn.textContent?.includes('AWS'),
     )!;
     fireEvent.click(awsFilterBtn);
     expect(screen.getByText('AWS Issue')).toBeInTheDocument();
@@ -258,16 +248,12 @@ describe('CloudStatusTab', () => {
   });
 
   it('renders status bar with provider count', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     expect(screen.getByText('9 providers monitored')).toBeInTheDocument();
   });
 
   it('shows Updated timestamp', () => {
-    render(
-      <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
-    );
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     expect(screen.getByText(/Updated/)).toBeInTheDocument();
   });
 

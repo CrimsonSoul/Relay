@@ -59,15 +59,33 @@ vi.mock('../AlertForm', () => ({
     const onToggleEnhanced = props.onToggleEnhanced as () => void;
     return (
       <div data-testid="alert-form">
-        <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>set-issue</button>
-        <button data-testid="set-severity-resolved" onClick={() => setSeverity('RESOLVED')}>set-resolved</button>
-        <button data-testid="set-subject" onClick={() => setSubject('Test Subject')}>set-subject</button>
-        <button data-testid="set-body" onClick={() => setBodyHtml('<p>body</p>')}>set-body</button>
-        <button data-testid="set-sender" onClick={() => setSender('Security')}>set-sender</button>
-        <button data-testid="set-recipient" onClick={() => setRecipient('Managers')}>set-recipient</button>
-        <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>set-update</button>
-        <button data-testid="toggle-compact" onClick={onToggleCompact}>toggle-compact</button>
-        <button data-testid="toggle-enhanced" onClick={onToggleEnhanced}>toggle-enhanced</button>
+        <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>
+          set-issue
+        </button>
+        <button data-testid="set-severity-resolved" onClick={() => setSeverity('RESOLVED')}>
+          set-resolved
+        </button>
+        <button data-testid="set-subject" onClick={() => setSubject('Test Subject')}>
+          set-subject
+        </button>
+        <button data-testid="set-body" onClick={() => setBodyHtml('<p>body</p>')}>
+          set-body
+        </button>
+        <button data-testid="set-sender" onClick={() => setSender('Security')}>
+          set-sender
+        </button>
+        <button data-testid="set-recipient" onClick={() => setRecipient('Managers')}>
+          set-recipient
+        </button>
+        <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
+          set-update
+        </button>
+        <button data-testid="toggle-compact" onClick={onToggleCompact}>
+          toggle-compact
+        </button>
+        <button data-testid="toggle-enhanced" onClick={onToggleEnhanced}>
+          toggle-enhanced
+        </button>
         <span data-testid="form-compact">{String(props.isCompact)}</span>
         <span data-testid="form-enhanced">{String(props.isEnhanced)}</span>
       </div>
@@ -89,7 +107,12 @@ vi.mock('../AlertCard', () => ({
 
 // Mock AlertHistoryModal — render load button when open
 vi.mock('../AlertHistoryModal', () => ({
-  AlertHistoryModal: (props: { isOpen: boolean; onLoad: (entry: Record<string, unknown>) => void; onDelete: (id: string) => void; onClear: () => void }) =>
+  AlertHistoryModal: (props: {
+    isOpen: boolean;
+    onLoad: (entry: Record<string, unknown>) => void;
+    onDelete: (id: string) => void;
+    onClear: () => void;
+  }) =>
     props.isOpen ? (
       <div data-testid="history-modal">
         <button
@@ -106,8 +129,12 @@ vi.mock('../AlertHistoryModal', () => ({
         >
           Load
         </button>
-        <button data-testid="history-delete" onClick={() => props.onDelete('del-1')}>Delete</button>
-        <button data-testid="history-clear" onClick={() => props.onClear()}>Clear</button>
+        <button data-testid="history-delete" onClick={() => props.onDelete('del-1')}>
+          Delete
+        </button>
+        <button data-testid="history-clear" onClick={() => props.onClear()}>
+          Clear
+        </button>
       </div>
     ) : null,
 }));
@@ -246,7 +273,9 @@ describe('AlertsTab', () => {
 
   it('loads logo from api on mount', async () => {
     const api = globalThis.api as Record<string, unknown>;
-    (api.getCompanyLogo as ReturnType<typeof vi.fn>).mockResolvedValue('data:image/png;base64,LOGO');
+    (api.getCompanyLogo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,LOGO',
+    );
     render(<AlertsTab />);
     // The getCompanyLogo should have been called
     expect(api.getCompanyLogo).toHaveBeenCalled();
@@ -254,7 +283,9 @@ describe('AlertsTab', () => {
 
   it('loads footer logo from api on mount', async () => {
     const api = globalThis.api as Record<string, unknown>;
-    (api.getFooterLogo as ReturnType<typeof vi.fn>).mockResolvedValue('data:image/png;base64,FLOGO');
+    (api.getFooterLogo as ReturnType<typeof vi.fn>).mockResolvedValue(
+      'data:image/png;base64,FLOGO',
+    );
     render(<AlertsTab />);
     expect(api.getFooterLogo).toHaveBeenCalled();
   });
