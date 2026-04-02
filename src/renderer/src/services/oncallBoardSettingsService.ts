@@ -79,7 +79,10 @@ function reconcileTeamOrder(stored: string[], liveIds: Set<string>): string[] {
 
 function validateSettingsRecord(record: BoardSettingsRecord, errors: string[]): boolean {
   let valid = true;
-  if (Array.isArray(record.teamOrder)) {
+  if (!Array.isArray(record.teamOrder)) {
+    errors.push('Invalid teamOrder: expected array');
+    valid = false;
+  } else {
     const seen = new Set<string>();
     for (const id of record.teamOrder) {
       if (typeof id !== 'string') {
@@ -94,9 +97,6 @@ function validateSettingsRecord(record: BoardSettingsRecord, errors: string[]): 
       }
       seen.add(id);
     }
-  } else {
-    errors.push('Invalid teamOrder: expected array');
-    valid = false;
   }
   if (typeof record.locked !== 'boolean') {
     errors.push('Invalid locked: expected boolean');
@@ -353,6 +353,23 @@ export async function updatePrimaryBoardSettings(
 /**
  * Initialize board settings for the on-call board.
  *
+ * Self-heal duplicate primary settings records by keeping the first and deleting extras.
+ * Mutates the array in-place to contain only the kept record.
+ */
+async function deduplicateSettings(records: BoardSettingsRecord[]): Promise<void> {
+  const [keep, ...extras] = records;
+  for (const dup of extras) {
+    try {
+      await getPb().collection(COLLECTION).delete(dup.id);
+    } catch {
+      // Best-effort cleanup — if delete fails, continue with the first record.
+    }
+  }
+  records.length = 1;
+  records[0] = keep!;
+}
+
+/**
  * - Backfills legacy rows missing `teamId`
  * - Looks up or creates the singleton `primary` board settings record
  * - Reconciles `teamOrder` against live on-call rows
@@ -385,11 +402,7 @@ export async function initializeBoardSettings(
 
   // --- Handle duplicate primary records ---
   if (records.length > 1) {
-    return lockedResult(
-      'invalid',
-      [`Found ${records.length} duplicate primary settings records`],
-      records[0]!,
-    );
+    await deduplicateSettings(records);
   }
 
   // --- Bootstrap or use existing ---

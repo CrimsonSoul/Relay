@@ -4,6 +4,7 @@ const mockGetFullList = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockGetOne = vi.fn();
+const mockDelete = vi.fn();
 
 let mockIsOnline = true;
 
@@ -14,6 +15,7 @@ vi.mock('./pocketbase', () => ({
       create: mockCreate,
       update: mockUpdate,
       getOne: mockGetOne,
+      delete: mockDelete,
     }),
   }),
   handleApiError: vi.fn(),
@@ -200,22 +202,26 @@ describe('initializeBoardSettings', () => {
     expect(result.errors.some((e) => e.includes('collision'))).toBe(true);
   });
 
-  it('returns invalid for duplicate primary settings records', async () => {
+  it('self-heals duplicate primary settings records by keeping first and deleting extras', async () => {
     const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
     const s1 = makeSettingsRecord({
       id: 'bs1',
+      teamOrder: ['team-a'],
       created: '2024-01-01T00:00:00Z',
     });
     const s2 = makeSettingsRecord({
       id: 'bs2',
+      teamOrder: ['team-a'],
       created: '2024-01-02T00:00:00Z',
     });
     mockGetFullList.mockResolvedValueOnce([s1, s2]);
+    mockDelete.mockResolvedValueOnce(undefined);
 
     const result = await initializeBoardSettings(rows);
 
-    expect(result.status).toBe('invalid');
-    expect(result.errors.some((e) => e.includes('duplicate'))).toBe(true);
+    expect(result.status).toBe('ready');
+    expect(result.recordId).toBe('bs1');
+    expect(mockDelete).toHaveBeenCalledWith('bs2');
   });
 
   it('returns invalid for malformed teamOrder', async () => {
