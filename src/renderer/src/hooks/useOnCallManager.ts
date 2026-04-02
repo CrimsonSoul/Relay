@@ -301,6 +301,10 @@ export function useOnCallManager(
       try {
         if (boardSettings.status === 'ready' && boardSettings.recordId) {
           await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: currentTeams });
+          onBoardSettingsChange?.((prev) => ({
+            ...prev,
+            effectiveTeamOrder: currentTeams,
+          }));
           showToast('Teams reordered', 'success');
         } else {
           // Non-ready state: can't persist, rollback
@@ -322,6 +326,7 @@ export function useOnCallManager(
       setLocalOnCall,
       boardSettings.status,
       boardSettings.recordId,
+      onBoardSettingsChange,
     ],
   );
 

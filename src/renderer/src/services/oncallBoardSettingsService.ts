@@ -79,10 +79,7 @@ function reconcileTeamOrder(stored: string[], liveIds: Set<string>): string[] {
 
 function validateSettingsRecord(record: BoardSettingsRecord, errors: string[]): boolean {
   let valid = true;
-  if (!Array.isArray(record.teamOrder)) {
-    errors.push('Invalid teamOrder: expected array');
-    valid = false;
-  } else {
+  if (Array.isArray(record.teamOrder)) {
     const seen = new Set<string>();
     for (const id of record.teamOrder) {
       if (typeof id !== 'string') {
@@ -97,6 +94,9 @@ function validateSettingsRecord(record: BoardSettingsRecord, errors: string[]): 
       }
       seen.add(id);
     }
+  } else {
+    errors.push('Invalid teamOrder: expected array');
+    valid = false;
   }
   if (typeof record.locked !== 'boolean') {
     errors.push('Invalid locked: expected boolean');
