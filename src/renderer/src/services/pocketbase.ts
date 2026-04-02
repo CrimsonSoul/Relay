@@ -81,9 +81,11 @@ function authWithTimeout(
 ): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
+  // requestKey: null prevents the PB SDK from replacing our signal with its
+  // own internal AbortController (which would make our timeout ineffective).
   return pb
     .collection(collection)
-    .authWithPassword(email, password, { signal: controller.signal })
+    .authWithPassword(email, password, { signal: controller.signal, requestKey: null })
     .finally(() => clearTimeout(timer));
 }
 
@@ -145,12 +147,15 @@ export function handleApiError(error: unknown): void {
     setConnectionState('offline');
     return;
   }
-  // PocketBase SDK wraps network errors as ClientResponseError with status 0
+  // PocketBase SDK wraps network errors as ClientResponseError with status 0.
+  // Auto-cancelled requests (isAbort) also have status 0 but are NOT network
+  // failures — skip those so we don't falsely flip the connection to offline.
   if (
     error &&
     typeof error === 'object' &&
     'status' in error &&
-    (error as { status: number }).status === 0
+    (error as { status: number }).status === 0 &&
+    !('isAbort' in error && (error as { isAbort: boolean }).isAbort)
   ) {
     setConnectionState('offline');
   }

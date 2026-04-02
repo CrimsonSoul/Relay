@@ -33,7 +33,8 @@ export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
-}> = ({ onCall, contacts, boardSettings }) => {
+  onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
+}> = ({ onCall, contacts, boardSettings, onBoardSettingsChange }) => {
   const {
     localOnCall,
     weekRange,
@@ -51,7 +52,7 @@ export const PersonnelTab: React.FC<{
     toggleBoardLock,
     isBoardLockTogglePending,
     tick,
-  } = usePersonnel(onCall, boardSettings);
+  } = usePersonnel(onCall, boardSettings, onBoardSettingsChange);
   const addTeamModal = useModalState();
   const [newTeamName, setNewTeamName] = useState('');
   const [renamingTeam, setRenamingTeam] = useState<{ old: string; new: string } | null>(null);

@@ -28,6 +28,7 @@ export function useOnCallManager(
   onCall: OnCallRow[],
   dismissAlert: (type: string) => void,
   boardSettings: BoardSettingsState,
+  onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void,
 ) {
   const { showToast } = useToast();
   const {
@@ -89,18 +90,30 @@ export function useOnCallManager(
 
   const toggleBoardLock = useCallback(async () => {
     if (boardSettings.status !== 'ready' || !boardSettings.recordId) return;
+    const newLocked = !boardSettings.effectiveLocked;
     setIsBoardLockTogglePending(true);
     try {
-      await updatePrimaryBoardSettings(boardSettings.recordId, {
-        locked: !boardSettings.effectiveLocked,
+      const updated = await updatePrimaryBoardSettings(boardSettings.recordId, {
+        locked: newLocked,
       });
-      // Realtime subscription will propagate the change
+      // Update local state so the UI reflects the change immediately.
+      onBoardSettingsChange?.((prev) => ({
+        ...prev,
+        record: updated,
+        effectiveLocked: updated.locked,
+      }));
     } catch {
       showToast('Failed to toggle board lock', 'error');
     } finally {
       setIsBoardLockTogglePending(false);
     }
-  }, [boardSettings.status, boardSettings.recordId, boardSettings.effectiveLocked, showToast]);
+  }, [
+    boardSettings.status,
+    boardSettings.recordId,
+    boardSettings.effectiveLocked,
+    showToast,
+    onBoardSettingsChange,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Handlers

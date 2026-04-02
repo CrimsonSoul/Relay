@@ -13,11 +13,17 @@ interface PopoutBoardProps {
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
+  onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
 }
 
-export const PopoutBoard: React.FC<PopoutBoardProps> = ({ onCall, contacts, boardSettings }) => {
+export const PopoutBoard: React.FC<PopoutBoardProps> = ({
+  onCall,
+  contacts,
+  boardSettings,
+  onBoardSettingsChange,
+}) => {
   const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, teamIdToName, tick } =
-    usePersonnel(onCall, boardSettings);
+    usePersonnel(onCall, boardSettings, onBoardSettingsChange);
 
   const { isCollapsed, scrollContainerRef } = useCollapsibleHeader(30);
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null);

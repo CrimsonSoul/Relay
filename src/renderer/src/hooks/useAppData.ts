@@ -203,5 +203,6 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     isReloading: isReloading || isLoading,
     handleSync,
     boardSettings,
+    setBoardSettings,
   };
 }

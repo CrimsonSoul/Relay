@@ -57,7 +57,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
 
-  const { data, boardSettings } = useAppData(showToast);
+  const { data, boardSettings, setBoardSettings } = useAppData(showToast);
 
   const {
     weatherLocation,
@@ -175,6 +175,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                   onCall={data.onCall}
                   contacts={data.contacts}
                   boardSettings={boardSettings}
+                  onBoardSettingsChange={setBoardSettings}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -270,6 +271,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                       onCall={data.onCall}
                       contacts={data.contacts}
                       boardSettings={boardSettings}
+                      onBoardSettingsChange={setBoardSettings}
                     />
                   </Suspense>
                 </ErrorBoundary>

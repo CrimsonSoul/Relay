@@ -190,10 +190,13 @@ if (gotLock) {
           const controller = new AbortController();
           const authTimeout = setTimeout(() => controller.abort(), 15_000);
           try {
+            // requestKey: null prevents the PB SDK from replacing our signal
+            // with its own internal AbortController.
             await syncPb
               .collection('_pb_users_auth_')
               .authWithPassword('relay@relay.app', clientConfig.secret, {
                 signal: controller.signal,
+                requestKey: null,
               });
           } finally {
             clearTimeout(authTimeout);

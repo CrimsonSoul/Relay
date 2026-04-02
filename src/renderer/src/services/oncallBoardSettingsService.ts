@@ -180,7 +180,7 @@ async function fetchPrimarySettings(): Promise<
   try {
     const records = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"' });
+      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
     return { ok: true, records };
   } catch (err) {
     handleApiError(err);
@@ -225,7 +225,7 @@ async function refetchAfterConflict(): Promise<
   try {
     const refetched = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"' });
+      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
     if (refetched.length === 0) {
       return {
         ok: false,
@@ -325,7 +325,7 @@ export async function getPrimaryBoardSettings(): Promise<BoardSettingsRecord | n
   try {
     const records = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"' });
+      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
     return records.length > 0 ? records[0]! : null;
   } catch (err) {
     handleApiError(err);
