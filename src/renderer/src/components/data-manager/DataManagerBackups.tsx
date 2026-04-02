@@ -71,7 +71,7 @@ export const DataManagerBackups: React.FC = () => {
     try {
       const result = await api.restoreBackup(backup.name);
       if (result.success) {
-        window.location.reload();
+        globalThis.location.reload();
       } else {
         setError(result.error ?? 'Restore failed');
         setRestoring(false);

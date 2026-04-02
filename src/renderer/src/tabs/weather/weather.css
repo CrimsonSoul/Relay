@@ -216,7 +216,7 @@
   font-size: var(--text-xs);
   padding: 4px 12px;
   border-radius: 6px;
-  background: rgba(239, 68, 68, 0.35);
+  background: #7f1d1d;
   color: #fff;
   text-transform: uppercase;
   font-weight: 800;

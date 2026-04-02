@@ -27,7 +27,7 @@ interface ExtendedApi {
 }
 
 function getApi(): ExtendedApi | undefined {
-  return window.api as (ExtendedApi & typeof window.api) | undefined;
+  return globalThis.api as (ExtendedApi & typeof globalThis.api) | undefined;
 }
 
 /** Compare two values for a single sort field, returning -1 / 0 / 1. */
@@ -109,7 +109,7 @@ export function useCollection<T extends RecordModel>(
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const subscriptionRef = useRef<(() => void) | null>(null);
+  const subscriptionRef = useRef<(() => void | Promise<void>) | null>(null);
   // Ref to latest data so the realtime handler can read it without a closure
   // over stale state (avoids functional updater nesting flagged by sonarjs).
   const dataRef = useRef<T[]>([]);
@@ -168,7 +168,7 @@ export function useCollection<T extends RecordModel>(
 
       if (online && wasOffline) {
         // Flush pending offline writes then bump generation to trigger re-subscribe
-        void window.api?.syncPending?.();
+        void globalThis.api?.syncPending?.();
         setConnectGeneration((g) => g + 1);
       } else if (!online && !wasOffline) {
         // Going offline — bump to tear down stale subscription
@@ -209,7 +209,7 @@ export function useCollection<T extends RecordModel>(
 
     return () => {
       cancelled = true;
-      subscriptionRef.current?.();
+      void subscriptionRef.current?.();
       subscriptionRef.current = null;
     };
   }, [collectionName, fetchData, connectGeneration, comparator]);

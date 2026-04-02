@@ -7,11 +7,9 @@ type ContactRowProps = {
   email: string;
   title?: string;
   phone?: string;
-  avatarColor?: string;
   action?: React.ReactNode;
   style?: React.CSSProperties;
   className?: string;
-  sourceLabel?: string;
   groups?: string[];
   selected?: boolean;
   onContextMenu?: (
@@ -42,16 +40,12 @@ export const ContactCard = memo(
     onNotesClick,
   }: ContactRowProps) => {
     return (
-      <div
+      <button
+        type="button"
         className={`contact-entry ${selected ? 'contact-entry--selected' : ''} ${className || ''}`}
         style={style}
         onContextMenu={(e) => onContextMenu?.(e, { name, email, title, groups })}
         onClick={onRowClick}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') onRowClick?.();
-        }}
       >
         <Avatar name={name} email={email} className="contact-entry-avatar" />
         <div className="contact-entry-body">
@@ -89,7 +83,7 @@ export const ContactCard = memo(
             </button>
           )}
         </div>
-      </div>
+      </button>
     );
   },
 );

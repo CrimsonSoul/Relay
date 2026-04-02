@@ -284,4 +284,141 @@ describe('updatePrimaryBoardSettings', () => {
     // Only locked was passed to update
     expect(mockUpdate).toHaveBeenCalledWith('bs1', { locked: true });
   });
+
+  it('throws when offline', async () => {
+    mockIsOnline = false;
+
+    await expect(updatePrimaryBoardSettings('bs1', { locked: true })).rejects.toThrow(
+      'You are offline.',
+    );
+  });
+
+  it('throws and calls handleApiError when update fails', async () => {
+    mockUpdate.mockRejectedValueOnce(new Error('update failed'));
+
+    await expect(updatePrimaryBoardSettings('bs1', { locked: true })).rejects.toThrow(
+      'update failed',
+    );
+  });
+});
+
+describe('getPrimaryBoardSettings — error handling', () => {
+  it('throws when getFullList fails', async () => {
+    mockGetFullList.mockRejectedValueOnce(new Error('fetch error'));
+
+    await expect(getPrimaryBoardSettings()).rejects.toThrow('fetch error');
+  });
+});
+
+describe('initializeBoardSettings — validation edge cases', () => {
+  it('returns invalid when teamOrder contains non-string entries', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    const settings = makeSettingsRecord({
+      teamOrder: ['team-a', 42 as unknown as string],
+    });
+    mockGetFullList.mockResolvedValueOnce([settings]);
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('non-string'))).toBe(true);
+  });
+
+  it('returns invalid when teamOrder contains duplicate entries', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    const settings = makeSettingsRecord({
+      teamOrder: ['team-a', 'team-a'],
+    });
+    mockGetFullList.mockResolvedValueOnce([settings]);
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('duplicate'))).toBe(true);
+  });
+
+  it('returns invalid when locked is not a boolean', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    const settings = makeSettingsRecord({
+      locked: 'yes' as unknown as boolean,
+    });
+    mockGetFullList.mockResolvedValueOnce([settings]);
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('locked'))).toBe(true);
+  });
+
+  it('returns invalid when canonical name collides with existing teamId during pre-backfill', async () => {
+    // Row with teamId already set to 'teama', and another row without teamId whose canonical is also 'teama'
+    const rows = [
+      makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'teama', sortOrder: 0 }),
+      makeOncallRow({ id: 'oc2', team: 'TeamA', teamId: '', sortOrder: 1 }),
+    ];
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('collision'))).toBe(true);
+  });
+
+  it('handles concurrent bootstrap where refetch also returns empty', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    mockGetFullList.mockResolvedValueOnce([]); // initially empty
+    mockCreate.mockRejectedValueOnce(new Error('unique constraint')); // create fails
+    mockGetFullList.mockResolvedValueOnce([]); // refetch also empty
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('Failed to create or fetch'))).toBe(true);
+  });
+
+  it('handles concurrent bootstrap where refetch also fails', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    mockGetFullList.mockResolvedValueOnce([]); // initially empty
+    mockCreate.mockRejectedValueOnce(new Error('unique constraint')); // create fails
+    mockGetFullList.mockRejectedValueOnce(new Error('refetch failed')); // refetch fails
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('Failed to refetch'))).toBe(true);
+  });
+
+  it('skips backfill when no rows need it', async () => {
+    const rows = [
+      makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a', sortOrder: 0 }),
+      makeOncallRow({ id: 'oc2', team: 'TeamB', teamId: 'team-b', sortOrder: 1 }),
+    ];
+    const settings = makeSettingsRecord({ teamOrder: ['team-a', 'team-b'] });
+    mockGetFullList.mockResolvedValueOnce([settings]);
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('ready');
+    // No update calls since no backfill needed
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('returns invalid when backfill encounters blank team names in backfillTeamIds', async () => {
+    // Two rows without teamId — one has a blank team name
+    // The pre-backfill check catches this first
+    const rows = [
+      makeOncallRow({ id: 'oc1', team: '   ', teamId: '', sortOrder: 0 }),
+    ];
+
+    const result = await initializeBoardSettings(rows);
+
+    expect(result.status).toBe('invalid');
+    expect(result.errors.some((e) => e.includes('blank'))).toBe(true);
+  });
+
+  it('handles fetch throwing a non-offline error', async () => {
+    const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
+    mockGetFullList.mockRejectedValueOnce(new Error('server error'));
+
+    await expect(initializeBoardSettings(rows)).rejects.toThrow('server error');
+  });
 });

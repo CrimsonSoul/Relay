@@ -1,4 +1,4 @@
-import { spawn, execFileSync, type ChildProcess } from 'child_process';
+import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -12,9 +12,9 @@ export interface PocketBaseConfig {
 
 export class PocketBaseProcess {
   private child: ChildProcess | null = null;
-  private config: PocketBaseConfig;
+  private readonly config: PocketBaseConfig;
   private restartCount = 0;
-  private maxRestarts = 3;
+  private readonly maxRestarts = 3;
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
 

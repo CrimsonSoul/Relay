@@ -19,24 +19,24 @@ function applyTheme(theme: ResolvedTheme) {
 }
 
 export function useTheme() {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() => {
-    return secureStorage.getItemSync<ThemePreference>(STORAGE_KEY, 'system') ?? 'system';
-  });
-  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolve(preference));
+  const [rawPref, setRawPref] = useState<ThemePreference>(
+    () => secureStorage.getItemSync<ThemePreference>(STORAGE_KEY, 'system') ?? 'system',
+  );
+  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolve(rawPref));
 
   const setPreference = useCallback((p: ThemePreference) => {
     secureStorage.setItemSync(STORAGE_KEY, p);
-    setPreferenceState(p);
+    setRawPref(p);
   }, []);
 
   // Apply theme and listen for OS changes
   useEffect(() => {
     let cancelled = false;
-    const current = resolve(preference);
+    const current = resolve(rawPref);
     setResolved(current);
     applyTheme(current);
 
-    if (preference !== 'system') return;
+    if (rawPref !== 'system') return;
 
     const mql = globalThis.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent | { matches: boolean }) => {
@@ -50,7 +50,7 @@ export function useTheme() {
       cancelled = true;
       mql.removeEventListener('change', handler);
     };
-  }, [preference]);
+  }, [rawPref]);
 
-  return { preference, resolved, setPreference } as const;
+  return { preference: rawPref, resolved, setPreference } as const;
 }

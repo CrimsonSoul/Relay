@@ -19,16 +19,17 @@ function mkContact(
   };
 }
 
-function mkServer(
-  name: string,
-  ba: string,
-  lob: string,
-  comment: string,
-  owner: string,
-  contact: string,
-  os: string,
-  now: number,
-): Server {
+function mkServer(opts: {
+  name: string;
+  ba: string;
+  lob: string;
+  comment: string;
+  owner: string;
+  contact: string;
+  os: string;
+  now: number;
+}): Server {
+  const { name, ba, lob, comment, owner, contact, os, now } = opts;
   return {
     name,
     businessArea: ba,
@@ -107,106 +108,16 @@ export function getDevMockData(): AppData {
   ];
 
   const servers = [
-    mkServer(
-      'web-prod-01',
-      'eCommerce',
-      'Storefront',
-      'Primary web server',
-      'alice@example.com',
-      'steve@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'web-prod-02',
-      'eCommerce',
-      'Storefront',
-      'Secondary web server',
-      'alice@example.com',
-      'steve@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'db-primary',
-      'Data Services',
-      'Core Data',
-      'Main production DB',
-      'evan@example.com',
-      'laura@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'db-replica',
-      'Data Services',
-      'Core Data',
-      'Read replica',
-      'evan@example.com',
-      'laura@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'cache-cluster',
-      'Platform',
-      'Caching',
-      'Session cache',
-      'bob@example.com',
-      'kyle@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'monitoring',
-      'Platform',
-      'Observability',
-      'Metrics dashboard',
-      'ian@example.com',
-      'ian@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'ci-runner',
-      'DevOps',
-      'CI/CD',
-      'Build agent',
-      'bob@example.com',
-      'kyle@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'staging-web',
-      'eCommerce',
-      'Storefront',
-      'Staging environment',
-      'fiona@example.com',
-      'steve@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'bastion-host',
-      'Security',
-      'InfraSec',
-      'Jump box',
-      'diana@example.com',
-      'diana@example.com',
-      'Linux',
-      now,
-    ),
-    mkServer(
-      'backup-server',
-      'IT Ops',
-      'Backups',
-      'Daily backups location',
-      'kyle@example.com',
-      'kyle@example.com',
-      'Windows',
-      now,
-    ),
+    mkServer({ name: 'web-prod-01', ba: 'eCommerce', lob: 'Storefront', comment: 'Primary web server', owner: 'alice@example.com', contact: 'steve@example.com', os: 'Linux', now }),
+    mkServer({ name: 'web-prod-02', ba: 'eCommerce', lob: 'Storefront', comment: 'Secondary web server', owner: 'alice@example.com', contact: 'steve@example.com', os: 'Linux', now }),
+    mkServer({ name: 'db-primary', ba: 'Data Services', lob: 'Core Data', comment: 'Main production DB', owner: 'evan@example.com', contact: 'laura@example.com', os: 'Linux', now }),
+    mkServer({ name: 'db-replica', ba: 'Data Services', lob: 'Core Data', comment: 'Read replica', owner: 'evan@example.com', contact: 'laura@example.com', os: 'Linux', now }),
+    mkServer({ name: 'cache-cluster', ba: 'Platform', lob: 'Caching', comment: 'Session cache', owner: 'bob@example.com', contact: 'kyle@example.com', os: 'Linux', now }),
+    mkServer({ name: 'monitoring', ba: 'Platform', lob: 'Observability', comment: 'Metrics dashboard', owner: 'ian@example.com', contact: 'ian@example.com', os: 'Linux', now }),
+    mkServer({ name: 'ci-runner', ba: 'DevOps', lob: 'CI/CD', comment: 'Build agent', owner: 'bob@example.com', contact: 'kyle@example.com', os: 'Linux', now }),
+    mkServer({ name: 'staging-web', ba: 'eCommerce', lob: 'Storefront', comment: 'Staging environment', owner: 'fiona@example.com', contact: 'steve@example.com', os: 'Linux', now }),
+    mkServer({ name: 'bastion-host', ba: 'Security', lob: 'InfraSec', comment: 'Jump box', owner: 'diana@example.com', contact: 'diana@example.com', os: 'Linux', now }),
+    mkServer({ name: 'backup-server', ba: 'IT Ops', lob: 'Backups', comment: 'Daily backups location', owner: 'kyle@example.com', contact: 'kyle@example.com', os: 'Windows', now }),
   ];
 
   const onCall = [

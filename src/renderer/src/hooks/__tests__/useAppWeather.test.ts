@@ -229,4 +229,117 @@ describe('useAppWeather', () => {
     expect(result.current.weatherLoading).toBe(false);
     expect(result.current.weatherData).toBeNull();
   });
+
+  it('logs error when weather fetch throws', async () => {
+    mockApi.getWeather.mockRejectedValue(new Error('network down'));
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+    const { loggers } = await import('../../utils/logger');
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await act(async () => {
+      await result.current.fetchWeather(35, -80, false);
+    });
+
+    expect(loggers.weather.error).toHaveBeenCalledWith(
+      'Weather fetch failed',
+      expect.objectContaining({ error: 'network down' }),
+    );
+    expect(result.current.weatherLoading).toBe(false);
+  });
+
+  it('removes cache when weather data is null from API', async () => {
+    mockApi.getWeather.mockResolvedValue(null);
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await act(async () => {
+      await result.current.fetchWeather(35, -80, false);
+    });
+
+    expect(secureStorageMock.removeItem).toHaveBeenCalledWith('cached_weather_data');
+  });
+
+  it('fetches weather on location change and resets data', async () => {
+    mockApi.getWeather.mockResolvedValue(weatherData);
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await act(async () => {
+      result.current.setWeatherLocation({
+        latitude: 40.7,
+        longitude: -74.0,
+        name: 'New York, NY',
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockApi.getWeather).toHaveBeenCalledWith(40.7, -74.0);
+    });
+  });
+
+  it('uses Current Location name when device city is not available', async () => {
+    const { result } = renderHook(() =>
+      useAppWeather(
+        {
+          ...deviceLocation,
+          loading: false,
+          lat: 40.7,
+          lon: -74,
+          city: null,
+          region: null,
+        },
+        showToast,
+      ),
+    );
+
+    await waitFor(() => {
+      expect(result.current.weatherLocation?.name).toBe('Current Location');
+    });
+  });
+
+  it('skips silent fetch loading state', async () => {
+    mockApi.getWeather.mockResolvedValue(weatherData);
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await act(async () => {
+      await result.current.fetchWeather(35, -80, true);
+    });
+
+    // Should not have set loading to true for silent fetch
+    expect(result.current.weatherLoading).toBe(false);
+  });
+
+  it('discards stale cache with wrong version', async () => {
+    secureStorageMock.setItemSync('cached_weather_data', {
+      version: 1, // wrong version
+      fetchedAt: Date.now(),
+      data: weatherData,
+    });
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await waitFor(() => {
+      // Should not use the stale cache
+      expect(result.current.weatherData).toBeNull();
+    });
+  });
+
+  it('discards expired cache', async () => {
+    secureStorageMock.setItemSync('cached_weather_data', {
+      version: 2,
+      fetchedAt: Date.now() - 25 * 60 * 1000, // 25 min ago, exceeds 20 min TTL
+      data: weatherData,
+    });
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await waitFor(() => {
+      expect(result.current.weatherData).toBeNull();
+    });
+  });
 });

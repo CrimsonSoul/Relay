@@ -329,4 +329,135 @@ describe('PocketBaseProcess', () => {
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     expect(crashCallback).not.toHaveBeenCalled();
   });
+
+  // ── stdout/stderr listeners ──────────────────────────────────────────────────
+
+  it('logs stdout data from PocketBase', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    await pbProcess.start();
+
+    // Find and trigger the stdout data callback
+    const stdoutCb = child.stdout.on.mock.calls.find(([evt]: [string]) => evt === 'data');
+    expect(stdoutCb).toBeDefined();
+    // Call the callback — should not throw
+    expect(() => stdoutCb![1](Buffer.from('Server started'))).not.toThrow();
+  });
+
+  it('logs stderr data from PocketBase', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    await pbProcess.start();
+
+    const stderrCb = child.stderr.on.mock.calls.find(([evt]: [string]) => evt === 'data');
+    expect(stderrCb).toBeDefined();
+    expect(() => stderrCb![1](Buffer.from('Warning message'))).not.toThrow();
+  });
+
+  // ── exit with code 0 or null does not trigger restart ──────────────────────
+
+  it('does not restart on exit with code null (signal-based)', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    const crashCallback = vi.fn();
+    pbProcess.onCrash(crashCallback);
+
+    await pbProcess.start();
+
+    child._emit('exit', null, 'SIGTERM');
+    await new Promise<void>((res) => setTimeout(res, 0));
+
+    expect(crashCallback).not.toHaveBeenCalled();
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+  });
+
+  // ── handleCrash when restart itself fails ──────────────────────────────────
+
+  it('calls onCrash when restart attempt itself fails', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    // First start succeeds, second start (restart) fails health check
+    mockFetch
+      .mockResolvedValueOnce({ ok: true }) // initial start health
+      .mockRejectedValue(new Error('connection refused')); // restart health fails
+
+    const crashCallback = vi.fn();
+    pbProcess.onCrash(crashCallback);
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+
+    // Trigger crash
+    children[0].exitCode = 1;
+    children[0]._emit('exit', 1, null);
+
+    // Advance past health check timeout (10s) + the 200ms retry intervals
+    await vi.advanceTimersByTimeAsync(11000);
+
+    // The restart failed, so onCrash should be called
+    expect(crashCallback).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to restart PocketBase'),
+    );
+
+    vi.useRealTimers();
+  });
+
+  // ── stop() when already stopping ──────────────────────────────────────────
+
+  it('stop() returns immediately when already stopping', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    await pbProcess.start();
+
+    // First stop — don't emit exit yet
+    const stop1 = pbProcess.stop();
+    // Second stop should return immediately (stopping flag is set)
+    const stop2 = pbProcess.stop();
+    await stop2; // should resolve right away
+
+    // Now trigger exit so first stop resolves
+    child._emit('exit', 0, null);
+    await stop1;
+    // Both stop calls should have resolved without throwing
+    await expect(stop2).resolves.toBeUndefined();
+  });
+
+  // ── killSync on Windows path (code coverage for execFileSync branch) ──────
+
+  it('killSync uses process.kill with SIGKILL on non-Windows', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    await pbProcess.start();
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    pbProcess.killSync();
+    expect(processKillSpy).toHaveBeenCalledWith(child.pid, 'SIGKILL');
+    processKillSpy.mockRestore();
+  });
+
+  it('killSync handles process.kill throwing (already dead)', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    await pbProcess.start();
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw new Error('ESRCH');
+    });
+    expect(() => pbProcess.killSync()).not.toThrow();
+    processKillSpy.mockRestore();
+  });
 });

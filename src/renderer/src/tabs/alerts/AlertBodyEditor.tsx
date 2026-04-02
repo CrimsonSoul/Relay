@@ -79,12 +79,12 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
     const applyHighlight = useCallback(
       (type: HighlightType) => {
         editorRef.current?.focus();
-        const selection = window.getSelection();
+        const selection = globalThis.getSelection();
         if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
 
         const range = selection.getRangeAt(0);
         const span = document.createElement('span');
-        span.setAttribute('data-hl', type);
+        span.dataset.hl = type;
         try {
           range.surroundContents(span);
         } catch {
@@ -98,14 +98,14 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
 
     const clearHighlight = useCallback(() => {
       editorRef.current?.focus();
-      const selection = window.getSelection();
+      const selection = globalThis.getSelection();
       if (!selection || selection.rangeCount === 0) return;
 
       const node = selection.anchorNode?.parentElement;
       if (node?.hasAttribute('data-hl')) {
         const parent = node.parentNode;
         while (node.firstChild) parent?.insertBefore(node.firstChild, node);
-        parent?.removeChild(node);
+        node.remove();
         handleBodyInput();
       }
     }, [handleBodyInput]);
@@ -116,7 +116,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
         const key = e.key;
         if (key >= '1' && key <= '5') {
           e.preventDefault();
-          const idx = parseInt(key) - 1;
+          const idx = Number.parseInt(key) - 1;
           if (HIGHLIGHTS[idx]) applyHighlight(HIGHLIGHTS[idx].type);
         } else if (key === '0') {
           e.preventDefault();

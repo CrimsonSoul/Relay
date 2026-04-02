@@ -68,4 +68,55 @@ describe('enhanceHtml', () => {
     const result = enhanceHtml('Call ext. 4357 for help.');
     expect(result).toContain('data-hl="number"');
   });
+
+  it('handles HTML tags at the very start of input', () => {
+    const result = enhanceHtml('<b>outage</b> detected');
+    expect(result).toContain('data-hl="warning"');
+    expect(result).toContain('<b>');
+  });
+
+  it('handles input that is only HTML tags with no text', () => {
+    const result = enhanceHtml('<br><br>');
+    expect(result).toBe('<br><br>');
+  });
+
+  it('skips overlapping matches in the same text range', () => {
+    // "complete outage" matches both the warning pattern and could overlap
+    const result = enhanceHtml('complete outage at 14:15 UTC');
+    // Both warning and deadline should be highlighted but not overlapping
+    expect(result).toContain('data-hl="warning"');
+    expect(result).toContain('data-hl="deadline"');
+  });
+
+  it('handles text with no matching rules', () => {
+    const result = enhanceHtml('The sky is blue today.');
+    expect(result).toBe('The sky is blue today.');
+  });
+
+  it('highlights large formatted numbers', () => {
+    const result = enhanceHtml('Affected users: 1,200,000');
+    expect(result).toContain('data-hl="number"');
+    expect(result).toContain('1,200,000');
+  });
+
+  it('highlights day-of-week dates as deadline', () => {
+    const result = enhanceHtml('Scheduled for Monday January 15.');
+    expect(result).toContain('data-hl="deadline"');
+  });
+
+  it('highlights seconds as number', () => {
+    const result = enhanceHtml('Response time > 30 seconds.');
+    expect(result).toContain('data-hl="number"');
+  });
+
+  it('bolds "immediately"', () => {
+    const result = enhanceHtml('Update immediately to avoid issues.');
+    expect(result).toContain('<b>immediately</b>');
+  });
+
+  it('bolds frozen deployment messages', () => {
+    const result = enhanceHtml('All deployments are frozen until further notice.');
+    expect(result).toContain('<b>');
+    expect(result).toContain('frozen');
+  });
 });

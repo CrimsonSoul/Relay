@@ -139,4 +139,139 @@ describe('weatherHandlers', () => {
     vi.mocked(fetch).mockResolvedValueOnce({ ok: false, status: 500 } as Response);
     await expect(handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7)).resolves.toEqual([]);
   });
+
+  it('returns null for weather when rate limited', async () => {
+    checkNetworkRateLimitMock.mockReturnValue(false);
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7)).resolves.toBeNull();
+  });
+
+  it('returns weather error when API response is not ok', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 500,
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7);
+    expect(result).toEqual({ error: 'Weather service unavailable' });
+  });
+
+  it('returns error when weather API response has unexpected shape', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({ unexpected: 'data' }),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7);
+    expect(result).toEqual({ error: 'Weather data has unexpected format' });
+  });
+
+  it('returns empty array for alerts when rate limited', async () => {
+    checkNetworkRateLimitMock.mockReturnValue(false);
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7)).resolves.toEqual([]);
+  });
+
+  it('returns empty array for alerts with invalid coordinates', async () => {
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 999, -97.7)).resolves.toEqual([]);
+  });
+
+  it('returns empty array for alerts when API returns 404', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 404,
+    } as Response);
+
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7)).resolves.toEqual([]);
+  });
+
+  it('returns empty array for alerts when fetch throws', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
+
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7)).resolves.toEqual([]);
+  });
+
+  it('handles alert features with missing properties gracefully', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        features: [
+          { id: 'alert-2', properties: undefined },
+          { id: undefined, properties: { id: 'prop-id' } },
+        ],
+      }),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        id: 'alert-2',
+        event: 'Unknown Event',
+        severity: 'Unknown',
+      }),
+    );
+    expect(result[1]).toEqual(
+      expect.objectContaining({
+        id: 'prop-id',
+      }),
+    );
+  });
+
+  it('handles alerts response with no features key', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.GET_WEATHER_ALERTS]({}, 30.2, -97.7);
+    expect(result).toEqual([]);
+  });
+
+  it('zip code lookup returns null when zippopotam API returns not ok', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+    } as Response);
+    // Fallback to general search
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [{ name: 'Place', latitude: 30, longitude: -97 }] }),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.SEARCH_LOCATION]({}, '00000');
+    expect(result).toEqual({ results: [{ name: 'Place', latitude: 30, longitude: -97 }] });
+  });
+
+  it('zip code lookup returns null when places array is empty', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ places: [] }),
+    } as Response);
+    // Falls back to general search
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.SEARCH_LOCATION]({}, '99999');
+    expect(result).toEqual({ results: [] });
+  });
+
+  it('search location returns error on fetch failure', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('Network down'));
+
+    const result = await handlers[IPC_CHANNELS.SEARCH_LOCATION]({}, 'Denver');
+    expect(result).toEqual({ error: 'Location search unavailable' });
+  });
+
+  it('search location does not retry city-only when no comma in query', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ results: [] }),
+    } as Response);
+
+    const result = await handlers[IPC_CHANNELS.SEARCH_LOCATION]({}, 'Denver');
+    // Only one fetch call — no comma fallback
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ results: [] });
+  });
 });

@@ -264,5 +264,104 @@ describe('useAppData', () => {
 
       expect(mockInitializeBoardSettings).not.toHaveBeenCalled();
     });
+
+    it('falls back to invalid status when board settings initialization throws', async () => {
+      mockInitializeBoardSettings.mockRejectedValue(new Error('init boom'));
+      collectionData.oncall = { data: [], loading: false, error: null };
+
+      const { result } = renderHook(() => useAppData(showToast));
+
+      await waitFor(() => {
+        expect(result.current.boardSettings.status).toBe('invalid');
+        expect(result.current.boardSettings.errors).toContain(
+          'Board settings initialization failed',
+        );
+      });
+    });
+  });
+
+  it('shows error toast for servers collection error', async () => {
+    collectionData.servers = { data: [], loading: false, error: 'Server fetch failed' };
+
+    renderHook(() => useAppData(showToast));
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Servers: Server fetch failed', 'error');
+    });
+  });
+
+  it('shows error toast for groups collection error', async () => {
+    collectionData.bridge_groups = { data: [], loading: false, error: 'Groups fetch failed' };
+
+    renderHook(() => useAppData(showToast));
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Groups: Groups fetch failed', 'error');
+    });
+  });
+
+  it('shows error toast for oncall collection error', async () => {
+    collectionData.oncall = { data: [], loading: false, error: 'Oncall fetch failed' };
+
+    renderHook(() => useAppData(showToast));
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('On-Call: Oncall fetch failed', 'error');
+    });
+  });
+
+  it('suppresses autocancelled errors', async () => {
+    collectionData.contacts = { data: [], loading: false, error: 'autocancelled' };
+    collectionData.servers = { data: [], loading: false, error: 'autocancelled' };
+    collectionData.bridge_groups = { data: [], loading: false, error: 'autocancelled' };
+    collectionData.oncall = { data: [], loading: false, error: 'autocancelled' };
+
+    renderHook(() => useAppData(showToast));
+
+    // Wait a tick to ensure effects run
+    await waitFor(() => {
+      expect(showToast).not.toHaveBeenCalled();
+    });
+  });
+
+  it('shows error toast when handleSync fails', async () => {
+    mockRefetchContacts.mockRejectedValue(new Error('network error'));
+
+    const { result } = renderHook(() => useAppData(showToast));
+
+    await act(async () => {
+      await result.current.handleSync();
+    });
+
+    expect(showToast).toHaveBeenCalledWith('Failed to sync data', 'error');
+  });
+
+  it('does not allow concurrent syncs', async () => {
+    let resolveContacts: () => void;
+    mockRefetchContacts.mockImplementation(
+      () => new Promise<void>((resolve) => { resolveContacts = resolve; }),
+    );
+
+    const { result } = renderHook(() => useAppData(showToast));
+
+    // Start first sync
+    let syncPromise: Promise<void>;
+    act(() => {
+      syncPromise = result.current.handleSync();
+    });
+
+    // Try second sync while first is in progress
+    await act(async () => {
+      await result.current.handleSync();
+    });
+
+    // Resolve first sync
+    await act(async () => {
+      resolveContacts!();
+      await syncPromise!;
+    });
+
+    // refetchContacts should only be called once
+    expect(mockRefetchContacts).toHaveBeenCalledTimes(1);
   });
 });

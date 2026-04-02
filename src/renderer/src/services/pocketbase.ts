@@ -71,14 +71,14 @@ export function startHealthCheck(intervalMs = 30000): void {
         // Rehydrate auth if the token expired during offline time.
         // Do NOT emit 'reconnecting' — subscribers listen for state changes
         // and would resubscribe before auth is complete.
-        if (!getPb().authStore.isValid) {
+        if (getPb().authStore.isValid) {
+          setConnectionState('online');
+        } else {
           const refreshed = await refreshAuthSession(true);
           if (!refreshed) {
             loggers.network.warn('Auth session refresh failed on reconnect');
             return;
           }
-        } else {
-          setConnectionState('online');
         }
       } else if (!res.ok && connectionState === 'online') {
         setConnectionState('offline');
@@ -99,7 +99,7 @@ export function stopHealthCheck(): void {
 }
 
 export function handleApiError(error: unknown): void {
-  if (error instanceof TypeError && (error as TypeError).message.includes('fetch')) {
+  if (error instanceof TypeError && error.message.includes('fetch')) {
     setConnectionState('offline');
     return;
   }
@@ -132,5 +132,6 @@ export function requireOnline(): void {
 
 /** Escape a value for use in PocketBase filter strings to prevent injection. */
 export function escapeFilter(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const backslash = String.fromCodePoint(92);
+  return value.replaceAll(backslash, backslash + backslash).replaceAll('"', backslash + '"');
 }

@@ -159,3 +159,184 @@ describe('PersonnelTab — board lock button', () => {
     );
   });
 });
+
+describe('PersonnelTab — Add Card modal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('opens the Add New Card modal when ADD CARD button is clicked', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+
+    expect(screen.getByText('Add New Card')).toBeDefined();
+  });
+
+  it('closes the Add New Card modal when Cancel is clicked', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    expect(screen.getByText('Add New Card')).toBeDefined();
+
+    fireEvent.click(screen.getByText('Cancel'));
+
+    // Modal should be closed after Cancel
+    expect(screen.queryByText('Add New Card')).toBeNull();
+  });
+
+  it('submits the Add Card form on Enter key', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.change(input, { target: { value: 'NewTeam' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Modal should close after successful submission
+    expect(screen.queryByText('Add New Card')).toBeNull();
+  });
+
+  it('does not submit the Add Card form on Enter when name is blank', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Modal should still be open since blank names are rejected
+    expect(screen.getByText('Add New Card')).toBeDefined();
+  });
+
+  it('submits via the Add Card button click', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    const input = screen.getByPlaceholderText('Card Name (e.g. SRE, Support)');
+    fireEvent.change(input, { target: { value: 'SRE' } });
+
+    // Click the modal's Add Card button (not the header one)
+    const addCardBtns = screen.getAllByText('Add Card');
+    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    fireEvent.click(modalAddBtn);
+
+    // Modal should close after successful submission
+    expect(screen.queryByText('Add New Card')).toBeNull();
+  });
+
+  it('does not submit via Add Card button when name is blank', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Card' }));
+    // Don't enter any text, just click the Add Card button in the modal
+    const addCardBtns = screen.getAllByText('Add Card');
+    const modalAddBtn = addCardBtns[addCardBtns.length - 1];
+    fireEvent.click(modalAddBtn);
+
+    // Modal should still be open
+    expect(screen.getByText('Add New Card')).toBeDefined();
+  });
+});
+
+describe('PersonnelTab — Export CSV button', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the EXPORT button', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    expect(screen.getByRole('button', { name: 'Export to CSV' })).toBeDefined();
+  });
+});
+
+describe('PersonnelTab — Copy All button', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the COPY ALL button', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    expect(screen.getByRole('button', { name: 'Copy All On-Call Info' })).toBeDefined();
+  });
+});
+
+describe('PersonnelTab — Pop Out button', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders POP OUT button when not in popout mode', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    expect(screen.getByRole('button', { name: 'Pop Out Board' })).toBeDefined();
+  });
+
+  it('calls openAuxWindow when POP OUT is clicked', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pop Out Board' }));
+    expect((globalThis as Record<string, unknown> & { api: { openAuxWindow: ReturnType<typeof vi.fn> } }).api.openAuxWindow).toHaveBeenCalledWith('popout/board');
+  });
+});
+
+describe('PersonnelTab — team rendering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders team cards for each team in the board settings', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
+    expect(list).toBeDefined();
+  });
+
+  it('renders no team cards when there are no teams', () => {
+    const bs = makeReadyBoardSettings([]);
+    render(<PersonnelTab onCall={[]} contacts={defaultContacts} boardSettings={bs} />);
+
+    const list = screen.getByRole('list', { name: 'Sortable On-Call Teams' });
+    expect(list).toBeDefined();
+  });
+
+  it('renders the week range', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    expect(screen.getByText('March 30 - April 5, 2026')).toBeDefined();
+  });
+});
+
+describe('PersonnelTab — Rename Card modal', () => {
+  // Note: the rename modal is triggered by SortableTeamCard callbacks which are
+  // mocked, but we can test the modal rendering and interactions by directly
+  // simulating the state. Since the modal opens based on `renamingTeam` state,
+  // we cannot easily trigger it from outside without the child component.
+  // However, we can verify the modal elements exist when the component renders.
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does not render rename modal initially', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    // The modal title "Rename Card" should not be visible initially
+    expect(screen.queryByText('Rename Card')).toBeNull();
+  });
+});

@@ -147,4 +147,38 @@ describe('useGroups', () => {
 
     expect(success).toBe(false);
   });
+
+  it('updates a group with contacts field', async () => {
+    mockUpdateGroup.mockResolvedValue({ id: 'g1', name: 'Network', contacts: ['x@test.com'] });
+
+    const { result } = renderHook(() => useGroups(), { wrapper });
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.updateGroup('g1', { contacts: ['x@test.com'] });
+    });
+
+    expect(success).toBe(true);
+    expect(mockUpdateGroup).toHaveBeenCalledWith('g1', { contacts: ['x@test.com'] });
+  });
+
+  it('updates a group with both name and contacts', async () => {
+    mockUpdateGroup.mockResolvedValue({ id: 'g1', name: 'Renamed', contacts: ['y@test.com'] });
+
+    const { result } = renderHook(() => useGroups(), { wrapper });
+
+    let success = false;
+    await act(async () => {
+      success = await result.current.updateGroup('g1', {
+        name: 'Renamed',
+        contacts: ['y@test.com'],
+      });
+    });
+
+    expect(success).toBe(true);
+    expect(mockUpdateGroup).toHaveBeenCalledWith('g1', {
+      name: 'Renamed',
+      contacts: ['y@test.com'],
+    });
+  });
 });

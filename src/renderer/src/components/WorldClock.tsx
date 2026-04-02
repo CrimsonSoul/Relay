@@ -152,7 +152,7 @@ export const WorldClock: React.FC = () => {
       {isOpen &&
         createPortal(
           <>
-            <div role="presentation" className="world-clock-backdrop" onMouseDown={closePopover} />
+            <div role="none" className="world-clock-backdrop" onMouseDown={closePopover} />
             <div
               ref={popoverRef}
               className="world-clock-popover"

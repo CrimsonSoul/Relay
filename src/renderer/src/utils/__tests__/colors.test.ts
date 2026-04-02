@@ -50,5 +50,24 @@ describe('colors', () => {
       expect(scheme).toBeDefined();
       expect(scheme.fill).toBeTruthy();
     });
+
+    it('uses 0 when codePointAt returns undefined', () => {
+      // Force the ?? 0 fallback by providing a string whose codePointAt can return undefined
+      // We can trigger this by mocking codePointAt to return undefined for one call
+      const original = String.prototype.codePointAt;
+      let callCount = 0;
+      String.prototype.codePointAt = function (pos: number) {
+        callCount++;
+        if (callCount === 2) return undefined; // Force the ?? 0 branch
+        return original.call(this, pos);
+      };
+      try {
+        const scheme = getColorForString('abc');
+        expect(scheme).toBeDefined();
+        expect(scheme.bg).toBeTruthy();
+      } finally {
+        String.prototype.codePointAt = original;
+      }
+    });
   });
 });

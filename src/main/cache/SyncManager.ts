@@ -16,7 +16,7 @@ export interface SyncResult {
  * enqueues changes into PendingChanges yet.
  */
 export class SyncManager {
-  constructor(private pb: PocketBase) {}
+  constructor(private readonly pb: PocketBase) {}
 
   /** Whether the internal PB client has a valid auth token. */
   isAuthenticated(): boolean {
@@ -106,7 +106,7 @@ export class SyncManager {
       created: _created, // eslint-disable-line sonarjs/no-unused-vars
       updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
       ...updateData
-    } = data as Record<string, unknown>;
+    } = data;
     await this.pb.collection(collection).update(recordId, updateData);
 
     return { conflict, overwrittenData };

@@ -70,6 +70,17 @@ describe('useBridgeHistory', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('defaults groups and contacts to empty arrays when falsy', () => {
+    mockCollectionData.current = [
+      makeRecord({ id: 'h_null', groups: null, contacts: undefined }),
+    ];
+    const { result } = renderHook(() => useBridgeHistory(), { wrapper });
+
+    expect(result.current.history).toHaveLength(1);
+    expect(result.current.history[0].groups).toEqual([]);
+    expect(result.current.history[0].contacts).toEqual([]);
+  });
+
   it('returns empty array when no records', () => {
     mockCollectionData.current = [];
     const { result } = renderHook(() => useBridgeHistory(), { wrapper });

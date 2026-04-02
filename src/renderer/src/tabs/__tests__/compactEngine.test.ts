@@ -68,6 +68,22 @@ describe('compactText', () => {
     expect(compactText('PLEASE BE ADVISED THAT the server is down.')).toBe('The server is down.');
   });
 
+  it('removes trailing period when result is very short', () => {
+    // When compaction strips nearly everything, a lone trailing period should be removed
+    // if result.length <= 2
+    const result = compactText('.');
+    expect(result).toBe('');
+  });
+
+  it('preserves trailing period on longer results', () => {
+    const result = compactText('Server is down.');
+    expect(result).toContain('.');
+  });
+
+  it('returns empty string for whitespace-only input', () => {
+    expect(compactText('   \n\t  ')).toBe('');
+  });
+
   it('cleans up extra whitespace after removals', () => {
     const input = 'Please be advised that  your password  will expire.';
     expect(compactText(input)).not.toContain('  ');

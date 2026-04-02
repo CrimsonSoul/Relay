@@ -249,4 +249,71 @@ describe('useDirectoryContacts', () => {
     const emails = effective.map((c) => c.email);
     expect(emails).toContain('bob@test.com');
   });
+
+  it('handleUpdateContact rolls back optimistic update when update service fails with email', async () => {
+    mockFindContactByEmail.mockResolvedValue({
+      id: 'c1',
+      name: 'Alice',
+      email: 'alice@test.com',
+      phone: '',
+      title: '',
+    });
+    mockUpdateContact.mockRejectedValue(new Error('update failed'));
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    await expect(
+      act(async () => {
+        await result.current.handleUpdateContact({
+          email: 'alice@test.com',
+          title: 'Senior Eng',
+        });
+      }),
+    ).rejects.toThrow();
+
+    // Optimistic update should be rolled back
+    const effective = result.current.getEffectiveContacts();
+    const alice = effective.find((c) => c.email === 'alice@test.com');
+    expect(alice?.title).toBe('');
+  });
+
+  it('handleUpdateContact creates contact when existing is not found in PocketBase', async () => {
+    mockFindContactByEmail.mockResolvedValue(null);
+    mockAddContact.mockResolvedValue({ id: 'new-1' });
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    await act(async () => {
+      await result.current.handleUpdateContact({
+        email: 'alice@test.com',
+        name: 'Alice Updated',
+      });
+    });
+
+    expect(mockAddContact).toHaveBeenCalledWith({
+      name: 'Alice Updated',
+      email: 'alice@test.com',
+      phone: '',
+      title: '',
+    });
+  });
+
+  it('handleDeleteContact shows not found toast when contact does not exist in PocketBase', async () => {
+    mockFindContactByEmail.mockResolvedValue(null);
+
+    const { result } = renderHook(() => useDirectoryContacts(contacts), { wrapper });
+
+    act(() => {
+      result.current.setDeleteConfirmation(contacts[0]); // Alice
+    });
+
+    await act(async () => {
+      await result.current.handleDeleteContact();
+    });
+
+    // Contact should be rolled back (not deleted) since PB record not found
+    const effective = result.current.getEffectiveContacts();
+    const emails = effective.map((c) => c.email);
+    expect(emails).toContain('alice@test.com');
+  });
 });

@@ -162,8 +162,8 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
     }
 
     if (mode === 'server') {
-      const portNum = parseInt(port, 10);
-      if (isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+      const portNum = Number.parseInt(port, 10);
+      if (Number.isNaN(portNum) || portNum < 1024 || portNum > 65535) {
         setError('Port must be between 1024 and 65535');
         return;
       }
@@ -270,7 +270,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 pattern="[0-9]*"
                 value={port}
                 onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, '');
+                  const v = e.target.value.replaceAll(/\D/g, '');
                   setPort(v);
                 }}
                 placeholder="8090"

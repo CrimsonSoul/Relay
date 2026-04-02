@@ -428,27 +428,27 @@
 }
 
 .alerts-sev-btn.active[data-sev='ISSUE'] {
-  background: rgba(239, 68, 68, 0.12);
+  background: #3b1419;
   border-color: #ef4444;
-  color: #fca5a5;
+  color: #fecaca;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {
-  background: rgba(251, 146, 60, 0.12);
+  background: #3b2010;
   border-color: #fb923c;
-  color: #fdba74;
+  color: #fed7aa;
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: rgba(56, 189, 248, 0.12);
+  background: #0c2a3d;
   border-color: #38bdf8;
-  color: #38bdf8;
+  color: #bae6fd;
 }
 
 .alerts-sev-btn.active[data-sev='RESOLVED'] {
-  background: rgba(16, 185, 129, 0.12);
+  background: #0a2e22;
   border-color: #10b981;
-  color: #10b981;
+  color: #a7f3d0;
 }
 
 /* --- Preview Panel (Right) --- */
@@ -985,13 +985,13 @@
 }
 
 .alerts-toggle-compact.active {
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: #111d33;
+  color: #bfdbfe;
 }
 
 .alerts-toggle-enhance.active {
-  background: rgba(124, 92, 252, 0.15);
-  color: #a78bfa;
+  background: #1c1530;
+  color: #c4b5fd;
 }
 
 /* Event Time Banner — amber strip below subject */

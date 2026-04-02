@@ -76,6 +76,26 @@ function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormS
   }
 }
 
+function localToIso(datetimeLocal: string, sourceTz: string): string {
+  if (!datetimeLocal) return '';
+  const systemLocal = new Date(datetimeLocal);
+  if (Number.isNaN(systemLocal.getTime())) return '';
+  const inSourceTz = new Date(systemLocal.toLocaleString('en-US', { timeZone: sourceTz }));
+  const offsetMs = systemLocal.getTime() - inSourceTz.getTime();
+  return new Date(systemLocal.getTime() + offsetMs).toISOString();
+}
+
+function compactHtml(html: string): string {
+  // eslint-disable-next-line sonarjs/slow-regex -- splitting on HTML tags; input is sanitized, no ReDoS risk
+  const parts = html.split(/(<[^>]*>)/g);
+  return parts
+    .map((part) => {
+      if (part.startsWith('<')) return part;
+      return compactText(part);
+    })
+    .join('');
+}
+
 export const AlertsTab: React.FC = () => {
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
@@ -201,15 +221,6 @@ export const AlertsTab: React.FC = () => {
     );
   }, [now]);
 
-  function localToIso(datetimeLocal: string, sourceTz: string): string {
-    if (!datetimeLocal) return '';
-    const systemLocal = new Date(datetimeLocal);
-    if (Number.isNaN(systemLocal.getTime())) return '';
-    const inSourceTz = new Date(systemLocal.toLocaleString('en-US', { timeZone: sourceTz }));
-    const offsetMs = systemLocal.getTime() - inSourceTz.getTime();
-    return new Date(systemLocal.getTime() + offsetMs).toISOString();
-  }
-
   const eventTimeStartIso = useMemo(
     () => localToIso(eventTimeStart, eventTimeSourceTz),
     [eventTimeStart, eventTimeSourceTz],
@@ -240,7 +251,7 @@ export const AlertsTab: React.FC = () => {
         logging: false,
       });
     } finally {
-      document.body.removeChild(clone);
+      clone.remove();
     }
   }, []);
 
@@ -414,20 +425,6 @@ export const AlertsTab: React.FC = () => {
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
 
-  /**
-   * Apply compact rules to HTML while preserving markup (including data-hl spans).
-   */
-  function compactHtml(html: string): string {
-    // eslint-disable-next-line sonarjs/slow-regex -- splitting on HTML tags; input is sanitized, no ReDoS risk
-    const parts = html.split(/(<[^>]*>)/g);
-    return parts
-      .map((part) => {
-        if (part.startsWith('<')) return part;
-        return compactText(part);
-      })
-      .join('');
-  }
-
   const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
     let result = sanitizeHtml(html);
     if (compact) result = compactHtml(result);
@@ -445,7 +442,7 @@ export const AlertsTab: React.FC = () => {
       formRef.current?.setEditorContent(original);
     } else {
       // Save original if first toggle on
-      if (originalBodyRef.current === null) originalBodyRef.current = bodyHtml;
+      originalBodyRef.current ??= bodyHtml;
       const transformed = applyTransforms(originalBodyRef.current, nextCompact, isEnhanced);
       setBodyHtml(transformed);
       formRef.current?.setEditorContent(transformed);
@@ -463,7 +460,7 @@ export const AlertsTab: React.FC = () => {
       formRef.current?.setEditorContent(original);
     } else {
       // Save original if first toggle on
-      if (originalBodyRef.current === null) originalBodyRef.current = bodyHtml;
+      originalBodyRef.current ??= bodyHtml;
       const transformed = applyTransforms(originalBodyRef.current, isCompact, nextEnhanced);
       setBodyHtml(transformed);
       formRef.current?.setEditorContent(transformed);

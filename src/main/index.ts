@@ -1,7 +1,7 @@
 import { app, BrowserWindow, session, dialog, ipcMain } from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
-import { AppConfig, type ServerConfig, type ClientConfig } from './config/AppConfig';
+import { AppConfig } from './config/AppConfig';
 import { OfflineCache } from './cache/OfflineCache';
 import { PendingChanges } from './cache/PendingChanges';
 import { SyncManager } from './cache/SyncManager';
@@ -133,22 +133,22 @@ if (gotLock) {
       // Start PocketBase on demand (called after first-time setup)
       ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
         const config = getAppConfig()?.load();
-        if (!config || config.mode !== 'server') return false;
-        return startPocketBase(config as ServerConfig, configDataDir);
+        if (config?.mode !== 'server') return false;
+        return startPocketBase(config, configDataDir);
       });
 
       const restartPb = async (): Promise<boolean> => {
         const config = getAppConfig()?.load();
-        if (!config || config.mode !== 'server') return false;
-        return startPocketBase(config as ServerConfig, configDataDir);
+        if (config?.mode !== 'server') return false;
+        return startPocketBase(config, configDataDir);
       };
       setupIpc(createAuxWindow, restartPb);
 
       // Start PocketBase before the window in server mode so bootstrap
       // connection checks can succeed as soon as the renderer loads.
-      const relayConfig = getAppConfig()!.load();
-      if (relayConfig && relayConfig.mode === 'server') {
-        await startPocketBase(relayConfig as ServerConfig, configDataDir);
+      const relayConfig = getAppConfig()?.load();
+      if (relayConfig?.mode === 'server') {
+        await startPocketBase(relayConfig, configDataDir);
       }
 
       // Show the window as early as possible — the renderer has its own
@@ -162,11 +162,10 @@ if (gotLock) {
       // initialized together so they're either all available or none —
       // preventing silent data loss from a half-initialized state.
       // Auth is capped at 15 s to avoid hanging if the server is unreachable.
-      if (relayConfig && relayConfig.mode === 'client') {
-        const clientConfig = relayConfig as ClientConfig;
+      if (relayConfig?.mode === 'client') {
         try {
           const PocketBase = (await import('pocketbase')).default;
-          const syncPb = new PocketBase(clientConfig.serverUrl);
+          const syncPb = new PocketBase(relayConfig.serverUrl);
           const controller = new AbortController();
           const authTimeout = setTimeout(() => controller.abort(), 15_000);
           try {
@@ -174,7 +173,7 @@ if (gotLock) {
             // with its own internal AbortController.
             await syncPb
               .collection('_pb_users_auth_')
-              .authWithPassword('relay@relay.app', clientConfig.secret, {
+              .authWithPassword('relay@relay.app', relayConfig.secret, {
                 signal: controller.signal,
                 requestKey: null,
               });

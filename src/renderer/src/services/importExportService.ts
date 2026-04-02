@@ -69,7 +69,10 @@ function stripMetadata(record: Record<string, unknown>): Record<string, unknown>
  * with a single quote so spreadsheet apps treat them as plain text.
  */
 function csvSafeValue(value: unknown): string {
-  const str = value === null || value === undefined ? '' : String(value);
+  let str: string;
+  if (value == null) str = '';
+  else if (typeof value === 'object') str = JSON.stringify(value);
+  else str = String(value as string | number | boolean);
   if (/^[=+\-@\t\r]/.test(str)) {
     return `'${str}`;
   }
@@ -98,12 +101,14 @@ async function upsertOne(
   const uniqueKey = UNIQUE_KEYS[collection];
 
   if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
-    const filterValue = escapeFilter(String(data[uniqueKey]));
+    const rawValue = data[uniqueKey];
+    const rawStr = typeof rawValue === 'object' && rawValue !== null ? JSON.stringify(rawValue) : String(rawValue as string | number | boolean);
+    const filterValue = escapeFilter(rawStr);
     let existing: { id: string } | null = null;
     try {
-      existing = (await getPb()
+      existing = await getPb()
         .collection(collection)
-        .getFirstListItem(`${uniqueKey}="${filterValue}"`)) as { id: string };
+        .getFirstListItem(`${uniqueKey}="${filterValue}"`);
     } catch (err: unknown) {
       const e = err as { status?: number };
       if (e?.status !== 404) throw err;
@@ -245,7 +250,10 @@ export async function exportToExcel(collection: CollectionName | 'all'): Promise
     worksheet.columns.forEach((col) => {
       let maxLen = col.header ? String(col.header).length : 10;
       col.eachCell?.({ includeEmpty: false }, (cell) => {
-        const cellLen = cell.value ? String(cell.value).length : 0;
+        let cellLen = 0;
+        if (cell.value) {
+          cellLen = typeof cell.value === 'object' ? JSON.stringify(cell.value).length : String(cell.value).length;
+        }
         if (cellLen > maxLen) maxLen = cellLen;
       });
       col.width = Math.min(maxLen + 2, 50);
@@ -375,13 +383,17 @@ export async function importFromExcel(
   worksheet.eachRow((row, rowNumber) => {
     const values = (row.values as (ExcelJS.CellValue | undefined)[]).slice(1); // col index starts at 1
     if (rowNumber === 1) {
-      headers = values.map((v) => (v !== null && v !== undefined ? String(v).trim() : ''));
+      headers = values.map((v) => {
+        if (v == null) return '';
+        if (typeof v === 'object') return JSON.stringify(v).trim();
+        return String(v).trim();
+      });
     } else {
       const record: Record<string, unknown> = {};
       headers.forEach((h, i) => {
         if (h) {
           const cell = values[i];
-          record[h] = cell !== null && cell !== undefined ? cell : '';
+          record[h] = cell ?? '';
         }
       });
       records.push(record);

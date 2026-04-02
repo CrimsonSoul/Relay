@@ -20,17 +20,28 @@ import { getErrorMessage } from '@shared/types';
  * Each handler group is wrapped in try/catch to prevent a single failure
  * from leaving all subsequent handlers unregistered.
  */
-export function setupIpcHandlers(
-  getMainWindow: () => BrowserWindow | null,
-  getDataRoot: () => Promise<string>,
-  createAuxWindow?: (route: string) => void,
-  getAppConfig?: () => AppConfig | null,
-  getCache?: () => OfflineCache | null,
-  getPendingChanges?: () => PendingChanges | null,
-  getSyncManager?: () => SyncManager | null,
-  getBackupManager?: () => BackupManager | null,
-  restartPb?: () => Promise<boolean>,
-) {
+export function setupIpcHandlers(opts: {
+  getMainWindow: () => BrowserWindow | null;
+  getDataRoot: () => Promise<string>;
+  createAuxWindow?: (route: string) => void;
+  getAppConfig?: () => AppConfig | null;
+  getCache?: () => OfflineCache | null;
+  getPendingChanges?: () => PendingChanges | null;
+  getSyncManager?: () => SyncManager | null;
+  getBackupManager?: () => BackupManager | null;
+  restartPb?: () => Promise<boolean>;
+}) {
+  const {
+    getMainWindow,
+    getDataRoot,
+    createAuxWindow,
+    getAppConfig,
+    getCache,
+    getPendingChanges,
+    getSyncManager,
+    getBackupManager,
+    restartPb,
+  } = opts;
   const safeSetup = (name: string, fn: () => void) => {
     try {
       fn();

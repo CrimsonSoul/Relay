@@ -468,4 +468,90 @@ describe('NotesTab', () => {
     render(<NotesTab />);
     expect(screen.queryByTestId('dnd-context')).not.toBeInTheDocument();
   });
+
+  // ── Status Bar ──
+
+  it('should display singular "note" when totalCount is 1', () => {
+    mockNotes = [makeSampleNotes()[0]];
+    mockTotalCountOverride = 1;
+    render(<NotesTab />);
+    expect(screen.getByText('1 note')).toBeInTheDocument();
+  });
+
+  it('should display plural "notes" when totalCount is not 1', () => {
+    render(<NotesTab />);
+    expect(screen.getByText('5 notes')).toBeInTheDocument();
+  });
+
+  it('should display "0 notes" when there are no notes', () => {
+    mockNotes = [];
+    mockTotalCountOverride = 0;
+    render(<NotesTab />);
+    expect(screen.getByText('0 notes')).toBeInTheDocument();
+  });
+
+  // ── Editor Close ──
+
+  it('should close editor via close callback and clear editingNote', () => {
+    render(<NotesTab />);
+    // Open editor for existing note
+    fireEvent.click(screen.getByText('Bridge Call Checklist'));
+    expect(screen.getByDisplayValue('Bridge Call Checklist')).toBeInTheDocument();
+
+    // Close editor via Cancel
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.queryByDisplayValue('Bridge Call Checklist')).not.toBeInTheDocument();
+
+    // Re-open should show blank (new note) editor
+    fireEvent.click(screen.getByText('NEW NOTE'));
+    expect(screen.getByPlaceholderText('Note title...')).toBeInTheDocument();
+  });
+
+  // ── Note deletion clears editor state ──
+
+  it('should clear editor state after deleting a note from editor', () => {
+    render(<NotesTab />);
+    fireEvent.click(screen.getByText('Bridge Call Checklist'));
+
+    const deleteButtons = screen.getAllByText('Delete');
+    fireEvent.click(deleteButtons[0]);
+
+    expect(mockDeleteNote).toHaveBeenCalledWith('sample-1');
+    // Editor should be closed
+    expect(screen.queryByDisplayValue('Bridge Call Checklist')).not.toBeInTheDocument();
+  });
+
+  // ── Tag click ──
+
+  it('should call setActiveTag when a tag pill is clicked', () => {
+    render(<NotesTab />);
+    // Click one of the tag pills in the toolbar
+    const bridgeTags = screen.getAllByText('bridge');
+    // The first one should be in the toolbar
+    fireEvent.click(bridgeTags[0]);
+    expect(mockSetActiveTag).toHaveBeenCalled();
+  });
+
+  // ── Font size change ──
+
+  it('should call setFontSize when font size button is clicked', () => {
+    render(<NotesTab />);
+    fireEvent.click(screen.getByLabelText('Font size S'));
+    expect(mockSetFontSize).toHaveBeenCalledWith('sm');
+  });
+
+  it('should call setFontSize for large', () => {
+    render(<NotesTab />);
+    fireEvent.click(screen.getByLabelText('Font size L'));
+    expect(mockSetFontSize).toHaveBeenCalledWith('lg');
+  });
+
+  // ── Single note grid ──
+
+  it('should render grid with a single note', () => {
+    mockNotes = [makeSampleNotes()[0]];
+    render(<NotesTab />);
+    expect(screen.getByText('Bridge Call Checklist')).toBeInTheDocument();
+    expect(screen.getByTestId('dnd-context')).toBeInTheDocument();
+  });
 });

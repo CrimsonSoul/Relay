@@ -4,7 +4,7 @@ import { loggers } from '../logger';
 const logger = loggers.sync;
 
 export class OfflineCache {
-  private db: Database.Database;
+  private readonly db: Database.Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);

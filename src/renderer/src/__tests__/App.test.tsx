@@ -270,6 +270,7 @@ const mockHandleReset = vi.fn();
 const mockHandleAddManual = vi.fn();
 const mockHandleRemoveManual = vi.fn();
 const mockHandleToggleGroup = vi.fn();
+let mockSettingsOpen = false;
 
 vi.mock('../hooks/useAppAssembler', () => ({
   useAppAssembler: () => ({
@@ -280,7 +281,7 @@ vi.mock('../hooks/useAppAssembler', () => ({
     manualAdds: [],
     setManualAdds: vi.fn(),
     manualRemoves: [],
-    settingsOpen: false,
+    settingsOpen: mockSettingsOpen,
     setSettingsOpen: mockSetSettingsOpen,
     handleAddToAssembler: mockHandleAddToAssembler,
     handleUndoRemove: mockHandleUndoRemove,
@@ -323,6 +324,7 @@ function renderApp(searchParams = '') {
 describe('MainApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockSettingsOpen = false;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -330,6 +332,7 @@ describe('MainApp', () => {
   });
 
   afterEach(() => {
+    mockSettingsOpen = false;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -549,6 +552,41 @@ describe('MainApp', () => {
     // PopoutBoard should NOT render because route doesn't include 'board'
     expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
   });
+
+  it('opens data manager modal from settings', async () => {
+    mockSettingsOpen = true;
+    renderApp();
+
+    // Settings modal should be open since settingsOpen is true
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+    });
+
+    // Click open-data-manager button inside settings
+    fireEvent.click(screen.getByText('open-data-manager'));
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('data-manager-modal')).toBeInTheDocument();
+    });
+  });
+
+  it('adds platform class to body on mount', () => {
+    (globalThis as Window & { api?: { platform: string } }).api = { platform: 'darwin' } as typeof globalThis.api;
+    renderApp();
+    expect(document.body.classList.contains('platform-darwin')).toBe(true);
+  });
+
+  it('adds is-popout class to body in popout mode', () => {
+    renderApp('?popout=board');
+    expect(document.body.classList.contains('is-popout')).toBe(true);
+  });
+
+  it('renders popout board when popout param contains board', async () => {
+    renderApp('?popout=board');
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('popout-board')).toBeInTheDocument();
+    });
+  });
 });
 
 // ── App default export (popout toast branch) ─────────────────────────────────
@@ -687,5 +725,193 @@ describe('App default export', () => {
     expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
     expect(reload).not.toHaveBeenCalled();
     expect(mockStartPocketBase).not.toHaveBeenCalled();
+  });
+
+  it('shows unavailable error when connection result is not auth-failed or not-configured', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByText('PocketBase server is unavailable.')).toBeInTheDocument();
+  });
+
+  it('goes to setup when getPbConnection returns not-configured error', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'not-configured' });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+  });
+
+  it('goes to setup when getPbConnection returns invalid-config error', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'invalid-config' });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+  });
+
+  it('shows generic error when checkConfig throws a non-timeout error', async () => {
+    mockIsConfigured.mockRejectedValue(new Error('random failure'));
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByText('Failed to read configuration.')).toBeInTheDocument();
+  });
+
+  it('navigates to setup when Reconfigure button is clicked from error state', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    const reconfigureBtn = await screen.findByText('Reconfigure');
+    fireEvent.click(reconfigureBtn);
+
+    expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+  });
+
+  it('reloads the page after successful client-mode setup', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue(true);
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup'));
+
+    await vi.waitFor(() => {
+      expect(reload).toHaveBeenCalled();
+    });
+    // Client mode should NOT start PocketBase
+    expect(mockStartPocketBase).not.toHaveBeenCalled();
+  });
+
+  it('starts PocketBase and reloads after successful server-mode setup', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue(true);
+    mockStartPocketBase.mockResolvedValue(true);
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    await vi.waitFor(() => {
+      expect(mockStartPocketBase).toHaveBeenCalled();
+      expect(reload).toHaveBeenCalled();
+    });
+  });
+
+  it('shows error when startPocketBase returns false in server mode', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue(true);
+    mockStartPocketBase.mockResolvedValue(false);
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload: vi.fn() },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    expect(await screen.findByText('Failed to start PocketBase server.')).toBeInTheDocument();
+  });
+
+  it('shows error when saveConfig throws an exception', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockRejectedValue(new Error('save failed'));
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup'));
+
+    expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
+  });
+
+  it('calls windowClose when close button is clicked in checking state', async () => {
+    // Make isConfigured hang so we stay in 'checking' phase
+    mockIsConfigured.mockImplementation(() => new Promise(() => undefined));
+    const mockWindowClose = vi.fn();
+    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
+      api: { windowClose: mockWindowClose },
+    } as unknown as typeof globalThis.window;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(screen.getByText('Initializing...')).toBeInTheDocument();
+    const closeBtn = screen.getByLabelText('Close');
+    fireEvent.click(closeBtn);
+    expect(mockWindowClose).toHaveBeenCalled();
+  });
+
+  it('calls windowClose when close button is clicked in error state', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'unavailable' });
+    const mockWindowClose = vi.fn();
+    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
+      api: { windowClose: mockWindowClose },
+    } as unknown as typeof globalThis.window;
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    await screen.findByText('PocketBase server is unavailable.');
+    const closeBtn = screen.getByLabelText('Close');
+    fireEvent.click(closeBtn);
+    expect(mockWindowClose).toHaveBeenCalled();
   });
 });

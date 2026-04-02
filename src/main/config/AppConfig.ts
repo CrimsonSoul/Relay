@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { loggers } from '../logger';
 
 /** Safe wrapper — safeStorage is unavailable in tests and non-Electron environments. */
@@ -38,9 +38,9 @@ interface StoredConfig {
 }
 
 export class AppConfig {
-  private configPath: string;
+  private readonly configPath: string;
 
-  constructor(private dataDir: string) {
+  constructor(private readonly dataDir: string) {
     this.configPath = join(dataDir, 'config.json');
   }
 

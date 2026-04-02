@@ -692,8 +692,7 @@ describe('windowHandlers', () => {
     it('returns error when image exceeds 2MB', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
-        // eslint-disable-next-line sonarjs/publicly-writable-directories
-        filePaths: ['/tmp/huge.png'],
+        filePaths: ['/mock-dir/huge.png'],
       });
       // Create a buffer larger than 2MB
       const bigBuffer = Buffer.alloc(2 * 1024 * 1024 + 1);
@@ -707,8 +706,7 @@ describe('windowHandlers', () => {
     it('returns error when image is invalid (empty)', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
-        // eslint-disable-next-line sonarjs/publicly-writable-directories
-        filePaths: ['/tmp/bad.png'],
+        filePaths: ['/mock-dir/bad.png'],
       });
       vi.mocked(readFile).mockResolvedValue(Buffer.from('tiny') as never);
       vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
@@ -753,6 +751,133 @@ describe('windowHandlers', () => {
       );
 
       expect(result).toEqual({ success: false, error: 'Cancelled' });
+    });
+
+    it('saves image successfully and returns file path', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+        canceled: false,
+        filePath: '/mock-dir/test-alert.png',
+      } as never);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+        {},
+        'data:image/png;base64,iVBORw0KGgo=',
+        'test.png',
+      );
+
+      expect(result).toEqual({ success: true, data: '/mock-dir/test-alert.png' });
+      expect(writeFile).toHaveBeenCalled();
+    });
+
+    it('returns error on write failure', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+        canceled: false,
+        filePath: '/mock-dir/test-alert.png',
+      } as never);
+      vi.mocked(writeFile).mockRejectedValue(new Error('Disk full'));
+
+      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+        {},
+        'data:image/png;base64,iVBORw0KGgo=',
+        'test.png',
+      );
+
+      expect(result).toEqual({ success: false, error: 'Disk full' });
+    });
+
+    it('returns non-Error failure message on non-Error throw', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+        canceled: false,
+        filePath: '/mock-dir/test-alert.png',
+      } as never);
+      vi.mocked(writeFile).mockRejectedValue('string error');
+
+      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+        {},
+        'data:image/png;base64,iVBORw0KGgo=',
+        'test.png',
+      );
+
+      expect(result).toEqual({ success: false, error: 'Save failed' });
+    });
+
+    it('returns error for non-string dataUrl', async () => {
+      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE]({}, 42, 'test.png');
+      expect(result).toEqual({ success: false, error: 'Invalid image data' });
+    });
+  });
+
+  describe('Logo handlers - SAVE_COMPANY_LOGO (full save path)', () => {
+    it('saves a valid logo successfully with resize', async () => {
+      const { writeFile, mkdir } = await import('node:fs/promises');
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/logo.png'],
+      });
+      // Small enough buffer
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
+      // Image wider than MAX_LOGO_WIDTH (400)
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
+        isEmpty: vi.fn(() => false),
+        getSize: vi.fn(() => ({ width: 800, height: 600 })),
+        resize: vi.fn().mockReturnValue({
+          toPNG: vi.fn(() => Buffer.from('resized-png')),
+        }),
+      } as never);
+      vi.mocked(mkdir).mockResolvedValue(undefined as never);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('resized-png').toString('base64'),
+      });
+    });
+
+    it('saves a valid logo without resize when within width limit', async () => {
+      const { writeFile, mkdir } = await import('node:fs/promises');
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/small-logo.png'],
+      });
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('small-image') as never);
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue({
+        isEmpty: vi.fn(() => false),
+        getSize: vi.fn(() => ({ width: 200, height: 100 })),
+        toPNG: vi.fn(() => Buffer.from('small-png')),
+      } as never);
+      vi.mocked(mkdir).mockResolvedValue(undefined as never);
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('small-png').toString('base64'),
+      });
+    });
+
+    it('returns error when save throws non-Error', async () => {
+      vi.mocked(dialog.showOpenDialog).mockRejectedValue('unexpected failure');
+
+      const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
+
+      expect(result).toEqual({ success: false, error: 'Save failed' });
+    });
+  });
+
+  describe('Logo handlers - REMOVE with non-Error throw', () => {
+    it('returns generic error message for non-Error throws', async () => {
+      vi.mocked(unlink).mockRejectedValue('string throw');
+
+      const result = await handlers[IPC_CHANNELS.REMOVE_COMPANY_LOGO]();
+
+      expect(result).toEqual({ success: false, error: 'Remove failed' });
     });
   });
 });

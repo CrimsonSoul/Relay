@@ -78,6 +78,38 @@ describe('useNotes', () => {
     expect(result.current.notes).toEqual({ contacts: {}, servers: {} });
   });
 
+  it('defaults tags to empty array when falsy', () => {
+    mockCollectionData.current = [
+      {
+        id: 'n_notags',
+        entityType: 'contact',
+        entityKey: 'notags@test.com',
+        note: 'no tags',
+        tags: null,
+        created: '2026-01-01T00:00:01Z',
+        updated: '2026-01-01T00:00:01Z',
+      },
+    ];
+    const { result } = renderHook(() => useNotes());
+    expect(result.current.getContactNote('notags@test.com')?.tags).toEqual([]);
+  });
+
+  it('ignores records with unknown entityType', () => {
+    mockCollectionData.current = [
+      {
+        id: 'n_unknown',
+        entityType: 'widget',
+        entityKey: 'some-key',
+        note: 'unknown type',
+        tags: [],
+        created: '2026-01-01T00:00:01Z',
+        updated: '2026-01-01T00:00:01Z',
+      },
+    ];
+    const { result } = renderHook(() => useNotes());
+    expect(result.current.notes).toEqual({ contacts: {}, servers: {} });
+  });
+
   it('sets contact notes via PocketBase service', async () => {
     mockSetNote.mockResolvedValue({
       id: 'n1',

@@ -35,7 +35,7 @@ function downloadBlob(blob: Blob, filename: string): void {
   a.click();
   // Clean up
   setTimeout(() => {
-    document.body.removeChild(a);
+    a.remove();
     URL.revokeObjectURL(url);
   }, 100);
 }
@@ -53,7 +53,7 @@ function pickFile(
 
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
-      document.body.removeChild(input);
+      input.remove();
       if (!file) {
         resolve(null);
         return;
@@ -68,7 +68,7 @@ function pickFile(
 
     // Handle cancel (input won't fire change)
     input.addEventListener('cancel', () => {
-      document.body.removeChild(input);
+      input.remove();
       resolve(null);
     });
 

@@ -154,4 +154,57 @@ describe('MaintainTeamModal', () => {
     // After removal the phone input should no longer be there
     expect(screen.queryByDisplayValue('5559876543')).toBeNull();
   });
+
+  it('defaults empty role to "Member" on save', () => {
+    const onSave = vi.fn();
+    render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow({ role: '   ' })]}
+        contacts={contacts}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText('Save Changes'));
+    const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
+    expect(savedRows[0].role).toBe('Member');
+  });
+
+  it('preserves non-empty role on save', () => {
+    const onSave = vi.fn();
+    render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow({ role: 'Lead' })]}
+        contacts={contacts}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText('Save Changes'));
+    const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
+    expect(savedRows[0].role).toBe('Lead');
+  });
+
+  it('handles adding and then saving multiple rows', () => {
+    const onSave = vi.fn();
+    render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[]}
+        contacts={[]}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByText('Save Changes'));
+    const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
+    expect(savedRows).toHaveLength(2);
+  });
 });

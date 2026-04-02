@@ -62,4 +62,47 @@ describe('ListToolbar', () => {
     );
     expect(screen.getByText('Extra Action')).toBeInTheDocument();
   });
+
+  it('shows Descending title when sortDirection is desc', () => {
+    render(<ListToolbar sortDirection="desc" onToggleSortDirection={vi.fn()} />);
+    expect(screen.getByTitle('Descending')).toBeInTheDocument();
+  });
+
+  it('renders sort button without dropdown when no sortOptions provided', () => {
+    render(<ListToolbar {...defaultProps} />);
+    // Should render the simple sort direction button, not the dropdown
+    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
+    expect(screen.getByTitle('Ascending')).toBeInTheDocument();
+  });
+
+  it('renders sort button without dropdown when sortOptions is empty', () => {
+    render(
+      <ListToolbar
+        {...defaultProps}
+        sortOptions={[]}
+        onSortKeyChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
+  });
+
+  it('renders sort button without dropdown when onSortKeyChange is not provided', () => {
+    const sortOptions = [{ value: 'name', label: 'Name' }];
+    render(<ListToolbar {...defaultProps} sortOptions={sortOptions} />);
+    // Even with sortOptions, without onSortKeyChange it falls back to simple button
+    expect(screen.queryByText('Sort By')).not.toBeInTheDocument();
+  });
+
+  it('shows Descending title with sort options', () => {
+    render(
+      <ListToolbar
+        sortDirection="desc"
+        onToggleSortDirection={vi.fn()}
+        sortKey="name"
+        sortOptions={[{ value: 'name', label: 'Name' }]}
+        onSortKeyChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTitle('Descending')).toBeInTheDocument();
+  });
 });

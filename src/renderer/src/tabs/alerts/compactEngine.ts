@@ -79,14 +79,14 @@ export function compactText(text: string): string {
   result = result.replace(/^\s*([a-z])/, (_, c: string) => c.toUpperCase());
 
   // Capitalize after period + space where removal lowered the case
-  result = result.replace(/\.\s+([a-z])/g, (_, c: string) => `. ${c.toUpperCase()}`);
+  result = result.replaceAll(/\.\s+([a-z])/g, (_, c: string) => `. ${c.toUpperCase()}`);
 
   // Collapse multiple spaces
-  result = result.replace(/ {2,}/g, ' ');
+  result = result.replaceAll(/ {2,}/g, ' ');
 
   // Clean up orphaned punctuation and whitespace
   // eslint-disable-next-line sonarjs/slow-regex
-  result = result.replace(/\s+\./g, '.').replace(/\s+,/g, ',');
+  result = result.replaceAll(/\s+\./g, '.').replaceAll(/\s+,/g, ',');
 
   // Remove trailing whitespace
   result = result.trim();

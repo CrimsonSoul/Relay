@@ -159,15 +159,11 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                 {sortedGroups.map((group) => {
                   const isSelected = selectedGroupIds.includes(group.id);
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={group.id}
                       className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
-                      role="button"
-                      tabIndex={0}
                       onClick={() => onToggleGroup(group.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') onToggleGroup(group.id);
-                      }}
                       onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
                     >
                       <div className="sig-grp-check">
@@ -186,7 +182,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         <div className="sig-grp-name">{group.name}</div>
                         <div className="sig-grp-sub">{group.contacts.length} contacts</div>
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
                 {sortedGroups.length === 0 && (

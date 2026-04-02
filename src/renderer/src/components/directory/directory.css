@@ -485,6 +485,14 @@
   border-bottom: 1px solid var(--color-border-subtle);
   transition: background 0.12s;
   cursor: default;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  width: 100%;
 }
 .contact-entry:hover {
   background: var(--color-bg-card-hover);

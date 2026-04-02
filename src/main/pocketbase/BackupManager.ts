@@ -1,13 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
 
 const logger = loggers.backup;
 
 export class BackupManager {
-  private backupsDir: string;
-  private maxBackups = 10;
+  private readonly backupsDir: string;
+  private readonly maxBackups = 10;
   private pb: PocketBase | null = null;
 
   constructor(dataDir: string) {
@@ -26,7 +26,7 @@ export class BackupManager {
       throw new Error('PocketBase client not ready — try again in a moment');
     }
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
     const backupName = `${timestamp}.zip`;
 
     await this.pb.backups.create(backupName);
@@ -44,7 +44,7 @@ export class BackupManager {
     if (!this.pb) throw new Error('No PocketBase client available');
 
     // Safety backup before overwriting
-    const safetyName = `pre-restore-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    const safetyName = `pre-restore-${new Date().toISOString().replaceAll(/[:.]/g, '-')}.zip`;
     try {
       await this.pb.backups.create(safetyName);
       logger.info('Pre-restore safety backup created', { name: safetyName });

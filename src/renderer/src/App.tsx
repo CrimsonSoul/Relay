@@ -511,7 +511,7 @@ function AppWithSetup() {
         }
         // Reload the page so the CSP headers are re-evaluated with the
         // newly saved config (connect-src must include the server URL).
-        window.location.reload();
+        globalThis.location.reload();
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
         setPhase({ stage: 'error', message: 'Failed to save configuration.' });

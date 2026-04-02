@@ -85,7 +85,7 @@ export function sanitizeHtml(html: string): string {
     }
     // Allow <span data-hl="knownType"> for highlight support
     if (tag === 'span') {
-      const hlType = el.getAttribute('data-hl');
+      const hlType = el.dataset.hl;
       if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
         return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
       }

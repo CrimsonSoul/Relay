@@ -174,6 +174,16 @@ describe('sanitizeHtml', () => {
     });
   });
 
+  describe('non-element, non-text nodes', () => {
+    it('strips HTML comment nodes', () => {
+      expect(sanitizeHtml('before<!-- comment -->after')).toBe('beforeafter');
+    });
+
+    it('strips processing instruction style comments', () => {
+      expect(sanitizeHtml('a<!-- x -->b<!-- y -->c')).toBe('abc');
+    });
+  });
+
   describe('edge cases', () => {
     it('returns empty string for empty input', () => {
       expect(sanitizeHtml('')).toBe('');

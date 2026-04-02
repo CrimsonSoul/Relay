@@ -184,17 +184,17 @@ export function setupIpc(
   createAuxWindow?: (route: string) => void,
   restartPb?: () => Promise<boolean>,
 ) {
-  setupIpcHandlers(
-    () => state.mainWindow,
+  setupIpcHandlers({
+    getMainWindow: () => state.mainWindow,
     getDataRoot,
     createAuxWindow,
-    () => state.appConfig,
-    () => state.offlineCache,
-    () => state.pendingChanges,
-    () => state.syncManager,
-    () => state.backupManager,
+    getAppConfig: () => state.appConfig,
+    getCache: () => state.offlineCache,
+    getPendingChanges: () => state.pendingChanges,
+    getSyncManager: () => state.syncManager,
+    getBackupManager: () => state.backupManager,
     restartPb,
-  );
+  });
   setupAuthHandlers();
   setupAuthInterception(() => state.mainWindow);
   setupLoggerHandlers();

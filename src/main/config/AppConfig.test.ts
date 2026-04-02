@@ -159,4 +159,69 @@ describe('AppConfig', () => {
     const config = new AppConfig(tempDir);
     expect(config.isConfigured()).toBe(false);
   });
+
+  it('clear returns true when config file does not exist', () => {
+    const config = new AppConfig(tempDir);
+    // No config saved, so file doesn't exist
+    expect(config.clear()).toBe(true);
+  });
+
+  it('clear deletes existing config file', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'server', port: 8090, secret: 'sec' });
+    expect(existsSync(join(tempDir, 'config.json'))).toBe(true);
+
+    const result = config.clear();
+    expect(result).toBe(true);
+    expect(existsSync(join(tempDir, 'config.json'))).toBe(false);
+  });
+
+  it('clear returns false when unlinkSync throws non-ENOENT error', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'server', port: 8090, secret: 'sec' });
+
+    // Make the config file read-only to simulate a permission error
+    const fs = require('node:fs');
+    const configPath = join(tempDir, 'config.json');
+    // Change permissions to read-only
+    fs.chmodSync(configPath, 0o444); // eslint-disable-line sonarjs/file-permissions
+    // Also make directory read-only so unlink fails
+    fs.chmodSync(tempDir, 0o555); // eslint-disable-line sonarjs/file-permissions
+
+    const result = config.clear();
+
+    // Restore permissions before assertions so cleanup works
+    fs.chmodSync(tempDir, 0o755); // eslint-disable-line sonarjs/file-permissions
+    fs.chmodSync(configPath, 0o644); // eslint-disable-line sonarjs/file-permissions
+
+    expect(result).toBe(false);
+  });
+
+  it('isConfigured returns true for valid config (with secret)', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'client', serverUrl: 'https://example.com', secret: 'sec' });
+    expect(config.isConfigured()).toBe(true);
+  });
+
+  it('load returns client config with default empty serverUrl when not in file', () => {
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({ mode: 'client', secret: 'sec' }),
+      'utf-8',
+    );
+    const config = new AppConfig(tempDir);
+    const loaded = config.load();
+    expect(loaded).not.toBeNull();
+    expect(loaded!.mode).toBe('client');
+    expect((loaded as { serverUrl: string }).serverUrl).toBe('');
+  });
+
+  it('save writes client config with serverUrl', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'client', serverUrl: 'https://relay.local:8090', secret: 'my-sec' });
+    const raw = readFileSync(join(tempDir, 'config.json'), 'utf-8');
+    const stored = JSON.parse(raw);
+    expect(stored.mode).toBe('client');
+    expect(stored.serverUrl).toBe('https://relay.local:8090');
+  });
 });

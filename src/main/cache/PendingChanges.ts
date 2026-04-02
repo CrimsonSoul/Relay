@@ -12,7 +12,7 @@ export interface PendingChange {
 }
 
 export class PendingChanges {
-  private db: Database.Database;
+  private readonly db: Database.Database;
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);

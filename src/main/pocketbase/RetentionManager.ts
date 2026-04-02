@@ -6,7 +6,7 @@ const logger = loggers.retention;
 export class RetentionManager {
   private interval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private pb: PocketBase) {}
+  constructor(private readonly pb: PocketBase) {}
 
   async runCleanup(): Promise<void> {
     await this.cleanBridgeHistory();

@@ -41,8 +41,8 @@ export function useGroups() {
     async (id: string, updates: Partial<Omit<BridgeGroup, 'id' | 'createdAt'>>) => {
       try {
         await pbUpdateGroup(id, {
-          ...(updates.name !== undefined ? { name: updates.name } : {}),
-          ...(updates.contacts !== undefined ? { contacts: updates.contacts } : {}),
+          ...(updates.name === undefined ? {} : { name: updates.name }),
+          ...(updates.contacts === undefined ? {} : { contacts: updates.contacts }),
         });
         showToast('Group updated', 'success');
         return true;

@@ -68,7 +68,7 @@ export const formatHistoryDate = (timestamp: number): string => {
     return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   }
   const date = new Date(timestamp);
-  if (isNaN(date.getTime())) {
+  if (Number.isNaN(date.getTime())) {
     return new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   }
   const now = new Date();

@@ -3,6 +3,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { DataManagerModal } from '../DataManagerModal';
 
+const mockExportData = vi.fn().mockResolvedValue(true);
+const mockImportData = vi.fn().mockResolvedValue({ success: true, imported: 5, updated: 2 });
+const mockLoadStats = vi.fn().mockResolvedValue(undefined);
+const mockShowToast = vi.fn();
+
 // Mock useDataManager hook
 vi.mock('../../hooks/useDataManager', () => ({
   useDataManager: () => ({
@@ -10,16 +15,23 @@ vi.mock('../../hooks/useDataManager', () => ({
     exporting: false,
     importing: false,
     lastImportResult: null,
-    loadStats: vi.fn().mockResolvedValue(undefined),
-    exportData: vi.fn().mockResolvedValue(true),
-    importData: vi.fn().mockResolvedValue({ success: true, imported: 5, updated: 2 }),
+    loadStats: mockLoadStats,
+    exportData: mockExportData,
+    importData: mockImportData,
     clearLastImportResult: vi.fn(),
   }),
 }));
 
 // Mock Toast
 vi.mock('../Toast', () => ({
-  useToast: () => ({ showToast: vi.fn() }),
+  useToast: () => ({ showToast: mockShowToast }),
+}));
+
+// Mock logger
+vi.mock('../../utils/logger', () => ({
+  loggers: {
+    app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  },
 }));
 
 // Mock data-manager sub-components to avoid deep rendering complexity
@@ -45,6 +57,10 @@ vi.mock('../data-manager/DataManagerExport', () => ({
   ),
 }));
 
+vi.mock('../data-manager/DataManagerBackups', () => ({
+  DataManagerBackups: () => <div data-testid="backups">Backups content</div>,
+}));
+
 vi.mock('../data-manager/SharedComponents', () => ({
   TabButton: ({
     children,
@@ -66,6 +82,8 @@ describe('DataManagerModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExportData.mockResolvedValue(true);
+    mockImportData.mockResolvedValue({ success: true, imported: 5, updated: 2 });
   });
 
   it('does not render when isOpen is false', () => {
@@ -117,5 +135,90 @@ describe('DataManagerModal', () => {
     fireEvent.click(screen.getByText('Import'));
     fireEvent.click(screen.getByTestId('import-btn'));
     expect(screen.getByTestId('import-btn')).toBeInTheDocument();
+  });
+
+  it('switches to Backups tab', () => {
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Backups'));
+    expect(screen.getByTestId('backups')).toBeInTheDocument();
+    expect(screen.queryByTestId('overview')).not.toBeInTheDocument();
+  });
+
+  it('shows error toast when export returns false', async () => {
+    mockExportData.mockResolvedValue(false);
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Export'));
+    fireEvent.click(screen.getByTestId('export-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Export failed. Please try again.', 'error');
+    });
+  });
+
+  it('shows error toast when export throws', async () => {
+    mockExportData.mockRejectedValue(new Error('disk full'));
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Export'));
+    fireEvent.click(screen.getByTestId('export-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Export failed unexpectedly. Please try again.',
+        'error',
+      );
+    });
+  });
+
+  it('shows success toast when export succeeds', async () => {
+    mockExportData.mockResolvedValue(true);
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Export'));
+    fireEvent.click(screen.getByTestId('export-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Exported all as JSON', 'success');
+    });
+  });
+
+  it('shows info toast when import has errors', async () => {
+    mockImportData.mockResolvedValue({ success: false, errors: ['bad row'] });
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+    fireEvent.click(screen.getByTestId('import-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Import completed with errors', 'info');
+    });
+  });
+
+  it('shows error toast when import returns no success and no errors', async () => {
+    mockImportData.mockResolvedValue({ success: false });
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+    fireEvent.click(screen.getByTestId('import-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith('Import failed. Please try again.', 'error');
+    });
+  });
+
+  it('shows error toast when import throws', async () => {
+    mockImportData.mockRejectedValue(new Error('oops'));
+
+    render(<DataManagerModal isOpen={true} onClose={onClose} />);
+    fireEvent.click(screen.getByText('Import'));
+    fireEvent.click(screen.getByTestId('import-btn'));
+
+    await vi.waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Import failed unexpectedly. Please try again.',
+        'error',
+      );
+    });
   });
 });

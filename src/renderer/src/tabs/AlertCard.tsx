@@ -139,13 +139,13 @@ export const AlertCard: React.FC<AlertCardProps> = ({
     for (const size of [13, 11, 9.5]) {
       probe.style.fontSize = `${size}px`;
       if (probe.scrollWidth <= probe.clientWidth) {
-        el.parentElement!.removeChild(probe);
+        probe.remove();
         setMetaFontSize(size);
         setMetaWrap(false);
         return;
       }
     }
-    el.parentElement!.removeChild(probe);
+    probe.remove();
     setMetaFontSize(9.5);
     setMetaWrap(true);
   }, [displaySender, displayRecipient, metaWidth]);
