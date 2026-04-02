@@ -126,51 +126,7 @@ if (gotLock) {
         return;
       }
 
-      // Start PocketBase if already configured in server mode
-      const relayConfig = getAppConfig()!.load();
-      if (relayConfig && relayConfig.mode === 'server') {
-        await startPocketBase(relayConfig as ServerConfig, configDataDir);
-      }
-
-      // Initialize offline cache infrastructure for client mode.
-      // All three components (cache, pending, sync) are initialized together so
-      // they're either all available or none — preventing silent data loss from
-      // a half-initialized state.
-      if (relayConfig && relayConfig.mode === 'client') {
-        const clientConfig = relayConfig as ClientConfig;
-        try {
-          const PocketBase = (await import('pocketbase')).default;
-          const syncPb = new PocketBase(clientConfig.serverUrl);
-          const controller = new AbortController();
-          const authTimeout = setTimeout(() => controller.abort(), 15_000);
-          try {
-            await syncPb
-              .collection('_pb_users_auth_')
-              .authWithPassword('relay@relay.app', clientConfig.secret, {
-                signal: controller.signal,
-              });
-          } finally {
-            clearTimeout(authTimeout);
-          }
-
-          setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
-          setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));
-          // SyncManager is pre-built infrastructure for future offline-write support.
-          // Currently it processes pending changes when explicitly triggered via IPC,
-          // but no production code path enqueues changes into PendingChanges yet.
-          setSyncManager(new SyncManager(syncPb));
-          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
-        } catch (syncErr) {
-          loggers.pocketbase.warn(
-            'Could not initialize offline infrastructure — will retry on reconnect',
-            {
-              error: syncErr,
-            },
-          );
-        }
-      }
-
-      // Register PocketBase IPC handlers
+      // Register PocketBase IPC handlers early so they're available when the renderer loads.
       ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
         if (getPbProcess()?.isRunning()) {
           // Server mode: renderer connects to localhost, not 0.0.0.0
@@ -207,9 +163,58 @@ if (gotLock) {
         return startPocketBase(config as ServerConfig, configDataDir);
       };
       setupIpc(createAuxWindow, restartPb);
+
+      // Start PocketBase before the window in server mode — the renderer
+      // queries PB_GET_URL on load and needs the process to be running.
+      const relayConfig = getAppConfig()!.load();
+      if (relayConfig && relayConfig.mode === 'server') {
+        await startPocketBase(relayConfig as ServerConfig, configDataDir);
+      }
+
+      // Show the window as early as possible — the renderer has its own
+      // loading/connecting states and doesn't need the offline cache to be ready.
       await createWindow();
       startPeriodicCleanup();
       const cleanupMaintenance = setupMaintenanceTasks();
+
+      // Initialize offline cache infrastructure for client mode AFTER the
+      // window is visible. All three components (cache, pending, sync) are
+      // initialized together so they're either all available or none —
+      // preventing silent data loss from a half-initialized state.
+      // Auth is capped at 15 s to avoid hanging if the server is unreachable.
+      if (relayConfig && relayConfig.mode === 'client') {
+        const clientConfig = relayConfig as ClientConfig;
+        try {
+          const PocketBase = (await import('pocketbase')).default;
+          const syncPb = new PocketBase(clientConfig.serverUrl);
+          const controller = new AbortController();
+          const authTimeout = setTimeout(() => controller.abort(), 15_000);
+          try {
+            await syncPb
+              .collection('_pb_users_auth_')
+              .authWithPassword('relay@relay.app', clientConfig.secret, {
+                signal: controller.signal,
+              });
+          } finally {
+            clearTimeout(authTimeout);
+          }
+
+          setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
+          setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));
+          // SyncManager is pre-built infrastructure for future offline-write support.
+          // Currently it processes pending changes when explicitly triggered via IPC,
+          // but no production code path enqueues changes into PendingChanges yet.
+          setSyncManager(new SyncManager(syncPb));
+          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
+        } catch (syncErr) {
+          loggers.pocketbase.warn(
+            'Could not initialize offline infrastructure — will retry on reconnect',
+            {
+              error: syncErr,
+            },
+          );
+        }
+      }
 
       // Graceful shutdown: clean up file watchers, timers, etc.
       app.on('before-quit', () => {
