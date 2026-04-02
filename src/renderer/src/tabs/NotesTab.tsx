@@ -267,7 +267,7 @@ export const NotesTab: React.FC = () => {
         <div ref={gridRef} className="relay-grid--notes" data-font-size={pad.fontSize}>
           <div className="notes-masonry-columns stagger-children">
             {noteColumns.map((column, columnIndex) => (
-              <div className="notes-masonry-column" key={column[0]?.id ?? columnIndex}>
+              <div className="notes-masonry-column" key={columnIndex}>
                 {column.map((note) => (
                   <NoteCard
                     key={note.id}

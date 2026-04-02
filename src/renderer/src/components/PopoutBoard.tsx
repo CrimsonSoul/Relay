@@ -229,7 +229,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
         aria-label="On-Call Teams"
       >
         {teamColumns.map((column, colIdx) => (
-          <div className="oncall-masonry-column" key={column[0] ?? colIdx}>
+          <div className="oncall-masonry-column" key={colIdx}>
             {column.map((teamId) => {
               const teamName = teamIdToName.get(teamId) || teamId;
               return (
