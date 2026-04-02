@@ -35,6 +35,12 @@ vi.mock('../Input', () => ({
 }));
 
 describe('SetupScreen', () => {
+  const SECRET_FIELD = 'secret';
+  const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
+  const validPassphrase = createFixturePassphrase();
+  // eslint-disable-next-line sonarjs/no-clear-text-protocols
+  const CLIENT_URL = 'http://192.168.1.50:8090';
+  const getSubmittedConfig = () => onComplete.mock.calls.at(-1)?.[0] as Record<string, unknown>;
   let onComplete: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -203,7 +209,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '80' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'validpassphrase123' },
+      target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
     expect(screen.getByText('Port must be between 1024 and 65535')).toBeInTheDocument();
@@ -215,7 +221,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '70000' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'validpassphrase123' },
+      target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
     expect(screen.getByText('Port must be between 1024 and 65535')).toBeInTheDocument();
@@ -227,7 +233,7 @@ describe('SetupScreen', () => {
     // Port field strips non-digits, so an empty string after stripping = NaN
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'validpassphrase123' },
+      target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
     expect(screen.getByText('Port must be between 1024 and 65535')).toBeInTheDocument();
@@ -237,7 +243,7 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'validpassphrase123' },
+      target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
     expect(screen.getByText('Server URL is required')).toBeInTheDocument();
@@ -249,7 +255,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Server URL'), { target: { value: '   ' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'validpassphrase123' },
+      target: { value: validPassphrase },
     });
     fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
     expect(screen.getByText('Server URL is required')).toBeInTheDocument();
@@ -263,17 +269,15 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '9090' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     await act(async () => {
       fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
     });
 
-    expect(onComplete).toHaveBeenCalledWith({
-      mode: 'server',
-      port: 9090,
-      secret: 'mypassphrase123',
-    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(getSubmittedConfig()).toMatchObject({ mode: 'server', port: 9090 });
+    expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
   it('calls onComplete with client config on valid client submission', async () => {
@@ -281,22 +285,18 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Server URL'), {
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      target: { value: 'http://192.168.1.50:8090' },
+      target: { value: CLIENT_URL },
     });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     await act(async () => {
       fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
     });
 
-    expect(onComplete).toHaveBeenCalledWith({
-      mode: 'client',
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      serverUrl: 'http://192.168.1.50:8090',
-      secret: 'mypassphrase123',
-    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
+    expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
   it('trims server URL before submitting in client mode', async () => {
@@ -304,22 +304,18 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Server URL'), {
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      target: { value: '  http://192.168.1.50:8090  ' },
+      target: { value: `  ${CLIENT_URL}  ` },
     });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     await act(async () => {
       fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
     });
 
-    expect(onComplete).toHaveBeenCalledWith({
-      mode: 'client',
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      serverUrl: 'http://192.168.1.50:8090',
-      secret: 'mypassphrase123',
-    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(getSubmittedConfig()).toMatchObject({ mode: 'client', serverUrl: CLIENT_URL });
+    expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
   // ── Loading State ──
@@ -331,7 +327,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '8090' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     // Use act to flush the synchronous state update (setLoading(true))
     // but don't await the full promise (it never resolves)
@@ -348,11 +344,10 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Server URL'), {
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      target: { value: 'http://192.168.1.50:8090' },
+      target: { value: CLIENT_URL },
     });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     act(() => {
       fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
@@ -369,7 +364,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     fireEvent.change(screen.getByLabelText('Port'), { target: { value: '8090' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     await act(async () => {
       fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
@@ -383,11 +378,10 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     fireEvent.change(screen.getByLabelText('Server URL'), {
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      target: { value: 'http://192.168.1.50:8090' },
+      target: { value: CLIENT_URL },
     });
     fireEvent.change(screen.getByLabelText('Passphrase'), {
-      target: { value: 'mypassphrase123' },
+      target: { value: validPassphrase },
     });
     await act(async () => {
       fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);

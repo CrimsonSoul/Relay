@@ -7,13 +7,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // ---------------------------------------------------------------------------
 
 let mockConnectionState: string = 'connecting';
-let mockError: string | null = null;
+const mockUsePocketBase = vi.fn();
 
 vi.mock('../../hooks/usePocketBase', () => ({
-  usePocketBase: () => ({
-    connectionState: mockConnectionState,
-    error: mockError,
-  }),
+  usePocketBase: (pbUrl: string, pbAuth: unknown) => {
+    mockUsePocketBase(pbUrl, pbAuth);
+    return {
+      connectionState: mockConnectionState,
+    };
+  },
 }));
 
 // Mock ConnectionStatus (it has its own tests)
@@ -33,14 +35,13 @@ import { ConnectionManager } from '../ConnectionManager';
 describe('ConnectionManager', () => {
   const defaultProps = {
     pbUrl: 'http://localhost:8090',
-    pbSecret: 'test-secret',
+    pbAuth: { token: 'test-token', record: null },
     onReconfigure: vi.fn(),
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockConnectionState = 'connecting';
-    mockError = null;
     (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
       api: { windowClose: vi.fn() },
     } as unknown as typeof globalThis.window;
@@ -57,6 +58,16 @@ describe('ConnectionManager', () => {
     );
     expect(screen.getByText('Connecting to server...')).toBeInTheDocument();
     expect(screen.queryByText('child-content')).not.toBeInTheDocument();
+  });
+
+  it('passes pbAuth to usePocketBase', () => {
+    render(
+      <ConnectionManager {...defaultProps}>
+        <div>child-content</div>
+      </ConnectionManager>,
+    );
+
+    expect(mockUsePocketBase).toHaveBeenCalledWith(defaultProps.pbUrl, defaultProps.pbAuth);
   });
 
   it('renders a close button in connecting state', () => {
@@ -124,66 +135,5 @@ describe('ConnectionManager', () => {
       </ConnectionManager>,
     );
     expect(screen.getByText('child-content')).toBeInTheDocument();
-  });
-
-  // ── Error State ──
-
-  it('shows error message and Reconfigure button when there is an error', () => {
-    mockError = 'Authentication failed. Check your passphrase.';
-    render(
-      <ConnectionManager {...defaultProps}>
-        <div>child-content</div>
-      </ConnectionManager>,
-    );
-    expect(screen.getByText('Authentication failed. Check your passphrase.')).toBeInTheDocument();
-    expect(screen.getByText('Reconfigure')).toBeInTheDocument();
-    expect(screen.queryByText('child-content')).not.toBeInTheDocument();
-  });
-
-  it('shows error icon in error state', () => {
-    mockError = 'Some error';
-    render(
-      <ConnectionManager {...defaultProps}>
-        <div>child</div>
-      </ConnectionManager>,
-    );
-    expect(screen.getByText('!')).toBeInTheDocument();
-  });
-
-  it('renders a close button in error state', () => {
-    mockError = 'Some error';
-    render(
-      <ConnectionManager {...defaultProps}>
-        <div>child</div>
-      </ConnectionManager>,
-    );
-    expect(screen.getByLabelText('Close')).toBeInTheDocument();
-  });
-
-  it('calls onReconfigure when Reconfigure button is clicked', () => {
-    const onReconfigure = vi.fn();
-    mockError = 'Auth failed';
-    render(
-      <ConnectionManager {...defaultProps} onReconfigure={onReconfigure}>
-        <div>child</div>
-      </ConnectionManager>,
-    );
-    screen.getByText('Reconfigure').click();
-    expect(onReconfigure).toHaveBeenCalledTimes(1);
-  });
-
-  // ── Error takes precedence over connecting ──
-
-  it('shows error state even if connectionState is connecting', () => {
-    mockConnectionState = 'connecting';
-    mockError = 'Connection timeout';
-    render(
-      <ConnectionManager {...defaultProps}>
-        <div>child</div>
-      </ConnectionManager>,
-    );
-    expect(screen.getByText('Connection timeout')).toBeInTheDocument();
-    expect(screen.getByText('Reconfigure')).toBeInTheDocument();
-    expect(screen.queryByText('Connecting to server...')).not.toBeInTheDocument();
   });
 });

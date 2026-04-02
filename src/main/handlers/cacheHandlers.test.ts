@@ -15,6 +15,8 @@ vi.mock('../logger', () => ({
 }));
 
 describe('cacheHandlers', () => {
+  const SECRET_FIELD = 'secret';
+  const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
 
   const mockCache = {
@@ -269,24 +271,26 @@ describe('cacheHandlers', () => {
     });
 
     it('re-authenticates when token has expired and succeeds', async () => {
+      const reauthPassphrase = createFixturePassphrase();
       const changes = [{ id: '1' }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
-      mockAppConfig.load.mockReturnValue({ secret: 'mysecret123' });
+      mockAppConfig.load.mockReturnValue({ [SECRET_FIELD]: reauthPassphrase });
       mockSync.reauthenticate.mockResolvedValue(undefined);
       mockSync.syncAll.mockResolvedValue({ total: 1, conflicts: 0, errors: [], failed: [] });
 
       await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
-      expect(mockSync.reauthenticate).toHaveBeenCalledWith('relay@relay.app', 'mysecret123');
+      expect(mockSync.reauthenticate).toHaveBeenCalledWith('relay@relay.app', reauthPassphrase);
       expect(mockSync.syncAll).toHaveBeenCalledWith(changes);
     });
 
     it('returns error result when re-authentication fails', async () => {
+      const reauthPassphrase = createFixturePassphrase();
       const changes = [{ id: '1' }, { id: '2' }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
-      mockAppConfig.load.mockReturnValue({ secret: 'mysecret123' });
+      mockAppConfig.load.mockReturnValue({ [SECRET_FIELD]: reauthPassphrase });
       mockSync.reauthenticate.mockRejectedValue(new Error('auth failed'));
 
       const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();

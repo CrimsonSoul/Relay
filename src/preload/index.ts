@@ -91,8 +91,8 @@ const api: BridgeAPI = {
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase
-  getPbUrl: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_URL),
-  getPbSecret: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_SECRET),
+  getPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_CONNECTION),
+  refreshPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_REFRESH_CONNECTION),
   startPocketBase: () => ipcRenderer.invoke(IPC_CHANNELS.PB_START),
 
   // Backups

@@ -253,6 +253,20 @@ export type IpLocationResult = {
   timezone?: string;
 } | null;
 
+export type PbAuthSession = {
+  token: string;
+  record: Record<string, unknown> | null;
+};
+
+export type PbConnection = {
+  pbUrl: string;
+  auth: PbAuthSession;
+};
+
+export type PbConnectionResult =
+  | { ok: true; connection: PbConnection }
+  | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
+
 export type BridgeAPI = {
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
@@ -312,8 +326,8 @@ export type BridgeAPI = {
   // Sync
   syncPending: () => Promise<{ total: number; conflicts: number; errors: string[] }>;
   // PocketBase
-  getPbUrl: () => Promise<string | null>;
-  getPbSecret: () => Promise<string | null>;
+  getPbConnection: () => Promise<PbConnectionResult>;
+  refreshPbConnection: () => Promise<PbConnectionResult>;
   startPocketBase: () => Promise<boolean>;
   // Backups
   listBackups: () => Promise<BackupEntry[]>;
@@ -381,8 +395,8 @@ export const IPC_CHANNELS = {
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
   // PocketBase
-  PB_GET_URL: 'pb:getUrl',
-  PB_GET_SECRET: 'pb:getSecret',
+  PB_GET_CONNECTION: 'pb:getConnection',
+  PB_REFRESH_CONNECTION: 'pb:refreshConnection',
   PB_START: 'pb:start',
   // Backups
   BACKUP_LIST: 'backup:list',

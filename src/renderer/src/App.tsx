@@ -13,7 +13,7 @@ import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { TactileButton } from './components/TactileButton';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, TabName } from '@shared/ipc';
+import { Contact, TabName, type PbAuthSession } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 // Hooks
@@ -47,6 +47,26 @@ const AlertsTab = lazyTab(() => import('./tabs/AlertsTab'), 'AlertsTab');
 const PopoutBoard = lazyTab(() => import('./components/PopoutBoard'), 'PopoutBoard');
 
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
+const STARTUP_CONNECTION_TIMEOUT_MS = 20_000;
+
+function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error('startup-timeout'));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
 
 export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
   const { showToast } = useToast();
@@ -412,7 +432,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
 type AppPhase =
   | { stage: 'checking' }
   | { stage: 'setup' }
-  | { stage: 'connecting'; pbUrl: string; pbSecret: string }
+  | { stage: 'connecting'; pbUrl: string; pbAuth: PbAuthSession }
   | { stage: 'error'; message: string };
 
 function AppWithSetup() {
@@ -425,14 +445,40 @@ function AppWithSetup() {
         setPhase({ stage: 'setup' });
         return;
       }
-      const pbUrl = await globalThis.api!.getPbUrl();
-      const pbSecret = await globalThis.api!.getPbSecret();
-      if (!pbUrl || !pbSecret) {
-        setPhase({ stage: 'setup' });
+      const result = await withStartupTimeout(
+        globalThis.api!.getPbConnection(),
+        STARTUP_CONNECTION_TIMEOUT_MS,
+      );
+      if (!result.ok) {
+        if (result.error === 'not-configured' || result.error === 'invalid-config') {
+          setPhase({ stage: 'setup' });
+          return;
+        }
+
+        setPhase({
+          stage: 'error',
+          message:
+            result.error === 'auth-failed'
+              ? 'PocketBase authentication failed.'
+              : 'PocketBase server is unavailable.',
+        });
         return;
       }
-      setPhase({ stage: 'connecting', pbUrl, pbSecret });
+
+      setPhase({
+        stage: 'connecting',
+        pbUrl: result.connection.pbUrl,
+        pbAuth: result.connection.auth,
+      });
     } catch (err) {
+      if (err instanceof Error && err.message === 'startup-timeout') {
+        setPhase({
+          stage: 'error',
+          message: 'Connection timed out. The server may be unreachable.',
+        });
+        return;
+      }
+
       loggers.app.error('Failed to check configuration', { error: err });
       setPhase({ stage: 'error', message: 'Failed to read configuration.' });
     }
@@ -450,7 +496,11 @@ function AppWithSetup() {
       secret: string;
     }) => {
       try {
-        await globalThis.api!.saveConfig(config);
+        const saved = await globalThis.api!.saveConfig(config);
+        if (!saved) {
+          setPhase({ stage: 'error', message: 'Failed to save configuration.' });
+          return;
+        }
         // In server mode, start PocketBase before connecting
         if (config.mode === 'server') {
           const started = await globalThis.api!.startPocketBase();
@@ -514,7 +564,7 @@ function AppWithSetup() {
   return (
     <ConnectionManager
       pbUrl={phase.pbUrl}
-      pbSecret={phase.pbSecret}
+      pbAuth={phase.pbAuth}
       onReconfigure={() => setPhase({ stage: 'setup' })}
     >
       <MainApp onReconfigure={() => setPhase({ stage: 'setup' })} />

@@ -1,22 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks – must be declared before any imports that reference them
 // ---------------------------------------------------------------------------
 
-const { networkWarn, networkError } = vi.hoisted(() => ({
+const { networkWarn } = vi.hoisted(() => ({
   networkWarn: vi.fn(),
-  networkError: vi.fn(),
 }));
 
 vi.mock('../../utils/logger', () => ({
   loggers: {
-    network: { warn: networkWarn, error: networkError, info: vi.fn() },
+    network: { warn: networkWarn, error: vi.fn(), info: vi.fn() },
   },
 }));
 
-const mockAuthWithPassword = vi.fn();
-const mockAuthStore = { isValid: true };
+const mockAuthSave = vi.fn();
+const mockAuthStore = { isValid: true, save: mockAuthSave };
 
 vi.mock('pocketbase', () => {
   return {
@@ -26,9 +26,6 @@ vi.mock('pocketbase', () => {
       constructor(url: string) {
         this.baseURL = url;
       }
-      collection = vi.fn().mockReturnValue({
-        authWithPassword: mockAuthWithPassword,
-      });
     },
   };
 });
@@ -44,20 +41,20 @@ vi.mock('../pbErrors', () => ({
 // Import the module under test — AFTER mocks are in place
 // ---------------------------------------------------------------------------
 
+import * as pocketbaseService from '../pocketbase';
 import {
   initPocketBase,
   getPb,
   getConnectionState,
   onConnectionStateChange,
-  authenticate,
+  loadAuthSession,
+  refreshAuthSession,
   startHealthCheck,
   stopHealthCheck,
   handleApiError,
   requireOnline,
   escapeFilter,
-  setStoredSecret,
   isOnline,
-  AUTH_TIMEOUT_MS,
 } from '../pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -77,12 +74,17 @@ describe('pocketbase service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
+    mockAuthStore.isValid = true;
+    globalThis.api = {
+      refreshPbConnection: vi.fn(),
+    } as typeof globalThis.api;
     // Reset the module-level connection state by re-initializing
     resetPbState();
   });
 
   afterEach(() => {
     stopHealthCheck();
+    delete globalThis.api;
     vi.useRealTimers();
   });
 
@@ -107,28 +109,28 @@ describe('pocketbase service', () => {
     });
   });
 
-  // -------------------------------------------------------------------------
-  // onConnectionStateChange
-  // -------------------------------------------------------------------------
+  describe('module surface', () => {
+    it('does not export renderer password auth entry points', () => {
+      expect('authenticate' in pocketbaseService).toBe(false);
+      expect('AUTH_TIMEOUT_MS' in pocketbaseService).toBe(false);
+    });
+  });
+
   describe('onConnectionStateChange', () => {
     it('calls listener when state changes and returns unsubscribe function', async () => {
       const listener = vi.fn();
       const unsub = onConnectionStateChange(listener);
+      const auth: PbAuthSession = { token: 'token-1', record: { id: 'user-1' } };
 
-      // Trigger a state change via successful auth
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('secret123');
+      loadAuthSession(auth, true);
 
       expect(listener).toHaveBeenCalledWith('online');
 
-      // Unsubscribe and verify no further calls
       unsub();
       listener.mockClear();
 
-      // Re-init to get back to 'connecting', then authenticate again
       resetPbState();
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('secret123');
+      loadAuthSession(auth, true);
 
       expect(listener).not.toHaveBeenCalled();
     });
@@ -136,141 +138,101 @@ describe('pocketbase service', () => {
     it('does not call listener when state is set to the same value', async () => {
       const listener = vi.fn();
       onConnectionStateChange(listener);
+      const auth: PbAuthSession = { token: 'token-1', record: { id: 'user-1' } };
 
-      // First auth sets state to 'online'
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('secret1');
+      loadAuthSession(auth, true);
       expect(listener).toHaveBeenCalledTimes(1);
 
-      // Second auth — state already 'online', should not fire again
       listener.mockClear();
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('secret2', true);
+      loadAuthSession(auth, true);
       expect(listener).not.toHaveBeenCalled();
     });
   });
 
-  // -------------------------------------------------------------------------
-  // authenticate
-  // -------------------------------------------------------------------------
-  describe('authenticate()', () => {
-    it('succeeds with app user auth on first attempt', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
+  describe('loadAuthSession()', () => {
+    it('hydrates authStore from main-provided session data and marks connection online', () => {
+      const auth: PbAuthSession = {
+        token: 'token-123',
+        record: { id: 'user-1', email: 'relay@example.com' },
+      };
 
-      const result = await authenticate('my-secret');
+      loadAuthSession(auth);
 
-      expect(result).toBe(true);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
       expect(getConnectionState()).toBe('online');
-      expect(mockAuthWithPassword).toHaveBeenCalledWith(
-        'relay@relay.app',
-        'my-secret',
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      );
     });
+  });
 
-    it('falls back to superuser auth when app user fails', async () => {
-      mockAuthWithPassword
-        .mockRejectedValueOnce(new Error('app user fail'))
-        .mockResolvedValueOnce({});
-
-      const result = await authenticate('my-secret');
-
-      expect(result).toBe(true);
-      expect(getConnectionState()).toBe('online');
-      expect(mockAuthWithPassword).toHaveBeenCalledTimes(2);
-      expect(mockAuthWithPassword).toHaveBeenNthCalledWith(
-        2,
-        'admin@relay.app',
-        'my-secret',
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      );
-      expect(networkWarn).toHaveBeenCalled();
-    });
-
-    it('returns false when both auth methods fail', async () => {
-      mockAuthWithPassword
-        .mockRejectedValueOnce(new Error('app fail'))
-        .mockRejectedValueOnce(new Error('superuser fail'));
-
-      const result = await authenticate('bad-secret');
-
-      expect(result).toBe(false);
-      expect(getConnectionState()).toBe('connecting');
-      expect(networkError).toHaveBeenCalled();
-    });
-
-    it('does not start health check when skipHealthRestart is true', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-
-      // Spy on setInterval to ensure health check is not started
-      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-      const callsBefore = setIntervalSpy.mock.calls.length;
-
-      await authenticate('secret', true);
-
-      // No new setInterval should have been called
-      expect(setIntervalSpy.mock.calls.length).toBe(callsBefore);
-    });
-
-    it('starts health check when skipHealthRestart is false (default)', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-
-      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-      const callsBefore = setIntervalSpy.mock.calls.length;
-
-      await authenticate('secret');
-
-      expect(setIntervalSpy.mock.calls.length).toBeGreaterThan(callsBefore);
-    });
-
-    it('falls back to superuser and also skips health check when skipHealthRestart is true', async () => {
-      mockAuthWithPassword.mockRejectedValueOnce(new Error('app fail')).mockResolvedValueOnce({});
-
-      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
-      const callsBefore = setIntervalSpy.mock.calls.length;
-
-      await authenticate('secret', true);
-
-      expect(setIntervalSpy.mock.calls.length).toBe(callsBefore);
-    });
-
-    it('aborts auth attempt after AUTH_TIMEOUT_MS', async () => {
-      // authWithPassword never resolves — simulates a hung server
-      let capturedSignal: AbortSignal | undefined;
-      mockAuthWithPassword.mockImplementation(
-        (_email: string, _pass: string, opts?: { signal?: AbortSignal }) => {
-          capturedSignal = opts?.signal;
-          return new Promise((_resolve, reject) => {
-            opts?.signal?.addEventListener('abort', () =>
-              reject(new DOMException('The operation was aborted', 'AbortError')),
-            );
-          });
+  describe('refreshAuthSession()', () => {
+    it('refreshes through main, hydrates returned auth, and reports success', async () => {
+      const auth: PbAuthSession = {
+        token: 'refreshed-token',
+        record: { id: 'user-1' },
+      };
+      const resultFromMain: PbConnectionResult = {
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth,
         },
-      );
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
 
-      const resultP = authenticate('my-secret');
+      const result = await refreshAuthSession();
 
-      // Fast-forward past the timeout
-      await vi.advanceTimersByTimeAsync(AUTH_TIMEOUT_MS + 1);
-      // Second attempt also times out
-      await vi.advanceTimersByTimeAsync(AUTH_TIMEOUT_MS + 1);
-
-      const result = await resultP;
-
-      expect(capturedSignal?.aborted).toBe(true);
-      expect(result).toBe(false);
-      expect(networkError).toHaveBeenCalled();
+      expect(result).toBe(true);
+      expect(refreshPbConnection).toHaveBeenCalledTimes(1);
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+      expect(getConnectionState()).toBe('online');
     });
 
-    it('clears timeout timer when auth succeeds before timeout', async () => {
-      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-      mockAuthWithPassword.mockResolvedValueOnce({});
+    it('updates the PocketBase base URL when refresh returns a different server URL', async () => {
+      const auth: PbAuthSession = {
+        token: 'refreshed-token',
+        record: { id: 'user-1' },
+      };
+      const resultFromMain: PbConnectionResult = {
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8091',
+          auth,
+        },
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
 
-      await authenticate('my-secret');
+      expect(getPb().baseURL).toBe('http://localhost:8090');
 
-      // clearTimeout should have been called by the .finally() in authWithTimeout
-      expect(clearTimeoutSpy).toHaveBeenCalled();
-      clearTimeoutSpy.mockRestore();
+      const result = await refreshAuthSession(true);
+
+      expect(result).toBe(true);
+      expect(getPb().baseURL).toBe('http://localhost:8091');
+      expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
+    });
+
+    it('returns false when main refresh does not provide an auth session', async () => {
+      const resultFromMain: PbConnectionResult = {
+        ok: false,
+        error: 'auth-failed',
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      const result = await refreshAuthSession();
+
+      expect(result).toBe(false);
+      expect(mockAuthSave).not.toHaveBeenCalled();
+    });
+
+    it('returns false when main refresh is unavailable', async () => {
+      const refreshPbConnection = vi.fn().mockResolvedValue(null);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      const result = await refreshAuthSession();
+
+      expect(result).toBe(false);
+      expect(mockAuthSave).not.toHaveBeenCalled();
     });
   });
 
@@ -293,9 +255,7 @@ describe('pocketbase service', () => {
     });
 
     it('sets state to offline when health check fetch fails', async () => {
-      // First set state to online
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       const fetchMock = vi.fn().mockRejectedValue(new Error('net error'));
@@ -310,9 +270,7 @@ describe('pocketbase service', () => {
     });
 
     it('sets state to offline when health check returns non-ok response', async () => {
-      // Set state to online first
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       const fetchMock = vi.fn().mockResolvedValue({ ok: false });
@@ -326,10 +284,8 @@ describe('pocketbase service', () => {
       vi.unstubAllGlobals();
     });
 
-    it('reconnects and re-authenticates when coming back online with invalid auth', async () => {
-      // Start online, then go offline
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('my-secret', true);
+    it('refreshes through main when coming back online with invalid auth', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       // Simulate going offline
@@ -340,29 +296,36 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(5000);
       expect(getConnectionState()).toBe('offline');
 
-      // Now health returns OK but auth is invalid — should re-authenticate
+      // Now health returns OK but auth is invalid — should refresh via main
       mockAuthStore.isValid = false;
       fetchMock.mockResolvedValue({ ok: true });
-      mockAuthWithPassword.mockResolvedValueOnce({});
+      const refreshedAuth: PbAuthSession = {
+        token: 'refreshed-token',
+        record: { id: 'user-1' },
+      };
+      const resultFromMain: PbConnectionResult = {
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth: refreshedAuth,
+        },
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
 
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(getConnectionState()).toBe('online');
+      expect(refreshPbConnection).toHaveBeenCalledTimes(1);
+      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
       // Restore
       mockAuthStore.isValid = true;
 
       vi.unstubAllGlobals();
     });
 
-    it('does not reconnect when auth is invalid and no stored secret', async () => {
-      // Start online then go offline
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
-
-      // Clear stored secret by re-initialising and not calling setStoredSecret
-      // Actually we need the stored secret to expire — simulate TTL
-      // The authenticate call above stores the secret. Let's expire it.
-      vi.advanceTimersByTime(8 * 60 * 60 * 1000 + 1);
+    it('does not reconnect when auth is invalid and main refresh fails', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 
       const fetchMock = vi
         .fn()
@@ -376,19 +339,24 @@ describe('pocketbase service', () => {
 
       // Now health OK but auth invalid and no secret
       mockAuthStore.isValid = false;
+      const resultFromMain: PbConnectionResult = {
+        ok: false,
+        error: 'auth-failed',
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
       await vi.advanceTimersByTimeAsync(5000);
 
       // Should NOT have reconnected — state still offline
       expect(getConnectionState()).not.toBe('online');
+      expect(refreshPbConnection).toHaveBeenCalledTimes(1);
 
       mockAuthStore.isValid = true;
       vi.unstubAllGlobals();
     });
 
     it('sets state to online when coming back with valid auth (no re-auth needed)', async () => {
-      // Start online, go offline, come back
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 
       const fetchMock = vi
         .fn()
@@ -410,9 +378,8 @@ describe('pocketbase service', () => {
       vi.unstubAllGlobals();
     });
 
-    it('logs warning when re-authentication fails on reconnect', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('my-secret', true);
+    it('logs warning when main refresh fails on reconnect', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 
       const fetchMock = vi
         .fn()
@@ -424,11 +391,10 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(5000);
       expect(getConnectionState()).toBe('offline');
 
-      // Auth invalid, re-auth will fail
+      // Auth invalid, main refresh will fail
       mockAuthStore.isValid = false;
-      mockAuthWithPassword
-        .mockRejectedValueOnce(new Error('fail'))
-        .mockRejectedValueOnce(new Error('fail'));
+      const refreshPbConnection = vi.fn().mockRejectedValue(new Error('fail'));
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
 
       await vi.advanceTimersByTimeAsync(5000);
 
@@ -483,25 +449,19 @@ describe('pocketbase service', () => {
   // -------------------------------------------------------------------------
   describe('handleApiError()', () => {
     it('sets offline for TypeError with "fetch" in message', () => {
-      // First go online
-      mockAuthWithPassword.mockResolvedValueOnce({});
-
       const listener = vi.fn();
       onConnectionStateChange(listener);
 
-      // Simulate going online
-      void authenticate('s', true).then(() => {
-        listener.mockClear();
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      listener.mockClear();
 
-        handleApiError(new TypeError('Failed to fetch'));
+      handleApiError(new TypeError('Failed to fetch'));
 
-        expect(listener).toHaveBeenCalledWith('offline');
-      });
+      expect(listener).toHaveBeenCalledWith('offline');
     });
 
     it('sets offline for PocketBase ClientResponseError with status 0', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       const listener = vi.fn();
@@ -513,8 +473,7 @@ describe('pocketbase service', () => {
     });
 
     it('does not change state for non-network errors', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       const listener = vi.fn();
@@ -527,8 +486,7 @@ describe('pocketbase service', () => {
     });
 
     it('does not change state for errors with non-zero status', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 
       const listener = vi.fn();
       onConnectionStateChange(listener);
@@ -554,8 +512,7 @@ describe('pocketbase service', () => {
     });
 
     it('does not throw when online', async () => {
-      mockAuthWithPassword.mockResolvedValueOnce({});
-      await authenticate('s', true);
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
       expect(getConnectionState()).toBe('online');
 
       expect(() => requireOnline()).not.toThrow();
@@ -584,41 +541,6 @@ describe('pocketbase service', () => {
 
     it('returns plain string unchanged', () => {
       expect(escapeFilter('hello world')).toBe('hello world');
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // setStoredSecret
-  // -------------------------------------------------------------------------
-  describe('setStoredSecret()', () => {
-    it('stores secret and clears it after TTL', () => {
-      setStoredSecret('my-secret');
-
-      // Secret should be available (tested indirectly via health check reconnect)
-      // Advance past TTL
-      vi.advanceTimersByTime(8 * 60 * 60 * 1000 + 1);
-
-      // Secret should now be null — tested indirectly: if health check tries to
-      // re-auth with no secret it won't attempt authenticate
-      expect(true).toBe(true);
-    });
-
-    it('resets TTL timer when called again', () => {
-      setStoredSecret('first');
-
-      // Advance 4 hours
-      vi.advanceTimersByTime(4 * 60 * 60 * 1000);
-
-      // Store a new secret — should reset timer
-      setStoredSecret('second');
-
-      // Advance another 4 hours (total 8 from first, but only 4 from second)
-      vi.advanceTimersByTime(4 * 60 * 60 * 1000);
-
-      // Secret should still be alive (second hasn't expired yet)
-      // Verified indirectly — the timeout callback would have set it to null
-      // after 8h from second call, not from first
-      expect(true).toBe(true);
     });
   });
 });

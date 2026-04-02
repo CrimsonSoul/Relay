@@ -33,6 +33,7 @@ import { setupErrorHandlers } from './app/errorHandlers';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { isTrustedWebviewUrl } from './securityPolicy';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
+import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -126,35 +127,14 @@ if (gotLock) {
         return;
       }
 
-      // Register PocketBase IPC handlers early so they're available when the renderer loads.
-      ipcMain.handle(IPC_CHANNELS.PB_GET_URL, () => {
-        if (getPbProcess()?.isRunning()) {
-          // Server mode: renderer connects to localhost, not 0.0.0.0
-          return getPbProcess()!.getLocalUrl();
-        }
-        const config = getAppConfig()?.load();
-        if (config?.mode === 'client') {
-          return config.serverUrl;
-        }
-        return null;
-      });
+      // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
+      setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess);
 
       // Start PocketBase on demand (called after first-time setup)
       ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
         const config = getAppConfig()?.load();
         if (!config || config.mode !== 'server') return false;
         return startPocketBase(config as ServerConfig, configDataDir);
-      });
-
-      // Intentional: the plaintext passphrase is sent to the renderer for PB SDK auth.
-      // This is an accepted tradeoff for the shared-passphrase LAN use case. The renderer
-      // is sandboxed + context-isolated, and the passphrase is already known to all operators
-      // who use the tool. If the threat model ever includes untrusted renderer content,
-      // switch to a token-exchange approach where main authenticates and passes only the
-      // PB auth token (not the master passphrase).
-      ipcMain.handle(IPC_CHANNELS.PB_GET_SECRET, () => {
-        const config = getAppConfig()?.load();
-        return config?.secret ?? null;
       });
 
       const restartPb = async (): Promise<boolean> => {
@@ -164,8 +144,8 @@ if (gotLock) {
       };
       setupIpc(createAuxWindow, restartPb);
 
-      // Start PocketBase before the window in server mode — the renderer
-      // queries PB_GET_URL on load and needs the process to be running.
+      // Start PocketBase before the window in server mode so bootstrap
+      // connection checks can succeed as soon as the renderer loads.
       const relayConfig = getAppConfig()!.load();
       if (relayConfig && relayConfig.mode === 'server') {
         await startPocketBase(relayConfig as ServerConfig, configDataDir);

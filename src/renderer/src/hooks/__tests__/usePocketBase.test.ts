@@ -1,35 +1,31 @@
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-// ---------------------------------------------------------------------------
-// Hoisted mocks
-// ---------------------------------------------------------------------------
+import type { PbAuthSession } from '@shared/ipc';
 
 const mockInitPocketBase = vi.fn();
-const mockAuthenticate = vi.fn();
+const mockLoadAuthSession = vi.fn();
 const mockStopHealthCheck = vi.fn();
 let capturedStateListener: ((state: string) => void) | null = null;
 const mockUnsubscribe = vi.fn();
 
 vi.mock('../../services/pocketbase', () => ({
   initPocketBase: (...args: unknown[]) => mockInitPocketBase(...args),
-  authenticate: (...args: unknown[]) => mockAuthenticate(...args),
+  loadAuthSession: (...args: unknown[]) => mockLoadAuthSession(...args),
   stopHealthCheck: (...args: unknown[]) => mockStopHealthCheck(...args),
   onConnectionStateChange: (listener: (state: string) => void) => {
     capturedStateListener = listener;
     return mockUnsubscribe;
   },
-  AUTH_TIMEOUT_MS: 15_000,
 }));
 
-import { usePocketBase, CONNECTION_TIMEOUT_MS } from '../usePocketBase';
+import * as usePocketBaseModule from '../usePocketBase';
+import { usePocketBase } from '../usePocketBase';
 
 describe('usePocketBase', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     capturedStateListener = null;
-    mockAuthenticate.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -40,40 +36,49 @@ describe('usePocketBase', () => {
     const { result } = renderHook(() => usePocketBase(null, null));
 
     expect(result.current.connectionState).toBe('connecting');
-    expect(result.current.error).toBeNull();
   });
 
-  it('does not init or authenticate when url is null', () => {
-    renderHook(() => usePocketBase(null, 'secret'));
+  it('does not export stale connection timeout helpers', () => {
+    expect('CONNECTION_TIMEOUT_MS' in usePocketBaseModule).toBe(false);
+  });
+
+  it('does not init or hydrate when url is null', () => {
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+
+    renderHook(() => usePocketBase(null, auth));
 
     expect(mockInitPocketBase).not.toHaveBeenCalled();
-    expect(mockAuthenticate).not.toHaveBeenCalled();
+    expect(mockLoadAuthSession).not.toHaveBeenCalled();
   });
 
-  it('does not init or authenticate when secret is null', () => {
+  it('initializes when auth session is null', () => {
     renderHook(() => usePocketBase('http://localhost:8090', null));
 
-    expect(mockInitPocketBase).not.toHaveBeenCalled();
-    expect(mockAuthenticate).not.toHaveBeenCalled();
+    expect(mockInitPocketBase).toHaveBeenCalledWith('http://localhost:8090');
+    expect(mockLoadAuthSession).not.toHaveBeenCalled();
   });
 
-  it('calls initPocketBase and authenticate with correct arguments', async () => {
-    renderHook(() => usePocketBase('http://localhost:8090', 'my-secret'));
+  it('calls initPocketBase and hydrates auth with the bootstrap payload', () => {
+    const auth: PbAuthSession = { token: 'token-123', record: { id: 'user-1' } };
+
+    renderHook(() => usePocketBase('http://localhost:8090', auth));
 
     expect(mockInitPocketBase).toHaveBeenCalledWith('http://localhost:8090');
-    expect(mockAuthenticate).toHaveBeenCalledWith('my-secret');
+    expect(mockLoadAuthSession).toHaveBeenCalledWith(auth);
   });
 
   it('subscribes to connection state changes', () => {
-    renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+
+    renderHook(() => usePocketBase('http://localhost:8090', auth));
 
     expect(capturedStateListener).toBeTruthy();
   });
 
-  it('updates connectionState when listener fires', async () => {
-    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+  it('updates connectionState when listener fires', () => {
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+    const { result } = renderHook(() => usePocketBase('http://localhost:8090', auth));
 
-    // Simulate state change
     act(() => {
       capturedStateListener?.('online');
     });
@@ -81,33 +86,9 @@ describe('usePocketBase', () => {
     expect(result.current.connectionState).toBe('online');
   });
 
-  it('sets error when authentication fails', async () => {
-    mockAuthenticate.mockResolvedValue(false);
-
-    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'bad-secret'));
-
-    // Wait for the authenticate promise to resolve
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(result.current.error).toBe('Authentication failed. Check your passphrase.');
-  });
-
-  it('does not set error when authentication succeeds', async () => {
-    mockAuthenticate.mockResolvedValue(true);
-
-    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'good-secret'));
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-
-    expect(result.current.error).toBeNull();
-  });
-
   it('calls unsubscribe and stopHealthCheck on unmount', () => {
-    const { unmount } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+    const { unmount } = renderHook(() => usePocketBase('http://localhost:8090', auth));
 
     unmount();
 
@@ -115,7 +96,7 @@ describe('usePocketBase', () => {
     expect(mockStopHealthCheck).toHaveBeenCalled();
   });
 
-  it('does not call cleanup when url/secret are null (no effect ran)', () => {
+  it('does not call cleanup when url/auth are null (no effect ran)', () => {
     const { unmount } = renderHook(() => usePocketBase(null, null));
 
     unmount();
@@ -124,90 +105,128 @@ describe('usePocketBase', () => {
     expect(mockStopHealthCheck).not.toHaveBeenCalled();
   });
 
-  it('re-initializes when url changes', async () => {
+  it('re-initializes when url changes', () => {
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
     const { rerender } = renderHook(
-      ({ url, secret }: { url: string; secret: string }) => usePocketBase(url, secret),
+      ({ url, currentAuth }: { url: string; currentAuth: PbAuthSession }) =>
+        usePocketBase(url, currentAuth),
       // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      { initialProps: { url: 'http://host1:8090', secret: 's' } },
+      { initialProps: { url: 'http://host1:8090', currentAuth: auth } },
     );
 
     // eslint-disable-next-line sonarjs/no-clear-text-protocols
     expect(mockInitPocketBase).toHaveBeenCalledWith('http://host1:8090');
 
     // eslint-disable-next-line sonarjs/no-clear-text-protocols
-    rerender({ url: 'http://host2:8090', secret: 's' });
+    rerender({ url: 'http://host2:8090', currentAuth: auth });
 
     // eslint-disable-next-line sonarjs/no-clear-text-protocols
     expect(mockInitPocketBase).toHaveBeenCalledWith('http://host2:8090');
-    // Cleanup from previous effect should have fired
     expect(mockUnsubscribe).toHaveBeenCalled();
     expect(mockStopHealthCheck).toHaveBeenCalled();
   });
 
-  it('re-authenticates when secret changes', () => {
-    const { rerender } = renderHook(
-      ({ url, secret }: { url: string; secret: string }) => usePocketBase(url, secret),
-      { initialProps: { url: 'http://localhost:8090', secret: 'first' } },
+  it('resets local connection state to connecting when reinitialized', () => {
+    const firstAuth: PbAuthSession = { token: 'first', record: { id: 'user-1' } };
+    const secondAuth: PbAuthSession = { token: 'second', record: { id: 'user-1' } };
+    const { result, rerender } = renderHook(
+      ({ url, auth }: { url: string; auth: PbAuthSession }) => usePocketBase(url, auth),
+      {
+        initialProps: {
+          url: 'http://localhost:8090',
+          auth: firstAuth,
+        },
+      },
     );
 
-    expect(mockAuthenticate).toHaveBeenCalledWith('first');
+    act(() => {
+      capturedStateListener?.('online');
+    });
 
-    rerender({ url: 'http://localhost:8090', secret: 'second' });
+    expect(result.current.connectionState).toBe('online');
 
-    expect(mockAuthenticate).toHaveBeenCalledWith('second');
+    rerender({ url: 'http://localhost:8091', auth: secondAuth });
+
+    expect(result.current.connectionState).toBe('connecting');
   });
 
-  // ── Connection timeout ──
+  it('resets local connection state when url becomes null', () => {
+    const auth: PbAuthSession = { token: 'token', record: { id: 'user-1' } };
+    const { result, rerender } = renderHook(
+      ({ url, currentAuth }: { url: string | null; currentAuth: PbAuthSession | null }) =>
+        usePocketBase(url, currentAuth),
+      {
+        initialProps: {
+          url: 'http://localhost:8090',
+          currentAuth: auth,
+        },
+      },
+    );
 
-  it('sets timeout error when authenticate hangs beyond CONNECTION_TIMEOUT_MS', async () => {
-    // authenticate never resolves
-    mockAuthenticate.mockReturnValue(new Promise(() => {}));
-
-    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
-
-    // Before timeout — no error
-    expect(result.current.error).toBeNull();
-
-    // Advance past the timeout
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    act(() => {
+      capturedStateListener?.('online');
     });
 
-    expect(result.current.error).toBe('Connection timed out. The server may be unreachable.');
+    expect(result.current.connectionState).toBe('online');
+
+    rerender({ url: null, currentAuth: null });
+
+    expect(result.current.connectionState).toBe('connecting');
   });
 
-  it('clears connection timeout when authenticate resolves successfully', async () => {
-    mockAuthenticate.mockResolvedValue(true);
+  it('rehydrates when bootstrap auth changes', () => {
+    const { rerender } = renderHook(
+      ({ url, auth }: { url: string; auth: PbAuthSession }) => usePocketBase(url, auth),
+      {
+        initialProps: {
+          url: 'http://localhost:8090',
+          auth: { token: 'first', record: { id: 'user-1' } },
+        },
+      },
+    );
 
-    const { result } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
-
-    // Let authenticate resolve
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
+    expect(mockLoadAuthSession).toHaveBeenCalledWith({
+      token: 'first',
+      record: { id: 'user-1' },
     });
 
-    // Advance past the timeout — should NOT set error because it was cleared
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    rerender({
+      url: 'http://localhost:8090',
+      auth: { token: 'second', record: { id: 'user-1' } },
     });
 
-    expect(result.current.error).toBeNull();
+    expect(mockLoadAuthSession).toHaveBeenCalledWith({
+      token: 'second',
+      record: { id: 'user-1' },
+    });
   });
 
-  it('clears connection timeout on unmount', async () => {
-    // authenticate never resolves
-    mockAuthenticate.mockReturnValue(new Promise(() => {}));
+  it('does not reinitialize or tear down when only auth changes', () => {
+    const { rerender } = renderHook(
+      ({ url, auth }: { url: string; auth: PbAuthSession }) => usePocketBase(url, auth),
+      {
+        initialProps: {
+          url: 'http://localhost:8090',
+          auth: { token: 'first', record: { id: 'user-1' } },
+        },
+      },
+    );
 
-    const { result, unmount } = renderHook(() => usePocketBase('http://localhost:8090', 'secret'));
+    expect(mockInitPocketBase).toHaveBeenCalledTimes(1);
+    expect(mockUnsubscribe).not.toHaveBeenCalled();
+    expect(mockStopHealthCheck).not.toHaveBeenCalled();
 
-    unmount();
-
-    // Advance past timeout — should NOT set error (cleanup cleared the timer)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CONNECTION_TIMEOUT_MS + 1);
+    rerender({
+      url: 'http://localhost:8090',
+      auth: { token: 'second', record: { id: 'user-1' } },
     });
 
-    // After unmount, state is stale but error should not have been set
-    expect(result.current.error).toBeNull();
+    expect(mockInitPocketBase).toHaveBeenCalledTimes(1);
+    expect(mockUnsubscribe).not.toHaveBeenCalled();
+    expect(mockStopHealthCheck).not.toHaveBeenCalled();
+    expect(mockLoadAuthSession).toHaveBeenLastCalledWith({
+      token: 'second',
+      record: { id: 'user-1' },
+    });
   });
 });

@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 // Seed PocketBase with dummy data for visual testing
 
+import { getSuperuserPassword } from './seedConfig.mjs';
+
 const PB = 'http://localhost:8090';
 let token = '';
 
 async function auth() {
+  const password = getSuperuserPassword(process.env);
   const res = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identity: 'admin@relay.app', password: 'testtest' }),
+    body: JSON.stringify({ identity: 'admin@relay.app', password }),
   });
   const data = await res.json();
   if (!res.ok) {

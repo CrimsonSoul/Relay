@@ -1,10 +1,8 @@
 import PocketBase from 'pocketbase';
+import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 import { loggers } from '../utils/logger';
 
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
-
-/** Per-attempt timeout for authWithPassword calls. */
-export const AUTH_TIMEOUT_MS = 15_000;
 
 type StateListener = (state: ConnectionState) => void;
 
@@ -39,68 +37,29 @@ function setConnectionState(state: ConnectionState): void {
   stateListeners.forEach((fn) => fn(state));
 }
 
-export async function authenticate(secret: string, skipHealthRestart = false): Promise<boolean> {
+export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false): void {
   const pb = getPb();
-  setStoredSecret(secret);
+  pb.authStore.save(auth.token, auth.record);
+  setConnectionState('online');
+  if (!skipHealthRestart) startHealthCheck();
+}
 
-  // Try app user first — this works both locally and remotely.
-  // Superuser auth is restricted to localhost by PocketBase, so it would
-  // fail for remote clients. Only fall back to superuser for local dev/setup.
+export async function refreshAuthSession(skipHealthRestart = false): Promise<boolean> {
   try {
-    await authWithTimeout(pb, '_pb_users_auth_', 'relay@relay.app', secret);
-    setConnectionState('online');
-    if (!skipHealthRestart) startHealthCheck();
+    const result: PbConnectionResult | null | undefined =
+      await globalThis.api?.refreshPbConnection?.();
+    if (!result?.ok) return false;
+    if (result.connection.pbUrl !== getPb().baseURL) {
+      initPocketBase(result.connection.pbUrl);
+    }
+    loadAuthSession(result.connection.auth, skipHealthRestart);
     return true;
-  } catch (appErr) {
-    loggers.network.warn('App user auth failed, trying superuser fallback', {
-      error: appErr instanceof Error ? appErr.message : String(appErr),
-    });
-  }
-
-  // Fall back to superuser (localhost only — useful during initial setup
-  // before the app user has been created)
-  try {
-    await authWithTimeout(pb, '_superusers', 'admin@relay.app', secret);
-    setConnectionState('online');
-    if (!skipHealthRestart) startHealthCheck();
-    return true;
-  } catch (suErr) {
-    loggers.network.error('All auth methods failed', {
-      error: suErr instanceof Error ? suErr.message : String(suErr),
+  } catch (error) {
+    loggers.network.warn('Session refresh failed', {
+      error: error instanceof Error ? error.message : String(error),
     });
     return false;
   }
-}
-
-/** Wraps authWithPassword with an AbortController timeout so a hung server can't block forever. */
-function authWithTimeout(
-  pb: PocketBase,
-  collection: string,
-  email: string,
-  password: string,
-): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), AUTH_TIMEOUT_MS);
-  // requestKey: null prevents the PB SDK from replacing our signal with its
-  // own internal AbortController (which would make our timeout ineffective).
-  return pb
-    .collection(collection)
-    .authWithPassword(email, password, { signal: controller.signal, requestKey: null })
-    .finally(() => clearTimeout(timer));
-}
-
-/** Stored secret for re-authentication on reconnect. Cleared after 8 hours. */
-let storedSecret: string | null = null;
-let storedSecretTimer: ReturnType<typeof setTimeout> | null = null;
-const SECRET_TTL_MS = 8 * 60 * 60 * 1000;
-
-export function setStoredSecret(secret: string): void {
-  storedSecret = secret;
-  if (storedSecretTimer) clearTimeout(storedSecretTimer);
-  storedSecretTimer = setTimeout(() => {
-    storedSecret = null;
-    storedSecretTimer = null;
-  }, SECRET_TTL_MS);
 }
 
 export function startHealthCheck(intervalMs = 30000): void {
@@ -109,18 +68,15 @@ export function startHealthCheck(intervalMs = 30000): void {
     try {
       const res = await fetch(`${getPb().baseURL}/api/health`);
       if (res.ok && connectionState !== 'online') {
-        // Re-authenticate if token expired during offline period.
+        // Rehydrate auth if the token expired during offline time.
         // Do NOT emit 'reconnecting' — subscribers listen for state changes
         // and would resubscribe before auth is complete.
-        if (!getPb().authStore.isValid && storedSecret) {
-          const reauthed = await authenticate(storedSecret, true);
-          if (!reauthed) {
-            loggers.network.warn('Re-authentication failed on reconnect');
+        if (!getPb().authStore.isValid) {
+          const refreshed = await refreshAuthSession(true);
+          if (!refreshed) {
+            loggers.network.warn('Auth session refresh failed on reconnect');
             return;
           }
-          // authenticate already sets state to 'online' on success
-        } else if (!getPb().authStore.isValid) {
-          return;
         } else {
           setConnectionState('online');
         }

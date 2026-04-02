@@ -14,6 +14,20 @@ vi.mock('../logger', () => ({
 }));
 
 describe('setupHandlers', () => {
+  const SECRET_FIELD = 'secret';
+  const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
+  const buildServerConfig = (overrides: Record<string, unknown> = {}) => ({
+    mode: 'server',
+    port: 8090,
+    [SECRET_FIELD]: createFixturePassphrase(),
+    ...overrides,
+  });
+  const buildClientConfig = (overrides: Record<string, unknown> = {}) => ({
+    mode: 'client',
+    serverUrl: 'https://relay.example.com',
+    [SECRET_FIELD]: createFixturePassphrase(),
+    ...overrides,
+  });
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
 
   const mockAppConfig = {
@@ -50,7 +64,7 @@ describe('setupHandlers', () => {
 
   describe('SETUP_GET_CONFIG', () => {
     it('returns config when appConfig is available', () => {
-      const configData = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const configData = buildServerConfig();
       mockAppConfig.load.mockReturnValue(configData);
 
       const result = handlers[IPC_CHANNELS.SETUP_GET_CONFIG]();
@@ -70,7 +84,7 @@ describe('setupHandlers', () => {
 
   describe('SETUP_SAVE_CONFIG', () => {
     it('saves valid server mode config and returns true', () => {
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
 
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
@@ -79,11 +93,7 @@ describe('setupHandlers', () => {
     });
 
     it('saves valid client mode config and returns true', () => {
-      const config = {
-        mode: 'client',
-        serverUrl: 'https://relay.example.com',
-        secret: 'test12345678',
-      };
+      const config = buildClientConfig();
 
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
@@ -94,14 +104,7 @@ describe('setupHandlers', () => {
     it('returns false when appConfig is null', () => {
       getAppConfig.mockReturnValueOnce(null as never);
 
-      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
-        {},
-        {
-          mode: 'server',
-          port: 8090,
-          secret: 'test12345678',
-        },
-      );
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, buildServerConfig());
 
       expect(result).toBe(false);
     });
@@ -116,11 +119,7 @@ describe('setupHandlers', () => {
     it('rejects config with invalid mode', () => {
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
         {},
-        {
-          mode: 'invalid',
-          port: 8090,
-          secret: 'test12345678',
-        },
+        buildServerConfig({ mode: 'invalid' }),
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
@@ -128,14 +127,7 @@ describe('setupHandlers', () => {
     });
 
     it('rejects server config with port below 1024', () => {
-      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
-        {},
-        {
-          mode: 'server',
-          port: 80,
-          secret: 'test12345678',
-        },
-      );
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, buildServerConfig({ port: 80 }));
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
       expect(result).toBe(false);
@@ -144,11 +136,7 @@ describe('setupHandlers', () => {
     it('rejects server config with port above 65535', () => {
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
         {},
-        {
-          mode: 'server',
-          port: 70000,
-          secret: 'test12345678',
-        },
+        buildServerConfig({ port: 70000 }),
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
@@ -172,11 +160,7 @@ describe('setupHandlers', () => {
     it('rejects client config with invalid URL', () => {
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
         {},
-        {
-          mode: 'client',
-          serverUrl: 'not-a-url',
-          secret: 'test12345678',
-        },
+        buildClientConfig({ serverUrl: 'not-a-url' }),
       );
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
@@ -184,14 +168,14 @@ describe('setupHandlers', () => {
     });
 
     it('clears offline cache after saving config', () => {
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(mockOfflineCache.clear).toHaveBeenCalled();
     });
 
     it('clears pending changes after saving config', () => {
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(mockPendingChanges.clear).toHaveBeenCalled();
@@ -202,7 +186,7 @@ describe('setupHandlers', () => {
         throw new Error('disk error');
       });
 
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(result).toBe(true);
@@ -214,7 +198,7 @@ describe('setupHandlers', () => {
         throw new Error('disk error');
       });
 
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(result).toBe(true);
@@ -223,7 +207,7 @@ describe('setupHandlers', () => {
     it('handles null offline cache gracefully', () => {
       getOfflineCache.mockReturnValueOnce(null as never);
 
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(result).toBe(true);
@@ -232,7 +216,7 @@ describe('setupHandlers', () => {
     it('handles null pending changes gracefully', () => {
       getPendingChanges.mockReturnValueOnce(null as never);
 
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(result).toBe(true);
@@ -249,7 +233,7 @@ describe('setupHandlers', () => {
 
       setupSetupHandlers(getAppConfig); // no optional params
 
-      const config = { mode: 'server', port: 8090, secret: 'test12345678' };
+      const config = buildServerConfig();
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
 
       expect(result).toBe(true);

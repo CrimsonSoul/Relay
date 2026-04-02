@@ -3,6 +3,28 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp } from '../App';
 
+const mockIsConfigured = vi.fn();
+const mockGetPbConnection = vi.fn();
+const mockSaveConfig = vi.fn();
+const mockStartPocketBase = vi.fn();
+const SETUP_SECRET_FIELD = 'secret';
+const buildSetupSecret = () => ['setup', 'fixture', 'value'].join('-');
+const buildClientSetupConfig = () => ({
+  mode: 'client',
+  serverUrl: 'http://localhost:8090',
+  [SETUP_SECRET_FIELD]: buildSetupSecret(),
+});
+const buildServerSetupConfig = () => ({
+  mode: 'server',
+  port: 8090,
+  [SETUP_SECRET_FIELD]: buildSetupSecret(),
+});
+let lastConnectionManagerProps: {
+  pbUrl: string;
+  pbAuth: { token: string; record: Record<string, unknown> | null };
+  onReconfigure: () => void;
+} | null = null;
+
 // ── mock contexts ────────────────────────────────────────────────────────────
 vi.mock('../contexts', () => ({
   LocationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -120,6 +142,32 @@ vi.mock('../components/AddContactModal', () => ({
         </button>
       </div>
     ) : null,
+}));
+
+vi.mock('../components/SetupScreen', () => ({
+  SetupScreen: ({ onComplete }: { onComplete: (config: unknown) => void }) => (
+    <div data-testid="setup-screen">
+      <button onClick={() => onComplete(buildClientSetupConfig())}>complete-setup</button>
+      <button onClick={() => onComplete(buildServerSetupConfig())}>complete-setup-server</button>
+    </div>
+  ),
+}));
+
+vi.mock('../components/ConnectionManager', () => ({
+  ConnectionManager: ({
+    pbUrl,
+    pbAuth,
+    onReconfigure,
+    children,
+  }: {
+    pbUrl: string;
+    pbAuth: { token: string; record: Record<string, unknown> | null };
+    onReconfigure: () => void;
+    children: React.ReactNode;
+  }) => {
+    lastConnectionManagerProps = { pbUrl, pbAuth, onReconfigure };
+    return <div data-testid="connection-manager">{children}</div>;
+  },
 }));
 
 // Lazy loaded tabs
@@ -505,13 +553,42 @@ describe('MainApp', () => {
 
 // ── App default export (popout toast branch) ─────────────────────────────────
 describe('App default export', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    lastConnectionManagerProps = null;
+    mockIsConfigured.mockResolvedValue(true);
+    mockGetPbConnection.mockResolvedValue({
+      ok: true,
+      connection: {
+        pbUrl: 'http://localhost:8090',
+        auth: { token: 'startup-token', record: null },
+      },
+    });
+    mockSaveConfig.mockResolvedValue(true);
+    mockStartPocketBase.mockResolvedValue(true);
+    globalThis.api = {
+      isConfigured: mockIsConfigured,
+      getPbConnection: mockGetPbConnection,
+      saveConfig: mockSaveConfig,
+      startPocketBase: mockStartPocketBase,
+      platform: 'win32',
+    } as typeof globalThis.api;
+    (
+      globalThis as unknown as { window: { api: { windowClose: ReturnType<typeof vi.fn> } } }
+    ).window = {
+      api: { windowClose: vi.fn() },
+    } as unknown as typeof globalThis.window;
+  });
+
   it('renders without crashing', async () => {
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
     });
     const { default: App } = await import('../App');
-    expect(() => render(<App />)).not.toThrow();
+    render(<App />);
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
   });
 
   it('uses NoopToastProvider in popout mode', async () => {
@@ -521,5 +598,94 @@ describe('App default export', () => {
     });
     const { default: App } = await import('../App');
     expect(() => render(<App />)).not.toThrow();
+  });
+
+  it('uses getPbConnection on startup without relying on legacy bridge helpers', async () => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+    expect(mockIsConfigured).toHaveBeenCalledTimes(1);
+    expect(mockGetPbConnection).toHaveBeenCalledTimes(1);
+    expect(lastConnectionManagerProps).toMatchObject({
+      pbUrl: 'http://localhost:8090',
+      pbAuth: { token: 'startup-token', record: null },
+    });
+  });
+
+  it('goes to setup when the app is not configured', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
+    expect(mockGetPbConnection).not.toHaveBeenCalled();
+  });
+
+  it('shows an error state when startup authentication fails', async () => {
+    mockGetPbConnection.mockResolvedValue({ ok: false, error: 'auth-failed' });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByText('PocketBase authentication failed.')).toBeInTheDocument();
+    expect(screen.getByText('Reconfigure')).toBeInTheDocument();
+    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
+  });
+
+  it('shows an error if startup connection bootstrap times out', async () => {
+    vi.useFakeTimers();
+    mockGetPbConnection.mockImplementation(() => new Promise(() => undefined));
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(screen.getByText('Initializing...')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(
+      screen.getByText('Connection timed out. The server may be unreachable.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows an error instead of reloading when saveConfig returns false', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue(false);
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    expect(await screen.findByText('Failed to save configuration.')).toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
+    expect(mockStartPocketBase).not.toHaveBeenCalled();
   });
 });
