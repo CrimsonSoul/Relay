@@ -1,22 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock logger before importing secureStorage
-vi.mock('./logger', () => ({
-  loggers: {
-    storage: {
-      warn: vi.fn(),
-      error: vi.fn(),
-      info: vi.fn(),
-      debug: vi.fn(),
-    },
-  },
-}));
-
-import { loggers } from './logger';
-
 // We need to test the singleton, but also control crypto availability.
 // The module uses CRYPTO_AVAILABLE at module scope, so we test the
 // fallback paths (obfuscation) since jsdom doesn't have full crypto.subtle.
+
+const mockLoggers = {
+  storage: {
+    warn: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+};
 
 describe('secureStorage', () => {
   let secureStorage: (typeof import('./secureStorage'))['secureStorage'];
@@ -24,13 +19,16 @@ describe('secureStorage', () => {
   beforeEach(async () => {
     localStorage.clear();
     vi.clearAllMocks();
-    // Re-import to get fresh singleton
+    vi.restoreAllMocks();
+    // Re-import to get fresh singleton with mocked logger
     vi.resetModules();
+    vi.doMock('./logger', () => ({ loggers: mockLoggers }));
     const mod = await import('./secureStorage');
     secureStorage = mod.secureStorage;
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     localStorage.clear();
   });
 
@@ -69,7 +67,7 @@ describe('secureStorage', () => {
     expect(localStorage.getItem('relay_corrupt')).toBeNull();
 
     // Should have logged a warning
-    expect(loggers.storage.warn).toHaveBeenCalled();
+    expect(mockLoggers.storage.warn).toHaveBeenCalled();
   });
 
   it('setItemSync handles values that serialize normally', () => {
@@ -84,16 +82,13 @@ describe('secureStorage', () => {
   });
 
   it('setItemSync logs error when localStorage.setItem throws', () => {
-    const origSetItem = localStorage.setItem;
-    localStorage.setItem = vi.fn(() => {
+    vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('quota exceeded');
     });
 
     secureStorage.setItemSync('fail-key', 'value');
 
-    expect(loggers.storage.error).toHaveBeenCalled();
-
-    localStorage.setItem = origSetItem;
+    expect(mockLoggers.storage.error).toHaveBeenCalled();
   });
 
   // --- async setItem / getItem ---
@@ -121,19 +116,16 @@ describe('secureStorage', () => {
 
     const result = await secureStorage.getItem('bad-json', 'fallback');
     expect(result).toBe('fallback');
-    expect(loggers.storage.error).toHaveBeenCalled();
+    expect(mockLoggers.storage.error).toHaveBeenCalled();
   });
 
   it('setItem throws and logs on failure', async () => {
-    const origSetItem = localStorage.setItem;
-    localStorage.setItem = vi.fn(() => {
+    vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
       throw new Error('storage full');
     });
 
     await expect(secureStorage.setItem('fail', 'data')).rejects.toThrow('storage full');
-    expect(loggers.storage.error).toHaveBeenCalled();
-
-    localStorage.setItem = origSetItem;
+    expect(mockLoggers.storage.error).toHaveBeenCalled();
   });
 
   // --- removeItem ---
