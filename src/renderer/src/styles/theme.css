@@ -20,7 +20,7 @@
   --app-surface: #0c0e15;
   --app-surface-2: #10131b;
   --app-surface-3: #151821;
-  --app-border: rgba(255, 255, 255, 0.055);
+  --app-border: rgba(255, 255, 255, 0.08);
   --app-text: #eef0f6;
   --app-muted: #8892a6;
   --app-accent: #e11d48;
@@ -30,7 +30,7 @@
   /* Text */
   --color-text-primary: #eef0f6;
   --color-text-secondary: #8892a6;
-  --color-text-tertiary: #546178;
+  --color-text-tertiary: #6b7a90;
   --color-text-quaternary: #8892a6;
 
   /* Accent - Signal Red */
@@ -71,14 +71,14 @@
   --color-warning-subtle: rgba(225, 29, 72, 0.15);
 
   /* Borders */
-  --color-border: rgba(255, 255, 255, 0.055);
-  --color-border-subtle: rgba(255, 255, 255, 0.03);
-  --color-border-medium: rgba(255, 255, 255, 0.055);
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-medium: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.16);
   --color-border-accent: rgba(225, 29, 72, 0.3);
-  --border-default: rgba(255, 255, 255, 0.055);
-  --border-subtle: rgba(255, 255, 255, 0.03);
-  --border-medium: 1px solid rgba(255, 255, 255, 0.055);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-medium: 1px solid rgba(255, 255, 255, 0.08);
   --border-strong: 1px solid rgba(255, 255, 255, 0.16);
 
   /* Overlay / Interaction */
@@ -87,9 +87,9 @@
   --color-active-overlay: rgba(255, 255, 255, 0.06);
   --color-backdrop: rgba(0, 0, 0, 0.42);
   --color-divider: rgba(255, 255, 255, 0.025);
-  --color-focus-ring: rgba(255, 255, 255, 0.08);
-  --color-scrollbar: rgba(255, 255, 255, 0.1);
-  --color-scrollbar-hover: rgba(255, 255, 255, 0.2);
+  --color-focus-ring: rgba(255, 255, 255, 0.22);
+  --color-scrollbar: rgba(255, 255, 255, 0.22);
+  --color-scrollbar-hover: rgba(255, 255, 255, 0.35);
 
   /* Shadows */
   --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -119,7 +119,7 @@
 
   /* Line Heights */
   --leading-tight: 1.15;
-  --leading-normal: 1.35;
+  --leading-normal: 1.5;
   --leading-relaxed: 1.5;
   --leading-loose: 1.7;
 
