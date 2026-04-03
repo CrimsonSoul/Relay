@@ -247,7 +247,7 @@
   line-height: 1.5;
   white-space: pre-wrap;
   max-height: 240px;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .weather-alert-meta {
@@ -287,7 +287,7 @@
   flex-direction: column;
   gap: 2px;
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   overflow-x: hidden;
   padding: 4px;
 }
@@ -421,7 +421,7 @@
   gap: 24px;
   flex: 0 0 35%;
   min-width: 300px;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .weather-forecast-column--hidden {
@@ -523,7 +523,7 @@
 
 .weather-saved-list {
   max-height: 240px;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .weather-saved-item-info {

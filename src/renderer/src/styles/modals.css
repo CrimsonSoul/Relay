@@ -338,7 +338,7 @@
 
 .modal-body-generic {
   padding: 28px;
-  overflow-y: auto;
+  overflow-y: overlay;
   flex: 1;
   overscroll-behavior: contain;
 }
@@ -367,7 +367,7 @@
 
 .search-dropdown-results {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   list-style: none;
   margin: 0;
   padding: 8px;

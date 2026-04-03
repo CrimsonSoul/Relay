@@ -62,7 +62,7 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: overlay;
   overflow-x: hidden;
   flex-shrink: 0;
   padding: 0;
@@ -172,7 +172,7 @@
 
 .bridge-history-list {
   max-height: 400px;
-  overflow-y: auto;
+  overflow-y: overlay;
   margin: 0 -24px;
   padding: 0 24px;
 }
@@ -285,7 +285,7 @@
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
   max-height: 180px;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .save-group-contacts-header {

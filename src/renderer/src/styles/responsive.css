@@ -2,7 +2,7 @@
 @media (max-width: 850px) {
   .weather-tab-root {
     flex-direction: column-reverse !important;
-    overflow-y: auto !important;
+    overflow-y: overlay !important;
     padding-bottom: 40px !important;
     gap: 32px !important;
   }
@@ -61,7 +61,7 @@
 
 /* Notes variant */
 .relay-grid--notes {
-  overflow-y: auto;
+  overflow-y: overlay;
   flex: 1;
   padding: 8px;
 }

@@ -40,7 +40,7 @@
 
 .alert-history-list {
   max-height: 400px;
-  overflow-y: auto;
+  overflow-y: overlay;
   margin: 0 -24px;
   padding: 0 24px;
 }
@@ -223,7 +223,7 @@
 .alerts-composer {
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow-y: overlay;
   overflow-x: hidden;
   padding: 20px;
   border: 1px solid var(--color-border);
@@ -381,7 +381,7 @@
   outline: none;
   min-height: 200px;
   line-height: 1.6;
-  overflow-y: auto;
+  overflow-y: overlay;
   word-wrap: break-word;
   white-space: pre-wrap;
   flex: 1;
@@ -467,7 +467,7 @@
 
 .alerts-preview-scroll {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   padding: 32px;
   display: flex;
   justify-content: center;

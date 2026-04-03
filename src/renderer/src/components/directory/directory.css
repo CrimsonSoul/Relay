@@ -32,7 +32,7 @@
 
 .detail-panel-body {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   padding: 24px 28px 28px 28px;
   display: flex;
   flex-direction: column;

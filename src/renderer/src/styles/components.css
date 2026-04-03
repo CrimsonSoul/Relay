@@ -671,7 +671,7 @@ body.modal-open {
   border: var(--border-medium);
   border-radius: 10px;
   max-height: 200px;
-  overflow-y: auto;
+  overflow-y: overlay;
   z-index: 99999;
   box-shadow: var(--shadow-md);
   padding: 4px;
@@ -794,7 +794,7 @@ body.modal-open {
 
 .shortcuts-modal-content {
   padding: 20px 24px;
-  overflow-y: auto;
+  overflow-y: overlay;
   flex: 1;
 }
 
@@ -871,7 +871,7 @@ body.modal-open {
 
 .group-selector-list {
   max-height: 200px;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .group-selector-item {
@@ -1067,7 +1067,7 @@ body.modal-open {
   padding: 16px 20px;
   border-radius: 10px;
   max-width: 600px;
-  overflow: auto;
+  overflow: overlay;
   text-align: left;
 }
 

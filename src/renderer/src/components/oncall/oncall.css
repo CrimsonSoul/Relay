@@ -90,7 +90,7 @@
   flex-direction: column;
   padding: 16px 24px;
   background: var(--color-bg-app);
-  overflow-y: auto;
+  overflow-y: overlay;
   position: relative;
 }
 
@@ -324,7 +324,7 @@
   flex-direction: column;
   padding: 16px 24px 0;
   background: transparent;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .oncall-header-info {
@@ -397,7 +397,7 @@
 
 .maintain-team-scroll {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: overlay;
   overflow-x: hidden;
   padding: 8px 6px;
   display: flex;
@@ -606,7 +606,7 @@
   margin: 0;
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow-y: overlay;
 }
 
 .oncall-masonry-column {
