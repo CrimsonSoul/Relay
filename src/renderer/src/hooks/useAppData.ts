@@ -9,7 +9,9 @@ import type { OnCallRecord } from '../services/oncallService';
 import {
   initializeBoardSettings,
   type BoardSettingsInitializationResult,
+  type BoardSettingsRecord,
 } from '../services/oncallBoardSettingsService';
+import { getPb, isOnline, onConnectionStateChange } from '../services/pocketbase';
 import { loggers } from '../utils/logger';
 import { getDevMockData } from '../utils/mockData';
 
@@ -155,6 +157,63 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       },
     );
   }, [oncallRecords, oncallLoading]);
+
+  // --- Realtime subscription for board settings ---
+  // Keeps boardSettings in sync across popout windows and connected clients.
+  const boardSettingsSubRef = useRef<(() => void | Promise<void>) | null>(null);
+
+  useEffect(() => {
+    if (boardSettings.status !== 'ready' || !boardSettings.recordId) return;
+
+    let cancelled = false;
+
+    function handleSettingsEvent(action: string, raw: Record<string, unknown>): void {
+      if (cancelled) return;
+      if (action !== 'update' && action !== 'create') return;
+      const record = raw as unknown as BoardSettingsRecord;
+      if (record.key !== 'primary') return;
+      setBoardSettings((prev) => ({
+        ...prev,
+        record,
+        recordId: record.id,
+        effectiveTeamOrder: record.teamOrder,
+        effectiveLocked: record.locked,
+      }));
+    }
+
+    async function subscribe(): Promise<void> {
+      void boardSettingsSubRef.current?.();
+      const unsub = await getPb()
+        .collection('oncall_board_settings')
+        .subscribe('*', (e) => handleSettingsEvent(e.action, e.record));
+      if (cancelled) {
+        void unsub();
+        return;
+      }
+      boardSettingsSubRef.current = unsub;
+    }
+
+    if (isOnline()) {
+      void subscribe().catch((err: unknown) => {
+        loggers.app.error('Board settings subscription failed', { error: err });
+      });
+    }
+
+    const unsubConnection = onConnectionStateChange((s) => {
+      if (s === 'online' && !cancelled) {
+        void subscribe().catch((err: unknown) => {
+          loggers.app.error('Board settings re-subscription failed', { error: err });
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      void boardSettingsSubRef.current?.();
+      boardSettingsSubRef.current = null;
+      unsubConnection();
+    };
+  }, [boardSettings.status, boardSettings.recordId]);
 
   // Show errors as toasts (suppress PocketBase auto-cancellation errors)
   useEffect(() => {
