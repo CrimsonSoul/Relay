@@ -318,10 +318,11 @@
    ============================================================================ */
 
 .personnel-tab-root {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px 24px;
+  padding: 16px 24px 0;
   background: transparent;
   overflow-y: auto;
 }

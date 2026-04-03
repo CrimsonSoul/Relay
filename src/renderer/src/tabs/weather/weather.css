@@ -71,7 +71,7 @@
   padding: 20px;
   border: 1px solid var(--border-default);
   flex-shrink: 0;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .hourly-forecast-title {
@@ -269,7 +269,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-sm);
 }
 
 .daily-forecast-title {
@@ -394,10 +394,11 @@
 .weather-tab-layout {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   background: transparent;
-  padding: 16px 24px;
+  padding: 16px 24px 0;
   gap: 16px;
   overflow: hidden;
 }
