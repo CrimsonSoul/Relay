@@ -211,7 +211,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             ) : (
               <div className="alerts-email-footer-spacer" />
             )}
-            <div className="alerts-email-footer-timestamp">{formattedDate}</div>
           </div>
         </div>
       </div>
