@@ -59,7 +59,6 @@ export interface AlertCardProps {
   displaySubject: string;
   displaySender: string;
   displayRecipient: string;
-  formattedDate: string;
   bodyHtml: string;
   logoDataUrl: string | null;
   footerLogoDataUrl?: string | null;
@@ -73,7 +72,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   displaySubject,
   displaySender,
   displayRecipient,
-  formattedDate,
   bodyHtml,
   logoDataUrl,
   footerLogoDataUrl,

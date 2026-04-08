@@ -36,7 +36,6 @@ function makeProps(overrides: Partial<AlertCardProps> = {}): AlertCardProps {
     displaySubject: 'Server Down',
     displaySender: 'ops@example.com',
     displayRecipient: 'team@example.com',
-    formattedDate: 'Apr 2, 2026 10:00 AM',
     bodyHtml: '<p>Server is unreachable.</p>',
     logoDataUrl: null,
     ...overrides,
@@ -50,7 +49,6 @@ describe('AlertCard', () => {
     expect(screen.getByText('Server Down')).toBeInTheDocument();
     expect(screen.getByText('ops@example.com')).toBeInTheDocument();
     expect(screen.getByText('team@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Apr 2, 2026 10:00 AM')).toBeInTheDocument();
   });
 
   it('renders the severity label', () => {

@@ -197,30 +197,6 @@ export const AlertsTab: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  const [now, setNow] = useState(() => new Date());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 15_000);
-    return () => clearInterval(id);
-  }, []);
-
-  const formattedDate = useMemo(() => {
-    return (
-      now.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        timeZone: 'America/Chicago',
-      }) +
-      ' · ' +
-      now.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZone: 'America/Chicago',
-      })
-    );
-  }, [now]);
-
   const eventTimeStartIso = useMemo(
     () => localToIso(eventTimeStart, eventTimeSourceTz),
     [eventTimeStart, eventTimeSourceTz],
@@ -622,7 +598,6 @@ export const AlertsTab: React.FC = () => {
           displaySubject={displaySubject}
           displaySender={displaySender}
           displayRecipient={displayRecipient}
-          formattedDate={formattedDate}
           bodyHtml={bodyHtml}
           logoDataUrl={logoDataUrl}
           footerLogoDataUrl={footerLogoDataUrl}

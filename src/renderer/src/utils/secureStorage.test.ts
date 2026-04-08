@@ -82,13 +82,15 @@ describe('secureStorage', () => {
   });
 
   it('setItemSync logs error when localStorage.setItem throws', () => {
-    vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
+    const origSetItem = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = () => {
       throw new Error('quota exceeded');
-    });
+    };
 
     secureStorage.setItemSync('fail-key', 'value');
 
     expect(mockLoggers.storage.error).toHaveBeenCalled();
+    localStorage.setItem = origSetItem;
   });
 
   // --- async setItem / getItem ---
@@ -120,12 +122,14 @@ describe('secureStorage', () => {
   });
 
   it('setItem throws and logs on failure', async () => {
-    vi.spyOn(globalThis.localStorage, 'setItem').mockImplementation(() => {
+    const origSetItem = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = () => {
       throw new Error('storage full');
-    });
+    };
 
     await expect(secureStorage.setItem('fail', 'data')).rejects.toThrow('storage full');
     expect(mockLoggers.storage.error).toHaveBeenCalled();
+    localStorage.setItem = origSetItem;
   });
 
   // --- removeItem ---
