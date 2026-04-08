@@ -45,6 +45,7 @@ Handlers validate inputs and delegate to service/utility modules for business lo
 | Desktop shell  | Electron 41                                     |
 | Frontend       | React 19 + TypeScript 6.0                       |
 | Build          | Vite 7 + electron-vite 5                        |
+| Database       | PocketBase 0.26 (embedded SQLite)               |
 | Validation     | Zod 4                                           |
 | Virtualization | react-window 2 + react-virtualized-auto-sizer 2 |
 | Drag and drop  | @dnd-kit/core + @dnd-kit/sortable               |
