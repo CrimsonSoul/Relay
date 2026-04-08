@@ -1,501 +1,234 @@
 # Development Guide
 
-Patterns, conventions, and testing strategy for the Relay codebase.
+Current patterns, workflows, and contributor conventions for Relay.
 
-## Table of Contents
+## Overview
 
-- [PocketBase Service Pattern](#pocketbase-service-pattern)
-- [IPC and Validation](#ipc-and-validation)
-- [PocketBase Data Access](#pocketbase-data-access)
-- [Realtime Subscriptions](#realtime-subscriptions)
-- [Offline Cache and Pending Changes](#offline-cache-and-pending-changes)
-- [Renderer Patterns](#renderer-patterns)
-- [Testing](#testing)
-- [Code Style](#code-style)
+Relay is an Electron app with a React renderer, a typed preload bridge, and a PocketBase-backed data model.
 
-## PocketBase Service Pattern
+Use these directories as the primary mental model:
 
-Data CRUD lives in `src/renderer/src/services/`, separated from UI hooks. Each domain has its own service module. Services call the PocketBase REST API directly — no IPC round-trip for data operations.
+- `src/main/`: Electron lifecycle, security, IPC handlers, PocketBase bootstrap, offline cache, backup logic
+- `src/preload/`: typed `window.api` bridge
+- `src/renderer/`: UI, hooks, services, tabs, and styles
+- `src/shared/`: shared types, IPC channels, schemas, and utilities
 
-### Current Service Modules
+For runtime structure, see `docs/architecture.md`.
 
-| Module                     | File                            | Domain                                                  |
-| -------------------------- | ------------------------------- | ------------------------------------------------------- |
-| PocketBase client          | `pocketbase.ts`                 | Client init, auth, health check, error handling         |
-| pbErrors                   | `pbErrors.ts`                   | PocketBase error type guards (e.g. 404 not-found check) |
-| crudServiceFactory         | `crudServiceFactory.ts`         | Generic CRUD service factory (`createCrudService<T>`)   |
-| contactService             | `contactService.ts`             | Contact CRUD                                            |
-| serverService              | `serverService.ts`              | Server CRUD                                             |
-| oncallService              | `oncallService.ts`              | On-call team CRUD and reorder                           |
-| oncallDismissalService     | `oncallDismissalService.ts`     | On-call alert dismissal persistence                     |
-| bridgeGroupService         | `bridgeGroupService.ts`         | Bridge group preset CRUD                                |
-| bridgeHistoryService       | `bridgeHistoryService.ts`       | Bridge history log                                      |
-| notesService               | `notesService.ts`               | Contact and server notes                                |
-| standaloneNoteService      | `standaloneNoteService.ts`      | Standalone notepad CRUD and reorder                     |
-| savedLocationService       | `savedLocationService.ts`       | Weather saved locations                                 |
-| alertHistoryService        | `alertHistoryService.ts`        | Alert history log                                       |
-| oncallBoardSettingsService | `oncallBoardSettingsService.ts` | On-call board shared settings CRUD                      |
-| importExportService        | `importExportService.ts`        | CSV and JSON import/export                              |
+## Source Of Truth
 
-### Adding a New Service
+These files define the current workflow and should win over stale assumptions:
 
-1. Create `src/renderer/src/services/newDomainService.ts`
-2. Import `getPb`, `requireOnline`, `handleApiError` from `./pocketbase`
-3. Export pure async functions; use `requireOnline()` before any write
-4. Write tests in a `__tests__/` directory (mock the PB SDK — see [Testing PB Services](#testing-pb-services))
-5. Create a hook in `src/renderer/src/hooks/useNewDomain.ts` that calls the service
+| File                                          | Purpose                                                     |
+| --------------------------------------------- | ----------------------------------------------------------- |
+| `package.json`                                | Scripts and tool entry points                               |
+| `eslint.config.js`                            | Lint rules and per-layer restrictions                       |
+| `vitest.config.ts`                            | Main/shared test config                                     |
+| `vitest.renderer.config.ts`                   | Renderer test config                                        |
+| `src/shared/ipc.ts`                           | Bridge API and IPC channel definitions                      |
+| `src/shared/ipcValidation.ts`                 | Shared IPC validation helpers                               |
+| `src/renderer/src/services/pocketbase.ts`     | Renderer PocketBase client and connection state             |
+| `src/renderer/src/hooks/useCollection.ts`     | Realtime collection subscription and offline cache fallback |
+| `src/renderer/src/hooks/useOptimisticList.ts` | Optimistic list state over realtime data                    |
 
-```typescript
-import { getPb, handleApiError, requireOnline } from './pocketbase';
+## Data Access Pattern
 
-export interface MyRecord {
-  id: string;
-  name: string;
-  created: string;
-  updated: string;
-}
+### Renderer Services
 
-export type MyInput = Omit<MyRecord, 'id' | 'created' | 'updated'>;
+PocketBase collection CRUD lives in `src/renderer/src/services/`.
 
-export async function getAll(): Promise<MyRecord[]> {
-  try {
-    return await getPb().collection('myDomain').getFullList<MyRecord>({ sort: 'name' });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+Current conventions:
 
-export async function add(data: MyInput): Promise<MyRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('myDomain').create<MyRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+- Initialize PocketBase once through `initPocketBase()`
+- Access the shared client through `getPb()`
+- Keep collection logic in service modules, not components
+- Call `requireOnline()` before writes that should fail fast while offline
+- Route API failures through `handleApiError()`
 
-export async function update(id: string, data: Partial<MyInput>): Promise<MyRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('myDomain').update<MyRecord>(id, data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
+In Relay, normal record CRUD is performed directly from the renderer via the PocketBase SDK. It does not go through Electron IPC.
 
-export async function remove(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('myDomain').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
-}
-```
+### Adding A Service
 
-### CRUD Service Factory
+For a new collection-backed feature:
 
-For new domains with standard CRUD operations, use `createCrudService<T>` from `crudServiceFactory.ts` to avoid boilerplate:
+1. Add a service module in `src/renderer/src/services/`
+2. Keep the exported API narrow and async
+3. Add a hook in `src/renderer/src/hooks/` for UI-facing state and effects
+4. Write tests next to the service or in a nearby `__tests__/` directory
 
-```typescript
-import { createCrudService } from './crudServiceFactory';
+Prefer using `createCrudService<T>()` from `crudServiceFactory.ts` when the collection only needs standard CRUD behavior.
 
-export interface MyRecord {
-  id: string;
-  name: string;
-  created: string;
-  updated: string;
-}
+### PocketBase Filters
 
-const crud = createCrudService<MyRecord>('my_collection');
+Escape user-provided values with `escapeFilter()` before interpolating them into PocketBase filter strings.
 
-export const addRecord = (data: Partial<MyRecord>) => crud.create(data);
-export const updateRecord = (id: string, data: Partial<MyRecord>) => crud.update(id, data);
-export const deleteRecord = (id: string) => crud.remove(id);
-```
+```ts
+import { escapeFilter, getPb } from './pocketbase';
 
-The factory provides `getAll`, `getOne`, `create`, `update`, and `remove` — all with proper `requireOnline()` guards and `handleApiError()` wrapping. `getOne` returns `null` on 404 instead of throwing (uses `isPbNotFoundError` from `pbErrors.ts`).
-
-### Why This Pattern?
-
-- **Testable**: Services can be unit tested by mocking the PB SDK, without Electron or IPC
-- **No IPC overhead**: Renderer talks directly to PocketBase REST — one fewer round-trip
-- **Consistent error handling**: `handleApiError` centralises offline detection; `requireOnline` gives clear errors before writes
-
-## IPC and Validation
-
-Data CRUD no longer uses IPC. IPC handlers remain for system-level operations: weather API proxy, window management, auth credential prompts, cloud status, location lookup, logging bridge, and initial setup/config.
-
-All IPC messages are validated with Zod 4 schemas.
-
-### Defining Channels
-
-Channels are defined in `src/shared/ipc.ts` as the `IPC_CHANNELS` const object:
-
-```typescript
-export const IPC_CHANNELS = {
-  MY_CHANNEL: 'myDomain:action',
-  // ...
-} as const;
-```
-
-### Zod 4 Validation
-
-Schemas are in `src/shared/ipcValidation.ts`. Key Zod 4 differences from Zod 3:
-
-- Use `z.ZodType<T>` (not `z.ZodSchema<T>`)
-- Error access: `.error.message` and `.error.issues` (not `.error.format()`)
-- Import: `import { z } from 'zod'` (same)
-
-```typescript
-// Define schema
-export const MyInputSchema = z.object({
-  name: z.string().min(1).max(200),
-});
-
-// Use in handler
-import { validateIpcDataSafe } from '../../shared/ipcValidation';
-
-ipcMain.handle(IPC_CHANNELS.MY_CHANNEL, async (_, payload) => {
-  const data = validateIpcDataSafe(MyInputSchema, payload, 'myDomain:action');
-  if (!data) return { success: false, error: 'Invalid input' };
-  return doSomething(data);
-});
-```
-
-### Preload Bridge
-
-After adding a handler, expose it in the preload:
-
-1. Add the method signature to the `BridgeAPI` type in `src/shared/ipc.ts`
-2. Implement in `src/preload/index.ts` using `ipcRenderer.invoke`
-
-## PocketBase Data Access
-
-The PB client is initialised in the renderer at startup via `initPocketBase(url)` from `src/renderer/src/services/pocketbase.ts`. All service modules access it through `getPb()`.
-
-### Filter Escaping
-
-Always escape user-supplied values in PB filter strings:
-
-```typescript
-import { escapeFilter } from './pocketbase';
-
-const result = await getPb()
+const record = await getPb()
   .collection('contacts')
-  .getFirstListItem<ContactRecord>(`email="${escapeFilter(email)}"`);
+  .getFirstListItem(`email="${escapeFilter(email)}"`);
 ```
 
-Never interpolate user input directly into filter strings — this is equivalent to a SQL injection vector.
+## IPC Pattern
+
+IPC is reserved for work the renderer should not do directly.
+
+Current examples:
+
+- Window management
+- Setup and PocketBase connection bootstrap
+- Weather, radar, and location lookups
+- Cloud status aggregation
+- Clipboard and shell/file-system actions
+- Alert image and logo persistence
+- Offline cache reads and sync triggers
+- Backup creation and restore
+- Renderer-to-main logging
+
+Rules:
+
+- Define channels and bridge types in `src/shared/ipc.ts`
+- Validate payloads with shared schemas from `src/shared/ipcValidation.ts`
+- Expose new bridge methods from `src/preload/index.ts`
+- Keep handlers in `src/main/handlers/`
+
+## Connection, Realtime, And Offline Behavior
 
 ### Connection State
 
-The PB client exposes a connection state machine: `connecting` → `online` → `offline` → `reconnecting`. Use `isOnline()` to check, or `requireOnline()` to throw immediately on writes when offline. `onConnectionStateChange(listener)` registers a callback for UI updates.
+`src/renderer/src/services/pocketbase.ts` owns the renderer connection lifecycle.
 
-## Realtime Subscriptions
+Current connection states:
 
-PocketBase supports realtime subscriptions over SSE. Use them to push collection changes to the UI without polling:
+- `connecting`
+- `online`
+- `offline`
+- `reconnecting`
 
-```typescript
-// Subscribe to all changes in a collection
-const unsub = await getPb()
-  .collection('contacts')
-  .subscribe('*', (e) => {
-    if (e.action === 'create') addToList(e.record);
-    if (e.action === 'update') updateInList(e.record);
-    if (e.action === 'delete') removeFromList(e.record.id);
-  });
+Use:
 
-// Unsubscribe on component unmount
-return () => {
-  unsub();
-};
-```
+- `onConnectionStateChange()` to subscribe
+- `isOnline()` to branch behavior
+- `requireOnline()` to reject writes while disconnected
 
-The `useCollection` hook in `src/renderer/src/hooks/useCollection.ts` provides a generic subscription wrapper. It fetches the full collection on mount, subscribes to realtime SSE events, maintains sort order via a parsed comparator, and falls back to the offline cache when the connection is lost. On reconnect, it automatically flushes pending offline writes and re-subscribes.
+### Realtime Collections
 
-### useOptimisticList
+`useCollection()` is the standard pattern for list data backed by PocketBase realtime subscriptions.
 
-When a hook needs to apply optimistic UI updates while receiving realtime pushes from `useCollection`, wrap the data with `useOptimisticList`:
+It handles:
 
-```typescript
-import { useOptimisticList } from './useOptimisticList';
-import { useCollection } from './useCollection';
+- Initial full fetch
+- Realtime subscription setup
+- Sort preservation for incoming events
+- Offline cache fallback
+- Reconnect-triggered resubscribe and pending-sync flush
 
-const { data: records } = useCollection<MyRecord>('my_collection', { sort: 'sortOrder' });
-const { data, setData, startMutation, finishMutation } = useOptimisticList(records);
+### Optimistic Lists
 
-async function handleAdd(input: MyInput) {
-  startMutation();
-  setData((prev) => [optimisticRecord, ...prev]); // Optimistic update
-  try {
-    await addRecord(input);
-  } finally {
-    finishMutation(); // Releases lock — queued external updates apply
-  }
-}
-```
+When UI state needs optimistic updates on top of realtime collection data, layer `useOptimisticList()` on top of `useCollection()`.
 
-While mutations are in-flight, external realtime updates are queued. Once all mutations settle, the queued data is applied. This prevents realtime SSE events from overwriting optimistic UI state.
+This prevents external realtime events from overwriting local optimistic state while mutations are still settling.
 
-## Offline Cache and Pending Changes
+## Renderer Conventions
 
-The main process maintains two local SQLite databases (via better-sqlite3) for offline resilience:
+### Hooks
 
-- **OfflineCache** (`src/main/cache/OfflineCache.ts`): Read-through cache of PB collections. Renderer reads from this via `window.api.cacheRead(collection)` when offline.
-- **PendingChanges** (`src/main/cache/PendingChanges.ts`): Write queue for mutations that occurred while offline.
-- **SyncManager** (`src/main/cache/SyncManager.ts`): On reconnect, replays the pending queue to PocketBase and resolves conflicts (last-write-wins, server takes precedence).
+Hooks in `src/renderer/src/hooks/` should own:
 
-Cache updates are triggered via `window.api.cacheSnapshot(collection, records)` after a successful PB fetch. Pending writes are queued via `window.api.cacheWrite(collection, action, record)` when the renderer is offline.
+- Feature-level state
+- Side effects
+- Service orchestration
+- View-facing callbacks
 
-### Cache Handler Validation
+Components should stay focused on rendering and local interaction details.
 
-Cache handlers (`src/main/handlers/cacheHandlers.ts`) validate all inputs against allowlists before touching the database:
+### Tab Loading
 
-- **Collection allowlist**: A `VALID_COLLECTIONS` set restricts which collection names are accepted. Any unrecognised collection name is rejected and logged as an error.
-- **Action allowlist**: A `VALID_ACTIONS` set (`create`, `update`, `delete`) validates mutation types.
-- **Record shape check**: Write operations verify the record is a non-null, non-array object.
+`src/renderer/src/App.tsx` uses a mount-once tab model.
 
-This prevents the renderer from reading or writing arbitrary collections through the cache IPC bridge.
+Current behavior:
 
-## Renderer Patterns
+- Compose loads eagerly
+- Most other tabs are lazy-loaded
+- Visited tabs remain mounted to preserve local state and scroll position
 
-### Tab Architecture
+### Styling
 
-Tabs use a "mount once, keep alive" pattern. Once a tab is visited, its component stays in the DOM (hidden via `display: none`) to preserve scroll position and state. Only the Compose tab is eagerly loaded; all others use `React.lazy` with `Suspense`.
+Relay uses plain CSS plus shared design tokens.
 
-Current tabs: Compose, On-Call (Personnel), People (Directory), Servers, Weather, Radar, Alerts, Notes, Cloud Status.
+Conventions:
 
-### Hook-per-Domain
+- Reuse existing tokens in `src/renderer/src/styles/theme.css`
+- Reuse shared primitives such as `TactileButton`, `.tactile-input`, and `.card-surface`
+- Keep feature-specific CSS near the feature when that pattern already exists
 
-Each feature domain has a dedicated hook in `src/renderer/src/hooks/`:
-
-| Hook                   | Tab          | Purpose                                           |
-| ---------------------- | ------------ | ------------------------------------------------- |
-| `useAssembler`         | Compose      | Contact/group selection, draft bridge, copy       |
-| `useAppAssembler`      | Compose      | Tab state, settings, cross-tab integration        |
-| `useBridgeHistory`     | Compose      | Bridge history CRUD                               |
-| `useGroups`            | Compose      | Group preset CRUD                                 |
-| `usePersonnel`         | On-Call      | Team grid, alerts, reminders                      |
-| `useOnCallBoard`       | On-Call      | Board interactions, clipboard, animations         |
-| `useOnCallManager`     | On-Call      | Team CRUD, rename, reorder                        |
-| `useAlertDismissal`    | On-Call      | Daily alert dismissal with optimistic updates     |
-| `useDirectory`         | People       | Search, pagination, tab state                     |
-| `useDirectoryContacts` | People       | Contact data, add/edit/delete                     |
-| `useDirectoryKeyboard` | People       | Keyboard navigation (arrows, context menu)        |
-| `useServers`           | Servers      | Server data, search, selection                    |
-| `useAppWeather`        | Weather      | Weather data, alerts, location                    |
-| `useWeatherLocation`   | Weather      | Location selection state                          |
-| `useSavedLocations`    | Weather      | Saved location CRUD                               |
-| `useAlertHistory`      | Alerts       | Alert history CRUD with pin/label                 |
-| `useNotepad`           | Notes        | Notepad state, font size, search integration      |
-| `useNoteStorage`       | Notes        | Standalone note CRUD, reorder, optimistic queue   |
-| `useAppCloudStatus`    | Cloud Status | Cloud provider status polling and aggregation     |
-| `useAppData`           | Global       | Data loading, reload, sync                        |
-| `useNotes`             | Global       | Contact/server entity notes                       |
-| `useCommandSearch`     | Global       | Command palette search                            |
-| `useDataManager`       | Global       | Import/export                                     |
-| `useCollection`        | Global       | Generic PB realtime subscription wrapper          |
-| `useOptimisticList`    | Global       | Optimistic list updates with queued external sync |
-| `useHistory`           | Global       | Generic history hook for PB-backed collections    |
-| `useListFilters`       | Global       | Filter definitions with predicate-based matching  |
-| `usePolling`           | Global       | Generic polling loop                              |
-| `usePocketBase`        | Global       | PB client init, auth, connection state            |
-| `useKeyboardShortcuts` | Global       | Global keyboard shortcut bindings                 |
-| `useDebounce`          | Utility      | Debounced values                                  |
-| `useFocusTrap`         | Utility      | Modal focus trapping                              |
-| `useModalState`        | Utility      | Open/close/toggle state for modals                |
-| `useMounted`           | Utility      | Mount state tracking                              |
-| `useOnClickOutside`    | Utility      | Click-outside detection                           |
-| `useTheme`             | Global       | Theme preference (dark/light mode)                |
-
-### Virtual Lists
-
-Large lists (contacts, servers, composition) use react-window v2 with AutoSizer v2:
-
-```typescript
-<AutoSizer
-  renderProp={({ height, width }) => (
-    <FixedSizeList
-      height={height ?? 0}
-      width={width ?? 0}
-      itemCount={items.length}
-      itemSize={ROW_HEIGHT}
-    >
-      {({ index, style }) => <Row key={index} style={style} />}
-    </FixedSizeList>
-  )}
-/>
-```
-
-The `renderProp` pattern (not children-as-function) is required by AutoSizer v2. Always provide `?? 0` fallbacks for height/width.
-
-### Drag and Drop
-
-On-Call Board and sortable lists use @dnd-kit:
-
-- `@dnd-kit/core` for `DndContext`, sensors, collision detection
-- `@dnd-kit/sortable` for `SortableContext`, `useSortable`
-- Custom `PointerSensor` with activation constraints for touch/click disambiguation
-
-### Accessibility
-
-eslint-plugin-jsx-a11y is enforced on all renderer code. Key rules:
-
-- Clickable divs: `role="button"` + `tabIndex={0}` + `onKeyDown` (Enter/Space handler)
-- Overlays/backdrops: `role="presentation"`
-- Toggle items: `role="checkbox"` + `aria-checked`
-- Menu containers: `role="menu"` + `tabIndex={-1}`
-- Label-input pairs: `htmlFor`/`id` matching
-- `jsx-a11y/no-autofocus` is disabled (modals use `useFocusTrap` intentionally)
-
-### CSS Structure
-
-Styles are in `src/renderer/src/styles/` — vanilla CSS with design tokens:
-
-| File             | Purpose                                   |
-| ---------------- | ----------------------------------------- |
-| `theme.css`      | Color palette, spacing tokens, typography |
-| `components.css` | Cards, buttons, inputs, sidebar           |
-| `modals.css`     | Modal layouts and overlays                |
-| `animations.css` | Keyframes and transitions                 |
-| `responsive.css` | Breakpoints                               |
-| `toast.css`      | Toast notifications                       |
-| `utilities.css`  | Utility classes                           |
-| `app-icon.css`   | App icon styling                          |
-| `setup.css`      | Setup/configuration wizard                |
-
-No CSS modules. No Tailwind. Components reference class names directly.
-
-For the full visual language, component patterns, and rules for adding new UI, see [DESIGN.md](DESIGN.md).
+For UI guidance, see `docs/DESIGN.md`.
 
 ## Testing
 
-### Two Test Suites
+### Test Suites
 
-| Suite       | Config                      | Environment | Scope                                              |
-| ----------- | --------------------------- | ----------- | -------------------------------------------------- |
-| Main/Shared | `vitest.config.ts`          | Node        | `src/main/**/*.test.ts`, `src/shared/**/*.test.ts` |
-| Renderer    | `vitest.renderer.config.ts` | jsdom       | `src/renderer/**/*.test.{ts,tsx}`                  |
+Relay uses two Vitest configurations:
+
+| Suite       | Config                      | Environment |
+| ----------- | --------------------------- | ----------- |
+| Main/shared | `vitest.config.ts`          | Node        |
+| Renderer    | `vitest.renderer.config.ts` | jsdom       |
+
+Common commands:
 
 ```bash
-npm test               # Both suites sequentially
-npm run test:unit      # Main/shared only
-npm run test:renderer  # Renderer only
-npm run test:coverage  # Main/shared with coverage report
-npm run test:electron  # Playwright E2E
+npm test
+npm run test:unit
+npm run test:renderer
+npm run test:coverage
+npm run test:electron
 ```
 
-### Coverage Thresholds
+Coverage thresholds are currently 80% for lines, functions, branches, and statements in both Vitest configs.
 
-Enforced in both vitest configs — CI fails if coverage drops below:
+### Renderer Test Setup
 
-| Suite       | Lines | Functions | Branches | Statements |
-| ----------- | ----- | --------- | -------- | ---------- |
-| Main/Shared | 80%   | 80%       | 80%      | 80%        |
-| Renderer    | 80%   | 80%       | 80%      | 80%        |
+`src/renderer/test/setup.ts` provides the shared renderer test environment.
 
-### Testing PB Services
+It currently:
 
-Mock the PocketBase SDK and the `pocketbase.ts` module:
+- Loads `@testing-library/jest-dom`
+- Patches missing `HTMLDialogElement` methods in jsdom
+- Provides a localStorage fallback when needed
 
-```typescript
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { getPb, requireOnline, handleApiError } from '../pocketbase';
-import { add, update, remove } from '../myDomainService';
+If a hook or component depends on toast context, wrap it with `NoopToastProvider` from `src/renderer/src/components/Toast.tsx`.
 
-vi.mock('../pocketbase', () => ({
-  getPb: vi.fn(),
-  requireOnline: vi.fn(),
-  handleApiError: vi.fn(),
-}));
+### Test Placement
 
-const mockCollection = {
-  create: vi.fn(),
-  update: vi.fn(),
-  delete: vi.fn(),
-  getFullList: vi.fn(),
-};
+Both of these patterns are already used in the repo:
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  (getPb as Mock).mockReturnValue({ collection: () => mockCollection });
-});
+- Adjacent `*.test.ts` or `*.test.tsx` files
+- Nearby `__tests__/` directories
 
-describe('myDomainService', () => {
-  it('creates a record', async () => {
-    const record = { id: '1', name: 'Test', created: '', updated: '' };
-    mockCollection.create.mockResolvedValue(record);
+Match the surrounding feature instead of introducing a new structure.
 
-    const result = await add({ name: 'Test' });
+## Linting And Code Style
 
-    expect(requireOnline).toHaveBeenCalledOnce();
-    expect(mockCollection.create).toHaveBeenCalledWith({ name: 'Test' });
-    expect(result).toEqual(record);
-  });
+Relay uses ESLint flat config plus Prettier.
 
-  it('calls handleApiError on network failure', async () => {
-    const err = new Error('Network error');
-    mockCollection.create.mockRejectedValue(err);
+Important current rules from `eslint.config.js`:
 
-    await expect(add({ name: 'Test' })).rejects.toThrow('Network error');
-    expect(handleApiError).toHaveBeenCalledWith(err);
-  });
-});
-```
+- `@typescript-eslint/no-explicit-any`: `error` in app code, `warn` in tests
+- `@typescript-eslint/no-floating-promises`: `error`
+- `@typescript-eslint/no-misused-promises`: `error` in app code
+- `react-hooks/rules-of-hooks`: `error`
+- `jsx-a11y` rules are enabled in renderer code
+- `jsx-a11y/no-autofocus` is intentionally disabled for current modal/search behavior
 
-### Testing Hooks (Renderer)
+Renderer, main, preload, and shared code all have slightly different lint environments. Check the file globs in `eslint.config.js` before assuming a rule applies everywhere.
 
-Hooks that use `useToast` need a toast provider wrapper:
+## Practical Contributor Rules
 
-```typescript
-import { renderHook, act } from '@testing-library/react';
-import { NoopToastProvider } from '../../components/Toast';
-
-const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <NoopToastProvider>{children}</NoopToastProvider>
-);
-
-it('loads data on mount', async () => {
-  mockCollection.getFullList.mockResolvedValue([{ id: '1', name: 'Alice' }]);
-
-  const { result } = renderHook(() => useMyHook(), { wrapper });
-
-  await act(async () => {});  // Flush promises
-  expect(result.current.items).toHaveLength(1);
-});
-```
-
-### Testing Components (Renderer)
-
-Mock the Modal component to avoid portal issues:
-
-```typescript
-vi.mock('../../components/Modal', () => ({
-  default: ({ children, isOpen }: { children: React.ReactNode; isOpen: boolean }) =>
-    isOpen ? <div>{children}</div> : null,
-}));
-```
-
-Renderer tests use `@testing-library/react` with `globals: true` in the vitest config. The setup file (`src/renderer/test/setup.ts`) imports `@testing-library/jest-dom` for DOM matchers.
-
-### Test Quality Rules
-
-- No tests that just check CSS classes or assert React internals
-- No tautological assertions (e.g., sorting an array and comparing to itself)
-- Use concrete expected values, not derived values
-- Test behavior and outcomes, not implementation details
-
-## Code Style
-
-- **Strict TypeScript**: `strict: true`, `noUncheckedIndexedAccess: true`
-- **No `any`**: `@typescript-eslint/no-explicit-any` is `error` in main/preload, `warn` in renderer
-- **No `@ts-ignore`**: Zero tolerance for `@ts-ignore` or `@ts-expect-error`
-- **Logging**: Use `loggers` object — never `console.log` in production code
-- **Promises**: `no-floating-promises: error` and `no-misused-promises: error` enforced
-- **Formatting**: Prettier with single quotes, trailing commas, 100 char width, 2 space indent
-- **Pre-commit**: Husky runs lint-staged (eslint --fix + prettier --write) on every commit
+- Prefer the smallest correct change over broad refactors
+- Keep domain CRUD in renderer services, not React components
+- Use IPC only for privileged or system-level work
+- Validate new IPC payloads in shared schemas
+- Reuse existing hooks and shared UI primitives before adding new abstractions
+- Keep docs aligned with current code paths instead of preserving old architecture notes
