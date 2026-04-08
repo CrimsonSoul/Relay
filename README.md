@@ -2,7 +2,7 @@
 
 Relay is an Electron desktop command center for operations teams managing people, systems, and incident bridge communications.
 
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2041-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%205.9-2ea043)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0a7ea4) ![Shell](https://img.shields.io/badge/shell-Electron%2041-47848f) ![UI](https://img.shields.io/badge/ui-React%2019-149eca) ![Language](https://img.shields.io/badge/language-TypeScript%206.0-2ea043)
 
 ## Snapshot
 
@@ -31,19 +31,19 @@ Relay is an Electron desktop command center for operations teams managing people
 
 ## Architecture
 
-- `src/main/`: IPC handlers, PocketBase services, offline cache, and business-logic operations modules
+- `src/main/`: IPC handlers, PocketBase services, offline cache, and business logic
 - `src/preload/`: typed `window.api` bridge via Electron context isolation
 - `src/renderer/`: React tabs, feature-focused hooks, and shared UI components
 - `src/shared/`: IPC channel contracts, Zod validation schemas, and domain types
 
-Business logic stays in operations modules; handlers validate inputs and delegate — no logic in handlers.
+Handlers validate inputs and delegate to service/utility modules for business logic.
 
 ## Tech Stack
 
 | Layer          | Technology                                      |
 | -------------- | ----------------------------------------------- |
 | Desktop shell  | Electron 41                                     |
-| Frontend       | React 19 + TypeScript 5.9                       |
+| Frontend       | React 19 + TypeScript 6.0                       |
 | Build          | Vite 7 + electron-vite 5                        |
 | Validation     | Zod 4                                           |
 | Virtualization | react-window 2 + react-virtualized-auto-sizer 2 |
@@ -82,15 +82,14 @@ Coverage thresholds are enforced:
 
 ## Project Layout
 
-- `src/main/operations/`: core data and business logic
-- `src/main/handlers/`: IPC handler registration and input validation
+- `src/main/handlers/`: IPC handler registration, input validation, and business logic
 - `src/renderer/src/tabs/`: feature tabs (Compose, Alerts, On-Call, People, Servers, Weather, Radar, Notes, Cloud Status)
 - `src/renderer/src/tabs/alerts/`: alert sub-components (severity selector, body editor, compact/enhance engines, highlight colors, event time banner)
 - `src/renderer/src/tabs/notes/`: note sub-components (card, editor, toolbar, content parser/renderer)
 - `src/renderer/src/hooks/`: feature-focused state and side-effect hooks
 - `src/main/handlers/cloudStatus/`: cloud status provider fetchers (Google, AWS/Azure/GitHub/Cloudflare via RSS, Salesforce, Statuspage)
 - `src/main/handlers/backupHandlers.ts`: PocketBase backup create/restore with cache invalidation
-- `docs/`: architecture decisions, logging guide, security notes, troubleshooting
+- `docs/`: architecture, development guide, design system, security
 
 ## License
 

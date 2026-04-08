@@ -19,22 +19,23 @@ Data CRUD lives in `src/renderer/src/services/`, separated from UI hooks. Each d
 
 ### Current Service Modules
 
-| Module                 | File                        | Domain                                                  |
-| ---------------------- | --------------------------- | ------------------------------------------------------- |
-| PocketBase client      | `pocketbase.ts`             | Client init, auth, health check, error handling         |
-| pbErrors               | `pbErrors.ts`               | PocketBase error type guards (e.g. 404 not-found check) |
-| crudServiceFactory     | `crudServiceFactory.ts`     | Generic CRUD service factory (`createCrudService<T>`)   |
-| contactService         | `contactService.ts`         | Contact CRUD                                            |
-| serverService          | `serverService.ts`          | Server CRUD                                             |
-| oncallService          | `oncallService.ts`          | On-call team CRUD and reorder                           |
-| oncallDismissalService | `oncallDismissalService.ts` | On-call alert dismissal persistence                     |
-| bridgeGroupService     | `bridgeGroupService.ts`     | Bridge group preset CRUD                                |
-| bridgeHistoryService   | `bridgeHistoryService.ts`   | Bridge history log                                      |
-| notesService           | `notesService.ts`           | Contact and server notes                                |
-| standaloneNoteService  | `standaloneNoteService.ts`  | Standalone notepad CRUD and reorder                     |
-| savedLocationService   | `savedLocationService.ts`   | Weather saved locations                                 |
-| alertHistoryService    | `alertHistoryService.ts`    | Alert history log                                       |
-| importExportService    | `importExportService.ts`    | CSV and JSON import/export                              |
+| Module                     | File                            | Domain                                                  |
+| -------------------------- | ------------------------------- | ------------------------------------------------------- |
+| PocketBase client          | `pocketbase.ts`                 | Client init, auth, health check, error handling         |
+| pbErrors                   | `pbErrors.ts`                   | PocketBase error type guards (e.g. 404 not-found check) |
+| crudServiceFactory         | `crudServiceFactory.ts`         | Generic CRUD service factory (`createCrudService<T>`)   |
+| contactService             | `contactService.ts`             | Contact CRUD                                            |
+| serverService              | `serverService.ts`              | Server CRUD                                             |
+| oncallService              | `oncallService.ts`              | On-call team CRUD and reorder                           |
+| oncallDismissalService     | `oncallDismissalService.ts`     | On-call alert dismissal persistence                     |
+| bridgeGroupService         | `bridgeGroupService.ts`         | Bridge group preset CRUD                                |
+| bridgeHistoryService       | `bridgeHistoryService.ts`       | Bridge history log                                      |
+| notesService               | `notesService.ts`               | Contact and server notes                                |
+| standaloneNoteService      | `standaloneNoteService.ts`      | Standalone notepad CRUD and reorder                     |
+| savedLocationService       | `savedLocationService.ts`       | Weather saved locations                                 |
+| alertHistoryService        | `alertHistoryService.ts`        | Alert history log                                       |
+| oncallBoardSettingsService | `oncallBoardSettingsService.ts` | On-call board shared settings CRUD                      |
+| importExportService        | `importExportService.ts`        | CSV and JSON import/export                              |
 
 ### Adding a New Service
 
@@ -310,6 +311,7 @@ Each feature domain has a dedicated hook in `src/renderer/src/hooks/`:
 | `useModalState`        | Utility      | Open/close/toggle state for modals                |
 | `useMounted`           | Utility      | Mount state tracking                              |
 | `useOnClickOutside`    | Utility      | Click-outside detection                           |
+| `useTheme`             | Global       | Theme preference (dark/light mode)                |
 
 ### Virtual Lists
 
@@ -365,6 +367,7 @@ Styles are in `src/renderer/src/styles/` — vanilla CSS with design tokens:
 | `toast.css`      | Toast notifications                       |
 | `utilities.css`  | Utility classes                           |
 | `app-icon.css`   | App icon styling                          |
+| `setup.css`      | Setup/configuration wizard                |
 
 No CSS modules. No Tailwind. Components reference class names directly.
 

@@ -8,7 +8,7 @@ System design for the Relay Electron desktop application.
 | -------------- | ---------------------------- | ------------------- |
 | Shell          | Electron                     | 41                  |
 | Renderer       | React                        | 19                  |
-| Language       | TypeScript                   | 5.9 (strict)        |
+| Language       | TypeScript                   | 6.0 (strict)        |
 | Build          | Vite + electron-vite         | 7 / 5               |
 | Validation     | Zod                          | 4                   |
 | Database       | PocketBase (embedded SQLite) | 0.26                |
@@ -102,19 +102,20 @@ Contains TypeScript types, IPC channel definitions, Zod validation schemas, and 
 
 All application data is stored in PocketBase's embedded SQLite database. The following collections are defined:
 
-| Collection          | Contents                                                       |
-| ------------------- | -------------------------------------------------------------- |
-| `contacts`          | Contact records (name, email, phone, title)                    |
-| `servers`           | Server records (name, business area, owner, OS, etc.)          |
-| `oncall`            | On-call records (team, role, name, contact, sort order)        |
-| `bridge_groups`     | Bridge group presets (name, contact emails)                    |
-| `bridge_history`    | Bridge composition log (groups, contacts, timestamp)           |
-| `alert_history`     | Alert composition log (severity, subject, body, sender, label) |
-| `notes`             | Contact and server notes with tags (entityType, entityKey)     |
-| `standalone_notes`  | Standalone notes with title, content, color, tags, sort order  |
-| `saved_locations`   | Weather saved locations                                        |
-| `oncall_dismissals` | On-call alert dismissal tracking (alertType, dateKey)          |
-| `conflict_log`      | Sync conflict records (collection, recordId, overwritten data) |
+| Collection              | Contents                                                       |
+| ----------------------- | -------------------------------------------------------------- |
+| `contacts`              | Contact records (name, email, phone, title)                    |
+| `servers`               | Server records (name, business area, owner, OS, etc.)          |
+| `oncall`                | On-call records (team, role, name, contact, sort order)        |
+| `bridge_groups`         | Bridge group presets (name, contact emails)                    |
+| `bridge_history`        | Bridge composition log (groups, contacts, timestamp)           |
+| `alert_history`         | Alert composition log (severity, subject, body, sender, label) |
+| `notes`                 | Contact and server notes with tags (entityType, entityKey)     |
+| `standalone_notes`      | Standalone notes with title, content, color, tags, sort order  |
+| `saved_locations`       | Weather saved locations                                        |
+| `oncall_dismissals`     | On-call alert dismissal tracking (alertType, dateKey)          |
+| `oncall_board_settings` | Shared on-call board settings (teamId-based, lock state)       |
+| `conflict_log`          | Sync conflict records (collection, recordId, overwritten data) |
 
 Schema migrations live in `src/main/pocketbase/migrations/` and are applied automatically on startup via the `--migrationsDir` flag.
 
@@ -170,7 +171,7 @@ oncall:alertDismissed
 setup:getConfig, setup:saveConfig, setup:isConfigured
 cache:read, cache:write, cache:snapshot
 sync:pending
-pb:getUrl, pb:getSecret, pb:start
+pb:getConnection, pb:refreshConnection, pb:start
 backup:list, backup:create, backup:restore
 logger:toMain, metrics:logBridge
 ```
@@ -274,7 +275,7 @@ The logger automatically strips sensitive fields (passwords, tokens, authorizati
 
 ## Logging
 
-Structured logging with automatic rotation. See [LOGGING.md](LOGGING.md) for the full guide.
+Structured logging with automatic rotation.
 
 Main process: `src/main/logger.ts` — writes to `relay.log` and `errors.log`
 Renderer: `src/renderer/src/utils/logger.ts` — forwards to main via IPC
