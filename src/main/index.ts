@@ -30,6 +30,7 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
+import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { isTrustedWebviewUrl } from './securityPolicy';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -156,6 +157,7 @@ if (gotLock) {
       await createWindow();
       startPeriodicCleanup();
       const cleanupMaintenance = setupMaintenanceTasks();
+      const stopMemoryHeartbeat = startMemoryHeartbeat();
 
       // Initialize offline cache infrastructure for client mode AFTER the
       // window is visible. All three components (cache, pending, sync) are
@@ -203,6 +205,7 @@ if (gotLock) {
         loggers.main.info('App quitting — cleaning up resources');
         stopPeriodicCleanup();
         cleanupMaintenance();
+        stopMemoryHeartbeat();
         // PocketBase cleanup — synchronous kill to ensure process dies before app exits
         if (getRetentionManager()) {
           getRetentionManager()!.stop();
@@ -248,6 +251,7 @@ if (gotLock) {
 
   // Global Exception Handlers
   setupErrorHandlers();
+  setupAppLifecycleListeners();
 } else {
   app.quit();
 }

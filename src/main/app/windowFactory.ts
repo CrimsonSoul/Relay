@@ -7,6 +7,7 @@ import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHand
 import { isTrustedWebviewUrl } from '../securityPolicy';
 import { setupSecurityHeaders } from './securityHeaders';
 import { setupContextMenu } from './contextMenu';
+import { attachWindowLifecycleListeners } from './processLifecycle';
 
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
@@ -44,6 +45,7 @@ export async function createWindow(): Promise<void> {
   setMainWindow(mainWindow);
 
   setupWindowListeners(mainWindow);
+  attachWindowLifecycleListeners(mainWindow, { label: 'main', autoReload: true });
 
   // Configure spellchecker languages
   mainWindow.webContents.session.setSpellCheckerLanguages(['en-US']);
@@ -161,6 +163,7 @@ export async function createAuxWindow(route: string): Promise<void> {
   });
 
   setupWindowListeners(auxWindow);
+  attachWindowLifecycleListeners(auxWindow, { label: `aux:${route}`, autoReload: true });
 
   // Track aux window and clean up on close
   auxWindows.set(route, auxWindow);
