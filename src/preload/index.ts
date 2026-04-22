@@ -94,6 +94,7 @@ const api: BridgeAPI = {
   getPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_GET_CONNECTION),
   refreshPbConnection: () => ipcRenderer.invoke(IPC_CHANNELS.PB_REFRESH_CONNECTION),
   startPocketBase: () => ipcRenderer.invoke(IPC_CHANNELS.PB_START),
+  relaunchApp: () => ipcRenderer.invoke(IPC_CHANNELS.APP_RELAUNCH),
 
   // Backups
   listBackups: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST),

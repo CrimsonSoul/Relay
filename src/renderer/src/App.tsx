@@ -509,9 +509,16 @@ function AppWithSetup() {
             return;
           }
         }
-        // Reload the page so the CSP headers are re-evaluated with the
-        // newly saved config (connect-src must include the server URL).
-        globalThis.location.reload();
+        // Full app relaunch so the main process rebuilds its per-mode state
+        // (pbProcess, syncPb, offline cache) from the new config. A renderer-only
+        // reload leaves stale state — e.g. a lingering embedded PocketBase after
+        // switching to client mode — that can misroute or stall the connection.
+        const relaunch = globalThis.api?.relaunchApp;
+        if (relaunch) {
+          await relaunch();
+        } else {
+          globalThis.location.reload();
+        }
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
         setPhase({ stage: 'error', message: 'Failed to save configuration.' });

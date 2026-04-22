@@ -138,6 +138,17 @@ if (gotLock) {
         return startPocketBase(config, configDataDir);
       });
 
+      // Full app relaunch — used by the setup flow so the main process rebuilds
+      // its per-mode state (pbProcess, syncPb, offline cache) from the new config.
+      // A renderer-only reload leaves stale state (e.g. the embedded PocketBase
+      // still running after switching to client mode) that can misroute or
+      // stall the first connection attempt.
+      ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, () => {
+        loggers.main.info('Relaunching app (reconfigure)');
+        app.relaunch();
+        app.exit(0);
+      });
+
       const restartPb = async (): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;

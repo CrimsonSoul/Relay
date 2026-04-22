@@ -329,6 +329,7 @@ export type BridgeAPI = {
   getPbConnection: () => Promise<PbConnectionResult>;
   refreshPbConnection: () => Promise<PbConnectionResult>;
   startPocketBase: () => Promise<boolean>;
+  relaunchApp: () => Promise<void>;
   // Backups
   listBackups: () => Promise<BackupEntry[]>;
   createBackup: () => Promise<IpcResult<string>>;
@@ -398,6 +399,7 @@ export const IPC_CHANNELS = {
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',
   PB_START: 'pb:start',
+  APP_RELAUNCH: 'app:relaunch',
   // Backups
   BACKUP_LIST: 'backup:list',
   BACKUP_CREATE: 'backup:create',
