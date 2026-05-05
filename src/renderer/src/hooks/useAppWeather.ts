@@ -21,30 +21,56 @@ type WeatherCache = {
   data: WeatherData;
 };
 
-const isWeatherDataUsable = (data: unknown): data is WeatherData => {
+const hasCurrentWeather = (data: unknown): data is Pick<WeatherData, 'current_weather'> => {
   if (!data || typeof data !== 'object') return false;
   const weather = data as Partial<WeatherData>;
   const current = weather.current_weather;
-  const hourly = weather.hourly;
-  const daily = weather.daily;
 
   return (
     typeof current?.temperature === 'number' &&
     typeof current?.weathercode === 'number' &&
-    typeof current?.time === 'string' &&
-    Array.isArray(hourly?.time) &&
-    hourly.time.length > 0 &&
-    Array.isArray(hourly.temperature_2m) &&
-    Array.isArray(hourly.weathercode) &&
-    Array.isArray(hourly.precipitation_probability) &&
-    Array.isArray(daily?.time) &&
-    daily.time.length > 0 &&
-    Array.isArray(daily.weathercode) &&
-    Array.isArray(daily.temperature_2m_max) &&
-    Array.isArray(daily.temperature_2m_min) &&
-    Array.isArray(daily.wind_speed_10m_max) &&
-    Array.isArray(daily.precipitation_probability_max)
+    typeof current?.time === 'string'
   );
+};
+
+const numberArray = (value: unknown): number[] => (Array.isArray(value) ? value.map(Number) : []);
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.map((item) => String(item)) : [];
+
+const normalizeWeatherPayload = (payload: unknown): WeatherData | null => {
+  if (!hasCurrentWeather(payload)) {
+    if (payload) {
+      loggers.weather.warn('Ignoring unusable weather payload', {
+        keys: getPayloadKeys(payload),
+      });
+    }
+    return null;
+  }
+
+  const weather = payload as Partial<WeatherData>;
+  const hourly = weather.hourly as Partial<WeatherData['hourly']> | undefined;
+  const daily = weather.daily as Partial<WeatherData['daily']> | undefined;
+
+  return {
+    timezone: typeof weather.timezone === 'string' ? weather.timezone : undefined,
+    utc_offset_seconds:
+      typeof weather.utc_offset_seconds === 'number' ? weather.utc_offset_seconds : undefined,
+    current_weather: weather.current_weather,
+    hourly: {
+      time: stringArray(hourly?.time),
+      temperature_2m: numberArray(hourly?.temperature_2m),
+      weathercode: numberArray(hourly?.weathercode),
+      precipitation_probability: numberArray(hourly?.precipitation_probability),
+    },
+    daily: {
+      time: stringArray(daily?.time),
+      weathercode: numberArray(daily?.weathercode),
+      temperature_2m_max: numberArray(daily?.temperature_2m_max),
+      temperature_2m_min: numberArray(daily?.temperature_2m_min),
+      wind_speed_10m_max: numberArray(daily?.wind_speed_10m_max),
+      precipitation_probability_max: numberArray(daily?.precipitation_probability_max),
+    },
+  };
 };
 
 const loadCachedWeather = (): WeatherData | null => {
@@ -55,7 +81,7 @@ const loadCachedWeather = (): WeatherData | null => {
     const cache = cached as WeatherCache;
     if (cache.version !== WEATHER_CACHE_VERSION) return null;
     if (Date.now() - cache.fetchedAt > WEATHER_CACHE_TTL_MS) return null;
-    return isWeatherDataUsable(cache.data) ? cache.data : null;
+    return normalizeWeatherPayload(cache.data);
   }
 
   return null;
@@ -65,16 +91,6 @@ const getPayloadKeys = (payload: unknown): string[] => {
   return payload && typeof payload === 'object'
     ? Object.keys(payload as Record<string, unknown>)
     : [];
-};
-
-const normalizeWeatherPayload = (payload: unknown): WeatherData | null => {
-  if (isWeatherDataUsable(payload)) return payload;
-  if (payload) {
-    loggers.weather.warn('Ignoring unusable weather payload', {
-      keys: getPayloadKeys(payload),
-    });
-  }
-  return null;
 };
 
 const persistWeatherCache = (weather: WeatherData | null): void => {
@@ -228,10 +244,14 @@ export function useAppWeather(
 
         const usableWeather = normalizeWeatherPayload(wData);
 
-        setWeatherData(usableWeather);
+        if (usableWeather) {
+          setWeatherData(usableWeather);
+        }
         setWeatherAlerts(aData);
 
-        persistWeatherCache(usableWeather);
+        if (usableWeather) {
+          persistWeatherCache(usableWeather);
+        }
         secureStorage.setItemSync(WEATHER_ALERTS_CACHE_KEY, aData);
 
         if (aData.length > 0) processAlerts(aData);

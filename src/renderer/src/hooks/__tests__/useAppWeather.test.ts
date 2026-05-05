@@ -248,36 +248,83 @@ describe('useAppWeather', () => {
     expect(result.current.weatherLoading).toBe(false);
   });
 
-  it('removes cache when weather data is null from API', async () => {
+  it('keeps the current weather when refresh returns null', async () => {
     mockApi.getWeather.mockResolvedValue(null);
     mockApi.getWeatherAlerts.mockResolvedValue([]);
 
+    secureStorageMock.setItemSync('cached_weather_data', {
+      version: 2,
+      fetchedAt: Date.now(),
+      data: weatherData,
+    });
+
     const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await waitFor(() => {
+      expect(result.current.weatherData?.timezone).toBe('America/Chicago');
+    });
+    secureStorageMock.removeItem.mockClear();
 
     await act(async () => {
       await result.current.fetchWeather(35, -80, false);
     });
 
-    expect(secureStorageMock.removeItem).toHaveBeenCalledWith('cached_weather_data');
+    expect(result.current.weatherData?.timezone).toBe('America/Chicago');
+    expect(secureStorageMock.removeItem).not.toHaveBeenCalledWith('cached_weather_data');
   });
 
-  it('ignores malformed weather payloads instead of exposing them to the UI', async () => {
+  it('ignores malformed weather payloads instead of replacing good weather', async () => {
     mockApi.getWeather.mockResolvedValue({ error: 'Weather service unavailable' });
     mockApi.getWeatherAlerts.mockResolvedValue([]);
     const { loggers } = await import('../../utils/logger');
 
+    secureStorageMock.setItemSync('cached_weather_data', {
+      version: 2,
+      fetchedAt: Date.now(),
+      data: weatherData,
+    });
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await waitFor(() => {
+      expect(result.current.weatherData?.timezone).toBe('America/Chicago');
+    });
+
+    await act(async () => {
+      await result.current.fetchWeather(35, -80, false);
+    });
+
+    expect(result.current.weatherData?.timezone).toBe('America/Chicago');
+    expect(loggers.weather.warn).toHaveBeenCalledWith(
+      'Ignoring unusable weather payload',
+      expect.objectContaining({ keys: ['error'] }),
+    );
+  });
+
+  it('accepts weather payloads with current conditions even if forecast arrays are partial', async () => {
+    const partialWeather = {
+      current_weather: weatherData.current_weather,
+      hourly: {
+        time: ['2026-02-22T15:00'],
+        temperature_2m: [75],
+      },
+      daily: {
+        time: ['2026-02-22'],
+        temperature_2m_max: [80],
+      },
+    };
+    mockApi.getWeather.mockResolvedValue(partialWeather);
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+
     const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
 
     await act(async () => {
       await result.current.fetchWeather(35, -80, false);
     });
 
-    expect(result.current.weatherData).toBeNull();
-    expect(secureStorageMock.removeItem).toHaveBeenCalledWith('cached_weather_data');
-    expect(loggers.weather.warn).toHaveBeenCalledWith(
-      'Ignoring unusable weather payload',
-      expect.objectContaining({ keys: ['error'] }),
-    );
+    expect(result.current.weatherData?.current_weather.temperature).toBe(75);
+    expect(result.current.weatherData?.hourly.weathercode).toEqual([]);
+    expect(result.current.weatherData?.daily.precipitation_probability_max).toEqual([]);
   });
 
   it('fetches weather on location change and resets data', async () => {
