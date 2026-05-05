@@ -271,20 +271,16 @@
 
 * {
   box-sizing: border-box;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
-*:hover {
-  scrollbar-width: thin;
+*:hover,
+*:focus-within {
   scrollbar-color: var(--color-scrollbar) transparent;
 }
 
 ::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-}
-
-*:hover::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
@@ -294,8 +290,13 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: var(--color-scrollbar);
+  background-color: transparent;
   border-radius: 3px;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--color-scrollbar);
 }
 
 ::-webkit-scrollbar-thumb:hover {
