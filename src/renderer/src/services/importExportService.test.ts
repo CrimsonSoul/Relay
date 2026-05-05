@@ -12,13 +12,9 @@ const {
   mockGetFirstListItem,
   mockPapaUnparse,
   mockPapaParse,
-  mockAddWorksheet,
-  mockGetWorksheet,
-  mockXlsxWriteBuffer,
-  mockXlsxLoad,
-  mockEachRow,
-  mockWorksheetInstance,
-  mockWorkbookInstance,
+  mockWriteExcelFile,
+  mockToBlob,
+  mockReadExcelFile,
 } = vi.hoisted(() => {
   const mockCreate = vi.fn();
   const mockUpdate = vi.fn();
@@ -26,30 +22,9 @@ const {
   const mockGetFirstListItem = vi.fn();
   const mockPapaUnparse = vi.fn();
   const mockPapaParse = vi.fn();
-  const mockAddWorksheet = vi.fn();
-  const mockGetWorksheet = vi.fn();
-  const mockXlsxWriteBuffer = vi.fn();
-  const mockXlsxLoad = vi.fn();
-  const mockEachRow = vi.fn();
-
-  const mockWorksheetInstance = {
-    columns: [] as unknown[],
-    getRow: vi.fn(() => ({ font: {}, fill: {}, commit: vi.fn() })),
-    addRow: vi.fn(),
-    eachRow: mockEachRow,
-  };
-
-  const mockWorkbookInstance = {
-    creator: '',
-    created: new Date(),
-    addWorksheet: mockAddWorksheet,
-    getWorksheet: mockGetWorksheet,
-    worksheets: [mockWorksheetInstance] as unknown[],
-    xlsx: {
-      writeBuffer: mockXlsxWriteBuffer,
-      load: mockXlsxLoad,
-    },
-  };
+  const mockWriteExcelFile = vi.fn();
+  const mockToBlob = vi.fn();
+  const mockReadExcelFile = vi.fn();
 
   return {
     mockCreate,
@@ -58,13 +33,9 @@ const {
     mockGetFirstListItem,
     mockPapaUnparse,
     mockPapaParse,
-    mockAddWorksheet,
-    mockGetWorksheet,
-    mockXlsxWriteBuffer,
-    mockXlsxLoad,
-    mockEachRow,
-    mockWorksheetInstance,
-    mockWorkbookInstance,
+    mockWriteExcelFile,
+    mockToBlob,
+    mockReadExcelFile,
   };
 });
 
@@ -89,13 +60,12 @@ vi.mock('papaparse', () => ({
   },
 }));
 
-vi.mock('exceljs', () => ({
-  default: {
-    // Must use a regular function (not arrow) so `new ExcelJS.Workbook()` works
-    Workbook: vi.fn(function () {
-      return mockWorkbookInstance;
-    }),
-  },
+vi.mock('write-excel-file/browser', () => ({
+  default: mockWriteExcelFile,
+}));
+
+vi.mock('read-excel-file/browser', () => ({
+  default: mockReadExcelFile,
 }));
 
 import {
@@ -115,10 +85,8 @@ const sampleRecord = { id: 'r1', email: 'alice@example.com', name: 'Alice' };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockAddWorksheet.mockReturnValue(mockWorksheetInstance);
-  mockGetWorksheet.mockReturnValue(mockWorksheetInstance);
-  mockWorksheetInstance.columns = [];
-  mockWorkbookInstance.worksheets = [mockWorksheetInstance];
+  mockWriteExcelFile.mockReturnValue({ toBlob: mockToBlob });
+  mockToBlob.mockResolvedValue(new Blob([new Uint8Array([1, 2, 3, 4])]));
 });
 
 // ---------------------------------------------------------------------------
@@ -179,29 +147,27 @@ describe('exportToCsv', () => {
 // exportToExcel
 // ---------------------------------------------------------------------------
 describe('exportToExcel', () => {
-  it('creates a workbook and returns an ArrayBuffer', async () => {
+  it('writes a spreadsheet and returns an ArrayBuffer', async () => {
     mockGetFullList.mockResolvedValueOnce([sampleRecord]);
-    const fakeBuffer = new ArrayBuffer(8);
-    mockXlsxWriteBuffer.mockResolvedValueOnce(fakeBuffer);
     const result = await exportToExcel('contacts');
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(result).toBeInstanceOf(ArrayBuffer);
-  });
-
-  it('converts a Uint8Array-style buffer to ArrayBuffer', async () => {
-    mockGetFullList.mockResolvedValueOnce([sampleRecord]);
-    const fakeNodeBuffer = new Uint8Array([1, 2, 3, 4]);
-    mockXlsxWriteBuffer.mockResolvedValueOnce(fakeNodeBuffer);
-    const result = await exportToExcel('contacts');
-    expect(result).toBeInstanceOf(ArrayBuffer);
+    expect(mockWriteExcelFile).toHaveBeenCalledOnce();
+    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(sheets[0]?.data[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ value: 'id', fontWeight: 'bold' }),
+        expect.objectContaining({ value: 'email', fontWeight: 'bold' }),
+      ]),
+    );
     expect(result.byteLength).toBe(4);
   });
 
-  it('skips adding rows for empty collections', async () => {
+  it('writes an empty sheet for empty collections', async () => {
     mockGetFullList.mockResolvedValueOnce([]);
-    mockXlsxWriteBuffer.mockResolvedValueOnce(new ArrayBuffer(0));
     await exportToExcel('contacts');
-    expect(mockWorksheetInstance.addRow).not.toHaveBeenCalled();
+    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(sheets[0]).toMatchObject({ sheet: 'contacts', data: [] });
   });
 });
 
@@ -313,13 +279,15 @@ describe('importFromCsv', () => {
 // ---------------------------------------------------------------------------
 describe('importFromExcel', () => {
   it('reads rows from the matching worksheet and imports records', async () => {
-    mockXlsxLoad.mockResolvedValueOnce(undefined);
-    mockEachRow.mockImplementationOnce(
-      (cb: (row: { values: unknown[] }, rowNumber: number) => void) => {
-        cb({ values: [undefined, 'email', 'name'] }, 1);
-        cb({ values: [undefined, 'alice@example.com', 'Alice'] }, 2);
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [
+          ['email', 'name'],
+          ['alice@example.com', 'Alice'],
+        ],
       },
-    );
+    ]);
     const notFound = Object.assign(new Error('Not found'), { status: 404 });
     mockGetFirstListItem.mockRejectedValueOnce(notFound);
     mockCreate.mockResolvedValueOnce(sampleRecord);
@@ -329,14 +297,12 @@ describe('importFromExcel', () => {
   });
 
   it('falls back to the first worksheet when named worksheet is not found', async () => {
-    mockXlsxLoad.mockResolvedValueOnce(undefined);
-    mockGetWorksheet.mockReturnValueOnce(undefined);
-    mockEachRow.mockImplementationOnce(
-      (cb: (row: { values: unknown[] }, rowNumber: number) => void) => {
-        cb({ values: [undefined, 'email'] }, 1);
-        cb({ values: [undefined, 'bob@example.com'] }, 2);
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'Sheet 1',
+        data: [['email'], ['bob@example.com']],
       },
-    );
+    ]);
     const notFound = Object.assign(new Error('Not found'), { status: 404 });
     mockGetFirstListItem.mockRejectedValueOnce(notFound);
     mockCreate.mockResolvedValueOnce(sampleRecord);
@@ -345,19 +311,14 @@ describe('importFromExcel', () => {
   });
 
   it('returns an error when no worksheets exist', async () => {
-    mockXlsxLoad.mockResolvedValueOnce(undefined);
-    mockGetWorksheet.mockReturnValueOnce(undefined);
-    mockWorkbookInstance.worksheets = [];
+    mockReadExcelFile.mockResolvedValueOnce([]);
     const result = await importFromExcel('contacts', new ArrayBuffer(8));
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toMatch(/No worksheets/);
   });
 
   it('returns an error when sheet has no header row', async () => {
-    mockXlsxLoad.mockResolvedValueOnce(undefined);
-    mockEachRow.mockImplementationOnce(() => {
-      // no rows yielded
-    });
+    mockReadExcelFile.mockResolvedValueOnce([{ sheet: 'contacts', data: [] }]);
     const result = await importFromExcel('contacts', new ArrayBuffer(8));
     expect(result.errors[0]).toMatch(/no header row/);
   });

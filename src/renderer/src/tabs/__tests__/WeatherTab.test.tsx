@@ -61,8 +61,10 @@ vi.mock('../weather', () => ({
   DailyForecast: ({ weather }: { weather: unknown }) => (
     <div data-testid="daily-forecast">{weather ? 'has-weather' : 'no-weather'}</div>
   ),
-  RadarPanel: ({ location }: { location: unknown }) => (
-    <div data-testid="radar-panel">{location ? 'has-location' : 'no-location'}</div>
+  RadarPanel: ({ location, isActive }: { location: unknown; isActive?: boolean }) => (
+    <div data-testid="radar-panel">
+      {location ? 'has-location' : 'no-location'}:{isActive === false ? 'inactive' : 'active'}
+    </div>
   ),
   SaveLocationModal: ({
     onClose,
@@ -599,5 +601,10 @@ describe('WeatherTab', () => {
     render(<WeatherTab {...defaultProps} weather={null} />);
     expect(screen.getByTestId('hourly-forecast')).toHaveTextContent('no-weather');
     expect(screen.getByTestId('daily-forecast')).toHaveTextContent('no-weather');
+  });
+
+  it('passes inactive state to radar panel', () => {
+    render(<WeatherTab {...defaultProps} isActive={false} />);
+    expect(screen.getByTestId('radar-panel')).toHaveTextContent('has-location:inactive');
   });
 });

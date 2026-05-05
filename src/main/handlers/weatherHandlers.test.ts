@@ -54,9 +54,7 @@ describe('weatherHandlers', () => {
   });
 
   it('returns weather error for invalid coordinates', async () => {
-    await expect(handlers[IPC_CHANNELS.GET_WEATHER]({}, 999, -97.7)).resolves.toEqual({
-      error: 'Weather service unavailable',
-    });
+    await expect(handlers[IPC_CHANNELS.GET_WEATHER]({}, 999, -97.7)).resolves.toBeNull();
     expect(fetch).not.toHaveBeenCalled();
   });
 
@@ -152,7 +150,7 @@ describe('weatherHandlers', () => {
     } as Response);
 
     const result = await handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7);
-    expect(result).toEqual({ error: 'Weather service unavailable' });
+    expect(result).toBeNull();
   });
 
   it('returns error when weather API response has unexpected shape', async () => {
@@ -162,7 +160,7 @@ describe('weatherHandlers', () => {
     } as Response);
 
     const result = await handlers[IPC_CHANNELS.GET_WEATHER]({}, 30.2, -97.7);
-    expect(result).toEqual({ error: 'Weather data has unexpected format' });
+    expect(result).toBeNull();
   });
 
   it('returns empty array for alerts when rate limited', async () => {

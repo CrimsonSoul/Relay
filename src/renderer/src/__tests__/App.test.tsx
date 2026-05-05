@@ -270,11 +270,12 @@ const mockHandleReset = vi.fn();
 const mockHandleAddManual = vi.fn();
 const mockHandleRemoveManual = vi.fn();
 const mockHandleToggleGroup = vi.fn();
+let mockActiveTab = 'Compose';
 let mockSettingsOpen = false;
 
 vi.mock('../hooks/useAppAssembler', () => ({
   useAppAssembler: () => ({
-    activeTab: 'Compose',
+    activeTab: mockActiveTab,
     setActiveTab: mockSetActiveTab,
     selectedGroupIds: [],
     setSelectedGroupIds: mockSetSelectedGroupIds,
@@ -324,6 +325,7 @@ function renderApp(searchParams = '') {
 describe('MainApp', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockActiveTab = 'Compose';
     mockSettingsOpen = false;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
@@ -333,6 +335,7 @@ describe('MainApp', () => {
 
   afterEach(() => {
     mockSettingsOpen = false;
+    mockActiveTab = 'Compose';
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -480,6 +483,17 @@ describe('MainApp', () => {
 
     fireEvent.click(screen.getByText('nav-radar'));
     expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
+  });
+
+  it('mounts the dedicated Radar webview tab only while Radar is active', async () => {
+    renderApp();
+    expect(screen.queryByTestId('radar-tab')).not.toBeInTheDocument();
+
+    mockActiveTab = 'Radar';
+    renderApp();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('radar-tab')).toBeInTheDocument();
+    });
   });
 
   it('navigates tab on Cmd+3 (People)', () => {

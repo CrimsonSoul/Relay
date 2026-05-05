@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, session, dialog, ipcMain, crashReporter } from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
 import { AppConfig } from './config/AppConfig';
@@ -30,7 +30,11 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
-import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
+import {
+  attachWebContentsLifecycleListeners,
+  setupAppLifecycleListeners,
+  startMemoryHeartbeat,
+} from './app/processLifecycle';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { isTrustedWebviewUrl } from './securityPolicy';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -46,6 +50,25 @@ if (process.platform === 'win32') {
 
 // Validate environment early
 validateEnv();
+
+const hardwareAccelerationEnabled = process.env.RELAY_ENABLE_HARDWARE_ACCELERATION === '1';
+if (!hardwareAccelerationEnabled) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu-compositing');
+}
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+}
+
+crashReporter.start({
+  uploadToServer: false,
+  compress: false,
+  globalExtra: {
+    productName: app.name,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+  },
+});
 
 const gotLock = app.requestSingleInstanceLock();
 if (gotLock) {
@@ -63,6 +86,8 @@ if (gotLock) {
     platform: process.platform,
     electron: process.versions.electron,
     node: process.versions.node,
+    hardwareAcceleration: hardwareAccelerationEnabled ? 'enabled' : 'disabled',
+    nativeWinOcclusion: process.platform === 'win32' ? 'disabled' : 'unchanged',
   });
 
   // Windows-specific optimizations
@@ -79,6 +104,11 @@ if (gotLock) {
 
   app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return;
+
+    attachWebContentsLifecycleListeners(contents, {
+      label: `webview:${contents.id}`,
+      autoReload: true,
+    });
 
     contents.on('will-navigate', (event, url) => {
       if (isTrustedWebviewUrl(url)) return;
@@ -101,6 +131,7 @@ if (gotLock) {
       }
 
       loggers.main.info('Electron ready, performing setup...');
+      loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
 
       setupPermissions(session.defaultSession);
       setupPermissions(session.fromPartition('persist:weather'));

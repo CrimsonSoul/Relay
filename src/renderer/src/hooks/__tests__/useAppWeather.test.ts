@@ -261,6 +261,25 @@ describe('useAppWeather', () => {
     expect(secureStorageMock.removeItem).toHaveBeenCalledWith('cached_weather_data');
   });
 
+  it('ignores malformed weather payloads instead of exposing them to the UI', async () => {
+    mockApi.getWeather.mockResolvedValue({ error: 'Weather service unavailable' });
+    mockApi.getWeatherAlerts.mockResolvedValue([]);
+    const { loggers } = await import('../../utils/logger');
+
+    const { result } = renderHook(() => useAppWeather(deviceLocation, showToast));
+
+    await act(async () => {
+      await result.current.fetchWeather(35, -80, false);
+    });
+
+    expect(result.current.weatherData).toBeNull();
+    expect(secureStorageMock.removeItem).toHaveBeenCalledWith('cached_weather_data');
+    expect(loggers.weather.warn).toHaveBeenCalledWith(
+      'Ignoring unusable weather payload',
+      expect.objectContaining({ keys: ['error'] }),
+    );
+  });
+
   it('fetches weather on location change and resets data', async () => {
     mockApi.getWeather.mockResolvedValue(weatherData);
     mockApi.getWeatherAlerts.mockResolvedValue([]);

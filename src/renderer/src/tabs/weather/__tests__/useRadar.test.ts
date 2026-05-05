@@ -128,4 +128,47 @@ describe('useRadar', () => {
     unmount();
     expect(webview.removeEventListener).toHaveBeenCalled();
   });
+
+  it('cleans up listeners and disables refresh when disabled', () => {
+    const listeners = new Map<string, Listener>();
+    const webview = {
+      addEventListener: vi.fn((name: string, cb: Listener) => {
+        listeners.set(name, cb);
+      }),
+      removeEventListener: vi.fn((name: string) => {
+        listeners.delete(name);
+      }),
+      insertCSS: vi.fn().mockResolvedValue(undefined),
+      executeJavaScript: vi.fn().mockResolvedValue(undefined),
+      reload: vi.fn(),
+      reloadIgnoringCache: vi.fn(),
+    };
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useRadar({ latitude: 1, longitude: 2, name: 'A' }, enabled),
+      {
+        initialProps: { enabled: false },
+      },
+    );
+
+    act(() => {
+      result.current.webviewRef.current = webview as unknown as Electron.WebviewTag;
+      rerender({ enabled: true });
+    });
+    expect(webview.addEventListener).toHaveBeenCalled();
+    expect(listeners.size).toBeGreaterThan(0);
+
+    act(() => {
+      rerender({ enabled: false });
+    });
+    expect(webview.removeEventListener).toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
+
+    webview.reloadIgnoringCache.mockClear();
+    act(() => {
+      result.current.handleRefresh();
+    });
+    expect(webview.reloadIgnoringCache).not.toHaveBeenCalled();
+    expect(result.current.isLoading).toBe(false);
+  });
 });

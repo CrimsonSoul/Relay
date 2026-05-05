@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
-import ExcelJS from 'exceljs';
+import type { Cell, Row, Sheet } from 'write-excel-file/browser';
+import type { Sheet as ReadSheet } from 'read-excel-file/browser';
 import { getPb, escapeFilter, requireOnline } from './pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -83,6 +84,74 @@ function csvSafeValue(value: unknown): string {
 async function fetchAll(collection: CollectionName): Promise<Record<string, unknown>[]> {
   const records = await getPb().collection(collection).getFullList({ batch: 500 });
   return records as unknown as Record<string, unknown>[];
+}
+
+function toSpreadsheetCell(value: unknown): Cell {
+  if (value == null) return null;
+  if (
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean' ||
+    value instanceof Date
+  ) {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function getColumnWidths(headers: string[], rows: Record<string, unknown>[]) {
+  return headers.map((header) => {
+    let maxLen = header.length;
+    for (const row of rows) {
+      const value = row[header];
+      const length =
+        value && typeof value === 'object'
+          ? JSON.stringify(value).length
+          : String(value ?? '').length;
+      maxLen = Math.max(maxLen, length);
+    }
+    return { width: Math.min(maxLen + 2, 50) };
+  });
+}
+
+function buildSpreadsheetSheet(
+  sheet: CollectionName,
+  records: Record<string, unknown>[],
+): Sheet<Blob> {
+  if (records.length === 0) {
+    return { sheet, data: [] };
+  }
+
+  const firstRecord = records[0];
+  if (!firstRecord) {
+    return { sheet, data: [] };
+  }
+
+  const headers = Object.keys(firstRecord);
+  const headerRow: Row = headers.map((header) => ({
+    value: header,
+    fontWeight: 'bold',
+    backgroundColor: '#D9D9D9',
+  }));
+  const dataRows: Row[] = records.map((record) => headers.map((h) => toSpreadsheetCell(record[h])));
+
+  return {
+    sheet,
+    data: [headerRow, ...dataRows],
+    columns: getColumnWidths(headers, records),
+    stickyRowsCount: 1,
+  };
+}
+
+async function readWorkbook(buffer: ArrayBuffer): Promise<ReadSheet[]> {
+  const { default: readExcelFile } = await import('read-excel-file/browser');
+  return readExcelFile(buffer);
+}
+
+async function writeWorkbook(sheets: Sheet<Blob>[]): Promise<ArrayBuffer> {
+  const { default: writeExcelFile } = await import('write-excel-file/browser');
+  const blob = await writeExcelFile(sheets).toBlob();
+  return blob.arrayBuffer();
 }
 
 // ---------------------------------------------------------------------------
@@ -210,73 +279,15 @@ export async function exportToCsv(collection: CollectionName): Promise<string> {
 /** Export a single collection or all collections to an Excel ArrayBuffer. */
 export async function exportToExcel(collection: CollectionName | 'all'): Promise<ArrayBuffer> {
   requireOnline();
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Relay';
-  workbook.created = new Date();
-
   const collections: CollectionName[] = collection === 'all' ? [...ALL_COLLECTIONS] : [collection];
+  const sheets: Sheet<Blob>[] = [];
 
   for (const col of collections) {
     const records = await fetchAll(col);
-    const worksheet = workbook.addWorksheet(col);
-
-    if (records.length === 0) {
-      continue;
-    }
-
-    const firstRecord = records[0];
-    if (!firstRecord) continue;
-    const headers = Object.keys(firstRecord);
-
-    // Header row — bold + gray background
-    worksheet.columns = headers.map((h) => ({
-      header: h,
-      key: h,
-      width: 15, // initial; auto-sized below
-    }));
-
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { bold: true };
-    headerRow.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFD9D9D9' },
-    };
-    headerRow.commit();
-
-    // Data rows
-    for (const record of records) {
-      worksheet.addRow(headers.map((h) => record[h]));
-    }
-
-    // Auto-width columns (max 50 chars)
-    worksheet.columns.forEach((col) => {
-      let maxLen = col.header ? String(col.header).length : 10;
-      col.eachCell?.({ includeEmpty: false }, (cell) => {
-        let cellLen = 0;
-        if (cell.value) {
-          cellLen =
-            typeof cell.value === 'object'
-              ? JSON.stringify(cell.value).length
-              : String(cell.value).length;
-        }
-        if (cellLen > maxLen) maxLen = cellLen;
-      });
-      col.width = Math.min(maxLen + 2, 50);
-    });
+    sheets.push(buildSpreadsheetSheet(col, records));
   }
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  // ExcelJS returns a Buffer (Node-style) or ArrayBuffer depending on env;
-  // ensure we always hand back an ArrayBuffer.
-  if (buffer instanceof ArrayBuffer) {
-    return buffer;
-  }
-  // Buffer is a Uint8Array subclass — copy into a plain ArrayBuffer
-  const uint8 = new Uint8Array(buffer as unknown as ArrayBufferLike);
-  const out = new ArrayBuffer(uint8.byteLength);
-  new Uint8Array(out).set(uint8);
-  return out;
+  return writeWorkbook(sheets);
 }
 
 // ---------------------------------------------------------------------------
@@ -373,11 +384,8 @@ export async function importFromExcel(
   buffer: ArrayBuffer,
 ): Promise<ImportResult> {
   requireOnline();
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-
-  // Try to find a worksheet matching the collection name, fall back to first sheet
-  let worksheet = workbook.getWorksheet(collection) ?? workbook.worksheets[0];
+  const sheets = await readWorkbook(buffer);
+  const worksheet = sheets.find((sheet) => sheet.sheet === collection) ?? sheets[0];
 
   if (!worksheet) {
     return { imported: 0, updated: 0, errors: ['No worksheets found in the Excel file'] };
@@ -386,9 +394,8 @@ export async function importFromExcel(
   const records: Record<string, unknown>[] = [];
   let headers: string[] = [];
 
-  worksheet.eachRow((row, rowNumber) => {
-    const values = (row.values as (ExcelJS.CellValue | undefined)[]).slice(1); // col index starts at 1
-    if (rowNumber === 1) {
+  worksheet.data.forEach((values, index) => {
+    if (index === 0) {
       headers = values.map((v) => {
         if (v == null) return '';
         if (typeof v === 'object') return JSON.stringify(v).trim();

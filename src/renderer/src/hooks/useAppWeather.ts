@@ -21,12 +21,30 @@ type WeatherCache = {
   data: WeatherData;
 };
 
-const isWeatherDataUsable = (data: WeatherData | null): data is WeatherData => {
-  if (!data) return false;
-  const hasHourly = Array.isArray(data.hourly?.time) && data.hourly.time.length > 0;
-  const hasOffset = typeof data.utc_offset_seconds === 'number';
-  const hasTimezone = typeof data.timezone === 'string';
-  return hasHourly && hasOffset && hasTimezone;
+const isWeatherDataUsable = (data: unknown): data is WeatherData => {
+  if (!data || typeof data !== 'object') return false;
+  const weather = data as Partial<WeatherData>;
+  const current = weather.current_weather;
+  const hourly = weather.hourly;
+  const daily = weather.daily;
+
+  return (
+    typeof current?.temperature === 'number' &&
+    typeof current?.weathercode === 'number' &&
+    typeof current?.time === 'string' &&
+    Array.isArray(hourly?.time) &&
+    hourly.time.length > 0 &&
+    Array.isArray(hourly.temperature_2m) &&
+    Array.isArray(hourly.weathercode) &&
+    Array.isArray(hourly.precipitation_probability) &&
+    Array.isArray(daily?.time) &&
+    daily.time.length > 0 &&
+    Array.isArray(daily.weathercode) &&
+    Array.isArray(daily.temperature_2m_max) &&
+    Array.isArray(daily.temperature_2m_min) &&
+    Array.isArray(daily.wind_speed_10m_max) &&
+    Array.isArray(daily.precipitation_probability_max)
+  );
 };
 
 const loadCachedWeather = (): WeatherData | null => {
@@ -41,6 +59,35 @@ const loadCachedWeather = (): WeatherData | null => {
   }
 
   return null;
+};
+
+const getPayloadKeys = (payload: unknown): string[] => {
+  return payload && typeof payload === 'object'
+    ? Object.keys(payload as Record<string, unknown>)
+    : [];
+};
+
+const normalizeWeatherPayload = (payload: unknown): WeatherData | null => {
+  if (isWeatherDataUsable(payload)) return payload;
+  if (payload) {
+    loggers.weather.warn('Ignoring unusable weather payload', {
+      keys: getPayloadKeys(payload),
+    });
+  }
+  return null;
+};
+
+const persistWeatherCache = (weather: WeatherData | null): void => {
+  if (!weather) {
+    secureStorage.removeItem(WEATHER_CACHE_KEY);
+    return;
+  }
+
+  secureStorage.setItemSync(WEATHER_CACHE_KEY, {
+    version: WEATHER_CACHE_VERSION,
+    fetchedAt: Date.now(),
+    data: weather,
+  } satisfies WeatherCache);
 };
 
 /**
@@ -179,19 +226,12 @@ export function useAppWeather(
 
         if (!mounted.current) return;
 
-        setWeatherData(wData);
+        const usableWeather = normalizeWeatherPayload(wData);
+
+        setWeatherData(usableWeather);
         setWeatherAlerts(aData);
 
-        // Cache for SWR
-        if (wData) {
-          secureStorage.setItemSync(WEATHER_CACHE_KEY, {
-            version: WEATHER_CACHE_VERSION,
-            fetchedAt: Date.now(),
-            data: wData,
-          } satisfies WeatherCache);
-        } else {
-          secureStorage.removeItem(WEATHER_CACHE_KEY);
-        }
+        persistWeatherCache(usableWeather);
         secureStorage.setItemSync(WEATHER_ALERTS_CACHE_KEY, aData);
 
         if (aData.length > 0) processAlerts(aData);

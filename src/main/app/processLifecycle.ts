@@ -1,89 +1,127 @@
-import { app, BrowserWindow, type Details, type RenderProcessGoneDetails } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  type Details,
+  type RenderProcessGoneDetails,
+  type WebContents,
+} from 'electron';
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
 const MB = 1024 * 1024;
 const UNRESPONSIVE_WARN_AFTER_MS = 5_000;
+const UNRESPONSIVE_RECOVERY_AFTER_MS = 30_000;
 const MEMORY_HEARTBEAT_INTERVAL_MS = 5 * 60_000;
 
 // Reload guard: prevent reload loops if the renderer is crashing repeatedly.
 const RELOAD_WINDOW_MS = 10 * 60_000;
 const MAX_RELOADS_IN_WINDOW = 3;
-const reloadTimestamps = new WeakMap<BrowserWindow, number[]>();
+const reloadTimestamps = new WeakMap<WebContents, number[]>();
+const gpuGoneTimestamps: number[] = [];
 
-function shouldAutoReload(win: BrowserWindow): boolean {
+function getRecentReloads(contents: WebContents, now = Date.now()): number[] {
+  const history = reloadTimestamps.get(contents) ?? [];
+  return history.filter((t) => t > now - RELOAD_WINDOW_MS);
+}
+
+function canAutoReload(contents: WebContents): boolean {
+  const recent = getRecentReloads(contents);
+  reloadTimestamps.set(contents, recent);
+  return recent.length < MAX_RELOADS_IN_WINDOW;
+}
+
+function shouldAutoReload(contents: WebContents): boolean {
   const now = Date.now();
-  const history = reloadTimestamps.get(win) ?? [];
-  const recent = history.filter((t) => t > now - RELOAD_WINDOW_MS);
+  const recent = getRecentReloads(contents, now);
   if (recent.length >= MAX_RELOADS_IN_WINDOW) {
-    reloadTimestamps.set(win, recent);
+    reloadTimestamps.set(contents, recent);
     return false;
   }
   recent.push(now);
-  reloadTimestamps.set(win, recent);
+  reloadTimestamps.set(contents, recent);
   return true;
 }
 
-export function attachWindowLifecycleListeners(
-  win: BrowserWindow,
+function getWebContentsSnapshot(contents: WebContents): Record<string, unknown> {
+  try {
+    return {
+      id: contents.id,
+      type: contents.getType(),
+      url: contents.getURL(),
+      destroyed: contents.isDestroyed(),
+      crashed: contents.isCrashed(),
+    };
+  } catch (error) {
+    return { error };
+  }
+}
+
+function notifyCrashLoopSuppressed(label: string): void {
+  loggers.main.error(
+    `Auto-reload suppressed for ${label}: ${MAX_RELOADS_IN_WINDOW} recoveries within ${RELOAD_WINDOW_MS / 60_000}m`,
+  );
+  broadcastToAllWindows('app:error-notification', {
+    title: 'Relay is unstable',
+    message: 'A window failed repeatedly and was not reloaded automatically. Please restart Relay.',
+  });
+}
+
+function reloadWebContents(
+  contents: WebContents,
+  label: string,
+  reason: string,
+  options: { ignoringCache?: boolean } = {},
+): void {
+  if (contents.isDestroyed()) return;
+
+  if (!shouldAutoReload(contents)) {
+    notifyCrashLoopSuppressed(label);
+    return;
+  }
+
+  loggers.main.warn(`Recovering ${label}: ${reason}`, {
+    ignoringCache: options.ignoringCache === true,
+    snapshot: getWebContentsSnapshot(contents),
+  });
+  broadcastToAllWindows('app:error-notification', {
+    title: 'Relay recovered a window',
+    message: 'The affected view reloaded automatically. Unsaved changes may be lost.',
+  });
+
+  try {
+    if (options.ignoringCache) {
+      contents.reloadIgnoringCache();
+    } else {
+      contents.reload();
+    }
+  } catch (err) {
+    loggers.main.error(`Failed to reload ${label}`, { error: err });
+  }
+}
+
+export function attachWebContentsLifecycleListeners(
+  contents: WebContents,
   options: { label: string; autoReload: boolean },
 ): void {
   const { label, autoReload } = options;
-  const wc = win.webContents;
 
   // Renderer process died (crash, oom, killed, etc.)
-  wc.on('render-process-gone', (_event, details: RenderProcessGoneDetails) => {
+  contents.on('render-process-gone', (_event, details: RenderProcessGoneDetails) => {
     loggers.main.error(`Renderer process gone (${label})`, {
       reason: details.reason,
       exitCode: details.exitCode,
       uptimeSec: Math.round(process.uptime()),
+      snapshot: getWebContentsSnapshot(contents),
     });
 
     // clean-exit is normal shutdown — don't reload.
-    if (details.reason === 'clean-exit' || win.isDestroyed()) return;
+    if (details.reason === 'clean-exit' || !autoReload) return;
 
-    if (!autoReload) return;
-
-    if (!shouldAutoReload(win)) {
-      loggers.main.error(
-        `Auto-reload suppressed for ${label}: ${MAX_RELOADS_IN_WINDOW} crashes within ${RELOAD_WINDOW_MS / 60_000}m`,
-      );
-      broadcastToAllWindows('app:error-notification', {
-        title: 'Relay is unstable',
-        message:
-          'The window crashed multiple times and was not reloaded automatically. Please restart Relay.',
-      });
-      return;
-    }
-
-    loggers.main.warn(`Auto-reloading ${label} after renderer crash`);
-    broadcastToAllWindows('app:error-notification', {
-      title: 'Relay recovered from a crash',
-      message: 'The window reloaded automatically. Unsaved changes may be lost.',
-    });
-    try {
-      wc.reload();
-    } catch (err) {
-      loggers.main.error(`Failed to reload ${label} after crash`, { error: err });
-    }
-  });
-
-  // Hang detection — renderer event loop stalled.
-  let unresponsiveSince: number | null = null;
-  win.on('unresponsive', () => {
-    unresponsiveSince = Date.now();
-    loggers.main.warn(`Window unresponsive (${label})`, {
-      threshold: `${UNRESPONSIVE_WARN_AFTER_MS}ms`,
-    });
-  });
-  win.on('responsive', () => {
-    const duration = unresponsiveSince ? Date.now() - unresponsiveSince : null;
-    unresponsiveSince = null;
-    loggers.main.warn(`Window responsive again (${label})`, { hangMs: duration });
+    reloadWebContents(contents, label, 'renderer process exited');
   });
 
   // Renderer failed to load the initial HTML/URL.
-  wc.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+  contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return; // iframe/webview failures are noise
     loggers.main.error(`did-fail-load (${label})`, {
       errorCode,
@@ -93,13 +131,93 @@ export function attachWindowLifecycleListeners(
   });
 
   // Preload script crashed — breaks all IPC from that renderer.
-  wc.on('preload-error', (_event, preloadPath, error) => {
+  contents.on('preload-error', (_event, preloadPath, error) => {
     loggers.main.error(`Preload error (${label})`, {
       preloadPath,
       error: error?.message,
       stack: error?.stack,
     });
   });
+}
+
+export function attachWindowLifecycleListeners(
+  win: BrowserWindow,
+  options: { label: string; autoReload: boolean },
+): void {
+  const { label, autoReload } = options;
+  const wc = win.webContents;
+
+  attachWebContentsLifecycleListeners(wc, options);
+
+  // Hang detection — renderer event loop stalled.
+  let unresponsiveSince: number | null = null;
+  let recoveryTimer: NodeJS.Timeout | null = null;
+
+  const clearRecoveryTimer = () => {
+    if (recoveryTimer) clearTimeout(recoveryTimer);
+    recoveryTimer = null;
+  };
+
+  win.on('unresponsive', () => {
+    unresponsiveSince = Date.now();
+    loggers.main.warn(`Window unresponsive (${label})`, {
+      threshold: `${UNRESPONSIVE_WARN_AFTER_MS}ms`,
+      recoveryAfterMs: UNRESPONSIVE_RECOVERY_AFTER_MS,
+      snapshot: getWebContentsSnapshot(wc),
+    });
+
+    if (!autoReload || recoveryTimer) return;
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null;
+      if (win.isDestroyed() || unresponsiveSince === null) return;
+
+      loggers.main.error(`Window still unresponsive; forcing renderer recovery (${label})`, {
+        hangMs: Date.now() - unresponsiveSince,
+        snapshot: getWebContentsSnapshot(wc),
+      });
+
+      if (!canAutoReload(wc)) {
+        notifyCrashLoopSuppressed(label);
+        return;
+      }
+
+      try {
+        wc.forcefullyCrashRenderer();
+      } catch (error) {
+        loggers.main.error(`Failed to force crash hung renderer (${label})`, { error });
+        reloadWebContents(wc, label, 'renderer hung past recovery threshold', {
+          ignoringCache: true,
+        });
+      }
+    }, UNRESPONSIVE_RECOVERY_AFTER_MS);
+    recoveryTimer.unref();
+  });
+
+  win.on('responsive', () => {
+    const duration = unresponsiveSince ? Date.now() - unresponsiveSince : null;
+    unresponsiveSince = null;
+    clearRecoveryTimer();
+    loggers.main.warn(`Window responsive again (${label})`, { hangMs: duration });
+  });
+
+  win.once('closed', () => {
+    clearRecoveryTimer();
+  });
+}
+
+function pruneGpuGoneHistory(now: number): void {
+  while (gpuGoneTimestamps.length > 0 && gpuGoneTimestamps[0] < now - RELOAD_WINDOW_MS) {
+    gpuGoneTimestamps.shift();
+  }
+}
+
+function recoverWindowsAfterGpuFailure(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    reloadWebContents(win.webContents, 'gpu-recovery', 'GPU process exited', {
+      ignoringCache: true,
+    });
+  }
 }
 
 /** App-level listeners for GPU / utility / webview child process crashes. */
@@ -115,6 +233,21 @@ export function setupAppLifecycleListeners(): void {
     // GPU crashes are the most suspicious for "black window" reports; flag them loudly.
     if (details.type === 'GPU') {
       loggers.main.error('GPU process gone', base);
+      const now = Date.now();
+      gpuGoneTimestamps.push(now);
+      pruneGpuGoneHistory(now);
+
+      if (gpuGoneTimestamps.length >= MAX_RELOADS_IN_WINDOW) {
+        loggers.main.error('Repeated GPU failures detected; relaunching Relay', {
+          failures: gpuGoneTimestamps.length,
+          windowMs: RELOAD_WINDOW_MS,
+        });
+        app.relaunch();
+        app.exit(0);
+        return;
+      }
+
+      setTimeout(recoverWindowsAfterGpuFailure, 1_000).unref();
     } else {
       loggers.main.warn('Child process gone', base);
     }

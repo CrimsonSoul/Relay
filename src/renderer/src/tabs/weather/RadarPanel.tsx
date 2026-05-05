@@ -6,13 +6,15 @@ import { useRadar } from './useRadar';
 
 interface RadarPanelProps {
   location: Location | null;
+  isActive?: boolean;
 }
 
-export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
-  const { webviewRef, isLoading, handleRefresh } = useRadar(location);
+export const RadarPanel: React.FC<RadarPanelProps> = ({ location, isActive = true }) => {
   const supportsWebview = Boolean(globalThis.api);
   const isValidLocation =
     location && !Number.isNaN(location.latitude) && !Number.isNaN(location.longitude);
+  const shouldRenderWebview = supportsWebview && isActive && Boolean(isValidLocation);
+  const { webviewRef, isLoading, handleRefresh } = useRadar(location, shouldRenderWebview);
   const radarWebviewAttributes: Record<string, string> = {
     useragent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -22,7 +24,7 @@ export const RadarPanel: React.FC<RadarPanelProps> = ({ location }) => {
   return (
     <div className="radar-panel-wrapper">
       <div className="radar-panel-container">
-        {supportsWebview && isValidLocation ? (
+        {shouldRenderWebview ? (
           <>
             <TactileButton
               onClick={handleRefresh}

@@ -3,25 +3,28 @@ import { RADAR_INJECT_CSS, RADAR_INJECT_JS } from './utils';
 import { loggers } from '../../utils/logger';
 import type { Location } from './types';
 
-export function useRadar(location: Location | null) {
+export function useRadar(location: Location | null, enabled = true) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const retryCountRef = useRef(0);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleRefresh = useCallback(() => {
     const webview = webviewRef.current;
-    if (!webview) return;
+    if (!enabled || !webview) return;
     setIsLoading(true);
     try {
       webview.reloadIgnoringCache();
     } catch {
       setIsLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
     const webview = webviewRef.current;
-    if (!webview || !location) return;
+    if (!enabled || !webview || !location) {
+      setIsLoading(false);
+      return;
+    }
     retryCountRef.current = 0;
     const timeouts = new Set<ReturnType<typeof setTimeout>>();
 
@@ -94,7 +97,7 @@ export function useRadar(location: Location | null) {
       timeouts.forEach((timeout) => clearTimeout(timeout));
       timeouts.clear();
     };
-  }, [location]);
+  }, [location, enabled]);
 
   return { webviewRef, isLoading, handleRefresh };
 }

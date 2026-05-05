@@ -21,9 +21,14 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
   alerts,
   location,
   loading,
+  isActive = true,
   onLocationChange,
   onManualRefresh,
 }) => {
+  const hasCurrentWeather =
+    typeof weather?.current_weather?.temperature === 'number' &&
+    typeof weather.current_weather.time === 'string';
+  const displayWeather = hasCurrentWeather ? weather : null;
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const loc = useWeatherLocation(location, loading, onLocationChange, onManualRefresh);
@@ -129,7 +134,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
   }, [loc]);
 
   if (!location && loading) return <TabFallback />;
-  const hasForecastContent = Boolean(weather) || alerts.length > 0;
+  const hasForecastContent = Boolean(displayWeather) || alerts.length > 0;
   const tabBodyClass = hasForecastContent
     ? 'weather-tab-root weather-scroll-container weather-tab-body'
     : 'weather-tab-root weather-scroll-container weather-tab-body weather-tab-body--radar-only';
@@ -139,10 +144,10 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
 
   const statusLeft = location ? <span>{location.name}</span> : <span>No location set</span>;
 
-  const statusRight = weather ? (
+  const statusRight = displayWeather ? (
     <span>
-      {Math.round(weather.current_weather.temperature)}°F &middot; Updated{' '}
-      {new Date(weather.current_weather.time).toLocaleTimeString([], {
+      {Math.round(displayWeather.current_weather.temperature)}°F &middot; Updated{' '}
+      {new Date(displayWeather.current_weather.time).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
       })}
@@ -154,7 +159,7 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
       <WeatherHeader
         location={location}
         activeSavedLocation={activeSavedLocation}
-        weather={weather}
+        weather={displayWeather}
         isSearching={isSearching}
         loc={loc}
         handleManualSearch={handleManualSearch}
@@ -218,10 +223,10 @@ export const WeatherTab: React.FC<WeatherTabProps> = ({
                 onToggle={() => setExpandedAlert(expandedAlert === alert.id ? null : alert.id)}
               />
             ))}
-          <HourlyForecast weather={weather} />
-          <DailyForecast weather={weather} />
+          <HourlyForecast weather={displayWeather} />
+          <DailyForecast weather={displayWeather} />
         </div>
-        <RadarPanel location={location} />
+        <RadarPanel location={location} isActive={isActive} />
       </div>
 
       <StatusBar left={statusLeft} right={statusRight} />

@@ -323,6 +323,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                       alerts={weatherAlerts}
                       location={weatherLocation}
                       loading={weatherLoading}
+                      isActive={activeTab === 'Weather'}
                       onLocationChange={setWeatherLocation}
                       onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
                     />
@@ -341,10 +342,8 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                 </ErrorBoundary>
               </div>
             )}
-            {mountedTabs.has('Radar') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Radar' ? ' tab-panel--active' : ''}`}
-              >
+            {activeTab === 'Radar' && (
+              <div className="tab-panel animate-fade-in tab-panel--active">
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <RadarTab />

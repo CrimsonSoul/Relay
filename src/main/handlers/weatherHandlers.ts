@@ -108,7 +108,7 @@ export function setupWeatherHandlers() {
         loggers.weather.warn('Weather API returned unexpected shape', {
           keys: data ? Object.keys(data) : [],
         });
-        return { error: 'Weather data has unexpected format' };
+        return null;
       }
 
       return data;
@@ -120,7 +120,7 @@ export function setupWeatherHandlers() {
         lat,
         lon,
       });
-      return { error: 'Weather service unavailable' };
+      return null;
     }
   });
 

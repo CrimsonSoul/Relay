@@ -12,6 +12,7 @@ export interface WeatherTabProps {
   alerts: WeatherAlert[];
   location: Location | null;
   loading: boolean;
+  isActive?: boolean;
   onLocationChange: (loc: Location) => void;
   onManualRefresh: (lat: number, lon: number) => void;
 }
