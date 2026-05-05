@@ -12,10 +12,9 @@ const localStorageFile = join(tempDir, `vitest-localstorage-${process.pid}.json`
 mkdirSync(tempDir, { recursive: true });
 
 const existingNodeOptions = process.env.NODE_OPTIONS?.trim();
-const nodeOptions = [
-  existingNodeOptions,
-  `--localstorage-file=${localStorageFile}`,
-].filter(Boolean).join(' ');
+const nodeOptions = [existingNodeOptions, `--localstorage-file=${localStorageFile}`]
+  .filter(Boolean)
+  .join(' ');
 
 const child = spawn(
   process.execPath,
