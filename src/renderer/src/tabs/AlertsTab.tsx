@@ -23,6 +23,9 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/montserrat/800.css';
 
+const ALERT_EXPORT_WIDTH_PX = 840;
+const ALERT_CAPTURE_SCALE = 2;
+
 interface AlertFormState {
   severity: Severity;
   subject: string;
@@ -214,14 +217,14 @@ export const AlertsTab: React.FC = () => {
     clone.style.position = 'fixed';
     clone.style.left = '-9999px';
     clone.style.top = '0';
-    clone.style.minWidth = '700px';
-    clone.style.maxWidth = '700px';
+    clone.style.minWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
+    clone.style.maxWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
     clone.style.zIndex = '-1';
     document.body.appendChild(clone);
     try {
       const { default: html2canvas } = await import('html2canvas');
       return await html2canvas(clone, {
-        scale: 3,
+        scale: ALERT_CAPTURE_SCALE,
         useCORS: true,
         backgroundColor: null,
         logging: false,
@@ -237,26 +240,17 @@ export const AlertsTab: React.FC = () => {
       setIsCapturing(true);
       try {
         const hiRes = await captureCard();
-        // Step-downsample 3x → 1.5x → 1x for sharper text than a single jump
-        const halfW = Math.round(hiRes.width / 2);
-        const halfH = Math.round(hiRes.height / 2);
-        const mid = document.createElement('canvas');
-        mid.width = halfW;
-        mid.height = halfH;
-        const midCtx = mid.getContext('2d')!;
-        midCtx.imageSmoothingEnabled = true;
-        midCtx.imageSmoothingQuality = 'high';
-        midCtx.drawImage(hiRes, 0, 0, halfW, halfH);
-
-        const finalW = Math.round(hiRes.width / 3);
-        const finalH = Math.round(hiRes.height / 3);
+        // Capture at 2x, then downsample to the native card size. This keeps text crisp
+        // while avoiding the extra memory and work of the previous 3x two-step resize.
+        const finalW = Math.round(hiRes.width / ALERT_CAPTURE_SCALE);
+        const finalH = Math.round(hiRes.height / ALERT_CAPTURE_SCALE);
         const canvas = document.createElement('canvas');
         canvas.width = finalW;
         canvas.height = finalH;
         const ctx = canvas.getContext('2d')!;
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(mid, 0, 0, finalW, finalH);
+        ctx.drawImage(hiRes, 0, 0, finalW, finalH);
         const dataUrl = canvas.toDataURL('image/png');
         await action(dataUrl);
       } catch {
