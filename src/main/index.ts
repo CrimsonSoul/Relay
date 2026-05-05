@@ -51,8 +51,8 @@ if (process.platform === 'win32') {
 // Validate environment early
 validateEnv();
 
-const hardwareAccelerationEnabled = process.env.RELAY_ENABLE_HARDWARE_ACCELERATION === '1';
-if (!hardwareAccelerationEnabled) {
+const hardwareAccelerationDisabled = process.env.RELAY_DISABLE_HARDWARE_ACCELERATION === '1';
+if (hardwareAccelerationDisabled) {
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch('disable-gpu-compositing');
 }
@@ -86,7 +86,7 @@ if (gotLock) {
     platform: process.platform,
     electron: process.versions.electron,
     node: process.versions.node,
-    hardwareAcceleration: hardwareAccelerationEnabled ? 'enabled' : 'disabled',
+    hardwareAcceleration: hardwareAccelerationDisabled ? 'disabled' : 'enabled',
     nativeWinOcclusion: process.platform === 'win32' ? 'disabled' : 'unchanged',
   });
 
