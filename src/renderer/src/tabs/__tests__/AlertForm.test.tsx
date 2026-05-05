@@ -1,5 +1,6 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertForm, type AlertFormHandle } from '../AlertForm';
 
@@ -59,6 +60,7 @@ const defaultProps = {
   setSeverity: vi.fn(),
   subject: '',
   setSubject: vi.fn(),
+  bodyHtml: '',
   setBodyHtml: vi.fn(),
   sender: '',
   setSender: vi.fn(),
@@ -89,9 +91,104 @@ describe('AlertForm', () => {
     vi.clearAllMocks();
   });
 
+  it('uses the base font for alert form labels and controls', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const baseFontSelectors = [
+      '.alerts-step-index',
+      '.alerts-step-status',
+      '.alerts-delivery-group-title',
+      '.alerts-branding-summary::after',
+      '.alerts-sev-btn',
+      '.alerts-update-toggle',
+      '.alerts-stepper-value',
+      '.alerts-logo-action',
+      '.alerts-hl-popover-label',
+      '.alerts-hl-popover-key',
+    ];
+
+    for (const selector of baseFontSelectors) {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const match = new RegExp(`${escapedSelector}\\s*\\{[^}]*\\}`, 'm').exec(css);
+      expect(match?.[0]).not.toContain('var(--font-family-mono)');
+    }
+  });
+
+  it('uses the app accent color for guided step numbers', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const stepIndex = /\.alerts-step-index\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(stepIndex).toContain('color: var(--color-accent-text)');
+    expect(stepIndex).toContain('background: var(--color-accent-dim)');
+    expect(stepIndex).toContain('border: 1px solid var(--color-accent-dim)');
+    expect(stepIndex).not.toContain('color-accent-secondary');
+    expect(stepIndex).not.toContain('34, 211, 238');
+  });
+
+  it('keeps select arrows and collapsed branding controls comfortably spaced', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const inputFocus =
+      /\.alerts-input:focus,[\s\S]*?\.alerts-input:focus-visible\s*\{[^}]*\}/m.exec(css)?.[0];
+    const timezoneSelect = /\.alerts-event-time-tz\s*\{[^}]*\}/m.exec(css)?.[0];
+    const brandingToggle = /\.alerts-branding-summary::after\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(inputFocus).toContain('background-color: var(--color-bg-surface)');
+    expect(inputFocus).not.toContain('background:');
+    expect(timezoneSelect).toContain('padding-right: 46px');
+    expect(timezoneSelect).toContain('appearance: none');
+    expect(timezoneSelect).toContain('background-position: right 18px center');
+    expect(brandingToggle).toContain('border-radius: 6px');
+  });
+
   it('renders the severity selector', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByTestId('severity-selector')).toBeInTheDocument();
+  });
+
+  it('renders the guided alert creation sections', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    expect(screen.getByRole('heading', { name: 'Set alert posture' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Write the message' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Add delivery details' })).toBeInTheDocument();
+  });
+
+  it('uses concise step descriptions', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    expect(screen.getByText('Card tone and icon.')).toBeInTheDocument();
+    expect(screen.getByText('Subject and body.')).toBeInTheDocument();
+    expect(screen.getByText('Routing, timing, and updates.')).toBeInTheDocument();
+  });
+
+  it('keeps branding controls collapsed by default', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    const brandingGroup = screen.getByText('Branding options').closest('details');
+    expect(brandingGroup).toBeInTheDocument();
+    expect(brandingGroup).not.toHaveAttribute('open');
+  });
+
+  it('uses one optional marker for the delivery section', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    const deliveryStep = screen.getByRole('region', { name: 'Add delivery details' });
+    expect(within(deliveryStep).getAllByText('OPTIONAL')).toHaveLength(1);
+  });
+
+  it('marks the message step done when subject and body both have content', () => {
+    render(<AlertForm {...defaultProps} subject="POS outage" bodyHtml="<p>Investigating.</p>" />);
+
+    const messageStep = screen.getByRole('region', { name: 'Write the message' });
+    expect(messageStep).toHaveTextContent('DONE');
+    expect(messageStep).not.toHaveTextContent('ACTIVE');
+  });
+
+  it('keeps the message step active when body only has invisible editor content', () => {
+    render(<AlertForm {...defaultProps} subject="POS outage" bodyHtml={'<p>\u200b</p>'} />);
+
+    const messageStep = screen.getByRole('region', { name: 'Write the message' });
+    expect(messageStep).toHaveTextContent('ACTIVE');
+    expect(messageStep).not.toHaveTextContent('DONE');
   });
 
   it('renders the subject field', () => {
@@ -338,7 +435,7 @@ describe('AlertForm', () => {
 
   it('renders the event time hint text', () => {
     render(<AlertForm {...defaultProps} />);
-    expect(screen.getByText(/Enter times in the source timezone/)).toBeInTheDocument();
+    expect(screen.getByText('Displays as Central Time on card')).toBeInTheDocument();
   });
 
   it('renders all timezone options in the Source TZ dropdown', () => {
@@ -407,9 +504,9 @@ describe('AlertForm', () => {
     expect(screen.getByLabelText(/End/)).toBeInTheDocument();
   });
 
-  it('renders footer logo label and hint', () => {
+  it('renders footer logo label without extra hint text', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByText('Footer Logo')).toBeInTheDocument();
-    expect(screen.getByText('Shown in grayscale in the card footer')).toBeInTheDocument();
+    expect(screen.queryByText('Grayscale footer mark')).not.toBeInTheDocument();
   });
 });

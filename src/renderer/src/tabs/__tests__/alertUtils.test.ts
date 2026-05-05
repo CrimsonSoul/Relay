@@ -246,6 +246,10 @@ describe('hasVisibleText', () => {
     expect(hasVisibleText('   \n\t  ')).toBe(false);
   });
 
+  it('returns false for zero-width-only HTML', () => {
+    expect(hasVisibleText('<p>\u200b</p>')).toBe(false);
+  });
+
   it('returns false for tags-only content like <br>', () => {
     expect(hasVisibleText('<br>')).toBe(false);
   });

@@ -41,6 +41,9 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
         type="button"
         className={`alerts-fmt-btn alerts-hl-trigger${isOpen ? ' open' : ''}`}
         title="Highlight text"
+        aria-label="Highlight text"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
         onMouseDown={(e) => {
           e.preventDefault();
           setIsOpen((v) => !v);
@@ -68,12 +71,13 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
       </button>
 
       {isOpen && (
-        <div className="alerts-hl-popover">
+        <div className="alerts-hl-popover" role="menu" aria-label="Highlight options">
           {HIGHLIGHTS.map((h) => (
             <button
               key={h.type}
               type="button"
               className="alerts-hl-popover-row"
+              role="menuitem"
               onMouseDown={(e) => {
                 e.preventDefault();
                 handleApply(h.type);
@@ -91,6 +95,7 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
           <button
             type="button"
             className="alerts-hl-popover-row"
+            role="menuitem"
             onMouseDown={(e) => {
               e.preventDefault();
               handleClear();

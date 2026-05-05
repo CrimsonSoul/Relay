@@ -17,6 +17,20 @@ describe('HighlightPopover', () => {
     expect(trigger).toBeInTheDocument();
   });
 
+  it('exposes trigger and menu semantics', () => {
+    const { container } = render(<HighlightPopover {...defaultProps} />);
+    const trigger = screen.getByRole('button', { name: 'Highlight text' });
+
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.mouseDown(trigger);
+
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu', { name: 'Highlight options' })).toBeInTheDocument();
+    expect(container.querySelectorAll('[role="menuitem"]')).toHaveLength(HIGHLIGHTS.length + 1);
+  });
+
   it('renders color dots in the trigger', () => {
     const { container } = render(<HighlightPopover {...defaultProps} />);
 

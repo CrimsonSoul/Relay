@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import { ConfirmModal } from './ConfirmModal';
 
 /** Minimal contract every history entry must satisfy. */
 export type BaseHistoryEntry = {
@@ -61,6 +62,12 @@ export type HistoryModalProps<T extends BaseHistoryEntry> = Readonly<{
    * Useful for overlays such as the label-editing dialog in AlertHistory.
    */
   extraContent?: React.ReactNode;
+
+  /** Optional controls rendered below the header and above the entry list. */
+  toolbar?: React.ReactNode;
+
+  /** Optional modal width override. */
+  width?: string;
 }>;
 
 export const formatHistoryDate = (timestamp: number): string => {
@@ -105,17 +112,21 @@ export function HistoryModal<T extends BaseHistoryEntry>({
   pinnedSectionLabel = 'Pinned Templates',
   recentSectionLabel = 'Recent',
   extraContent,
+  toolbar,
+  width,
 }: HistoryModalProps<T>): React.ReactElement | null {
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
     entry: T;
   } | null>(null);
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false);
 
   // Reset transient UI state when modal closes so stale overlays don't persist on reopen
   useEffect(() => {
     if (!isOpen) {
       setContextMenu(null);
+      setIsClearConfirmOpen(false);
     }
   }, [isOpen]);
 
@@ -160,25 +171,26 @@ export function HistoryModal<T extends BaseHistoryEntry>({
     </button>
   );
 
+  const renderSection = (kind: 'pinned' | 'recent', label: string, entries: T[]) => (
+    <section className={`${classPrefix}-section ${classPrefix}-section-${kind}`}>
+      <div className={`${classPrefix}-section-label`}>{label}</div>
+      <div className={`${classPrefix}-section-items`}>{entries.map(renderEntryButton)}</div>
+    </section>
+  );
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose}>
+    <Modal isOpen={isOpen} onClose={onClose} width={width} bare>
       <div className={`${classPrefix}-content`}>
         <div className={`${classPrefix}-header`}>
           <h2 className={`${classPrefix}-title`}>{title}</h2>
           {history.length > 0 && (
-            <TactileButton
-              variant="secondary"
-              onClick={() => {
-                if (globalThis.confirm(clearConfirmText)) {
-                  onClear();
-                }
-              }}
-              className="btn-sm"
-            >
+            <TactileButton variant="ghost" size="sm" onClick={() => setIsClearConfirmOpen(true)}>
               Clear All
             </TactileButton>
           )}
         </div>
+
+        {toolbar}
 
         {history.length === 0 ? (
           <div className={`${classPrefix}-empty`}>
@@ -189,20 +201,11 @@ export function HistoryModal<T extends BaseHistoryEntry>({
           <div className={`${classPrefix}-list`}>
             {enablePinnedSections ? (
               <>
-                {pinned.length > 0 && (
-                  <>
-                    <div className={`${classPrefix}-section-label`}>{pinnedSectionLabel}</div>
-                    {pinned.map(renderEntryButton)}
-                  </>
-                )}
-                {recent.length > 0 && (
-                  <>
-                    {pinned.length > 0 && (
-                      <div className={`${classPrefix}-section-label`}>{recentSectionLabel}</div>
-                    )}
-                    {recent.map(renderEntryButton)}
-                  </>
-                )}
+                {pinned.length > 0 && renderSection('pinned', pinnedSectionLabel, pinned)}
+                {recent.length > 0 &&
+                  (pinned.length > 0
+                    ? renderSection('recent', recentSectionLabel, recent)
+                    : recent.map(renderEntryButton))}
               </>
             ) : (
               history.map(renderEntryButton)
@@ -211,13 +214,23 @@ export function HistoryModal<T extends BaseHistoryEntry>({
         )}
 
         <div className={`${classPrefix}-footer`}>
-          <TactileButton variant="secondary" onClick={onClose}>
+          <TactileButton variant="secondary" size="sm" onClick={onClose}>
             Close
           </TactileButton>
         </div>
       </div>
 
       {extraContent}
+
+      <ConfirmModal
+        isOpen={isClearConfirmOpen}
+        onClose={() => setIsClearConfirmOpen(false)}
+        onConfirm={onClear}
+        title="Clear History?"
+        message={clearConfirmText}
+        confirmLabel="Clear History"
+        isDanger
+      />
 
       {contextMenu && (
         <ContextMenu

@@ -15,6 +15,97 @@ interface AlertBodyEditorProps {
   onToggleEnhanced: () => void;
 }
 
+const nodeHasContent = (node: Node): boolean => {
+  if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? '').length > 0;
+  if (node instanceof HTMLBRElement) return true;
+  return Array.from(node.childNodes).some(nodeHasContent);
+};
+
+const unwrapElement = (element: Element) => {
+  const parent = element.parentNode;
+  if (!parent) return;
+  while (element.firstChild) parent.insertBefore(element.firstChild, element);
+  element.remove();
+};
+
+const unwrapHighlightDescendants = (root: ParentNode) => {
+  Array.from(root.querySelectorAll('[data-hl]')).forEach(unwrapElement);
+};
+
+const removeEmptyHighlights = (root: ParentNode) => {
+  Array.from(root.querySelectorAll('[data-hl]')).forEach((element) => {
+    if (!nodeHasContent(element)) element.remove();
+  });
+};
+
+const getHighlightsIntersectingRange = (range: Range, editorRoot: HTMLElement) =>
+  Array.from(editorRoot.querySelectorAll<HTMLElement>('[data-hl]')).filter((element) =>
+    range.intersectsNode(element),
+  );
+
+const findHighlightAncestor = (node: HTMLElement, editorRoot: HTMLElement) => {
+  let current = node.parentElement;
+  while (current && current !== editorRoot) {
+    if (current.hasAttribute('data-hl')) return current;
+    current = current.parentElement;
+  }
+  return null;
+};
+
+const cloneAncestorPathAroundNode = (node: HTMLElement, stopAncestor: HTMLElement): Node => {
+  let lifted: Node = node;
+  let currentParent = node.parentNode;
+
+  while (currentParent instanceof Element && currentParent !== stopAncestor) {
+    const nextParent = currentParent.parentNode;
+    const wrapper = currentParent.cloneNode(false);
+    wrapper.appendChild(lifted);
+    lifted = wrapper;
+    currentParent = nextParent;
+  }
+
+  return lifted;
+};
+
+const appendHighlightedFragment = (
+  replacement: DocumentFragment,
+  ancestor: HTMLElement,
+  contents: DocumentFragment,
+) => {
+  if (!nodeHasContent(contents)) return;
+  const wrapper = ancestor.cloneNode(false);
+  wrapper.appendChild(contents);
+  replacement.appendChild(wrapper);
+};
+
+const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLElement) => {
+  let ancestor = findHighlightAncestor(highlight, editorRoot);
+
+  while (ancestor) {
+    const parent = ancestor.parentNode;
+    if (!parent) return;
+
+    const beforeRange = document.createRange();
+    beforeRange.selectNodeContents(ancestor);
+    beforeRange.setEndBefore(highlight);
+    const beforeContents = beforeRange.cloneContents();
+
+    const afterRange = document.createRange();
+    afterRange.selectNodeContents(ancestor);
+    afterRange.setStartAfter(highlight);
+    const afterContents = afterRange.cloneContents();
+
+    const lifted = cloneAncestorPathAroundNode(highlight, ancestor);
+    const replacement = document.createDocumentFragment();
+    appendHighlightedFragment(replacement, ancestor, beforeContents);
+    replacement.appendChild(lifted);
+    appendHighlightedFragment(replacement, ancestor, afterContents);
+    parent.replaceChild(replacement, ancestor);
+
+    ancestor = findHighlightAncestor(highlight, editorRoot);
+  }
+};
+
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
   ({ setBodyHtml, isCompact, onToggleCompact, isEnhanced, onToggleEnhanced }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
@@ -78,34 +169,51 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
 
     const applyHighlight = useCallback(
       (type: HighlightType) => {
-        editorRef.current?.focus();
         const selection = globalThis.getSelection();
         if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
 
         const range = selection.getRangeAt(0);
+        if (!editorRef.current?.contains(range.commonAncestorContainer)) return;
+
         const span = document.createElement('span');
         span.dataset.hl = type;
-        try {
-          range.surroundContents(span);
-        } catch {
-          // surroundContents throws if selection crosses element boundaries — silently ignore
-          return;
-        }
+        span.append(range.extractContents());
+        unwrapHighlightDescendants(span);
+        range.insertNode(span);
+        liftHighlightOutOfAncestors(span, editorRef.current);
+        removeEmptyHighlights(editorRef.current);
+        selection.removeAllRanges();
+        const nextRange = document.createRange();
+        nextRange.selectNodeContents(span);
+        selection.addRange(nextRange);
         handleBodyInput();
       },
       [handleBodyInput],
     );
 
     const clearHighlight = useCallback(() => {
-      editorRef.current?.focus();
       const selection = globalThis.getSelection();
       if (!selection || selection.rangeCount === 0) return;
 
-      const node = selection.anchorNode?.parentElement;
-      if (node?.hasAttribute('data-hl')) {
-        const parent = node.parentNode;
-        while (node.firstChild) parent?.insertBefore(node.firstChild, node);
-        node.remove();
+      const range = selection.getRangeAt(0);
+      const editor = editorRef.current;
+      if (!editor?.contains(range.commonAncestorContainer)) return;
+
+      if (!selection.isCollapsed) {
+        const highlights = getHighlightsIntersectingRange(range, editor);
+        if (highlights.length === 0) return;
+        highlights.forEach(unwrapElement);
+        handleBodyInput();
+        return;
+      }
+
+      const anchor = selection.anchorNode;
+      const element = anchor instanceof Element ? anchor : anchor?.parentElement;
+      const highlight = element?.closest<HTMLElement>('[data-hl]');
+      if (highlight) {
+        const parent = highlight.parentNode;
+        while (highlight.firstChild) parent?.insertBefore(highlight.firstChild, highlight);
+        highlight.remove();
         handleBodyInput();
       }
     }, [handleBodyInput]);
@@ -130,11 +238,14 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       <div className="alerts-field">
         <span className="alerts-field-label">Body</span>
         <div className="alerts-body-editor">
-          <div className="alerts-body-toolbar">
+          <div className="alerts-body-toolbar" role="toolbar" aria-label="Body formatting">
             <button
               type="button"
               className={`alerts-fmt-btn${activeFormats.bold ? ' active' : ''}`}
               title="Bold (Cmd+B)"
+              aria-label="Bold"
+              aria-keyshortcuts="Meta+B Control+B"
+              aria-pressed={activeFormats.bold}
               onMouseDown={(e) => {
                 e.preventDefault();
                 applyFormat('bold');
@@ -146,6 +257,9 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className={`alerts-fmt-btn${activeFormats.italic ? ' active' : ''}`}
               title="Italic (Cmd+I)"
+              aria-label="Italic"
+              aria-keyshortcuts="Meta+I Control+I"
+              aria-pressed={activeFormats.italic}
               onMouseDown={(e) => {
                 e.preventDefault();
                 applyFormat('italic');
@@ -157,6 +271,9 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className={`alerts-fmt-btn${activeFormats.underline ? ' active' : ''}`}
               title="Underline (Cmd+U)"
+              aria-label="Underline"
+              aria-keyshortcuts="Meta+U Control+U"
+              aria-pressed={activeFormats.underline}
               onMouseDown={(e) => {
                 e.preventDefault();
                 applyFormat('underline');
@@ -169,6 +286,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className="alerts-fmt-btn"
               title="Bullet List"
+              aria-label="Bullet list"
               onMouseDown={(e) => {
                 e.preventDefault();
                 applyFormat('insertUnorderedList');
@@ -195,6 +313,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className="alerts-fmt-btn"
               title="Numbered List"
+              aria-label="Numbered list"
               onMouseDown={(e) => {
                 e.preventDefault();
                 applyFormat('insertOrderedList');
@@ -254,6 +373,8 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-compact${isCompact ? ' active' : ''}`}
               title="Compact — strip filler phrases"
+              aria-label="Compact message"
+              aria-pressed={isCompact}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onToggleCompact();
@@ -279,6 +400,8 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               type="button"
               className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-enhance${isEnhanced ? ' active' : ''}`}
               title="Enhance — auto-highlight key info"
+              aria-label="Enhance message"
+              aria-pressed={isEnhanced}
               onMouseDown={(e) => {
                 e.preventDefault();
                 onToggleEnhanced();

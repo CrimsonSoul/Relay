@@ -10,8 +10,8 @@ const __dirname = path.dirname(__filename);
 const mainEntry = path.join(__dirname, '../../dist/main/index.js');
 
 test.describe('Setup Screen & Auth Flow', () => {
-  let electronApp: Awaited<ReturnType<typeof electron.launch>>;
-  let window: Awaited<ReturnType<typeof electronApp.firstWindow>>;
+  let electronApp: Awaited<ReturnType<typeof electron.launch>> | null;
+  let window: Awaited<ReturnType<NonNullable<typeof electronApp>['firstWindow']>>;
   let tempDataDir: string;
 
   test.beforeEach(async () => {
@@ -20,7 +20,15 @@ test.describe('Setup Screen & Auth Flow', () => {
 
   test.afterEach(async () => {
     if (electronApp) {
-      await electronApp.close();
+      try {
+        const process = electronApp.process();
+        if (!process || process.exitCode === null) {
+          await electronApp.close();
+        }
+      } catch {
+        // The app may already be closed after setup-triggered relaunch.
+      }
+      electronApp = null;
     }
     if (tempDataDir) {
       fs.rmSync(tempDataDir, { recursive: true, force: true });
@@ -86,14 +94,35 @@ test.describe('Setup Screen & Auth Flow', () => {
     await fillPassphrase('testpassphrase123');
 
     // Click save & start
-    await window.locator('button.setup-config__submit').click();
+    const appProcess = electronApp?.process();
+    const appExited = appProcess
+      ? new Promise<void>((resolve) => {
+          if (appProcess.exitCode !== null) {
+            resolve();
+            return;
+          }
+          appProcess.once('exit', () => resolve());
+        })
+      : Promise.resolve();
 
-    // The submit button should show loading state ("Starting Server...")
-    // Then the app transitions past setup — either to the main app (sidebar visible)
-    // or to an error/connecting state if PB binary isn't available in the test env.
-    // Either way, the setup screen mode cards should no longer be visible.
-    await expect(window.locator('.setup-mode-cards')).not.toBeVisible({ timeout: 20_000 });
-    await expect(window.locator('.setup-config__form')).not.toBeVisible({ timeout: 5_000 });
+    await Promise.all([
+      window.waitForEvent('close', { timeout: 20_000 }),
+      window.locator('button.setup-config__submit').click(),
+    ]);
+    await appExited;
+
+    const configPath = path.join(tempDataDir, 'data', 'config.json');
+    expect(fs.existsSync(configPath)).toBe(true);
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8')) as {
+      mode?: string;
+      port?: number;
+      secret?: string;
+      encryptedSecret?: string;
+    };
+    expect(saved.mode).toBe('server');
+    expect(saved.port).toBe(8099);
+    expect(Boolean(saved.secret || saved.encryptedSecret)).toBe(true);
+    electronApp = null;
   });
 
   test('Client mode: validates server URL', async () => {

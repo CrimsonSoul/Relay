@@ -5,6 +5,11 @@ import { loggers } from '../logger';
 
 const logger = loggers.backup;
 
+function makeBackupName(prefix: string, date = new Date()): string {
+  const timestamp = date.toISOString().slice(0, 19).replace('T', '_').replaceAll(':', '-');
+  return `${prefix}_${timestamp}.zip`;
+}
+
 export class BackupManager {
   private readonly backupsDir: string;
   private readonly maxBackups = 10;
@@ -26,8 +31,7 @@ export class BackupManager {
       throw new Error('PocketBase client not ready — try again in a moment');
     }
 
-    const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
-    const backupName = `${timestamp}.zip`;
+    const backupName = makeBackupName('backup');
 
     await this.pb.backups.create(backupName);
     logger.info('Backup created via PB API', { name: backupName });
@@ -44,7 +48,7 @@ export class BackupManager {
     if (!this.pb) throw new Error('No PocketBase client available');
 
     // Safety backup before overwriting
-    const safetyName = `pre-restore-${new Date().toISOString().replaceAll(/[:.]/g, '-')}.zip`;
+    const safetyName = makeBackupName('pre_restore');
     try {
       await this.pb.backups.create(safetyName);
       logger.info('Pre-restore safety backup created', { name: safetyName });

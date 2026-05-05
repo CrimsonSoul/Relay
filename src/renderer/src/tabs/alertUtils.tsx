@@ -98,5 +98,11 @@ export function sanitizeHtml(html: string): string {
 /** Check if HTML has any visible text content. */
 export function hasVisibleText(html: string): boolean {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  return (doc.body.textContent ?? '').trim().length > 0;
+  const visibleText = (doc.body.textContent ?? '')
+    .replaceAll('\u200b', '')
+    .replaceAll('\u200c', '')
+    .replaceAll('\u200d', '')
+    .replaceAll('\ufeff', '')
+    .replaceAll('\u2060', '');
+  return visibleText.trim().length > 0;
 }

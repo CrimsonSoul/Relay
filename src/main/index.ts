@@ -97,7 +97,7 @@ if (gotLock) {
 
   // App lifecycle
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit();
+    if (process.platform !== 'darwin' || process.env.NODE_ENV === 'test') app.quit();
   });
 
   loggers.main.info('Waiting for Electron ready...');
@@ -176,6 +176,10 @@ if (gotLock) {
       // stall the first connection attempt.
       ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, () => {
         loggers.main.info('Relaunching app (reconfigure)');
+        if (process.env.NODE_ENV === 'test') {
+          app.quit();
+          return;
+        }
         app.relaunch();
         app.exit(0);
       });

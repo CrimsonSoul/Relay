@@ -566,6 +566,7 @@ export const AlertsTab: React.FC = () => {
           setSeverity={setSeverity}
           subject={subject}
           setSubject={setSubject}
+          bodyHtml={bodyHtml}
           setBodyHtml={setBodyHtml}
           sender={sender}
           setSender={setSender}

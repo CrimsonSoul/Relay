@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { HistoryModal } from '../components/HistoryModal';
 import { TactileButton } from '../components/TactileButton';
+import { sanitizeHtml } from './alertUtils';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
 const SEVERITY_DOT_COLORS: Record<string, string> = {
@@ -9,6 +10,28 @@ const SEVERITY_DOT_COLORS: Record<string, string> = {
   INFO: '#1565c0',
   RESOLVED: '#2e7d32',
 };
+
+const getPlainBodyText = (html: string): string => {
+  const container = document.createElement('div');
+  container.innerHTML = sanitizeHtml(html);
+  return (container.textContent ?? '').replace(/\s+/g, ' ').trim();
+};
+
+const getEntryTitle = (entry: AlertHistoryEntry, formatDate: (ts: number) => string) =>
+  entry.label || formatDate(entry.timestamp);
+
+const getSearchText = (entry: AlertHistoryEntry): string =>
+  [
+    entry.label,
+    entry.subject,
+    getPlainBodyText(entry.bodyHtml),
+    entry.severity,
+    entry.sender,
+    entry.recipient,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase();
 
 type AlertHistoryModalProps = {
   isOpen: boolean;
@@ -33,12 +56,20 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
 }) => {
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [labelDraft, setLabelDraft] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredHistory = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return history;
+    return history.filter((entry) => getSearchText(entry).includes(query));
+  }, [history, searchQuery]);
 
   // Reset transient UI state when modal closes so stale overlays don't persist on reopen
   useEffect(() => {
     if (!isOpen) {
       setEditingLabelId(null);
       setLabelDraft('');
+      setSearchQuery('');
     }
   }, [isOpen]);
 
@@ -59,10 +90,15 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
     <HistoryModal<AlertHistoryEntry>
       isOpen={isOpen}
       onClose={onClose}
-      history={history}
+      history={filteredHistory}
       title="Alert History"
       classPrefix="alert-history"
-      emptyText="No alert history yet. History is saved when you copy or save an alert."
+      width="760px"
+      emptyText={
+        searchQuery.trim()
+          ? 'No matching alert history. Try a different subject, template name, sender, recipient, or body phrase.'
+          : 'No alert history yet. History is saved when you copy or save an alert.'
+      }
       clearConfirmText="Clear all alert history? Pinned templates will also be removed."
       onLoad={onLoad}
       onDelete={onDelete}
@@ -70,34 +106,90 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
       enablePinnedSections
       pinnedSectionLabel="Pinned Templates"
       recentSectionLabel="Recent"
-      renderEntry={(entry, { formatDate }) => (
-        <>
-          <div className="alert-history-entry-header">
-            <span className="alert-history-entry-date">
-              {entry.pinned && (
-                <span className="alert-history-pin-icon" title="Pinned template">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
-                  </svg>
-                </span>
-              )}
-              {entry.label || formatDate(entry.timestamp)}
-            </span>
-            <span
-              className="alert-history-entry-severity"
-              style={
-                {
-                  '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
-                } as React.CSSProperties
-              }
-            >
-              {entry.severity}
+      toolbar={
+        history.length > 0 ? (
+          <div className="alert-history-toolbar">
+            <input
+              type="search"
+              className="alert-history-search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search templates and history..."
+              aria-label="Search templates and history"
+            />
+            <span className="alert-history-result-count">
+              {filteredHistory.length} of {history.length}
             </span>
           </div>
-          <div className="alert-history-entry-subject">{entry.subject || '(no subject)'}</div>
-          {entry.sender && <div className="alert-history-entry-sender">From: {entry.sender}</div>}
-        </>
-      )}
+        ) : undefined
+      }
+      renderEntry={(entry, { formatDate }) => {
+        const bodyText = getPlainBodyText(entry.bodyHtml);
+        const title = getEntryTitle(entry, formatDate);
+        const subject = entry.subject || '(no subject)';
+        const isPinned = Boolean(entry.pinned);
+
+        return (
+          <div className={isPinned ? 'alert-history-template-card' : 'alert-history-recent-row'}>
+            <div
+              className={
+                isPinned
+                  ? 'alert-history-card-preview'
+                  : 'alert-history-card-preview alert-history-mini-preview'
+              }
+              aria-hidden="true"
+            >
+              <div
+                className="alert-history-preview-banner"
+                style={
+                  {
+                    '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
+                  } as React.CSSProperties
+                }
+              />
+              <div className="alert-history-preview-body">
+                <span className="alert-history-preview-line" />
+                <span className="alert-history-preview-line alert-history-preview-line-short" />
+                <span className="alert-history-preview-highlight" />
+              </div>
+            </div>
+            <div className="alert-history-entry-main">
+              <div className="alert-history-entry-header">
+                <span className="alert-history-entry-date">
+                  {isPinned && (
+                    <span className="alert-history-pin-icon" title="Pinned template">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 2c-.55 0-1.05.22-1.41.59L9.17 8H4a1 1 0 00-.7 1.71l4.58 4.58L2 22l7.71-5.88 4.58 4.58A1 1 0 0016 20v-5.17l5.41-5.42A2 2 0 0016 2z" />
+                      </svg>
+                    </span>
+                  )}
+                  {title}
+                </span>
+                <span
+                  className="alert-history-entry-severity"
+                  style={
+                    {
+                      '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
+                    } as React.CSSProperties
+                  }
+                >
+                  {entry.severity}
+                </span>
+              </div>
+              <div className="alert-history-entry-subject">{subject}</div>
+              {bodyText && <div className="alert-history-entry-body">{bodyText}</div>}
+              <div className="alert-history-entry-meta">
+                {entry.sender && (
+                  <span className="alert-history-entry-sender">From: {entry.sender}</span>
+                )}
+                {entry.recipient && (
+                  <span className="alert-history-entry-recipient">To: {entry.recipient}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }}
       getContextMenuItems={(entry, { closeMenu, closeModal }) => [
         {
           label: 'Load Alert',

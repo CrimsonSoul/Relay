@@ -11,9 +11,7 @@ export function AlertLogoUpload({
 }: AlertLogoUploadProps): React.JSX.Element {
   return (
     <div className="alerts-field">
-      <span className="alerts-field-label">
-        Company Logo <span className="alerts-optional-tag">OPTIONAL</span>
-      </span>
+      <span className="alerts-field-label">Company Logo</span>
       <div className="alerts-logo-controls">
         {logoDataUrl ? (
           <>

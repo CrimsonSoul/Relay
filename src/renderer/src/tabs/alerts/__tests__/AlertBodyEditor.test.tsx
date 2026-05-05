@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertBodyEditor, type AlertBodyEditorHandle } from '../AlertBodyEditor';
@@ -19,10 +20,22 @@ vi.mock('../HighlightPopover', () => ({
     onClear: () => void;
   }) => (
     <div data-testid="highlight-popover">
-      <button data-testid="apply-highlight" onClick={() => onApply('deadline')}>
+      <button
+        data-testid="apply-highlight"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onApply('deadline');
+        }}
+      >
         Apply
       </button>
-      <button data-testid="clear-highlight" onClick={onClear}>
+      <button
+        data-testid="clear-highlight"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onClear();
+        }}
+      >
         Clear
       </button>
     </div>
@@ -61,11 +74,42 @@ describe('AlertBodyEditor', () => {
     expect(screen.getByRole('textbox', { name: 'Alert body' })).toBeInTheDocument();
   });
 
+  it('lets the editor grow with text and starts tall enough for the highlight menu', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const editableBody = /\.alerts-editable-body\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(editableBody).toContain('min-height: 224px');
+    expect(editableBody).toContain('overflow-y: visible');
+    expect(editableBody).toContain('flex: 0 0 auto');
+  });
+
   it('renders formatting buttons (Bold, Italic, Underline)', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     expect(screen.getByTitle('Bold (Cmd+B)')).toBeInTheDocument();
     expect(screen.getByTitle('Italic (Cmd+I)')).toBeInTheDocument();
     expect(screen.getByTitle('Underline (Cmd+U)')).toBeInTheDocument();
+  });
+
+  it('exposes toolbar controls with clear accessible labels and pressed states', () => {
+    render(<AlertBodyEditor {...defaultProps} isCompact={true} />);
+
+    expect(screen.getByRole('toolbar', { name: 'Body formatting' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Underline' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Compact message' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Enhance message' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
   });
 
   it('renders list formatting buttons', () => {
@@ -237,7 +281,7 @@ describe('AlertBodyEditor', () => {
   it('calls applyHighlight via popover onApply (no selection is a no-op)', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     // Clicking apply without a selection should not crash
-    fireEvent.click(screen.getByTestId('apply-highlight'));
+    fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
     // With no selection, setBodyHtml is not called
     expect(defaultProps.setBodyHtml).not.toHaveBeenCalled();
   });
@@ -245,8 +289,136 @@ describe('AlertBodyEditor', () => {
   it('calls clearHighlight via popover onClear (no highlight node is a no-op)', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     // Clicking clear without any highlighted node should not crash
-    fireEvent.click(screen.getByTestId('clear-highlight'));
+    fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
     expect(defaultProps.setBodyHtml).not.toHaveBeenCalled();
+  });
+
+  it('applies highlight across mixed formatted and plain text selections', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent('<b>Bold</b> text');
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const boldText = editor.querySelector('b')!.firstChild!;
+    const plainText = editor.childNodes[1];
+    const range = document.createRange();
+    range.setStart(boldText, 2);
+    range.setEnd(plainText, 3);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
+
+    expect(editor.innerHTML).toBe('<b>Bo</b><span data-hl="deadline"><b>ld</b> te</span>xt');
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+      '<b>Bo</b><span data-hl="deadline"><b>ld</b> te</span>xt',
+    );
+  });
+
+  it('replaces existing highlights inside the selected content', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent('<span data-hl="warning">Old</span> text');
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
+    const plainText = editor.childNodes[1];
+    const range = document.createRange();
+    range.setStart(highlightedText, 0);
+    range.setEnd(plainText, 3);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
+
+    expect(editor.innerHTML).toBe('<span data-hl="deadline">Old te</span>xt');
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+      '<span data-hl="deadline">Old te</span>xt',
+    );
+  });
+
+  it('replaces the current highlight instead of nesting when selection is inside one', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent('<span data-hl="warning">Old</span> text');
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(highlightedText, 0);
+    range.setEnd(highlightedText, 3);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
+
+    expect(editor.innerHTML).toBe('<span data-hl="deadline">Old</span> text');
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+      '<span data-hl="deadline">Old</span> text',
+    );
+  });
+
+  it('splits an existing highlight around a newly selected highlight', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent('<span data-hl="warning">ABCDE</span>');
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const highlightedText = editor.querySelector('[data-hl="warning"]')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(highlightedText, 1);
+    range.setEnd(highlightedText, 3);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('apply-highlight'));
+
+    expect(editor.innerHTML).toBe(
+      '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
+    );
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith(
+      '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
+    );
+  });
+
+  it('clears highlight when the selection is inside nested formatted content', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent('<span data-hl="deadline"><b>Nested</b></span> highlight');
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const nestedText = editor.querySelector('b')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(nestedText, 1);
+    range.setEnd(nestedText, 3);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
+
+    expect(editor.innerHTML).toBe('<b>Nested</b> highlight');
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('<b>Nested</b> highlight');
+  });
+
+  it('clears all highlights touched by a selected range', () => {
+    const ref = React.createRef<AlertBodyEditorHandle>();
+    render(<AlertBodyEditor {...defaultProps} ref={ref} />);
+    ref.current!.setEditorContent(
+      '<span data-hl="warning">A</span><span data-hl="deadline">BC</span><span data-hl="warning">DE</span>',
+    );
+    const editor = screen.getByRole('textbox', { name: 'Alert body' });
+    const highlights = editor.querySelectorAll('[data-hl]');
+    const range = document.createRange();
+    range.setStart(highlights[0].firstChild!, 0);
+    range.setEnd(highlights[2].firstChild!, 2);
+    const selection = globalThis.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    fireEvent.mouseDown(screen.getByTestId('clear-highlight'));
+
+    expect(editor.innerHTML).toBe('ABCDE');
+    expect(defaultProps.setBodyHtml).toHaveBeenCalledWith('ABCDE');
   });
 
   it('handles Ctrl+3 to apply third highlight type', () => {

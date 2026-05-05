@@ -5,8 +5,21 @@ import { HistoryModal, formatHistoryDate, type BaseHistoryEntry } from '../Histo
 
 // Mock Modal to render children directly
 vi.mock('../Modal', () => ({
-  Modal: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
-    isOpen ? <div data-testid="modal">{children}</div> : null,
+  Modal: ({
+    isOpen,
+    children,
+    title,
+  }: {
+    isOpen: boolean;
+    children: React.ReactNode;
+    title?: string;
+  }) =>
+    isOpen ? (
+      <div data-testid="modal">
+        {title && <h2>{title}</h2>}
+        {children}
+      </div>
+    ) : null,
 }));
 
 // Mock ContextMenu
@@ -36,12 +49,18 @@ vi.mock('../TactileButton', () => ({
   TactileButton: ({
     children,
     onClick,
+    variant,
+    size,
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     variant?: string;
-    className?: string;
-  }) => <button onClick={onClick}>{children}</button>,
+    size?: string;
+  }) => (
+    <button onClick={onClick} data-variant={variant} data-size={size}>
+      {children}
+    </button>
+  ),
 }));
 
 type TestEntry = BaseHistoryEntry & { label: string };
@@ -100,22 +119,53 @@ describe('HistoryModal', () => {
     expect(screen.getByText('Clear All')).toBeInTheDocument();
   });
 
-  it('calls onClear when Clear All is confirmed', () => {
+  it('uses app button variants for history actions', () => {
+    render(<HistoryModal {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'Clear All' })).toHaveAttribute(
+      'data-variant',
+      'ghost',
+    );
+    expect(screen.getByRole('button', { name: 'Clear All' })).toHaveAttribute('data-size', 'sm');
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveAttribute(
+      'data-variant',
+      'secondary',
+    );
+  });
+
+  it('opens an in-app warning prompt before clearing all history', () => {
     const onClear = vi.fn();
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
     render(<HistoryModal {...defaultProps} onClear={onClear} />);
+
     fireEvent.click(screen.getByText('Clear All'));
+
+    expect(screen.getByText('Clear History?')).toBeInTheDocument();
+    expect(screen.getByText('Clear all entries?')).toBeInTheDocument();
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it('calls onClear when the in-app warning prompt is confirmed', () => {
+    const onClear = vi.fn();
+    const confirmSpy = vi.spyOn(globalThis, 'confirm');
+    render(<HistoryModal {...defaultProps} onClear={onClear} />);
+
+    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear History' }));
+
     expect(onClear).toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
     vi.restoreAllMocks();
   });
 
-  it('does not call onClear when Clear All is cancelled', () => {
+  it('does not call onClear when the in-app warning prompt is cancelled', () => {
     const onClear = vi.fn();
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
     render(<HistoryModal {...defaultProps} onClear={onClear} />);
+
     fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
     expect(onClear).not.toHaveBeenCalled();
-    vi.restoreAllMocks();
+    expect(screen.queryByText('Clear History?')).not.toBeInTheDocument();
   });
 
   it('calls onLoad and onClose when entry is clicked', () => {
@@ -173,6 +223,31 @@ describe('HistoryModal', () => {
     expect(screen.getByText('Recent')).toBeInTheDocument();
     expect(screen.getByText(/Pinned Item/)).toBeInTheDocument();
     expect(screen.getByText(/Recent Item/)).toBeInTheDocument();
+  });
+
+  it('wraps pinned and recent sections for custom section layouts', () => {
+    const pinnedEntry = makeEntry({ id: 'pinned-1', label: 'Pinned Item', pinned: true });
+    const recentEntry = makeEntry({ id: 'recent-1', label: 'Recent Item', pinned: false });
+    const { container } = render(
+      <HistoryModal
+        {...defaultProps}
+        history={[pinnedEntry, recentEntry]}
+        enablePinnedSections={true}
+        pinnedSectionLabel="Pinned"
+        recentSectionLabel="Recent"
+      />,
+    );
+
+    expect(container.querySelector('.test-history-section-pinned')).toBeInTheDocument();
+    expect(container.querySelector('.test-history-section-recent')).toBeInTheDocument();
+    expect(container.querySelectorAll('.test-history-section-items')).toHaveLength(2);
+  });
+
+  it('renders optional toolbar content between header and list', () => {
+    render(
+      <HistoryModal {...defaultProps} toolbar={<div data-testid="history-toolbar">Find</div>} />,
+    );
+    expect(screen.getByTestId('history-toolbar')).toBeInTheDocument();
   });
 
   it('does not show recent label when no pinned items exist', () => {

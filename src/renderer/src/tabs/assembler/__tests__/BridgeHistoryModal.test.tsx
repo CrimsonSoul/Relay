@@ -6,8 +6,19 @@ import type { BridgeHistoryEntry } from '@shared/ipc';
 
 // Mock Modal to avoid portal
 vi.mock('../../../components/Modal', () => ({
-  Modal: ({ isOpen, children }: { isOpen: boolean; children: React.ReactNode }) =>
-    isOpen ? React.createElement('div', { 'data-testid': 'modal' }, children) : null,
+  Modal: ({
+    isOpen,
+    children,
+    title,
+  }: {
+    isOpen: boolean;
+    children: React.ReactNode;
+    title?: string;
+  }) => {
+    if (!isOpen) return null;
+    const titleNode = title ? React.createElement('h2', null, title) : null;
+    return React.createElement('div', { 'data-testid': 'modal' }, titleNode, children);
+  },
 }));
 
 // Mock ContextMenu
@@ -245,23 +256,41 @@ describe('BridgeHistoryModal', () => {
     expect(screen.getByText('Clear All')).toBeInTheDocument();
   });
 
-  it('calls onClear after globalThis.confirm for Clear All', () => {
+  it('opens an in-app warning prompt before clearing all bridge history', () => {
     const onClear = vi.fn();
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
     fireEvent.click(screen.getByText('Clear All'));
-    expect(onClear).toHaveBeenCalled();
+
+    expect(screen.getByText('Clear History?')).toBeInTheDocument();
+    expect(screen.getByText('Clear all bridge history?')).toBeInTheDocument();
+    expect(onClear).not.toHaveBeenCalled();
   });
 
-  it('does not call onClear when confirm is cancelled', () => {
+  it('calls onClear when the in-app warning prompt is confirmed', () => {
     const onClear = vi.fn();
-    vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
+    const confirmSpy = vi.spyOn(globalThis, 'confirm');
 
     render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
 
     fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear History' }));
+
+    expect(onClear).toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('does not call onClear when the in-app warning prompt is cancelled', () => {
+    const onClear = vi.fn();
+
+    render(<BridgeHistoryModal {...defaultProps} onClear={onClear} />);
+
+    fireEvent.click(screen.getByText('Clear All'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
     expect(onClear).not.toHaveBeenCalled();
+    expect(screen.queryByText('Clear History?')).not.toBeInTheDocument();
   });
 });

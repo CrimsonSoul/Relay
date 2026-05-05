@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AlertHistoryModal } from '../AlertHistoryModal';
 import type { AlertHistoryEntry } from '@shared/ipc';
@@ -16,6 +16,7 @@ vi.mock('../../components/HistoryModal', () => ({
     onClose,
     extraContent,
     getContextMenuItems,
+    toolbar,
   }: {
     isOpen: boolean;
     title: string;
@@ -31,11 +32,13 @@ vi.mock('../../components/HistoryModal', () => ({
       entry: AlertHistoryEntry,
       helpers: { closeMenu: () => void; closeModal: () => void },
     ) => Array<{ label: string; onClick: () => void; danger?: boolean; icon?: React.ReactNode }>;
+    toolbar?: React.ReactNode;
     [key: string]: unknown;
   }) =>
     isOpen ? (
       <div data-testid="history-modal">
         <h2>{title}</h2>
+        {toolbar}
         {history.length === 0 ? (
           <p>{emptyText}</p>
         ) : (
@@ -154,10 +157,19 @@ describe('AlertHistoryModal', () => {
     expect(defaultProps.onClose).toHaveBeenCalled();
   });
 
-  it('renders pinned icon for pinned entries', () => {
-    render(<AlertHistoryModal {...defaultProps} history={[makeEntry({ pinned: true })]} />);
-    // The pin icon has a title attribute
+  it('renders the pinned marker without an active label inside pinned template cards', () => {
+    render(
+      <AlertHistoryModal
+        {...defaultProps}
+        history={[makeEntry({ pinned: true, label: 'My Template' })]}
+      />,
+    );
+
+    const templateCard = screen.getByText('My Template').closest('.alert-history-template-card');
+    expect(templateCard).toBeInTheDocument();
+    expect(screen.getByText('My Template')).toBeInTheDocument();
     expect(screen.getByTitle('Pinned template')).toBeInTheDocument();
+    expect(within(templateCard as HTMLElement).queryByText('ACTIVE')).not.toBeInTheDocument();
   });
 
   it('shows label instead of date for entries with a label', () => {
@@ -183,6 +195,69 @@ describe('AlertHistoryModal', () => {
     expect(screen.getByText('First')).toBeInTheDocument();
     expect(screen.getByText('Second')).toBeInTheDocument();
     expect(screen.getByText('MAINTENANCE')).toBeInTheDocument();
+  });
+
+  it('renders pinned templates as rich preview cards', () => {
+    const { container } = render(
+      <AlertHistoryModal
+        {...defaultProps}
+        history={[makeEntry({ pinned: true, label: 'Network Template' })]}
+      />,
+    );
+
+    expect(container.querySelector('.alert-history-template-card')).toBeInTheDocument();
+    expect(screen.getByText('Network Template')).toBeInTheDocument();
+  });
+
+  it('renders recent history as compact preview rows', () => {
+    const { container } = render(<AlertHistoryModal {...defaultProps} />);
+
+    expect(container.querySelector('.alert-history-recent-row')).toBeInTheDocument();
+    expect(container.querySelector('.alert-history-mini-preview')).toBeInTheDocument();
+  });
+
+  it('renders a plain-text body snippet from saved bodyHtml', () => {
+    render(
+      <AlertHistoryModal
+        {...defaultProps}
+        history={[makeEntry({ bodyHtml: '<p><b>VPN</b> users must reconnect.</p>' })]}
+      />,
+    );
+
+    expect(screen.getByText(/VPN users must reconnect/)).toBeInTheDocument();
+  });
+
+  it('filters history and templates by label, subject, body text, sender, and recipient', () => {
+    render(
+      <AlertHistoryModal
+        {...defaultProps}
+        history={[
+          makeEntry({
+            id: 'template',
+            pinned: true,
+            label: 'VPN Template',
+            subject: 'Remote access issue',
+            bodyHtml: '<p>Remote employees cannot connect</p>',
+            sender: 'IT',
+            recipient: 'All Staff',
+          }),
+          makeEntry({
+            id: 'recent',
+            subject: 'Firewall maintenance',
+            bodyHtml: '<p>Datacenter change window</p>',
+            sender: 'Network',
+            recipient: 'NOC',
+          }),
+        ]}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Search templates and history...'), {
+      target: { value: 'remote employees' },
+    });
+
+    expect(screen.getByText('VPN Template')).toBeInTheDocument();
+    expect(screen.queryByText('Firewall maintenance')).not.toBeInTheDocument();
   });
 
   it('renders severity dot with correct color for ISSUE', () => {

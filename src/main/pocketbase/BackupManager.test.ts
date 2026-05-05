@@ -77,7 +77,7 @@ describe('BackupManager', () => {
   });
 
   describe('backup()', () => {
-    it('calls pb.backups.create() with a timestamped .zip name', async () => {
+    it('calls pb.backups.create() with a PocketBase-valid timestamped .zip name', async () => {
       const manager = new BackupManager(dataDir);
       const createMock = vi.fn().mockResolvedValue(undefined);
       const pb = { backups: { create: createMock } } as unknown as import('pocketbase').default;
@@ -88,10 +88,8 @@ describe('BackupManager', () => {
 
       expect(createMock).toHaveBeenCalledOnce();
       const backupName: string = createMock.mock.calls[0][0] as string;
-      expect(backupName).toMatch(/\.zip$/);
-      // ISO timestamp chars : and . are replaced with - in the stem (before .zip)
-      const stem = backupName.replace(/\.zip$/, '');
-      expect(stem).not.toMatch(/[:.]/);
+      expect(backupName).toMatch(/^backup_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
+      expect(backupName).not.toMatch(/[TZ:]/);
       expect(result).toBe(join(backupsDir, backupName));
     });
 
@@ -199,7 +197,8 @@ describe('BackupManager', () => {
       // Safety backup should be created first
       expect(createMock).toHaveBeenCalledOnce();
       const safetyName: string = createMock.mock.calls[0][0] as string;
-      expect(safetyName).toMatch(/^pre-restore-.*\.zip$/);
+      expect(safetyName).toMatch(/^pre_restore_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$/);
+      expect(safetyName).not.toMatch(/[TZ:]/);
 
       // Then restore the requested backup
       expect(restoreMock).toHaveBeenCalledWith('my-backup.zip');
