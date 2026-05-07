@@ -27,21 +27,49 @@ type ContextMenuEvent = Pick<MouseEvent, 'preventDefault' | 'clientX' | 'clientY
 
 interface ServerVirtualRowData {
   servers: Server[];
+  contactLookup: Map<string, Contact>;
   onContextMenu: (e: ContextMenuEvent, server: Server) => void;
   selectedIndex: number;
   onRowClick: (index: number) => void;
 }
 
-const ROW_HEIGHT = 72;
+const ROW_HEIGHT = 104;
+
+const normalizeServerField = (value: string | undefined) => {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === '-' || trimmed === '0') return '';
+  return trimmed;
+};
+
+const getContactDisplayName = (email: string, contactLookup: Map<string, Contact>) => {
+  const normalized = normalizeServerField(email).toLowerCase();
+  if (!normalized) return '';
+  return contactLookup.get(normalized)?.name || email;
+};
+
+const usefulOsFilters: Array<{ key: string; label: string; matches: (os: string) => boolean }> = [
+  {
+    key: 'linux',
+    label: 'Linux',
+    matches: (os) => /\b(linux|ubuntu|debian|centos|rhel|red hat|fedora|suse|alpine)\b/.test(os),
+  },
+  {
+    key: 'windows',
+    label: 'Windows',
+    matches: (os) => /\b(windows|win server)\b/.test(os),
+  },
+];
 
 const VirtualRow = memo(({ index, style, ...data }: RowComponentProps<ServerVirtualRowData>) => {
-  const { servers, onContextMenu, selectedIndex, onRowClick } = data;
+  const { servers, contactLookup, onContextMenu, selectedIndex, onRowClick } = data;
   if (index >= servers.length) return null;
   const server = servers[index];
   return (
     <ServerCard
       style={style}
       server={server}
+      ownerName={getContactDisplayName(server.owner, contactLookup)}
+      supportName={getContactDisplayName(server.contact, contactLookup)}
       onContextMenu={onContextMenu}
       selected={index === selectedIndex}
       onRowClick={() => onRowClick(index)}
@@ -55,11 +83,15 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const [notesServer, setNotesServer] = useState<Server | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const serverExtraFilters = useMemo<FilterDef<Server>[]>(
-    () => [
-      {
-        key: 'hasOwner',
-        label: 'Has Owner',
+  const serverExtraFilters = useMemo<FilterDef<Server>[]>(() => {
+    const availableOperatingSystems = new Set(
+      servers.map((server) => normalizeServerField(server.os).toLowerCase()).filter(Boolean),
+    );
+    const operatingSystemFilters = usefulOsFilters
+      .filter((os) => Array.from(availableOperatingSystems).some(os.matches))
+      .map((os) => ({
+        key: `os:${os.key}`,
+        label: os.label,
         icon: (
           <svg
             width="14"
@@ -71,11 +103,54 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
           </svg>
         ),
-        predicate: (s) => !!s.owner?.trim(),
+        predicate: (server: Server) => os.matches(normalizeServerField(server.os).toLowerCase()),
+      }));
+
+    return [
+      {
+        key: 'missingOwner',
+        label: 'Missing Owner',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="12" cy="7" r="4" />
+            <path d="M4 21v-2a4 4 0 0 1 4-4h4" />
+            <path d="M17 17l4 4M21 17l-4 4" />
+          </svg>
+        ),
+        predicate: (s) => !normalizeServerField(s.owner),
+      },
+      {
+        key: 'missingSupport',
+        label: 'Missing Support',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
+            <path d="M17 17l4 4M21 17l-4 4" />
+          </svg>
+        ),
+        predicate: (s) => !normalizeServerField(s.contact),
       },
       {
         key: 'hasComment',
@@ -96,9 +171,9 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
         ),
         predicate: (s) => !!s.comment?.trim(),
       },
-    ],
-    [],
-  );
+      ...operatingSystemFilters,
+    ];
+  }, [servers]);
 
   const filters = useListFilters({
     items: h.filteredServers,
@@ -127,11 +202,12 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
   const rowProps = useMemo(
     () => ({
       servers: displayedServers,
+      contactLookup: h.contactLookup,
       onContextMenu: h.handleContextMenu,
       selectedIndex,
       onRowClick: (i: number) => setSelectedIndex(i),
     }),
-    [displayedServers, h.handleContextMenu, selectedIndex],
+    [displayedServers, h.contactLookup, h.handleContextMenu, selectedIndex],
   );
 
   return (

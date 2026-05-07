@@ -1,5 +1,5 @@
 import React from 'react';
-import { Contact } from '@shared/ipc';
+import { Contact, Server } from '@shared/ipc';
 import { AMBER } from '../utils/colors';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { GroupPill, getInitials } from './shared/AvatarUtils';
@@ -17,6 +17,10 @@ import {
 interface ContactDetailPanelProps {
   contact: Contact;
   groups: string[];
+  relatedServers?: {
+    owned: Server[];
+    supported: Server[];
+  };
   noteText?: string;
   tags?: string[];
   onEditNotes: () => void;
@@ -30,6 +34,7 @@ const isValidName = (name: string) => name && name.replaceAll(/[.\s\-_]/g, '').l
 export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
   contact,
   groups,
+  relatedServers,
   noteText,
   tags = [],
   onEditNotes,
@@ -40,6 +45,8 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
   const displayName = isValidName(contact.name) ? contact.name : contact.email;
   const formattedPhone = formatPhoneNumber(contact.phone || '');
   const initials = getInitials(contact.name, contact.email);
+  const hasServerRelationships =
+    !!relatedServers && (relatedServers.owned.length > 0 || relatedServers.supported.length > 0);
 
   return (
     <div className="detail-panel">
@@ -79,6 +86,28 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
 
         <DetailTagsSection tags={tags} />
 
+        {hasServerRelationships && (
+          <div className="detail-panel-section">
+            <div className="detail-panel-section-label">SERVER RELATIONSHIPS</div>
+            <div className="detail-panel-relationship-list">
+              {relatedServers.owned.map((server) => (
+                <ServerRelationshipRow
+                  key={`owned-${server.name}`}
+                  relationshipRole="Owner"
+                  server={server}
+                />
+              ))}
+              {relatedServers.supported.map((server) => (
+                <ServerRelationshipRow
+                  key={`supported-${server.name}`}
+                  relationshipRole="Support"
+                  server={server}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <DetailNotesSection noteText={noteText} />
 
         <div className="detail-panel-actions">
@@ -107,3 +136,18 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
     </div>
   );
 };
+
+const ServerRelationshipRow: React.FC<{
+  relationshipRole: 'Owner' | 'Support';
+  server: Server;
+}> = ({ relationshipRole, server }) => (
+  <div className="detail-panel-relationship">
+    <div className="detail-panel-relationship-main">
+      <div className="detail-panel-relationship-name">{server.name}</div>
+      <div className="detail-panel-relationship-meta">
+        {[server.businessArea, server.lob, server.os].filter(Boolean).join(' · ')}
+      </div>
+    </div>
+    <span className="detail-panel-relationship-role">{relationshipRole}</span>
+  </div>
+);

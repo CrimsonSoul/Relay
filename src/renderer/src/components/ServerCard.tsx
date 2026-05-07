@@ -12,10 +12,20 @@ interface ServerCardProps {
   style?: React.CSSProperties;
   selected?: boolean;
   onRowClick?: () => void;
+  ownerName?: string;
+  supportName?: string;
 }
 
 export const ServerCard = memo(
-  ({ server, onContextMenu, style, selected, onRowClick }: ServerCardProps) => {
+  ({
+    server,
+    onContextMenu,
+    style,
+    selected,
+    onRowClick,
+    ownerName,
+    supportName,
+  }: ServerCardProps) => {
     const osInfo = getPlatformColor(server.os);
     const staticCardRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +83,12 @@ export const ServerCard = memo(
             <span className="server-card-meta-separator">|</span>
             <span className="server-card-meta-lob">{server.lob}</span>
           </div>
+          {(ownerName || supportName) && (
+            <div className="server-card-relationships">
+              {ownerName && <span>Owner: {ownerName}</span>}
+              {supportName && <span>Support: {supportName}</span>}
+            </div>
+          )}
         </div>
       </div>
     );

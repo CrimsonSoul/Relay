@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { List, useListRef } from 'react-window';
 import type { ListImperativeAPI } from 'react-window';
 import { AutoSizer } from 'react-virtualized-auto-sizer';
-import { Contact, BridgeGroup } from '@shared/ipc';
+import { Contact, BridgeGroup, Server } from '@shared/ipc';
 
 import { AddContactModal } from '../components/AddContactModal';
 import { Modal } from '../components/Modal';
@@ -25,11 +25,18 @@ import { StatusBar, StatusBarLive } from '../components/StatusBar';
 type Props = {
   contacts: Contact[];
   groups: BridgeGroup[];
+  servers?: Server[];
   onAddToAssembler: (contact: Contact) => void;
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
 const ROW_HEIGHT = 72;
+
+const normalizeRelationshipEmail = (value: string | undefined) => {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed || trimmed === '-' || trimmed === '0') return '';
+  return trimmed;
+};
 
 const ScrollController = ({
   listRef,
@@ -48,12 +55,34 @@ const ScrollController = ({
   return null;
 };
 
-export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembler }) => {
+export const DirectoryTab: React.FC<Props> = ({
+  contacts,
+  groups,
+  servers = [],
+  onAddToAssembler,
+}) => {
   const dir = useDirectory(contacts, groups, onAddToAssembler);
   const listRef = useListRef();
   const listContainerRef = useRef<HTMLDivElement>(null);
   const { getContactNote, setContactNote } = useNotesContext();
   const [notesContact, setNotesContact] = useState<Contact | null>(null);
+
+  const serverRelationMap = useMemo(() => {
+    const relationMap = new Map<string, { owned: number; supported: number }>();
+    for (const server of servers) {
+      const owner = normalizeRelationshipEmail(server.owner);
+      const support = normalizeRelationshipEmail(server.contact);
+      if (owner) {
+        const current = relationMap.get(owner) ?? { owned: 0, supported: 0 };
+        relationMap.set(owner, { ...current, owned: current.owned + 1 });
+      }
+      if (support) {
+        const current = relationMap.get(support) ?? { owned: 0, supported: 0 };
+        relationMap.set(support, { ...current, supported: current.supported + 1 });
+      }
+    }
+    return relationMap;
+  }, [servers]);
 
   const contactExtraFilters = useMemo<FilterDef<Contact>[]>(
     () => [
@@ -116,8 +145,49 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
         ),
         predicate: (c) => !!c.title?.trim(),
       },
+      {
+        key: 'ownsServer',
+        label: 'Owns Server',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+            <path d="M12 6h.01M12 18h.01" />
+          </svg>
+        ),
+        predicate: (c) => (serverRelationMap.get(c.email.toLowerCase())?.owned ?? 0) > 0,
+      },
+      {
+        key: 'supportsServer',
+        label: 'Supports Server',
+        icon: (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M9 11a3 3 0 1 0 6 0 3 3 0 0 0-6 0" />
+            <path d="M12 2v4M12 16v6M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+          </svg>
+        ),
+        predicate: (c) => (serverRelationMap.get(c.email.toLowerCase())?.supported ?? 0) > 0,
+      },
     ],
-    [],
+    [serverRelationMap],
   );
 
   const filters = useListFilters({
@@ -157,11 +227,20 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
     ? groupMap.get(selectedContact.email.toLowerCase()) || []
     : [];
   const selectedNote = selectedContact ? getContactNote(selectedContact.email) : undefined;
+  const selectedServerRelationships = useMemo(() => {
+    if (!selectedContact) return { owned: [], supported: [] };
+    const email = selectedContact.email.toLowerCase();
+    return {
+      owned: servers.filter((server) => normalizeRelationshipEmail(server.owner) === email),
+      supported: servers.filter((server) => normalizeRelationshipEmail(server.contact) === email),
+    };
+  }, [selectedContact, servers]);
 
   const itemData = useMemo(
     () => ({
       filtered,
       groupMap,
+      serverRelationMap,
       onContextMenu: (e: React.MouseEvent, contact: Contact) => {
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY, contact });
@@ -169,7 +248,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
       focusedIndex,
       onRowClick: (i: number) => setFocusedIndex(i),
     }),
-    [filtered, groupMap, focusedIndex, setFocusedIndex, setContextMenu],
+    [filtered, groupMap, serverRelationMap, focusedIndex, setFocusedIndex, setContextMenu],
   );
 
   return (
@@ -272,6 +351,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
             groups={selectedGroups}
             noteText={selectedNote?.note}
             tags={selectedNote?.tags}
+            relatedServers={selectedServerRelationships}
             onEditNotes={() => setNotesContact(selectedContact)}
             onEdit={() => dir.setEditingContact(selectedContact)}
             onDelete={() => dir.setDeleteConfirmation(selectedContact)}

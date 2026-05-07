@@ -346,6 +346,22 @@
   flex-shrink: 0;
 }
 
+.server-card-relationships {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.server-card-relationships span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Server Card - Wide layout */
 @container (min-width: 900px) {
   .server-card-name {
@@ -542,6 +558,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 .contact-entry-name {
   font-size: var(--text-lg);
@@ -570,6 +587,23 @@
 }
 .contact-entry-phone {
   font-family: var(--font-family-mono);
+}
+
+.contact-entry-chip {
+  flex-shrink: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--color-hover-overlay);
+  padding: 2px 7px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.contact-entry--selected .contact-entry-chip {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 .contact-entry-actions {
   flex-shrink: 0;
@@ -621,4 +655,53 @@
 /* Empty/placeholder field value */
 .detail-panel-field-value--empty {
   color: var(--color-text-tertiary);
+}
+
+.detail-panel-relationship-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-panel-relationship {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  background: var(--color-bg-card);
+}
+
+.detail-panel-relationship-main {
+  min-width: 0;
+}
+
+.detail-panel-relationship-name {
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-panel-relationship-meta {
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-panel-relationship-role {
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: var(--color-hover-overlay);
+  padding: 3px 7px;
+  font-size: var(--text-xs);
+  font-weight: 700;
 }

@@ -290,6 +290,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                     <DirectoryTab
                       contacts={data.contacts}
                       groups={data.groups}
+                      servers={data.servers}
                       onAddToAssembler={handleAddToAssembler}
                     />
                   </Suspense>

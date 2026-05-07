@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ContactDetailPanel } from '../ContactDetailPanel';
-import type { Contact } from '@shared/ipc';
+import type { Contact, Server } from '@shared/ipc';
 
 const mockContact: Contact = {
   id: '1',
@@ -185,6 +185,43 @@ describe('ContactDetailPanel', () => {
     expect(btn).toBeInTheDocument();
     fireEvent.click(btn);
     expect(onAddToAssembler).toHaveBeenCalled();
+  });
+
+  it('renders server relationships when provided', () => {
+    const owned: Server = {
+      name: 'web-prod-01',
+      businessArea: 'eCommerce',
+      lob: 'Storefront',
+      comment: 'Primary web server',
+      owner: 'alice@example.com',
+      contact: 'steve@example.com',
+      os: 'Linux',
+      _searchString: 'web-prod-01 ecommerce storefront alice@example.com steve@example.com linux',
+      raw: {},
+    };
+    const supported: Server = {
+      ...owned,
+      name: 'api-prod-01',
+      owner: 'steve@example.com',
+      contact: 'alice@example.com',
+    };
+
+    render(
+      <ContactDetailPanel
+        contact={mockContact}
+        groups={[]}
+        relatedServers={{ owned: [owned], supported: [supported] }}
+        onEditNotes={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('SERVER RELATIONSHIPS')).toBeInTheDocument();
+    expect(screen.getByText('web-prod-01')).toBeInTheDocument();
+    expect(screen.getByText('api-prod-01')).toBeInTheDocument();
+    expect(screen.getByText('Owner')).toBeInTheDocument();
+    expect(screen.getByText('Support')).toBeInTheDocument();
   });
 
   it('uses email as display name when contact name is invalid', () => {

@@ -6,6 +6,7 @@ import { ContactCard } from '../ContactCard';
 export interface DirectoryVirtualRowData {
   filtered: Contact[];
   groupMap: Map<string, string[]>;
+  serverRelationMap: Map<string, { owned: number; supported: number }>;
   onContextMenu: (e: React.MouseEvent, contact: Contact) => void;
   focusedIndex: number;
   onRowClick: (index: number) => void;
@@ -13,12 +14,14 @@ export interface DirectoryVirtualRowData {
 
 export const VirtualRow = memo(
   ({ index, style, ...data }: RowComponentProps<DirectoryVirtualRowData>) => {
-    const { filtered, groupMap, onContextMenu, focusedIndex, onRowClick } = data;
+    const { filtered, groupMap, serverRelationMap, onContextMenu, focusedIndex, onRowClick } = data;
 
     if (index >= filtered.length) return <div style={style} />;
 
     const contact = filtered[index];
-    const membership = groupMap.get(contact.email.toLowerCase()) || [];
+    const emailKey = contact.email.toLowerCase();
+    const membership = groupMap.get(emailKey) || [];
+    const relationshipCounts = serverRelationMap.get(emailKey);
     const isFocused = index === focusedIndex;
     return (
       <ContactCard
@@ -28,6 +31,7 @@ export const VirtualRow = memo(
         title={contact.title}
         phone={contact.phone}
         groups={membership}
+        relationshipCounts={relationshipCounts}
         selected={isFocused}
         onContextMenu={(e) => onContextMenu(e, contact)}
         onRowClick={() => onRowClick(index)}

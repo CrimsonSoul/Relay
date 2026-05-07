@@ -237,6 +237,31 @@ describe('ServersTab', () => {
     expect(screen.getByTestId('list-filters')).toBeInTheDocument();
   });
 
+  it('configures a compact set of useful server quick filters', () => {
+    const linuxServer = makeServer({
+      os: 'Ubuntu 22.04',
+      comment: 'Requires quarterly patch review',
+    });
+    const windowsServer = makeServer({
+      name: 'win-server-01',
+      os: 'Windows',
+      owner: '',
+      contact: '',
+    });
+    const macServer = makeServer({ name: 'mac-mini-01', os: 'macOS' });
+    const servers = [linuxServer, windowsServer, macServer];
+    mockUseServers.mockReturnValue({
+      ...makeDefaultServersReturn(),
+      filteredServers: servers,
+    });
+
+    render(<ServersTab servers={servers} contacts={[]} />);
+
+    const options = mockUseListFilters.mock.calls.at(-1)?.[0];
+    const labels = options.extraFilters.map((filter: { label: string }) => filter.label);
+    expect(labels).toEqual(['Missing Owner', 'Missing Support', 'Has Comment', 'Linux', 'Windows']);
+  });
+
   it('shows list filters when isAnyFilterActive', () => {
     mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ isAnyFilterActive: true }));
     mockUseServers.mockReturnValue({

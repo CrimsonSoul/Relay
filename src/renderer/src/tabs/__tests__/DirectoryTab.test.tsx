@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import type { Contact, BridgeGroup } from '@shared/ipc';
+import type { Contact, BridgeGroup, Server } from '@shared/ipc';
 
 // --- Mocks ---
 
@@ -162,8 +162,22 @@ vi.mock('../../components/directory/DirectoryContextMenu', () => ({
 }));
 
 vi.mock('../../components/ContactDetailPanel', () => ({
-  ContactDetailPanel: ({ contact }: { contact: Contact }) => (
-    <div data-testid="contact-detail">{contact.name}</div>
+  ContactDetailPanel: ({
+    contact,
+    relatedServers,
+  }: {
+    contact: Contact;
+    relatedServers?: { owned: Server[]; supported: Server[] };
+  }) => (
+    <div data-testid="contact-detail">
+      {contact.name}
+      {relatedServers?.owned.map((server) => (
+        <span key={`owned-${server.name}`}>owned:{server.name}</span>
+      ))}
+      {relatedServers?.supported.map((server) => (
+        <span key={`supported-${server.name}`}>supported:{server.name}</span>
+      ))}
+    </div>
   ),
 }));
 
@@ -241,6 +255,19 @@ const makeContact = (overrides: Partial<Contact> = {}): Contact => ({
   ...overrides,
 });
 
+const makeServer = (overrides: Partial<Server> = {}): Server => ({
+  name: 'web-prod-01',
+  businessArea: 'eCommerce',
+  lob: 'Storefront',
+  comment: 'Primary web server',
+  owner: 'john@example.com',
+  contact: 'support@example.com',
+  os: 'Linux',
+  _searchString: 'web-prod-01 ecommerce storefront john@example.com support@example.com linux',
+  raw: {},
+  ...overrides,
+});
+
 describe('DirectoryTab', () => {
   it('renders without crashing', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
@@ -290,6 +317,34 @@ describe('DirectoryTab', () => {
     render(<DirectoryTab contacts={contacts} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('contact-detail')).toBeInTheDocument();
     expect(screen.getByText('Jane Smith')).toBeInTheDocument();
+  });
+
+  it('passes owned and supported servers to the selected contact detail panel', () => {
+    const contact = makeContact({ name: 'Alice', email: 'alice@example.com' });
+    const owned = makeServer({ name: 'web-prod-01', owner: 'alice@example.com' });
+    const supported = makeServer({
+      name: 'api-prod-01',
+      owner: 'other@example.com',
+      contact: 'alice@example.com',
+    });
+    mockUseDirectory.mockReturnValue({
+      ...makeDefaultDirectoryReturn(),
+      filtered: [contact],
+      focusedIndex: 0,
+    });
+    mockUseListFilters.mockReturnValue(makeDefaultListFiltersReturn({ filteredItems: [contact] }));
+
+    render(
+      <DirectoryTab
+        contacts={[contact]}
+        groups={[]}
+        servers={[owned, supported]}
+        onAddToAssembler={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('owned:web-prod-01')).toBeInTheDocument();
+    expect(screen.getByText('supported:api-prod-01')).toBeInTheDocument();
   });
 
   it('shows match count when contacts are filtered', () => {

@@ -155,6 +155,13 @@ describe('ContactCard Component', () => {
     expect(container.querySelector('.contact-entry-notes-btn')).toBeInTheDocument();
   });
 
+  test('renders server relationship chips when counts are provided', () => {
+    render(<ContactCard {...mockContact} relationshipCounts={{ owned: 2, supported: 1 }} />);
+
+    expect(screen.getByText('Owner 2')).toBeInTheDocument();
+    expect(screen.getByText('Support 1')).toBeInTheDocument();
+  });
+
   test('calls onNotesClick when notes button is clicked', () => {
     const onNotesClick = vi.fn();
     const { container } = render(

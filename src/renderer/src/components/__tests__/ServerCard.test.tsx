@@ -38,6 +38,20 @@ describe('ServerCard', () => {
     expect(screen.getByText('Platform')).toBeInTheDocument();
   });
 
+  it('renders owner and support names when provided', () => {
+    render(
+      <ServerCard
+        server={makeServer()}
+        ownerName="Alice Johnson"
+        supportName="Steve Rogers"
+        onContextMenu={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Owner: Alice Johnson')).toBeInTheDocument();
+    expect(screen.getByText('Support: Steve Rogers')).toBeInTheDocument();
+  });
+
   it('renders separator between meta items', () => {
     render(<ServerCard server={makeServer()} onContextMenu={vi.fn()} />);
 

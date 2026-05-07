@@ -21,6 +21,10 @@ type ContactRowProps = {
   hasNotes?: boolean;
   tags?: string[];
   onNotesClick?: () => void;
+  relationshipCounts?: {
+    owned: number;
+    supported: number;
+  };
 };
 
 export const ContactCard = memo(
@@ -39,6 +43,7 @@ export const ContactCard = memo(
     hasNotes,
     tags,
     onNotesClick,
+    relationshipCounts,
   }: ContactRowProps) => {
     const displayPhone = phone ? formatPhoneNumber(phone) : '';
     const tooltipContent = [name || email, email, title, displayPhone].filter(Boolean).join('\n');
@@ -58,6 +63,12 @@ export const ContactCard = memo(
               <div className="contact-entry-line1">
                 <span className="contact-entry-name">{name || email}</span>
                 {tags && tags.length > 0 && <GroupPill group={tags[0]} />}
+                {relationshipCounts && relationshipCounts.owned > 0 && (
+                  <span className="contact-entry-chip">Owner {relationshipCounts.owned}</span>
+                )}
+                {relationshipCounts && relationshipCounts.supported > 0 && (
+                  <span className="contact-entry-chip">Support {relationshipCounts.supported}</span>
+                )}
               </div>
               <div className="contact-entry-line2">
                 {email && <span>{email}</span>}
