@@ -46,6 +46,19 @@ describe('AssemblerSidebar', () => {
     expect(screen.getByText('Beta')).toBeInTheDocument();
   });
 
+  it('adds compact identity cues to each group button', () => {
+    const groups = [makeGroup('1', 'First Due'), makeGroup('2', 'Night Shift')];
+    render(<AssemblerSidebar {...defaultProps} groups={groups} />);
+
+    const firstDue = screen.getByRole('button', { name: 'First Due group, 0 contacts' });
+    const nightShift = screen.getByRole('button', { name: 'Night Shift group, 0 contacts' });
+
+    expect(firstDue).toHaveAttribute('title', 'First Due');
+    expect(nightShift).toHaveAttribute('title', 'Night Shift');
+    expect(screen.getByText('FD')).toBeInTheDocument();
+    expect(screen.getByText('NS')).toBeInTheDocument();
+  });
+
   it('sorts groups alphabetically', () => {
     const groups = [makeGroup('1', 'Zebra'), makeGroup('2', 'Alpha')];
     const { container } = render(<AssemblerSidebar {...defaultProps} groups={groups} />);

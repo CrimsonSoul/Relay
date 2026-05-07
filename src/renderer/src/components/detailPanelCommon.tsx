@@ -1,4 +1,5 @@
 import React from 'react';
+import { Tooltip } from './Tooltip';
 
 type DetailActionVariant = 'default' | 'primary' | 'danger';
 
@@ -21,10 +22,12 @@ export const DetailActionButton: React.FC<DetailActionButtonProps> = ({
   icon,
   variant = 'default',
 }) => (
-  <button className={`detail-panel-action-btn${VARIANT_CLASS[variant]}`} onClick={onClick}>
-    {icon}
-    {label}
-  </button>
+  <Tooltip content={label}>
+    <button className={`detail-panel-action-btn${VARIANT_CLASS[variant]}`} onClick={onClick}>
+      {icon}
+      {label}
+    </button>
+  </Tooltip>
 );
 
 export const DetailField: React.FC<{ label: string; value: string; valueClassName?: string }> = ({

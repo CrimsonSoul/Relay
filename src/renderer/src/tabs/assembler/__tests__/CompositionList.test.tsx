@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { CompositionList } from '../CompositionList';
 
@@ -52,6 +52,26 @@ describe('CompositionList', () => {
   it('shows empty state when log is empty', () => {
     render(<CompositionList log={[]} itemData={mockItemData as never} onScroll={vi.fn()} />);
     expect(screen.getByText('No recipients selected')).toBeInTheDocument();
+  });
+
+  it('points empty state at global search, groups, and history without duplicate local search', () => {
+    const onOpenHistory = vi.fn();
+    render(
+      <CompositionList
+        log={[]}
+        itemData={mockItemData as never}
+        onScroll={vi.fn()}
+        onOpenHistory={onOpenHistory}
+      />,
+    );
+
+    expect(screen.getByText(/global search/i)).toBeInTheDocument();
+    expect(screen.getByText(/select a group/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /open history/i })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/add email/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /open history/i }));
+    expect(onOpenHistory).toHaveBeenCalled();
   });
 
   it('renders virtual list when log has items', () => {

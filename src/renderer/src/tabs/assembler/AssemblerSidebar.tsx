@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { BridgeGroup } from '@shared/ipc';
 import { ContextMenu } from '../../components/ContextMenu';
+import { Tooltip } from '../../components/Tooltip';
 import { SaveGroupModal } from './SaveGroupModal';
 import { loggers } from '../../utils/logger';
 
@@ -22,6 +23,24 @@ type AssemblerSidebarProps = {
   actions: SidebarGroupActions;
   // For updating a group with current selection
   currentEmails?: string[];
+};
+
+const getGroupToken = (name: string): string => {
+  const parts = name
+    .trim()
+    .split(/[\s_-]+/)
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return (
+    name
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .slice(0, 2)
+      .toUpperCase() || '?'
+  );
 };
 
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
@@ -135,54 +154,67 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
             <div className="assembler-sidebar-groups">
               <div className="assembler-sidebar-groups-header">
                 <span className="assembler-sidebar-groups-title">Groups</span>
-                <button
-                  onClick={() => setIsSaveGroupOpen(true)}
-                  className="assembler-sidebar-add-btn"
-                  title="Create new group"
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                <Tooltip content="Create new group">
+                  <button
+                    onClick={() => setIsSaveGroupOpen(true)}
+                    className="assembler-sidebar-add-btn"
+                    title="Create new group"
                   >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </button>
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                  </button>
+                </Tooltip>
               </div>
               <div className="assembler-sidebar-group-list">
                 {sortedGroups.map((group) => {
                   const isSelected = selectedGroupIds.includes(group.id);
                   return (
-                    <button
-                      type="button"
+                    <Tooltip
                       key={group.id}
-                      className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
-                      onClick={() => onToggleGroup(group.id)}
-                      onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
+                      content={`${group.name}\n${group.contacts.length} contacts`}
+                      block
+                      position="right"
                     >
-                      <div className="sig-grp-check">
-                        <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
-                          <polyline
-                            points="3.5 8.5 6.5 11.5 12.5 4.5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </div>
-                      <div className="sig-grp-info">
-                        <div className="sig-grp-name">{group.name}</div>
-                        <div className="sig-grp-sub">{group.contacts.length} contacts</div>
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        className={`sig-grp ${isSelected ? 'sig-grp--on' : ''}`}
+                        onClick={() => onToggleGroup(group.id)}
+                        onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
+                        title={group.name}
+                        aria-label={`${group.name} group, ${group.contacts.length} contacts`}
+                      >
+                        <div className="sig-grp-check">
+                          <svg viewBox="0 0 16 16" className="sig-grp-checkmark">
+                            <polyline
+                              points="3.5 8.5 6.5 11.5 12.5 4.5"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
+                        <div className="sig-grp-token" aria-hidden="true">
+                          {getGroupToken(group.name)}
+                        </div>
+                        <div className="sig-grp-info">
+                          <div className="sig-grp-name">{group.name}</div>
+                          <div className="sig-grp-sub">{group.contacts.length} contacts</div>
+                        </div>
+                      </button>
+                    </Tooltip>
                   );
                 })}
                 {sortedGroups.length === 0 && (

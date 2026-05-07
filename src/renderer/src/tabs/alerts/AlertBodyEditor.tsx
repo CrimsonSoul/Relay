@@ -1,4 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { Tooltip } from '../../components/Tooltip';
 import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
@@ -239,187 +240,201 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
         <span className="alerts-field-label">Body</span>
         <div className="alerts-body-editor">
           <div className="alerts-body-toolbar" role="toolbar" aria-label="Body formatting">
-            <button
-              type="button"
-              className={`alerts-fmt-btn${activeFormats.bold ? ' active' : ''}`}
-              title="Bold (Cmd+B)"
-              aria-label="Bold"
-              aria-keyshortcuts="Meta+B Control+B"
-              aria-pressed={activeFormats.bold}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyFormat('bold');
-              }}
-            >
-              <strong>B</strong>
-            </button>
-            <button
-              type="button"
-              className={`alerts-fmt-btn${activeFormats.italic ? ' active' : ''}`}
-              title="Italic (Cmd+I)"
-              aria-label="Italic"
-              aria-keyshortcuts="Meta+I Control+I"
-              aria-pressed={activeFormats.italic}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyFormat('italic');
-              }}
-            >
-              <em>I</em>
-            </button>
-            <button
-              type="button"
-              className={`alerts-fmt-btn${activeFormats.underline ? ' active' : ''}`}
-              title="Underline (Cmd+U)"
-              aria-label="Underline"
-              aria-keyshortcuts="Meta+U Control+U"
-              aria-pressed={activeFormats.underline}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyFormat('underline');
-              }}
-            >
-              <span className="alerts-fmt-underline">U</span>
-            </button>
+            <Tooltip content="Bold (Cmd+B)">
+              <button
+                type="button"
+                className={`alerts-fmt-btn${activeFormats.bold ? ' active' : ''}`}
+                title="Bold (Cmd+B)"
+                aria-label="Bold"
+                aria-keyshortcuts="Meta+B Control+B"
+                aria-pressed={activeFormats.bold}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyFormat('bold');
+                }}
+              >
+                <strong>B</strong>
+              </button>
+            </Tooltip>
+            <Tooltip content="Italic (Cmd+I)">
+              <button
+                type="button"
+                className={`alerts-fmt-btn${activeFormats.italic ? ' active' : ''}`}
+                title="Italic (Cmd+I)"
+                aria-label="Italic"
+                aria-keyshortcuts="Meta+I Control+I"
+                aria-pressed={activeFormats.italic}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyFormat('italic');
+                }}
+              >
+                <em>I</em>
+              </button>
+            </Tooltip>
+            <Tooltip content="Underline (Cmd+U)">
+              <button
+                type="button"
+                className={`alerts-fmt-btn${activeFormats.underline ? ' active' : ''}`}
+                title="Underline (Cmd+U)"
+                aria-label="Underline"
+                aria-keyshortcuts="Meta+U Control+U"
+                aria-pressed={activeFormats.underline}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyFormat('underline');
+                }}
+              >
+                <span className="alerts-fmt-underline">U</span>
+              </button>
+            </Tooltip>
             <span className="alerts-fmt-separator" />
-            <button
-              type="button"
-              className="alerts-fmt-btn"
-              title="Bullet List"
-              aria-label="Bullet list"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyFormat('insertUnorderedList');
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
+            <Tooltip content="Bullet list">
+              <button
+                type="button"
+                className="alerts-fmt-btn"
+                title="Bullet List"
+                aria-label="Bullet list"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyFormat('insertUnorderedList');
+                }}
               >
-                <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
-                <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
-                <line x1="9" y1="6" x2="21" y2="6" />
-                <line x1="9" y1="12" x2="21" y2="12" />
-                <line x1="9" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className="alerts-fmt-btn"
-              title="Numbered List"
-              aria-label="Numbered list"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                applyFormat('insertOrderedList');
-              }}
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <circle cx="4" cy="6" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none" />
+                  <circle cx="4" cy="18" r="1.5" fill="currentColor" stroke="none" />
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            </Tooltip>
+            <Tooltip content="Numbered list">
+              <button
+                type="button"
+                className="alerts-fmt-btn"
+                title="Numbered List"
+                aria-label="Numbered list"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  applyFormat('insertOrderedList');
+                }}
               >
-                <text
-                  x="2"
-                  y="8"
-                  fontSize="7"
-                  fontWeight="700"
-                  fill="currentColor"
-                  stroke="none"
-                  fontFamily="sans-serif"
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                 >
-                  1
-                </text>
-                <text
-                  x="2"
-                  y="14.5"
-                  fontSize="7"
-                  fontWeight="700"
-                  fill="currentColor"
-                  stroke="none"
-                  fontFamily="sans-serif"
-                >
-                  2
-                </text>
-                <text
-                  x="2"
-                  y="21"
-                  fontSize="7"
-                  fontWeight="700"
-                  fill="currentColor"
-                  stroke="none"
-                  fontFamily="sans-serif"
-                >
-                  3
-                </text>
-                <line x1="9" y1="6" x2="21" y2="6" />
-                <line x1="9" y1="12" x2="21" y2="12" />
-                <line x1="9" y1="18" x2="21" y2="18" />
-              </svg>
-            </button>
+                  <text
+                    x="2"
+                    y="8"
+                    fontSize="7"
+                    fontWeight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    fontFamily="sans-serif"
+                  >
+                    1
+                  </text>
+                  <text
+                    x="2"
+                    y="14.5"
+                    fontSize="7"
+                    fontWeight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    fontFamily="sans-serif"
+                  >
+                    2
+                  </text>
+                  <text
+                    x="2"
+                    y="21"
+                    fontSize="7"
+                    fontWeight="700"
+                    fill="currentColor"
+                    stroke="none"
+                    fontFamily="sans-serif"
+                  >
+                    3
+                  </text>
+                  <line x1="9" y1="6" x2="21" y2="6" />
+                  <line x1="9" y1="12" x2="21" y2="12" />
+                  <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            </Tooltip>
             <span className="alerts-fmt-separator" />
             <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
             <span className="alerts-fmt-separator" />
-            <button
-              type="button"
-              className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-compact${isCompact ? ' active' : ''}`}
-              title="Compact — strip filler phrases"
-              aria-label="Compact message"
-              aria-pressed={isCompact}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onToggleCompact();
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <Tooltip content="Compact - strip filler phrases">
+              <button
+                type="button"
+                className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-compact${isCompact ? ' active' : ''}`}
+                title="Compact - strip filler phrases"
+                aria-label="Compact message"
+                aria-pressed={isCompact}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onToggleCompact();
+                }}
               >
-                <polyline points="4 14 10 14 10 20" />
-                <polyline points="20 10 14 10 14 4" />
-                <line x1="14" y1="10" x2="21" y2="3" />
-                <line x1="3" y1="21" x2="10" y2="14" />
-              </svg>
-            </button>
-            <button
-              type="button"
-              className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-enhance${isEnhanced ? ' active' : ''}`}
-              title="Enhance — auto-highlight key info"
-              aria-label="Enhance message"
-              aria-pressed={isEnhanced}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                onToggleEnhanced();
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="4 14 10 14 10 20" />
+                  <polyline points="20 10 14 10 14 4" />
+                  <line x1="14" y1="10" x2="21" y2="3" />
+                  <line x1="3" y1="21" x2="10" y2="14" />
+                </svg>
+              </button>
+            </Tooltip>
+            <Tooltip content="Enhance - auto-highlight key info">
+              <button
+                type="button"
+                className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-enhance${isEnhanced ? ' active' : ''}`}
+                title="Enhance - auto-highlight key info"
+                aria-label="Enhance message"
+                aria-pressed={isEnhanced}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onToggleEnhanced();
+                }}
               >
-                <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
-              </svg>
-            </button>
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
           <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
             ref={editorRef}

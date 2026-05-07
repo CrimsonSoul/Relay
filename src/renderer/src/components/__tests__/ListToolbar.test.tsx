@@ -99,4 +99,22 @@ describe('ListToolbar', () => {
     );
     expect(screen.getByTitle('Descending')).toBeInTheDocument();
   });
+
+  it('disables sort controls when disabled', () => {
+    const onToggleSortDirection = vi.fn();
+    const onSortKeyChange = vi.fn();
+    render(
+      <ListToolbar
+        sortDirection="asc"
+        onToggleSortDirection={onToggleSortDirection}
+        sortKey="name"
+        sortOptions={[{ value: 'name', label: 'Name' }]}
+        onSortKeyChange={onSortKeyChange}
+        disabled
+      />,
+    );
+
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByTitle('Ascending')).toBeDisabled();
+  });
 });

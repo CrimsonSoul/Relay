@@ -23,6 +23,16 @@ describe('ListFilters', () => {
     expect(screen.getByText('Has Notes')).toBeInTheDocument();
   });
 
+  it('shows a tooltip for the Has Notes filter', () => {
+    render(<ListFilters {...defaultProps} />);
+
+    fireEvent.mouseEnter(screen.getByText('Has Notes'));
+
+    expect(document.body.querySelector('.tooltip-popup')).toHaveTextContent(
+      'Show items with notes',
+    );
+  });
+
   it('calls onToggleHasNotes when Has Notes is clicked', () => {
     const onToggleHasNotes = vi.fn();
     render(<ListFilters {...defaultProps} onToggleHasNotes={onToggleHasNotes} />);

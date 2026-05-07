@@ -95,6 +95,33 @@
   transform: translateY(0);
 }
 
+[data-theme='light'] .toast-container {
+  width: min(520px, calc(100vw - 40px));
+}
+
+[data-theme='light'] .toast {
+  min-height: 76px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(51, 65, 85, 0.14);
+  box-shadow: var(--shadow-md);
+}
+
+[data-theme='light'] .toast-title {
+  font-size: var(--text-md);
+}
+
+[data-theme='light'] .toast-message {
+  font-size: var(--text-base);
+}
+
+[data-theme='light'] .toast-close {
+  width: 38px;
+  height: 38px;
+  background: #f8fafc;
+  border-color: rgba(51, 65, 85, 0.1);
+}
+
 @media (max-width: 640px) {
   .toast-container {
     right: 12px;

@@ -61,8 +61,18 @@ vi.mock('../../components/Modal', () => ({
 }));
 
 vi.mock('../../components/TactileButton', () => ({
-  TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{children}</button>
+  TactileButton: ({
+    children,
+    onClick,
+    tooltip,
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+    tooltip?: React.ReactNode;
+  }) => (
+    <button onClick={onClick} data-tooltip={typeof tooltip === 'string' ? tooltip : undefined}>
+      {children}
+    </button>
   ),
 }));
 
@@ -251,6 +261,11 @@ describe('DirectoryTab', () => {
   it('renders ADD CONTACT button', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByText('ADD CONTACT')).toBeInTheDocument();
+  });
+
+  it('gives the add contact button a tooltip', () => {
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    expect(screen.getByText('ADD CONTACT')).toHaveAttribute('data-tooltip', 'Add contact');
   });
 
   it('shows "Select a contact" placeholder when no contact selected', () => {

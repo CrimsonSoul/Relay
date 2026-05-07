@@ -444,6 +444,7 @@ export const AlertsTab: React.FC = () => {
         <TactileButton
           variant="ghost"
           onClick={handleClear}
+          tooltip="Reset alert composer"
           icon={
             <svg
               width="14"
@@ -466,6 +467,7 @@ export const AlertsTab: React.FC = () => {
         <TactileButton
           variant="ghost"
           onClick={historyModal.open}
+          tooltip="Open alert history"
           icon={
             <svg
               width="14"
@@ -487,6 +489,7 @@ export const AlertsTab: React.FC = () => {
         <TactileButton
           variant="ghost"
           onClick={handlePinTemplate}
+          tooltip="Pin current alert as a template"
           icon={
             <svg
               width="14"
@@ -509,6 +512,7 @@ export const AlertsTab: React.FC = () => {
           variant="ghost"
           onClick={handleSavePNG}
           loading={isCapturing}
+          tooltip="Save alert preview as PNG"
           icon={
             <svg
               width="14"
@@ -532,6 +536,7 @@ export const AlertsTab: React.FC = () => {
           variant="primary"
           onClick={handleCopyImage}
           loading={isCapturing}
+          tooltip="Copy alert preview for Outlook"
           icon={
             <svg
               width="14"

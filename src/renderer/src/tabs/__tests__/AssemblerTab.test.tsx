@@ -118,13 +118,19 @@ vi.mock('../../components/ListToolbar', () => ({
   ListToolbar: ({
     onToggleSortDirection,
     onSortKeyChange,
+    disabled,
   }: {
     onToggleSortDirection: () => void;
     onSortKeyChange: (key: string) => void;
+    disabled?: boolean;
   }) => (
     <div data-testid="list-toolbar">
-      <button onClick={onToggleSortDirection}>toggle-sort-dir</button>
-      <button onClick={() => onSortKeyChange('email')}>sort-by-email</button>
+      <button disabled={disabled} onClick={onToggleSortDirection}>
+        toggle-sort-dir
+      </button>
+      <button disabled={disabled} onClick={() => onSortKeyChange('email')}>
+        sort-by-email
+      </button>
     </div>
   ),
 }));
@@ -315,9 +321,37 @@ describe('AssemblerTab', () => {
 
   it('calls onResetManual when RESET is clicked', () => {
     const onResetManual = vi.fn();
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
     render(<AssemblerTab {...defaultProps} onResetManual={onResetManual} />);
     fireEvent.click(screen.getByText('Reset'));
     expect(onResetManual).toHaveBeenCalled();
+  });
+
+  it('disables zero-recipient actions that cannot do useful work', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Copy All/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Draft Bridge/i })).toBeDisabled();
+    expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
+    expect(screen.getByText('sort-by-email')).toBeDisabled();
+  });
+
+  it('enables recipient actions once recipients exist', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Copy All/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Draft Bridge/i })).not.toBeDisabled();
   });
 
   it('opens history modal when HISTORY is clicked', () => {
@@ -334,6 +368,11 @@ describe('AssemblerTab', () => {
   });
 
   it('calls setIsBridgeReminderOpen when DRAFT BRIDGE is clicked', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('Draft Bridge'));
     expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(true);
@@ -353,6 +392,11 @@ describe('AssemblerTab', () => {
   });
 
   it('calls handleCopy when COPY is clicked', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
     render(<AssemblerTab {...defaultProps} />);
     fireEvent.click(screen.getByText('Copy All'));
     expect(mockHandleCopy).toHaveBeenCalled();
@@ -508,6 +552,11 @@ describe('AssemblerTab', () => {
   });
 
   it('updates sort config from toolbar controls', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+    };
     render(<AssemblerTab {...defaultProps} />);
 
     fireEvent.click(screen.getByText('toggle-sort-dir'));

@@ -46,6 +46,15 @@ describe('TactileButton', () => {
     expect(screen.getByText('With Icon')).toBeInTheDocument();
   });
 
+  it('shows an inferred tooltip for icon-only buttons', () => {
+    render(<TactileButton aria-label="Refresh data" icon={<span data-testid="icon">↻</span>} />);
+
+    expect(screen.queryByText('Refresh data')).toBeNull();
+    fireEvent.mouseEnter(screen.getByLabelText('Refresh data'));
+
+    expect(screen.getByText('Refresh data')).toBeInTheDocument();
+  });
+
   it('defaults to type="button"', () => {
     render(<TactileButton>Btn</TactileButton>);
     expect(screen.getByRole('button')).toHaveAttribute('type', 'button');

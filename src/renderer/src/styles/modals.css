@@ -35,6 +35,21 @@
   z-index: 1;
 }
 
+[data-theme='light'] .modal-overlay {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+[data-theme='light'] .modal-container {
+  border-color: rgba(51, 65, 85, 0.14);
+  box-shadow: var(--shadow-modal);
+}
+
+[data-theme='light'] .modal-header {
+  background: linear-gradient(180deg, #ffffff, #fbfcff);
+  border-bottom-color: rgba(51, 65, 85, 0.1);
+}
+
 /* Modal Header */
 .modal-header {
   padding: 20px 24px 16px;

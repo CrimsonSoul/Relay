@@ -99,6 +99,21 @@ export const PersonnelTab: React.FC<{
     });
 
   const [isDragging, setIsDragging] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const lastUpdatedLabel = useMemo(
+    () =>
+      lastUpdated.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }),
+    [lastUpdated],
+  );
+
+  useEffect(() => {
+    setLastUpdated(new Date());
+  }, [localOnCall]);
 
   // Masonry column distribution
   const gridRef = React.useRef<HTMLUListElement | null>(null);
@@ -220,7 +235,10 @@ export const PersonnelTab: React.FC<{
     <div ref={scrollContainerRef} className="personnel-tab-root">
       <CollapsibleHeader isCollapsed={isCollapsed}>
         <div className="oncall-header-info">
-          <span className="oncall-header-date">{weekRange}</span>
+          <div className="oncall-header-stack">
+            <span className="oncall-header-date">{weekRange}</span>
+            <span className="oncall-header-updated">Last updated {lastUpdatedLabel}</span>
+          </div>
           {renderAlerts()}
         </div>
         <TactileButton
@@ -228,6 +246,7 @@ export const PersonnelTab: React.FC<{
           onClick={handleCopyAllOnCall}
           title="Copy All On-Call Info"
           aria-label="Copy All On-Call Info"
+          tooltip="Copy all on-call info"
           className="header-btn-mr"
           icon={
             <svg
@@ -252,6 +271,7 @@ export const PersonnelTab: React.FC<{
           onClick={handleExportCsv}
           title="Export to CSV (Excel)"
           aria-label="Export to CSV"
+          tooltip="Export to CSV"
           className="header-btn-mr"
           icon={
             <svg
@@ -280,6 +300,7 @@ export const PersonnelTab: React.FC<{
             }}
             title="Pop Out Board"
             aria-label="Pop Out Board"
+            tooltip="Pop out board"
             className="header-btn-mr"
             icon={
               <svg
@@ -311,6 +332,11 @@ export const PersonnelTab: React.FC<{
               : 'Lock Board (disable drag reorder)'
           }
           aria-label={bs.effectiveLocked ? 'Unlock Board' : 'Lock Board'}
+          tooltip={
+            bs.effectiveLocked
+              ? 'Unlock board to enable drag reorder'
+              : 'Lock board to disable drag reorder'
+          }
           className="header-btn-mr"
           icon={
             bs.effectiveLocked ? (
@@ -349,6 +375,7 @@ export const PersonnelTab: React.FC<{
         <TactileButton
           variant="primary"
           aria-label="Add Card"
+          tooltip="Add card"
           className="btn-collapsible"
           onClick={addTeamModal.open}
           icon={

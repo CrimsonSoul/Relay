@@ -4,6 +4,7 @@ import { Contact, Server, BridgeGroup } from '@shared/ipc';
 import { useSearchContext } from '../contexts/SearchContext';
 import { useCommandSearch, SearchResult, ResultType } from '../hooks/useCommandSearch';
 import { ContactIcon, GroupIcon, ServerIcon, ActionIcon } from './command-palette/CommandIcons';
+import { Tooltip } from './Tooltip';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
@@ -255,26 +256,28 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           }
         />
         {query ? (
-          <button
-            className="header-search-bar-clear"
-            onClick={clearSearch}
-            onMouseDown={(e) => e.preventDefault()}
-            aria-label="Clear search"
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <Tooltip content="Clear search" position="bottom">
+            <button
+              className="header-search-bar-clear"
+              onClick={clearSearch}
+              onMouseDown={(e) => e.preventDefault()}
+              aria-label="Clear search"
             >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </Tooltip>
         ) : (
           <kbd className="header-search-bar-shortcut">{isMac ? '\u2318K' : 'Ctrl+K'}</kbd>
         )}

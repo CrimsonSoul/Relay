@@ -68,6 +68,18 @@ describe('TeamRow', () => {
     expect(screen.getByText('9-5')).toBeInTheDocument();
   });
 
+  it('marks active time windows with an ACTIVE NOW pill', () => {
+    render(
+      <TeamRow
+        row={makeRow({ timeWindow: 'always' })}
+        hasAnyTimeWindow={true}
+        gridTemplate="auto 1fr auto 100px"
+      />,
+    );
+
+    expect(screen.getByText('ACTIVE NOW')).toBeInTheDocument();
+  });
+
   it('does not render time window column when hasAnyTimeWindow is false', () => {
     const { container } = render(
       <TeamRow

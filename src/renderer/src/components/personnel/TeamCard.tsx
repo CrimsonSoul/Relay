@@ -5,6 +5,7 @@ import { Tooltip } from '../Tooltip';
 import { MaintainTeamModal } from '../MaintainTeamModal';
 import { ContextMenuItem } from '../ContextMenu';
 import { TeamRow } from './TeamRow';
+import { isTimeWindowActive } from '../../utils/timeParsing';
 
 interface TeamCardProps {
   team: string;
@@ -41,6 +42,39 @@ export const TeamCard = React.memo(
     const teamRows = useMemo(() => rows || [], [rows]);
     const hasAnyTimeWindow = useMemo(() => teamRows.some((r) => r.timeWindow?.trim()), [teamRows]);
     const rowGridTemplate = hasAnyTimeWindow ? 'auto 1fr auto 100px' : 'auto 1fr auto';
+    const health = useMemo(() => {
+      const activeCount = teamRows.filter((row) => isTimeWindowActive(row.timeWindow || '')).length;
+      if (activeCount > 0) {
+        return { label: `${activeCount} active`, tone: 'ok' };
+      }
+
+      const validRows = teamRows.filter((row) => row.name.trim() || row.contact.trim());
+      if (validRows.length === 0) {
+        return { label: 'Empty', tone: 'muted' };
+      }
+
+      const hasPrimary = validRows.some((row) => row.role.toLowerCase().includes('primary'));
+      const hasBackup = validRows.some((row) => {
+        const role = row.role.toLowerCase();
+        return (
+          role.includes('secondary') ||
+          role.includes('backup') ||
+          role.includes('weekend') ||
+          role.includes('after')
+        );
+      });
+      const missingContact = validRows.some((row) => !row.contact.trim());
+
+      if (missingContact) {
+        return { label: 'Needs contact', tone: 'watch' };
+      }
+
+      if (hasPrimary && !hasBackup) {
+        return { label: 'No backup', tone: 'danger' };
+      }
+
+      return { label: 'Covered', tone: 'ok' };
+    }, [teamRows]);
 
     const isEmpty =
       teamRows.length === 0 || (teamRows.length === 1 && !teamRows[0].name && !teamRows[0].contact);
@@ -169,6 +203,9 @@ export const TeamCard = React.memo(
                 <span>{team}</span>
               </Tooltip>
             </div>
+            <span className={`team-health-badge team-health-badge--${health.tone}`}>
+              {health.label}
+            </span>
           </div>
           <div className="team-card-rows">
             {isEmpty

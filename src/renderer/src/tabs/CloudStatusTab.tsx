@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { TabFallback } from '../components/TabFallback';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { Tooltip } from '../components/Tooltip';
 import { ProviderIcon } from '../components/icons/ProviderIcons';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
@@ -222,29 +223,31 @@ export const CloudStatusTab: React.FC<{
           <span className="cloud-status__updated">
             Updated {lastUpdatedLabel(statusData?.lastUpdated ?? 0)}
           </span>
-          <button
-            type="button"
-            className="cloud-status__refresh"
-            onClick={refetch}
-            disabled={loading}
-            aria-label="Refresh cloud status"
-          >
-            <svg
-              className={loading ? 'cloud-status__refresh-icon--spinning' : ''}
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+          <Tooltip content={loading ? 'Refreshing cloud status' : 'Refresh cloud status'}>
+            <button
+              type="button"
+              className="cloud-status__refresh"
+              onClick={refetch}
+              disabled={loading}
+              aria-label="Refresh cloud status"
             >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-          </button>
+              <svg
+                className={loading ? 'cloud-status__refresh-icon--spinning' : ''}
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="23 4 23 10 17 10" />
+                <polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            </button>
+          </Tooltip>
         </div>
         <div className="cloud-status__filters">
           <button

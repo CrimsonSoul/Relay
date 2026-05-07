@@ -32,6 +32,21 @@ describe('Tooltip', () => {
     expect(screen.getByText('Helpful hint')).toBeInTheDocument();
   });
 
+  it('preserves the trigger child mouse handlers', () => {
+    const onMouseEnter = vi.fn();
+
+    render(
+      <Tooltip content="Helpful hint">
+        <button onMouseEnter={onMouseEnter}>Trigger</button>
+      </Tooltip>,
+    );
+
+    fireEvent.mouseEnter(screen.getByText('Trigger'));
+
+    expect(onMouseEnter).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Helpful hint')).toBeInTheDocument();
+  });
+
   it('hides tooltip content on mouse leave', () => {
     render(
       <Tooltip content="Helpful hint">

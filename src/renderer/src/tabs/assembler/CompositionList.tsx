@@ -8,14 +8,31 @@ type CompositionListProps = {
   log: { email: string; source: string }[];
   itemData: VirtualRowData;
   onScroll: (scrollOffset: number) => void;
+  onOpenHistory?: () => void;
 };
 
-export const CompositionList: React.FC<CompositionListProps> = ({ log, itemData, onScroll }) => {
+export const CompositionList: React.FC<CompositionListProps> = ({
+  log,
+  itemData,
+  onScroll,
+  onOpenHistory,
+}) => {
   if (log.length === 0) {
     return (
       <div className="composition-list-empty">
         <div className="composition-list-empty-icon">∅</div>
-        <div>No recipients selected</div>
+        <div className="composition-list-empty-copy">
+          <div className="composition-list-empty-title">No recipients selected</div>
+          <p>
+            Use global search to add a contact or group, select a group from the left, or open
+            History to reload a recent bridge.
+          </p>
+          {onOpenHistory && (
+            <button type="button" className="composition-list-empty-action" onClick={onOpenHistory}>
+              Open History
+            </button>
+          )}
+        </div>
       </div>
     );
   }

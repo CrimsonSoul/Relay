@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { useLocation } from '../contexts';
 import { loggers } from '../utils/logger';
+import { Tooltip } from './Tooltip';
 
 const logInvalidTimezone = (tz: string, error: unknown) =>
   loggers.app.warn(`[WorldClock] Invalid timezone "${tz}"`, { error });
@@ -132,22 +133,24 @@ export const WorldClock: React.FC = () => {
 
   return (
     <div className="world-clock-container">
-      <button
-        ref={triggerRef}
-        className={`world-clock-trigger${isOpen ? ' world-clock-trigger--active' : ''}`}
-        onClick={toggle}
-        aria-expanded={isOpen}
-        aria-haspopup="true"
-      >
-        <div className="world-clock-primary-inner">
-          <span className="world-clock-primary-time">{primaryTimeStr}</span>
-          <div className="world-clock-details">
-            <span>{primaryZoneName}</span>
-            <span>&bull;</span>
-            <span>{primaryDateStr}</span>
+      <Tooltip content="Show world clocks" position="bottom">
+        <button
+          ref={triggerRef}
+          className={`world-clock-trigger${isOpen ? ' world-clock-trigger--active' : ''}`}
+          onClick={toggle}
+          aria-expanded={isOpen}
+          aria-haspopup="true"
+        >
+          <div className="world-clock-primary-inner">
+            <span className="world-clock-primary-time">{primaryTimeStr}</span>
+            <div className="world-clock-details">
+              <span>{primaryZoneName}</span>
+              <span>&bull;</span>
+              <span>{primaryDateStr}</span>
+            </div>
           </div>
-        </div>
-      </button>
+        </button>
+      </Tooltip>
 
       {isOpen &&
         createPortal(

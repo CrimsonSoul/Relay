@@ -85,4 +85,16 @@ describe('SidebarButton', () => {
     );
     expect(screen.getByTestId('the-icon')).toBeInTheDocument();
   });
+
+  it('shows the label in a tooltip on hover', () => {
+    render(
+      <SidebarButton icon={<span>icon</span>} label="Radar" isActive={false} onClick={vi.fn()} />,
+    );
+
+    expect(document.body.querySelector('.tooltip-popup')).toBeNull();
+    fireEvent.mouseEnter(screen.getByLabelText('Radar'));
+
+    const tooltip = document.body.querySelector('.tooltip-popup');
+    expect(tooltip).toHaveTextContent('Radar');
+  });
 });

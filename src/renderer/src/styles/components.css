@@ -33,6 +33,18 @@
   transition: transform 0.1s ease-out;
 }
 
+.tactile-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tactile-button:disabled:hover {
+  transform: none;
+  background: var(--color-bg-chrome);
+  border-color: var(--color-border);
+  box-shadow: none;
+}
+
 /* Primary Variant */
 .tactile-button--primary {
   background: var(--color-accent);
@@ -1233,6 +1245,16 @@ body.modal-open {
 .list-toolbar-sort-select:hover {
   border-color: var(--color-border-strong);
   color: var(--color-text-primary);
+}
+
+.list-toolbar-sort-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.list-toolbar-sort-select:disabled:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-secondary);
 }
 
 .list-toolbar-sort-select:focus-visible {

@@ -1,4 +1,5 @@
 import React, { ReactNode } from 'react';
+import { Tooltip } from './Tooltip';
 
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
@@ -7,6 +8,8 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   icon?: ReactNode;
   loading?: boolean;
   block?: boolean;
+  tooltip?: ReactNode;
+  tooltipPosition?: 'top' | 'bottom' | 'left' | 'right';
 };
 
 export const TactileButton: React.FC<Props> = ({
@@ -17,9 +20,12 @@ export const TactileButton: React.FC<Props> = ({
   icon,
   loading = false,
   block = false,
+  tooltip,
+  tooltipPosition = 'top',
   className = '',
   style,
   disabled,
+  title,
   ...props
 }) => {
   const classes = [
@@ -36,13 +42,23 @@ export const TactileButton: React.FC<Props> = ({
     .join(' ');
 
   const isDisabled = disabled || loading;
+  const ariaLabel = props['aria-label'];
+  const isIconOnly = !children && icon;
+  let inferredTooltip: string | undefined;
+  if (isIconOnly && typeof ariaLabel === 'string') {
+    inferredTooltip = ariaLabel;
+  } else if (isIconOnly && typeof title === 'string') {
+    inferredTooltip = title;
+  }
+  const tooltipContent = tooltip ?? inferredTooltip;
 
-  return (
+  const button = (
     <button
       type={props.type ?? 'button'}
       style={style}
       className={classes}
       disabled={isDisabled}
+      title={title}
       {...props}
     >
       {loading && (
@@ -67,5 +83,13 @@ export const TactileButton: React.FC<Props> = ({
 
       {children && <span className="tactile-button-label">{children}</span>}
     </button>
+  );
+
+  if (!tooltipContent) return button;
+
+  return (
+    <Tooltip content={tooltipContent} position={tooltipPosition}>
+      {button}
+    </Tooltip>
   );
 };

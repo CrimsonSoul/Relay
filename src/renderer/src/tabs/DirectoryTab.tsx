@@ -204,6 +204,7 @@ export const DirectoryTab: React.FC<Props> = ({ contacts, groups, onAddToAssembl
               variant="primary"
               className="btn-collapsible"
               onClick={() => dir.setIsAddModalOpen(true)}
+              tooltip="Add contact"
               icon={
                 <svg
                   width="20"

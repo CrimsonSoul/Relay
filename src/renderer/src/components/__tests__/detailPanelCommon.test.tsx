@@ -41,6 +41,14 @@ describe('DetailActionButton', () => {
     );
     expect(container.querySelector('.detail-panel-action-btn--danger')).toBeInTheDocument();
   });
+
+  it('shows the action label in a tooltip on hover', () => {
+    render(<DetailActionButton label="Edit Contact" onClick={vi.fn()} icon={<span />} />);
+
+    fireEvent.mouseEnter(screen.getByRole('button', { name: /edit contact/i }));
+
+    expect(document.body.querySelector('.tooltip-popup')).toHaveTextContent('Edit Contact');
+  });
 });
 
 describe('DetailField', () => {

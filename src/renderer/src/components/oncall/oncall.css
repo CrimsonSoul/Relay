@@ -193,6 +193,7 @@
   padding: 10px 20px;
   border-bottom: 1px solid var(--color-divider);
   transition: background 0.12s;
+  position: relative;
 }
 
 .team-row:last-child {
@@ -204,7 +205,8 @@
 }
 
 .team-row--active {
-  background: rgba(16, 185, 129, 0.04);
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0.04));
+  box-shadow: inset 3px 0 0 var(--color-group-green);
 }
 
 .team-row--primary {
@@ -213,7 +215,8 @@
 }
 
 .team-row--primary.team-row--active {
-  background: rgba(16, 185, 129, 0.04);
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.14), rgba(16, 185, 129, 0.04));
+  box-shadow: inset 3px 0 0 var(--color-group-green);
 }
 
 .team-row-top {
@@ -313,6 +316,26 @@
   visibility: hidden;
 }
 
+.team-row-time-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-row-active-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--color-group-green);
+  color: #06120b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 /* ============================================================================
    Personnel Tab
    ============================================================================ */
@@ -332,6 +355,13 @@
   align-items: center;
   gap: 10px;
   margin-right: auto;
+}
+
+.oncall-header-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .oncall-header-date {
@@ -510,6 +540,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 14px 20px;
   border-bottom: 1px solid var(--border-default);
 }
@@ -519,6 +550,43 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--team-color, var(--color-text-primary));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-health-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.team-health-badge--ok {
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.14);
+}
+
+.team-health-badge--watch {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.team-health-badge--danger {
+  color: #fecdd3;
+  background: rgba(244, 63, 94, 0.16);
+}
+
+.team-health-badge--muted {
+  color: var(--color-text-tertiary);
+  background: var(--color-hover-overlay);
 }
 
 .team-card-rows {

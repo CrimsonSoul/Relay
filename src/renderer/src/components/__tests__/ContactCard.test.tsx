@@ -46,6 +46,19 @@ describe('ContactCard Component', () => {
     expect(cardElement).toHaveClass('contact-entry--selected');
   });
 
+  test('shows contact details in a tooltip on hover', () => {
+    render(<ContactCard {...mockContact} />);
+
+    const row = screen.getByRole('button', { name: /john doe/i });
+    expect(row).not.toHaveAttribute('title');
+
+    fireEvent.mouseEnter(screen.getByText('John Doe'));
+
+    const tooltip = document.body.querySelector('.tooltip-popup');
+    expect(tooltip).toHaveTextContent('John Doe');
+    expect(tooltip).toHaveTextContent('john.doe@example.com');
+  });
+
   test('renders with source label prop without error', () => {
     // sourceLabel is accepted as a prop; rendering should not throw
     expect(() => render(<ContactCard {...mockContact} sourceLabel="CSV" />)).not.toThrow();
@@ -57,7 +70,7 @@ describe('ContactCard Component', () => {
       <ContactCard {...mockContact} onContextMenu={handleContextMenu} />,
     );
 
-    const cardElement = container.querySelector('.card-surface') || container.firstChild;
+    const cardElement = container.querySelector('.contact-entry');
     if (cardElement) {
       fireEvent.contextMenu(cardElement);
       expect(handleContextMenu).toHaveBeenCalled();
@@ -68,7 +81,7 @@ describe('ContactCard Component', () => {
     const handleRowClick = vi.fn();
     const { container } = render(<ContactCard {...mockContact} onRowClick={handleRowClick} />);
 
-    const cardElement = container.querySelector('.card-surface') || container.firstChild;
+    const cardElement = container.querySelector('.contact-entry');
     if (cardElement) {
       fireEvent.click(cardElement);
       expect(handleRowClick).toHaveBeenCalled();

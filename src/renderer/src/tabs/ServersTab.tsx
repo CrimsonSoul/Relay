@@ -163,6 +163,7 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               onClick={h.openAddModal}
               variant="primary"
               className="btn-collapsible"
+              tooltip="Add server"
               icon={
                 <svg
                   width="20"

@@ -67,6 +67,16 @@ describe('TeamCard', () => {
     expect(screen.getByTestId('team-row-r1')).toBeInTheDocument();
   });
 
+  it('shows a health badge for active coverage', () => {
+    render(<TeamCard {...defaultProps()} rows={[makeRow({ timeWindow: 'always' })]} />);
+    expect(screen.getByText('1 active')).toBeInTheDocument();
+  });
+
+  it('warns when a team has a primary but no backup coverage', () => {
+    render(<TeamCard {...defaultProps()} rows={[makeRow({ role: 'Primary' })]} />);
+    expect(screen.getByText('No backup')).toBeInTheDocument();
+  });
+
   it('shows empty state when rows are empty', () => {
     render(<TeamCard {...defaultProps()} rows={[]} />);
     expect(screen.getByText('Click to assign personnel')).toBeInTheDocument();

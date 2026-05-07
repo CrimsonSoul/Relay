@@ -8,7 +8,13 @@ interface TooltipProps {
   width?: string;
   block?: boolean;
   delay?: number;
+  triggerStyle?: React.CSSProperties;
 }
+
+type TooltipTriggerHandlers = Pick<
+  React.DOMAttributes<Element>,
+  'onMouseEnter' | 'onMouseLeave' | 'onFocus' | 'onBlur'
+>;
 
 export const Tooltip: React.FC<TooltipProps> = ({
   content,
@@ -17,6 +23,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
   width = 'max-content',
   block = false,
   delay = 0,
+  triggerStyle,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -84,16 +91,33 @@ export const Tooltip: React.FC<TooltipProps> = ({
     setIsVisible(false);
   };
 
+  const childHandlers = children.props as TooltipTriggerHandlers;
   const trigger = React.cloneElement(children, {
-    onMouseEnter: handleMouseEnter,
-    onMouseLeave: handleMouseLeave,
-    onFocus: handleMouseEnter,
-    onBlur: handleMouseLeave,
+    onMouseEnter: (event: React.MouseEvent<Element>) => {
+      childHandlers.onMouseEnter?.(event);
+      handleMouseEnter();
+    },
+    onMouseLeave: (event: React.MouseEvent<Element>) => {
+      childHandlers.onMouseLeave?.(event);
+      handleMouseLeave();
+    },
+    onFocus: (event: React.FocusEvent<Element>) => {
+      childHandlers.onFocus?.(event);
+      handleMouseEnter();
+    },
+    onBlur: (event: React.FocusEvent<Element>) => {
+      childHandlers.onBlur?.(event);
+      handleMouseLeave();
+    },
   });
 
   return (
     <>
-      <span ref={triggerRef} className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}>
+      <span
+        ref={triggerRef}
+        className={`tooltip-trigger${block ? ' tooltip-trigger--block' : ''}`}
+        style={triggerStyle}
+      >
         {trigger}
       </span>
       {isVisible &&

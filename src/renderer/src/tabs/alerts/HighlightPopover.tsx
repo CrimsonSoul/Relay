@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Tooltip } from '../../components/Tooltip';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
 
 interface HighlightPopoverProps {
@@ -37,38 +38,40 @@ export const HighlightPopover: React.FC<HighlightPopoverProps> = ({ onApply, onC
 
   return (
     <div className="alerts-hl-popover-wrapper" ref={popoverRef}>
-      <button
-        type="button"
-        className={`alerts-fmt-btn alerts-hl-trigger${isOpen ? ' open' : ''}`}
-        title="Highlight text"
-        aria-label="Highlight text"
-        aria-haspopup="menu"
-        aria-expanded={isOpen}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          setIsOpen((v) => !v);
-        }}
-      >
-        <svg
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <Tooltip content="Highlight text">
+        <button
+          type="button"
+          className={`alerts-fmt-btn alerts-hl-trigger${isOpen ? ' open' : ''}`}
+          title="Highlight text"
+          aria-label="Highlight text"
+          aria-haspopup="menu"
+          aria-expanded={isOpen}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsOpen((v) => !v);
+          }}
         >
-          <path d="M12 20h9" />
-          <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
-        </svg>
-        <span className="alerts-hl-dots">
-          {HIGHLIGHTS.map((h) => (
-            <span key={h.type} className="alerts-hl-dot" style={{ background: h.bg }} />
-          ))}
-        </span>
-        <span className="alerts-hl-arrow">{isOpen ? '\u25B4' : '\u25BE'}</span>
-      </button>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z" />
+          </svg>
+          <span className="alerts-hl-dots">
+            {HIGHLIGHTS.map((h) => (
+              <span key={h.type} className="alerts-hl-dot" style={{ background: h.bg }} />
+            ))}
+          </span>
+          <span className="alerts-hl-arrow">{isOpen ? '\u25B4' : '\u25BE'}</span>
+        </button>
+      </Tooltip>
 
       {isOpen && (
         <div className="alerts-hl-popover" role="menu" aria-label="Highlight options">

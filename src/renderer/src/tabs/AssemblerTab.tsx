@@ -31,6 +31,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
     onResetManual,
     onUndoRemove,
     manualRemoves,
+    manualAdds,
     setSelectedGroupIds,
     setManualAdds,
   } = props;
@@ -159,6 +160,12 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Current emails for the sidebar (all recipients, not search-filtered)
   const currentEmails = useMemo(() => asm.allRecipients.map((l) => l.email), [asm.allRecipients]);
+  const hasRecipients = asm.allRecipients.length > 0;
+  const canReset =
+    hasRecipients ||
+    selectedGroupIds.length > 0 ||
+    manualAdds.length > 0 ||
+    manualRemoves.length > 0;
 
   return (
     <div className="tab-layout">
@@ -187,6 +194,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               <TactileButton
                 variant="ghost"
                 onClick={onUndoRemove}
+                tooltip="Undo last removed recipient"
                 icon={
                   <svg
                     width="20"
@@ -209,6 +217,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             <TactileButton
               variant="ghost"
               onClick={onResetManual}
+              disabled={!canReset}
+              tooltip="Reset manual recipient changes"
               icon={
                 <svg
                   width="20"
@@ -235,6 +245,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 event.stopPropagation();
                 historyModal.open();
               }}
+              tooltip="Open bridge history"
               icon={
                 <svg
                   width="20"
@@ -256,6 +267,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
             <TactileButton
               variant="ghost"
               onClick={handleCopyWithHistory}
+              disabled={!hasRecipients}
+              tooltip="Copy all recipients"
               icon={
                 <svg
                   width="20"
@@ -295,11 +308,14 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                   key: key as 'name' | 'email' | 'title' | 'phone',
                 }))
               }
+              disabled={!hasRecipients}
             />
             <TactileButton
               onClick={() => asm.setIsBridgeReminderOpen(true)}
               variant="primary"
               className="btn-collapsible"
+              disabled={!hasRecipients}
+              tooltip="Draft bridge reminder"
               icon={
                 <svg
                   width="20"
@@ -325,6 +341,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               log={asm.log}
               itemData={asm.itemData}
               onScroll={(scrollOffset) => asm.setIsHeaderCollapsed(scrollOffset > 30)}
+              onOpenHistory={historyModal.open}
             />
           </div>
         </div>

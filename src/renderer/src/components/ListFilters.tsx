@@ -36,6 +36,7 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
         active={hasNotesFilter}
         aria-pressed={hasNotesFilter}
         onClick={onToggleHasNotes}
+        tooltip="Show items with notes"
         icon={
           <svg
             width="14"
@@ -64,6 +65,7 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
           active={activeExtras.has(filter.key)}
           aria-pressed={activeExtras.has(filter.key)}
           onClick={() => onToggleExtra(filter.key)}
+          tooltip={`Show items where ${filter.label.toLowerCase()}`}
           icon={filter.icon}
         >
           {filter.label}
@@ -80,6 +82,7 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
             active={selectedTags.has(tag)}
             aria-pressed={selectedTags.has(tag)}
             onClick={() => onToggleTag(tag)}
+            tooltip={`Filter by #${tag}`}
           >
             #{tag}
           </TactileButton>
@@ -90,6 +93,7 @@ export const ListFilters: React.FC<ListFiltersProps> = ({
           size="sm"
           variant="ghost"
           onClick={onClearAll}
+          tooltip="Clear filters"
           icon={
             <svg
               width="12"

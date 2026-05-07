@@ -72,6 +72,16 @@
   animation: detailPanelFadeIn 0.2s ease-out;
 }
 
+[data-theme='light'] .assembler-sidebar-panel {
+  border-color: rgba(51, 65, 85, 0.13);
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme='light'] .assembler-sidebar-groups-header {
+  background: linear-gradient(180deg, #ffffff, #fbfcff);
+  border-bottom-color: rgba(51, 65, 85, 0.11);
+}
+
 .assembler-sidebar-groups {
   display: flex;
   flex-direction: column;
@@ -372,14 +382,63 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-direction: column;
-  gap: 16px;
+  gap: 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px;
   color: var(--color-text-tertiary);
 }
 
 .composition-list-empty-icon {
+  width: 56px;
+  height: 56px;
+  border: 1px solid var(--color-accent-dim);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: var(--text-3xl);
-  opacity: 0.1;
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  flex-shrink: 0;
+}
+
+.composition-list-empty-copy {
+  max-width: 620px;
+}
+
+.composition-list-empty-title {
+  color: var(--color-text-primary);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.composition-list-empty-copy p {
+  margin: 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+.composition-list-empty-action {
+  margin-top: 14px;
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--color-accent-dim);
+  border-radius: 8px;
+  background: var(--color-bg-chrome);
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.composition-list-empty-action:hover {
+  color: var(--color-text-primary);
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
 }
 
 .composition-list-container {
@@ -452,6 +511,9 @@
 .sig-grp-checkmark {
   width: 12px;
   height: 12px;
+}
+.sig-grp-token {
+  display: none;
 }
 .sig-grp-info {
   flex: 1;

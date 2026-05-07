@@ -88,7 +88,18 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
           </Tooltip>
           {hasAnyTimeWindow && (
             <Tooltip content={row.timeWindow || ''}>
-              <span className={timeClasses}>{row.timeWindow || '\u00A0'}</span>
+              <span className={isActive ? 'team-row-time-status' : timeClasses}>
+                {isActive ? (
+                  <>
+                    <span className="team-row-time-window team-row-time-window--active">
+                      {row.timeWindow || '\u00A0'}
+                    </span>
+                    <span className="team-row-active-pill">ACTIVE NOW</span>
+                  </>
+                ) : (
+                  row.timeWindow || '\u00A0'
+                )}
+              </span>
             </Tooltip>
           )}
         </div>

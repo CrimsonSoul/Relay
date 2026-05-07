@@ -322,6 +322,13 @@ describe('PersonnelTab — team rendering', () => {
 
     expect(screen.getByText('March 30 - April 5, 2026')).toBeDefined();
   });
+
+  it('renders the last-updated timestamp in the standard header', () => {
+    const bs = makeReadyBoardSettings(['network']);
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
+    expect(screen.getByText(/Last updated [A-Z][a-z]{2} \d{1,2},/i)).toBeDefined();
+  });
 });
 
 describe('PersonnelTab — Rename Card modal', () => {
