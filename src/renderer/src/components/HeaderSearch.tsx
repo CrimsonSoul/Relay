@@ -11,9 +11,6 @@ const FILTERABLE_TABS: Record<string, ResultType[]> = {
   People: ['contact', 'group', 'server'],
   Servers: ['contact', 'group', 'server'],
   Personnel: ['contact', 'group', 'server'],
-  Weather: ['contact', 'group', 'server'],
-  Radar: ['contact', 'group', 'server'],
-  AI: ['contact', 'group', 'server'],
   Notes: ['contact', 'group', 'server'],
 };
 

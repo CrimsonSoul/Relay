@@ -8,9 +8,9 @@ Relay is an Electron desktop command center for operations teams managing people
 
 - Embedded PocketBase for local-first data storage and realtime sync
 - Typed preload bridge with Zod-validated IPC contracts
-- Feature tabs for compose, on-call, directories, weather, alerts, notes, and status monitoring
+- Feature tabs for compose, on-call, directories, alerts, notes, and status monitoring
 - Offline cache and pending-change replay for reconnect scenarios
-- Electron hardening with context isolation, sandboxing, CSP, trusted webview origins, and path validation
+- Electron hardening with context isolation, sandboxing, CSP, and path validation
 
 ## Preview
 
@@ -23,7 +23,6 @@ Relay is an Electron desktop command center for operations teams managing people
 - **Compose**: Build bridge communication lists from contacts and saved groups
 - **On-Call Board**: Manage team and role coverage with drag-and-drop scheduling and pop-out support
 - **People and Servers**: Search large directories, open context actions, and keep entity notes close to the record
-- **Weather and Radar**: Pull current conditions, forecasts, alerts, and an embedded radar view
 - **Alerts**: Compose styled incident cards, apply severity formatting, and capture them to disk or clipboard
 - **Notes**: Maintain standalone tagged notes with reorderable cards and adjustable reading density
 - **Cloud Status**: Monitor provider incident feeds across major cloud and SaaS vendors

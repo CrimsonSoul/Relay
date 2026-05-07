@@ -10,7 +10,6 @@ import { rateLimiters } from '../rateLimiter';
 
 export const ALLOWED_AUX_ROUTES = new Set([
   'oncall',
-  'weather',
   'directory',
   'servers',
   'assembler',

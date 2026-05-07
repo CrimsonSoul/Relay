@@ -143,7 +143,6 @@ describe('windowHandlers', () => {
   describe('ALLOWED_AUX_ROUTES', () => {
     it('contains expected routes', () => {
       expect(ALLOWED_AUX_ROUTES.has('oncall')).toBe(true);
-      expect(ALLOWED_AUX_ROUTES.has('weather')).toBe(true);
       expect(ALLOWED_AUX_ROUTES.has('directory')).toBe(true);
       expect(ALLOWED_AUX_ROUTES.has('servers')).toBe(true);
       expect(ALLOWED_AUX_ROUTES.has('assembler')).toBe(true);

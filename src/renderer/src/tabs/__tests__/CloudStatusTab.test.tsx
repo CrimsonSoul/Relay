@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
-import type { CloudStatusData, CloudStatusProvider } from '@shared/ipc';
+import type { CloudStatusData, CloudStatusItem, CloudStatusProvider } from '@shared/ipc';
 
 // Mock ProviderIcon
 vi.mock('../../components/icons/ProviderIcons', () => ({
@@ -49,6 +49,16 @@ const makeStatusData = (overrides: Partial<CloudStatusData> = {}): CloudStatusDa
   ...overrides,
 });
 
+const makeItem = (overrides: Partial<CloudStatusItem>): CloudStatusItem => ({
+  id: overrides.id ?? 'item-1',
+  provider: overrides.provider ?? 'aws',
+  title: overrides.title ?? 'Provider incident',
+  description: overrides.description ?? 'Incident details',
+  pubDate: overrides.pubDate ?? new Date().toISOString(),
+  link: overrides.link ?? '',
+  severity: overrides.severity ?? 'warning',
+});
+
 describe('CloudStatusTab', () => {
   it('shows loading fallback when no data and loading', () => {
     render(<CloudStatusTab statusData={null} loading={true} refetch={vi.fn()} />);
@@ -57,7 +67,7 @@ describe('CloudStatusTab', () => {
 
   it('renders with empty status data', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('Recent Events')).toBeInTheDocument();
+    expect(screen.getByText('Incident feed')).toBeInTheDocument();
     expect(screen.getByText(/No recent events/)).toBeInTheDocument();
   });
 
@@ -102,17 +112,7 @@ describe('CloudStatusTab', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
-        aws: [
-          {
-            id: 'aws-1',
-            provider: 'aws',
-            title: 'EC2 Outage',
-            description: 'EC2 is experiencing issues',
-            pubDate: new Date().toISOString(),
-            link: 'https://example.com',
-            severity: 'error',
-          },
-        ],
+        aws: [makeItem({ id: 'aws-1', provider: 'aws', title: 'EC2 Outage', severity: 'error' })],
       },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
@@ -138,7 +138,88 @@ describe('CloudStatusTab', () => {
       },
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('1 active issue')).toBeInTheDocument();
+    expect(screen.getAllByText('1 active issue').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders command center posture metrics', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [
+          makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' }),
+          makeItem({ id: 'aws-2', provider: 'aws', severity: 'warning' }),
+        ],
+        cloudflare: [makeItem({ id: 'cf-1', provider: 'cloudflare', severity: 'warning' })],
+        m365: [makeItem({ id: 'm365-1', provider: 'm365', severity: 'info' })],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getByText('Current posture')).toBeInTheDocument();
+    expect(screen.getByText('3 active issues')).toBeInTheDocument();
+    expect(screen.getByText('2 impacted providers')).toBeInTheDocument();
+    expect(screen.getByText('Worst severity')).toBeInTheDocument();
+    expect(screen.getByText('Outage')).toBeInTheDocument();
+  });
+
+  it('orders impacted providers before healthy providers', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' })],
+        cloudflare: [makeItem({ id: 'cf-1', provider: 'cloudflare', severity: 'warning' })],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    const names = Array.from(container.querySelectorAll('.cloud-status-provider__name')).map(
+      (node) => node.textContent,
+    );
+    expect(names.slice(0, 2)).toEqual(['AWS', 'Cloudflare']);
+  });
+
+  it('filters the incident feed by active, recent, and resolved states', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [
+          makeItem({ id: 'aws-1', provider: 'aws', title: 'Active outage', severity: 'error' }),
+        ],
+        m365: [
+          makeItem({
+            id: 'm365-1',
+            provider: 'm365',
+            title: 'Admin center notice',
+            severity: 'info',
+          }),
+        ],
+        github: [
+          makeItem({
+            id: 'gh-1',
+            provider: 'github',
+            title: 'Recovered webhooks',
+            severity: 'resolved',
+          }),
+        ],
+      },
+    });
+
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    expect(screen.getByText('Active outage')).toBeInTheDocument();
+    expect(screen.queryByText('Admin center notice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recovered webhooks')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    expect(screen.getByText('Admin center notice')).toBeInTheDocument();
+    expect(screen.getByText('Active outage')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resolved' }));
+    expect(screen.getByText('Recovered webhooks')).toBeInTheDocument();
+    expect(screen.queryByText('Active outage')).not.toBeInTheDocument();
   });
 
   it('expands status item on click', () => {
@@ -266,5 +347,11 @@ describe('CloudStatusTab', () => {
       />,
     );
     expect(screen.getByText('Updated Never')).toBeInTheDocument();
+  });
+
+  it('labels provider social links as socials', () => {
+    render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
+    expect(screen.getByText('Socials')).toBeInTheDocument();
+    expect(screen.queryByText('Sources')).not.toBeInTheDocument();
   });
 });

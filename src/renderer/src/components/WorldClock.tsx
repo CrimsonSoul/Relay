@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { useLocation } from '../contexts';
 import { loggers } from '../utils/logger';
 import { Tooltip } from './Tooltip';
 
@@ -37,7 +36,6 @@ const getMinuteKey = (date: Date): number => Math.floor(date.getTime() / 60_000)
 
 export const WorldClock: React.FC = () => {
   const [time, setTime] = useState(new Date());
-  const { timezone } = useLocation();
   const minuteKeyRef = useRef(getMinuteKey(time));
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -82,7 +80,7 @@ export const WorldClock: React.FC = () => {
   const toggle = useCallback(() => setIsOpen((v) => !v), []);
 
   const { primaryZone, secondaryZones } = useMemo(() => {
-    const currentTz = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const currentTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const knownZone = OFFICE_ZONES.find((z) => z.timeZone === currentTz);
 
     const primary = {
@@ -93,7 +91,7 @@ export const WorldClock: React.FC = () => {
 
     const secondaries = OFFICE_ZONES.filter((z) => z.timeZone !== currentTz);
     return { primaryZone: primary, secondaryZones: secondaries };
-  }, [timezone]);
+  }, []);
 
   const primaryTimeStr = getFormatter(primaryZone.timeZone, {
     hour: 'numeric',

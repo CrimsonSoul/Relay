@@ -31,10 +31,8 @@ describe('renderer logger (loggers)', () => {
 
   it('loggers object exports expected module loggers', () => {
     expect(loggers.app).toBeDefined();
-    expect(loggers.weather).toBeDefined();
     expect(loggers.directory).toBeDefined();
     expect(loggers.ui).toBeDefined();
-    expect(loggers.location).toBeDefined();
     expect(loggers.api).toBeDefined();
     expect(loggers.storage).toBeDefined();
     expect(loggers.network).toBeDefined();
@@ -60,14 +58,6 @@ describe('renderer logger (loggers)', () => {
     expect(consoleSpy.error).toHaveBeenCalled();
     const output = consoleSpy.error.mock.calls[0][0] as string;
     expect(output).toContain('Error occurred');
-  });
-
-  it('weather.info includes the weather module name', () => {
-    loggers.weather.info('Forecast fetched');
-    expect(consoleSpy.info).toHaveBeenCalled();
-    const output = consoleSpy.info.mock.calls[0][0] as string;
-    expect(output).toContain('Renderer:Weather');
-    expect(output).toContain('Forecast fetched');
   });
 
   it('includes data in log output', () => {

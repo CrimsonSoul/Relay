@@ -102,7 +102,6 @@
   /* Typography */
   --font-family-base: 'Instrument Sans Variable', 'Instrument Sans', sans-serif;
   --font-family-mono: 'JetBrains Mono', monospace;
-  --font-family-weather: var(--font-family-base);
 
   /* Font Size Scale — balanced for 10ft/55" and 1ft/24" at 1080p
      At 1920px: 2xs≈14px, xs≈15px, sm≈17px, base≈20px, lg≈27px */

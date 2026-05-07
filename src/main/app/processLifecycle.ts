@@ -122,7 +122,7 @@ export function attachWebContentsLifecycleListeners(
 
   // Renderer failed to load the initial HTML/URL.
   contents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame) return; // iframe/webview failures are noise
+    if (!isMainFrame) return; // iframe failures are noise
     loggers.main.error(`did-fail-load (${label})`, {
       errorCode,
       errorDescription,
@@ -220,7 +220,7 @@ function recoverWindowsAfterGpuFailure(): void {
   }
 }
 
-/** App-level listeners for GPU / utility / webview child process crashes. */
+/** App-level listeners for GPU / utility child process crashes. */
 export function setupAppLifecycleListeners(): void {
   app.on('child-process-gone', (_event, details: Details) => {
     const base = {

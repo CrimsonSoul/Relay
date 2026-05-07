@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
 import { getMainWindow, setMainWindow } from './appState';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
-import { isTrustedWebviewUrl } from '../securityPolicy';
 import { setupSecurityHeaders } from './securityHeaders';
 import { setupContextMenu } from './contextMenu';
 import { attachWindowLifecycleListeners } from './processLifecycle';
@@ -31,8 +30,6 @@ export async function createWindow(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // L7: webviewTag is required for RadarTab functionality (embedded radar webviews)
-      webviewTag: true,
       webSecurity: true,
       allowRunningInsecureContent: false,
       experimentalFeatures: false,
@@ -77,20 +74,6 @@ export async function createWindow(): Promise<void> {
       throw err;
     });
   }
-
-  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    delete webPreferences.preload;
-    webPreferences.nodeIntegration = false;
-    webPreferences.contextIsolation = true;
-    webPreferences.sandbox = true;
-    webPreferences.webSecurity = true;
-    webPreferences.allowRunningInsecureContent = false;
-
-    if (!isTrustedWebviewUrl(params.src)) {
-      loggers.security.warn(`Blocked WebView navigation to non-allowlisted URL: ${params.src}`);
-      event.preventDefault();
-    }
-  });
 
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)
   const allowedFilePath = join(mainDir, '../renderer/');

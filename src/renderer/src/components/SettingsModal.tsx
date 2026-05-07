@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
-import { useToast } from './Toast';
-import { getErrorMessage } from '@shared/types';
-import { secureStorage } from '../utils/secureStorage';
-import { RADAR_URL_KEY } from '../tabs/RadarTab';
 import { useTheme, type ThemePreference } from '../hooks/useTheme';
 
 type Props = {
@@ -28,13 +24,11 @@ export const SettingsModal: React.FC<Props> = ({
   onReconfigure,
 }) => {
   const { preference, setPreference } = useTheme();
-  const [radarUrl, setRadarUrl] = useState('');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      setRadarUrl(secureStorage.getItemSync<string>(RADAR_URL_KEY, '') ?? '');
       setPbConfigLoading(true);
       globalThis.api
         ?.getConfig()
@@ -43,21 +37,6 @@ export const SettingsModal: React.FC<Props> = ({
         .finally(() => setPbConfigLoading(false));
     }
   }, [isOpen]);
-
-  const { showToast } = useToast();
-
-  const handleSaveRadarUrl = () => {
-    const trimmed = radarUrl.trim();
-    if (trimmed && !trimmed.startsWith('http')) {
-      showToast('Radar URL must start with http:// or https://', 'error');
-      return;
-    }
-    secureStorage.setItemSync(RADAR_URL_KEY, trimmed);
-    globalThis.api?.registerRadarUrl(trimmed)?.catch((error_) => {
-      showToast(`Failed to register radar URL: ${getErrorMessage(error_)}`, 'error');
-    });
-    showToast(trimmed ? 'Radar URL saved' : 'Radar URL cleared', 'success');
-  };
 
   const handleReconfigure = async () => {
     // Delete config on disk so the app returns to the setup screen on restart.
@@ -134,47 +113,6 @@ export const SettingsModal: React.FC<Props> = ({
             </>
           )}
         </div>
-
-        <div className="settings-divider" />
-
-        <div className="settings-section">
-          <div className="settings-section-heading">Radar Tab URL</div>
-          <div className="settings-description">
-            Enter the URL for your internal radar / network dashboard.
-          </div>
-          <input
-            id="radar-url-input"
-            type="url"
-            className="settings-text-input"
-            placeholder="https://your-intranet/dashboard"
-            value={radarUrl}
-            onChange={(e) => setRadarUrl(e.target.value)}
-          />
-          <div className="settings-button-row">
-            <TactileButton
-              onClick={handleSaveRadarUrl}
-              variant="primary"
-              className="btn-flex-center"
-            >
-              Save
-            </TactileButton>
-            <TactileButton
-              onClick={() => {
-                setRadarUrl('');
-                secureStorage.setItemSync(RADAR_URL_KEY, '');
-                globalThis.api?.registerRadarUrl('')?.catch((error_) => {
-                  showToast(`Failed to clear radar URL: ${getErrorMessage(error_)}`, 'error');
-                });
-                showToast('Radar URL cleared', 'success');
-              }}
-              className="btn-flex-center"
-            >
-              Clear
-            </TactileButton>
-          </div>
-        </div>
-
-        <div className="settings-divider" />
       </div>
     </Modal>
   );

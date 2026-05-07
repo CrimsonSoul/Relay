@@ -27,10 +27,8 @@ let lastConnectionManagerProps: {
 
 // ── mock contexts ────────────────────────────────────────────────────────────
 vi.mock('../contexts', () => ({
-  LocationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  useLocation: () => null,
 }));
 
 // ── mock Toast ───────────────────────────────────────────────────────────────
@@ -61,9 +59,7 @@ vi.mock('../components/Sidebar', () => ({
       <span data-testid="active-tab">{activeTab}</span>
       <button onClick={() => onTabChange('Personnel')}>nav-personnel</button>
       <button onClick={() => onTabChange('People')}>nav-people</button>
-      <button onClick={() => onTabChange('Weather')}>nav-weather</button>
       <button onClick={() => onTabChange('Servers')}>nav-servers</button>
-      <button onClick={() => onTabChange('Radar')}>nav-radar</button>
       <button onClick={onOpenSettings}>open-settings</button>
     </div>
   ),
@@ -183,14 +179,6 @@ vi.mock('../tabs/ServersTab', () => ({
   ServersTab: () => <div data-testid="servers-tab" />,
 }));
 
-vi.mock('../tabs/RadarTab', () => ({
-  RadarTab: () => <div data-testid="radar-tab" />,
-}));
-
-vi.mock('../tabs/WeatherTab', () => ({
-  WeatherTab: () => <div data-testid="weather-tab" />,
-}));
-
 vi.mock('../tabs/PersonnelTab', () => ({
   PersonnelTab: () => <div data-testid="personnel-tab" />,
 }));
@@ -247,17 +235,6 @@ vi.mock('../hooks/useAppData', () => ({
     data: { contacts: [], groups: [], servers: [], onCall: [] },
     isReloading: false,
     handleSync: mockHandleSync,
-  }),
-}));
-
-vi.mock('../hooks/useAppWeather', () => ({
-  useAppWeather: () => ({
-    weatherLocation: null,
-    setWeatherLocation: vi.fn(),
-    weatherData: null,
-    weatherAlerts: [],
-    weatherLoading: false,
-    fetchWeather: vi.fn(),
   }),
 }));
 
@@ -399,12 +376,12 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
 
-  it('navigates tab on Cmd+7 (Status)', () => {
+  it('navigates tab on Cmd+7 (Alerts)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
@@ -475,25 +452,8 @@ describe('MainApp', () => {
     fireEvent.click(screen.getByText('nav-people'));
     expect(mockSetActiveTab).toHaveBeenCalledWith('People');
 
-    fireEvent.click(screen.getByText('nav-weather'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
-
     fireEvent.click(screen.getByText('nav-servers'));
     expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
-
-    fireEvent.click(screen.getByText('nav-radar'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
-  });
-
-  it('mounts the dedicated Radar webview tab only while Radar is active', async () => {
-    renderApp();
-    expect(screen.queryByTestId('radar-tab')).not.toBeInTheDocument();
-
-    mockActiveTab = 'Radar';
-    renderApp();
-    await vi.waitFor(() => {
-      expect(screen.getByTestId('radar-tab')).toBeInTheDocument();
-    });
   });
 
   it('navigates tab on Cmd+3 (People)', () => {
@@ -504,42 +464,34 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('People');
   });
 
-  it('navigates tab on Cmd+4 (Weather)', () => {
+  it('navigates tab on Cmd+4 (Servers)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Weather');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
   });
 
-  it('navigates tab on Cmd+5 (Servers)', () => {
+  it('navigates tab on Cmd+5 (Status)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '5', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
   });
 
-  it('navigates tab on Cmd+6 (Radar)', () => {
+  it('navigates tab on Cmd+6 (Notes)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Radar');
-  });
-
-  it('navigates tab on Cmd+8 (Notes)', () => {
-    renderApp();
-    act(() => {
-      fireEvent.keyDown(globalThis, { key: '8', metaKey: true });
-    });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
   });
 
-  it('navigates tab on Cmd+9 (Alerts)', () => {
+  it('navigates tab on Cmd+7 (Alerts)', () => {
     renderApp();
     act(() => {
-      fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
+      fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
     });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
   });

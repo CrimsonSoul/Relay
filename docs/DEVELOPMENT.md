@@ -78,7 +78,6 @@ Current examples:
 
 - Window management
 - Setup and PocketBase connection bootstrap
-- Weather, radar, and location lookups
 - Cloud status aggregation
 - Clipboard and shell/file-system actions
 - Alert image and logo persistence

@@ -31,8 +31,6 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   PersonnelIcon: () => <span>PersonnelIcon</span>,
   PeopleIcon: () => <span>PeopleIcon</span>,
   ServersIcon: () => <span>ServersIcon</span>,
-  RadarIcon: () => <span>RadarIcon</span>,
-  WeatherIcon: () => <span>WeatherIcon</span>,
   NotesIcon: () => <span>NotesIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
@@ -56,8 +54,6 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-btn-status')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-people')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-servers')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-radar')).toBeInTheDocument();
-    expect(screen.getByTestId('sidebar-btn-weather')).toBeInTheDocument();
   });
 
   it('renders Settings button', () => {

@@ -1,4 +1,4 @@
-import { LocationProvider, useLocation, NotesProvider, SearchProvider } from './contexts';
+import { NotesProvider, SearchProvider } from './contexts';
 import { useEffect, useState, useCallback, useRef, Suspense, lazy, ComponentType } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { WorldClock } from './components/WorldClock';
@@ -16,8 +16,6 @@ import { ConnectionManager } from './components/ConnectionManager';
 import { Contact, TabName, type PbAuthSession } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
-// Hooks
-import { useAppWeather } from './hooks/useAppWeather';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
@@ -36,8 +34,6 @@ function lazyTab<T extends Record<string, ComponentType>>(
 // Lazy load non-default tabs and settings modal
 const DirectoryTab = lazyTab(() => import('./tabs/DirectoryTab'), 'DirectoryTab');
 const ServersTab = lazyTab(() => import('./tabs/ServersTab'), 'ServersTab');
-const RadarTab = lazyTab(() => import('./tabs/RadarTab'), 'RadarTab');
-const WeatherTab = lazyTab(() => import('./tabs/WeatherTab'), 'WeatherTab');
 const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab');
 const SettingsModal = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
 const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
@@ -70,7 +66,6 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
 
 export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
   const { showToast } = useToast();
-  const deviceLocation = useLocation();
   useTheme();
 
   const searchParams = new URLSearchParams(globalThis.location.search);
@@ -78,15 +73,6 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
   const popoutRoute = searchParams.get('popout');
 
   const { data, boardSettings, setBoardSettings } = useAppData(showToast);
-
-  const {
-    weatherLocation,
-    setWeatherLocation,
-    weatherData,
-    weatherAlerts,
-    weatherLoading,
-    fetchWeather,
-  } = useAppWeather(deviceLocation, showToast);
 
   const {
     statusData: cloudStatusData,
@@ -224,8 +210,6 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                   Personnel: 'On-Call',
                   People: 'People',
                   Servers: 'Servers',
-                  Radar: 'Radar',
-                  Weather: 'Weather',
                   Notes: 'Notes',
                   Status: 'Service Status',
                   Alerts: 'Alerts',
@@ -312,25 +296,6 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                 </ErrorBoundary>
               </div>
             )}
-            {mountedTabs.has('Weather') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Weather' ? ' tab-panel--active' : ''}`}
-              >
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <WeatherTab
-                      weather={weatherData}
-                      alerts={weatherAlerts}
-                      location={weatherLocation}
-                      loading={weatherLoading}
-                      isActive={activeTab === 'Weather'}
-                      onLocationChange={setWeatherLocation}
-                      onManualRefresh={(lat: number, lon: number) => fetchWeather(lat, lon)}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
-            )}
             {mountedTabs.has('Servers') && (
               <div
                 className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
@@ -338,15 +303,6 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <ServersTab servers={data.servers} contacts={data.contacts} />
-                  </Suspense>
-                </ErrorBoundary>
-              </div>
-            )}
-            {activeTab === 'Radar' && (
-              <div className="tab-panel animate-fade-in tab-panel--active">
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <RadarTab />
                   </Suspense>
                 </ErrorBoundary>
               </div>
@@ -585,11 +541,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastWrapper>
-        <LocationProvider>
-          <NotesProvider>
-            <AppWithSetup />
-          </NotesProvider>
-        </LocationProvider>
+        <NotesProvider>
+          <AppWithSetup />
+        </NotesProvider>
       </ToastWrapper>
     </ErrorBoundary>
   );

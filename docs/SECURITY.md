@@ -4,7 +4,7 @@ Current security model and implementation notes for Relay.
 
 ## Overview
 
-Relay is an Electron desktop application that handles operational data, local configuration, and network-backed services. The security model centers on a narrow renderer surface, validated IPC, trusted-origin controls for embedded content, and encrypted storage for sensitive secrets where Electron supports it.
+Relay is an Electron desktop application that handles operational data, local configuration, and network-backed services. The security model centers on a narrow renderer surface, validated IPC, and encrypted storage for sensitive secrets where Electron supports it.
 
 ## Trust Boundaries
 
@@ -18,7 +18,7 @@ Primary responsibilities:
 - PocketBase bootstrap and local background services
 - IPC handler registration
 - File system and shell operations
-- Security header and webview policy enforcement
+- Security header enforcement
 - Credential and config secret handling
 
 Key files:
@@ -26,7 +26,6 @@ Key files:
 - `src/main/index.ts`
 - `src/main/app/windowFactory.ts`
 - `src/main/app/securityHeaders.ts`
-- `src/main/securityPolicy.ts`
 
 ### Preload
 
@@ -66,30 +65,12 @@ Controls in place:
 Highlights:
 
 - `default-src 'self'`
-- Strict `connect-src` allowlist for PocketBase, weather, geolocation, and radar endpoints
+- Strict `connect-src` allowlist for PocketBase endpoints
 - `object-src 'none'`
 - `base-uri 'self'`
 - `form-action 'self'`
 
 Development mode relaxes `script-src` only as needed for HMR.
-
-### Webview Policy
-
-Relay currently uses embedded web content for radar and keeps a centralized allowlist for trusted webview origins.
-
-Enforcement lives in:
-
-- `src/main/securityPolicy.ts`
-- `src/main/app/windowFactory.ts`
-- `src/main/handlers/configHandlers.ts`
-
-Controls in place:
-
-- Only HTTPS origins are eligible for trust
-- Built-in allowlisted origins are centralized in `ALLOWED_WEBVIEW_ORIGINS`
-- User-configured radar origins are registered at runtime only after HTTPS validation
-- `will-attach-webview` strips preload access and forces safe web preferences
-- Untrusted webview URLs are blocked before attachment
 
 ## Validation And Rate Limiting
 

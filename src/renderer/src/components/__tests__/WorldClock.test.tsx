@@ -3,21 +3,26 @@ import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WorldClock } from '../WorldClock';
 
-// Mock the LocationContext
-vi.mock('../../contexts', () => ({
-  useLocation: () => ({
-    timezone: 'America/Chicago',
-  }),
-}));
-
 describe('WorldClock', () => {
+  const originalDateTimeFormat = Intl.DateTimeFormat;
+
   beforeEach(() => {
     vi.useFakeTimers();
     // Freeze to January (standard time) so America/Chicago shows CST, not CDT
     vi.setSystemTime(new Date('2026-01-15T12:00:00Z'));
+    vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (
+      locales?: Intl.LocalesArgument,
+      options: Intl.DateTimeFormatOptions = {},
+    ) {
+      return new originalDateTimeFormat(locales, {
+        timeZone: 'America/Chicago',
+        ...options,
+      });
+    } as typeof Intl.DateTimeFormat);
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 

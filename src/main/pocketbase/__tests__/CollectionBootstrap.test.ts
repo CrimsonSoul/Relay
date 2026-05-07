@@ -75,7 +75,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(12);
+    expect(mockCreate).toHaveBeenCalledTimes(11);
   });
 
   it('includes teamId in the oncall collection schema', async () => {

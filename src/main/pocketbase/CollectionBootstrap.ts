@@ -126,16 +126,6 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
-    name: 'saved_locations',
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'name', required: true },
-      { type: 'number', name: 'lat' },
-      { type: 'number', name: 'lon' },
-      { type: 'bool', name: 'isDefault' },
-    ],
-  },
-  {
     name: 'standalone_notes',
     type: 'base',
     fields: [

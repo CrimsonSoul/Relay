@@ -102,7 +102,6 @@ describe('cacheHandlers', () => {
         'bridge_history',
         'alert_history',
         'notes',
-        'saved_locations',
         'standalone_notes',
         'oncall_dismissals',
         'conflict_log',

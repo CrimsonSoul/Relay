@@ -6,7 +6,6 @@ import { setupLoggerHandlers } from '../handlers/loggerHandlers';
 import { ensureDataDirectoryAsync, loadConfigAsync, saveConfigAsync } from '../dataUtils';
 import { validateDataPath } from '../utils/pathValidation';
 import { loggers } from '../logger';
-import { getSecureOrigin, isTrustedGeolocationOrigin } from '../securityPolicy';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import type { BackupManager } from '../pocketbase/BackupManager';
@@ -205,14 +204,10 @@ export function setupPermissions(sess: Electron.Session) {
     const isMainWindow = state.mainWindow?.webContents === webContents;
 
     if (permission === 'geolocation') {
-      const requestingOrigin = getSecureOrigin(details.requestingUrl);
-      const allowed = !!isMainWindow || isTrustedGeolocationOrigin(requestingOrigin);
-      if (!allowed) {
-        loggers.security.warn('Blocked geolocation permission request from untrusted origin', {
-          requestingUrl: details.requestingUrl,
-        });
-      }
-      callback(allowed);
+      loggers.security.warn('Blocked geolocation permission request', {
+        requestingUrl: details.requestingUrl,
+      });
+      callback(false);
       return;
     }
 
@@ -230,14 +225,10 @@ export function setupPermissions(sess: Electron.Session) {
       typeof mainWindowWebContents?.id === 'number' && typeof webContents.id === 'number';
     const isMainWindowById = canCompareById && mainWindowWebContents.id === webContents.id;
     const isMainWindow = isMainWindowById;
-    const mainWindowOrigin = state.mainWindow
-      ? getSecureOrigin(state.mainWindow.webContents.getURL())
-      : null;
-    const isMainWindowOrigin =
-      mainWindowOrigin !== null && getSecureOrigin(requestingOrigin) === mainWindowOrigin;
 
     if (permission === 'geolocation') {
-      return !!isMainWindow || isMainWindowOrigin || isTrustedGeolocationOrigin(requestingOrigin);
+      loggers.security.warn('Blocked geolocation permission check', { requestingOrigin });
+      return false;
     }
 
     if (permission === 'media') {

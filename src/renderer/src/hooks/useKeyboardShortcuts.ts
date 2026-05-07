@@ -19,12 +19,10 @@ export function useKeyboardShortcuts({
       '1': 'Compose',
       '2': 'Personnel',
       '3': 'People',
-      '4': 'Weather',
-      '5': 'Servers',
-      '6': 'Radar',
-      '7': 'Status',
-      '8': 'Notes',
-      '9': 'Alerts',
+      '4': 'Servers',
+      '5': 'Status',
+      '6': 'Notes',
+      '7': 'Alerts',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {

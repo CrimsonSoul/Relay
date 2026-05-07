@@ -21,7 +21,6 @@ const CATEGORY_TO_COLLECTION: Record<Exclude<DataCategory, 'all'>, CollectionNam
   bridge_history: 'bridge_history',
   alert_history: 'alert_history',
   notes: 'notes',
-  saved_locations: 'saved_locations',
   standalone_notes: 'standalone_notes',
 };
 

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, type BridgeAPI, type AuthRequest, type RadarSnapshot } from '@shared/ipc';
+import { IPC_CHANNELS, type BridgeAPI, type AuthRequest } from '@shared/ipc';
 
 const api: BridgeAPI = {
   /** Path validation and sandboxing constraints are enforced on the main process side. */
@@ -26,19 +26,8 @@ const api: BridgeAPI = {
     return ipcRenderer.invoke(IPC_CHANNELS.AUTH_USE_CACHED, { nonce });
   },
 
-  subscribeToRadar: (callback) => {
-    const handler = (_event: Electron.IpcRendererEvent, data: RadarSnapshot) => callback(data);
-    ipcRenderer.on(IPC_CHANNELS.RADAR_DATA, handler);
-    return () => ipcRenderer.removeListener(IPC_CHANNELS.RADAR_DATA, handler);
-  },
-
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
-  getWeather: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER, lat, lon),
-  searchLocation: (query) => ipcRenderer.invoke(IPC_CHANNELS.SEARCH_LOCATION, query),
-  getWeatherAlerts: (lat, lon) => ipcRenderer.invoke(IPC_CHANNELS.GET_WEATHER_ALERTS, lat, lon),
-  registerRadarUrl: (url: string) => ipcRenderer.invoke(IPC_CHANNELS.REGISTER_RADAR_URL, url),
-  getIpLocation: () => ipcRenderer.invoke(IPC_CHANNELS.GET_IP_LOCATION),
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
 
   // Drag Sync

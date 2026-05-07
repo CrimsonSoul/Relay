@@ -15,7 +15,6 @@ export const ALL_COLLECTIONS = [
   'bridge_history',
   'alert_history',
   'notes',
-  'saved_locations',
   'standalone_notes',
 ] as const;
 
@@ -46,7 +45,6 @@ const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
   servers: 'name',
   bridge_groups: 'name',
   notes: 'entityKey',
-  saved_locations: 'name',
 };
 
 // ---------------------------------------------------------------------------

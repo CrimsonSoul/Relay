@@ -133,8 +133,8 @@ describe('useDataManager', () => {
     });
 
     expect(success).toBe(true);
-    // Should call exportToCsv for each of the 9 categories
-    expect(mockedExportToCsv).toHaveBeenCalledTimes(9);
+    // Should call exportToCsv for each exportable collection.
+    expect(mockedExportToCsv).toHaveBeenCalledTimes(8);
   });
 
   it('exportData with csv format and specific category', async () => {
@@ -163,8 +163,8 @@ describe('useDataManager', () => {
     });
 
     expect(success).toBe(true);
-    // CSV was called for each category but downloadBlob skipped since csvStr is empty
-    expect(mockedExportToCsv).toHaveBeenCalledTimes(9);
+    // CSV was called for each exportable collection but downloadBlob skipped since csvStr is empty
+    expect(mockedExportToCsv).toHaveBeenCalledTimes(8);
   });
 
   it('exportData with excel format calls exportToExcel', async () => {

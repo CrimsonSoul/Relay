@@ -83,10 +83,6 @@ vi.mock('../../handlers/windowHandlers', () => ({
   ALLOWED_AUX_ROUTES: new Set(['oncall']),
 }));
 
-vi.mock('../../securityPolicy', () => ({
-  isTrustedWebviewUrl: vi.fn((url: string) => url === 'https://www.rainviewer.com/test'),
-}));
-
 vi.mock('../securityHeaders', () => ({
   setupSecurityHeaders: vi.fn(),
 }));
@@ -97,7 +93,6 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
-import { isTrustedWebviewUrl } from '../../securityPolicy';
 
 describe('windowFactory', () => {
   beforeEach(() => {
@@ -143,60 +138,6 @@ describe('windowFactory', () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
       expect(mocks.getLastOptions().webPreferences.experimentalFeatures).toBe(false);
-    });
-  });
-
-  describe('createWindow - will-attach-webview security', () => {
-    it('enforces security settings on webview attach', async () => {
-      const { createWindow } = await import('../windowFactory');
-      await createWindow();
-
-      const webviewCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-attach-webview',
-      );
-      expect(webviewCall).toBeDefined();
-
-      const handler = webviewCall![1];
-      const event = { preventDefault: vi.fn() };
-      const webPreferences: Record<string, unknown> = {
-        preload: '/some/preload.js',
-        nodeIntegration: true,
-        contextIsolation: false,
-        sandbox: false,
-        webSecurity: false,
-        allowRunningInsecureContent: true,
-      };
-      const params = { src: 'https://www.rainviewer.com/test' };
-
-      handler(event, webPreferences, params);
-
-      expect(webPreferences.preload).toBeUndefined();
-      expect(webPreferences.nodeIntegration).toBe(false);
-      expect(webPreferences.contextIsolation).toBe(true);
-      expect(webPreferences.sandbox).toBe(true);
-      expect(webPreferences.webSecurity).toBe(true);
-      expect(webPreferences.allowRunningInsecureContent).toBe(false);
-      expect(event.preventDefault).not.toHaveBeenCalled();
-    });
-
-    it('blocks webview with untrusted URL', async () => {
-      vi.mocked(isTrustedWebviewUrl).mockReturnValue(false);
-
-      const { createWindow } = await import('../windowFactory');
-      await createWindow();
-
-      const webviewCall = mocks.mockWebContentsOn.mock.calls.find(
-        (call: unknown[]) => call[0] === 'will-attach-webview',
-      );
-      const handler = webviewCall![1];
-      const event = { preventDefault: vi.fn() };
-      const webPreferences: Record<string, unknown> = {};
-      const params = { src: 'https://evil.example.com' };
-
-      handler(event, webPreferences, params);
-
-      expect(event.preventDefault).toHaveBeenCalled();
-      expect(loggers.security.warn).toHaveBeenCalled();
     });
   });
 

@@ -25,16 +25,16 @@ describe('SidebarButton', () => {
 
   it('sets aria-pressed to false when not active', () => {
     render(
-      <SidebarButton icon={<span>icon</span>} label="Weather" isActive={false} onClick={vi.fn()} />,
+      <SidebarButton icon={<span>icon</span>} label="Notes" isActive={false} onClick={vi.fn()} />,
     );
-    expect(screen.getByLabelText('Weather')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByLabelText('Notes')).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('sets aria-pressed to true when active', () => {
     render(
-      <SidebarButton icon={<span>icon</span>} label="Weather" isActive={true} onClick={vi.fn()} />,
+      <SidebarButton icon={<span>icon</span>} label="Notes" isActive={true} onClick={vi.fn()} />,
     );
-    expect(screen.getByLabelText('Weather')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Notes')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('applies active class when isActive is true', () => {
@@ -88,13 +88,13 @@ describe('SidebarButton', () => {
 
   it('shows the label in a tooltip on hover', () => {
     render(
-      <SidebarButton icon={<span>icon</span>} label="Radar" isActive={false} onClick={vi.fn()} />,
+      <SidebarButton icon={<span>icon</span>} label="Status" isActive={false} onClick={vi.fn()} />,
     );
 
     expect(document.body.querySelector('.tooltip-popup')).toBeNull();
-    fireEvent.mouseEnter(screen.getByLabelText('Radar'));
+    fireEvent.mouseEnter(screen.getByLabelText('Status'));
 
     const tooltip = document.body.querySelector('.tooltip-popup');
-    expect(tooltip).toHaveTextContent('Radar');
+    expect(tooltip).toHaveTextContent('Status');
   });
 });

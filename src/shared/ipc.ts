@@ -64,8 +64,6 @@ export type TabName =
   | 'Personnel'
   | 'People'
   | 'Servers'
-  | 'Radar'
-  | 'Weather'
   | 'Notes'
   | 'Status';
 
@@ -191,68 +189,6 @@ export type AuthRequest = {
   hasCachedCredentials?: boolean; // Whether credentials are available from cache
 };
 
-type RadarCounters = {
-  ok?: number;
-  pending?: number;
-  internalError?: number;
-};
-
-type RadarStatusVariant = 'success' | 'warning' | 'danger' | 'info';
-
-export type RadarSnapshot = {
-  counters: RadarCounters;
-  statusText?: string;
-  statusColor?: string;
-  statusVariant?: RadarStatusVariant;
-  lastUpdated: number;
-};
-
-// Weather and Location Types
-export type WeatherData = {
-  timezone?: string;
-  utc_offset_seconds?: number;
-  current_weather: {
-    temperature: number;
-    windspeed: number;
-    winddirection: number;
-    weathercode: number;
-    time: string;
-  };
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-    weathercode: number[];
-    precipitation_probability: number[];
-  };
-  daily: {
-    time: string[];
-    weathercode: number[];
-    temperature_2m_max: number[];
-    temperature_2m_min: number[];
-    wind_speed_10m_max: number[];
-    precipitation_probability_max: number[];
-  };
-};
-
-export type LocationSearchResult = {
-  results?: {
-    name: string;
-    lat: number;
-    lon: number;
-    admin1?: string;
-    country_code: string;
-  }[];
-};
-
-export type IpLocationResult = {
-  lat: number;
-  lon: number;
-  city: string;
-  region: string;
-  country: string;
-  timezone?: string;
-} | null;
-
 export type PbAuthSession = {
   token: string;
   record: Record<string, unknown> | null;
@@ -280,20 +216,14 @@ export type BridgeAPI = {
   ) => Promise<boolean>;
   cancelAuth: (nonce: string) => void;
   useCachedAuth: (nonce: string) => Promise<boolean>;
-  subscribeToRadar: (callback: (data: RadarSnapshot) => void) => () => void;
   logBridge: (groups: string[]) => void;
   getCloudStatus: () => Promise<CloudStatusData>;
-  getWeather: (lat: number, lon: number) => Promise<WeatherData | null>;
-  searchLocation: (query: string) => Promise<LocationSearchResult>;
-  getWeatherAlerts: (lat: number, lon: number) => Promise<WeatherAlert[]>;
-  registerRadarUrl: (url: string) => Promise<void>;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
   isMaximized: () => Promise<boolean>;
   onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
   openAuxWindow: (route: string) => void;
-  getIpLocation: () => Promise<IpLocationResult>;
   logToMain: (entry: LogEntry) => void;
   // Drag and Drop Sync
   notifyDragStart: () => void;
@@ -361,14 +291,8 @@ export const IPC_CHANNELS = {
   AUTH_SUBMIT: 'auth:submit',
   AUTH_CANCEL: 'auth:cancel',
   AUTH_USE_CACHED: 'auth:useCached',
-  RADAR_DATA: 'radar:data',
-  REGISTER_RADAR_URL: 'config:registerRadarUrl',
   LOG_BRIDGE: 'metrics:logBridge',
   GET_CLOUD_STATUS: 'cloudstatus:get',
-  GET_WEATHER: 'weather:get',
-  SEARCH_LOCATION: 'weather:search',
-  GET_WEATHER_ALERTS: 'weather:alerts',
-  GET_IP_LOCATION: 'location:ip',
   LOG_TO_MAIN: 'logger:toMain',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
@@ -407,20 +331,6 @@ export const IPC_CHANNELS = {
   // Sync
   SYNC_PENDING: 'sync:pending',
 } as const;
-
-export type WeatherAlert = {
-  id: string;
-  event: string;
-  headline: string;
-  description: string;
-  severity: 'Extreme' | 'Severe' | 'Moderate' | 'Minor' | 'Unknown';
-  urgency: 'Immediate' | 'Expected' | 'Future' | 'Past' | 'Unknown';
-  certainty: 'Observed' | 'Likely' | 'Possible' | 'Unlikely' | 'Unknown';
-  effective: string;
-  expires: string;
-  senderName: string;
-  areaDesc: string;
-};
 
 export type LogEntry = {
   level: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
@@ -469,15 +379,6 @@ export type NoteEntry = { note: string; tags: string[]; updatedAt: number };
 export type NotesData = {
   contacts: Record<string, NoteEntry>;
   servers: Record<string, NoteEntry>;
-};
-
-// Saved weather locations
-export type SavedLocation = {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  isDefault: boolean;
 };
 
 // ============================================
@@ -534,7 +435,6 @@ export type DataCategory =
   | 'bridge_history'
   | 'alert_history'
   | 'notes'
-  | 'saved_locations'
   | 'standalone_notes'
   | 'all';
 

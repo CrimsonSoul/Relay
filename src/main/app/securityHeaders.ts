@@ -39,10 +39,10 @@ export function setupSecurityHeaders(isDev: boolean): void {
           "default-src 'self'; " +
             `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
             "style-src 'self' 'unsafe-inline'; " +
-            "img-src 'self' data: blob: https://api.weather.gov https://*.rainviewer.com; " +
-            `connect-src 'self' ${pbConnectSrc} https://api.weather.gov https://geocoding-api.open-meteo.com https://api.open-meteo.com https://ipapi.co https://ipinfo.io https://ipwho.is https://*.rainviewer.com https://api.zippopotam.us; ` +
+            "img-src 'self' data: blob:; " +
+            `connect-src 'self' ${pbConnectSrc}; ` +
             "font-src 'self' data:; " +
-            "frame-src 'self' https://www.rainviewer.com https://chatgpt.com https://claude.ai https://copilot.microsoft.com https://gemini.google.com; " +
+            "frame-src 'self'; " +
             "object-src 'none'; " +
             "base-uri 'self'; " +
             "form-action 'self';",

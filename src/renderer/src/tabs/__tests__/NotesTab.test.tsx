@@ -177,7 +177,7 @@ vi.mock('../../contexts/SearchContext', () => ({
   }),
 }));
 
-import { NotesTab } from '../NotesTab';
+import { getNotesColumnCount, NotesTab } from '../NotesTab';
 
 describe('NotesTab', () => {
   beforeEach(() => {
@@ -203,6 +203,11 @@ describe('NotesTab', () => {
 
   it('should show sample notes on first load', () => {
     render(<NotesTab />);
+    expect(screen.getByText('Notes board')).toBeInTheDocument();
+    expect(screen.getByText('All notes')).toBeInTheDocument();
+    expect(screen.queryByText('Active lane')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Active notes lane')).not.toBeInTheDocument();
+    expect(screen.getByText('Select a note')).toBeInTheDocument();
     expect(screen.getByText('Bridge Call Checklist')).toBeInTheDocument();
     expect(screen.getByText('DB Failover Runbook')).toBeInTheDocument();
     expect(screen.getByText('Weekly Ops Review Notes')).toBeInTheDocument();
@@ -255,11 +260,46 @@ describe('NotesTab', () => {
     render(<NotesTab />);
     fireEvent.click(screen.getByText('Bridge Call Checklist'));
     expect(screen.getByDisplayValue('Bridge Call Checklist')).toBeInTheDocument();
+    expect(screen.getByLabelText('Edit note in detail panel')).toBeInTheDocument();
     // Editor modal renders Save and Delete buttons (may appear multiple times due to mock)
     const saveButtons = screen.getAllByText('Save');
     const deleteButtons = screen.getAllByText('Delete');
     expect(saveButtons.length).toBeGreaterThanOrEqual(1);
     expect(deleteButtons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should mark the workspace as editing while the side panel is open', () => {
+    render(<NotesTab />);
+    fireEvent.click(screen.getByText('Bridge Call Checklist'));
+
+    expect(document.querySelector('.notes-workspace')).toHaveClass('is-editing');
+
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(document.querySelector('.notes-workspace')).not.toHaveClass('is-editing');
+  });
+
+  it('should keep multiple note columns when the board itself is wide', () => {
+    expect(getNotesColumnCount({ width: 1440, fontSize: 'md', isWorkspace: true })).toBe(4);
+  });
+
+  it('should render every visible note on the notes board', () => {
+    render(<NotesTab />);
+    const board = screen.getByLabelText('Notes board');
+
+    expect(board).toHaveTextContent('Bridge Call Checklist');
+    expect(board).toHaveTextContent('DB Failover Runbook');
+    expect(board).toHaveTextContent('Weekly Ops Review Notes');
+    expect(board).toHaveTextContent('Monitoring Improvements');
+    expect(board).toHaveTextContent('Vendor Contacts');
+  });
+
+  it('should open a blank side panel editor when clicking New Note', () => {
+    render(<NotesTab />);
+    fireEvent.click(screen.getByText('NEW NOTE'));
+
+    expect(screen.getByLabelText('Create note in detail panel')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Note title...')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Write something...')).toBeInTheDocument();
   });
 
   it('should create a new note', () => {

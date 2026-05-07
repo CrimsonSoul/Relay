@@ -30,13 +30,8 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
-import {
-  attachWebContentsLifecycleListeners,
-  setupAppLifecycleListeners,
-  startMemoryHeartbeat,
-} from './app/processLifecycle';
+import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { startPocketBase } from './app/pocketbaseBootstrap';
-import { isTrustedWebviewUrl } from './securityPolicy';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 
@@ -102,26 +97,6 @@ if (gotLock) {
 
   loggers.main.info('Waiting for Electron ready...');
 
-  app.on('web-contents-created', (_event, contents) => {
-    if (contents.getType() !== 'webview') return;
-
-    attachWebContentsLifecycleListeners(contents, {
-      label: `webview:${contents.id}`,
-      autoReload: true,
-    });
-
-    contents.on('will-navigate', (event, url) => {
-      if (isTrustedWebviewUrl(url)) return;
-      loggers.security.warn(`Blocked webview navigation to non-allowlisted URL: ${url}`);
-      event.preventDefault();
-    });
-
-    contents.setWindowOpenHandler(({ url }) => {
-      loggers.security.warn(`Blocked webview window.open() attempt: ${url}`);
-      return { action: 'deny' };
-    });
-  });
-
   const configDataDir = join(app.getPath('userData'), 'data');
 
   const bootstrap = async () => {
@@ -134,8 +109,6 @@ if (gotLock) {
       loggers.main.info('Crash dumps path:', { path: app.getPath('crashDumps') });
 
       setupPermissions(session.defaultSession);
-      setupPermissions(session.fromPartition('persist:weather'));
-      setupPermissions(session.fromPartition('persist:dispatcher-radar'));
 
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.

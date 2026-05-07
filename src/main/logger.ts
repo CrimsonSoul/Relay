@@ -438,8 +438,6 @@ export const loggers = {
   bridge: logger.createChild('Bridge'),
   security: logger.createChild('Security'),
   auth: logger.createChild('Auth'),
-  weather: logger.createChild('Weather'),
-  location: logger.createChild('Location'),
   config: logger.createChild('Config'),
   network: logger.createChild('Network'),
   cloudStatus: logger.createChild('CloudStatus'),

@@ -184,6 +184,12 @@ describe('NoteEditor', () => {
     expect(props.onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('uses a compact close control when rendered as a panel', () => {
+    const props = defaultProps();
+    render(<NoteEditor {...props} variant="panel" />);
+    expect(screen.getByLabelText('Close')).toHaveClass('note-editor-close--panel');
+  });
+
   // 8. Delete: button only shown when note exists AND onDelete provided
   it('does not show delete button when creating a new note', () => {
     const props = defaultProps();
@@ -491,5 +497,11 @@ describe('NoteEditor', () => {
     const hintText = document.querySelector('.note-editor-hint');
     expect(hintText).toBeTruthy();
     expect(hintText!.textContent).toContain('Save');
+  });
+
+  it('does not render the keyboard hint in panel mode', () => {
+    const props = defaultProps();
+    render(<NoteEditor {...props} variant="panel" />);
+    expect(document.querySelector('.note-editor-hint')).toBeNull();
   });
 });

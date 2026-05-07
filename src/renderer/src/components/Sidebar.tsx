@@ -7,8 +7,6 @@ import {
   PersonnelIcon,
   PeopleIcon,
   ServersIcon,
-  RadarIcon,
-  WeatherIcon,
   NotesIcon,
   StatusIcon,
   SettingsIcon,
@@ -30,8 +28,6 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
   { label: 'People', tab: 'People', icon: <PeopleIcon /> },
   { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
-  { label: 'Radar', tab: 'Radar', icon: <RadarIcon /> },
-  { label: 'Weather', tab: 'Weather', icon: <WeatherIcon /> },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpenSettings }) => {

@@ -47,7 +47,6 @@ export const CategorySelect: React.FC<{
     <option value="bridge_history">Bridge History</option>
     <option value="alert_history">Alert History</option>
     <option value="notes">Notes</option>
-    <option value="saved_locations">Saved Locations</option>
     <option value="standalone_notes">Standalone Notes</option>
   </select>
 );

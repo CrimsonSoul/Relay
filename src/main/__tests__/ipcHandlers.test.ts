@@ -13,29 +13,17 @@ vi.mock('@shared/types', () => ({
   getErrorMessage: (err: unknown) => (err instanceof Error ? err.message : String(err)),
 }));
 
-const mockSetupWeatherHandlers = vi.fn();
 const mockSetupCloudStatusHandlers = vi.fn();
 const mockSetupWindowHandlers = vi.fn();
-const mockSetupConfigHandlers = vi.fn();
-const mockSetupLocationHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
 
-vi.mock('../handlers/weatherHandlers', () => ({
-  setupWeatherHandlers: (...args: unknown[]) => mockSetupWeatherHandlers(...args),
-}));
 vi.mock('../handlers/cloudStatus', () => ({
   setupCloudStatusHandlers: (...args: unknown[]) => mockSetupCloudStatusHandlers(...args),
 }));
 vi.mock('../handlers/windowHandlers', () => ({
   setupWindowHandlers: (...args: unknown[]) => mockSetupWindowHandlers(...args),
-}));
-vi.mock('../handlers/configHandlers', () => ({
-  setupConfigHandlers: (...args: unknown[]) => mockSetupConfigHandlers(...args),
-}));
-vi.mock('../handlers/locationHandlers', () => ({
-  setupLocationHandlers: (...args: unknown[]) => mockSetupLocationHandlers(...args),
 }));
 vi.mock('../handlers/setupHandlers', () => ({
   setupSetupHandlers: (...args: unknown[]) => mockSetupSetupHandlers(...args),
@@ -65,21 +53,11 @@ describe('setupIpcHandlers', () => {
   it('calls all handler setup functions', () => {
     setupIpcHandlers(makeOpts());
 
-    expect(mockSetupConfigHandlers).toHaveBeenCalled();
-    expect(mockSetupLocationHandlers).toHaveBeenCalled();
-    expect(mockSetupWeatherHandlers).toHaveBeenCalled();
     expect(mockSetupCloudStatusHandlers).toHaveBeenCalled();
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
-  });
-
-  it('passes getMainWindow to location handlers', () => {
-    const getMainWindow = vi.fn();
-    setupIpcHandlers(makeOpts({ getMainWindow }));
-
-    expect(mockSetupLocationHandlers).toHaveBeenCalledWith(getMainWindow);
   });
 
   it('passes getMainWindow, createAuxWindow, getDataRoot to window handlers', () => {
@@ -129,19 +107,17 @@ describe('setupIpcHandlers', () => {
   });
 
   it('continues registering handlers if one setup throws', () => {
-    mockSetupConfigHandlers.mockImplementation(() => {
-      throw new Error('config setup failed');
+    mockSetupCloudStatusHandlers.mockImplementation(() => {
+      throw new Error('cloud status setup failed');
     });
 
     setupIpcHandlers(makeOpts());
 
-    // config failed but others should still be called
-    expect(mockSetupLocationHandlers).toHaveBeenCalled();
-    expect(mockSetupWeatherHandlers).toHaveBeenCalled();
+    // cloud status failed but others should still be called
     expect(mockSetupWindowHandlers).toHaveBeenCalled();
     expect(loggers.main.error).toHaveBeenCalledWith(
-      'Failed to setup config handlers',
-      expect.objectContaining({ error: 'config setup failed' }),
+      'Failed to setup cloudStatus handlers',
+      expect.objectContaining({ error: 'cloud status setup failed' }),
     );
   });
 

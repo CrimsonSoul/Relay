@@ -46,14 +46,6 @@ export function useCommandSearch(
           data: { action: 'navigate', tab: 'People' },
         },
         {
-          id: 'action-weather',
-          type: 'action',
-          title: 'Go to Weather',
-          subtitle: 'Check current conditions',
-          iconType: 'weather',
-          data: { action: 'navigate', tab: 'Weather' },
-        },
-        {
           id: 'action-create-contact',
           type: 'action',
           title: 'Create New Contact',

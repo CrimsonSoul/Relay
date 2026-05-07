@@ -179,18 +179,6 @@ export const OnCallRecordSchema = z.object({
   updatedAt: z.number(),
 });
 
-export const RadarSnapshotSchema = z.object({
-  counters: z.object({
-    ok: z.number().int().min(0).optional(),
-    pending: z.number().int().min(0).optional(),
-    internalError: z.number().int().min(0).optional(),
-  }),
-  statusText: z.string().max(MAX_FIELD).optional(),
-  statusColor: z.string().max(100).optional(),
-  statusVariant: z.enum(['success', 'warning', 'danger', 'info']).optional(),
-  lastUpdated: z.number(),
-});
-
 export const SearchQuerySchema = z
   .string()
   .min(1)
@@ -207,7 +195,6 @@ export const ExportOptionsSchema = z.object({
     'bridge_history',
     'alert_history',
     'notes',
-    'saved_locations',
     'standalone_notes',
     'all',
   ]),
@@ -222,7 +209,6 @@ export const DataCategorySchema = z.enum([
   'bridge_history',
   'alert_history',
   'notes',
-  'saved_locations',
   'standalone_notes',
   'all',
 ]);
@@ -230,30 +216,12 @@ export const DataCategorySchema = z.enum([
 // ==================== Note Schemas ====================
 export const NotesTagsSchema = z.array(z.string().max(50)).max(20).optional();
 
-// ==================== Location Schemas ====================
-const LatitudeSchema = z.number().min(-90).max(90);
-const LongitudeSchema = z.number().min(-180).max(180);
-
 export const LogEntrySchema = z.object({
   level: z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL']),
   module: z.string().max(100),
   message: z.string().max(5000),
   data: z.unknown().optional(),
   timestamp: z.string().optional(),
-});
-
-export const SavedLocationSchema = z.object({
-  id: z.string().max(MAX_ID).optional(),
-  name: z.string().min(1).max(MAX_NAME),
-  lat: LatitudeSchema,
-  lon: LongitudeSchema,
-  isDefault: z.boolean().optional(),
-});
-
-export const LocationUpdateSchema = z.object({
-  name: z.string().min(1).max(MAX_NAME).optional(),
-  lat: LatitudeSchema.optional(),
-  lon: LongitudeSchema.optional(),
 });
 
 // ==================== Utility Functions ====================

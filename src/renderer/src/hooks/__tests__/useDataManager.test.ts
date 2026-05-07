@@ -50,7 +50,6 @@ vi.mock('../../services/importExportService', () => ({
     'bridge_history',
     'alert_history',
     'notes',
-    'saved_locations',
     'standalone_notes',
   ],
 }));
@@ -483,21 +482,6 @@ describe('useDataManager', () => {
       });
 
       expect(mockExportToJson).toHaveBeenCalledWith('notes');
-    });
-
-    it('maps saved_locations category correctly', async () => {
-      setupDownloadMocks();
-
-      const { result } = renderHook(() => useDataManager());
-
-      await act(async () => {
-        await result.current.exportData({
-          format: 'json',
-          category: 'saved_locations',
-        });
-      });
-
-      expect(mockExportToJson).toHaveBeenCalledWith('saved_locations');
     });
 
     it('maps standalone_notes category correctly', async () => {

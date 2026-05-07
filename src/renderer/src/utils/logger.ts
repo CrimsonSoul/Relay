@@ -255,10 +255,8 @@ const logger = new RendererLogger();
 // Pre-configured module loggers
 export const loggers = {
   app: logger.createChild('App'),
-  weather: logger.createChild('Weather'),
   directory: logger.createChild('Directory'),
   ui: logger.createChild('UI'),
-  location: logger.createChild('Location'),
   api: logger.createChild('API'),
   storage: logger.createChild('Storage'),
   network: logger.createChild('Network'),

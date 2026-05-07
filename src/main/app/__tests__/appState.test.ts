@@ -38,11 +38,6 @@ vi.mock('../../utils/pathValidation', () => ({
   validateDataPath: vi.fn().mockResolvedValue({ success: true }),
 }));
 
-vi.mock('../../securityPolicy', () => ({
-  getSecureOrigin: vi.fn((url: string) => url),
-  isTrustedGeolocationOrigin: vi.fn(() => false),
-}));
-
 import {
   getMainWindow,
   setMainWindow,
@@ -282,6 +277,21 @@ describe('setupPermissions', () => {
     expect(callback).toHaveBeenCalledWith(false);
   });
 
+  it('blocks geolocation permissions in request handler', () => {
+    const mockSession = {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+    };
+
+    setupPermissions(mockSession as never);
+
+    const requestHandler = mockSession.setPermissionRequestHandler.mock.calls[0][0];
+    const callback = vi.fn();
+
+    requestHandler({}, 'geolocation', callback, { requestingUrl: 'https://example.com' });
+    expect(callback).toHaveBeenCalledWith(false);
+  });
+
   it('blocks non-geo/media permissions in check handler', () => {
     const mockSession = {
       setPermissionRequestHandler: vi.fn(),
@@ -293,6 +303,20 @@ describe('setupPermissions', () => {
     const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
 
     const result = checkHandler({ id: 999 }, 'clipboard-read', '');
+    expect(result).toBe(false);
+  });
+
+  it('blocks geolocation permissions in check handler', () => {
+    const mockSession = {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+    };
+
+    setupPermissions(mockSession as never);
+
+    const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
+
+    const result = checkHandler({ id: 999 }, 'geolocation', 'https://example.com');
     expect(result).toBe(false);
   });
 });

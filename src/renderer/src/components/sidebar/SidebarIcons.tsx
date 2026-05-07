@@ -69,50 +69,6 @@ export const ServersIcon = () => (
   </svg>
 );
 
-export const RadarIcon = () => (
-  <svg
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <path
-      d="M12 12L12 2A10 10 0 0 1 20.66 7L12 12Z"
-      fill="currentColor"
-      stroke="none"
-      opacity="0.4"
-    />
-    <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
-    <circle cx="16" cy="6" r="1.5" fill="currentColor" stroke="none" />
-  </svg>
-);
-
-export const WeatherIcon = () => (
-  <svg
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <path d="M12 2v2" opacity="0.8" />
-    <path d="m4.93 4.93 1.41 1.41" opacity="0.8" />
-    <path d="M20 12h2" opacity="0.8" />
-    <path d="m19.07 4.93-1.41 1.41" opacity="0.8" />
-    <circle cx="12" cy="10" r="4" />
-    <path d="m15.947 12.65a4 4 0 0 0-5.925-4.128" opacity="0.6" />
-    <path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z" stroke="currentColor" opacity="0.6" />
-  </svg>
-);
-
 export const NotesIcon = () => (
   <svg
     width="20"

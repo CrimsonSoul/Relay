@@ -221,13 +221,12 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'DRAFT BRIDGE' })).toBeVisible();
   });
 
-  test('Vital 2: Navigation to On-Call & Weather', async () => {
+  test('Vital 2: Navigation to On-Call & Servers', async () => {
     await goToTab(window, 'sidebar-on-call', 'On-Call');
     await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
 
-    await goToTab(window, 'sidebar-weather', 'Weather');
-    await expect(window.getByLabel('Search city')).toBeVisible();
-    await expect(window.getByLabel('Detect current location')).toBeVisible();
+    await goToTab(window, 'sidebar-servers', 'Servers');
+    await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
   });
 
   test('Vital 3: Data Integrity (Add/Delete Contact)', async () => {

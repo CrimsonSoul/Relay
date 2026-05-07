@@ -45,7 +45,6 @@ IPC is reserved for operations the renderer should not perform directly, includi
 
 - Window management
 - Setup and connection bootstrap
-- Weather and location requests
 - Cloud status aggregation
 - Clipboard and file-system actions
 - Backup and restore
@@ -124,8 +123,6 @@ The current primary tabs are:
 - On-Call (`Personnel`)
 - People
 - Servers
-- Radar
-- Weather
 - Notes
 - Status
 
@@ -153,7 +150,6 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 | `alert_history`         | Saved alert cards                      |
 | `notes`                 | Notes attached to contacts and servers |
 | `standalone_notes`      | Freeform notes tab data                |
-| `saved_locations`       | Saved weather locations                |
 | `oncall_dismissals`     | On-call alert dismissals               |
 | `oncall_board_settings` | Board-level settings                   |
 | `conflict_log`          | Offline sync conflict records          |
@@ -167,7 +163,6 @@ Important rules:
 - Auxiliary windows are route-limited
 - Existing auxiliary windows are focused instead of duplicated when possible
 - Navigation and `window.open()` are blocked for both main and auxiliary windows
-- Webviews are attach-time validated against trusted origins
 
 See `src/main/app/windowFactory.ts` for the implementation.
 
@@ -177,7 +172,6 @@ Architecture decisions that directly support security:
 
 - Context-isolated preload bridge
 - Renderer sandboxing with no direct Electron imports
-- Trusted-origin validation for webviews
 - Path validation for file operations
 - CSP installation at the session level
 - Centralized IPC validation through shared schemas

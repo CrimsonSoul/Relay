@@ -60,22 +60,22 @@ describe('useAlertDismissal', () => {
     const { result } = renderHook(() => useAlertDismissal());
 
     act(() => {
-      result.current.dismissAlert('weather');
+      result.current.dismissAlert('staffing');
     });
 
-    expect(result.current.dismissedAlerts.has('weather')).toBe(true);
-    expect(mockDismissAlert).toHaveBeenCalledWith('weather', expect.any(String));
-    expect(mockNotifyAlertDismissed).toHaveBeenCalledWith('weather');
+    expect(result.current.dismissedAlerts.has('staffing')).toBe(true);
+    expect(mockDismissAlert).toHaveBeenCalledWith('staffing', expect.any(String));
+    expect(mockNotifyAlertDismissed).toHaveBeenCalledWith('staffing');
   });
 
   it('dismissAlert skips if already dismissed', () => {
     const { result } = renderHook(() => useAlertDismissal());
 
     act(() => {
-      result.current.dismissAlert('weather');
+      result.current.dismissAlert('staffing');
     });
     act(() => {
-      result.current.dismissAlert('weather');
+      result.current.dismissAlert('staffing');
     });
 
     expect(mockDismissAlert).toHaveBeenCalledTimes(1);
@@ -88,10 +88,10 @@ describe('useAlertDismissal', () => {
     const dd = String(today.getDate()).padStart(2, '0');
     const todayKey = `${yyyy}-${mm}-${dd}`;
 
-    mockRecords.push({ id: '1', dateKey: todayKey, alertType: 'severe-weather' });
+    mockRecords.push({ id: '1', dateKey: todayKey, alertType: 'staffing' });
 
     const { result } = renderHook(() => useAlertDismissal());
-    expect(result.current.dismissedAlerts.has('severe-weather')).toBe(true);
+    expect(result.current.dismissedAlerts.has('staffing')).toBe(true);
   });
 
   it('ignores PB records from other days', () => {

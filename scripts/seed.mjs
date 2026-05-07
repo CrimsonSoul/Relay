@@ -654,14 +654,6 @@ async function seed() {
   ];
   for (const h of history) await create('bridge_history', h);
 
-  console.log('Seeding saved_locations...');
-  const locations = [
-    { name: 'Bowling Green, KY', lat: 36.9685, lon: -86.4808, isDefault: true },
-    { name: 'New York, NY', lat: 40.7128, lon: -74.006, isDefault: false },
-    { name: 'San Francisco, CA', lat: 37.7749, lon: -122.4194, isDefault: false },
-  ];
-  for (const l of locations) await create('saved_locations', l);
-
   console.log('\n✅ Seed complete!');
 }
 
