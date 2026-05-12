@@ -4,11 +4,57 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
 const REJECTION_WINDOW_MS = 60_000;
 const REJECTION_THRESHOLD = 3;
+const FATAL_RELAUNCH_DELAY_MS = 1_000;
+
+type ErrorHandlerOptions = {
+  platform?: NodeJS.Platform;
+  isPackaged?: boolean;
+  nodeEnv?: string;
+  relaunchDelayMs?: number;
+};
+
+function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
+  return (
+    (options.platform ?? process.platform) === 'win32' &&
+    (options.isPackaged ?? app.isPackaged) &&
+    (options.nodeEnv ?? process.env.NODE_ENV) !== 'test' &&
+    process.env.RELAY_DISABLE_FATAL_RELAUNCH !== '1'
+  );
+}
+
+function scheduleFatalRelaunch(options: ErrorHandlerOptions): void {
+  const relaunch = () => {
+    app.relaunch();
+    app.exit(1);
+  };
+
+  const delayMs = options.relaunchDelayMs ?? FATAL_RELAUNCH_DELAY_MS;
+  if (delayMs <= 0) {
+    relaunch();
+    return;
+  }
+
+  const timer = setTimeout(relaunch, delayMs);
+  timer.unref();
+}
 
 /** Install global process error handlers (uncaughtException, unhandledRejection). */
-export function setupErrorHandlers(): void {
+export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
+  let fatalRecoveryStarted = false;
+
   process.on('uncaughtException', (error) => {
     loggers.main.error('Uncaught Exception', { error: error.message, stack: error.stack });
+    if (shouldAutoRelaunchFatalError(options)) {
+      if (fatalRecoveryStarted) return;
+      fatalRecoveryStarted = true;
+      broadcastToAllWindows('app:error-notification', {
+        title: 'Relay is restarting',
+        message: 'Relay hit a critical background error and will restart automatically.',
+      });
+      scheduleFatalRelaunch(options);
+      return;
+    }
+
     const choice = dialog.showMessageBoxSync({
       type: 'error',
       title: 'Uncaught Exception',

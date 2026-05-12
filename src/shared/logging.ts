@@ -98,6 +98,6 @@ export class ModuleLogger {
   errorWithCategory(message: string, category: ErrorCategory, data?: LogData): void {
     const errorData =
       typeof data === 'object' && data !== null ? { ...data, category } : { value: data, category };
-    this.parent.error(this.module, message, errorData as LogData);
+    this.parent.error(this.module, message, errorData);
   }
 }

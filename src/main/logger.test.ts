@@ -25,6 +25,8 @@ vi.mock('electron', () => ({
 }));
 
 describe('logger module', () => {
+  const makeCliPassphraseFixture = () => ['relay', 'fixture', 'value', 'not-log'].join('-');
+
   beforeEach(() => {
     vi.clearAllMocks();
     // Make sure mkdir and appendFile are no-ops
@@ -69,6 +71,24 @@ describe('logger module', () => {
   it('calling loggers.main.error does not throw', async () => {
     const { loggers } = await import('./logger');
     expect(() => loggers.main.error('error msg', { error: new Error('boom') })).not.toThrow();
+  });
+
+  it('does not write PocketBase CLI passphrases from error stacks to log files', async () => {
+    const { loggers } = await import('./logger');
+    const cliSecret = makeCliPassphraseFixture();
+    const error = new Error(
+      `Command failed: pocketbase superuser upsert admin@relay.app ${cliSecret} --dir=/tmp/pb`,
+    );
+
+    loggers.pocketbase.error('Failed to upsert superuser via CLI', { error });
+    await vi.waitFor(() => expect(fsPromises.appendFile).toHaveBeenCalled());
+
+    const written = vi
+      .mocked(fsPromises.appendFile)
+      .mock.calls.map((call) => String(call[1]))
+      .join('\n');
+    expect(written).not.toContain(cliSecret);
+    expect(written).toContain('[REDACTED]');
   });
 
   it('calling loggers.main.debug does not throw', async () => {

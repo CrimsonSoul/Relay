@@ -28,7 +28,7 @@ export async function loadConfigAsync(): Promise<{ dataRoot?: string }> {
       loggers.fileManager.error('config.json dataRoot is not a string, ignoring');
       return {};
     }
-    return obj as { dataRoot?: string };
+    return typeof obj.dataRoot === 'string' ? { dataRoot: obj.dataRoot } : {};
   } catch {
     return {};
   }

@@ -215,23 +215,33 @@
    ============================================================================ */
 
 .sidebar-button {
+  --sidebar-button-width: 80px;
+  --sidebar-button-height: 64px;
+
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: calc(100% - 16px);
-  margin: 0 8px;
-  padding: 10px 8px;
+  flex: 0 0 var(--sidebar-button-height);
+  width: var(--sidebar-button-width);
+  height: var(--sidebar-button-height);
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 8px 4px;
   gap: 4px;
   background: transparent;
   border: none;
   cursor: pointer;
   position: relative;
   color: var(--color-text-tertiary);
-  transition: all 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
   border-radius: 8px;
   outline: none;
   box-shadow: none;
+  overflow: hidden;
 }
 
 .sidebar-button:hover {
@@ -276,7 +286,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 80px;
+  max-width: calc(var(--sidebar-button-width) - 4px);
   transition: color 0.15s;
   line-height: 1;
 }

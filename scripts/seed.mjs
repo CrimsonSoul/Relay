@@ -15,7 +15,7 @@ async function auth() {
   });
   const data = await res.json();
   if (!res.ok) {
-    console.error('Auth failed:', data);
+    console.error(`Auth failed with status ${res.status}`);
     process.exit(1);
   }
   token = data.token;
@@ -657,4 +657,9 @@ async function seed() {
   console.log('\n✅ Seed complete!');
 }
 
-seed().catch(console.error);
+try {
+  await seed();
+} catch (err) {
+  console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
+  process.exit(1);
+}

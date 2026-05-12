@@ -498,11 +498,11 @@ describe('MainApp', () => {
 
   it('focuses search on Cmd+K', () => {
     renderApp();
+    let handled = true;
     act(() => {
-      fireEvent.keyDown(globalThis, { key: 'k', metaKey: true });
+      handled = fireEvent.keyDown(globalThis, { key: 'k', metaKey: true, cancelable: true });
     });
-    // The ref-based focus won't work in mocked environment, but the shortcut should not error
-    expect(true).toBe(true);
+    expect(handled).toBe(false);
   });
 
   it('handles navigate tab via HeaderSearch', () => {

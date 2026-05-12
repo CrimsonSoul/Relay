@@ -1,9 +1,10 @@
-import { execSync } from 'child_process';
-import { existsSync, mkdirSync, unlinkSync, createWriteStream } from 'fs';
-import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
-import https from 'https';
-import http from 'http';
+import { execSync } from 'node:child_process';
+import { existsSync, mkdirSync, unlinkSync, createWriteStream, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import https from 'node:https';
+import http from 'node:http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,44 +25,62 @@ function getPlatformArch(): { os: string; arch: string; ext: string } {
   return { os: 'linux', arch: arch === 'arm64' ? 'arm64' : 'amd64', ext: '' };
 }
 
+type HttpClient = typeof https | typeof http;
+
+function getHttpClient(url: string): HttpClient {
+  return url.startsWith('https') ? https : http;
+}
+
+function resolveRedirect(location: string, requestUrl: string): string {
+  return new URL(location, requestUrl).toString();
+}
+
+function pipeResponseToFile(
+  res: http.IncomingMessage,
+  dest: string,
+  resolve: () => void,
+  reject: (reason?: unknown) => void,
+): void {
+  const file = createWriteStream(dest);
+  res.pipe(file);
+  file.on('finish', () => {
+    file.close((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+  file.on('error', (err) => {
+    file.close();
+    reject(err);
+  });
+}
+
+function requestDownload(
+  requestUrl: string,
+  dest: string,
+  resolve: () => void,
+  reject: (reason?: unknown) => void,
+): void {
+  getHttpClient(requestUrl)
+    .get(requestUrl, (res) => {
+      if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        requestDownload(resolveRedirect(res.headers.location, requestUrl), dest, resolve, reject);
+        return;
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        reject(new Error(`Download failed with status ${res.statusCode}`));
+        return;
+      }
+      pipeResponseToFile(res, dest, resolve, reject);
+    })
+    .on('error', reject);
+}
+
 /** Download a file following redirects (works on all platforms without curl). */
 function downloadFile(url: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const file = createWriteStream(dest);
-    const client = url.startsWith('https') ? https : http;
-
-    function doRequest(requestUrl: string): void {
-      const reqClient = requestUrl.startsWith('https') ? https : http;
-      reqClient
-        .get(requestUrl, (res) => {
-          // Follow redirects (GitHub uses 302)
-          if (
-            res.statusCode &&
-            res.statusCode >= 300 &&
-            res.statusCode < 400 &&
-            res.headers.location
-          ) {
-            doRequest(res.headers.location);
-            return;
-          }
-          if (res.statusCode !== 200) {
-            reject(new Error(`Download failed with status ${res.statusCode}`));
-            return;
-          }
-          res.pipe(file);
-          file.on('finish', () => {
-            file.close();
-            resolve();
-          });
-        })
-        .on('error', (err) => {
-          file.close();
-          reject(err);
-        });
-    }
-
-    doRequest(url);
-  });
+  return new Promise((resolve, reject) => requestDownload(url, dest, resolve, reject));
 }
 
 /** Extract a zip file (cross-platform). */
@@ -90,10 +109,7 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
   }
 
   try {
-    const { readFileSync: readFs } = await import('fs');
-    const { createHash } = await import('crypto');
-
-    const checksumFile = readFs(checksumPath, 'utf-8');
+    const checksumFile = readFileSync(checksumPath, 'utf-8');
     const line = checksumFile.split('\n').find((l) => l.includes(expectedFilename));
     if (!line) {
       console.warn(
@@ -103,7 +119,7 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
     }
 
     const expectedHash = line.trim().split(/\s+/)[0];
-    const fileBuffer = readFs(zipPath);
+    const fileBuffer = readFileSync(zipPath);
     const actualHash = createHash('sha256').update(fileBuffer).digest('hex');
 
     if (actualHash !== expectedHash) {
@@ -167,7 +183,9 @@ async function download(): Promise<void> {
   console.log(`PocketBase binary saved to ${outputPath}`);
 }
 
-download().catch((err) => {
+try {
+  await download();
+} catch (err) {
   console.error('Failed to download PocketBase:', err);
   process.exit(1);
-});
+}

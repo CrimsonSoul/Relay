@@ -1,8 +1,4 @@
-import {
-  type CloudStatusItem,
-  type CloudStatusProvider,
-  type CloudStatusSeverity,
-} from '@shared/ipc';
+import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
 import type { SalesforceIncident } from './types';
 
 export const SALESFORCE_ACTIVE_URL = 'https://api.status.salesforce.com/v1/incidents/active';
@@ -33,7 +29,7 @@ export async function fetchSalesforceProvider(): Promise<CloudStatusItem[]> {
 
     return {
       id: `sf-${inc.id}`,
-      provider: 'salesforce' as CloudStatusProvider,
+      provider: 'salesforce',
       title: services ? `${inc.type} — ${services}` : inc.type,
       description,
       pubDate:

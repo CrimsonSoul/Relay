@@ -1,8 +1,4 @@
-import {
-  type CloudStatusItem,
-  type CloudStatusProvider,
-  type CloudStatusSeverity,
-} from '@shared/ipc';
+import { type CloudStatusItem, type CloudStatusSeverity } from '@shared/ipc';
 import type { GoogleCloudIncident } from './types';
 
 export const GOOGLE_CLOUD_INCIDENTS_URL = 'https://status.cloud.google.com/incidents.json';
@@ -39,7 +35,7 @@ export async function fetchGoogleCloudProvider(): Promise<CloudStatusItem[]> {
     })
     .map((inc) => ({
       id: inc.id,
-      provider: 'google' as CloudStatusProvider,
+      provider: 'google',
       title: inc.external_desc,
       description: inc.most_recent_update?.text ?? '',
       pubDate: inc.most_recent_update?.when ?? inc.modified ?? inc.begin,

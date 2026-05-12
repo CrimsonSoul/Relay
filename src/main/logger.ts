@@ -11,7 +11,7 @@ import {
   ILogger,
   ModuleLogger,
 } from '@shared/logging';
-import { redactSensitiveData } from '@shared/logRedaction';
+import { redactLogString, redactSensitiveData } from '@shared/logRedaction';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
@@ -184,7 +184,7 @@ class Logger implements ILogger {
       `[${entry.timestamp}]`,
       `[${entry.level.padEnd(5)}]`,
       `[${entry.module.padEnd(15)}]`,
-      entry.message,
+      redactLogString(entry.message),
     ];
 
     this.appendDataToParts(parts, entry.data);
@@ -193,7 +193,7 @@ class Logger implements ILogger {
     let output = parts.join(' ');
 
     if (entry.errorContext?.stack) {
-      output += '\n' + this.formatStackTrace(entry.errorContext.stack);
+      output += '\n' + this.formatStackTrace(redactLogString(entry.errorContext.stack));
     }
 
     return output;

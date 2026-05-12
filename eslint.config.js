@@ -72,6 +72,7 @@ export default [
       'src/renderer/dist/**',
       '.scannerwork/**',
       '.sonar-local/**',
+      '.worktrees/**',
       'src/renderer/test/setup.ts',
     ],
   },

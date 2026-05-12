@@ -169,6 +169,21 @@ describe('exportToExcel', () => {
     const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
     expect(sheets[0]).toMatchObject({ sheet: 'contacts', data: [] });
   });
+
+  it('prefixes formula-injection strings before writing spreadsheet cells', async () => {
+    const dangerous = {
+      id: 'r2',
+      email: '=HYPERLINK("https://evil.example")',
+      name: '@SUM(1,1)',
+    };
+    mockGetFullList.mockResolvedValueOnce([dangerous]);
+
+    await exportToExcel('contacts');
+
+    const sheets = mockWriteExcelFile.mock.calls[0][0] as Array<{ data: unknown[][] }>;
+    expect(sheets[0]?.data[1]?.[1]).toBe('\'=HYPERLINK("https://evil.example")');
+    expect(sheets[0]?.data[1]?.[2]).toBe("'@SUM(1,1)");
+  });
 });
 
 // ---------------------------------------------------------------------------

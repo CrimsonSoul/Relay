@@ -570,18 +570,18 @@
 }
 
 .team-health-badge--ok {
-  color: #a7f3d0;
-  background: rgba(16, 185, 129, 0.14);
+  color: #d1fae5;
+  background: #064e3b;
 }
 
 .team-health-badge--watch {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.14);
+  color: #fef3c7;
+  background: #78350f;
 }
 
 .team-health-badge--danger {
-  color: #fecdd3;
-  background: rgba(244, 63, 94, 0.16);
+  color: #ffe4e6;
+  background: #881337;
 }
 
 .team-health-badge--muted {

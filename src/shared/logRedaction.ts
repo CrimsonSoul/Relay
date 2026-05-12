@@ -29,11 +29,75 @@ function shouldRedactKey(key: string): boolean {
   return SENSITIVE_KEY_PATTERNS.some((pattern) => pattern.test(key));
 }
 
-/** Redact PII patterns (emails, phone numbers) found in string values. */
-function redactPiiInString(value: string): string {
-  let result = value.replaceAll(EMAIL_PATTERN, REDACTED_EMAIL);
+function isWhitespace(char: string): boolean {
+  return char === ' ' || char === '\t' || char === '\n' || char === '\r';
+}
+
+function findTokenEnd(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && !isWhitespace(value[index]!)) {
+    index++;
+  }
+  return index;
+}
+
+function skipWhitespace(value: string, start: number): number {
+  let index = start;
+  while (index < value.length && isWhitespace(value[index]!)) {
+    index++;
+  }
+  return index;
+}
+
+function findSecretEnd(value: string, start: number): number {
+  const nextFlag = value.indexOf(' --', start);
+  const lineEnd = value.indexOf('\n', start);
+
+  if (nextFlag === -1 && lineEnd === -1) return value.length;
+  if (nextFlag === -1) return lineEnd;
+  if (lineEnd === -1) return nextFlag;
+  return Math.min(nextFlag, lineEnd);
+}
+
+function redactPocketBaseSuperuserSecrets(value: string): string {
+  const marker = 'superuser upsert ';
+  let cursor = 0;
+  let output = '';
+
+  while (cursor < value.length) {
+    const markerIndex = value.indexOf(marker, cursor);
+    if (markerIndex === -1) {
+      output += value.slice(cursor);
+      break;
+    }
+
+    const emailStart = markerIndex + marker.length;
+    const emailEnd = findTokenEnd(value, emailStart);
+    const secretStart = skipWhitespace(value, emailEnd);
+    if (secretStart >= value.length || secretStart === emailEnd) {
+      output += value.slice(cursor, emailStart);
+      cursor = emailStart;
+      continue;
+    }
+
+    const secretEnd = findSecretEnd(value, secretStart);
+    output += value.slice(cursor, secretStart) + REDACTED;
+    cursor = secretEnd;
+  }
+
+  return output;
+}
+
+export function redactLogString(value: string): string {
+  let result = redactPocketBaseSuperuserSecrets(value);
+  result = result.replaceAll(EMAIL_PATTERN, REDACTED_EMAIL);
   result = result.replaceAll(PHONE_PATTERN, REDACTED_PHONE);
   return result;
+}
+
+/** Redact PII patterns (emails, phone numbers) found in string values. */
+function redactPiiInString(value: string): string {
+  return redactLogString(value);
 }
 
 function redactValue(value: unknown, seen: WeakMap<object, unknown>): unknown {

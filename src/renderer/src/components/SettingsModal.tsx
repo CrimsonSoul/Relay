@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import { useTheme, type ThemePreference } from '../hooks/useTheme';
+import type { PublicRelayConfig } from '@shared/ipc';
 
 type Props = {
   isOpen: boolean;
@@ -10,12 +11,7 @@ type Props = {
   onReconfigure?: () => void;
 };
 
-type PbConfig = {
-  mode?: string;
-  port?: number;
-  serverUrl?: string;
-  secret?: string;
-} | null;
+type PbConfig = PublicRelayConfig | null;
 
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
@@ -32,7 +28,7 @@ export const SettingsModal: React.FC<Props> = ({
       setPbConfigLoading(true);
       globalThis.api
         ?.getConfig()
-        .then((config) => setPbConfig(config as PbConfig))
+        .then((config) => setPbConfig(config))
         .catch(() => setPbConfig(null))
         .finally(() => setPbConfigLoading(false));
     }

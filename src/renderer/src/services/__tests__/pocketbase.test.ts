@@ -249,7 +249,64 @@ describe('pocketbase service', () => {
       // Advance past one interval tick
       await vi.advanceTimersByTimeAsync(5000);
 
-      expect(fetchMock).toHaveBeenCalledWith('http://localhost:8090/api/health');
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://localhost:8090/api/health',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+
+      vi.unstubAllGlobals();
+    });
+
+    it('does not start overlapping health checks while a previous probe is still pending', async () => {
+      const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+      vi.stubGlobal('fetch', fetchMock);
+
+      startHealthCheck(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      vi.unstubAllGlobals();
+    });
+
+    it('aborts a stuck health check probe', async () => {
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      startHealthCheck(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(signal).toBeDefined();
+      expect(signal?.aborted).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(signal?.aborted).toBe(true);
+
+      vi.unstubAllGlobals();
+    });
+
+    it('aborts an in-flight probe when stopping health checks', async () => {
+      let signal: AbortSignal | undefined;
+      const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return new Promise<Response>(() => undefined);
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      startHealthCheck(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(signal?.aborted).toBe(false);
+
+      stopHealthCheck();
+
+      expect(signal?.aborted).toBe(true);
 
       vi.unstubAllGlobals();
     });

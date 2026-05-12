@@ -11,6 +11,8 @@ const TEST_FIXTURES = {
 };
 
 describe('redactSensitiveData', () => {
+  const makeCliPassphraseFixture = () => ['relay', 'fixture', 'value', 'not-log'].join('-');
+
   it('redacts sensitive keys recursively', () => {
     const input = {
       token: TEST_FIXTURES.fakeToken,
@@ -58,6 +60,21 @@ describe('redactSensitiveData', () => {
     const redactedErr = redacted.error as Record<string, unknown>;
     expect(redactedErr.name).toBe('Error');
     expect(redactedErr.message).toBe('Something went wrong');
+  });
+
+  it('redacts PocketBase superuser CLI passphrases embedded in error strings', () => {
+    const cliSecret = makeCliPassphraseFixture();
+    const error = new Error(
+      `Command failed: pocketbase superuser upsert admin@relay.app ${cliSecret} --dir=/tmp/pb`,
+    );
+    const input = { error };
+
+    const redacted = redactSensitiveData(input) as Record<string, unknown>;
+    const redactedErr = redacted.error as Record<string, unknown>;
+
+    expect(redactedErr.message).not.toContain(cliSecret);
+    expect(redactedErr.stack).not.toContain(cliSecret);
+    expect(redactedErr.message).toContain('[REDACTED]');
   });
 
   it('passes null through unchanged', () => {

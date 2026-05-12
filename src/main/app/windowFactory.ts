@@ -66,13 +66,15 @@ export async function createWindow(): Promise<void> {
     await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
   } else {
     const indexPath = join(mainDir, '../renderer/index.html');
-    mainWindow.loadFile(indexPath).catch((err) => {
+    try {
+      await mainWindow.loadFile(indexPath);
+    } catch (err) {
       loggers.main.error('Failed to load local index.html', {
         path: indexPath,
-        error: err.message,
+        error: err instanceof Error ? err.message : String(err),
       });
       throw err;
-    });
+    }
   }
 
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)

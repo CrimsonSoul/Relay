@@ -49,7 +49,7 @@ function getPbConnectionResult(pbUrl: string, pb: PocketBase): PbConnectionResul
       pbUrl,
       auth: {
         token: pb.authStore.token,
-        record: (pb.authStore.record as Record<string, unknown> | null) ?? null,
+        record: pb.authStore.record ?? null,
       },
     },
   };

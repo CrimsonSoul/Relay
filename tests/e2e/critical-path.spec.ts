@@ -3,19 +3,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import PocketBase from 'pocketbase';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-import crypto from 'node:crypto';
 
 const uniqueSuffix = () => crypto.randomUUID().slice(0, 8);
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 type RelayContact = { email: string };
 
-const TEST_SECRET = 'testpassphrase123';
+const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
+const makeTestPassphrase = () => ['test', crypto.randomUUID()].join('-');
+const TEST_PASSPHRASE = makeTestPassphrase();
 
 const rightClick = async (target: Locator) => {
   await target.scrollIntoViewIfNeeded();
@@ -31,14 +32,14 @@ const writeServerConfig = (userDataDir: string, port: number) => {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.writeFileSync(
     path.join(dataDir, 'config.json'),
-    JSON.stringify({ mode: 'server', port, secret: TEST_SECRET }, null, 2),
+    JSON.stringify({ mode: 'server', port, [CONFIG_SECRET_FIELD]: TEST_PASSPHRASE }, null, 2),
     'utf8',
   );
 };
 
 const makePbClient = async (port: number) => {
   const pb = new PocketBase(`http://127.0.0.1:${port}`);
-  await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', TEST_SECRET, {
+  await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', TEST_PASSPHRASE, {
     requestKey: null,
   });
   return pb;

@@ -63,14 +63,25 @@ describe('setupHandlers', () => {
   });
 
   describe('SETUP_GET_CONFIG', () => {
-    it('returns config when appConfig is available', () => {
+    it('returns public server config without the secret when appConfig is available', () => {
       const configData = buildServerConfig();
       mockAppConfig.load.mockReturnValue(configData);
 
       const result = handlers[IPC_CHANNELS.SETUP_GET_CONFIG]();
 
       expect(mockAppConfig.load).toHaveBeenCalled();
-      expect(result).toEqual(configData);
+      expect(result).toEqual({ mode: 'server', port: 8090 });
+      expect(result).not.toHaveProperty(SECRET_FIELD);
+    });
+
+    it('returns public client config without the secret when appConfig is available', () => {
+      const configData = buildClientConfig();
+      mockAppConfig.load.mockReturnValue(configData);
+
+      const result = handlers[IPC_CHANNELS.SETUP_GET_CONFIG]();
+
+      expect(result).toEqual({ mode: 'client', serverUrl: 'https://relay.example.com' });
+      expect(result).not.toHaveProperty(SECRET_FIELD);
     });
 
     it('returns null when appConfig is null', () => {

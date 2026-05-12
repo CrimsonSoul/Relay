@@ -187,15 +187,15 @@ class RendererLogger implements ILogger {
     if (level >= LogLevel.INFO && globalThis.api?.logToMain) {
       try {
         globalThis.api.logToMain({
-          level: levelName as 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL',
+          level: levelName,
           module: `Renderer:${module}`,
           message,
           data: redactSensitiveData({
             ...(typeof sanitizedData === 'object' && sanitizedData !== null
-              ? (sanitizedData as Record<string, unknown>)
+              ? sanitizedData
               : { value: sanitizedData }),
             errorContext,
-          }) as Record<string, unknown>,
+          }),
         });
       } catch (error) {
         // Fallback or silently fail if IPC isn't available

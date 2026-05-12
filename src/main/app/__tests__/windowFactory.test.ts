@@ -196,6 +196,20 @@ describe('windowFactory', () => {
       expect(mocks.mockLoadURL).not.toHaveBeenCalled();
     });
 
+    it('rejects when the production renderer file fails to load', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      delete process.env.ELECTRON_RENDERER_URL;
+      mocks.mockLoadFile.mockRejectedValueOnce(new Error('missing renderer'));
+
+      const { createWindow } = await import('../windowFactory');
+
+      await expect(createWindow()).rejects.toThrow('missing renderer');
+      expect(loggers.main.error).toHaveBeenCalledWith(
+        'Failed to load local index.html',
+        expect.objectContaining({ error: 'missing renderer' }),
+      );
+    });
+
     it('loads file when isPackaged is false but ELECTRON_RENDERER_URL is unset', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
       delete process.env.ELECTRON_RENDERER_URL;

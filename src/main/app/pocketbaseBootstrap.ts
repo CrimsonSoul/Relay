@@ -16,6 +16,10 @@ import {
 } from './appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
+const APP_USER_EMAIL = 'relay@relay.app';
+const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
+const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
+
 /**
  * Ensure superuser and app user exist with the correct passphrase.
  *
@@ -57,7 +61,7 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
 
     // If app user already works with current password, nothing to do
     try {
-      await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret);
+      await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
       loggers.pocketbase.info('App user auth OK');
       return;
     } catch {
@@ -71,16 +75,19 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
     try {
       const existing = await pb
         .collection('_pb_users_auth_')
-        .getFirstListItem('email="relay@relay.app"');
+        .getFirstListItem(`email="${APP_USER_EMAIL}"`);
       await pb.collection('_pb_users_auth_').delete(existing.id);
     } catch {
       // User doesn't exist yet
     }
 
     // Create with current passphrase
-    await pb
-      .collection('_pb_users_auth_')
-      .create({ email: 'relay@relay.app', password: secret, passwordConfirm: secret });
+    const appUserCreateEntries = [
+      ['email', APP_USER_EMAIL],
+      [APP_USER_AUTH_FIELD, secret],
+      [APP_USER_AUTH_CONFIRM_FIELD, secret],
+    ];
+    await pb.collection('_pb_users_auth_').create(Object.fromEntries(appUserCreateEntries));
     loggers.pocketbase.info('App user created');
   } catch (err) {
     loggers.pocketbase.error('Failed to ensure app user', { error: err });

@@ -116,20 +116,21 @@ describe('useAlertDismissal', () => {
 
   it('handles visibility change - pauses interval when hidden', () => {
     renderHook(() => useAlertDismissal());
+    expect(vi.getTimerCount()).toBe(1);
 
     // Simulate tab hidden
     Object.defineProperty(document, 'hidden', { value: true, configurable: true });
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
+    expect(vi.getTimerCount()).toBe(0);
 
     // Simulate tab visible
     Object.defineProperty(document, 'hidden', { value: false, configurable: true });
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'));
     });
-
-    expect(true).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
   });
 
   it('handles dismissAlert error logging', async () => {

@@ -67,11 +67,21 @@ function stripMetadata(record: Record<string, unknown>): Record<string, unknown>
  * Fields starting with =, +, -, @, Tab (0x09), or CR (0x0D) are prefixed
  * with a single quote so spreadsheet apps treat them as plain text.
  */
+function valueToExportString(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return value.toString();
+  }
+  return '';
+}
+
 function csvSafeValue(value: unknown): string {
-  let str: string;
-  if (value == null) str = '';
-  else if (typeof value === 'object') str = JSON.stringify(value);
-  else str = String(value as string | number | boolean);
+  return spreadsheetFormulaSafeValue(valueToExportString(value));
+}
+
+function spreadsheetFormulaSafeValue(str: string): string {
   if (/^[=+\-@\t\r]/.test(str)) {
     return `'${str}`;
   }
@@ -80,18 +90,15 @@ function csvSafeValue(value: unknown): string {
 
 /** Fetch all records from a collection as plain objects. */
 async function fetchAll(collection: CollectionName): Promise<Record<string, unknown>[]> {
-  const records = await getPb().collection(collection).getFullList({ batch: 500 });
-  return records as unknown as Record<string, unknown>[];
+  return getPb().collection(collection).getFullList<Record<string, unknown>>({ batch: 500 });
 }
 
 function toSpreadsheetCell(value: unknown): Cell {
   if (value == null) return null;
-  if (
-    typeof value === 'string' ||
-    typeof value === 'number' ||
-    typeof value === 'boolean' ||
-    value instanceof Date
-  ) {
+  if (typeof value === 'string') {
+    return spreadsheetFormulaSafeValue(value);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || value instanceof Date) {
     return value;
   }
   return JSON.stringify(value);
@@ -101,11 +108,7 @@ function getColumnWidths(headers: string[], rows: Record<string, unknown>[]) {
   return headers.map((header) => {
     let maxLen = header.length;
     for (const row of rows) {
-      const value = row[header];
-      const length =
-        value && typeof value === 'object'
-          ? JSON.stringify(value).length
-          : String(value ?? '').length;
+      const length = valueToExportString(row[header]).length;
       maxLen = Math.max(maxLen, length);
     }
     return { width: Math.min(maxLen + 2, 50) };
@@ -169,10 +172,7 @@ async function upsertOne(
 
   if (uniqueKey && data[uniqueKey] !== undefined && data[uniqueKey] !== '') {
     const rawValue = data[uniqueKey];
-    const rawStr =
-      typeof rawValue === 'object' && rawValue !== null
-        ? JSON.stringify(rawValue)
-        : String(rawValue as string | number | boolean);
+    const rawStr = valueToExportString(rawValue);
     const filterValue = escapeFilter(rawStr);
     let existing: { id: string } | null = null;
     try {
@@ -369,7 +369,7 @@ export async function importFromCsv(
     }
   }
 
-  return bulkUpsert(collection, parseResult.data as unknown as Record<string, unknown>[]);
+  return bulkUpsert(collection, parseResult.data);
 }
 
 // ---------------------------------------------------------------------------

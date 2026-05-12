@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
@@ -20,6 +20,13 @@ const clientConfigSchema = z.object({
 
 const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clientConfigSchema]);
 
+function toPublicConfig(config: RelayConfig): PublicRelayConfig {
+  if (config.mode === 'server') {
+    return { mode: 'server', port: config.port };
+  }
+  return { mode: 'client', serverUrl: config.serverUrl };
+}
+
 export function setupSetupHandlers(
   getAppConfig: () => AppConfig | null,
   getOfflineCache?: () => OfflineCache | null,
@@ -27,7 +34,8 @@ export function setupSetupHandlers(
 ): void {
   ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONFIG, () => {
     const config = getAppConfig();
-    return config ? config.load() : null;
+    const loaded = config ? config.load() : null;
+    return loaded ? toPublicConfig(loaded) : null;
   });
   ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (_event, configData) => {
     const config = getAppConfig();
@@ -37,7 +45,7 @@ export function setupSetupHandlers(
       loggers.main.warn('Invalid config data rejected', { errors: result.error.issues });
       return false;
     }
-    config.save(result.data as RelayConfig);
+    config.save(result.data);
 
     // Invalidate offline cache and pending changes when server config changes,
     // since cached data from the old server is stale and potentially wrong.

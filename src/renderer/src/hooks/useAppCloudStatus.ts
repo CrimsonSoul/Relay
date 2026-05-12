@@ -114,7 +114,8 @@ export function useAppCloudStatus(
 
         processNewEvents(data);
         setStatusData(data);
-        secureStorage.setItemSync(CACHE_KEY, { fetchedAt: Date.now(), data } as CacheEntry);
+        const cacheEntry: CacheEntry = { fetchedAt: Date.now(), data };
+        secureStorage.setItemSync(CACHE_KEY, cacheEntry);
       } catch (err) {
         loggers.app.error('Cloud status fetch failed', {
           error: getErrorMessage(err),

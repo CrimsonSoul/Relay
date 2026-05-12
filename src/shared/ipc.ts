@@ -203,6 +203,10 @@ export type PbConnectionResult =
   | { ok: true; connection: PbConnection }
   | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
 
+export type PublicRelayConfig =
+  | { mode: 'server'; port: number }
+  | { mode: 'client'; serverUrl: string };
+
 export type BridgeAPI = {
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
@@ -245,7 +249,7 @@ export type BridgeAPI = {
   getFooterLogo: () => Promise<string | null>;
   removeFooterLogo: () => Promise<IpcResult>;
   // Setup
-  getConfig: () => Promise<unknown>;
+  getConfig: () => Promise<PublicRelayConfig | null>;
   saveConfig: (config: unknown) => Promise<boolean>;
   clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;

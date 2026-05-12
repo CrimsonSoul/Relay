@@ -14,6 +14,7 @@ import type {
   CollisionDetection,
 } from '@dnd-kit/core';
 import type { StandaloneNote, NoteColor } from '@shared/ipc';
+import type { FontSize } from './notes/types';
 import { useNotepad } from '../hooks/useNotepad';
 import { useToast } from '../components/Toast';
 import { ContextMenu } from '../components/ContextMenu';
@@ -21,13 +22,11 @@ import { NoteCard, NoteCardOverlay, NoteEditor, NoteToolbar } from './notes';
 import { TactileButton } from '../components/TactileButton';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 
-type NotesFontSize = 'sm' | 'md' | 'lg' | string;
-
 export function getNotesColumnCount({
   width,
   fontSize,
   isWorkspace,
-}: Readonly<{ width: number; fontSize: NotesFontSize; isWorkspace: boolean }>): number {
+}: Readonly<{ width: number; fontSize: FontSize; isWorkspace: boolean }>): number {
   if (width < 1) return 1;
 
   let minColumnWidth = 280;

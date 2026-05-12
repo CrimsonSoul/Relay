@@ -1,7 +1,19 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { SidebarButton } from '../../sidebar/SidebarButton';
+
+const sidebarCss = readFileSync(
+  resolve(process.cwd(), 'src/renderer/src/components/sidebar/sidebar.css'),
+  'utf8',
+);
+
+const cssBlockFor = (selector: string) => {
+  const match = new RegExp(`${selector.replace('.', '\\.')}\\s*{([^}]*)}`).exec(sidebarCss);
+  return match?.[1] ?? '';
+};
 
 describe('SidebarButton', () => {
   it('renders with the label as aria-label', () => {
@@ -96,5 +108,13 @@ describe('SidebarButton', () => {
 
     const tooltip = document.body.querySelector('.tooltip-popup');
     expect(tooltip).toHaveTextContent('Status');
+  });
+
+  it('keeps the sidebar hover and active overlay at one fixed size', () => {
+    const buttonStyles = cssBlockFor('.sidebar-button');
+    expect(buttonStyles).toContain('--sidebar-button-width: 80px');
+    expect(buttonStyles).toContain('--sidebar-button-height: 64px');
+    expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
+    expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
   });
 });

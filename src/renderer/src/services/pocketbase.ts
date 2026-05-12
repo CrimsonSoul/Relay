@@ -9,7 +9,11 @@ type StateListener = (state: ConnectionState) => void;
 let pb: PocketBase | null = null;
 let connectionState: ConnectionState = 'connecting';
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
+let healthCheckInFlight = false;
+let healthCheckAbortController: AbortController | null = null;
+let healthCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 const stateListeners = new Set<StateListener>();
+const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 
 export function initPocketBase(url: string): PocketBase {
   pb = new PocketBase(url);
@@ -62,33 +66,70 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<boo
   }
 }
 
+function beginHealthCheckProbe(): AbortController | null {
+  if (healthCheckInFlight) return null;
+
+  healthCheckInFlight = true;
+  const controller = new AbortController();
+  healthCheckAbortController = controller;
+  healthCheckTimeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+
+  return controller;
+}
+
+function finishHealthCheckProbe(controller: AbortController): void {
+  if (healthCheckAbortController !== controller) return;
+
+  if (healthCheckTimeout) clearTimeout(healthCheckTimeout);
+  healthCheckTimeout = null;
+  healthCheckAbortController = null;
+  healthCheckInFlight = false;
+}
+
+async function handleHealthyProbe(): Promise<void> {
+  if (connectionState === 'online') return;
+
+  // Rehydrate auth if the token expired during offline time.
+  // Do NOT emit 'reconnecting' — subscribers listen for state changes
+  // and would resubscribe before auth is complete.
+  if (getPb().authStore.isValid) {
+    setConnectionState('online');
+    return;
+  }
+
+  const refreshed = await refreshAuthSession(true);
+  if (!refreshed) {
+    loggers.network.warn('Auth session refresh failed on reconnect');
+  }
+}
+
+function handleFailedProbe(): void {
+  if (connectionState === 'online') {
+    setConnectionState('offline');
+  }
+}
+
+async function runHealthCheckProbe(): Promise<void> {
+  const controller = beginHealthCheckProbe();
+  if (!controller) return;
+
+  try {
+    const res = await fetch(`${getPb().baseURL}/api/health`, { signal: controller.signal });
+    if (res.ok) {
+      await handleHealthyProbe();
+    } else {
+      handleFailedProbe();
+    }
+  } catch {
+    handleFailedProbe();
+  } finally {
+    finishHealthCheckProbe(controller);
+  }
+}
+
 export function startHealthCheck(intervalMs = 30000): void {
   stopHealthCheck();
-  healthCheckInterval = setInterval(async () => {
-    try {
-      const res = await fetch(`${getPb().baseURL}/api/health`);
-      if (res.ok && connectionState !== 'online') {
-        // Rehydrate auth if the token expired during offline time.
-        // Do NOT emit 'reconnecting' — subscribers listen for state changes
-        // and would resubscribe before auth is complete.
-        if (getPb().authStore.isValid) {
-          setConnectionState('online');
-        } else {
-          const refreshed = await refreshAuthSession(true);
-          if (!refreshed) {
-            loggers.network.warn('Auth session refresh failed on reconnect');
-            return;
-          }
-        }
-      } else if (!res.ok && connectionState === 'online') {
-        setConnectionState('offline');
-      }
-    } catch {
-      if (connectionState === 'online') {
-        setConnectionState('offline');
-      }
-    }
-  }, intervalMs);
+  healthCheckInterval = setInterval(() => void runHealthCheckProbe(), intervalMs);
 }
 
 export function stopHealthCheck(): void {
@@ -96,6 +137,11 @@ export function stopHealthCheck(): void {
     clearInterval(healthCheckInterval);
     healthCheckInterval = null;
   }
+  if (healthCheckTimeout) clearTimeout(healthCheckTimeout);
+  healthCheckTimeout = null;
+  healthCheckAbortController?.abort();
+  healthCheckAbortController = null;
+  healthCheckInFlight = false;
 }
 
 export function handleApiError(error: unknown): void {

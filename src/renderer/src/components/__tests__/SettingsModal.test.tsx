@@ -59,7 +59,7 @@ describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const mockApi = {
-      getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090, secret: 'test' }),
+      getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090 }),
       clearConfig: vi.fn().mockResolvedValue(true),
     };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi;
