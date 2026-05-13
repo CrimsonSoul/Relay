@@ -62,6 +62,26 @@ export class PocketBaseProcess {
       logger.warn('PocketBase stderr', { output: data.toString().trim() });
     });
 
+    let rejectStartupError: ((error: Error) => void) | null = null;
+    const startupError = new Promise<never>((_, reject) => {
+      rejectStartupError = reject;
+    });
+
+    this.child.once('error', (error) => {
+      logger.error('PocketBase process error', { error });
+      this.child = null;
+
+      if (rejectStartupError) {
+        rejectStartupError(error);
+        rejectStartupError = null;
+        return;
+      }
+
+      if (!this.stopping) {
+        void this.handleCrash(error.message);
+      }
+    });
+
     this.child.on('exit', (code, signal) => {
       logger.warn('PocketBase exited', { code, signal });
       this.child = null;
@@ -71,7 +91,12 @@ export class PocketBaseProcess {
       }
     });
 
-    await this.waitForHealthy();
+    try {
+      await Promise.race([this.waitForHealthy(), startupError]);
+    } finally {
+      rejectStartupError = null;
+    }
+
     this.restartCount = 0;
     logger.info('PocketBase is healthy', { url: this.getUrl() });
   }
@@ -116,7 +141,10 @@ export class PocketBaseProcess {
       // Use /F on Windows; SIGTERM on Unix gives PB a chance to flush WAL.
       if (process.platform === 'win32') {
         // eslint-disable-next-line sonarjs/no-os-command-from-path
-        spawn('taskkill', ['/F', '/PID', this.child!.pid!.toString()]);
+        const taskkill = spawn('taskkill', ['/F', '/PID', this.child!.pid!.toString()]);
+        taskkill.on('error', (error) => {
+          logger.warn('Failed to stop PocketBase with taskkill', { error });
+        });
       } else {
         this.child!.kill('SIGTERM');
       }

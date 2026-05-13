@@ -155,6 +155,18 @@ describe('PocketBaseProcess', () => {
     vi.useRealTimers();
   });
 
+  it('start() rejects when the PocketBase child process cannot spawn', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockRejectedValue(new Error('connection refused'));
+
+    const startPromise = pbProcess.start();
+    child._emit('error', new Error('spawn EACCES'));
+
+    await expect(startPromise).rejects.toThrow('spawn EACCES');
+    expect(pbProcess.isRunning()).toBe(false);
+  });
+
   // ── isRunning() ──────────────────────────────────────────────────────────────
 
   it('isRunning() returns false after process exits', async () => {
