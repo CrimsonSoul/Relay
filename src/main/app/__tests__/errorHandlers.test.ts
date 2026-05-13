@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
   broadcastToAllWindows: vi.fn(),
+  requestAppRelaunch: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -30,6 +31,10 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../utils/broadcastToAllWindows', () => ({
   broadcastToAllWindows: mocks.broadcastToAllWindows,
+}));
+
+vi.mock('../relaunch', () => ({
+  requestAppRelaunch: mocks.requestAppRelaunch,
 }));
 
 type ProcessHandler = (...args: unknown[]) => void;
@@ -58,7 +63,6 @@ describe('errorHandlers', () => {
       platform: 'win32',
       isPackaged: true,
       nodeEnv: 'production',
-      relaunchDelayMs: 0,
     });
 
     const handler = processHandlers.get('uncaughtException');
@@ -72,7 +76,8 @@ describe('errorHandlers', () => {
       'app:error-notification',
       expect.objectContaining({ title: 'Relay is restarting' }),
     );
-    expect(mocks.app.relaunch).toHaveBeenCalledOnce();
-    expect(mocks.app.exit).toHaveBeenCalledWith(1);
+    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('fatal-main-process-error', {
+      exitCode: 1,
+    });
   });
 });

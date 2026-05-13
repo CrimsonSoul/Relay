@@ -7,6 +7,7 @@ import {
 } from 'electron';
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { requestAppRelaunch } from './relaunch';
 
 const MB = 1024 * 1024;
 const UNRESPONSIVE_WARN_AFTER_MS = 5_000;
@@ -242,8 +243,7 @@ export function setupAppLifecycleListeners(): void {
           failures: gpuGoneTimestamps.length,
           windowMs: RELOAD_WINDOW_MS,
         });
-        app.relaunch();
-        app.exit(0);
+        requestAppRelaunch('repeated-gpu-process-failures', { exitCode: 0 });
         return;
       }
 

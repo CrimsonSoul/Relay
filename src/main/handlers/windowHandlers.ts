@@ -267,6 +267,9 @@ export function setupWindowHandlers(
 
   ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
+    loggers.main.info('Window close requested by renderer', {
+      webContentsId: event.sender.id,
+    });
     win?.close();
   });
 

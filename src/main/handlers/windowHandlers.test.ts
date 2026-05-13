@@ -65,6 +65,9 @@ vi.mock('node:fs/promises', () => ({
 
 vi.mock('../logger', () => ({
   loggers: {
+    main: {
+      info: vi.fn(),
+    },
     ipc: {
       warn: vi.fn(),
       error: vi.fn(),
@@ -95,6 +98,7 @@ vi.mock('../rateLimiter', () => ({
 import { validatePath } from '../utils/pathSafety';
 import { rateLimiters } from '../rateLimiter';
 import { readFile, unlink } from 'node:fs/promises';
+import { loggers } from '../logger';
 
 describe('windowHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
@@ -502,6 +506,9 @@ describe('windowHandlers', () => {
       const event = { sender: {} };
       onHandlers[IPC_CHANNELS.WINDOW_CLOSE](event);
       expect(mockWin.close).toHaveBeenCalled();
+      expect(loggers.main.info).toHaveBeenCalledWith('Window close requested by renderer', {
+        webContentsId: undefined,
+      });
     });
 
     it('handles null window gracefully', () => {

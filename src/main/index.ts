@@ -30,6 +30,7 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
+import { requestAppQuit, requestAppRelaunch } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -92,7 +93,9 @@ if (gotLock) {
 
   // App lifecycle
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin' || process.env.NODE_ENV === 'test') app.quit();
+    if (process.platform !== 'darwin' || process.env.NODE_ENV === 'test') {
+      requestAppQuit('all-windows-closed');
+    }
   });
 
   loggers.main.info('Waiting for Electron ready...');
@@ -128,7 +131,7 @@ if (gotLock) {
           'Critical Startup Error',
           'Failed to initialize data root directory. The application cannot continue.',
         );
-        app.quit();
+        requestAppQuit('critical-startup-data-root');
         return;
       }
 
@@ -153,8 +156,7 @@ if (gotLock) {
           app.quit();
           return;
         }
-        app.relaunch();
-        app.exit(0);
+        requestAppRelaunch('app-reconfigure', { exitCode: 0 });
       });
 
       const restartPb = async (): Promise<boolean> => {
@@ -248,7 +250,7 @@ if (gotLock) {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow().catch((error_) => {
             loggers.main.error('Failed to create window on app activate', { error: error_ });
-            app.quit();
+            requestAppQuit('activate-window-create-failed');
           });
         }
       });
@@ -256,7 +258,7 @@ if (gotLock) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });
       dialog.showErrorBox('Critical Startup Error', errorMessage);
-      app.quit();
+      requestAppQuit('startup-failed');
     }
   };
 
@@ -265,12 +267,12 @@ if (gotLock) {
   // module evaluation completes synchronously and the event loop stays unblocked.
   bootstrap().catch((error_) => {
     loggers.main.error('Unexpected bootstrap failure', { error: error_ });
-    app.quit();
+    requestAppQuit('bootstrap-failed');
   }); // NOSONAR: top-level await can deadlock Electron startup on some macOS versions.
 
   // Global Exception Handlers
   setupErrorHandlers();
   setupAppLifecycleListeners();
 } else {
-  app.quit();
+  requestAppQuit('single-instance-lock-unavailable');
 }

@@ -1,16 +1,15 @@
 import { app, dialog } from 'electron';
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { requestAppRelaunch } from './relaunch';
 
 const REJECTION_WINDOW_MS = 60_000;
 const REJECTION_THRESHOLD = 3;
-const FATAL_RELAUNCH_DELAY_MS = 1_000;
 
 type ErrorHandlerOptions = {
   platform?: NodeJS.Platform;
   isPackaged?: boolean;
   nodeEnv?: string;
-  relaunchDelayMs?: number;
 };
 
 function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
@@ -20,22 +19,6 @@ function shouldAutoRelaunchFatalError(options: ErrorHandlerOptions): boolean {
     (options.nodeEnv ?? process.env.NODE_ENV) !== 'test' &&
     process.env.RELAY_DISABLE_FATAL_RELAUNCH !== '1'
   );
-}
-
-function scheduleFatalRelaunch(options: ErrorHandlerOptions): void {
-  const relaunch = () => {
-    app.relaunch();
-    app.exit(1);
-  };
-
-  const delayMs = options.relaunchDelayMs ?? FATAL_RELAUNCH_DELAY_MS;
-  if (delayMs <= 0) {
-    relaunch();
-    return;
-  }
-
-  const timer = setTimeout(relaunch, delayMs);
-  timer.unref();
 }
 
 /** Install global process error handlers (uncaughtException, unhandledRejection). */
@@ -51,7 +34,7 @@ export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
         title: 'Relay is restarting',
         message: 'Relay hit a critical background error and will restart automatically.',
       });
-      scheduleFatalRelaunch(options);
+      requestAppRelaunch('fatal-main-process-error', { exitCode: 1 });
       return;
     }
 

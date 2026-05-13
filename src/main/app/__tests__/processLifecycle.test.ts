@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => {
       },
     },
     broadcastToAllWindows: vi.fn(),
+    requestAppRelaunch: vi.fn(),
   };
 });
 
@@ -40,6 +41,10 @@ vi.mock('../../logger', () => ({
 
 vi.mock('../../utils/broadcastToAllWindows', () => ({
   broadcastToAllWindows: mocks.broadcastToAllWindows,
+}));
+
+vi.mock('../relaunch', () => ({
+  requestAppRelaunch: mocks.requestAppRelaunch,
 }));
 
 let nextWebContentsId = 1;
@@ -82,6 +87,7 @@ describe('processLifecycle', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    vi.resetModules();
     mocks.appHandlers.clear();
     mocks.mockBrowserWindow.getAllWindows.mockReturnValue([]);
     nextWebContentsId = 1;
@@ -145,5 +151,19 @@ describe('processLifecycle', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(win.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
+  });
+
+  it('requests a recorded relaunch after repeated GPU process failures', async () => {
+    const { setupAppLifecycleListeners } = await import('../processLifecycle');
+
+    setupAppLifecycleListeners();
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+    mocks.appHandlers.get('child-process-gone')?.({}, { type: 'GPU', reason: 'crashed' });
+
+    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('repeated-gpu-process-failures', {
+      exitCode: 0,
+    });
+    expect(mocks.mockApp.exit).not.toHaveBeenCalled();
   });
 });
