@@ -32,6 +32,7 @@ import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
 import { requestAppQuit, requestAppRelaunch } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
+import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
@@ -46,6 +47,8 @@ if (process.platform === 'win32') {
 
 // Validate environment early
 validateEnv();
+
+const isCrashWatchdog = runCrashWatchdogIfRequested();
 
 const hardwareAccelerationDisabled = process.env.RELAY_DISABLE_HARDWARE_ACCELERATION === '1';
 if (hardwareAccelerationDisabled) {
@@ -66,8 +69,10 @@ crashReporter.start({
   },
 });
 
-const gotLock = app.requestSingleInstanceLock();
+const gotLock = !isCrashWatchdog && app.requestSingleInstanceLock();
 if (gotLock) {
+  startCrashWatchdog();
+
   app.on('second-instance', () => {
     // Someone tried to run a second instance, we should focus our window.
     const mainWindow = getMainWindow();
@@ -273,6 +278,6 @@ if (gotLock) {
   // Global Exception Handlers
   setupErrorHandlers();
   setupAppLifecycleListeners();
-} else {
+} else if (!isCrashWatchdog) {
   requestAppQuit('single-instance-lock-unavailable');
 }
