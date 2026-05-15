@@ -777,7 +777,7 @@
   align-items: flex-start;
 }
 
-/* --- Email Card (forced light theme for PNG capture) --- */
+/* --- Email Card (white canvas for PNG capture) --- */
 
 .alerts-email-card {
   background: #ffffff;

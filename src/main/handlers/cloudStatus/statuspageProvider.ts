@@ -6,6 +6,7 @@ import {
 import type { StatuspageIncident } from './types';
 
 export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
+  jira: 'https://jira-software.status.atlassian.com/api/v2/summary.json',
   github: 'https://www.githubstatus.com/api/v2/summary.json',
   cloudflare: 'https://www.cloudflarestatus.com/api/v2/summary.json',
   anthropic: 'https://status.claude.com/api/v2/summary.json',
@@ -15,6 +16,18 @@ export const STATUSPAGE_FEEDS: Partial<Record<CloudStatusProvider, string>> = {
 export function statuspageImpactToSeverity(impact: string, status: string): CloudStatusSeverity {
   if (status === 'resolved' || status === 'postmortem') return 'resolved';
   switch (impact) {
+    case 'critical':
+    case 'major':
+      return 'error';
+    case 'minor':
+      return 'warning';
+    default:
+      return 'info';
+  }
+}
+
+export function statuspageIndicatorToSeverity(indicator: string): CloudStatusSeverity {
+  switch (indicator) {
     case 'critical':
     case 'major':
       return 'error';
@@ -40,13 +53,16 @@ export async function fetchStatuspageProvider(
   if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
 
   const json = (await res.json()) as {
+    page?: { updated_at?: string };
     incidents: StatuspageIncident[];
+    components?: { name: string; status: string }[];
+    status?: { indicator: string; description: string };
   };
 
   // Derive base URL for fallback incident links (strip /api/v2/summary.json)
   const baseUrl = url.replace(/\/api\/v2\/summary\.json$/, '');
 
-  return (json.incidents ?? []).map((inc) => ({
+  const incidents = (json.incidents ?? []).map((inc) => ({
     id: inc.id,
     provider,
     title: inc.name,
@@ -55,4 +71,25 @@ export async function fetchStatuspageProvider(
     link: inc.shortlink || `${baseUrl}/incidents/${inc.id}`,
     severity: statuspageImpactToSeverity(inc.impact, inc.status),
   }));
+
+  if (incidents.length > 0 || !json.status || json.status.indicator === 'none') {
+    return incidents;
+  }
+
+  const impactedComponents = (json.components ?? [])
+    .filter((component) => component.status !== 'operational')
+    .map((component) => `${component.name}: ${component.status.replaceAll('_', ' ')}`);
+
+  return [
+    {
+      id: `${provider}-status-${json.page?.updated_at ?? Date.now()}`,
+      provider,
+      title: json.status.description,
+      description:
+        impactedComponents.length > 0 ? impactedComponents.join('\n') : json.status.description,
+      pubDate: json.page?.updated_at ?? new Date().toISOString(),
+      link: baseUrl,
+      severity: statuspageIndicatorToSeverity(json.status.indicator),
+    },
+  ];
 }

@@ -21,7 +21,6 @@ import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
-import { useTheme } from './hooks/useTheme';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -66,7 +65,6 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
 
 export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
   const { showToast } = useToast();
-  useTheme();
 
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');

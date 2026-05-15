@@ -4,7 +4,7 @@ export type HighlightType = (typeof HIGHLIGHT_TYPES)[number];
 export interface HighlightDef {
   type: HighlightType;
   label: string;
-  /** Background color for the pill (used in card body — light theme) */
+  /** Background color for the pill used in the email preview body. */
   bg: string;
   /** Text color for the pill */
   text: string;

@@ -34,6 +34,7 @@ const emptyProviders: Record<CloudStatusProvider, never[]> = {
   aws: [],
   azure: [],
   m365: [],
+  jira: [],
   github: [],
   cloudflare: [],
   google: [],
@@ -73,9 +74,9 @@ describe('CloudStatusTab', () => {
 
   it('renders provider cards for all providers', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    // Should show "All services normal" for each provider (9 providers)
+    // Should show "All services normal" for each provider (10 providers)
     const normalStatuses = screen.getAllByText('All services normal');
-    expect(normalStatuses.length).toBe(9);
+    expect(normalStatuses.length).toBe(10);
   });
 
   it('renders filter buttons including All', () => {
@@ -87,8 +88,8 @@ describe('CloudStatusTab', () => {
     expect(filterContainer).toBeInTheDocument();
     // Just verify the filters container has buttons
     const filterButtons = filterContainer.querySelectorAll('button');
-    // All + 9 providers = 10
-    expect(filterButtons.length).toBe(10);
+    // All + 10 providers = 11
+    expect(filterButtons.length).toBe(11);
   });
 
   it('renders refresh button', () => {
@@ -139,6 +140,51 @@ describe('CloudStatusTab', () => {
     });
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
     expect(screen.getAllByText('1 active issue').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses degraded and outage severity classes for provider status text', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        aws: [makeItem({ id: 'aws-1', provider: 'aws', severity: 'error' })],
+        azure: [makeItem({ id: 'az-1', provider: 'azure', severity: 'warning' })],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    const providerCards = Array.from(container.querySelectorAll('.cloud-status-provider'));
+    const awsCard = providerCards.find((card) => card.textContent?.includes('AWS'));
+    const azureCard = providerCards.find((card) => card.textContent?.includes('Azure'));
+
+    expect(awsCard?.querySelector('.cloud-status-provider__status--outage')).toBeInTheDocument();
+    expect(
+      azureCard?.querySelector('.cloud-status-provider__status--degraded'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders info feed items with the info severity class', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        m365: [
+          makeItem({
+            id: 'm365-info',
+            provider: 'm365',
+            title: 'Admin center notice',
+            severity: 'info',
+          }),
+        ],
+      },
+    });
+    const { container } = render(
+      <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    expect(screen.getByText('INFO')).toBeInTheDocument();
+    expect(container.querySelector('.cloud-status-item__severity--info')).toBeInTheDocument();
   });
 
   it('renders command center posture metrics', () => {
@@ -330,7 +376,7 @@ describe('CloudStatusTab', () => {
 
   it('renders status bar with provider count', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('9 providers monitored')).toBeInTheDocument();
+    expect(screen.getByText('10 providers monitored')).toBeInTheDocument();
   });
 
   it('shows Updated timestamp', () => {

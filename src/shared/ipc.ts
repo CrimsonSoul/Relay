@@ -72,6 +72,7 @@ export type CloudStatusProvider =
   | 'aws'
   | 'azure'
   | 'm365'
+  | 'jira'
   | 'github'
   | 'cloudflare'
   | 'google'
@@ -102,6 +103,7 @@ export const CLOUD_STATUS_PROVIDER_ORDER: CloudStatusProvider[] = [
   'aws',
   'azure',
   'm365',
+  'jira',
   'github',
   'cloudflare',
   'google',
@@ -129,6 +131,11 @@ export const CLOUD_STATUS_PROVIDERS: Record<
     shortLabel: 'M365',
     statusUrl: 'https://status.cloud.microsoft',
     twitterHandle: 'MSFT365Status',
+  },
+  jira: {
+    label: 'Jira',
+    statusUrl: 'https://jira-software.status.atlassian.com/',
+    twitterHandle: 'Atlassian',
   },
   github: {
     label: 'GitHub',

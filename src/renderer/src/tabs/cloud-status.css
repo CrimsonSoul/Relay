@@ -3,6 +3,15 @@
    ============================================ */
 
 .cloud-status {
+  --cloud-status-degraded: #f59e0b;
+  --cloud-status-degraded-subtle: rgba(245, 158, 11, 0.13);
+  --cloud-status-degraded-glow: rgba(245, 158, 11, 0.42);
+  --cloud-status-outage: var(--color-danger);
+  --cloud-status-outage-subtle: var(--color-danger-subtle);
+  --cloud-status-outage-glow: rgba(239, 68, 68, 0.48);
+  --cloud-status-info: #38bdf8;
+  --cloud-status-info-subtle: rgba(56, 189, 248, 0.12);
+
   display: flex;
   flex: 1;
   min-height: 0;
@@ -252,14 +261,14 @@
 }
 
 .cloud-status-provider--impacted {
-  border-color: color-mix(in srgb, var(--color-warning) 30%, var(--color-border));
+  border-color: color-mix(in srgb, var(--cloud-status-degraded) 34%, var(--color-border));
   background:
     linear-gradient(90deg, rgba(245, 158, 11, 0.09), rgba(245, 158, 11, 0) 52%),
     var(--color-bg-surface);
 }
 
 .cloud-status-provider--outage {
-  border-color: color-mix(in srgb, var(--color-danger) 34%, var(--color-border));
+  border-color: color-mix(in srgb, var(--cloud-status-outage) 38%, var(--color-border));
   background:
     linear-gradient(90deg, rgba(239, 68, 68, 0.11), rgba(239, 68, 68, 0) 55%),
     var(--color-bg-surface);
@@ -308,13 +317,13 @@
 }
 
 .cloud-status-provider__indicator--warning {
-  background: var(--color-warning);
-  box-shadow: 0 0 12px rgba(245, 158, 11, 0.42);
+  background: var(--cloud-status-degraded);
+  box-shadow: 0 0 12px var(--cloud-status-degraded-glow);
 }
 
 .cloud-status-provider__indicator--error {
-  background: var(--color-danger);
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.48);
+  background: var(--cloud-status-outage);
+  box-shadow: 0 0 12px var(--cloud-status-outage-glow);
 }
 
 .cloud-status-provider__indicator--unknown {
@@ -334,8 +343,12 @@
   color: var(--color-accent-green);
 }
 
-.cloud-status-provider__status--issue {
-  color: var(--color-warning);
+.cloud-status-provider__status--degraded {
+  color: var(--cloud-status-degraded);
+}
+
+.cloud-status-provider__status--outage {
+  color: var(--cloud-status-outage);
 }
 
 .cloud-status-provider__status--unknown {
@@ -362,13 +375,13 @@
 }
 
 .cloud-status-provider__count--error {
-  background: var(--color-danger-subtle);
-  color: var(--color-danger);
+  background: var(--cloud-status-outage-subtle);
+  color: var(--cloud-status-outage);
 }
 
 .cloud-status-provider__count--warning {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  background: var(--cloud-status-degraded-subtle);
+  color: var(--cloud-status-degraded);
 }
 
 .cloud-status__feed {
@@ -462,7 +475,7 @@
 }
 
 .cloud-status-item--error.cloud-status-item--expanded {
-  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  border-color: color-mix(in srgb, var(--cloud-status-outage) 45%, var(--color-border));
 }
 
 .cloud-status-item__header {
@@ -495,13 +508,13 @@
 }
 
 .cloud-status-item__severity--error {
-  background: var(--color-danger-subtle);
-  color: var(--color-danger);
+  background: var(--cloud-status-outage-subtle);
+  color: var(--cloud-status-outage);
 }
 
 .cloud-status-item__severity--warning {
-  background: var(--color-warning-subtle);
-  color: var(--color-warning);
+  background: var(--cloud-status-degraded-subtle);
+  color: var(--cloud-status-degraded);
 }
 
 .cloud-status-item__severity--resolved {
@@ -510,8 +523,8 @@
 }
 
 .cloud-status-item__severity--info {
-  background: var(--color-accent-subtle);
-  color: var(--color-accent);
+  background: var(--cloud-status-info-subtle);
+  color: var(--cloud-status-info);
 }
 
 .cloud-status-item__provider-tag {

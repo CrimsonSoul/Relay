@@ -343,6 +343,57 @@ describe('cloudStatusHandlers', () => {
     expect(result.providers.github[0]?.pubDate).toBe('2026-02-28T14:00:00Z');
   });
 
+  it('fetches Jira from Statuspage and emits rollup status when incidents are empty', async () => {
+    const rssEmpty = rssXml([]);
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('jira-software.status.atlassian.com')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              page: { updated_at: '2026-02-28T16:00:00Z' },
+              incidents: [],
+              status: { indicator: 'major', description: 'Partial System Outage' },
+              components: [
+                { name: 'Create and edit', status: 'partial_outage' },
+                { name: 'Search', status: 'operational' },
+              ],
+            }),
+        });
+      }
+      if (url.includes('google') || url.includes('salesforce')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (
+        url.includes('githubstatus') ||
+        url.includes('cloudflarestatus') ||
+        url.includes('anthropic') ||
+        url.includes('openai')
+      ) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ incidents: [] }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        text: () => Promise.resolve(rssEmpty),
+        json: () => Promise.resolve({ incidents: [] }),
+      });
+    });
+
+    const result = (await handler()) as {
+      providers: Record<string, { severity: string; pubDate: string; title: string }[]>;
+    };
+
+    expect(result.providers.jira).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        pubDate: '2026-02-28T16:00:00Z',
+        title: 'Partial System Outage',
+        description: 'Create and edit: partial outage',
+        link: 'https://jira-software.status.atlassian.com',
+      }),
+    ]);
+  });
+
   // --- Google Cloud parsing ---
 
   it('parses Google Cloud incidents with most_recent_update timestamp', async () => {

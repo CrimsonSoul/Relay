@@ -1,5 +1,5 @@
 :root {
-  /* === Relay Dark Theme === */
+  /* === Relay Theme === */
   /* Signal Sans — Signal Red Accent */
 
   /* Background System */
@@ -183,91 +183,6 @@
   --chrome-bg: var(--color-bg-chrome);
 }
 
-/* === Relay Light Theme === */
-[data-theme='light'] {
-  color-scheme: light;
-
-  /* Backgrounds */
-  --color-bg-app: #f3f5f9;
-  --color-bg-surface: #ffffff;
-  --color-bg-surface-2: #eef2f7;
-  --color-bg-surface-3: #e3e8f0;
-  --color-bg-surface-opaque: #ffffff;
-  --color-bg-surface-elevated: #ffffff;
-  --color-bg-card: #ffffff;
-  --color-bg-card-hover: #f7f9fc;
-  --color-bg-sidebar: #fbfcff;
-  --color-bg-chrome: #fbfcff;
-
-  /* App-specific tokens */
-  --app-bg: #f3f5f9;
-  --app-surface: #ffffff;
-  --app-surface-2: #eef2f7;
-  --app-surface-3: #e3e8f0;
-  --app-border: rgba(51, 65, 85, 0.14);
-  --app-text: #1a1d27;
-  --app-muted: #5c6578;
-  --app-accent-strong: #e11d48;
-  --app-accent-soft: rgba(225, 29, 72, 0.08);
-
-  /* Text */
-  --color-text-primary: #1a1d27;
-  --color-text-secondary: #5c6578;
-  --color-text-tertiary: #8a94a8;
-  --color-text-quaternary: #9aa4b5;
-
-  /* Accent overrides */
-  --color-accent-text: #e11d48;
-  --color-accent-dim: rgba(225, 29, 72, 0.08);
-  --color-accent-subtle: rgba(225, 29, 72, 0.04);
-  --color-accent-secondary: #0891b2;
-  --color-accent-secondary-subtle: rgba(8, 145, 178, 0.08);
-
-  /* Semantic Colors */
-  --color-accent-green: #16a34a;
-  --color-accent-green-subtle: rgba(22, 163, 74, 0.08);
-  --color-danger: #dc2626;
-  --color-danger-hover: #ef4444;
-  --color-danger-subtle: rgba(220, 38, 38, 0.08);
-  --color-warning-subtle: rgba(225, 29, 72, 0.1);
-
-  /* Group colors — slightly darker for light backgrounds */
-  --color-group-green: #059669;
-  --color-group-warn: #ca8a04;
-  --color-group-warn-text: #a16207;
-
-  /* Borders */
-  --color-border: rgba(51, 65, 85, 0.13);
-  --color-border-subtle: rgba(51, 65, 85, 0.08);
-  --color-border-medium: rgba(51, 65, 85, 0.13);
-  --color-border-strong: rgba(51, 65, 85, 0.18);
-  --color-border-accent: rgba(225, 29, 72, 0.25);
-  --border-default: rgba(51, 65, 85, 0.13);
-  --border-subtle: rgba(51, 65, 85, 0.08);
-  --border-medium: 1px solid rgba(51, 65, 85, 0.13);
-  --border-strong: 1px solid rgba(51, 65, 85, 0.18);
-
-  /* Shadows — visible enough to separate white surfaces from the app canvas */
-  --shadow-xs: 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-sm: 0 3px 10px rgba(15, 23, 42, 0.075), 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-md: 0 8px 22px rgba(15, 23, 42, 0.085), 0 2px 6px rgba(15, 23, 42, 0.05);
-  --shadow-lg: 0 16px 38px rgba(15, 23, 42, 0.12), 0 4px 10px rgba(15, 23, 42, 0.06);
-  --shadow-xl: 0 24px 56px rgba(15, 23, 42, 0.15), 0 8px 18px rgba(15, 23, 42, 0.08);
-  --shadow-modal: 0 28px 72px rgba(15, 23, 42, 0.2), 0 8px 18px rgba(15, 23, 42, 0.08);
-
-  /* Overlay / Interaction */
-  --color-hover-overlay: rgba(0, 0, 0, 0.02);
-  --color-hover-overlay-strong: rgba(0, 0, 0, 0.03);
-  --color-active-overlay: rgba(0, 0, 0, 0.04);
-  --color-backdrop: rgba(15, 23, 42, 0.34);
-  --color-divider: rgba(0, 0, 0, 0.04);
-  --color-focus-ring: rgba(0, 0, 0, 0.18);
-  --color-scrollbar: rgba(0, 0, 0, 0.2);
-  --color-scrollbar-hover: rgba(0, 0, 0, 0.3);
-
-  --chrome-bg: var(--color-bg-chrome);
-}
-
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
@@ -353,10 +268,6 @@ body {
   -webkit-app-region: drag;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-subtle);
-}
-
-[data-theme='light'] .app-header {
-  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.75);
 }
 
 /* Reserve space for window controls on Windows/Linux */

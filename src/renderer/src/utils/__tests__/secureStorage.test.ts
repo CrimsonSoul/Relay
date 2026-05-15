@@ -25,13 +25,13 @@ describe('secureStorage', () => {
 
   describe('setItemSync / getItemSync', () => {
     it('stores obfuscated value in localStorage', () => {
-      secureStorage.setItemSync('theme', 'dark');
+      secureStorage.setItemSync('setting', 'enabled');
 
-      const raw = localStorage.getItem(STORAGE_PREFIX + 'theme');
+      const raw = localStorage.getItem(STORAGE_PREFIX + 'setting');
       expect(raw).not.toBeNull();
       // The raw value should NOT be the plain JSON string
-      expect(raw).not.toBe('"dark"');
-      expect(raw).not.toBe('dark');
+      expect(raw).not.toBe('"enabled"');
+      expect(raw).not.toBe('enabled');
       // It should be a base64-encoded string
       expect(raw!.length).toBeGreaterThan(0);
     });

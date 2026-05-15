@@ -7,12 +7,10 @@ Current visual and interaction conventions for the Relay renderer.
 Relay uses a token-driven design system defined in `src/renderer/src/styles/theme.css`.
 The current UI is built around:
 
-- A responsive light/dark theme with `system`, `light`, and `dark` preferences
+- A single dark visual system
 - A red primary accent (`--color-accent`) with cyan reserved for secondary or informational use
 - Shared surface, border, spacing, and typography tokens consumed by plain CSS
 - Reusable interaction primitives such as `TactileButton`, `.tactile-input`, and `.card-surface`
-
-The active theme is applied by `src/renderer/src/hooks/useTheme.ts`, which writes the resolved theme to `document.documentElement.dataset.theme`.
 
 ## Source Of Truth
 
@@ -42,7 +40,7 @@ Primary UI colors come from `theme.css`:
 - Semantic: `--color-danger`, `--color-accent-green`, `--color-warning`
 - Borders: `--color-border`, `--color-border-strong`, `--color-border-accent`
 
-The default theme is dark. Light mode overrides are defined under `[data-theme='light']` in the same file.
+Relay does not provide runtime theme switching. The renderer should use the shared dark tokens directly.
 
 ### Typography
 
@@ -123,12 +121,12 @@ Most tabs follow one of these patterns:
 
 ### Alerts
 
-`src/renderer/src/tabs/alerts.css` mixes app-theme surfaces for authoring with a forced light preview card for screenshot/export fidelity.
+`src/renderer/src/tabs/alerts.css` mixes app surfaces for authoring with a white email preview card for screenshot/export fidelity.
 
 Key conventions:
 
 - Severity buttons use per-severity color states
-- The preview card uses a white email-style canvas regardless of app theme
+- The preview card uses a white email-style canvas
 - Highlighting and event-time affordances are styled as alert-specific primitives rather than global tokens
 
 ### Notes
@@ -138,7 +136,7 @@ Key conventions:
 Key conventions:
 
 - Font size is controlled via `data-font-size` on the notes grid
-- Note colors are lightweight surface tints, not full theme changes
+- Note colors are lightweight surface tints, not alternate app appearances
 - Drag-and-drop state is communicated through border, opacity, and lift changes
 
 ### Cloud Status
@@ -163,7 +161,7 @@ Key conventions:
 
 ### Don't
 
-- Don't document or reintroduce the older amber-only or dark-only visual system
+- Don't document or reintroduce runtime theme switching
 - Don't add Tailwind, CSS modules, or CSS-in-JS to new renderer code
 - Don't hardcode common spacing, radii, or colors that already exist as tokens
 - Don't add custom button patterns when `TactileButton` already fits the use case

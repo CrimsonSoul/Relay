@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
-import { useTheme, type ThemePreference } from '../hooks/useTheme';
 import type { PublicRelayConfig } from '@shared/ipc';
 
 type Props = {
@@ -19,7 +18,6 @@ export const SettingsModal: React.FC<Props> = ({
   onOpenDataManager,
   onReconfigure,
 }) => {
-  const { preference, setPreference } = useTheme();
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
 
@@ -53,41 +51,25 @@ export const SettingsModal: React.FC<Props> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
       <div className="settings-body">
-        <div className="settings-section">
-          <div className="settings-section-heading">Appearance</div>
-          <div className="settings-button-row">
-            {(['system', 'light', 'dark'] as ThemePreference[]).map((opt) => (
-              <TactileButton
-                key={opt}
-                variant={preference === opt ? 'primary' : 'secondary'}
-                onClick={() => setPreference(opt)}
-                className="btn-flex-center"
-              >
-                {opt.charAt(0).toUpperCase() + opt.slice(1)}
-              </TactileButton>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings-divider" />
-
         {onOpenDataManager && (
-          <div className="settings-section">
-            <div className="settings-section-heading">Data Management</div>
-            <TactileButton
-              onClick={() => {
-                onClose();
-                onOpenDataManager();
-              }}
-              variant="primary"
-              className="btn-center"
-            >
-              Open Data Manager...
-            </TactileButton>
-          </div>
-        )}
+          <>
+            <div className="settings-section">
+              <div className="settings-section-heading">Data Management</div>
+              <TactileButton
+                onClick={() => {
+                  onClose();
+                  onOpenDataManager();
+                }}
+                variant="primary"
+                className="btn-center"
+              >
+                Open Data Manager...
+              </TactileButton>
+            </div>
 
-        <div className="settings-divider" />
+            <div className="settings-divider" />
+          </>
+        )}
 
         <div className="settings-section">
           <div className="settings-section-heading">PocketBase</div>

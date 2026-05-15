@@ -3,13 +3,6 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SettingsModal } from '../SettingsModal';
 
-vi.mock('../../hooks/useTheme', () => ({
-  useTheme: () => ({
-    preference: 'dark',
-    setPreference: vi.fn(),
-  }),
-}));
-
 // Mock Modal to a simple wrapper
 vi.mock('../Modal', () => ({
   Modal: ({

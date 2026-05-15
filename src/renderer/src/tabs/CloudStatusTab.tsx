@@ -147,7 +147,13 @@ const ProviderCard: React.FC<{
       );
     }
     return (
-      <span className="cloud-status-provider__status cloud-status-provider__status--issue">
+      <span
+        className={`cloud-status-provider__status ${
+          stats.outages > 0
+            ? 'cloud-status-provider__status--outage'
+            : 'cloud-status-provider__status--degraded'
+        }`}
+      >
         {issueCountLabel(stats.activeIssues)}
       </span>
     );

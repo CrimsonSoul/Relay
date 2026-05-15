@@ -72,16 +72,6 @@
   animation: detailPanelFadeIn 0.2s ease-out;
 }
 
-[data-theme='light'] .assembler-sidebar-panel {
-  border-color: rgba(51, 65, 85, 0.13);
-  box-shadow: var(--shadow-sm);
-}
-
-[data-theme='light'] .assembler-sidebar-groups-header {
-  background: linear-gradient(180deg, #ffffff, #fbfcff);
-  border-bottom-color: rgba(51, 65, 85, 0.11);
-}
-
 .assembler-sidebar-groups {
   display: flex;
   flex-direction: column;
