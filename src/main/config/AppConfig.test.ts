@@ -160,6 +160,13 @@ describe('AppConfig', () => {
     expect(config.isConfigured()).toBe(false);
   });
 
+  it('isConfigured returns false when the config cannot be loaded', () => {
+    writeFileSync(join(tempDir, 'config.json'), JSON.stringify({ mode: 'client' }), 'utf-8');
+    const config = new AppConfig(tempDir);
+    expect(config.load()).toBeNull();
+    expect(config.isConfigured()).toBe(false);
+  });
+
   it('clear returns true when config file does not exist', () => {
     const config = new AppConfig(tempDir);
     // No config saved, so file doesn't exist

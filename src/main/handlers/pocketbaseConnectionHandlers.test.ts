@@ -183,11 +183,39 @@ describe('pocketbaseConnectionHandlers', () => {
       serverUrl: 'https://relay.example.com',
       secret: 'super-secret-passphrase',
     });
-    mockAppUserAuthWithPassword.mockRejectedValueOnce(new Error('bad credentials'));
+    mockAppUserAuthWithPassword.mockRejectedValue(new Error('bad credentials'));
 
     const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
 
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
+    expect(mockSuperuserAuthWithPassword).not.toHaveBeenCalled();
+  });
+
+  it('retries transient client auth failures before returning the bootstrap connection', async () => {
+    vi.useFakeTimers();
+    mockAppConfig.load.mockReturnValue({
+      mode: 'client',
+      serverUrl: 'https://relay.example.com',
+      secret: 'super-secret-passphrase',
+    });
+    mockAppUserAuthWithPassword
+      .mockRejectedValueOnce(new Error('server still provisioning app user'))
+      .mockResolvedValueOnce({});
+
+    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    await vi.advanceTimersByTimeAsync(750);
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: true,
+      connection: {
+        pbUrl: 'https://relay.example.com',
+        auth: {
+          token: 'pb-token',
+          record: { id: 'user-1', email: 'relay@relay.app' },
+        },
+      },
+    });
+    expect(mockAppUserAuthWithPassword).toHaveBeenCalledTimes(2);
     expect(mockSuperuserAuthWithPassword).not.toHaveBeenCalled();
   });
 

@@ -167,6 +167,19 @@ describe('PocketBaseProcess', () => {
     expect(pbProcess.isRunning()).toBe(false);
   });
 
+  it('start() rejects if the child exits before the health check completes', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockImplementation(() => new Promise(() => undefined));
+
+    const startPromise = pbProcess.start();
+    child.exitCode = 0;
+    child._emit('exit', 0, null);
+
+    await expect(startPromise).rejects.toThrow('PocketBase exited during startup');
+    expect(pbProcess.isRunning()).toBe(false);
+  });
+
   // ── isRunning() ──────────────────────────────────────────────────────────────
 
   it('isRunning() returns false after process exits', async () => {

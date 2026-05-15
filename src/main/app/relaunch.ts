@@ -94,12 +94,14 @@ export function requestAppRelaunch(
   loggers.main.error('Relaunching Relay', { reason, exitCode, exitDelayMs });
   recordRelaunch(reason, exitCode);
   app.relaunch();
+  app.quit();
 
   if (exitDelayMs <= 0) {
-    app.exit(exitCode);
     return;
   }
 
-  const timer = setTimeout(() => app.exit(exitCode), exitDelayMs);
+  const timer = setTimeout(() => {
+    app.exit(exitCode);
+  }, exitDelayMs);
   unrefTimer(timer);
 }

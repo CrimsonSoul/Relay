@@ -6,6 +6,31 @@ import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { loggers } from '../logger';
 
 const PB_BOOTSTRAP_AUTH_TIMEOUT_MS = 15_000;
+const PB_BOOTSTRAP_AUTH_ATTEMPTS = 4;
+const PB_BOOTSTRAP_AUTH_RETRY_MS = 750;
+const APP_USER_EMAIL = 'relay@relay.app';
+const SUPERUSER_EMAIL = 'admin@relay.app';
+
+class PbAuthTimeoutError extends Error {
+  constructor() {
+    super('PocketBase authentication timed out');
+    this.name = 'PbAuthTimeoutError';
+  }
+}
+
+type AuthFailure = {
+  error: 'auth-failed' | 'pb-unavailable';
+  timedOut: boolean;
+  originalError: unknown;
+};
+
+type AuthAttemptResult =
+  | { ok: true; result: PbConnectionResult }
+  | { ok: false; failure: AuthFailure };
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function getPbUrl(
   config: ReturnType<AppConfig['load']>,
@@ -23,6 +48,10 @@ function getPbUrl(
 }
 
 function isPbUnavailableError(error: unknown): boolean {
+  if (error instanceof PbAuthTimeoutError) {
+    return true;
+  }
+
   if (error instanceof TypeError) {
     return error.message.includes('fetch');
   }
@@ -87,12 +116,64 @@ function getPbConnectionContext(
 
 async function withPbAuthTimeout<T>(action: (signal: AbortSignal) => Promise<T>): Promise<T> {
   const controller = new AbortController();
-  const authTimeout = setTimeout(() => controller.abort(), PB_BOOTSTRAP_AUTH_TIMEOUT_MS);
+  let timedOut = false;
+  const authTimeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, PB_BOOTSTRAP_AUTH_TIMEOUT_MS);
 
   try {
     return await action(controller.signal);
+  } catch (error) {
+    if (timedOut) {
+      throw new PbAuthTimeoutError();
+    }
+    throw error;
   } finally {
     clearTimeout(authTimeout);
+  }
+}
+
+function toAuthFailure(error: unknown): AuthFailure {
+  return {
+    error: isPbUnavailableError(error) ? 'pb-unavailable' : 'auth-failed',
+    timedOut: error instanceof PbAuthTimeoutError,
+    originalError: error,
+  };
+}
+
+async function authenticatePbConnectionOnce(
+  config: ReturnType<AppConfig['load']>,
+  pbUrl: string,
+  secret: string,
+): Promise<AuthAttemptResult> {
+  const pb = new PocketBase(pbUrl);
+
+  try {
+    await withPbAuthTimeout(async (signal) => {
+      await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret, {
+        signal,
+        requestKey: null,
+      });
+    });
+    return { ok: true, result: getPbConnectionResult(pbUrl, pb) };
+  } catch (error) {
+    if (isServerModeConfig(config) && !isPbUnavailableError(error)) {
+      try {
+        await withPbAuthTimeout(async (signal) => {
+          await pb.collection('_superusers').authWithPassword(SUPERUSER_EMAIL, secret, {
+            signal,
+            requestKey: null,
+          });
+        });
+
+        return { ok: true, result: getPbConnectionResult(pbUrl, pb) };
+      } catch (fallbackError) {
+        return { ok: false, failure: toAuthFailure(fallbackError) };
+      }
+    }
+
+    return { ok: false, failure: toAuthFailure(error) };
   }
 }
 
@@ -102,44 +183,36 @@ async function authenticatePbConnection(
   secret: string,
   logMessage: string,
 ): Promise<PbConnectionResult> {
-  const pb = new PocketBase(pbUrl);
+  let lastFailure: AuthFailure | null = null;
 
-  try {
-    await withPbAuthTimeout(async (signal) => {
-      await pb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', secret, {
-        signal,
-        requestKey: null,
-      });
-    });
-
-    return getPbConnectionResult(pbUrl, pb);
-  } catch (error) {
-    if (isServerModeConfig(config) && !isPbUnavailableError(error)) {
-      try {
-        await withPbAuthTimeout(async (signal) => {
-          await pb.collection('_superusers').authWithPassword('admin@relay.app', secret, {
-            signal,
-            requestKey: null,
-          });
-        });
-
-        return getPbConnectionResult(pbUrl, pb);
-      } catch (fallbackError) {
-        const errorCode = isPbUnavailableError(fallbackError) ? 'pb-unavailable' : 'auth-failed';
-        loggers.pocketbase.warn(logMessage, {
-          error: fallbackError,
+  for (let attempt = 1; attempt <= PB_BOOTSTRAP_AUTH_ATTEMPTS; attempt++) {
+    const attemptResult = await authenticatePbConnectionOnce(config, pbUrl, secret);
+    if (attemptResult.ok) {
+      if (attempt > 1) {
+        loggers.pocketbase.info('PocketBase authentication recovered after retry', {
+          attempt,
           pbUrl,
-          authMethod: 'superuser-fallback',
-          initialAuthError: error,
         });
-        return { ok: false, error: errorCode };
       }
+      return attemptResult.result;
     }
 
-    const errorCode = isPbUnavailableError(error) ? 'pb-unavailable' : 'auth-failed';
-    loggers.pocketbase.warn(logMessage, { error, pbUrl });
-    return { ok: false, error: errorCode };
+    lastFailure = attemptResult.failure;
+    loggers.pocketbase.warn(logMessage, {
+      attempt,
+      attempts: PB_BOOTSTRAP_AUTH_ATTEMPTS,
+      error: lastFailure.originalError,
+      pbUrl,
+    });
+
+    if (lastFailure.timedOut || attempt === PB_BOOTSTRAP_AUTH_ATTEMPTS) {
+      break;
+    }
+
+    await delay(PB_BOOTSTRAP_AUTH_RETRY_MS);
   }
+
+  return { ok: false, error: lastFailure?.error ?? 'auth-failed' };
 }
 
 export function setupPocketbaseConnectionHandlers(

@@ -1,25 +1,102 @@
 #!/usr/bin/env node
 // Seed PocketBase with dummy data for visual testing
 
+import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { getSuperuserPassword } from './seedConfig.mjs';
 
 const PB = 'http://localhost:8090';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const seedSuperuserEmail = 'relay-seed@relay.local';
+const seedSuperuserPassword = `relay-seed-${randomUUID()}-Passphrase`;
 let token = '';
+let seedSuperuserId = '';
 
-async function auth() {
-  const password = getSuperuserPassword(process.env);
+function resolvePocketBaseBinary() {
+  const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
+  const binaryPath = join(__dirname, '..', 'resources', 'pocketbase', binaryName);
+  if (!existsSync(binaryPath)) {
+    throw new Error(`PocketBase binary not found at ${binaryPath}. Run npm install first.`);
+  }
+  return binaryPath;
+}
+
+function resolvePocketBaseDataDir() {
+  if (process.env.RELAY_SEED_PB_DATA_DIR) return process.env.RELAY_SEED_PB_DATA_DIR;
+  if (process.platform === 'darwin') {
+    return join(
+      process.env.HOME ?? '',
+      'Library',
+      'Application Support',
+      'Relay',
+      'data',
+      'pb_data',
+    );
+  }
+  if (process.platform === 'win32') {
+    return join(process.env.APPDATA ?? '', 'Relay', 'data', 'pb_data');
+  }
+  return join(process.env.HOME ?? '', '.config', 'Relay', 'data', 'pb_data');
+}
+
+function todayDateKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function ensureSeedSuperuser() {
+  execFileSync(
+    resolvePocketBaseBinary(),
+    [
+      'superuser',
+      'upsert',
+      seedSuperuserEmail,
+      seedSuperuserPassword,
+      `--dir=${resolvePocketBaseDataDir()}`,
+    ],
+    { stdio: 'pipe' },
+  );
+}
+
+async function authWith(identity, password) {
   const res = await fetch(`${PB}/api/collections/_superusers/auth-with-password`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identity: 'admin@relay.app', password }),
+    body: JSON.stringify({ identity, password }),
   });
   const data = await res.json();
   if (!res.ok) {
     console.error(`Auth failed with status ${res.status}`);
+    console.error(JSON.stringify(data, null, 2));
     process.exit(1);
   }
   token = data.token;
-  console.log('Authenticated as superuser');
+  return data;
+}
+
+async function auth() {
+  const configuredPassword = process.env.RELAY_SEED_SUPERUSER_PASSWORD;
+  if (configuredPassword) {
+    await authWith('admin@relay.app', getSuperuserPassword(process.env));
+    console.log('Authenticated as configured superuser');
+    return;
+  }
+
+  ensureSeedSuperuser();
+  const data = await authWith(seedSuperuserEmail, seedSuperuserPassword);
+  seedSuperuserId = data.record?.id ?? '';
+  console.log('Authenticated as temporary seed superuser');
+}
+
+async function cleanupSeedSuperuser() {
+  if (!seedSuperuserId || !token) return;
+  await fetch(`${PB}/api/collections/_superusers/records/${seedSuperuserId}`, {
+    method: 'DELETE',
+    headers: { Authorization: token },
+  }).catch(() => undefined);
 }
 
 async function create(collection, data) {
@@ -37,26 +114,41 @@ async function create(collection, data) {
 }
 
 async function clearCollection(collection) {
-  const res = await fetch(`${PB}/api/collections/${collection}/records?perPage=500`, {
-    headers: { Authorization: token },
-  });
-  const data = await res.json();
-  if (data.items) {
+  let removed = 0;
+  while (true) {
+    const res = await fetch(`${PB}/api/collections/${collection}/records?perPage=500`, {
+      headers: { Authorization: token },
+    });
+    const data = await res.json();
+    if (!data.items?.length) break;
     for (const item of data.items) {
-      await fetch(`${PB}/api/collections/${collection}/records/${item.id}`, {
+      const del = await fetch(`${PB}/api/collections/${collection}/records/${item.id}`, {
         method: 'DELETE',
         headers: { Authorization: token },
       });
+      if (del.ok) removed++;
     }
-    console.log(`  Cleared ${data.items.length} records from ${collection}`);
   }
+  console.log(`  Cleared ${removed} records from ${collection}`);
 }
 
 async function seed() {
   await auth();
 
-  // Clear all collections to re-seed with proper timestamps
-  for (const col of ['oncall', 'alert_history', 'bridge_history', 'standalone_notes']) {
+  // Clear all app-facing collections so the seed is repeatable.
+  for (const col of [
+    'contacts',
+    'servers',
+    'oncall',
+    'bridge_groups',
+    'bridge_history',
+    'alert_history',
+    'notes',
+    'standalone_notes',
+    'oncall_dismissals',
+    'conflict_log',
+    'oncall_board_settings',
+  ]) {
     console.log(`Clearing ${col}...`);
     await clearCollection(col);
   }
@@ -205,43 +297,33 @@ async function seed() {
   const groups = [
     {
       name: 'OPS — Core SRE',
-      contacts: JSON.stringify([
+      contacts: [
         'sarah.chen@corp.com',
         'marcus.j@corp.com',
         'lisa.c@corp.com',
         'omar.h@corp.com',
         'hannah.k@corp.com',
-      ]),
+      ],
     },
     {
       name: 'Field — Network',
-      contacts: JSON.stringify(['david.kim@corp.com', 'brian.s@corp.com', 'alex.n@corp.com']),
+      contacts: ['david.kim@corp.com', 'brian.s@corp.com', 'alex.n@corp.com'],
     },
     {
       name: 'HQ — Security',
-      contacts: JSON.stringify(['emily.r@corp.com', 'natalie.b@corp.com', 'michelle.t@corp.com']),
+      contacts: ['emily.r@corp.com', 'natalie.b@corp.com', 'michelle.t@corp.com'],
     },
     {
       name: 'Platform — DevOps',
-      contacts: JSON.stringify([
-        'rachel.t@corp.com',
-        'james.w@corp.com',
-        'tyler.g@corp.com',
-        'carlos.r@corp.com',
-      ]),
+      contacts: ['rachel.t@corp.com', 'james.w@corp.com', 'tyler.g@corp.com', 'carlos.r@corp.com'],
     },
     {
       name: 'Leadership',
-      contacts: JSON.stringify([
-        'ryan.m@corp.com',
-        'sam.lee@corp.com',
-        'rachel.t@corp.com',
-        'hannah.k@corp.com',
-      ]),
+      contacts: ['ryan.m@corp.com', 'sam.lee@corp.com', 'rachel.t@corp.com', 'hannah.k@corp.com'],
     },
     {
       name: 'Data — Engineering',
-      contacts: JSON.stringify(['priya.p@corp.com', 'andrew.p@corp.com', 'dmitri.v@corp.com']),
+      contacts: ['priya.p@corp.com', 'andrew.p@corp.com', 'dmitri.v@corp.com'],
     },
   ];
   for (const g of groups) await create('bridge_groups', g);
@@ -250,6 +332,7 @@ async function seed() {
   const oncall = [
     {
       team: 'SRE — Primary',
+      teamId: 'sre-primary',
       role: 'Primary On-Call',
       name: 'Sarah Chen',
       contact: '+1-555-0101',
@@ -258,6 +341,7 @@ async function seed() {
     },
     {
       team: 'SRE — Primary',
+      teamId: 'sre-primary',
       role: 'Secondary On-Call',
       name: 'Omar Hassan',
       contact: '+1-555-0110',
@@ -266,6 +350,7 @@ async function seed() {
     },
     {
       team: 'SRE — Primary',
+      teamId: 'sre-primary',
       role: 'Incident Commander',
       name: 'Lisa Chang',
       contact: '+1-555-0109',
@@ -274,6 +359,7 @@ async function seed() {
     },
     {
       team: 'Platform',
+      teamId: 'platform',
       role: 'Primary On-Call',
       name: 'Marcus Johnson',
       contact: '+1-555-0102',
@@ -282,6 +368,7 @@ async function seed() {
     },
     {
       team: 'Platform',
+      teamId: 'platform',
       role: 'Escalation',
       name: 'Rachel Thompson',
       contact: '+1-555-0105',
@@ -290,6 +377,7 @@ async function seed() {
     },
     {
       team: 'Platform',
+      teamId: 'platform',
       role: 'Build Engineer',
       name: 'Tyler Grant',
       contact: '+1-555-0112',
@@ -298,6 +386,7 @@ async function seed() {
     },
     {
       team: 'Security',
+      teamId: 'security',
       role: 'SOC Analyst',
       name: 'Emily Rodriguez',
       contact: '+1-555-0103',
@@ -306,6 +395,7 @@ async function seed() {
     },
     {
       team: 'Security',
+      teamId: 'security',
       role: 'SOC Analyst',
       name: 'Natalie Brooks',
       contact: '+1-555-0111',
@@ -314,6 +404,7 @@ async function seed() {
     },
     {
       team: 'Security',
+      teamId: 'security',
       role: 'Security Lead',
       name: 'Michelle Torres',
       contact: '+1-555-0121',
@@ -322,6 +413,7 @@ async function seed() {
     },
     {
       team: 'Data Engineering',
+      teamId: 'data-engineering',
       role: 'Primary On-Call',
       name: 'Priya Patel',
       contact: '+1-555-0107',
@@ -330,6 +422,7 @@ async function seed() {
     },
     {
       team: 'Data Engineering',
+      teamId: 'data-engineering',
       role: 'Pipeline Support',
       name: 'Andrew Park',
       contact: '+1-555-0120',
@@ -338,6 +431,7 @@ async function seed() {
     },
     {
       team: 'Network',
+      teamId: 'network',
       role: 'NOC Primary',
       name: 'David Kim',
       contact: '+1-555-0104',
@@ -346,6 +440,7 @@ async function seed() {
     },
     {
       team: 'Network',
+      teamId: 'network',
       role: 'NOC Secondary',
       name: 'Brian Schultz',
       contact: '+1-555-0122',
@@ -354,6 +449,13 @@ async function seed() {
     },
   ];
   for (const o of oncall) await create('oncall', o);
+
+  console.log('Seeding oncall_board_settings...');
+  await create('oncall_board_settings', {
+    key: 'primary',
+    teamOrder: ['sre-primary', 'platform', 'security', 'data-engineering', 'network'],
+    locked: false,
+  });
 
   console.log('Seeding servers...');
   const servers = [
@@ -495,6 +597,47 @@ async function seed() {
   ];
   for (const s of servers) await create('servers', s);
 
+  console.log('Seeding attached notes...');
+  const attachedNotes = [
+    {
+      entityType: 'contact',
+      entityKey: 'sarah.chen@corp.com',
+      note: 'Primary escalation contact for API incidents. Prefers SMS first during business hours and phone for overnight pages.',
+      tags: ['sre', 'escalation', 'api'],
+    },
+    {
+      entityType: 'contact',
+      entityKey: 'emily.r@corp.com',
+      note: 'Owns security incident intake and evidence preservation. Include SOC bridge when this contact is selected.',
+      tags: ['security', 'soc', 'incident'],
+    },
+    {
+      entityType: 'contact',
+      entityKey: 'priya.p@corp.com',
+      note: 'Database owner for production PostgreSQL. Has final approval on failover and replica promotion.',
+      tags: ['database', 'postgres', 'failover'],
+    },
+    {
+      entityType: 'server',
+      entityKey: 'prod-api-01',
+      note: 'Primary API gateway. Watch p99 latency, upstream connection saturation, and certificate expiry before planned rotations.',
+      tags: ['api', 'production', 'gateway'],
+    },
+    {
+      entityType: 'server',
+      entityKey: 'prod-db-primary',
+      note: 'Critical PostgreSQL primary. Run backup verification before maintenance and notify Data Engineering for failover drills.',
+      tags: ['database', 'critical', 'backup'],
+    },
+    {
+      entityType: 'server',
+      entityKey: 'monitor-02',
+      note: 'AlertManager relay node. If notifications stop, confirm PagerDuty routing keys and outbound firewall rules first.',
+      tags: ['monitoring', 'pagerduty', 'alerts'],
+    },
+  ];
+  for (const n of attachedNotes) await create('notes', n);
+
   console.log('Seeding standalone_notes...');
   const notes = [
     {
@@ -502,7 +645,7 @@ async function seed() {
       content:
         '1. Verify health check failures on prod-api-01\n2. Confirm prod-api-02 is healthy\n3. Update Route53 to point to secondary\n4. Notify #incidents channel\n5. Begin root cause analysis on primary',
       color: 'red',
-      tags: JSON.stringify(['runbook', 'api', 'failover']),
+      tags: ['runbook', 'api', 'failover'],
       sortOrder: 1,
     },
     {
@@ -510,7 +653,7 @@ async function seed() {
       content:
         'Current utilization:\n- API: 68% peak\n- DB: 45% peak (read replicas at 30%)\n- Workers: 82% peak — need 2 more\n- Cache: 55% memory usage\n\nAction items:\n- Scale worker pool by 2 nodes\n- Evaluate DB vertical scale vs horizontal',
       color: 'blue',
-      tags: JSON.stringify(['planning', 'capacity', 'q2']),
+      tags: ['planning', 'capacity', 'q2'],
       sortOrder: 2,
     },
     {
@@ -518,7 +661,7 @@ async function seed() {
       content:
         'Duration: 47 minutes\nImpact: 100% API failures\nRoot cause: Certificate expiration on load balancer\nContributing: No monitoring on cert expiry dates\n\nAction items:\n- Add cert expiry monitoring (Carlos)\n- Document renewal process (Diana)\n- Set up auto-renewal where possible (Alex)',
       color: 'amber',
-      tags: JSON.stringify(['postmortem', 'incident', 'certs']),
+      tags: ['postmortem', 'incident', 'certs'],
       sortOrder: 3,
     },
     {
@@ -526,7 +669,7 @@ async function seed() {
       content:
         '- [ ] VPN access setup\n- [ ] GitHub org invite\n- [ ] PagerDuty account\n- [ ] Slack channels (#ops, #incidents, #platform)\n- [ ] AWS IAM role assignment\n- [ ] Runbook review session\n- [ ] Shadow on-call shift',
       color: 'green',
-      tags: JSON.stringify(['onboarding', 'hr', 'checklist']),
+      tags: ['onboarding', 'hr', 'checklist'],
       sortOrder: 4,
     },
     {
@@ -534,7 +677,7 @@ async function seed() {
       content:
         'AWS TAM: Jennifer Liu — jliu@aws.amazon.com — (206) 555-0190\nCloudflare SE: Mike Torres — mtorres@cloudflare.com\nPagerDuty CSM: Alisha Grant — agrant@pagerduty.com\nDatadog AE: Chris Nguyen — cnguyen@datadoghq.com',
       color: 'purple',
-      tags: JSON.stringify(['vendors', 'contacts']),
+      tags: ['vendors', 'contacts'],
       sortOrder: 5,
     },
     {
@@ -542,7 +685,7 @@ async function seed() {
       content:
         'Saturday 2:00 AM–6:00 AM ET\n\n1. PostgreSQL minor version upgrade (prod-db-primary)\n2. Kernel patches on all Ubuntu hosts\n3. Redis cluster rebalance\n4. Rotate TLS certificates on LB\n\nRollback plan: snapshot before each step, 15-min checkpoint',
       color: 'slate',
-      tags: JSON.stringify(['maintenance', 'weekend', 'planned']),
+      tags: ['maintenance', 'weekend', 'planned'],
       sortOrder: 6,
     },
   ];
@@ -617,42 +760,60 @@ async function seed() {
   const history = [
     {
       note: 'Emergency bridge — DB failover coordination',
-      groups: JSON.stringify(['OPS — Core SRE', 'Data — Engineering']),
-      contacts: JSON.stringify([
+      groups: ['OPS — Core SRE', 'Data — Engineering'],
+      contacts: [
         'sarah.chen@corp.com',
         'priya.p@corp.com',
         'omar.h@corp.com',
         'andrew.p@corp.com',
         'lisa.c@corp.com',
-      ]),
+      ],
       recipientCount: 5,
     },
     {
       note: 'Planned maintenance window coordination',
-      groups: JSON.stringify(['Platform — DevOps', 'Network']),
-      contacts: JSON.stringify([
+      groups: ['Platform — DevOps', 'Network'],
+      contacts: [
         'rachel.t@corp.com',
         'james.w@corp.com',
         'tyler.g@corp.com',
         'david.kim@corp.com',
         'brian.s@corp.com',
         'carlos.r@corp.com',
-      ]),
+      ],
       recipientCount: 6,
     },
     {
       note: 'Security incident response',
-      groups: JSON.stringify(['HQ — Security', 'Leadership']),
-      contacts: JSON.stringify([
+      groups: ['HQ — Security', 'Leadership'],
+      contacts: [
         'emily.r@corp.com',
         'natalie.b@corp.com',
         'michelle.t@corp.com',
         'ryan.m@corp.com',
-      ]),
+      ],
       recipientCount: 4,
     },
   ];
   for (const h of history) await create('bridge_history', h);
+
+  console.log('Seeding oncall_dismissals...');
+  await create('oncall_dismissals', {
+    alertType: 'general',
+    dateKey: todayDateKey(),
+  });
+
+  console.log('Seeding conflict_log...');
+  await create('conflict_log', {
+    collection: 'contacts',
+    recordId: 'dummy-conflict-sarah-chen',
+    overwrittenData: {
+      name: 'Sarah Chen',
+      email: 'sarah.chen@corp.com',
+      title: 'Site Reliability Engineer',
+    },
+    overwrittenBy: 'seed-script',
+  });
 
   console.log('\n✅ Seed complete!');
 }
@@ -662,4 +823,6 @@ try {
 } catch (err) {
   console.error('Seed failed:', err instanceof Error ? err.message : 'Unknown error');
   process.exit(1);
+} finally {
+  await cleanupSeedSuperuser();
 }

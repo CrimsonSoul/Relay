@@ -19,6 +19,12 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 const APP_USER_EMAIL = 'relay@relay.app';
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
+const APP_USER_ENSURE_ATTEMPTS = 3;
+const APP_USER_ENSURE_RETRY_MS = 750;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Ensure superuser and app user exist with the correct passphrase.
@@ -54,44 +60,65 @@ function ensureSuperuserSync(binaryPath: string, pbDataDir: string, secret: stri
  * Ensure the app user (relay@relay.app) exists with the current passphrase.
  * Clients need this because _superusers may not be accessible remotely.
  */
-async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
+async function ensureAppUserOnce(localUrl: string, secret: string): Promise<void> {
+  const PocketBase = (await import('pocketbase')).default;
+  const pb = new PocketBase(localUrl);
+
+  // If app user already works with current password, nothing to do
   try {
-    const PocketBase = (await import('pocketbase')).default;
-    const pb = new PocketBase(localUrl);
-
-    // If app user already works with current password, nothing to do
-    try {
-      await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
-      loggers.pocketbase.info('App user auth OK');
-      return;
-    } catch {
-      // Need to create or recreate
-    }
-
-    // Auth as superuser to manage users
-    await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
-
-    // Delete the existing app user if present (recreate with correct password)
-    try {
-      const existing = await pb
-        .collection('_pb_users_auth_')
-        .getFirstListItem(`email="${APP_USER_EMAIL}"`);
-      await pb.collection('_pb_users_auth_').delete(existing.id);
-    } catch {
-      // User doesn't exist yet
-    }
-
-    // Create with current passphrase
-    const appUserCreateEntries = [
-      ['email', APP_USER_EMAIL],
-      [APP_USER_AUTH_FIELD, secret],
-      [APP_USER_AUTH_CONFIRM_FIELD, secret],
-    ];
-    await pb.collection('_pb_users_auth_').create(Object.fromEntries(appUserCreateEntries));
-    loggers.pocketbase.info('App user created');
-  } catch (err) {
-    loggers.pocketbase.error('Failed to ensure app user', { error: err });
+    await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
+    loggers.pocketbase.info('App user auth OK');
+    return;
+  } catch {
+    // Need to create or recreate
   }
+
+  // Auth as superuser to manage users
+  await pb.collection('_superusers').authWithPassword('admin@relay.app', secret);
+
+  // Delete the existing app user if present (recreate with correct password)
+  try {
+    const existing = await pb
+      .collection('_pb_users_auth_')
+      .getFirstListItem(`email="${APP_USER_EMAIL}"`);
+    await pb.collection('_pb_users_auth_').delete(existing.id);
+  } catch {
+    // User doesn't exist yet
+  }
+
+  // Create with current passphrase
+  const appUserCreateEntries = [
+    ['email', APP_USER_EMAIL],
+    [APP_USER_AUTH_FIELD, secret],
+    [APP_USER_AUTH_CONFIRM_FIELD, secret],
+  ];
+  await pb.collection('_pb_users_auth_').create(Object.fromEntries(appUserCreateEntries));
+
+  // Prove remote clients will be able to authenticate before reporting server ready.
+  await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
+  loggers.pocketbase.info('App user created');
+}
+
+async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= APP_USER_ENSURE_ATTEMPTS; attempt++) {
+    try {
+      await ensureAppUserOnce(localUrl, secret);
+      return;
+    } catch (err) {
+      lastError = err;
+      loggers.pocketbase.warn('Failed to ensure app user', {
+        attempt,
+        attempts: APP_USER_ENSURE_ATTEMPTS,
+        error: err,
+      });
+      if (attempt < APP_USER_ENSURE_ATTEMPTS) {
+        await delay(APP_USER_ENSURE_RETRY_MS);
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Failed to ensure app user');
 }
 
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).

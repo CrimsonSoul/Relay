@@ -37,7 +37,7 @@ describe('requestAppRelaunch', () => {
     vi.resetModules();
   });
 
-  it('records the relaunch reason before exiting', async () => {
+  it('records the relaunch reason before quitting', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 
     requestAppRelaunch('gpu-recovery', { exitCode: 0, exitDelayMs: 0 });
@@ -49,15 +49,17 @@ describe('requestAppRelaunch', () => {
       'utf8',
     );
     expect(mocks.app.relaunch).toHaveBeenCalledOnce();
-    expect(mocks.app.exit).toHaveBeenCalledWith(0);
+    expect(mocks.app.quit).toHaveBeenCalledOnce();
+    expect(mocks.app.exit).not.toHaveBeenCalled();
   });
 
-  it('delays exit to give Electron time to schedule the relaunch', async () => {
+  it('uses delayed app.exit only as a fallback after requesting quit', async () => {
     const { requestAppRelaunch } = await import('../relaunch');
 
     requestAppRelaunch('fatal-main-process-error', { exitCode: 1, exitDelayMs: 250 });
 
     expect(mocks.app.relaunch).toHaveBeenCalledOnce();
+    expect(mocks.app.quit).toHaveBeenCalledOnce();
     expect(mocks.app.exit).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(250);

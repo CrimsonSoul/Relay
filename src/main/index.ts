@@ -21,6 +21,8 @@ import {
   setPbProcess,
   getRetentionManager,
   setRetentionManager,
+  setBackupManager,
+  setPbClient,
   getOfflineCache,
   setOfflineCache,
   getPendingChanges,
@@ -49,6 +51,45 @@ if (process.platform === 'win32') {
 validateEnv();
 
 const isCrashWatchdog = runCrashWatchdogIfRequested();
+
+function isDevRendererRuntime(): boolean {
+  return !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
+}
+
+async function reconfigureDevRuntime(configDataDir: string): Promise<void> {
+  const config = getAppConfig()?.load();
+
+  if (getRetentionManager()) {
+    getRetentionManager()!.stop();
+    setRetentionManager(null);
+  }
+  setBackupManager(null);
+  setPbClient(null);
+
+  if (getOfflineCache()) {
+    getOfflineCache()!.close();
+    setOfflineCache(null);
+  }
+  if (getPendingChanges()) {
+    getPendingChanges()!.close();
+    setPendingChanges(null);
+  }
+  setSyncManager(null);
+
+  const pbProcess = getPbProcess();
+  if (config?.mode === 'server') {
+    const started = await startPocketBase(config, configDataDir);
+    if (!started) throw new Error('Failed to start PocketBase server.');
+  } else if (pbProcess) {
+    await pbProcess.stop();
+    setPbProcess(null);
+  }
+
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reloadIgnoringCache();
+  }
+}
 
 const hardwareAccelerationDisabled = process.env.RELAY_DISABLE_HARDWARE_ACCELERATION === '1';
 if (hardwareAccelerationDisabled) {
@@ -160,6 +201,9 @@ if (gotLock) {
         if (process.env.NODE_ENV === 'test') {
           app.quit();
           return;
+        }
+        if (isDevRendererRuntime()) {
+          return reconfigureDevRuntime(configDataDir);
         }
         requestAppRelaunch('app-reconfigure', { exitCode: 0 });
       });

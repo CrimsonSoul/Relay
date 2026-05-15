@@ -95,14 +95,7 @@ export class AppConfig {
   }
 
   isConfigured(): boolean {
-    if (!existsSync(this.configPath)) return false;
-    try {
-      const raw = readFileSync(this.configPath, 'utf-8');
-      JSON.parse(raw);
-      return true;
-    } catch {
-      return false;
-    }
+    return this.load() !== null;
   }
 
   /** Deletes the config file so the app returns to the setup screen on next load. */

@@ -318,6 +318,27 @@ describe('SetupScreen', () => {
     expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
+  it('normalizes client server URL before submitting', async () => {
+    onComplete.mockResolvedValue(undefined);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: ' relay-server.local:8090/ ' },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
+    });
+
+    expect(getSubmittedConfig()).toMatchObject({
+      mode: 'client',
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols
+      serverUrl: 'http://relay-server.local:8090',
+    });
+  });
+
   // ── Loading State ──
 
   it('shows loading state during server submission', async () => {

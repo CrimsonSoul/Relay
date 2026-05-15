@@ -62,6 +62,7 @@ export class PocketBaseProcess {
       logger.warn('PocketBase stderr', { output: data.toString().trim() });
     });
 
+    let startupSettled = false;
     let rejectStartupError: ((error: Error) => void) | null = null;
     const startupError = new Promise<never>((_, reject) => {
       rejectStartupError = reject;
@@ -86,6 +87,14 @@ export class PocketBaseProcess {
       logger.warn('PocketBase exited', { code, signal });
       this.child = null;
 
+      if (!startupSettled && rejectStartupError) {
+        rejectStartupError(
+          new Error(`PocketBase exited during startup with code ${code} signal ${signal}`),
+        );
+        rejectStartupError = null;
+        return;
+      }
+
       if (!this.stopping && code !== 0 && code !== null) {
         void this.handleCrash(`PocketBase exited with code ${code}`);
       }
@@ -94,6 +103,7 @@ export class PocketBaseProcess {
     try {
       await Promise.race([this.waitForHealthy(), startupError]);
     } finally {
+      startupSettled = true;
       rejectStartupError = null;
     }
 

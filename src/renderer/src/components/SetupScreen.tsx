@@ -138,6 +138,18 @@ const EyeClosed = () => (
   </svg>
 );
 
+function normalizeServerUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  const withProtocol = trimmed.includes('://') ? trimmed : `http://${trimmed}`;
+  const minLength = withProtocol.indexOf('://') + 3;
+  let end = withProtocol.length;
+  while (end > minLength && withProtocol[end - 1] === '/') {
+    end--;
+  }
+  return withProtocol.slice(0, end);
+}
+
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
@@ -174,13 +186,14 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
         setLoading(false);
       }
     } else if (mode === 'client') {
-      if (!serverUrl.trim()) {
+      const normalizedServerUrl = normalizeServerUrl(serverUrl);
+      if (!normalizedServerUrl) {
         setError('Server URL is required');
         return;
       }
       setLoading(true);
       try {
-        await onComplete({ mode: 'client', serverUrl: serverUrl.trim(), secret });
+        await onComplete({ mode: 'client', serverUrl: normalizedServerUrl, secret });
       } catch {
         setLoading(false);
       }
