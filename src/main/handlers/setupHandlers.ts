@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { hostname } from 'node:os';
+import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
@@ -32,9 +32,22 @@ const clientConfigSchema = z
 
 const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clientConfigSchema]);
 
+function getLanIpAddress(): string | undefined {
+  for (const addresses of Object.values(networkInterfaces())) {
+    const address = addresses?.find((entry) => entry.family === 'IPv4' && !entry.internal);
+    if (address) return address.address;
+  }
+  return undefined;
+}
+
 function toPublicConfig(config: RelayConfig): PublicRelayConfig {
   if (config.mode === 'server') {
-    return { mode: 'server', port: config.port, bindHost: config.bindHost, hostName: hostname() };
+    return {
+      mode: 'server',
+      port: config.port,
+      bindHost: config.bindHost,
+      lanIp: getLanIpAddress(),
+    };
   }
   return {
     mode: 'client',

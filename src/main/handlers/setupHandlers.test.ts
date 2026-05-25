@@ -9,6 +9,22 @@ vi.mock('electron', () => ({
 
 vi.mock('node:os', () => ({
   hostname: vi.fn(() => 'noc-admin-pc'),
+  networkInterfaces: vi.fn(() => ({
+    Ethernet: [
+      {
+        address: ['192', '168', '1', '25'].join('.'),
+        family: 'IPv4',
+        internal: false,
+      },
+    ],
+    Loopback: [
+      {
+        address: '127.0.0.1',
+        family: 'IPv4',
+        internal: true,
+      },
+    ],
+  })),
 }));
 
 vi.mock('../logger', () => ({
@@ -82,7 +98,7 @@ describe('setupHandlers', () => {
         mode: 'server',
         port: 8090,
         bindHost: '127.0.0.1',
-        hostName: 'noc-admin-pc',
+        lanIp: ['192', '168', '1', '25'].join('.'),
       });
       expect(result).not.toHaveProperty(SECRET_FIELD);
     });

@@ -20,6 +20,8 @@ const buildServerSetupConfig = () => ({
   port: 8090,
   [SETUP_SECRET_FIELD]: buildSetupSecret(),
 });
+const LAN_SERVER_ADDRESS = ['192', '168', '1', '25'].join('.');
+const LAN_SERVER_LABEL = ['LAN ', LAN_SERVER_ADDRESS, ':8090'].join('');
 const LAN_SERVER_URL = ['http', '://', 'noc-admin-pc', ':8090'].join('');
 let lastConnectionManagerProps: {
   pbUrl: string;
@@ -355,13 +357,14 @@ describe('MainApp', () => {
         mode: 'server',
         port: 8090,
         bindHost: '0.0.0.0',
-        hostName: 'noc-admin-pc',
+        lanIp: LAN_SERVER_ADDRESS,
       },
     });
 
-    expect(screen.getByText('Server')).toBeInTheDocument();
-    expect(screen.getByText('LAN access')).toBeInTheDocument();
-    expect(screen.getByText(LAN_SERVER_URL)).toBeInTheDocument();
+    expect(screen.getByText(LAN_SERVER_LABEL)).toBeInTheDocument();
+    expect(screen.queryByText('Server')).not.toBeInTheDocument();
+    expect(screen.queryByText('LAN access')).not.toBeInTheDocument();
+    expect(screen.queryByText(LAN_SERVER_URL)).not.toBeInTheDocument();
   });
 
   it('does not show server connection details in client mode', () => {
@@ -372,8 +375,7 @@ describe('MainApp', () => {
       },
     });
 
-    expect(screen.queryByText('LAN access')).not.toBeInTheDocument();
-    expect(screen.queryByText(LAN_SERVER_URL)).not.toBeInTheDocument();
+    expect(screen.queryByText(LAN_SERVER_LABEL)).not.toBeInTheDocument();
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -592,7 +594,7 @@ describe('App default export', () => {
       mode: 'server',
       port: 8090,
       bindHost: '0.0.0.0',
-      hostName: 'noc-admin-pc',
+      lanIp: LAN_SERVER_ADDRESS,
     });
     mockGetPbConnection.mockResolvedValue({
       ok: true,

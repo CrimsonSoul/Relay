@@ -63,14 +63,11 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
   });
 }
 
-function getServerStatusLabel(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
-  return config.bindHost === '0.0.0.0' ? 'LAN access' : 'Local only';
-}
-
-function getServerClientUrl(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
-  const host =
-    config.bindHost === '0.0.0.0' ? config.hostName || 'relay-server.local' : '127.0.0.1';
-  return `http://${host}:${config.port}`;
+function getServerRuntimeLabel(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
+  if (config.bindHost !== '0.0.0.0') {
+    return `Local 127.0.0.1:${config.port}`;
+  }
+  return `LAN ${config.lanIp ?? 'IP unavailable'}:${config.port}`;
 }
 
 function ServerRuntimeLine({ config }: { readonly config?: PublicRelayConfig | null }) {
@@ -78,10 +75,7 @@ function ServerRuntimeLine({ config }: { readonly config?: PublicRelayConfig | n
 
   return (
     <div className="server-runtime-line" aria-label="Relay server connection details">
-      <span>Server</span>
-      <span>{getServerStatusLabel(config)}</span>
-      <span>Port {config.port}</span>
-      <span>{getServerClientUrl(config)}</span>
+      {getServerRuntimeLabel(config)}
     </div>
   );
 }
