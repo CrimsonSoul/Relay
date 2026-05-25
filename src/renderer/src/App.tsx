@@ -13,7 +13,7 @@ import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { TactileButton } from './components/TactileButton';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, TabName, type PbAuthSession } from '@shared/ipc';
+import { Contact, TabName, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
@@ -63,7 +63,36 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
   });
 }
 
-export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void } = {}) {
+function getServerStatusLabel(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
+  return config.bindHost === '0.0.0.0' ? 'LAN access' : 'Local only';
+}
+
+function getServerClientUrl(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
+  const host =
+    config.bindHost === '0.0.0.0' ? config.hostName || 'relay-server.local' : '127.0.0.1';
+  return `http://${host}:${config.port}`;
+}
+
+function ServerRuntimeLine({ config }: { readonly config?: PublicRelayConfig | null }) {
+  if (config?.mode !== 'server') return null;
+
+  return (
+    <div className="server-runtime-line" aria-label="Relay server connection details">
+      <span>Server</span>
+      <span>{getServerStatusLabel(config)}</span>
+      <span>Port {config.port}</span>
+      <span>{getServerClientUrl(config)}</span>
+    </div>
+  );
+}
+
+export function MainApp({
+  onReconfigure,
+  relayConfig = null,
+}: {
+  readonly onReconfigure?: () => void;
+  readonly relayConfig?: PublicRelayConfig | null;
+} = {}) {
   const { showToast } = useToast();
 
   const searchParams = new URLSearchParams(globalThis.location.search);
@@ -235,6 +264,7 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
               />
             </div>
             <div className="header-actions">
+              <ServerRuntimeLine config={relayConfig} />
               <WorldClock />
             </div>
           </header>
@@ -386,7 +416,12 @@ export function MainApp({ onReconfigure }: { readonly onReconfigure?: () => void
 type AppPhase =
   | { stage: 'checking' }
   | { stage: 'setup' }
-  | { stage: 'connecting'; pbUrl: string; pbAuth: PbAuthSession }
+  | {
+      stage: 'connecting';
+      pbUrl: string;
+      pbAuth: PbAuthSession;
+      relayConfig: PublicRelayConfig | null;
+    }
   | { stage: 'error'; message: string };
 
 function AppWithSetup() {
@@ -399,6 +434,7 @@ function AppWithSetup() {
         setPhase({ stage: 'setup' });
         return;
       }
+      const relayConfig = await globalThis.api!.getConfig();
       const result = await withStartupTimeout(
         globalThis.api!.getPbConnection(),
         STARTUP_CONNECTION_TIMEOUT_MS,
@@ -423,6 +459,7 @@ function AppWithSetup() {
         stage: 'connecting',
         pbUrl: result.connection.pbUrl,
         pbAuth: result.connection.auth,
+        relayConfig,
       });
     } catch (err) {
       if (err instanceof Error && err.message === 'startup-timeout') {
@@ -446,7 +483,9 @@ function AppWithSetup() {
     async (config: {
       mode: 'server' | 'client';
       port?: number;
+      bindHost?: '127.0.0.1' | '0.0.0.0';
       serverUrl?: string;
+      allowInsecureHttp?: boolean;
       secret: string;
     }) => {
       try {
@@ -528,7 +567,7 @@ function AppWithSetup() {
       pbAuth={phase.pbAuth}
       onReconfigure={() => setPhase({ stage: 'setup' })}
     >
-      <MainApp onReconfigure={() => setPhase({ stage: 'setup' })} />
+      <MainApp onReconfigure={() => setPhase({ stage: 'setup' })} relayConfig={phase.relayConfig} />
     </ConnectionManager>
   );
 }

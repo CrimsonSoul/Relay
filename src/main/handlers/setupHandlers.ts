@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron';
+import { hostname } from 'node:os';
 import { z } from 'zod';
 import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
@@ -33,7 +34,7 @@ const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clie
 
 function toPublicConfig(config: RelayConfig): PublicRelayConfig {
   if (config.mode === 'server') {
-    return { mode: 'server', port: config.port, bindHost: config.bindHost };
+    return { mode: 'server', port: config.port, bindHost: config.bindHost, hostName: hostname() };
   }
   return {
     mode: 'client',

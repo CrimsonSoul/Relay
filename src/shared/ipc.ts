@@ -211,7 +211,7 @@ export type PbConnectionResult =
   | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
 
 export type PublicRelayConfig =
-  | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0' }
+  | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0'; hostName?: string }
   | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
 
 export type BridgeAPI = {

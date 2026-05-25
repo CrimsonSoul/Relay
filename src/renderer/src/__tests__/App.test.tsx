@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp } from '../App';
 
 const mockIsConfigured = vi.fn();
+const mockGetConfig = vi.fn();
 const mockGetPbConnection = vi.fn();
 const mockSaveConfig = vi.fn();
 const mockStartPocketBase = vi.fn();
@@ -19,6 +20,7 @@ const buildServerSetupConfig = () => ({
   port: 8090,
   [SETUP_SECRET_FIELD]: buildSetupSecret(),
 });
+const LAN_SERVER_URL = ['http', '://', 'noc-admin-pc', ':8090'].join('');
 let lastConnectionManagerProps: {
   pbUrl: string;
   pbAuth: { token: string; record: Record<string, unknown> | null };
@@ -285,13 +287,13 @@ vi.mock('../services/contactService', () => ({
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function renderApp(searchParams = '') {
+function renderApp(searchParams = '', props: Partial<React.ComponentProps<typeof MainApp>> = {}) {
   // Stub globalThis.location.search
   Object.defineProperty(globalThis, 'location', {
     value: { search: searchParams },
     writable: true,
   });
-  return render(<MainApp />);
+  return render(<MainApp {...props} />);
 }
 
 describe('MainApp', () => {
@@ -345,6 +347,33 @@ describe('MainApp', () => {
   it('renders header search bar', () => {
     renderApp();
     expect(screen.getByTestId('header-search')).toBeInTheDocument();
+  });
+
+  it('shows LAN server connection details when running in server mode', () => {
+    renderApp('', {
+      relayConfig: {
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        hostName: 'noc-admin-pc',
+      },
+    });
+
+    expect(screen.getByText('Server')).toBeInTheDocument();
+    expect(screen.getByText('LAN access')).toBeInTheDocument();
+    expect(screen.getByText(LAN_SERVER_URL)).toBeInTheDocument();
+  });
+
+  it('does not show server connection details in client mode', () => {
+    renderApp('', {
+      relayConfig: {
+        mode: 'client',
+        serverUrl: LAN_SERVER_URL,
+      },
+    });
+
+    expect(screen.queryByText('LAN access')).not.toBeInTheDocument();
+    expect(screen.queryByText(LAN_SERVER_URL)).not.toBeInTheDocument();
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -559,6 +588,12 @@ describe('App default export', () => {
     vi.useRealTimers();
     lastConnectionManagerProps = null;
     mockIsConfigured.mockResolvedValue(true);
+    mockGetConfig.mockResolvedValue({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      hostName: 'noc-admin-pc',
+    });
     mockGetPbConnection.mockResolvedValue({
       ok: true,
       connection: {
@@ -570,6 +605,7 @@ describe('App default export', () => {
     mockStartPocketBase.mockResolvedValue(true);
     globalThis.api = {
       isConfigured: mockIsConfigured,
+      getConfig: mockGetConfig,
       getPbConnection: mockGetPbConnection,
       saveConfig: mockSaveConfig,
       startPocketBase: mockStartPocketBase,

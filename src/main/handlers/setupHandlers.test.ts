@@ -7,6 +7,10 @@ vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
 }));
 
+vi.mock('node:os', () => ({
+  hostname: vi.fn(() => 'noc-admin-pc'),
+}));
+
 vi.mock('../logger', () => ({
   loggers: {
     main: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -74,7 +78,12 @@ describe('setupHandlers', () => {
       const result = handlers[IPC_CHANNELS.SETUP_GET_CONFIG]();
 
       expect(mockAppConfig.load).toHaveBeenCalled();
-      expect(result).toEqual({ mode: 'server', port: 8090, bindHost: '127.0.0.1' });
+      expect(result).toEqual({
+        mode: 'server',
+        port: 8090,
+        bindHost: '127.0.0.1',
+        hostName: 'noc-admin-pc',
+      });
       expect(result).not.toHaveProperty(SECRET_FIELD);
     });
 
