@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import PocketBase from 'pocketbase';
 import { IPC_CHANNELS, type PbConnectionResult } from '@shared/ipc';
+import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { loggers } from '../logger';
@@ -41,6 +42,9 @@ function getPbUrl(
   }
 
   if (config?.mode === 'client' && typeof config.serverUrl === 'string' && config.serverUrl) {
+    if (!isAllowedRelayServerUrl(config.serverUrl, config.allowInsecureHttp === true)) {
+      return null;
+    }
     return config.serverUrl;
   }
 

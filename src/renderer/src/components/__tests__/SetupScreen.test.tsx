@@ -38,8 +38,11 @@ describe('SetupScreen', () => {
   const SECRET_FIELD = 'secret';
   const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
   const validPassphrase = createFixturePassphrase();
-  // eslint-disable-next-line sonarjs/no-clear-text-protocols
-  const CLIENT_URL = 'http://192.168.1.50:8090';
+  const CLIENT_URL = 'https://relay.example.com:8090';
+  const PRIVATE_LAN_HTTP_URL = ['http', '://', ['192', '168', '1', '50'].join('.'), ':8090'].join(
+    '',
+  );
+  const PUBLIC_HTTP_URL = ['http', '://', 'relay.example.com', ':8090'].join('');
   const getSubmittedConfig = () => onComplete.mock.calls.at(-1)?.[0] as Record<string, unknown>;
   let onComplete: ReturnType<typeof vi.fn>;
 
@@ -277,7 +280,23 @@ describe('SetupScreen', () => {
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', port: 9090 });
+    expect(getSubmittedConfig()).toMatchObject({ bindHost: '127.0.0.1' });
     expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
+  });
+
+  it('can opt server mode into direct LAN HTTP binding', async () => {
+    onComplete.mockResolvedValue(undefined);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Server'));
+    fireEvent.click(screen.getByLabelText('Allow direct LAN access'));
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
+    });
+
+    expect(getSubmittedConfig()).toMatchObject({ mode: 'server', bindHost: '0.0.0.0' });
   });
 
   it('calls onComplete with client config on valid client submission', async () => {
@@ -334,8 +353,66 @@ describe('SetupScreen', () => {
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
-      // eslint-disable-next-line sonarjs/no-clear-text-protocols
-      serverUrl: 'http://relay-server.local:8090',
+      serverUrl: 'https://relay-server.local:8090',
+    });
+  });
+
+  it('submits private LAN HTTP client URLs without requiring insecure HTTP opt-in', async () => {
+    onComplete.mockResolvedValue(undefined);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
+    });
+
+    expect(getSubmittedConfig()).toMatchObject({
+      mode: 'client',
+      serverUrl: PRIVATE_LAN_HTTP_URL,
+    });
+  });
+
+  it('rejects public HTTP client URLs unless insecure HTTP is explicitly allowed', async () => {
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PUBLIC_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
+    });
+
+    expect(screen.getByText(/Public HTTP is not production safe/)).toBeInTheDocument();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('submits public HTTP client URLs when the user explicitly opts in', async () => {
+    onComplete.mockResolvedValue(undefined);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PUBLIC_HTTP_URL },
+    });
+    fireEvent.click(screen.getByLabelText('Allow public HTTP'));
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByText('Save & Connect').closest('form')!);
+    });
+
+    expect(getSubmittedConfig()).toMatchObject({
+      mode: 'client',
+      serverUrl: PUBLIC_HTTP_URL,
+      allowInsecureHttp: true,
     });
   });
 

@@ -144,6 +144,18 @@ Recommended deployment assumption:
 
 - Use full-disk encryption when the workstation or server handles sensitive operational data
 
+### PocketBase Network Exposure
+
+New server setup binds PocketBase to `127.0.0.1` by default. Direct LAN access requires an explicit setup opt-in and should be used only on trusted operator-controlled networks.
+
+Client setup accepts HTTPS Relay server URLs by default and also supports HTTP for trusted LAN targets, including private IP addresses, `.local` names, and single-label machine names used for NOC desktop-to-laptop deployments. Public HTTP requires the explicit insecure HTTP opt-in. Use HTTPS when Relay traffic leaves the trusted LAN so the shared Relay passphrase is not sent over cleartext WAN links.
+
+### PocketBase Bootstrap
+
+Relay manages its own collections at startup. Bootstrap creates missing Relay collections, adds missing fields, and re-applies authenticated API rules to existing managed collections.
+
+Unknown collections are left in place and logged as unmanaged. Startup must not delete application or operator-created collections outside Relay's managed collection list.
+
 ## Backups, Sync, And Resilience
 
 ### Backup Safety

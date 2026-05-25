@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
+import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
@@ -9,22 +10,36 @@ import { loggers } from '../logger';
 const serverConfigSchema = z.object({
   mode: z.literal('server'),
   port: z.number().int().min(1024).max(65535),
+  bindHost: z.enum(['127.0.0.1', '0.0.0.0']),
   secret: z.string().min(8),
 });
 
-const clientConfigSchema = z.object({
-  mode: z.literal('client'),
-  serverUrl: z.url(),
-  secret: z.string().min(8),
-});
+const clientConfigSchema = z
+  .object({
+    mode: z.literal('client'),
+    serverUrl: z.url(),
+    allowInsecureHttp: z.boolean().optional(),
+    secret: z.string().min(8),
+  })
+  .refine(
+    (config) => isAllowedRelayServerUrl(config.serverUrl, config.allowInsecureHttp === true),
+    {
+      message: 'Public HTTP Relay server URLs require explicit insecure HTTP opt-in',
+      path: ['serverUrl'],
+    },
+  );
 
 const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clientConfigSchema]);
 
 function toPublicConfig(config: RelayConfig): PublicRelayConfig {
   if (config.mode === 'server') {
-    return { mode: 'server', port: config.port };
+    return { mode: 'server', port: config.port, bindHost: config.bindHost };
   }
-  return { mode: 'client', serverUrl: config.serverUrl };
+  return {
+    mode: 'client',
+    serverUrl: config.serverUrl,
+    ...(config.allowInsecureHttp ? { allowInsecureHttp: true } : {}),
+  };
 }
 
 export function setupSetupHandlers(

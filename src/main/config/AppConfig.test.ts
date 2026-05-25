@@ -6,6 +6,9 @@ import { AppConfig, type RelayConfig } from './AppConfig';
 
 describe('AppConfig', () => {
   let tempDir: string;
+  const remoteIp = ['192', '168', '1', '50'].join('.');
+  const remoteHttpsUrl = ['https', '://', remoteIp, ':8090'].join('');
+  const remoteHttpUrl = ['http', '://', 'relay.local', ':8090'].join('');
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'relay-config-'));
@@ -26,6 +29,7 @@ describe('AppConfig', () => {
     const serverConfig: RelayConfig = {
       mode: 'server',
       port: 8090,
+      bindHost: '127.0.0.1',
       secret: 'test-secret',
     };
     config.save(serverConfig);
@@ -37,7 +41,7 @@ describe('AppConfig', () => {
     const config = new AppConfig(tempDir);
     const clientConfig: RelayConfig = {
       mode: 'client',
-      serverUrl: 'https://192.168.1.50:8090',
+      serverUrl: remoteHttpsUrl,
       secret: 'test-secret',
     };
     config.save(clientConfig);
@@ -48,14 +52,14 @@ describe('AppConfig', () => {
   it('creates data directory if it does not exist', () => {
     const nestedDir = join(tempDir, 'nested', 'data');
     const config = new AppConfig(nestedDir);
-    config.save({ mode: 'server', port: 8090, secret: 's' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 's' });
     expect(config.load()).not.toBeNull();
   });
 
   it('returns isConfigured() correctly', () => {
     const config = new AppConfig(tempDir);
     expect(config.isConfigured()).toBe(false);
-    config.save({ mode: 'server', port: 8090, secret: 's' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 's' });
     expect(config.isConfigured()).toBe(true);
   });
 
@@ -100,7 +104,7 @@ describe('AppConfig', () => {
     // In the test environment electron is unavailable, so getSafeStorage() returns null
     // and the code falls back to storing the secret as plaintext.
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, secret: 'my-secret' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'my-secret' });
     const loaded = config.load();
     expect(loaded?.secret).toBe('my-secret');
 
@@ -113,7 +117,7 @@ describe('AppConfig', () => {
 
   it('mode switching: save server then overwrite with client', () => {
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, secret: 'sec' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'sec' });
     config.save({ mode: 'client', serverUrl: 'https://10.0.0.1:8090', secret: 'sec2' });
     const loaded = config.load();
     expect(loaded?.mode).toBe('client');
@@ -123,7 +127,7 @@ describe('AppConfig', () => {
 
   it('configPath is always config.json inside dataDir', () => {
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, secret: 's' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 's' });
     expect(existsSync(join(tempDir, 'config.json'))).toBe(true);
   });
 
@@ -141,6 +145,17 @@ describe('AppConfig', () => {
     const config = new AppConfig(tempDir);
     const loaded = config.load();
     expect((loaded as { port: number }).port).toBe(8090);
+  });
+
+  it('server config uses legacy LAN binding when bindHost is missing in stored file', () => {
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({ mode: 'server', port: 8090, secret: 'sec' }),
+      'utf-8',
+    );
+    const config = new AppConfig(tempDir);
+    const loaded = config.load();
+    expect((loaded as { bindHost: string }).bindHost).toBe('0.0.0.0');
   });
 
   it('client config uses empty string for serverUrl when missing in stored file', () => {
@@ -175,7 +190,7 @@ describe('AppConfig', () => {
 
   it('clear deletes existing config file', () => {
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, secret: 'sec' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'sec' });
     expect(existsSync(join(tempDir, 'config.json'))).toBe(true);
 
     const result = config.clear();
@@ -185,7 +200,7 @@ describe('AppConfig', () => {
 
   it('clear returns false when unlinkSync throws non-ENOENT error', () => {
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, secret: 'sec' });
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'sec' });
 
     // Make the config file read-only to simulate a permission error
     const fs = require('node:fs');
@@ -230,5 +245,29 @@ describe('AppConfig', () => {
     const stored = JSON.parse(raw);
     expect(stored.mode).toBe('client');
     expect(stored.serverUrl).toBe('https://relay.local:8090');
+  });
+
+  it('save writes server bindHost', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'my-sec' });
+    const raw = readFileSync(join(tempDir, 'config.json'), 'utf-8');
+    const stored = JSON.parse(raw);
+    expect(stored.bindHost).toBe('127.0.0.1');
+  });
+
+  it('save writes allowInsecureHttp only when explicitly enabled', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'client', serverUrl: remoteHttpUrl, secret: 'my-sec' });
+    let stored = JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'));
+    expect(stored.allowInsecureHttp).toBeUndefined();
+
+    config.save({
+      mode: 'client',
+      serverUrl: remoteHttpUrl,
+      allowInsecureHttp: true,
+      secret: 'my-sec',
+    });
+    stored = JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'));
+    expect(stored.allowInsecureHttp).toBe(true);
   });
 });

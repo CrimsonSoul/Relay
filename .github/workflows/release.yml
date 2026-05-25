@@ -46,6 +46,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Audit dependencies
+        run: npm audit --audit-level=high --omit=dev
+
   package-windows:
     runs-on: windows-latest
     env:
@@ -80,14 +83,14 @@ jobs:
         run: npm ci --prefer-offline
 
       - name: Download PocketBase binary
-        run: npx tsx scripts/download-pocketbase.ts
+        run: npx tsx scripts/download-pocketbase.ts --platform=win32 --arch=x64
 
       - name: Verify PocketBase binary exists
         shell: bash
         run: |
-          if [ -f "resources/pocketbase/pocketbase.exe" ]; then
+          if [ -f "resources/pocketbase/win32-x64/pocketbase.exe" ]; then
             echo "PocketBase binary found"
-            ls -la resources/pocketbase/
+            ls -la resources/pocketbase/win32-x64/
           else
             echo "ERROR: PocketBase binary not found!"
             ls -la resources/pocketbase/ 2>/dev/null || echo "resources/pocketbase/ does not exist"
@@ -103,8 +106,80 @@ jobs:
           name: relay-windows
           path: release/*.exe
 
+  package-macos:
+    runs-on: macos-latest
+    env:
+      APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
+      CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Verify signing and notarization secrets
+        run: |
+          test -n "$CSC_LINK"
+          test -n "$CSC_KEY_PASSWORD"
+          test -n "$APPLE_API_KEY_CONTENT"
+          test -n "$APPLE_API_KEY_ID"
+          test -n "$APPLE_API_ISSUER"
+          test -n "$APPLE_TEAM_ID"
+
+      - name: Prepare notarization API key
+        run: |
+          API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$API_KEY_PATH"
+          echo "APPLE_API_KEY=$API_KEY_PATH" >> "$GITHUB_ENV"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Get Electron version
+        id: electron-version
+        run: |
+          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron binary
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/electron
+          key: electron-mac-${{ steps.electron-version.outputs.version }}
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+
+      - name: Download PocketBase binaries
+        run: |
+          npx tsx scripts/download-pocketbase.ts --platform=darwin --arch=arm64
+          npx tsx scripts/download-pocketbase.ts --platform=darwin --arch=x64
+
+      - name: Verify PocketBase binaries exist
+        run: |
+          test -f resources/pocketbase/darwin-arm64/pocketbase
+          test -f resources/pocketbase/darwin-x64/pocketbase
+          ls -la resources/pocketbase/darwin-arm64/
+          ls -la resources/pocketbase/darwin-x64/
+
+      - name: Build, sign, notarize, and package
+        run: npm run build:mac
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-macos
+          path: release/*.dmg
+
   release:
-    needs: [quality, package-windows]
+    needs: [quality, package-windows, package-macos]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -125,6 +200,12 @@ jobs:
           name: relay-windows
           path: release/
 
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: relay-macos
+          path: release/
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -133,6 +214,7 @@ jobs:
           body: 'Automated release from workflow dispatch.'
           files: |
             release/Relay.exe
+            release/*.dmg
           draft: true
           prerelease: false
         env:

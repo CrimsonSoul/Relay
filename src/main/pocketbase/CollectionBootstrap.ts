@@ -2,8 +2,8 @@
  * CollectionBootstrap — ensures all required PocketBase collections exist on server startup.
  *
  * Runs after PB is healthy and authenticated. Checks for each collection by name;
- * creates it with the correct schema and API rules if missing. Existing collections
- * are left untouched (no destructive updates).
+ * creates it with the correct schema and API rules if missing. Existing managed
+ * collections are patched non-destructively; unmanaged collections are left untouched.
  */
 
 import PocketBase from 'pocketbase';
@@ -28,6 +28,17 @@ interface CollectionDef {
   type: 'base';
   fields: FieldDef[];
 }
+
+type ExistingCollection = {
+  id: string;
+  name: string;
+  fields?: FieldDef[];
+  listRule?: string | null;
+  viewRule?: string | null;
+  createRule?: string | null;
+  updateRule?: string | null;
+  deleteRule?: string | null;
+};
 
 /** Autodate fields added to every collection for created/updated timestamps. */
 const AUTODATE_FIELDS: FieldDef[] = [
@@ -167,23 +178,47 @@ const COLLECTIONS: CollectionDef[] = [
 
 const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
 
-/** Patch a single collection to add any missing fields (schema + autodate). Returns true if patched. */
-async function patchMissingFields(
+const AUTH_RULE_PATCH = {
+  listRule: AUTH_RULE,
+  viewRule: AUTH_RULE,
+  createRule: AUTH_RULE,
+  updateRule: AUTH_RULE,
+  deleteRule: AUTH_RULE,
+};
+
+/** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
+async function patchCollectionDefinition(
   pb: PocketBase,
   colId: string,
   colName: string,
   expectedSchemaFields: FieldDef[],
 ): Promise<boolean> {
-  const colFull = await pb.collections.getOne(colId);
-  const fields = (colFull as unknown as { fields: FieldDef[] }).fields || [];
+  const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
+  const fields = colFull.fields || [];
   const fieldNames = new Set(fields.map((f) => f.name));
   const allExpected = [...expectedSchemaFields, ...AUTODATE_FIELDS];
   const missing = allExpected.filter((f) => !fieldNames.has(f.name));
-  if (missing.length === 0) return false;
-  await pb.collections.update(colId, { fields: [...fields, ...missing] });
-  logger.info(
-    `Patched fields on collection: ${colName} (+${missing.map((f) => f.name).join(', ')})`,
+  const rulesPatch = Object.fromEntries(
+    Object.entries(AUTH_RULE_PATCH).filter(([key, value]) => {
+      return colFull[key as keyof typeof AUTH_RULE_PATCH] !== value;
+    }),
   );
+
+  if (missing.length === 0 && Object.keys(rulesPatch).length === 0) return false;
+
+  await pb.collections.update(colId, {
+    ...(missing.length > 0 ? { fields: [...fields, ...missing] } : {}),
+    ...rulesPatch,
+  });
+
+  if (missing.length > 0) {
+    logger.info(
+      `Patched fields on collection: ${colName} (+${missing.map((f) => f.name).join(', ')})`,
+    );
+  }
+  if (Object.keys(rulesPatch).length > 0) {
+    logger.info(`Patched API rules on collection: ${colName}`);
+  }
   return true;
 }
 
@@ -224,7 +259,7 @@ async function patchExisting(
     const col = allCols.find((c) => c.name === def.name);
     if (!col) continue;
     try {
-      if (await patchMissingFields(pb, col.id, def.name, def.fields)) patched++;
+      if (await patchCollectionDefinition(pb, col.id, def.name, def.fields)) patched++;
     } catch (err) {
       logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
     }
@@ -232,36 +267,24 @@ async function patchExisting(
   return patched;
 }
 
-/** Remove collections not in the schema (excluding system and users). */
-async function pruneStale(
-  pb: PocketBase,
-  allCols: Array<{ id: string; name: string }>,
-): Promise<number> {
+/** Warn about collections Relay does not manage. Startup never deletes user data. */
+function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }>): number {
   const staleCols = allCols.filter(
     (col) => !col.name.startsWith('_') && col.name !== 'users' && !KNOWN_NAMES.has(col.name),
   );
   if (staleCols.length > 0) {
     logger.warn(
-      `About to prune ${staleCols.length} unknown collection(s): ${staleCols.map((c) => c.name).join(', ')}. ` +
-        'If unexpected, restore from a PocketBase backup.',
+      `Found ${staleCols.length} unmanaged collection(s): ${staleCols.map((c) => c.name).join(', ')}. ` +
+        'Relay leaves unmanaged collections untouched during startup.',
     );
   }
-  let pruned = 0;
-  for (const col of staleCols) {
-    try {
-      await pb.collections.delete(col.id);
-      pruned++;
-      logger.warn(`Pruned stale collection: ${col.name}`);
-    } catch (err) {
-      logger.error(`Failed to prune collection: ${col.name}`, { error: err });
-    }
-  }
-  return pruned;
+  return staleCols.length;
 }
 
 /**
  * Ensure all required collections exist in PocketBase.
- * Creates missing collections, patches autodate fields, prunes stale collections.
+ * Creates missing collections, patches required fields and API rules, and warns about
+ * unmanaged collections without deleting them.
  */
 export async function ensureCollections(pb: PocketBase): Promise<void> {
   let allCols: Array<{ id: string; name: string }>;
@@ -275,11 +298,11 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   const existing = new Set(allCols.map((c) => c.name));
   const created = await createMissing(pb, existing);
   const patched = await patchExisting(pb, existing, allCols);
-  const pruned = await pruneStale(pb, allCols);
+  const unmanaged = warnAboutUnknownCollections(allCols);
 
-  if (created > 0 || pruned > 0 || patched > 0) {
+  if (created > 0 || unmanaged > 0 || patched > 0) {
     logger.info(
-      `Collection bootstrap complete: ${created} created, ${patched} patched, ${pruned} pruned`,
+      `Collection bootstrap complete: ${created} created, ${patched} patched, ${unmanaged} unmanaged`,
     );
   } else {
     logger.info('Collection bootstrap: all collections up to date');

@@ -1,10 +1,10 @@
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, unlinkSync, createWriteStream, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import https from 'node:https';
+import { createWriteStream, existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
+import https from 'node:https';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,17 +12,43 @@ const __dirname = dirname(__filename);
 const PB_VERSION = '0.25.9';
 const RESOURCES_DIR = join(__dirname, '..', 'resources', 'pocketbase');
 
-function getPlatformArch(): { os: string; arch: string; ext: string } {
-  const platform = process.platform;
-  const arch = process.arch;
+type SupportedPlatform = 'win32' | 'darwin' | 'linux';
+type SupportedArch = 'x64' | 'arm64';
 
-  if (platform === 'win32') {
-    return { os: 'windows', arch: arch === 'arm64' ? 'arm64' : 'amd64', ext: '.exe' };
-  }
-  if (platform === 'darwin') {
-    return { os: 'darwin', arch: arch === 'arm64' ? 'arm64' : 'amd64', ext: '' };
-  }
-  return { os: 'linux', arch: arch === 'arm64' ? 'arm64' : 'amd64', ext: '' };
+type PlatformArch = {
+  platform: SupportedPlatform;
+  arch: SupportedArch;
+  pbOs: 'windows' | 'darwin' | 'linux';
+  pbArch: 'amd64' | 'arm64';
+  ext: '.exe' | '';
+};
+
+function parseArg(name: string): string | undefined {
+  const prefix = `--${name}=`;
+  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+}
+
+function toSupportedPlatform(value: string): SupportedPlatform {
+  if (value === 'win32' || value === 'darwin' || value === 'linux') return value;
+  throw new Error(`Unsupported PocketBase platform: ${value}`);
+}
+
+function toSupportedArch(value: string): SupportedArch {
+  if (value === 'x64' || value === 'arm64') return value;
+  throw new Error(`Unsupported PocketBase architecture: ${value}`);
+}
+
+function getPlatformArch(): PlatformArch {
+  const platform = toSupportedPlatform(parseArg('platform') ?? process.platform);
+  const arch = toSupportedArch(parseArg('arch') ?? process.arch);
+
+  return {
+    platform,
+    arch,
+    pbOs: platform === 'win32' ? 'windows' : platform,
+    pbArch: arch === 'arm64' ? 'arm64' : 'amd64',
+    ext: platform === 'win32' ? '.exe' : '',
+  };
 }
 
 type HttpClient = typeof https | typeof http;
@@ -86,7 +112,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
 /** Extract a zip file (cross-platform). */
 function extractZip(zipPath: string, destDir: string): void {
   if (process.platform === 'win32') {
-    // PowerShell is available on all modern Windows
+    // PowerShell is available on all modern Windows.
     execSync(
       `powershell -NoProfile -Command "Expand-Archive -Force -Path '${zipPath}' -DestinationPath '${destDir}'"`,
     );
@@ -103,8 +129,8 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
   try {
     await downloadFile(checksumUrl, checksumPath);
   } catch {
-    // Some PocketBase versions don't publish a checksums file — skip verification
-    console.warn(`Checksums file not available for v${PB_VERSION} — skipping verification`);
+    // Some PocketBase versions don't publish a checksums file, so skip verification.
+    console.warn(`Checksums file not available for v${PB_VERSION} - skipping verification`);
     return;
   }
 
@@ -113,7 +139,7 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
     const line = checksumFile.split('\n').find((l) => l.includes(expectedFilename));
     if (!line) {
       console.warn(
-        `Checksum for ${expectedFilename} not found in checksums file — skipping verification`,
+        `Checksum for ${expectedFilename} not found in checksums file - skipping verification`,
       );
       return;
     }
@@ -132,7 +158,6 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
     console.log(`Checksum verified: ${actualHash}`);
     unlinkSync(checksumPath);
   } catch (err) {
-    // Clean up checksums file on error
     try {
       unlinkSync(checksumPath);
     } catch {
@@ -143,29 +168,29 @@ async function verifyChecksum(zipPath: string, expectedFilename: string): Promis
 }
 
 async function download(): Promise<void> {
-  const { os, arch, ext } = getPlatformArch();
+  const { platform, arch, pbOs, pbArch, ext } = getPlatformArch();
   const binaryName = `pocketbase${ext}`;
-  const outputPath = join(RESOURCES_DIR, binaryName);
+  const outputDir = join(RESOURCES_DIR, `${platform}-${arch}`);
+  const outputPath = join(outputDir, binaryName);
 
   if (existsSync(outputPath)) {
     console.log(`PocketBase binary already exists at ${outputPath}`);
     return;
   }
 
-  mkdirSync(RESOURCES_DIR, { recursive: true });
+  mkdirSync(outputDir, { recursive: true });
 
-  const zipFilename = `pocketbase_${PB_VERSION}_${os}_${arch}.zip`;
+  const zipFilename = `pocketbase_${PB_VERSION}_${pbOs}_${pbArch}.zip`;
   const url = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/${zipFilename}`;
-  const zipPath = join(RESOURCES_DIR, 'pb.zip');
+  const zipPath = join(outputDir, 'pb.zip');
 
-  console.log(`Downloading PocketBase ${PB_VERSION} for ${os}/${arch}...`);
+  console.log(`Downloading PocketBase ${PB_VERSION} for ${platform}/${arch}...`);
   console.log(`URL: ${url}`);
 
   try {
     await downloadFile(url, zipPath);
     await verifyChecksum(zipPath, zipFilename);
   } catch (err) {
-    // Clean up partial/invalid zip on failure
     try {
       unlinkSync(zipPath);
     } catch {
@@ -173,7 +198,7 @@ async function download(): Promise<void> {
     }
     throw err;
   }
-  extractZip(zipPath, RESOURCES_DIR);
+  extractZip(zipPath, outputDir);
   unlinkSync(zipPath);
 
   if (ext === '') {
@@ -183,9 +208,11 @@ async function download(): Promise<void> {
   console.log(`PocketBase binary saved to ${outputPath}`);
 }
 
-try {
-  await download();
-} catch (err) {
-  console.error('Failed to download PocketBase:', err);
-  process.exit(1);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  try {
+    await download();
+  } catch (err) {
+    console.error('Failed to download PocketBase:', err);
+    process.exit(1);
+  }
 }

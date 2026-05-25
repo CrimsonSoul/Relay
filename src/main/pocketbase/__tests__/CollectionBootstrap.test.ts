@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 describe('ensureCollections', () => {
-  it('deletes collections not in the schema', async () => {
+  it('leaves unknown collections untouched during startup bootstrap', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'col1', name: 'contacts' },
       { id: 'col2', name: 'oncall_layout' },
@@ -36,8 +36,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockDelete).toHaveBeenCalledWith('col2');
-    expect(mockDelete).toHaveBeenCalledTimes(1);
+    expect(mockDelete).not.toHaveBeenCalledWith('col2');
   });
 
   it('skips system collections starting with underscore', async () => {
@@ -145,5 +144,39 @@ describe('ensureCollections', () => {
     const updatedFields = (updateCall![1] as { fields: Array<{ name: string }> }).fields;
     const teamIdField = updatedFields.find((f) => f.name === 'teamId');
     expect(teamIdField).toBeDefined();
+  });
+
+  it('patches authenticated API rules on existing collections', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'contacts-col', name: 'contacts' }]);
+    mockCreate.mockResolvedValue({});
+    mockDelete.mockResolvedValue(undefined);
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'name', required: true },
+        { type: 'text', name: 'email' },
+        { type: 'text', name: 'phone' },
+        { type: 'text', name: 'title' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      listRule: null,
+      viewRule: null,
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const updateCall = mockUpdate.mock.calls.find((call: unknown[]) => call[0] === 'contacts-col');
+    expect(updateCall).toBeDefined();
+    expect(updateCall![1]).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.id != ""',
+      updateRule: '@request.auth.id != ""',
+      deleteRule: '@request.auth.id != ""',
+    });
   });
 });

@@ -15,10 +15,14 @@ vi.mock('../logger', () => ({
 
 describe('setupHandlers', () => {
   const SECRET_FIELD = 'secret';
+  const remoteIp = ['192', '168', '1', '50'].join('.');
+  const privateLanHttpUrl = ['http', '://', remoteIp, ':8090'].join('');
+  const publicHttpUrl = ['http', '://', 'relay.example.com', ':8090'].join('');
   const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');
   const buildServerConfig = (overrides: Record<string, unknown> = {}) => ({
     mode: 'server',
     port: 8090,
+    bindHost: '127.0.0.1',
     [SECRET_FIELD]: createFixturePassphrase(),
     ...overrides,
   });
@@ -70,7 +74,7 @@ describe('setupHandlers', () => {
       const result = handlers[IPC_CHANNELS.SETUP_GET_CONFIG]();
 
       expect(mockAppConfig.load).toHaveBeenCalled();
-      expect(result).toEqual({ mode: 'server', port: 8090 });
+      expect(result).toEqual({ mode: 'server', port: 8090, bindHost: '127.0.0.1' });
       expect(result).not.toHaveProperty(SECRET_FIELD);
     });
 
@@ -154,6 +158,16 @@ describe('setupHandlers', () => {
       expect(result).toBe(false);
     });
 
+    it('rejects server config with unsupported bind host', () => {
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildServerConfig({ bindHost: remoteIp }),
+      );
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
     it('rejects config with secret shorter than 8 chars', () => {
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
         {},
@@ -176,6 +190,37 @@ describe('setupHandlers', () => {
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
       expect(result).toBe(false);
+    });
+
+    it('accepts private LAN HTTP client config without requiring insecure HTTP opt-in', () => {
+      const config = buildClientConfig({ serverUrl: privateLanHttpUrl });
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(mockAppConfig.save).toHaveBeenCalledWith(config);
+      expect(result).toBe(true);
+    });
+
+    it('rejects public HTTP client config unless insecure HTTP is explicitly allowed', () => {
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildClientConfig({ serverUrl: publicHttpUrl }),
+      );
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
+    it('accepts public HTTP client config with explicit insecure HTTP opt-in', () => {
+      const config = buildClientConfig({
+        serverUrl: publicHttpUrl,
+        allowInsecureHttp: true,
+      });
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(mockAppConfig.save).toHaveBeenCalledWith(config);
+      expect(result).toBe(true);
     });
 
     it('clears offline cache after saving config', () => {

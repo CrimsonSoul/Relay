@@ -15,12 +15,14 @@ function getSafeStorage(): typeof import('electron').safeStorage | null {
 export interface ServerConfig {
   mode: 'server';
   port: number;
+  bindHost: '127.0.0.1' | '0.0.0.0';
   secret: string;
 }
 
 export interface ClientConfig {
   mode: 'client';
   serverUrl: string;
+  allowInsecureHttp?: boolean;
   secret: string;
 }
 
@@ -30,7 +32,9 @@ export type RelayConfig = ServerConfig | ClientConfig;
 interface StoredConfig {
   mode: string;
   port?: number;
+  bindHost?: '127.0.0.1' | '0.0.0.0';
   serverUrl?: string;
+  allowInsecureHttp?: boolean;
   /** Encrypted secret (base64-encoded buffer) — used when safeStorage is available. */
   encryptedSecret?: string;
   /** Plaintext fallback — used only when safeStorage is unavailable (e.g. headless CI). */
@@ -63,9 +67,22 @@ export class AppConfig {
       }
 
       if (stored.mode === 'server') {
-        return { mode: 'server', port: stored.port ?? 8090, secret };
+        return {
+          mode: 'server',
+          port: stored.port ?? 8090,
+          bindHost: stored.bindHost ?? '0.0.0.0',
+          secret,
+        };
       }
-      return { mode: 'client', serverUrl: stored.serverUrl ?? '', secret };
+      const clientConfig: ClientConfig = {
+        mode: 'client',
+        serverUrl: stored.serverUrl ?? '',
+        secret,
+      };
+      if (stored.allowInsecureHttp === true) {
+        clientConfig.allowInsecureHttp = true;
+      }
+      return clientConfig;
     } catch (err) {
       loggers.main.error('Failed to parse config file', { path: this.configPath, error: err });
       return null;
@@ -79,8 +96,12 @@ export class AppConfig {
 
     if (config.mode === 'server') {
       stored.port = config.port;
+      stored.bindHost = config.bindHost;
     } else {
       stored.serverUrl = config.serverUrl;
+      if (config.allowInsecureHttp) {
+        stored.allowInsecureHttp = true;
+      }
     }
 
     // Encrypt secret at rest using OS credential storage when available

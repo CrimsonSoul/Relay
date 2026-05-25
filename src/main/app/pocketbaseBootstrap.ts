@@ -1,8 +1,10 @@
 import { app } from 'electron';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 import type { ServerConfig } from '../config/AppConfig';
 import { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
+import { getPocketBaseBinaryName, getPocketBaseBinaryPath } from '../pocketbase/binaryPath';
 import { BackupManager } from '../pocketbase/BackupManager';
 import { RetentionManager } from '../pocketbase/RetentionManager';
 import { ensureCollections } from '../pocketbase/CollectionBootstrap';
@@ -155,10 +157,28 @@ const doStartPocketBase = async (
 
   try {
     const appRoot = app.isPackaged ? process.resourcesPath : process.cwd();
-    const binaryName = process.platform === 'win32' ? 'pocketbase.exe' : 'pocketbase';
-    const binaryPath = app.isPackaged
-      ? join(process.resourcesPath, 'pocketbase', binaryName)
-      : join(appRoot, 'resources', 'pocketbase', binaryName);
+    let binaryPath = getPocketBaseBinaryPath({
+      isPackaged: app.isPackaged,
+      appRoot,
+      resourcesPath: process.resourcesPath,
+      platform: process.platform,
+      arch: process.arch,
+    });
+    if (!app.isPackaged && !existsSync(binaryPath)) {
+      const legacyBinaryPath = join(
+        appRoot,
+        'resources',
+        'pocketbase',
+        getPocketBaseBinaryName(process.platform),
+      );
+      if (existsSync(legacyBinaryPath)) {
+        loggers.pocketbase.warn('Using legacy PocketBase binary path for development', {
+          expectedBinaryPath: binaryPath,
+          legacyBinaryPath,
+        });
+        binaryPath = legacyBinaryPath;
+      }
+    }
     const pbDataDir = join(configDataDir, 'pb_data');
 
     loggers.pocketbase.info('PocketBase paths', {
@@ -175,7 +195,7 @@ const doStartPocketBase = async (
     const pbProcess = new PocketBaseProcess({
       binaryPath,
       dataDir: pbDataDir,
-      host: '0.0.0.0',
+      host: serverConfig.bindHost,
       port: serverConfig.port,
     });
     setPbProcess(pbProcess);

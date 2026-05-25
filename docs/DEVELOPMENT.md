@@ -94,6 +94,24 @@ Rules:
 
 ## Connection, Realtime, And Offline Behavior
 
+### Setup And Transport Security
+
+Server setup defaults to a local-only PocketBase listener (`127.0.0.1`). Use the direct LAN access option only when the server should accept connections from other machines on the network.
+
+Client setup normalizes host-only server entries to HTTPS. Explicit HTTP URLs are accepted for trusted LAN targets such as private IPs, `.local` names, and single-label machine names. Public HTTP URLs are rejected unless the insecure HTTP opt-in is selected.
+
+### PocketBase Binary Layout
+
+PocketBase binaries are downloaded into architecture-specific resource folders:
+
+- `resources/pocketbase/win32-x64/pocketbase.exe`
+- `resources/pocketbase/darwin-arm64/pocketbase`
+- `resources/pocketbase/darwin-x64/pocketbase`
+- `resources/pocketbase/linux-x64/pocketbase`
+- `resources/pocketbase/linux-arm64/pocketbase`
+
+Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetch a specific target. Packaged builds resolve the binary by `process.platform` and `process.arch`, while local development can still fall back to the legacy `resources/pocketbase/pocketbase` path if an older checkout already has it.
+
 ### Connection State
 
 `src/renderer/src/services/pocketbase.ts` owns the renderer connection lifecycle.

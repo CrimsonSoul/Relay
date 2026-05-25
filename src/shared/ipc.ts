@@ -211,8 +211,8 @@ export type PbConnectionResult =
   | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
 
 export type PublicRelayConfig =
-  | { mode: 'server'; port: number }
-  | { mode: 'client'; serverUrl: string };
+  | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0' }
+  | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
 
 export type BridgeAPI = {
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */

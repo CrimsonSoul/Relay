@@ -377,6 +377,24 @@
   margin: 0;
 }
 
+.setup-config__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  user-select: none;
+}
+
+.setup-config__checkbox input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent);
+}
+
 /* Password field with eye toggle */
 .setup-config__password-wrap {
   position: relative;

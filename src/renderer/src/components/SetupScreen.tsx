@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import { Input } from './Input';
 
 interface SetupScreenProps {
   readonly onComplete: (config: {
     mode: 'server' | 'client';
     port?: number;
+    bindHost?: '127.0.0.1' | '0.0.0.0';
     serverUrl?: string;
+    allowInsecureHttp?: boolean;
     secret: string;
   }) => Promise<void> | void;
 }
@@ -138,65 +141,83 @@ const EyeClosed = () => (
   </svg>
 );
 
-function normalizeServerUrl(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return '';
-  const withProtocol = trimmed.includes('://') ? trimmed : `http://${trimmed}`;
-  const minLength = withProtocol.indexOf('://') + 3;
-  let end = withProtocol.length;
-  while (end > minLength && withProtocol[end - 1] === '/') {
-    end--;
-  }
-  return withProtocol.slice(0, end);
-}
-
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
+  const [allowLanAccess, setAllowLanAccess] = useState(false);
   const [serverUrl, setServerUrl] = useState('');
+  const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [secret, setSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    setError(null);
-
+  const validatePassphrase = (): boolean => {
     if (!secret.trim()) {
       setError('Passphrase is required');
-      return;
+      return false;
     }
 
     if (secret.length < 8) {
       setError('Passphrase must be at least 8 characters');
-      return;
+      return false;
     }
 
+    return true;
+  };
+
+  const submitServerConfig = async () => {
+    const portNum = Number.parseInt(port, 10);
+    if (Number.isNaN(portNum) || portNum < 1024 || portNum > 65535) {
+      setError('Port must be between 1024 and 65535');
+      return;
+    }
+    setLoading(true);
+    try {
+      await onComplete({
+        mode: 'server',
+        port: portNum,
+        bindHost: allowLanAccess ? '0.0.0.0' : '127.0.0.1',
+        secret,
+      });
+    } catch {
+      setLoading(false);
+    }
+  };
+
+  const submitClientConfig = async () => {
+    const normalizedServerUrl = normalizeRelayServerUrl(serverUrl);
+    if (!normalizedServerUrl) {
+      setError('Server URL is required');
+      return;
+    }
+    if (!isAllowedRelayServerUrl(normalizedServerUrl, allowInsecureHttp)) {
+      setError('Public HTTP is not production safe. Use HTTPS or explicitly allow insecure HTTP.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await onComplete({
+        mode: 'client',
+        serverUrl: normalizedServerUrl,
+        ...(allowInsecureHttp ? { allowInsecureHttp: true } : {}),
+        secret,
+      });
+    } catch {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (!validatePassphrase()) return;
+
     if (mode === 'server') {
-      const portNum = Number.parseInt(port, 10);
-      if (Number.isNaN(portNum) || portNum < 1024 || portNum > 65535) {
-        setError('Port must be between 1024 and 65535');
-        return;
-      }
-      setLoading(true);
-      try {
-        await onComplete({ mode: 'server', port: portNum, secret });
-      } catch {
-        setLoading(false);
-      }
+      void submitServerConfig();
     } else if (mode === 'client') {
-      const normalizedServerUrl = normalizeServerUrl(serverUrl);
-      if (!normalizedServerUrl) {
-        setError('Server URL is required');
-        return;
-      }
-      setLoading(true);
-      try {
-        await onComplete({ mode: 'client', serverUrl: normalizedServerUrl, secret });
-      } catch {
-        setLoading(false);
-      }
+      void submitClientConfig();
     }
   };
 
@@ -289,8 +310,17 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 placeholder="8090"
               />
               <p className="setup-config__hint">
-                Clients on the LAN will connect to this port (1024–65535)
+                Local-only by default. Put HTTPS in front before connecting production clients.
               </p>
+              <label className="setup-config__checkbox">
+                <input
+                  type="checkbox"
+                  checked={allowLanAccess}
+                  onChange={(e) => setAllowLanAccess(e.target.checked)}
+                  aria-label="Allow direct LAN access"
+                />
+                <span>Allow direct LAN access</span>
+              </label>
             </div>
           )}
           {mode === 'client' && (
@@ -300,10 +330,20 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 type="text"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                // eslint-disable-next-line sonarjs/no-clear-text-protocols
-                placeholder="http://192.168.1.50:8090"
+                placeholder="https://relay.example.com:8090"
               />
-              <p className="setup-config__hint">The address of the Relay server on your network</p>
+              <p className="setup-config__hint">
+                HTTPS is preferred. HTTP is supported for trusted LAN Relay servers.
+              </p>
+              <label className="setup-config__checkbox">
+                <input
+                  type="checkbox"
+                  checked={allowInsecureHttp}
+                  onChange={(e) => setAllowInsecureHttp(e.target.checked)}
+                  aria-label="Allow public HTTP"
+                />
+                <span>Allow public HTTP</span>
+              </label>
             </div>
           )}
 
