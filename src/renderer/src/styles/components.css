@@ -1993,3 +1993,70 @@ body.modal-open {
     transform: rotate(360deg);
   }
 }
+
+/* ============================================================================
+   Alert Reminder Due Prompt
+   ============================================================================ */
+
+.alert-reminder-due {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1200;
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  width: min(440px, calc(100vw - 48px));
+  overflow: hidden;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  border-radius: 8px;
+  background: var(--color-bg-surface-elevated);
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.36);
+}
+
+.alert-reminder-due__accent {
+  grid-row: 1 / span 2;
+  background: #f59e0b;
+}
+
+.alert-reminder-due__content {
+  min-width: 0;
+  padding: 16px 16px 8px;
+}
+
+.alert-reminder-due__eyebrow {
+  margin-bottom: 6px;
+  color: #fbbf24;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.alert-reminder-due__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--text-lg);
+  line-height: 1.25;
+}
+
+.alert-reminder-due__note {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.alert-reminder-due__meta {
+  margin-top: 8px;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.alert-reminder-due__actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  padding: 8px 16px 16px;
+}

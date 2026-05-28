@@ -8,6 +8,7 @@ import { ToastProvider, NoopToastProvider, useToast } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TabFallback } from './components/TabFallback';
 import { HeaderSearch } from './components/HeaderSearch';
+import { AlertReminderManager } from './components/AlertReminderManager';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
@@ -401,6 +402,10 @@ export function MainApp({
             onSave={handleContactSaved}
             initialEmail={initialContactEmail}
           />
+        </ErrorBoundary>
+
+        <ErrorBoundary fallback={null}>
+          <AlertReminderManager onOpenAlerts={() => setActiveTab('Alerts')} />
         </ErrorBoundary>
       </div>
     </SearchProvider>

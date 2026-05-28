@@ -5,9 +5,11 @@ import { CollapsibleHeader } from '../components/CollapsibleHeader';
 import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
+import { useAlertReminders } from '../hooks/useAlertReminders';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
+import { AlertReminderModal } from './AlertReminderModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
@@ -168,15 +170,18 @@ export const AlertsTab: React.FC = () => {
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
+  const reminderModal = useModalState();
   const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
   const { history, addHistory, deleteHistory, clearHistory, pinHistory, updateLabel } =
     useAlertHistory();
+  const { upcomingReminders, scheduleReminder } = useAlertReminders();
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
+  const nextReminder = upcomingReminders[0];
 
   // Load persisted logo on mount
   useEffect(() => {
@@ -395,6 +400,16 @@ export const AlertsTab: React.FC = () => {
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
 
+  const reminderDraft = useMemo(
+    () => ({
+      severity,
+      subject,
+      bodyHtml,
+      sender,
+    }),
+    [severity, subject, bodyHtml, sender],
+  );
+
   const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
     let result = sanitizeHtml(html);
     if (compact) result = compactHtml(result);
@@ -488,6 +503,28 @@ export const AlertsTab: React.FC = () => {
         </TactileButton>
         <TactileButton
           variant="ghost"
+          onClick={reminderModal.open}
+          tooltip="Schedule a reminder to send an alert"
+          icon={
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+          }
+        >
+          REMIND
+        </TactileButton>
+        <TactileButton
+          variant="ghost"
           onClick={handlePinTemplate}
           tooltip="Pin current alert as a template"
           icon={
@@ -557,6 +594,21 @@ export const AlertsTab: React.FC = () => {
         </TactileButton>
       </CollapsibleHeader>
 
+      {nextReminder && (
+        <div className="alert-reminder-strip" aria-label="Upcoming alert reminder">
+          <span className="alert-reminder-strip-label">Next reminder</span>
+          <span className="alert-reminder-strip-title">{nextReminder.title}</span>
+          <span className="alert-reminder-strip-time">
+            {new Date(nextReminder.snoozeUntil || nextReminder.dueAt).toLocaleString([], {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </span>
+        </div>
+      )}
+
       <div className="alerts-layout">
         {/* Left Panel — Composer */}
         <AlertForm
@@ -615,6 +667,12 @@ export const AlertsTab: React.FC = () => {
         onClear={() => void clearHistory()}
         onPin={(id, pinned) => pinHistory(id, pinned)}
         onUpdateLabel={(id, label) => void updateLabel(id, label)}
+      />
+      <AlertReminderModal
+        isOpen={reminderModal.isOpen}
+        onClose={reminderModal.close}
+        onSchedule={scheduleReminder}
+        draft={reminderDraft}
       />
       <Modal
         isOpen={pinPromptModal.isOpen}

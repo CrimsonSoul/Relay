@@ -68,13 +68,63 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
-  it('creates missing collections including oncall_board_settings', async () => {
+  it('creates missing collections including alert_reminders', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(11);
+    expect(mockCreate).toHaveBeenCalledTimes(12);
+    expect(
+      mockCreate.mock.calls.some(
+        (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
+      ),
+    ).toBe(true);
+  });
+
+  it('creates alert_reminders with scheduling and status fields', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const reminderCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
+    );
+    expect(reminderCall).toBeDefined();
+    const schema = (
+      reminderCall![0] as {
+        fields: Array<{
+          name: string;
+          type: string;
+          required?: boolean;
+          values?: string[];
+          maxSelect?: number;
+        }>;
+      }
+    ).fields;
+
+    expect(schema.find((f) => f.name === 'title')).toMatchObject({
+      type: 'text',
+      required: true,
+    });
+    expect(schema.find((f) => f.name === 'dueAt')).toMatchObject({
+      type: 'date',
+      required: true,
+    });
+    expect(schema.find((f) => f.name === 'status')).toMatchObject({
+      type: 'select',
+      required: true,
+      values: ['pending', 'done', 'dismissed'],
+      maxSelect: 1,
+    });
+    expect(schema.find((f) => f.name === 'snoozeUntil')).toMatchObject({ type: 'date' });
+    expect(schema.find((f) => f.name === 'severity')).toMatchObject({
+      type: 'select',
+      values: ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'],
+      maxSelect: 1,
+    });
+    expect(schema.find((f) => f.name === 'alertBodyHtml')).toMatchObject({ type: 'text' });
   });
 
   it('includes teamId in the oncall collection schema', async () => {

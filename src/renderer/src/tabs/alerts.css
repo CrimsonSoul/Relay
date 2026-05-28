@@ -366,6 +366,43 @@
   overflow: hidden;
 }
 
+.alert-reminder-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--color-text-secondary);
+}
+
+.alert-reminder-strip-label {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  white-space: nowrap;
+}
+
+.alert-reminder-strip-title {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-reminder-strip-time {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
 .alerts-layout {
   display: grid;
   grid-template-columns: minmax(520px, 1fr) minmax(460px, 720px);
@@ -1176,6 +1213,33 @@
   gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
+}
+
+.alert-reminder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alert-reminder-note {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.alert-reminder-error {
+  padding: 8px 10px;
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 6px;
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+  font-size: var(--text-sm);
+}
+
+.alert-reminder-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 2px;
 }
 
 /* Highlight Popover */

@@ -27,6 +27,22 @@ vi.mock('../../hooks/useAlertHistory', () => ({
   }),
 }));
 
+const mockScheduleReminder = vi.fn().mockResolvedValue(true);
+const mockUpcomingReminders = { current: [] as Array<{ title: string; dueAt: string }> };
+vi.mock('../../hooks/useAlertReminders', () => ({
+  useAlertReminders: () => ({
+    reminders: [],
+    upcomingReminders: mockUpcomingReminders.current,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+    scheduleReminder: mockScheduleReminder,
+    snoozeReminder: vi.fn(),
+    markDone: vi.fn(),
+    dismissReminder: vi.fn(),
+  }),
+}));
+
 // Use a real-ish useModalState so modals can actually open/close
 vi.mock('../../hooks/useModalState', () => ({
   useModalState: () => {
@@ -38,6 +54,27 @@ vi.mock('../../hooks/useModalState', () => ({
       toggle: () => setIsOpen((p: boolean) => !p),
     };
   },
+}));
+
+vi.mock('../AlertReminderModal', () => ({
+  AlertReminderModal: (props: {
+    isOpen: boolean;
+    draft: { subject: string; bodyHtml: string; sender: string };
+    onSchedule: (input: Record<string, unknown>) => Promise<boolean>;
+  }) =>
+    props.isOpen ? (
+      <div data-testid="reminder-modal">
+        <span data-testid="reminder-draft-subject">{props.draft.subject}</span>
+        <span data-testid="reminder-draft-body">{props.draft.bodyHtml}</span>
+        <span data-testid="reminder-draft-sender">{props.draft.sender}</span>
+        <button
+          data-testid="reminder-schedule"
+          onClick={() => void props.onSchedule({ title: 'Scheduled reminder' })}
+        >
+          Schedule reminder
+        </button>
+      </div>
+    ) : null,
 }));
 
 // Mock AlertForm — forward ref and expose callbacks so we can trigger them from tests
@@ -200,6 +237,7 @@ vi.mock('../alerts/enhanceEngine', () => ({
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
+  mockUpcomingReminders.current = [];
   (globalThis as Record<string, unknown>).api = {
     getCompanyLogo: vi.fn().mockResolvedValue(null),
     getFooterLogo: vi.fn().mockResolvedValue(null),
@@ -226,6 +264,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     expect(screen.getByText('RESET')).toBeInTheDocument();
     expect(screen.getByText('HISTORY')).toBeInTheDocument();
+    expect(screen.getByText('REMIND')).toBeInTheDocument();
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
@@ -346,6 +385,41 @@ describe('AlertsTab', () => {
     const historyBtn = screen.getByText('HISTORY');
     fireEvent.click(historyBtn);
     expect(historyBtn).toBeInTheDocument();
+  });
+
+  it('opens reminder modal with current draft context', () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+    fireEvent.click(screen.getByTestId('set-sender'));
+
+    fireEvent.click(screen.getByText('REMIND'));
+
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
+    expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
+  });
+
+  it('schedules reminders through the reminder hook', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByText('REMIND'));
+    fireEvent.click(screen.getByTestId('reminder-schedule'));
+
+    await waitFor(() => {
+      expect(mockScheduleReminder).toHaveBeenCalledWith({ title: 'Scheduled reminder' });
+    });
+  });
+
+  it('shows the next upcoming reminder compactly', () => {
+    mockUpcomingReminders.current = [
+      { title: 'Send maintenance alert', dueAt: '2026-05-28T20:00:00.000Z' },
+    ];
+
+    render(<AlertsTab />);
+
+    expect(screen.getByText('Next reminder')).toBeInTheDocument();
+    expect(screen.getByText('Send maintenance alert')).toBeInTheDocument();
   });
 
   it('renders with null logo by default on the card', () => {

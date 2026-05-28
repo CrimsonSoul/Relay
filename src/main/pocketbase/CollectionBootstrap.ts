@@ -121,6 +121,34 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
+    name: 'alert_reminders',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'title', required: true },
+      { type: 'text', name: 'note' },
+      { type: 'date', name: 'dueAt', required: true },
+      {
+        type: 'select',
+        name: 'status',
+        required: true,
+        values: ['pending', 'done', 'dismissed'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'snoozeUntil' },
+      {
+        type: 'select',
+        name: 'severity',
+        values: ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'alertSubject' },
+      { type: 'text', name: 'alertBodyHtml' },
+      { type: 'text', name: 'createdBy' },
+      { type: 'date', name: 'completedAt' },
+      { type: 'date', name: 'dismissedAt' },
+    ],
+  },
+  {
     name: 'notes',
     type: 'base',
     fields: [

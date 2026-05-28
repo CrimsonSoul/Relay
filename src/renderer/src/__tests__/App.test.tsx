@@ -165,6 +165,14 @@ vi.mock('../components/ConnectionManager', () => ({
   },
 }));
 
+vi.mock('../components/AlertReminderManager', () => ({
+  AlertReminderManager: ({ onOpenAlerts }: { onOpenAlerts: () => void }) => (
+    <button data-testid="alert-reminder-manager" onClick={onOpenAlerts}>
+      open-alerts-from-reminder
+    </button>
+  ),
+}));
+
 // Lazy loaded tabs
 vi.mock('../tabs/AssemblerTab', () => ({
   AssemblerTab: () => <div data-testid="assembler-tab" />,
@@ -349,6 +357,12 @@ describe('MainApp', () => {
   it('renders header search bar', () => {
     renderApp();
     expect(screen.getByTestId('header-search')).toBeInTheDocument();
+  });
+
+  it('mounts global alert reminders and can navigate to Alerts', () => {
+    renderApp();
+    fireEvent.click(screen.getByTestId('alert-reminder-manager'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
   });
 
   it('shows LAN server connection details when running in server mode', () => {
