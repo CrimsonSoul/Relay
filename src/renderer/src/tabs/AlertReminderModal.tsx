@@ -23,8 +23,17 @@ function toDatetimeLocalValue(date: Date): string {
   return local.toISOString().slice(0, 16);
 }
 
+function toNextMinuteDatetimeLocalValue(timestampMs: number): string {
+  const nextMinuteMs = (Math.floor(timestampMs / 60_000) + 1) * 60_000;
+  return toDatetimeLocalValue(new Date(nextMinuteMs));
+}
+
+function getMinimumDueAt(): string {
+  return toNextMinuteDatetimeLocalValue(Date.now());
+}
+
 function getDefaultDueAt(): string {
-  return toDatetimeLocalValue(new Date(Date.now() + 30 * 60_000));
+  return toNextMinuteDatetimeLocalValue(Date.now() + 30 * 60_000);
 }
 
 export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
@@ -37,6 +46,8 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
   const [title, setTitle] = useState(defaultTitle);
   const [note, setNote] = useState('');
   const [dueAtLocal, setDueAtLocal] = useState(getDefaultDueAt);
+  const [minimumDueAtLocal, setMinimumDueAtLocal] = useState(getMinimumDueAt);
+  const [dueAtTouched, setDueAtTouched] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -45,9 +56,25 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     setTitle(defaultTitle);
     setNote('');
     setDueAtLocal(getDefaultDueAt());
+    setMinimumDueAtLocal(getMinimumDueAt());
+    setDueAtTouched(false);
     setError('');
     setSaving(false);
   }, [defaultTitle, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const refreshTimes = () => {
+      setMinimumDueAtLocal(getMinimumDueAt());
+      if (!dueAtTouched) {
+        setDueAtLocal(getDefaultDueAt());
+      }
+    };
+
+    const intervalId = window.setInterval(refreshTimes, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [dueAtTouched, isOpen]);
 
   const handleSubmit = async (event: { preventDefault: () => void }) => {
     event.preventDefault();
@@ -102,8 +129,11 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
             type="datetime-local"
             className="alerts-input alerts-input-datetime"
             value={dueAtLocal}
-            min={toDatetimeLocalValue(new Date())}
-            onChange={(event) => setDueAtLocal(event.target.value)}
+            min={minimumDueAtLocal}
+            onChange={(event) => {
+              setDueAtTouched(true);
+              setDueAtLocal(event.target.value);
+            }}
           />
         </div>
 

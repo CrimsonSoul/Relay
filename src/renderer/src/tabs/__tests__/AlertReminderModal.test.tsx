@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AlertReminderModal } from '../AlertReminderModal';
 
@@ -76,6 +76,46 @@ describe('AlertReminderModal', () => {
 
     expect(screen.getByText('Choose a future reminder time.')).toBeInTheDocument();
     expect(onSchedule).not.toHaveBeenCalled();
+  });
+
+  it('uses the next local minute as the minimum selectable time', () => {
+    vi.setSystemTime(new Date('2026-05-28T19:30:30.000Z'));
+
+    render(
+      <AlertReminderModal
+        isOpen
+        onClose={vi.fn()}
+        onSchedule={vi.fn()}
+        draft={{ severity: 'INFO', subject: '', bodyHtml: '', sender: '' }}
+      />,
+    );
+
+    const input = screen.getByLabelText('Date and time');
+    const minTime = new Date(input.getAttribute('min') || '').getTime();
+
+    expect(minTime).toBeGreaterThan(Date.now());
+    expect(minTime - Date.now()).toBeLessThanOrEqual(60_000);
+  });
+
+  it('keeps the untouched default reminder time in the future while open', () => {
+    render(
+      <AlertReminderModal
+        isOpen
+        onClose={vi.fn()}
+        onSchedule={vi.fn()}
+        draft={{ severity: 'INFO', subject: '', bodyHtml: '', sender: '' }}
+      />,
+    );
+
+    const input = screen.getByLabelText('Date and time') as HTMLInputElement;
+    const initialValue = input.value;
+
+    act(() => {
+      vi.advanceTimersByTime(31 * 60_000);
+    });
+
+    expect(input.value).not.toBe(initialValue);
+    expect(new Date(input.value).getTime()).toBeGreaterThan(Date.now());
   });
 
   it('submits normalized reminder context', async () => {
