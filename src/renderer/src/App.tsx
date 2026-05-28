@@ -405,7 +405,7 @@ export function MainApp({
         </ErrorBoundary>
 
         <ErrorBoundary fallback={null}>
-          <AlertReminderManager onOpenAlerts={() => setActiveTab('Alerts')} />
+          <AlertReminderManager />
         </ErrorBoundary>
       </div>
     </SearchProvider>

@@ -74,11 +74,23 @@ describe('AlertReminderManager', () => {
   it('shows the first due reminder', async () => {
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    render(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    render(<AlertReminderManager />);
     await flushReminderEffects();
 
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
     expect(screen.getByText('Tell the business')).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('does not show reminders before their scheduled time', async () => {
+    mockListDueAlertReminders.mockResolvedValue([
+      makeReminder({ dueAt: '2026-05-28T20:02:00.000Z' }),
+    ]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
   });
 
   it('does not replay sound for the same visible reminder on the next poll', async () => {
@@ -110,7 +122,7 @@ describe('AlertReminderManager', () => {
     });
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    render(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    render(<AlertReminderManager />);
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
 
@@ -122,24 +134,39 @@ describe('AlertReminderManager', () => {
     expect(oscillatorStart).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the Alerts tab without clearing the reminder', async () => {
-    const onOpenAlerts = vi.fn();
+  it('does not offer navigation before the reminder is addressed', async () => {
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    render(<AlertReminderManager onOpenAlerts={onOpenAlerts} />);
+    render(<AlertReminderManager />);
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Open Alerts'));
+    expect(screen.queryByText('Open Alerts')).not.toBeInTheDocument();
+  });
 
-    expect(onOpenAlerts).toHaveBeenCalledOnce();
-    expect(screen.getByText('Send outage alert')).toBeInTheDocument();
+  it('keeps keyboard focus inside the blocking reminder', async () => {
+    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    const dialog = screen.getByRole('alertdialog');
+    const snooze = screen.getByText('Snooze 10m');
+    const dismiss = screen.getByText('Dismiss');
+
+    expect(snooze).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(dismiss).toHaveFocus();
+
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(snooze).toHaveFocus();
   });
 
   it('snoozes for ten minutes and hides the reminder', async () => {
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    render(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    render(<AlertReminderManager />);
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Snooze 10m'));
@@ -155,7 +182,7 @@ describe('AlertReminderManager', () => {
   it('marks a reminder done and dismisses a reminder', async () => {
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    const { rerender } = render(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    const { rerender } = render(<AlertReminderManager />);
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Mark Done'));
@@ -164,7 +191,7 @@ describe('AlertReminderManager', () => {
     expect(mockMarkAlertReminderDone).toHaveBeenCalledWith('rem-1');
 
     mockListDueAlertReminders.mockResolvedValue([makeReminder({ id: 'rem-2' })]);
-    rerender(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    rerender(<AlertReminderManager />);
     await act(async () => {
       vi.advanceTimersByTime(30_000);
       await Promise.resolve();
@@ -188,7 +215,7 @@ describe('AlertReminderManager', () => {
     });
     mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
 
-    render(<AlertReminderManager onOpenAlerts={vi.fn()} />);
+    render(<AlertReminderManager />);
     await flushReminderEffects();
 
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();

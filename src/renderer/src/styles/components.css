@@ -1998,14 +1998,21 @@ body.modal-open {
    Alert Reminder Due Prompt
    ============================================================================ */
 
-.alert-reminder-due {
+.alert-reminder-due-overlay {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 1200;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 8, 16, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.alert-reminder-due {
   display: grid;
   grid-template-columns: 4px minmax(0, 1fr);
-  width: min(440px, calc(100vw - 48px));
+  width: min(460px, 100%);
   overflow: hidden;
   border: 1px solid rgba(245, 158, 11, 0.32);
   border-radius: 8px;

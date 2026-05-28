@@ -12,6 +12,11 @@ import {
 const POLL_INTERVAL_MS = 30_000;
 const SNOOZE_MS = 10 * 60_000;
 
+function getReminderEffectiveTime(reminder: AlertReminderRecord): number {
+  const timestamp = new Date(reminder.snoozeUntil || reminder.dueAt).getTime();
+  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+}
+
 function playReminderChime(): void {
   try {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
@@ -44,14 +49,11 @@ function chooseCurrentReminder(
   return dueReminders[0] ?? null;
 }
 
-export function AlertReminderManager({
-  onOpenAlerts,
-}: {
-  readonly onOpenAlerts: () => void;
-}) {
+export function AlertReminderManager() {
   const { showToast } = useToast();
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
   const currentRef = useRef<AlertReminderRecord | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const chimedIdsRef = useRef(new Set<string>());
   const mutedUntilRef = useRef(new Map<string, number>());
 
@@ -63,6 +65,7 @@ export function AlertReminderManager({
     try {
       const now = Date.now();
       const dueReminders = (await listDueAlertReminders()).filter((reminder) => {
+        if (getReminderEffectiveTime(reminder) > now) return false;
         const mutedUntil = mutedUntilRef.current.get(reminder.id);
         if (!mutedUntil || mutedUntil <= now) {
           mutedUntilRef.current.delete(reminder.id);
@@ -86,6 +89,46 @@ export function AlertReminderManager({
     if (!current || chimedIdsRef.current.has(current.id)) return;
     chimedIdsRef.current.add(current.id);
     playReminderChime();
+  }, [current]);
+
+  useEffect(() => {
+    if (!current) return;
+    const firstAction = dialogRef.current?.querySelector<HTMLElement>('button');
+    firstAction?.focus();
+  }, [current]);
+
+  useEffect(() => {
+    if (!current) return;
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+
+      const focusable = Array.from(
+        dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? [],
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!first || !last) return;
+
+      let nextFocus: HTMLElement | null = null;
+      if (!dialogRef.current?.contains(document.activeElement)) {
+        nextFocus = first;
+      } else if (event.shiftKey && document.activeElement === first) {
+        nextFocus = last;
+      } else if (!event.shiftKey && document.activeElement === last) {
+        nextFocus = first;
+      }
+
+      if (nextFocus) {
+        event.preventDefault();
+        nextFocus.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [current]);
 
   const handleSnooze = async () => {
@@ -130,39 +173,44 @@ export function AlertReminderManager({
   if (!current) return null;
 
   return (
-    <section className="alert-reminder-due" role="alertdialog" aria-labelledby="due-reminder-title">
-      <div className="alert-reminder-due__accent" aria-hidden="true" />
-      <div className="alert-reminder-due__content">
-        <div className="alert-reminder-due__eyebrow">Alert reminder</div>
-        <h2 id="due-reminder-title" className="alert-reminder-due__title">
-          {current.title}
-        </h2>
-        {current.note && <p className="alert-reminder-due__note">{current.note}</p>}
-        <div className="alert-reminder-due__meta">
-          Due{' '}
-          {new Date(current.snoozeUntil || current.dueAt).toLocaleString([], {
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-          })}
+    <div className="alert-reminder-due-overlay">
+      <div
+        ref={dialogRef}
+        className="alert-reminder-due"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="due-reminder-title"
+      >
+        <div className="alert-reminder-due__accent" aria-hidden="true" />
+        <div className="alert-reminder-due__content">
+          <div className="alert-reminder-due__eyebrow">Alert reminder</div>
+          <h2 id="due-reminder-title" className="alert-reminder-due__title">
+            {current.title}
+          </h2>
+          {current.note && <p className="alert-reminder-due__note">{current.note}</p>}
+          <div className="alert-reminder-due__meta">
+            Due{' '}
+            {new Date(current.snoozeUntil || current.dueAt).toLocaleString([], {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </div>
+        </div>
+        <div className="alert-reminder-due__actions">
+          <TactileButton variant="secondary" size="sm" onClick={() => void handleSnooze()}>
+            Snooze 10m
+          </TactileButton>
+          <TactileButton variant="primary" size="sm" onClick={() => void handleDone()}>
+            Mark Done
+          </TactileButton>
+          <TactileButton variant="ghost" size="sm" onClick={() => void handleDismiss()}>
+            Dismiss
+          </TactileButton>
         </div>
       </div>
-      <div className="alert-reminder-due__actions">
-        <TactileButton variant="secondary" size="sm" onClick={onOpenAlerts}>
-          Open Alerts
-        </TactileButton>
-        <TactileButton variant="secondary" size="sm" onClick={() => void handleSnooze()}>
-          Snooze 10m
-        </TactileButton>
-        <TactileButton variant="primary" size="sm" onClick={() => void handleDone()}>
-          Mark Done
-        </TactileButton>
-        <TactileButton variant="ghost" size="sm" onClick={() => void handleDismiss()}>
-          Dismiss
-        </TactileButton>
-      </div>
-    </section>
+    </div>
   );
 }
 
