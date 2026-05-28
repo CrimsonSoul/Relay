@@ -32,7 +32,7 @@ export interface AlertReminderInput {
 
 type AlertReminderCreatePayload = Omit<
   AlertReminderRecord,
-  'id' | 'created' | 'updated' | 'status'
+  'id' | 'created' | 'updated' | 'status' | 'snoozeUntil' | 'completedAt' | 'dismissedAt'
 > & {
   status: 'pending';
 };
@@ -45,13 +45,10 @@ function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreateP
     note: input.note?.trim() || '',
     dueAt: input.dueAt,
     status: 'pending',
-    snoozeUntil: '',
     severity: input.severity || '',
     alertSubject: input.alertSubject?.trim() || '',
     alertBodyHtml: input.alertBodyHtml || '',
     createdBy: input.createdBy?.trim() || '',
-    completedAt: '',
-    dismissedAt: '',
   };
 }
 

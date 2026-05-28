@@ -73,11 +73,19 @@ describe('addAlertReminder', () => {
       ...sampleInput,
       note: 'Use the prepared template',
       status: 'pending',
-      snoozeUntil: '',
-      completedAt: '',
-      dismissedAt: '',
     });
     expect(result).toEqual(sampleRecord);
+  });
+
+  it('omits unset optional date fields so PocketBase does not reject empty dates', async () => {
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+
+    await addAlertReminder(sampleInput);
+
+    const payload = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty('snoozeUntil');
+    expect(payload).not.toHaveProperty('completedAt');
+    expect(payload).not.toHaveProperty('dismissedAt');
   });
 
   it('handles and rethrows creation failures', async () => {
