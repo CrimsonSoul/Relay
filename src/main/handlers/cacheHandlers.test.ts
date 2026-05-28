@@ -101,6 +101,7 @@ describe('cacheHandlers', () => {
         'bridge_groups',
         'bridge_history',
         'alert_history',
+        'alert_reminders',
         'notes',
         'standalone_notes',
         'oncall_dismissals',
