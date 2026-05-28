@@ -34,9 +34,7 @@ export function useAlertReminders() {
     const now = Date.now();
     return reminders
       .filter((reminder) => {
-        return (
-          reminder.status === 'pending' && getAlertReminderEffectiveTime(reminder) >= now
-        );
+        return reminder.status === 'pending' && getAlertReminderEffectiveTime(reminder) >= now;
       })
       .toSorted((a, b) => getAlertReminderEffectiveTime(a) - getAlertReminderEffectiveTime(b));
   }, [reminders]);

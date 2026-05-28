@@ -86,11 +86,7 @@ describe('useAlertReminders', () => {
 
     const { result } = renderHook(() => useAlertReminders());
 
-    expect(result.current.upcomingReminders.map((r) => r.id)).toEqual([
-      'snoozed',
-      'soon',
-      'later',
-    ]);
+    expect(result.current.upcomingReminders.map((r) => r.id)).toEqual(['snoozed', 'soon', 'later']);
   });
 
   it('schedules a reminder and shows confirmation', async () => {

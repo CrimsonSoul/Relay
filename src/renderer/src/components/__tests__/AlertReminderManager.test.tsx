@@ -22,13 +22,9 @@ vi.mock('../Toast', () => ({
 }));
 
 vi.mock('../TactileButton', () => ({
-  TactileButton: ({
-    children,
-    onClick,
-  }: {
-    children: React.ReactNode;
-    onClick?: () => void;
-  }) => <button onClick={onClick}>{children}</button>,
+  TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
+    <button onClick={onClick}>{children}</button>
+  ),
 }));
 
 const makeReminder = (overrides: Partial<AlertReminderRecord> = {}): AlertReminderRecord => ({

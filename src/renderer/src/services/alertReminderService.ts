@@ -52,9 +52,7 @@ function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreateP
   };
 }
 
-export async function addAlertReminder(
-  input: AlertReminderInput,
-): Promise<AlertReminderRecord> {
+export async function addAlertReminder(input: AlertReminderInput): Promise<AlertReminderRecord> {
   requireOnline();
   try {
     return await getPb()
