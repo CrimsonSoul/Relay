@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlertReminderManager } from '../AlertReminderManager';
@@ -26,6 +29,11 @@ vi.mock('../TactileButton', () => ({
     <button onClick={onClick}>{children}</button>
   ),
 }));
+
+const componentStyles = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../styles/components.css'),
+  'utf8',
+);
 
 const makeReminder = (overrides: Partial<AlertReminderRecord> = {}): AlertReminderRecord => ({
   id: 'rem-1',
@@ -76,6 +84,23 @@ describe('AlertReminderManager', () => {
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
     expect(screen.getByText('Tell the business')).toBeInTheDocument();
     expect(screen.getByRole('alertdialog')).toHaveAttribute('aria-modal', 'true');
+  });
+
+  it('renders due reminders with the critical alarm visual treatment', async () => {
+    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    const overlay = screen.getByTestId('critical-reminder-overlay');
+    expect(overlay).toHaveClass('alert-reminder-due-overlay--critical');
+    expect(screen.getByRole('alertdialog')).toHaveClass('alert-reminder-due--critical');
+  });
+
+  it('defines reduced-motion styles for the critical reminder flash', () => {
+    expect(componentStyles).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(componentStyles).toContain('.alert-reminder-due-overlay--critical::before');
+    expect(componentStyles).toContain('animation: none');
   });
 
   it('does not show reminders before their scheduled time', async () => {

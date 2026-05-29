@@ -41,7 +41,7 @@ Run:
 ```bash
 PATH="/Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/ryan/Apps/Relay-fresh-test/node_modules/.bin:$PATH" \
 /Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
-/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run \
+/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts \
 src/renderer/src/components/__tests__/AlertReminderManager.test.tsx \
 --testNamePattern "critical alarm visual treatment"
 ```
@@ -110,7 +110,7 @@ Run:
 ```bash
 PATH="/Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/ryan/Apps/Relay-fresh-test/node_modules/.bin:$PATH" \
 /Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
-/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run \
+/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts \
 src/renderer/src/components/__tests__/AlertReminderManager.test.tsx \
 --testNamePattern "reduced-motion styles"
 ```
@@ -216,7 +216,7 @@ Run:
 ```bash
 PATH="/Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:/Users/ryan/Apps/Relay-fresh-test/node_modules/.bin:$PATH" \
 /Users/ryan/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
-/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run \
+/Users/ryan/Apps/Relay-fresh-test/node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts \
 src/renderer/src/components/__tests__/AlertReminderManager.test.tsx
 ```
 

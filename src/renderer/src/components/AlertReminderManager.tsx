@@ -173,10 +173,13 @@ export function AlertReminderManager() {
   if (!current) return null;
 
   return (
-    <div className="alert-reminder-due-overlay">
+    <div
+      className="alert-reminder-due-overlay alert-reminder-due-overlay--critical"
+      data-testid="critical-reminder-overlay"
+    >
       <div
         ref={dialogRef}
-        className="alert-reminder-due"
+        className="alert-reminder-due alert-reminder-due--critical"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="due-reminder-title"
