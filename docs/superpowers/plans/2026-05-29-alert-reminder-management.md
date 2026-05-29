@@ -19,7 +19,7 @@
 - [ ] Add an `AlertReminderUpdateInput` type with `title`, `note`, and `dueAt`.
 - [ ] Add `updateAlertReminder(id, input)` that calls `requireOnline()`, updates `title`, `note`, `dueAt`, `status: 'pending'`, and `snoozeUntil: ''`, catches errors through `handleApiError`, and rethrows.
 - [ ] Add a failing service test asserting the update payload clears `snoozeUntil`.
-- [ ] Run `node node_modules/vitest/vitest.mjs run src/renderer/src/services/alertReminderService.test.ts` and verify the new test fails before implementation, then passes after implementation.
+- [ ] Run `node node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts src/renderer/src/services/alertReminderService.test.ts` and verify the new test fails before implementation, then passes after implementation.
 
 ### Task 2: Reminder Hook Lists And Edit Action
 
@@ -76,7 +76,7 @@
 **Files:**
 - No new files.
 
-- [ ] Run `node node_modules/vitest/vitest.mjs run src/renderer/src/services/alertReminderService.test.ts`.
+- [ ] Run `node node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts src/renderer/src/services/alertReminderService.test.ts`.
 - [ ] Run `node node_modules/vitest/vitest.mjs run -c vitest.renderer.config.ts src/renderer/src/hooks/__tests__/useAlertReminders.test.ts src/renderer/src/tabs/__tests__/AlertReminderModal.test.tsx src/renderer/src/tabs/__tests__/AlertReminderManagerModal.test.tsx src/renderer/src/tabs/__tests__/AlertsTab.test.tsx`.
 - [ ] Run `node scripts/run-renderer-tests.mjs`.
 - [ ] Run `node node_modules/vitest/vitest.mjs run`.

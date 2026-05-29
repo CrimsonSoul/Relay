@@ -7,8 +7,10 @@ import {
   dismissAlertReminder,
   markAlertReminderDone,
   snoozeAlertReminder,
+  updateAlertReminder,
   type AlertReminderInput,
   type AlertReminderRecord,
+  type AlertReminderUpdateInput,
 } from '../services/alertReminderService';
 
 type CollectionAlertReminderRecord = AlertReminderRecord & RecordModel;
@@ -17,6 +19,12 @@ export function getAlertReminderEffectiveTime(reminder: AlertReminderRecord): nu
   const effective = reminder.snoozeUntil || reminder.dueAt;
   const time = new Date(effective).getTime();
   return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function getAlertReminderResolvedTime(reminder: AlertReminderRecord): number {
+  const resolved = reminder.completedAt || reminder.dismissedAt || reminder.updated || reminder.created;
+  const time = new Date(resolved).getTime();
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
 }
 
 export function useAlertReminders() {
@@ -30,14 +38,22 @@ export function useAlertReminders() {
 
   const reminders = data as AlertReminderRecord[];
 
-  const upcomingReminders = useMemo(() => {
-    const now = Date.now();
+  const pendingReminders = useMemo(() => {
     return reminders
-      .filter((reminder) => {
-        return reminder.status === 'pending' && getAlertReminderEffectiveTime(reminder) >= now;
-      })
+      .filter((reminder) => reminder.status === 'pending')
       .toSorted((a, b) => getAlertReminderEffectiveTime(a) - getAlertReminderEffectiveTime(b));
   }, [reminders]);
+
+  const completedReminders = useMemo(() => {
+    return reminders
+      .filter((reminder) => reminder.status === 'done' || reminder.status === 'dismissed')
+      .toSorted((a, b) => getAlertReminderResolvedTime(b) - getAlertReminderResolvedTime(a));
+  }, [reminders]);
+
+  const upcomingReminders = useMemo(() => {
+    const now = Date.now();
+    return pendingReminders.filter((reminder) => getAlertReminderEffectiveTime(reminder) >= now);
+  }, [pendingReminders]);
 
   const scheduleReminder = useCallback(
     async (input: AlertReminderInput): Promise<boolean> => {
@@ -60,6 +76,19 @@ export function useAlertReminders() {
         return true;
       } catch {
         showToast('Failed to snooze reminder', 'error');
+        return false;
+      }
+    },
+    [showToast],
+  );
+
+  const updateReminder = useCallback(
+    async (id: string, input: AlertReminderUpdateInput): Promise<boolean> => {
+      try {
+        await updateAlertReminder(id, input);
+        return true;
+      } catch {
+        showToast('Failed to update reminder', 'error');
         return false;
       }
     },
@@ -94,12 +123,15 @@ export function useAlertReminders() {
 
   return {
     reminders,
+    pendingReminders,
+    completedReminders,
     upcomingReminders,
     loading,
     error,
     refetch,
     scheduleReminder,
     snoozeReminder,
+    updateReminder,
     markDone,
     dismissReminder,
   };

@@ -23,6 +23,7 @@ import {
   listDueAlertReminders,
   markAlertReminderDone,
   snoozeAlertReminder,
+  updateAlertReminder,
   type AlertReminderInput,
   type AlertReminderRecord,
 } from './alertReminderService';
@@ -126,6 +127,35 @@ describe('snoozeAlertReminder', () => {
       snoozeUntil: '2026-05-28T20:11:00.000Z',
     });
     expect(result).toEqual(snoozed);
+  });
+});
+
+describe('updateAlertReminder', () => {
+  it('updates editable fields, keeps the reminder pending, and clears snoozeUntil', async () => {
+    const updated = {
+      ...sampleRecord,
+      title: 'Updated reminder',
+      note: 'Updated note',
+      dueAt: '2026-05-28T21:00:00.000Z',
+      snoozeUntil: '',
+    };
+    mockUpdate.mockResolvedValueOnce(updated);
+
+    const result = await updateAlertReminder('rem-1', {
+      title: ' Updated reminder ',
+      note: ' Updated note ',
+      dueAt: '2026-05-28T21:00:00.000Z',
+    });
+
+    expect(mockRequireOnline).toHaveBeenCalledOnce();
+    expect(mockUpdate).toHaveBeenCalledWith('rem-1', {
+      title: 'Updated reminder',
+      note: 'Updated note',
+      dueAt: '2026-05-28T21:00:00.000Z',
+      status: 'pending',
+      snoozeUntil: '',
+    });
+    expect(result).toEqual(updated);
   });
 });
 

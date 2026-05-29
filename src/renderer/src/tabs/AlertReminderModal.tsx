@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/Modal';
 import { TactileButton } from '../components/TactileButton';
-import type { AlertReminderInput } from '../services/alertReminderService';
+import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import type { Severity } from './alertUtils';
 
 export interface AlertReminderDraft {
@@ -16,6 +16,8 @@ interface AlertReminderModalProps {
   onClose: () => void;
   onSchedule: (input: AlertReminderInput) => Promise<boolean>;
   draft: AlertReminderDraft;
+  mode?: 'schedule' | 'edit';
+  reminder?: AlertReminderRecord | null;
 }
 
 function toDatetimeLocalValue(date: Date): string {
@@ -41,8 +43,14 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
   onClose,
   onSchedule,
   draft,
+  mode = 'schedule',
+  reminder = null,
 }) => {
-  const defaultTitle = useMemo(() => draft.subject.trim() || 'Send alert', [draft.subject]);
+  const isEditing = mode === 'edit' && reminder !== null;
+  const defaultTitle = useMemo(
+    () => (isEditing ? reminder.title : draft.subject.trim() || 'Send alert'),
+    [draft.subject, isEditing, reminder],
+  );
   const [title, setTitle] = useState(defaultTitle);
   const [note, setNote] = useState('');
   const [dueAtLocal, setDueAtLocal] = useState(getDefaultDueAt);
@@ -54,13 +62,17 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setTitle(defaultTitle);
-    setNote('');
-    setDueAtLocal(getDefaultDueAt());
+    setNote(isEditing ? reminder.note : '');
+    setDueAtLocal(
+      isEditing
+        ? toDatetimeLocalValue(new Date(reminder.snoozeUntil || reminder.dueAt))
+        : getDefaultDueAt(),
+    );
     setMinimumDueAtLocal(getMinimumDueAt());
-    setDueAtTouched(false);
+    setDueAtTouched(isEditing);
     setError('');
     setSaving(false);
-  }, [defaultTitle, isOpen]);
+  }, [defaultTitle, isEditing, isOpen, reminder]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -86,24 +98,37 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
 
     setSaving(true);
     setError('');
-    const success = await onSchedule({
-      title: title.trim() || 'Send alert',
-      note: note.trim(),
-      dueAt: dueAt.toISOString(),
-      severity: draft.severity,
-      alertSubject: draft.subject.trim(),
-      alertBodyHtml: draft.bodyHtml,
-      createdBy: draft.sender.trim(),
-    });
+    const payload: AlertReminderInput = isEditing
+      ? {
+          title: title.trim() || 'Send alert',
+          note: note.trim(),
+          dueAt: dueAt.toISOString(),
+        }
+      : {
+          title: title.trim() || 'Send alert',
+          note: note.trim(),
+          dueAt: dueAt.toISOString(),
+          severity: draft.severity,
+          alertSubject: draft.subject.trim(),
+          alertBodyHtml: draft.bodyHtml,
+          createdBy: draft.sender.trim(),
+        };
+
+    const success = await onSchedule(payload);
     setSaving(false);
     if (success) onClose();
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Schedule Reminder" width="440px">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEditing ? 'Edit Reminder' : 'Schedule Reminder'}
+      width="440px"
+    >
       <form
         className="alert-reminder-form"
-        aria-label="Schedule reminder"
+        aria-label={isEditing ? 'Edit reminder' : 'Schedule reminder'}
         onSubmit={(event) => void handleSubmit(event)}
       >
         <div className="alerts-field">
@@ -157,7 +182,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
             CANCEL
           </TactileButton>
           <TactileButton variant="primary" size="sm" type="submit" loading={saving}>
-            SCHEDULE
+            {isEditing ? 'SAVE' : 'SCHEDULE'}
           </TactileButton>
         </div>
       </form>

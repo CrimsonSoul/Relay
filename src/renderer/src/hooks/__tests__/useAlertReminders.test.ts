@@ -24,12 +24,14 @@ const mockAddAlertReminder = vi.fn();
 const mockSnoozeAlertReminder = vi.fn();
 const mockMarkAlertReminderDone = vi.fn();
 const mockDismissAlertReminder = vi.fn();
+const mockUpdateAlertReminder = vi.fn();
 
 vi.mock('../../services/alertReminderService', () => ({
   addAlertReminder: (...args: unknown[]) => mockAddAlertReminder(...args),
   snoozeAlertReminder: (...args: unknown[]) => mockSnoozeAlertReminder(...args),
   markAlertReminderDone: (...args: unknown[]) => mockMarkAlertReminderDone(...args),
   dismissAlertReminder: (...args: unknown[]) => mockDismissAlertReminder(...args),
+  updateAlertReminder: (...args: unknown[]) => mockUpdateAlertReminder(...args),
 }));
 
 import { useAlertReminders } from '../useAlertReminders';
@@ -89,6 +91,42 @@ describe('useAlertReminders', () => {
     expect(result.current.upcomingReminders.map((r) => r.id)).toEqual(['snoozed', 'soon', 'later']);
   });
 
+  it('returns all pending reminders ordered by effective due time', () => {
+    mockCollectionData.current = [
+      makeRecord({ id: 'later', dueAt: '2026-05-28T21:00:00.000Z' }),
+      makeRecord({ id: 'past', dueAt: '2026-05-28T19:00:00.000Z' }),
+      makeRecord({ id: 'dismissed', status: 'dismissed', dueAt: '2026-05-28T18:00:00.000Z' }),
+      makeRecord({ id: 'snoozed', snoozeUntil: '2026-05-28T19:35:00.000Z' }),
+    ];
+
+    const { result } = renderHook(() => useAlertReminders());
+
+    expect(result.current.pendingReminders.map((r) => r.id)).toEqual(['past', 'snoozed', 'later']);
+  });
+
+  it('returns completed reminders newest first', () => {
+    mockCollectionData.current = [
+      makeRecord({
+        id: 'done-old',
+        status: 'done',
+        completedAt: '2026-05-28T19:10:00.000Z',
+      }),
+      makeRecord({ id: 'pending', status: 'pending' }),
+      makeRecord({
+        id: 'dismissed-new',
+        status: 'dismissed',
+        dismissedAt: '2026-05-28T19:20:00.000Z',
+      }),
+    ];
+
+    const { result } = renderHook(() => useAlertReminders());
+
+    expect(result.current.completedReminders.map((r) => r.id)).toEqual([
+      'dismissed-new',
+      'done-old',
+    ]);
+  });
+
   it('schedules a reminder and shows confirmation', async () => {
     mockAddAlertReminder.mockResolvedValue(makeRecord({ id: 'created' }));
 
@@ -127,6 +165,36 @@ describe('useAlertReminders', () => {
 
     expect(success).toBe(false);
     expect(showToast).toHaveBeenCalledWith('Failed to schedule reminder', 'error');
+  });
+
+  it('updates a reminder and shows an error toast on failure', async () => {
+    mockUpdateAlertReminder.mockResolvedValueOnce(makeRecord({ id: 'rem-1' }));
+    mockUpdateAlertReminder.mockRejectedValueOnce(new Error('update failed'));
+
+    const { result } = renderHook(() => useAlertReminders());
+
+    await act(async () => {
+      expect(
+        await result.current.updateReminder('rem-1', {
+          title: 'Updated',
+          note: 'New note',
+          dueAt: '2026-05-28T21:00:00.000Z',
+        }),
+      ).toBe(true);
+      expect(
+        await result.current.updateReminder('rem-1', {
+          title: 'Updated again',
+          dueAt: '2026-05-28T22:00:00.000Z',
+        }),
+      ).toBe(false);
+    });
+
+    expect(mockUpdateAlertReminder).toHaveBeenCalledWith('rem-1', {
+      title: 'Updated',
+      note: 'New note',
+      dueAt: '2026-05-28T21:00:00.000Z',
+    });
+    expect(showToast).toHaveBeenCalledWith('Failed to update reminder', 'error');
   });
 
   it('wraps snooze, done, and dismiss service actions', async () => {

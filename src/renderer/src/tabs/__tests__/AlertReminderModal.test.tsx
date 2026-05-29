@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AlertReminderModal } from '../AlertReminderModal';
+import type { AlertReminderRecord } from '../../services/alertReminderService';
 
 vi.mock('../../components/Modal', () => ({
   Modal: ({
@@ -29,6 +30,24 @@ vi.mock('../../components/TactileButton', () => ({
     </button>
   ),
 }));
+
+const makeReminder = (overrides: Partial<AlertReminderRecord> = {}): AlertReminderRecord => ({
+  id: 'rem-1',
+  title: 'Send outage alert',
+  note: 'Tell the business',
+  dueAt: '2026-05-28T20:00:00.000Z',
+  status: 'pending',
+  snoozeUntil: '',
+  severity: 'ISSUE',
+  alertSubject: 'Outage',
+  alertBodyHtml: '<p>Body</p>',
+  createdBy: 'IT',
+  completedAt: '',
+  dismissedAt: '',
+  created: '2026-05-28T19:00:00.000Z',
+  updated: '2026-05-28T19:00:00.000Z',
+  ...overrides,
+});
 
 describe('AlertReminderModal', () => {
   beforeEach(() => {
@@ -156,5 +175,69 @@ describe('AlertReminderModal', () => {
       });
     });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('prefills edit mode from the reminder and submits editable fields only', async () => {
+    const onSchedule = vi.fn().mockResolvedValue(true);
+    const onClose = vi.fn();
+
+    render(
+      <AlertReminderModal
+        isOpen
+        mode="edit"
+        reminder={makeReminder({
+          title: 'Existing reminder',
+          note: 'Existing note',
+          snoozeUntil: '2026-05-28T20:10:00.000Z',
+        })}
+        onClose={onClose}
+        onSchedule={onSchedule}
+        draft={{ severity: 'INFO', subject: '', bodyHtml: '', sender: '' }}
+      />,
+    );
+
+    expect(screen.getByTestId('modal-Edit Reminder')).toBeInTheDocument();
+    expect(screen.getByLabelText('Title')).toHaveValue('Existing reminder');
+    expect(screen.getByLabelText('Note')).toHaveValue('Existing note');
+
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Updated reminder' },
+    });
+    fireEvent.change(screen.getByLabelText('Date and time'), {
+      target: { value: '2026-05-28T21:15' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit reminder' }));
+
+    await vi.waitFor(() => {
+      expect(onSchedule).toHaveBeenCalledWith({
+        title: 'Updated reminder',
+        note: 'Existing note',
+        dueAt: new Date('2026-05-28T21:15').toISOString(),
+      });
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('validates that an edited reminder time is in the future', () => {
+    const onSchedule = vi.fn();
+
+    render(
+      <AlertReminderModal
+        isOpen
+        mode="edit"
+        reminder={makeReminder()}
+        onClose={vi.fn()}
+        onSchedule={onSchedule}
+        draft={{ severity: 'INFO', subject: '', bodyHtml: '', sender: '' }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Date and time'), {
+      target: { value: '2026-05-28T14:00' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit reminder' }));
+
+    expect(screen.getByText('Choose a future reminder time.')).toBeInTheDocument();
+    expect(onSchedule).not.toHaveBeenCalled();
   });
 });

@@ -10,6 +10,7 @@ import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
 import { AlertReminderModal } from './AlertReminderModal';
+import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
@@ -17,6 +18,7 @@ import type { Severity } from './alertUtils';
 import { compactText } from './alerts/compactEngine';
 import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
+import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
 import '@fontsource/ibm-plex-sans/400.css';
@@ -171,17 +173,30 @@ export const AlertsTab: React.FC = () => {
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
   const reminderModal = useModalState();
+  const reminderManagerModal = useModalState();
+  const [editingReminder, setEditingReminder] = useState<AlertReminderRecord | null>(null);
   const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
   const { history, addHistory, deleteHistory, clearHistory, pinHistory, updateLabel } =
     useAlertHistory();
-  const { upcomingReminders, scheduleReminder } = useAlertReminders();
+  const {
+    pendingReminders,
+    completedReminders,
+    loading: remindersLoading,
+    error: remindersError,
+    refetch: refetchReminders,
+    scheduleReminder,
+    updateReminder,
+    markDone,
+    dismissReminder,
+  } = useAlertReminders();
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
-  const nextReminder = upcomingReminders[0];
+  const nextReminder = pendingReminders[0];
+  const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
   // Load persisted logo on mount
   useEffect(() => {
@@ -410,6 +425,38 @@ export const AlertsTab: React.FC = () => {
     [severity, subject, bodyHtml, sender],
   );
 
+  const handleReminderModalClose = useCallback(() => {
+    reminderModal.close();
+    setEditingReminder(null);
+  }, [reminderModal]);
+
+  const handleReminderSubmit = useCallback(
+    async (input: AlertReminderInput): Promise<boolean> => {
+      if (!editingReminder) return await scheduleReminder(input);
+      return await updateReminder(editingReminder.id, {
+        title: input.title,
+        note: input.note,
+        dueAt: input.dueAt,
+      });
+    },
+    [editingReminder, scheduleReminder, updateReminder],
+  );
+
+  const handleScheduleFromManager = useCallback(() => {
+    reminderManagerModal.close();
+    setEditingReminder(null);
+    reminderModal.open();
+  }, [reminderManagerModal, reminderModal]);
+
+  const handleEditReminder = useCallback(
+    (reminder: AlertReminderRecord) => {
+      reminderManagerModal.close();
+      setEditingReminder(reminder);
+      reminderModal.open();
+    },
+    [reminderManagerModal, reminderModal],
+  );
+
   const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
     let result = sanitizeHtml(html);
     if (compact) result = compactHtml(result);
@@ -503,8 +550,8 @@ export const AlertsTab: React.FC = () => {
         </TactileButton>
         <TactileButton
           variant="ghost"
-          onClick={reminderModal.open}
-          tooltip="Schedule a reminder to send an alert"
+          onClick={reminderManagerModal.open}
+          tooltip="Manage alert reminders"
           icon={
             <svg
               width="14"
@@ -517,11 +564,13 @@ export const AlertsTab: React.FC = () => {
               strokeLinejoin="round"
             >
               <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              <path d="M9 21h6" />
+              <path d="M8 11h8" />
+              <path d="M8 14h5" />
             </svg>
           }
         >
-          REMIND
+          REMINDERS
         </TactileButton>
         <TactileButton
           variant="ghost"
@@ -595,7 +644,12 @@ export const AlertsTab: React.FC = () => {
       </CollapsibleHeader>
 
       {nextReminder && (
-        <div className="alert-reminder-strip" aria-label="Upcoming alert reminder">
+        <button
+          type="button"
+          className="alert-reminder-strip alert-reminder-strip--button"
+          aria-label="Upcoming alert reminders"
+          onClick={reminderManagerModal.open}
+        >
           <span className="alert-reminder-strip-label">Next reminder</span>
           <span className="alert-reminder-strip-title">{nextReminder.title}</span>
           <span className="alert-reminder-strip-time">
@@ -606,7 +660,10 @@ export const AlertsTab: React.FC = () => {
               minute: '2-digit',
             })}
           </span>
-        </div>
+          {additionalReminderCount > 0 && (
+            <span className="alert-reminder-strip-count">+{additionalReminderCount} more</span>
+          )}
+        </button>
       )}
 
       <div className="alerts-layout">
@@ -670,9 +727,24 @@ export const AlertsTab: React.FC = () => {
       />
       <AlertReminderModal
         isOpen={reminderModal.isOpen}
-        onClose={reminderModal.close}
-        onSchedule={scheduleReminder}
+        onClose={handleReminderModalClose}
+        onSchedule={handleReminderSubmit}
         draft={reminderDraft}
+        mode={editingReminder ? 'edit' : 'schedule'}
+        reminder={editingReminder}
+      />
+      <AlertReminderManagerModal
+        isOpen={reminderManagerModal.isOpen}
+        onClose={reminderManagerModal.close}
+        pendingReminders={pendingReminders}
+        completedReminders={completedReminders}
+        loading={remindersLoading}
+        error={remindersError}
+        onRetry={() => void refetchReminders()}
+        onScheduleNew={handleScheduleFromManager}
+        onEdit={handleEditReminder}
+        onDone={(id) => void markDone(id)}
+        onDismiss={(id) => void dismissReminder(id)}
       />
       <Modal
         isOpen={pinPromptModal.isOpen}

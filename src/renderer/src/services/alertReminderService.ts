@@ -30,6 +30,12 @@ export interface AlertReminderInput {
   createdBy?: string;
 }
 
+export interface AlertReminderUpdateInput {
+  title: string;
+  note?: string;
+  dueAt: string;
+}
+
 type AlertReminderCreatePayload = Omit<
   AlertReminderRecord,
   'id' | 'created' | 'updated' | 'status' | 'snoozeUntil' | 'completedAt' | 'dismissedAt'
@@ -92,6 +98,25 @@ export async function snoozeAlertReminder(
     return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
       status: 'pending',
       snoozeUntil,
+    });
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+export async function updateAlertReminder(
+  id: string,
+  input: AlertReminderUpdateInput,
+): Promise<AlertReminderRecord> {
+  requireOnline();
+  try {
+    return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
+      title: input.title.trim() || 'Send alert',
+      note: input.note?.trim() || '',
+      dueAt: input.dueAt,
+      status: 'pending',
+      snoozeUntil: '',
     });
   } catch (err) {
     handleApiError(err);

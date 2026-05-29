@@ -28,18 +28,35 @@ vi.mock('../../hooks/useAlertHistory', () => ({
 }));
 
 const mockScheduleReminder = vi.fn().mockResolvedValue(true);
-const mockUpcomingReminders = { current: [] as Array<{ title: string; dueAt: string }> };
+const mockUpdateReminder = vi.fn().mockResolvedValue(true);
+const mockMarkDone = vi.fn().mockResolvedValue(true);
+const mockDismissReminder = vi.fn().mockResolvedValue(true);
+const mockReminderRefetch = vi.fn();
+const mockPendingReminders = {
+  current: [] as Array<{
+    id: string;
+    title: string;
+    dueAt: string;
+    note?: string;
+    status?: string;
+    snoozeUntil?: string;
+  }>,
+};
+const mockCompletedReminders = { current: [] as unknown[] };
 vi.mock('../../hooks/useAlertReminders', () => ({
   useAlertReminders: () => ({
     reminders: [],
-    upcomingReminders: mockUpcomingReminders.current,
+    pendingReminders: mockPendingReminders.current,
+    completedReminders: mockCompletedReminders.current,
+    upcomingReminders: mockPendingReminders.current,
     loading: false,
     error: null,
-    refetch: vi.fn(),
+    refetch: mockReminderRefetch,
     scheduleReminder: mockScheduleReminder,
     snoozeReminder: vi.fn(),
-    markDone: vi.fn(),
-    dismissReminder: vi.fn(),
+    updateReminder: mockUpdateReminder,
+    markDone: mockMarkDone,
+    dismissReminder: mockDismissReminder,
   }),
 }));
 
@@ -60,10 +77,14 @@ vi.mock('../AlertReminderModal', () => ({
   AlertReminderModal: (props: {
     isOpen: boolean;
     draft: { subject: string; bodyHtml: string; sender: string };
+    mode?: 'schedule' | 'edit';
+    reminder?: { title: string } | null;
     onSchedule: (input: Record<string, unknown>) => Promise<boolean>;
   }) =>
     props.isOpen ? (
       <div data-testid="reminder-modal">
+        <span data-testid="reminder-modal-mode">{props.mode ?? 'schedule'}</span>
+        <span data-testid="reminder-edit-title">{props.reminder?.title ?? ''}</span>
         <span data-testid="reminder-draft-subject">{props.draft.subject}</span>
         <span data-testid="reminder-draft-body">{props.draft.bodyHtml}</span>
         <span data-testid="reminder-draft-sender">{props.draft.sender}</span>
@@ -72,6 +93,40 @@ vi.mock('../AlertReminderModal', () => ({
           onClick={() => void props.onSchedule({ title: 'Scheduled reminder' })}
         >
           Schedule reminder
+        </button>
+      </div>
+    ) : null,
+}));
+
+vi.mock('../AlertReminderManagerModal', () => ({
+  AlertReminderManagerModal: (props: {
+    isOpen: boolean;
+    pendingReminders: Array<{ id: string; title: string }>;
+    onScheduleNew: () => void;
+    onEdit: (reminder: { id: string; title: string }) => void;
+    onDone: (id: string) => void;
+    onDismiss: (id: string) => void;
+  }) =>
+    props.isOpen ? (
+      <div data-testid="reminder-manager-modal">
+        <span data-testid="manager-count">{props.pendingReminders.length}</span>
+        <button data-testid="manager-schedule" onClick={props.onScheduleNew}>
+          manager-schedule
+        </button>
+        <button
+          data-testid="manager-edit"
+          onClick={() => props.onEdit(props.pendingReminders[0])}
+        >
+          manager-edit
+        </button>
+        <button data-testid="manager-done" onClick={() => props.onDone(props.pendingReminders[0].id)}>
+          manager-done
+        </button>
+        <button
+          data-testid="manager-dismiss"
+          onClick={() => props.onDismiss(props.pendingReminders[0].id)}
+        >
+          manager-dismiss
         </button>
       </div>
     ) : null,
@@ -237,7 +292,8 @@ vi.mock('../alerts/enhanceEngine', () => ({
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUpcomingReminders.current = [];
+  mockPendingReminders.current = [];
+  mockCompletedReminders.current = [];
   (globalThis as Record<string, unknown>).api = {
     getCompanyLogo: vi.fn().mockResolvedValue(null),
     getFooterLogo: vi.fn().mockResolvedValue(null),
@@ -264,7 +320,8 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     expect(screen.getByText('RESET')).toBeInTheDocument();
     expect(screen.getByText('HISTORY')).toBeInTheDocument();
-    expect(screen.getByText('REMIND')).toBeInTheDocument();
+    expect(screen.getByText('REMINDERS')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'REMIND' })).not.toBeInTheDocument();
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
@@ -393,7 +450,8 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('REMIND'));
+    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByTestId('manager-schedule'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
@@ -403,7 +461,8 @@ describe('AlertsTab', () => {
 
   it('schedules reminders through the reminder hook', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('REMIND'));
+    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByTestId('manager-schedule'));
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
     await waitFor(() => {
@@ -412,14 +471,58 @@ describe('AlertsTab', () => {
   });
 
   it('shows the next upcoming reminder compactly', () => {
-    mockUpcomingReminders.current = [
-      { title: 'Send maintenance alert', dueAt: '2026-05-28T20:00:00.000Z' },
+    mockPendingReminders.current = [
+      { id: 'rem-1', title: 'Send maintenance alert', dueAt: '2026-05-28T20:00:00.000Z' },
     ];
 
     render(<AlertsTab />);
 
     expect(screen.getByText('Next reminder')).toBeInTheDocument();
     expect(screen.getByText('Send maintenance alert')).toBeInTheDocument();
+  });
+
+  it('shows a count when more pending reminders exist and opens the manager from the strip', () => {
+    mockPendingReminders.current = [
+      { id: 'rem-1', title: 'First reminder', dueAt: '2026-05-28T20:00:00.000Z' },
+      { id: 'rem-2', title: 'Second reminder', dueAt: '2026-05-28T21:00:00.000Z' },
+      { id: 'rem-3', title: 'Third reminder', dueAt: '2026-05-28T22:00:00.000Z' },
+    ];
+
+    render(<AlertsTab />);
+
+    expect(screen.getByText('+2 more')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Upcoming alert reminders' }));
+    expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('manager-count')).toHaveTextContent('3');
+  });
+
+  it('opens the reminder manager from the header action', () => {
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('REMINDERS'));
+
+    expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
+  });
+
+  it('opens edit mode from the reminder manager and routes manager actions', async () => {
+    mockPendingReminders.current = [
+      { id: 'rem-1', title: 'Editable reminder', dueAt: '2026-05-28T20:00:00.000Z' },
+    ];
+
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByTestId('manager-edit'));
+
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('reminder-modal-mode')).toHaveTextContent('edit');
+    expect(screen.getByTestId('reminder-edit-title')).toHaveTextContent('Editable reminder');
+
+    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByTestId('manager-done'));
+    fireEvent.click(screen.getByTestId('manager-dismiss'));
+
+    expect(mockMarkDone).toHaveBeenCalledWith('rem-1');
+    expect(mockDismissReminder).toHaveBeenCalledWith('rem-1');
   });
 
   it('renders with null logo by default on the card', () => {
