@@ -1283,6 +1283,28 @@
   cursor: pointer;
 }
 
+.alert-reminder-manager-sound {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--color-surface-subtle);
+}
+
+.alert-reminder-manager-sound-label {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+}
+
+.alert-reminder-manager-sound-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .alert-reminder-manager-list {
   display: flex;
   flex-direction: column;

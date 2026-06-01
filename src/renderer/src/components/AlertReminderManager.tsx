@@ -8,9 +8,11 @@ import {
   snoozeAlertReminder,
   type AlertReminderRecord,
 } from '../services/alertReminderService';
+import { getReminderAlarmSource } from '../services/reminderAlarmSoundService';
 
 const POLL_INTERVAL_MS = 30_000;
 const SNOOZE_MS = 10 * 60_000;
+const FALLBACK_ALARM_REPEAT_MS = 1_500;
 const REMINDER_ALARM_GAIN = 0.38;
 const REMINDER_ALARM_PULSES = [
   { frequency: 880, offset: 0 },
@@ -24,7 +26,31 @@ function getReminderEffectiveTime(reminder: AlertReminderRecord): number {
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
-async function playReminderAlarm(): Promise<void> {
+function stopReminderAudio(audio: HTMLAudioElement): void {
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+  } catch {
+    // Audio may throw if it is torn down while the reminder is closing.
+  }
+}
+
+async function startReminderMp3Alarm(): Promise<HTMLAudioElement> {
+  const audio = new Audio(getReminderAlarmSource());
+  audio.loop = true;
+  audio.preload = 'auto';
+  audio.volume = 1;
+
+  try {
+    await audio.play();
+    return audio;
+  } catch (err) {
+    stopReminderAudio(audio);
+    throw err;
+  }
+}
+
+async function playFallbackReminderAlarm(): Promise<void> {
   void globalThis.api?.playAlertSound?.().catch(() => undefined);
 
   try {
@@ -74,6 +100,9 @@ export function AlertReminderManager() {
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
   const currentRef = useRef<AlertReminderRecord | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
+  const activeAlarmIdRef = useRef<string | null>(null);
+  const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const fallbackIntervalRef = useRef<number | null>(null);
   const chimedIdsRef = useRef(new Set<string>());
   const mutedUntilRef = useRef(new Map<string, number>());
 
@@ -99,6 +128,30 @@ export function AlertReminderManager() {
     }
   }, []);
 
+  const stopReminderAlarm = useCallback(() => {
+    activeAlarmIdRef.current = null;
+
+    if (fallbackIntervalRef.current !== null) {
+      window.clearInterval(fallbackIntervalRef.current);
+      fallbackIntervalRef.current = null;
+    }
+
+    if (alarmAudioRef.current) {
+      stopReminderAudio(alarmAudioRef.current);
+      alarmAudioRef.current = null;
+    }
+  }, []);
+
+  const startRepeatingFallbackAlarm = useCallback(() => {
+    if (fallbackIntervalRef.current !== null) return;
+
+    void playFallbackReminderAlarm();
+    fallbackIntervalRef.current = window.setInterval(
+      () => void playFallbackReminderAlarm(),
+      FALLBACK_ALARM_REPEAT_MS,
+    );
+  }, []);
+
   useEffect(() => {
     void refreshDue();
     const intervalId = window.setInterval(() => void refreshDue(), POLL_INTERVAL_MS);
@@ -106,10 +159,35 @@ export function AlertReminderManager() {
   }, [refreshDue]);
 
   useEffect(() => {
-    if (!current || chimedIdsRef.current.has(current.id)) return;
+    if (!current) {
+      stopReminderAlarm();
+      return;
+    }
+
+    if (activeAlarmIdRef.current && activeAlarmIdRef.current !== current.id) {
+      stopReminderAlarm();
+    }
+
+    if (chimedIdsRef.current.has(current.id)) return;
     chimedIdsRef.current.add(current.id);
-    void playReminderAlarm();
-  }, [current]);
+    activeAlarmIdRef.current = current.id;
+
+    void startReminderMp3Alarm()
+      .then((audio) => {
+        if (activeAlarmIdRef.current === current.id) {
+          alarmAudioRef.current = audio;
+          return;
+        }
+        stopReminderAudio(audio);
+      })
+      .catch(() => {
+        if (activeAlarmIdRef.current === current.id) {
+          startRepeatingFallbackAlarm();
+        }
+      });
+  }, [current, startRepeatingFallbackAlarm, stopReminderAlarm]);
+
+  useEffect(() => stopReminderAlarm, [stopReminderAlarm]);
 
   useEffect(() => {
     if (!current) return;
@@ -159,6 +237,7 @@ export function AlertReminderManager() {
       await snoozeAlertReminder(reminder.id, new Date(snoozeUntil).toISOString());
       chimedIdsRef.current.delete(reminder.id);
       mutedUntilRef.current.set(reminder.id, snoozeUntil);
+      stopReminderAlarm();
       setCurrent(null);
       void refreshDue();
     } catch {
@@ -171,6 +250,7 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await markAlertReminderDone(reminder.id);
+      stopReminderAlarm();
       setCurrent(null);
       void refreshDue();
     } catch {
@@ -183,6 +263,7 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await dismissAlertReminder(reminder.id);
+      stopReminderAlarm();
       setCurrent(null);
       void refreshDue();
     } catch {

@@ -249,6 +249,7 @@ export type BridgeAPI = {
   writeClipboardImage: (dataUrl: string) => Promise<boolean>;
   // Alerts
   playAlertSound: () => Promise<boolean>;
+  selectReminderSound: () => Promise<IpcResult<string>>;
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
   saveCompanyLogo: () => Promise<IpcResult<string>>;
   getCompanyLogo: () => Promise<string | null>;
@@ -311,6 +312,7 @@ export const IPC_CHANNELS = {
   CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',
   // Alerts
   ALERT_PLAY_SOUND: 'alert:playSound',
+  ALERT_SELECT_REMINDER_SOUND: 'alert:selectReminderSound',
   SAVE_ALERT_IMAGE: 'alert:saveImage',
   SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
   GET_COMPANY_LOGO: 'alert:getCompanyLogo',

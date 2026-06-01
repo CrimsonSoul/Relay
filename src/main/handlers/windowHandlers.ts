@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
 import { extname, normalize, resolve, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
@@ -84,6 +85,29 @@ export function setupWindowHandlers(
         error: getErrorMessage(err),
       });
       return false;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND, async () => {
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Select Reminder Alarm MP3',
+        filters: [{ name: 'MP3 Audio', extensions: ['mp3'] }],
+        properties: ['openFile'],
+      });
+      const filePath = filePaths[0];
+      if (canceled || !filePath) {
+        return { success: false, error: 'Cancelled' };
+      }
+      if (extname(filePath).toLowerCase() !== '.mp3') {
+        return { success: false, error: 'Select an MP3 file' };
+      }
+      return { success: true, data: pathToFileURL(filePath).href };
+    } catch (err) {
+      loggers.ipc.warn('Reminder sound selection failed', {
+        error: getErrorMessage(err),
+      });
+      return { success: false, error: err instanceof Error ? err.message : 'Selection failed' };
     }
   });
 

@@ -5,12 +5,52 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AlertReminderManager } from '../AlertReminderManager';
 import type { AlertReminderRecord } from '../../services/alertReminderService';
+import {
+  resetReminderAlarmSource,
+  saveReminderAlarmSource,
+} from '../../services/reminderAlarmSoundService';
 
 const mockListDueAlertReminders = vi.fn();
 const mockSnoozeAlertReminder = vi.fn();
 const mockMarkAlertReminderDone = vi.fn();
 const mockDismissAlertReminder = vi.fn();
 const mockPlayAlertSound = vi.fn();
+const originalAudio = globalThis.Audio;
+
+type MockAudioElement = {
+  readonly play: ReturnType<typeof vi.fn>;
+  readonly pause: ReturnType<typeof vi.fn>;
+  currentTime: number;
+  loop: boolean;
+  preload: string;
+  readonly src: string;
+  volume: number;
+};
+
+const mockAudioInstances: MockAudioElement[] = [];
+
+function installMockAudio(play: ReturnType<typeof vi.fn> = vi.fn().mockResolvedValue(undefined)) {
+  mockAudioInstances.length = 0;
+
+  class MockAudio implements MockAudioElement {
+    currentTime = 0;
+    loop = false;
+    pause = vi.fn();
+    preload = '';
+    volume = 1;
+
+    constructor(public readonly src: string) {
+      mockAudioInstances.push(this);
+    }
+
+    play = play;
+  }
+
+  Object.defineProperty(globalThis, 'Audio', {
+    configurable: true,
+    value: MockAudio,
+  });
+}
 
 vi.mock('../../services/alertReminderService', () => ({
   listDueAlertReminders: (...args: unknown[]) => mockListDueAlertReminders(...args),
@@ -74,6 +114,7 @@ async function flushReminderEffects(): Promise<void> {
 describe('AlertReminderManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-28T20:01:00.000Z'));
     (globalThis as unknown as { api: { playAlertSound: typeof mockPlayAlertSound } }).api = {
@@ -88,6 +129,11 @@ describe('AlertReminderManager', () => {
 
   afterEach(() => {
     delete (globalThis as unknown as { api?: unknown }).api;
+    resetReminderAlarmSource();
+    Object.defineProperty(globalThis, 'Audio', {
+      configurable: true,
+      value: originalAudio,
+    });
     vi.useRealTimers();
   });
 
@@ -134,7 +180,56 @@ describe('AlertReminderManager', () => {
     expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
   });
 
-  it('plays a loud reminder alarm only once for the same visible reminder', async () => {
+  it('loops a bundled reminder mp3 while visible and stops when addressed', async () => {
+    installMockAudio();
+    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+    expect(screen.getByText('Send outage alert')).toBeInTheDocument();
+    await flushReminderEffects();
+
+    expect(mockAudioInstances).toHaveLength(1);
+    const audio = mockAudioInstances[0];
+    expect(audio?.src).toContain('/audio/reminder-alarm.mp3');
+    expect(audio?.loop).toBe(true);
+    expect(audio?.preload).toBe('auto');
+    expect(audio?.volume).toBe(1);
+    expect(audio?.play).toHaveBeenCalledTimes(1);
+    expect(mockPlayAlertSound).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+    });
+
+    expect(audio?.play).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByText('Dismiss'));
+    await flushReminderEffects();
+
+    expect(mockDismissAlertReminder).toHaveBeenCalledWith('rem-1');
+    expect(audio?.pause).toHaveBeenCalledTimes(1);
+    expect(audio?.currentTime).toBe(0);
+  });
+
+  it('loops the selected custom mp3 when one is saved', async () => {
+    installMockAudio();
+    saveReminderAlarmSource('file:///Users/ryan/Music/custom-alarm.mp3');
+    mockListDueAlertReminders.mockResolvedValue([makeReminder()]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+    await flushReminderEffects();
+
+    expect(mockAudioInstances).toHaveLength(1);
+    expect(mockAudioInstances[0]?.src).toBe('file:///Users/ryan/Music/custom-alarm.mp3');
+    expect(mockAudioInstances[0]?.loop).toBe(true);
+    expect(mockAudioInstances[0]?.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('repeats the fallback alarm when mp3 playback fails', async () => {
+    installMockAudio(vi.fn().mockRejectedValue(new Error('mp3 blocked')));
     const oscillatorStart = vi.fn();
     const rampToValue = vi.fn();
     const resume = vi.fn().mockResolvedValue(undefined);
@@ -180,11 +275,22 @@ describe('AlertReminderManager', () => {
     );
 
     await act(async () => {
-      vi.advanceTimersByTime(30_000);
+      vi.advanceTimersByTime(1_500);
+      await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(mockPlayAlertSound).toHaveBeenCalledTimes(1);
+    expect(mockPlayAlertSound).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByText('Dismiss'));
+    await flushReminderEffects();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_500);
+      await Promise.resolve();
+    });
+
+    expect(mockPlayAlertSound).toHaveBeenCalledTimes(2);
   });
 
   it('does not offer navigation before the reminder is addressed', async () => {

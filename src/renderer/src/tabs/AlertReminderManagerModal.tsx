@@ -15,6 +15,10 @@ interface AlertReminderManagerModalProps {
   onEdit: (reminder: AlertReminderRecord) => void;
   onDone: (id: string) => void;
   onDismiss: (id: string) => void;
+  alarmSoundLabel: string;
+  hasCustomAlarmSound: boolean;
+  onChooseAlarmSound: () => void;
+  onResetAlarmSound: () => void;
 }
 
 interface ReminderRowProps {
@@ -105,6 +109,10 @@ export function AlertReminderManagerModal({
   onEdit,
   onDone,
   onDismiss,
+  alarmSoundLabel,
+  hasCustomAlarmSound,
+  onChooseAlarmSound,
+  onResetAlarmSound,
 }: Readonly<AlertReminderManagerModalProps>) {
   const [showCompleted, setShowCompleted] = useState(false);
 
@@ -123,6 +131,22 @@ export function AlertReminderManagerModal({
           <TactileButton variant="primary" size="sm" onClick={onScheduleNew}>
             Schedule reminder
           </TactileButton>
+        </div>
+
+        <div className="alert-reminder-manager-sound">
+          <div className="alert-reminder-manager-sound-label">
+            Alarm sound: {alarmSoundLabel}
+          </div>
+          <div className="alert-reminder-manager-sound-actions">
+            <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
+              Choose MP3
+            </TactileButton>
+            {hasCustomAlarmSound && (
+              <TactileButton variant="ghost" size="sm" onClick={onResetAlarmSound}>
+                Use default
+              </TactileButton>
+            )}
+          </div>
         </div>
 
         {loading && <div className="alert-reminder-manager-state">Loading reminders...</div>}

@@ -329,6 +329,46 @@ describe('windowHandlers', () => {
     });
   });
 
+  describe('ALERT_SELECT_REMINDER_SOUND', () => {
+    it('returns a file URL for the selected mp3', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/loud-alarm.mp3'],
+      });
+
+      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith({
+        title: 'Select Reminder Alarm MP3',
+        filters: [{ name: 'MP3 Audio', extensions: ['mp3'] }],
+        properties: ['openFile'],
+      });
+      expect(result).toEqual({ success: true, data: 'file:///mock-dir/loud-alarm.mp3' });
+    });
+
+    it('returns cancelled when no mp3 is selected', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: true,
+        filePaths: [],
+      });
+
+      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+
+      expect(result).toEqual({ success: false, error: 'Cancelled' });
+    });
+
+    it('rejects non-mp3 paths defensively', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/not-audio.wav'],
+      });
+
+      const result = await handlers[IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND]();
+
+      expect(result).toEqual({ success: false, error: 'Select an MP3 file' });
+    });
+  });
+
   describe('CLIPBOARD_WRITE_IMAGE', () => {
     it('writes valid PNG data URL to clipboard', async () => {
       const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';

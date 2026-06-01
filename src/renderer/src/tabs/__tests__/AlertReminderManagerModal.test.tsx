@@ -61,6 +61,10 @@ function renderModal(overrides: Partial<React.ComponentProps<typeof AlertReminde
     onEdit: vi.fn(),
     onDone: vi.fn(),
     onDismiss: vi.fn(),
+    alarmSoundLabel: 'Default alarm',
+    hasCustomAlarmSound: false,
+    onChooseAlarmSound: vi.fn(),
+    onResetAlarmSound: vi.fn(),
     ...overrides,
   };
 
@@ -120,5 +124,19 @@ describe('AlertReminderManagerModal', () => {
 
     expect(props.onRetry).toHaveBeenCalledOnce();
     expect(props.onScheduleNew).toHaveBeenCalledOnce();
+  });
+
+  it('shows reminder sound controls and calls selection actions', () => {
+    const props = renderModal({
+      alarmSoundLabel: 'Custom MP3',
+      hasCustomAlarmSound: true,
+    });
+
+    expect(screen.getByText('Alarm sound: Custom MP3')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Choose MP3'));
+    fireEvent.click(screen.getByText('Use default'));
+
+    expect(props.onChooseAlarmSound).toHaveBeenCalledOnce();
+    expect(props.onResetAlarmSound).toHaveBeenCalledOnce();
   });
 });

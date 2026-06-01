@@ -19,6 +19,12 @@ import { compactText } from './alerts/compactEngine';
 import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
+import {
+  getReminderAlarmLabel,
+  hasCustomReminderAlarmSource,
+  resetReminderAlarmSource,
+  saveReminderAlarmSource,
+} from '../services/reminderAlarmSoundService';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
 import '@fontsource/ibm-plex-sans/400.css';
@@ -175,6 +181,10 @@ export const AlertsTab: React.FC = () => {
   const reminderModal = useModalState();
   const reminderManagerModal = useModalState();
   const [editingReminder, setEditingReminder] = useState<AlertReminderRecord | null>(null);
+  const [reminderAlarmLabel, setReminderAlarmLabel] = useState(getReminderAlarmLabel);
+  const [hasCustomReminderAlarm, setHasCustomReminderAlarm] = useState(
+    hasCustomReminderAlarmSource,
+  );
   const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
@@ -456,6 +466,31 @@ export const AlertsTab: React.FC = () => {
     },
     [reminderManagerModal, reminderModal],
   );
+
+  const refreshReminderAlarmState = useCallback(() => {
+    setReminderAlarmLabel(getReminderAlarmLabel());
+    setHasCustomReminderAlarm(hasCustomReminderAlarmSource());
+  }, []);
+
+  const handleChooseReminderAlarmSound = useCallback(async () => {
+    const result = await globalThis.api?.selectReminderSound?.();
+    if (result?.success && result.data) {
+      if (saveReminderAlarmSource(result.data)) {
+        refreshReminderAlarmState();
+        showToast('Reminder sound saved', 'success');
+      } else {
+        showToast('Select an MP3 file', 'error');
+      }
+    } else if (result?.error && result.error !== 'Cancelled') {
+      showToast(result.error, 'error');
+    }
+  }, [refreshReminderAlarmState, showToast]);
+
+  const handleResetReminderAlarmSound = useCallback(() => {
+    resetReminderAlarmSource();
+    refreshReminderAlarmState();
+    showToast('Reminder sound reset', 'success');
+  }, [refreshReminderAlarmState, showToast]);
 
   const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
     let result = sanitizeHtml(html);
@@ -745,6 +780,10 @@ export const AlertsTab: React.FC = () => {
         onEdit={handleEditReminder}
         onDone={(id) => void markDone(id)}
         onDismiss={(id) => void dismissReminder(id)}
+        alarmSoundLabel={reminderAlarmLabel}
+        hasCustomAlarmSound={hasCustomReminderAlarm}
+        onChooseAlarmSound={() => void handleChooseReminderAlarmSound()}
+        onResetAlarmSound={handleResetReminderAlarmSound}
       />
       <Modal
         isOpen={pinPromptModal.isOpen}
