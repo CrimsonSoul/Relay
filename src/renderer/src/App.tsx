@@ -501,10 +501,10 @@ function AppWithSetup() {
             return;
           }
         }
-        // Full app relaunch so the main process rebuilds its per-mode state
-        // (pbProcess, syncPb, offline cache) from the new config. A renderer-only
-        // reload leaves stale state — e.g. a lingering embedded PocketBase after
-        // switching to client mode — that can misroute or stall the connection.
+        // Ask the main process to rebuild per-mode runtime state, then reload this
+        // window. A plain renderer reload leaves stale state — e.g. a lingering
+        // embedded PocketBase after switching to client mode — that can misroute
+        // or stall the connection.
         const relaunch = globalThis.api?.relaunchApp;
         if (relaunch) {
           await relaunch();

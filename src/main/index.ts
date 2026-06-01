@@ -21,8 +21,6 @@ import {
   setPbProcess,
   getRetentionManager,
   setRetentionManager,
-  setBackupManager,
-  setPbClient,
   getOfflineCache,
   setOfflineCache,
   getPendingChanges,
@@ -32,10 +30,11 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
-import { requestAppQuit, requestAppRelaunch } from './app/relaunch';
+import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
 import { startPocketBase } from './app/pocketbaseBootstrap';
+import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 
@@ -51,45 +50,6 @@ if (process.platform === 'win32') {
 validateEnv();
 
 const isCrashWatchdog = runCrashWatchdogIfRequested();
-
-function isDevRendererRuntime(): boolean {
-  return !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
-}
-
-async function reconfigureDevRuntime(configDataDir: string): Promise<void> {
-  const config = getAppConfig()?.load();
-
-  if (getRetentionManager()) {
-    getRetentionManager()!.stop();
-    setRetentionManager(null);
-  }
-  setBackupManager(null);
-  setPbClient(null);
-
-  if (getOfflineCache()) {
-    getOfflineCache()!.close();
-    setOfflineCache(null);
-  }
-  if (getPendingChanges()) {
-    getPendingChanges()!.close();
-    setPendingChanges(null);
-  }
-  setSyncManager(null);
-
-  const pbProcess = getPbProcess();
-  if (config?.mode === 'server') {
-    const started = await startPocketBase(config, configDataDir);
-    if (!started) throw new Error('Failed to start PocketBase server.');
-  } else if (pbProcess) {
-    await pbProcess.stop();
-    setPbProcess(null);
-  }
-
-  const mainWindow = getMainWindow();
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.reloadIgnoringCache();
-  }
-}
 
 const hardwareAccelerationDisabled = process.env.RELAY_DISABLE_HARDWARE_ACCELERATION === '1';
 if (hardwareAccelerationDisabled) {
@@ -191,21 +151,18 @@ if (gotLock) {
         return startPocketBase(config, configDataDir);
       });
 
-      // Full app relaunch — used by the setup flow so the main process rebuilds
-      // its per-mode state (pbProcess, syncPb, offline cache) from the new config.
-      // A renderer-only reload leaves stale state (e.g. the embedded PocketBase
-      // still running after switching to client mode) that can misroute or
-      // stall the first connection attempt.
+      // Runtime reconfigure — used by the setup flow so the main process rebuilds
+      // its per-mode state from the new config without closing the app.
+      // This now reconfigures in-process and reloads the visible window. Closing
+      // the app here made client-mode setup depend on app.relaunch(), so a failed
+      // successor launch left users with a closed app.
       ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, () => {
-        loggers.main.info('Relaunching app (reconfigure)');
+        loggers.main.info('Reconfiguring app runtime');
         if (process.env.NODE_ENV === 'test') {
           app.quit();
           return;
         }
-        if (isDevRendererRuntime()) {
-          return reconfigureDevRuntime(configDataDir);
-        }
-        requestAppRelaunch('app-reconfigure', { exitCode: 0 });
+        return reconfigureRuntime(configDataDir);
       });
 
       const restartPb = async (): Promise<boolean> => {
