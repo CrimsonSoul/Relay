@@ -2044,10 +2044,10 @@ body.modal-open {
   width: min(460px, 100%);
   overflow: hidden;
   border: 1px solid rgba(239, 68, 68, 0.52);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--color-bg-surface-elevated);
   box-shadow:
-    0 22px 52px rgba(0, 0, 0, 0.52),
+    var(--shadow-modal),
     0 0 38px rgba(225, 29, 72, 0.28);
 }
 
@@ -2058,15 +2058,37 @@ body.modal-open {
 
 .alert-reminder-due__content {
   min-width: 0;
-  padding: 16px 16px 8px;
+  padding: 18px 18px 10px;
+}
+
+.alert-reminder-due__eyebrow-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  margin-bottom: 8px;
 }
 
 .alert-reminder-due__eyebrow {
-  margin-bottom: 6px;
   color: var(--color-danger-hover);
   font-size: var(--text-2xs);
   font-weight: 700;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.alert-reminder-due__status {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid rgba(239, 68, 68, 0.44);
+  border-radius: var(--radius-pill);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fecaca;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
   text-transform: uppercase;
 }
 
@@ -2085,7 +2107,7 @@ body.modal-open {
 }
 
 .alert-reminder-due__meta {
-  margin-top: 8px;
+  margin-top: 9px;
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
 }
@@ -2096,7 +2118,7 @@ body.modal-open {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-  padding: 8px 16px 16px;
+  padding: 8px 18px 18px;
 }
 
 @keyframes critical-reminder-flash {

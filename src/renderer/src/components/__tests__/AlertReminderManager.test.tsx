@@ -25,8 +25,18 @@ vi.mock('../Toast', () => ({
 }));
 
 vi.mock('../TactileButton', () => ({
-  TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
-    <button onClick={onClick}>{children}</button>
+  TactileButton: ({
+    children,
+    onClick,
+    variant = 'secondary',
+  }: {
+    children: React.ReactNode;
+    onClick?: () => void;
+    variant?: string;
+  }) => (
+    <button onClick={onClick} data-variant={variant}>
+      {children}
+    </button>
   ),
 }));
 
@@ -95,6 +105,10 @@ describe('AlertReminderManager', () => {
     const overlay = screen.getByTestId('critical-reminder-overlay');
     expect(overlay).toHaveClass('alert-reminder-due-overlay--critical');
     expect(screen.getByRole('alertdialog')).toHaveClass('alert-reminder-due--critical');
+    expect(screen.getByText('Due now')).toBeInTheDocument();
+    expect(screen.getByText('Snooze 10m')).toHaveAttribute('data-variant', 'secondary');
+    expect(screen.getByText('Mark Done')).toHaveAttribute('data-variant', 'primary');
+    expect(screen.getByText('Dismiss')).toHaveAttribute('data-variant', 'ghost');
   });
 
   it('defines reduced-motion styles for the critical reminder flash', () => {

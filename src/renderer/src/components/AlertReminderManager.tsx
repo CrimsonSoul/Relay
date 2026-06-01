@@ -186,7 +186,10 @@ export function AlertReminderManager() {
       >
         <div className="alert-reminder-due__accent" aria-hidden="true" />
         <div className="alert-reminder-due__content">
-          <div className="alert-reminder-due__eyebrow">Alert reminder</div>
+          <div className="alert-reminder-due__eyebrow-row">
+            <div className="alert-reminder-due__eyebrow">Alert reminder</div>
+            <div className="alert-reminder-due__status">Due now</div>
+          </div>
           <h2 id="due-reminder-title" className="alert-reminder-due__title">
             {current.title}
           </h2>
