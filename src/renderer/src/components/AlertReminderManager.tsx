@@ -11,29 +11,49 @@ import {
 
 const POLL_INTERVAL_MS = 30_000;
 const SNOOZE_MS = 10 * 60_000;
+const REMINDER_ALARM_GAIN = 0.38;
+const REMINDER_ALARM_PULSES = [
+  { frequency: 880, offset: 0 },
+  { frequency: 1175, offset: 0.18 },
+  { frequency: 740, offset: 0.36 },
+  { frequency: 988, offset: 0.54 },
+];
 
 function getReminderEffectiveTime(reminder: AlertReminderRecord): number {
   const timestamp = new Date(reminder.snoozeUntil || reminder.dueAt).getTime();
   return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
 }
 
-function playReminderChime(): void {
+async function playReminderAlarm(): Promise<void> {
+  void globalThis.api?.playAlertSound?.().catch(() => undefined);
+
   try {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextCtor) return;
     const audio = new AudioContextCtor();
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(880, audio.currentTime);
-    gain.gain.setValueAtTime(0.0001, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.4);
-    oscillator.connect(gain);
-    gain.connect(audio.destination);
-    oscillator.start();
-    oscillator.stop(audio.currentTime + 0.42);
-    window.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 600);
+    if (audio.state === 'suspended') {
+      await audio.resume();
+    }
+
+    const baseTime = audio.currentTime + 0.02;
+    REMINDER_ALARM_PULSES.forEach(({ frequency, offset }) => {
+      const startAt = baseTime + offset;
+      const stopAt = startAt + 0.16;
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(frequency, startAt);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(REMINDER_ALARM_GAIN, startAt + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+      oscillator.start(startAt);
+      oscillator.stop(stopAt);
+    });
+
+    window.setTimeout(() => void Promise.resolve(audio.close()).catch(() => undefined), 1_200);
   } catch {
     // Visual reminder stays active when browser audio policy blocks playback.
   }
@@ -88,7 +108,7 @@ export function AlertReminderManager() {
   useEffect(() => {
     if (!current || chimedIdsRef.current.has(current.id)) return;
     chimedIdsRef.current.add(current.id);
-    playReminderChime();
+    void playReminderAlarm();
   }, [current]);
 
   useEffect(() => {

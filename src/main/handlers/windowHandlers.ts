@@ -75,6 +75,18 @@ export function setupWindowHandlers(
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.ALERT_PLAY_SOUND, () => {
+    try {
+      shell.beep();
+      return true;
+    } catch (err) {
+      loggers.ipc.warn('Alert sound failed', {
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
+  });
+
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);

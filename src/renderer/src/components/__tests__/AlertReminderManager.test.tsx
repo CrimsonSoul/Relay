@@ -10,6 +10,7 @@ const mockListDueAlertReminders = vi.fn();
 const mockSnoozeAlertReminder = vi.fn();
 const mockMarkAlertReminderDone = vi.fn();
 const mockDismissAlertReminder = vi.fn();
+const mockPlayAlertSound = vi.fn();
 
 vi.mock('../../services/alertReminderService', () => ({
   listDueAlertReminders: (...args: unknown[]) => mockListDueAlertReminders(...args),
@@ -75,6 +76,10 @@ describe('AlertReminderManager', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-28T20:01:00.000Z'));
+    (globalThis as unknown as { api: { playAlertSound: typeof mockPlayAlertSound } }).api = {
+      playAlertSound: mockPlayAlertSound,
+    };
+    mockPlayAlertSound.mockResolvedValue(true);
     mockListDueAlertReminders.mockResolvedValue([]);
     mockSnoozeAlertReminder.mockResolvedValue(makeReminder());
     mockMarkAlertReminderDone.mockResolvedValue(makeReminder({ status: 'done' }));
@@ -82,6 +87,7 @@ describe('AlertReminderManager', () => {
   });
 
   afterEach(() => {
+    delete (globalThis as unknown as { api?: unknown }).api;
     vi.useRealTimers();
   });
 
@@ -128,11 +134,15 @@ describe('AlertReminderManager', () => {
     expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
   });
 
-  it('does not replay sound for the same visible reminder on the next poll', async () => {
+  it('plays a loud reminder alarm only once for the same visible reminder', async () => {
     const oscillatorStart = vi.fn();
+    const rampToValue = vi.fn();
+    const resume = vi.fn().mockResolvedValue(undefined);
     function MockAudioContext() {
       return {
+        state: 'suspended',
         currentTime: 0,
+        resume,
         createOscillator: () => ({
           type: 'sine',
           frequency: { setValueAtTime: vi.fn() },
@@ -143,7 +153,7 @@ describe('AlertReminderManager', () => {
         createGain: () => ({
           gain: {
             setValueAtTime: vi.fn(),
-            exponentialRampToValueAtTime: vi.fn(),
+            exponentialRampToValueAtTime: rampToValue,
           },
           connect: vi.fn(),
         }),
@@ -160,13 +170,21 @@ describe('AlertReminderManager', () => {
     render(<AlertReminderManager />);
     await flushReminderEffects();
     expect(screen.getByText('Send outage alert')).toBeInTheDocument();
+    await flushReminderEffects();
+
+    expect(mockPlayAlertSound).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledTimes(1);
+    expect(oscillatorStart.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(rampToValue.mock.calls.some(([value]) => typeof value === 'number' && value >= 0.3)).toBe(
+      true,
+    );
 
     await act(async () => {
       vi.advanceTimersByTime(30_000);
       await Promise.resolve();
     });
 
-    expect(oscillatorStart).toHaveBeenCalledTimes(1);
+    expect(mockPlayAlertSound).toHaveBeenCalledTimes(1);
   });
 
   it('does not offer navigation before the reminder is addressed', async () => {

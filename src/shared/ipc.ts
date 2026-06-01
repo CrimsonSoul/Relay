@@ -248,6 +248,7 @@ export type BridgeAPI = {
   /** Accepts PNG data URLs only. This is intentional: clipboard operations use PNG format. */
   writeClipboardImage: (dataUrl: string) => Promise<boolean>;
   // Alerts
+  playAlertSound: () => Promise<boolean>;
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
   saveCompanyLogo: () => Promise<IpcResult<string>>;
   getCompanyLogo: () => Promise<string | null>;
@@ -309,6 +310,7 @@ export const IPC_CHANNELS = {
   CLIPBOARD_WRITE: 'clipboard:write',
   CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',
   // Alerts
+  ALERT_PLAY_SOUND: 'alert:playSound',
   SAVE_ALERT_IMAGE: 'alert:saveImage',
   SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
   GET_COMPANY_LOGO: 'alert:getCompanyLogo',

@@ -48,6 +48,7 @@ vi.mock('electron', () => {
     shell: {
       openPath: vi.fn(),
       openExternal: vi.fn(),
+      beep: vi.fn(),
     },
     dialog: {
       showSaveDialog: vi.fn(),
@@ -306,6 +307,25 @@ describe('windowHandlers', () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ALERT_PLAY_SOUND', () => {
+    it('plays the native alert sound and returns true', async () => {
+      const result = await handlers[IPC_CHANNELS.ALERT_PLAY_SOUND]();
+
+      expect(shell.beep).toHaveBeenCalledTimes(1);
+      expect(result).toBe(true);
+    });
+
+    it('returns false when the native alert sound fails', async () => {
+      vi.mocked(shell.beep).mockImplementationOnce(() => {
+        throw new Error('audio unavailable');
+      });
+
+      const result = await handlers[IPC_CHANNELS.ALERT_PLAY_SOUND]();
+
+      expect(result).toBe(false);
     });
   });
 
