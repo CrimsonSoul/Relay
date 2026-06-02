@@ -249,13 +249,18 @@ export function AlertReminderManager() {
     }
   };
 
-  const handleLoadAlert = () => {
+  const handleLoadAlert = async () => {
     const reminder = currentRef.current;
     if (!reminder || !hasLoadableReminderAlert(reminder)) return;
     dispatchReminderAlertLoad(reminder);
-    stopReminderAlarm();
-    mutedUntilRef.current.set(reminder.id, Date.now() + SNOOZE_MS);
-    setCurrent(null);
+    try {
+      await dismissAlertReminder(reminder.id);
+      stopReminderAlarm();
+      setCurrent(null);
+      void refreshDue();
+    } catch {
+      showToast('Failed to dismiss reminder', 'error');
+    }
   };
 
   const handleDone = async () => {
@@ -323,7 +328,7 @@ export function AlertReminderManager() {
             Snooze 10m
           </TactileButton>
           {hasLoadableReminderAlert(current) && (
-            <TactileButton variant="primary" size="sm" onClick={handleLoadAlert}>
+            <TactileButton variant="primary" size="sm" onClick={() => void handleLoadAlert()}>
               Load Alert
             </TactileButton>
           )}

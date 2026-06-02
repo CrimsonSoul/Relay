@@ -294,17 +294,19 @@ describe('AlertReminderManager', () => {
     expect(mockPlayAlertSound).toHaveBeenCalledTimes(2);
   });
 
-  it('loads the attached alert from a due reminder and hides the popup', async () => {
+  it('loads the attached alert from a due reminder and dismisses the popup', async () => {
     installMockAudio();
     const loadListener = vi.fn();
     window.addEventListener('relay:load-alert-reminder', loadListener as EventListener);
-    mockListDueAlertReminders.mockResolvedValue([
-      makeReminder({
-        alertSubject: 'Stored outage alert',
-        alertBodyHtml: '<p>Stored body</p>',
-        createdBy: 'Ops',
-      }),
-    ]);
+    mockListDueAlertReminders
+      .mockResolvedValueOnce([
+        makeReminder({
+          alertSubject: 'Stored outage alert',
+          alertBodyHtml: '<p>Stored body</p>',
+          createdBy: 'Ops',
+        }),
+      ])
+      .mockResolvedValue([]);
 
     render(<AlertReminderManager />);
     await flushReminderEffects();
@@ -322,6 +324,8 @@ describe('AlertReminderManager', () => {
       sender: 'Ops',
       severity: 'ISSUE',
     });
+    expect(mockDismissAlertReminder).toHaveBeenCalledWith('rem-1');
+    expect(mockSnoozeAlertReminder).not.toHaveBeenCalled();
     expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
 
     window.removeEventListener('relay:load-alert-reminder', loadListener as EventListener);
