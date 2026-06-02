@@ -4,14 +4,25 @@ import React from 'react';
 
 // --- Mocks ---
 
-const mockCapturedCanvas = {
-  width: 1680,
-  height: 1200,
-  toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
-};
+const mockCapture = vi.hoisted(() => {
+  const highResCanvas = {
+    width: 1680,
+    height: 1200,
+    toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
+  };
+  const outlookCanvas = {
+    width: 840,
+    height: 600,
+    toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
+  };
+  const html2canvas = vi.fn((_element: HTMLElement, options?: { scale?: number }) =>
+    Promise.resolve(options?.scale === 1 ? outlookCanvas : highResCanvas),
+  );
+  return { highResCanvas, outlookCanvas, html2canvas };
+});
 
 vi.mock('html2canvas', () => ({
-  default: vi.fn().mockResolvedValue(mockCapturedCanvas),
+  default: mockCapture.html2canvas,
 }));
 
 // Mock useToast — capture showToast so tests can assert on it
@@ -434,22 +445,31 @@ describe('AlertsTab', () => {
     expect(pinBtn).toBeInTheDocument();
   });
 
-  it('clicking SAVE PNG calls the button handler', () => {
+  it('clicking SAVE PNG saves the high-resolution capture', async () => {
     render(<AlertsTab />);
     const saveBtn = screen.getByText('SAVE PNG');
     fireEvent.click(saveBtn);
-    expect(saveBtn).toBeInTheDocument();
+    await waitFor(() => {
+      expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
+        'data:image/png;base64,HIGH_RES_CAPTURE',
+        'alert_alert.png',
+      );
+    });
   });
 
-  it('clicking COPY FOR OUTLOOK sends the high-resolution capture to the clipboard', async () => {
+  it('clicking COPY FOR OUTLOOK sends an Outlook-sized capture to the clipboard', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
     await waitFor(() => {
       expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,HIGH_RES_CAPTURE',
+        'data:image/png;base64,OUTLOOK_SIZED_CAPTURE',
       );
     });
+    expect(mockCapture.html2canvas).toHaveBeenCalledWith(
+      expect.any(HTMLElement),
+      expect.objectContaining({ scale: 1 }),
+    );
   });
 
   it('copies the alert and opens the reminder time picker from the final workflow button', async () => {
@@ -462,7 +482,7 @@ describe('AlertsTab', () => {
 
     await waitFor(() => {
       expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,HIGH_RES_CAPTURE',
+        'data:image/png;base64,OUTLOOK_SIZED_CAPTURE',
       );
     });
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();

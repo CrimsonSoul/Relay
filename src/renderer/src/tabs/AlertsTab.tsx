@@ -36,6 +36,7 @@ import '@fontsource/montserrat/800.css';
 
 const ALERT_EXPORT_WIDTH_PX = 840;
 const ALERT_CAPTURE_SCALE = 2;
+const ALERT_OUTLOOK_CAPTURE_SCALE = 1;
 const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
 interface AlertFormState {
@@ -275,37 +276,43 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [eventTimeEnd, eventTimeSourceTz],
   );
 
-  const captureCard = useCallback(async (): Promise<HTMLCanvasElement> => {
-    if (!cardRef.current) throw new Error('Card ref not available');
-    // Clone the card off-screen so the visible preview never jumps
-    const el = cardRef.current;
-    const clone = el.cloneNode(true) as HTMLDivElement;
-    clone.style.position = 'fixed';
-    clone.style.left = '-9999px';
-    clone.style.top = '0';
-    clone.style.minWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
-    clone.style.maxWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
-    clone.style.zIndex = '-1';
-    document.body.appendChild(clone);
-    try {
-      const { default: html2canvas } = await import('html2canvas');
-      return await html2canvas(clone, {
-        scale: ALERT_CAPTURE_SCALE,
-        useCORS: true,
-        backgroundColor: null,
-        logging: false,
-      });
-    } finally {
-      clone.remove();
-    }
-  }, []);
+  const captureCard = useCallback(
+    async (scale = ALERT_CAPTURE_SCALE): Promise<HTMLCanvasElement> => {
+      if (!cardRef.current) throw new Error('Card ref not available');
+      // Clone the card off-screen so the visible preview never jumps
+      const el = cardRef.current;
+      const clone = el.cloneNode(true) as HTMLDivElement;
+      clone.style.position = 'fixed';
+      clone.style.left = '-9999px';
+      clone.style.top = '0';
+      clone.style.minWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
+      clone.style.maxWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
+      clone.style.zIndex = '-1';
+      document.body.appendChild(clone);
+      try {
+        const { default: html2canvas } = await import('html2canvas');
+        return await html2canvas(clone, {
+          scale,
+          useCORS: true,
+          backgroundColor: null,
+          logging: false,
+        });
+      } finally {
+        clone.remove();
+      }
+    },
+    [],
+  );
 
   const withCapture = useCallback(
-    async <T,>(action: (dataUrl: string) => Promise<T>): Promise<T | null> => {
+    async <T,>(
+      action: (dataUrl: string) => Promise<T>,
+      scale = ALERT_CAPTURE_SCALE,
+    ): Promise<T | null> => {
       setIsCapturing(true);
       try {
-        const hiRes = await captureCard();
-        return await action(hiRes.toDataURL('image/png'));
+        const canvas = await captureCard(scale);
+        return await action(canvas.toDataURL('image/png'));
       } catch {
         showToast('Capture failed', 'error');
         return null;
@@ -331,19 +338,22 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
 
   const handleCopyImage = useCallback(
-    () => withCapture(copyCurrentAlertImage),
+    () => withCapture(copyCurrentAlertImage, ALERT_OUTLOOK_CAPTURE_SCALE),
     [withCapture, copyCurrentAlertImage],
   );
 
   const handleCopyAndSetReminder = useCallback(
     () =>
-      withCapture(async (dataUrl) => {
-        const copied = await copyCurrentAlertImage(dataUrl);
-        if (copied) {
-          setEditingReminder(null);
-          reminderModal.open();
-        }
-      }),
+      withCapture(
+        async (dataUrl) => {
+          const copied = await copyCurrentAlertImage(dataUrl);
+          if (copied) {
+            setEditingReminder(null);
+            reminderModal.open();
+          }
+        },
+        ALERT_OUTLOOK_CAPTURE_SCALE,
+      ),
     [withCapture, copyCurrentAlertImage, reminderModal],
   );
 
