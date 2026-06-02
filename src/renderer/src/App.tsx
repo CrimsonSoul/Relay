@@ -148,8 +148,7 @@ export function MainApp({
     };
 
     globalThis.addEventListener(REMINDER_ALERT_LOAD_EVENT, handleReminderAlertLoad);
-    return () =>
-      globalThis.removeEventListener(REMINDER_ALERT_LOAD_EVENT, handleReminderAlertLoad);
+    return () => globalThis.removeEventListener(REMINDER_ALERT_LOAD_EVENT, handleReminderAlertLoad);
   }, [setActiveTab]);
 
   // Header search ref (for Cmd+K focus)

@@ -58,9 +58,7 @@ function ReminderRow({
         <div className="alert-reminder-manager-row-meta">
           <span>{formatReminderTime(reminder)}</span>
           {reminder.snoozeUntil && <span className="alert-reminder-manager-badge">Snoozed</span>}
-          {isCompleted && (
-            <span className="alert-reminder-manager-badge">{reminder.status}</span>
-          )}
+          {isCompleted && <span className="alert-reminder-manager-badge">{reminder.status}</span>}
         </div>
         {reminder.note && <div className="alert-reminder-manager-note">{reminder.note}</div>}
       </div>
@@ -134,9 +132,7 @@ export function AlertReminderManagerModal({
         </div>
 
         <div className="alert-reminder-manager-sound">
-          <div className="alert-reminder-manager-sound-label">
-            Alarm sound: {alarmSoundLabel}
-          </div>
+          <div className="alert-reminder-manager-sound-label">Alarm sound: {alarmSoundLabel}</div>
           <div className="alert-reminder-manager-sound-actions">
             <TactileButton variant="secondary" size="sm" onClick={onChooseAlarmSound}>
               Choose MP3

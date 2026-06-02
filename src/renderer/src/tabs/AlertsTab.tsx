@@ -344,16 +344,13 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const handleCopyAndSetReminder = useCallback(
     () =>
-      withCapture(
-        async (dataUrl) => {
-          const copied = await copyCurrentAlertImage(dataUrl);
-          if (copied) {
-            setEditingReminder(null);
-            reminderModal.open();
-          }
-        },
-        ALERT_OUTLOOK_CAPTURE_SCALE,
-      ),
+      withCapture(async (dataUrl) => {
+        const copied = await copyCurrentAlertImage(dataUrl);
+        if (copied) {
+          setEditingReminder(null);
+          reminderModal.open();
+        }
+      }, ALERT_OUTLOOK_CAPTURE_SCALE),
     [withCapture, copyCurrentAlertImage, reminderModal],
   );
 

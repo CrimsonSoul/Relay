@@ -134,13 +134,13 @@ vi.mock('../AlertReminderManagerModal', () => ({
         <button data-testid="manager-schedule" onClick={props.onScheduleNew}>
           manager-schedule
         </button>
-        <button
-          data-testid="manager-edit"
-          onClick={() => props.onEdit(props.pendingReminders[0])}
-        >
+        <button data-testid="manager-edit" onClick={() => props.onEdit(props.pendingReminders[0])}>
           manager-edit
         </button>
-        <button data-testid="manager-done" onClick={() => props.onDone(props.pendingReminders[0].id)}>
+        <button
+          data-testid="manager-done"
+          onClick={() => props.onDone(props.pendingReminders[0].id)}
+        >
           manager-done
         </button>
         <button

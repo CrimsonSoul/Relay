@@ -111,13 +111,15 @@ export async function updateAlertReminder(
 ): Promise<AlertReminderRecord> {
   requireOnline();
   try {
-    return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
-      title: input.title.trim() || 'Send alert',
-      note: input.note?.trim() || '',
-      dueAt: input.dueAt,
-      status: 'pending',
-      snoozeUntil: '',
-    });
+    return await getPb()
+      .collection(COLLECTION)
+      .update<AlertReminderRecord>(id, {
+        title: input.title.trim() || 'Send alert',
+        note: input.note?.trim() || '',
+        dueAt: input.dueAt,
+        status: 'pending',
+        snoozeUntil: '',
+      });
   } catch (err) {
     handleApiError(err);
     throw err;

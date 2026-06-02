@@ -48,7 +48,9 @@ const makeReminder = (overrides: Partial<AlertReminderRecord> = {}): AlertRemind
   ...overrides,
 });
 
-function renderModal(overrides: Partial<React.ComponentProps<typeof AlertReminderManagerModal>> = {}) {
+function renderModal(
+  overrides: Partial<React.ComponentProps<typeof AlertReminderManagerModal>> = {},
+) {
   const props: React.ComponentProps<typeof AlertReminderManagerModal> = {
     isOpen: true,
     onClose: vi.fn(),
@@ -94,7 +96,9 @@ describe('AlertReminderManagerModal', () => {
 
   it('hides completed reminders until the toggle is enabled', () => {
     renderModal({
-      completedReminders: [makeReminder({ id: 'done', title: 'Finished reminder', status: 'done' })],
+      completedReminders: [
+        makeReminder({ id: 'done', title: 'Finished reminder', status: 'done' }),
+      ],
     });
 
     expect(screen.queryByText('Finished reminder')).not.toBeInTheDocument();

@@ -11,8 +11,8 @@
   "scripts": {
     "dev": "ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
-    "build:win": "npx tsx scripts/download-pocketbase.ts --platform=win32 --arch=x64 && npm run build && electron-builder --win --x64 --config electron-builder.yml",
-    "build:mac": "npx tsx scripts/download-pocketbase.ts --platform=darwin --arch=arm64 && npx tsx scripts/download-pocketbase.ts --platform=darwin --arch=x64 && npm run build && electron-builder --mac --config electron-builder.yml",
+    "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run build && electron-builder --win --x64 --config electron-builder.yml",
+    "build:mac": "node scripts/download-pocketbase.mjs --platform=darwin --arch=arm64 && node scripts/download-pocketbase.mjs --platform=darwin --arch=x64 && npm run build && electron-builder --mac --config electron-builder.yml",
     "release": "npm run build:win -- --publish always",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit",
@@ -28,8 +28,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "download:pocketbase": "npx tsx scripts/download-pocketbase.ts",
-    "postinstall": "npx tsx scripts/download-pocketbase.ts"
+    "download:pocketbase": "node scripts/download-pocketbase.mjs",
+    "postinstall": "node scripts/download-pocketbase.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

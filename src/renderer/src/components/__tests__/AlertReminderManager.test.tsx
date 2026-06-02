@@ -271,9 +271,9 @@ describe('AlertReminderManager', () => {
     expect(mockPlayAlertSound).toHaveBeenCalledTimes(1);
     expect(resume).toHaveBeenCalledTimes(1);
     expect(oscillatorStart.mock.calls.length).toBeGreaterThanOrEqual(3);
-    expect(rampToValue.mock.calls.some(([value]) => typeof value === 'number' && value >= 0.3)).toBe(
-      true,
-    );
+    expect(
+      rampToValue.mock.calls.some(([value]) => typeof value === 'number' && value >= 0.3),
+    ).toBe(true);
 
     await act(async () => {
       vi.advanceTimersByTime(1_500);

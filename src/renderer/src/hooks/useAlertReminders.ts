@@ -22,7 +22,8 @@ export function getAlertReminderEffectiveTime(reminder: AlertReminderRecord): nu
 }
 
 function getAlertReminderResolvedTime(reminder: AlertReminderRecord): number {
-  const resolved = reminder.completedAt || reminder.dismissedAt || reminder.updated || reminder.created;
+  const resolved =
+    reminder.completedAt || reminder.dismissedAt || reminder.updated || reminder.created;
   const time = new Date(resolved).getTime();
   return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
 }
