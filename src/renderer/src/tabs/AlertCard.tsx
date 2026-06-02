@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
-import type { Severity } from './alertUtils';
+import type { AlertBodyFontSize, Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
 
 /** Convert an image data URL to grayscale (preserving alpha). */
@@ -64,6 +64,7 @@ export interface AlertCardProps {
   footerLogoDataUrl?: string | null;
   eventTimeStart?: string;
   eventTimeEnd?: string;
+  alertBodyFontSize?: AlertBodyFontSize;
 }
 
 export const AlertCard: React.FC<AlertCardProps> = ({
@@ -77,6 +78,7 @@ export const AlertCard: React.FC<AlertCardProps> = ({
   footerLogoDataUrl,
   eventTimeStart,
   eventTimeEnd,
+  alertBodyFontSize = 'normal',
 }) => {
   const colors = SEVERITY_COLORS[severity];
   const hasContent = hasVisibleText(bodyHtml);
@@ -200,7 +202,9 @@ export const AlertCard: React.FC<AlertCardProps> = ({
             </div>
           </div>
           <div
-            className={`alerts-email-body${hasContent ? '' : ' empty'}`}
+            className={`alerts-email-body alerts-email-body--font-${alertBodyFontSize}${
+              hasContent ? '' : ' empty'
+            }`}
             dangerouslySetInnerHTML={{ __html: safeHtml }}
           />
           <div className="alerts-email-footer">

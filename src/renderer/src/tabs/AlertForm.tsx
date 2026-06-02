@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { hasVisibleText, type Severity } from './alertUtils';
+import { hasVisibleText, type AlertBodyFontSize, type Severity } from './alertUtils';
 import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import type { AlertBodyEditorHandle } from './alerts/AlertBodyEditor';
@@ -34,6 +34,8 @@ export interface AlertFormProps {
   onToggleCompact: () => void;
   isEnhanced: boolean;
   onToggleEnhanced: () => void;
+  alertBodyFontSize: AlertBodyFontSize;
+  setAlertBodyFontSize: (s: AlertBodyFontSize) => void;
 }
 
 export interface AlertFormHandle {
@@ -71,6 +73,8 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       onToggleCompact,
       isEnhanced,
       onToggleEnhanced,
+      alertBodyFontSize,
+      setAlertBodyFontSize,
     },
     ref,
   ) => {
@@ -150,6 +154,32 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                 isEnhanced={isEnhanced}
                 onToggleEnhanced={onToggleEnhanced}
               />
+
+              <div className="alerts-field">
+                <span className="alerts-field-label">Alert Font Size</span>
+                <div className="alerts-font-size-control" role="group" aria-label="Alert font size">
+                  {(
+                    [
+                      ['small', 'Small'],
+                      ['normal', 'Normal'],
+                      ['large', 'Large'],
+                      ['xl', 'XL'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`alerts-font-size-btn${
+                        alertBodyFontSize === value ? ' active' : ''
+                      }`}
+                      aria-pressed={alertBodyFontSize === value}
+                      onClick={() => setAlertBodyFontSize(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </section>
 

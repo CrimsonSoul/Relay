@@ -14,7 +14,7 @@ import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
-import type { Severity } from './alertUtils';
+import type { AlertBodyFontSize, Severity } from './alertUtils';
 import { compactText } from './alerts/compactEngine';
 import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
@@ -51,6 +51,7 @@ interface AlertFormState {
   eventTimeSourceTz: string;
   isCompact: boolean;
   isEnhanced: boolean;
+  alertBodyFontSize: AlertBodyFontSize;
 }
 
 type AlertFormAction =
@@ -70,6 +71,7 @@ const initialFormState: AlertFormState = {
   eventTimeSourceTz: 'America/Chicago',
   isCompact: false,
   isEnhanced: false,
+  alertBodyFontSize: 'normal',
 };
 
 function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
@@ -142,6 +144,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     eventTimeSourceTz,
     isCompact,
     isEnhanced,
+    alertBodyFontSize,
   } = form;
 
   const setSeverity = useCallback(
@@ -186,6 +189,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
   const setIsEnhanced = useCallback(
     (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: v }),
+    [],
+  );
+  const setAlertBodyFontSize = useCallback(
+    (v: AlertBodyFontSize) => dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: v }),
     [],
   );
 
@@ -239,6 +246,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
     dispatch({ type: 'SET_FIELD', field: 'isCompact', value: false });
     dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: false });
+    dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: 'normal' });
     formRef.current?.setEditorContent(nextBodyHtml);
     originalBodyRef.current = null;
     showToast('Alert loaded from reminder', 'success');
@@ -702,29 +710,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           SAVE PNG
         </TactileButton>
         <TactileButton
-          variant="primary"
-          onClick={handleCopyImage}
-          loading={isCapturing}
-          tooltip="Copy alert preview for Outlook"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-            </svg>
-          }
-        >
-          COPY FOR OUTLOOK
-        </TactileButton>
-        <TactileButton
           variant="secondary"
           onClick={handleCopyAndSetReminder}
           loading={isCapturing}
@@ -749,6 +734,29 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           }
         >
           COPY + SET ALARM
+        </TactileButton>
+        <TactileButton
+          variant="primary"
+          onClick={handleCopyImage}
+          loading={isCapturing}
+          tooltip="Copy alert preview for Outlook"
+          icon={
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="9" y="9" width="13" height="13" rx="2" />
+              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+          }
+        >
+          COPY FOR OUTLOOK
         </TactileButton>
       </CollapsibleHeader>
 
@@ -807,6 +815,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           onToggleCompact={handleToggleCompact}
           isEnhanced={isEnhanced}
           onToggleEnhanced={handleToggleEnhanced}
+          alertBodyFontSize={alertBodyFontSize}
+          setAlertBodyFontSize={setAlertBodyFontSize}
         />
 
         {/* Right Panel — Preview */}
@@ -821,6 +831,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           footerLogoDataUrl={footerLogoDataUrl}
           eventTimeStart={eventTimeStartIso}
           eventTimeEnd={eventTimeEndIso}
+          alertBodyFontSize={alertBodyFontSize}
         />
       </div>
 

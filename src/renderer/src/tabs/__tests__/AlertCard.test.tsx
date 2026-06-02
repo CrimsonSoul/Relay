@@ -88,6 +88,13 @@ describe('AlertCard', () => {
     expect(body).not.toHaveClass('empty');
   });
 
+  it('applies the selected alert body font size class', () => {
+    render(<AlertCard {...makeProps({ alertBodyFontSize: 'xl' })} />);
+
+    const body = document.querySelector('.alerts-email-body');
+    expect(body).toHaveClass('alerts-email-body--font-xl');
+  });
+
   it('adds empty class when body has no content', () => {
     render(<AlertCard {...makeProps({ bodyHtml: '' })} />);
 

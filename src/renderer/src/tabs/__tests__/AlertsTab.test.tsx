@@ -168,6 +168,7 @@ vi.mock('../AlertForm', () => ({
     const setSender = props.setSender as (s: string) => void;
     const setRecipient = props.setRecipient as (s: string) => void;
     const setUpdateNumber = props.setUpdateNumber as (n: number) => void;
+    const setAlertBodyFontSize = props.setAlertBodyFontSize as (s: string) => void;
     const onToggleCompact = props.onToggleCompact as () => void;
     const onToggleEnhanced = props.onToggleEnhanced as () => void;
     return (
@@ -193,6 +194,9 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
           set-update
         </button>
+        <button data-testid="set-alert-font-xl" onClick={() => setAlertBodyFontSize('xl')}>
+          set-xl
+        </button>
         <button data-testid="toggle-compact" onClick={onToggleCompact}>
           toggle-compact
         </button>
@@ -201,6 +205,7 @@ vi.mock('../AlertForm', () => ({
         </button>
         <span data-testid="form-compact">{String(props.isCompact)}</span>
         <span data-testid="form-enhanced">{String(props.isEnhanced)}</span>
+        <span data-testid="form-alert-font-size">{String(props.alertBodyFontSize)}</span>
       </div>
     );
   }),
@@ -214,6 +219,7 @@ vi.mock('../AlertCard', () => ({
       <span data-testid="card-sender">{String(props.displaySender)}</span>
       <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
       <span data-testid="card-body">{String(props.bodyHtml)}</span>
+      <span data-testid="card-alert-font-size">{String(props.alertBodyFontSize)}</span>
     </div>
   ),
 }));
@@ -347,6 +353,16 @@ describe('AlertsTab', () => {
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
     expect(screen.getByText('COPY + SET ALARM')).toBeInTheDocument();
+  });
+
+  it('places the combined copy and reminder action before the Outlook copy action', () => {
+    render(<AlertsTab />);
+    const header = screen.getByTestId('collapsible-header');
+    const labels = Array.from(header.querySelectorAll('button')).map((button) =>
+      button.textContent?.trim(),
+    );
+
+    expect(labels.indexOf('COPY + SET ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -638,6 +654,18 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-recipient'));
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('Managers');
+  });
+
+  it('routes selected alert font size from the composer to the preview', () => {
+    render(<AlertsTab />);
+
+    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('normal');
+    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('normal');
+
+    fireEvent.click(screen.getByTestId('set-alert-font-xl'));
+
+    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('xl');
+    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('xl');
   });
 
   it('shows UPDATE prefix in subject when updateNumber > 0', () => {
