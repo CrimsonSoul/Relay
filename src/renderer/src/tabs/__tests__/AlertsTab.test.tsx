@@ -4,6 +4,16 @@ import React from 'react';
 
 // --- Mocks ---
 
+const mockCapturedCanvas = {
+  width: 1680,
+  height: 1200,
+  toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
+};
+
+vi.mock('html2canvas', () => ({
+  default: vi.fn().mockResolvedValue(mockCapturedCanvas),
+}));
+
 // Mock useToast — capture showToast so tests can assert on it
 const mockShowToast = vi.fn();
 vi.mock('../../components/Toast', () => ({
@@ -187,7 +197,7 @@ vi.mock('../AlertForm', () => ({
 
 vi.mock('../AlertCard', () => ({
   AlertCard: (props: Record<string, unknown>) => (
-    <div data-testid="alert-card">
+    <div data-testid="alert-card" ref={props.cardRef as React.Ref<HTMLDivElement>}>
       <span data-testid="card-severity">{String(props.severity)}</span>
       <span data-testid="card-subject">{String(props.displaySubject)}</span>
       <span data-testid="card-sender">{String(props.displaySender)}</span>
@@ -325,6 +335,7 @@ describe('AlertsTab', () => {
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
+    expect(screen.getByText('COPY + SET ALARM')).toBeInTheDocument();
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -430,11 +441,34 @@ describe('AlertsTab', () => {
     expect(saveBtn).toBeInTheDocument();
   });
 
-  it('clicking COPY FOR OUTLOOK calls the button handler', () => {
+  it('clicking COPY FOR OUTLOOK sends the high-resolution capture to the clipboard', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
-    expect(copyBtn).toBeInTheDocument();
+    await waitFor(() => {
+      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
+        'data:image/png;base64,HIGH_RES_CAPTURE',
+      );
+    });
+  });
+
+  it('copies the alert and opens the reminder time picker from the final workflow button', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-subject'));
+    fireEvent.click(screen.getByTestId('set-body'));
+    fireEvent.click(screen.getByTestId('set-sender'));
+
+    fireEvent.click(screen.getByText('COPY + SET ALARM'));
+
+    await waitFor(() => {
+      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
+        'data:image/png;base64,HIGH_RES_CAPTURE',
+      );
+    });
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
+    expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
+    expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
   });
 
   it('clicking HISTORY button calls open on the modal state', () => {
