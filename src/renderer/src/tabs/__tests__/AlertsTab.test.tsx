@@ -6,12 +6,12 @@ import React from 'react';
 
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
-    width: 1440,
+    width: 1280,
     height: 1200,
     toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
   };
   const outlookCanvas = {
-    width: 720,
+    width: 640,
     height: 600,
     toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
   };
@@ -488,8 +488,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '720px',
-          maxWidth: '720px',
+          minWidth: '640px',
+          maxWidth: '640px',
         }),
       }),
       expect.objectContaining({ scale: 2 }),
@@ -508,8 +508,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '720px',
-          maxWidth: '720px',
+          minWidth: '640px',
+          maxWidth: '640px',
         }),
       }),
       expect.objectContaining({ scale: 1 }),
