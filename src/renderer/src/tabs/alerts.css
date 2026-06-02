@@ -869,10 +869,10 @@
 
 .alerts-preview-scroll {
   flex: 1;
-  overflow-y: overlay;
+  overflow: auto;
   padding: 32px;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
 }
 
@@ -880,8 +880,11 @@
 
 .alerts-email-card {
   background: #ffffff;
-  width: 100%;
-  max-width: 840px;
+  width: 720px;
+  min-width: 720px;
+  max-width: none;
+  flex: 0 0 auto;
+  margin: 0 auto;
   border-radius: 10px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
   overflow: hidden;

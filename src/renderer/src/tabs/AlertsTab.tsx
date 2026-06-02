@@ -34,7 +34,7 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/montserrat/800.css';
 
-const ALERT_EXPORT_WIDTH_PX = 840;
+const ALERT_EXPORT_WIDTH_PX = 720;
 const ALERT_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_CAPTURE_SCALE = 1;
 const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
@@ -293,6 +293,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       clone.style.position = 'fixed';
       clone.style.left = '-9999px';
       clone.style.top = '0';
+      clone.style.width = `${ALERT_EXPORT_WIDTH_PX}px`;
       clone.style.minWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
       clone.style.maxWidth = `${ALERT_EXPORT_WIDTH_PX}px`;
       clone.style.zIndex = '-1';
@@ -350,17 +351,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [withCapture, copyCurrentAlertImage],
   );
 
-  const handleCopyAndSetReminder = useCallback(
-    () =>
-      withCapture(async (dataUrl) => {
-        const copied = await copyCurrentAlertImage(dataUrl);
-        if (copied) {
-          setEditingReminder(null);
-          reminderModal.open();
-        }
-      }, ALERT_OUTLOOK_CAPTURE_SCALE),
-    [withCapture, copyCurrentAlertImage, reminderModal],
-  );
+  const handleSetReminder = useCallback(() => {
+    setEditingReminder(null);
+    reminderModal.open();
+  }, [reminderModal]);
 
   const handleSavePNG = useCallback(
     () =>
@@ -711,9 +705,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         </TactileButton>
         <TactileButton
           variant="secondary"
-          onClick={handleCopyAndSetReminder}
-          loading={isCapturing}
-          tooltip="Copy alert preview and schedule a reminder"
+          onClick={handleSetReminder}
+          tooltip="Schedule a reminder"
           icon={
             <svg
               width="14"
@@ -725,15 +718,13 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <rect x="3" y="3" width="9" height="9" rx="2" />
-              <path d="M8 17h8" />
-              <path d="M12 21h4" />
-              <path d="M18 8a4 4 0 0 0-8 0c0 5-2 5-2 7h12c0-2-2-2-2-7" />
-              <path d="M15 18h2" />
+              <path d="M19 9a7 7 0 10-14 0c0 6-2 6-2 8h18c0-2-2-2-2-8" />
+              <path d="M9 21h6" />
+              <path d="M12 6v4l3 2" />
             </svg>
           }
         >
-          COPY + SET ALARM
+          SET ALARM
         </TactileButton>
         <TactileButton
           variant="primary"

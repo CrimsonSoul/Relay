@@ -6,12 +6,12 @@ import React from 'react';
 
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
-    width: 1680,
+    width: 1440,
     height: 1200,
     toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
   };
   const outlookCanvas = {
-    width: 840,
+    width: 720,
     height: 600,
     toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
   };
@@ -97,7 +97,7 @@ vi.mock('../../hooks/useModalState', () => ({
 vi.mock('../AlertReminderModal', () => ({
   AlertReminderModal: (props: {
     isOpen: boolean;
-    draft: { subject: string; bodyHtml: string; sender: string };
+    draft: { severity: string; subject: string; bodyHtml: string; sender: string };
     mode?: 'schedule' | 'edit';
     reminder?: { title: string } | null;
     onSchedule: (input: Record<string, unknown>) => Promise<boolean>;
@@ -106,6 +106,7 @@ vi.mock('../AlertReminderModal', () => ({
       <div data-testid="reminder-modal">
         <span data-testid="reminder-modal-mode">{props.mode ?? 'schedule'}</span>
         <span data-testid="reminder-edit-title">{props.reminder?.title ?? ''}</span>
+        <span data-testid="reminder-draft-severity">{props.draft.severity}</span>
         <span data-testid="reminder-draft-subject">{props.draft.subject}</span>
         <span data-testid="reminder-draft-body">{props.draft.bodyHtml}</span>
         <span data-testid="reminder-draft-sender">{props.draft.sender}</span>
@@ -264,13 +265,24 @@ vi.mock('../../components/TactileButton', () => ({
     onClick,
     loading,
     variant,
+    icon,
+    tooltip,
   }: {
     children: React.ReactNode;
     onClick?: () => void;
     loading?: boolean;
     variant?: string;
+    icon?: React.ReactNode;
+    tooltip?: React.ReactNode;
   }) => (
-    <button onClick={onClick} disabled={loading} data-variant={variant}>
+    <button
+      onClick={onClick}
+      disabled={loading}
+      data-variant={variant}
+      data-has-icon={icon ? 'true' : 'false'}
+      data-tooltip={typeof tooltip === 'string' ? tooltip : undefined}
+    >
+      {icon && <span data-testid={`button-icon-${String(children).trim()}`}>{icon}</span>}
       {children}
     </button>
   ),
@@ -352,17 +364,19 @@ describe('AlertsTab', () => {
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
-    expect(screen.getByText('COPY + SET ALARM')).toBeInTheDocument();
+    expect(screen.getByText('SET ALARM')).toBeInTheDocument();
   });
 
-  it('places the combined copy and reminder action before the Outlook copy action', () => {
+  it('places the alarm action before the Outlook copy action', () => {
     render(<AlertsTab />);
     const header = screen.getByTestId('collapsible-header');
     const labels = Array.from(header.querySelectorAll('button')).map((button) =>
       button.textContent?.trim(),
     );
 
-    expect(labels.indexOf('COPY + SET ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
+    expect(labels.indexOf('SET ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
+    expect(screen.getByText('SET ALARM')).toHaveAttribute('data-has-icon', 'true');
+    expect(screen.getByText('SET ALARM')).toHaveAttribute('data-tooltip', 'Schedule a reminder');
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -471,9 +485,18 @@ describe('AlertsTab', () => {
         'alert_alert.png',
       );
     });
+    expect(mockCapture.html2canvas).toHaveBeenCalledWith(
+      expect.objectContaining({
+        style: expect.objectContaining({
+          minWidth: '720px',
+          maxWidth: '720px',
+        }),
+      }),
+      expect.objectContaining({ scale: 2 }),
+    );
   });
 
-  it('clicking COPY FOR OUTLOOK sends an Outlook-sized capture to the clipboard', async () => {
+  it('clicking COPY FOR OUTLOOK sends a preview-sized capture to the clipboard', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
@@ -483,28 +506,32 @@ describe('AlertsTab', () => {
       );
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
-      expect.any(HTMLElement),
+      expect.objectContaining({
+        style: expect.objectContaining({
+          minWidth: '720px',
+          maxWidth: '720px',
+        }),
+      }),
       expect.objectContaining({ scale: 1 }),
     );
   });
 
-  it('copies the alert and opens the reminder time picker from the final workflow button', async () => {
+  it('opens the reminder time picker without copying from the alarm button', async () => {
     render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('COPY + SET ALARM'));
+    fireEvent.click(screen.getByText('SET ALARM'));
 
-    await waitFor(() => {
-      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,OUTLOOK_SIZED_CAPTURE',
-      );
-    });
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
     expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
+    expect(globalThis.api?.writeClipboardImage).not.toHaveBeenCalled();
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
   });
 
   it('clicking HISTORY button calls open on the modal state', () => {
@@ -516,6 +543,7 @@ describe('AlertsTab', () => {
 
   it('opens reminder modal with current draft context', () => {
     render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
     fireEvent.click(screen.getByTestId('set-subject'));
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
@@ -524,6 +552,7 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('manager-schedule'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
     expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
@@ -550,6 +579,13 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-body')).toHaveTextContent('<p>Stored body</p>');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from reminder', 'success');
+
+    fireEvent.click(screen.getByText('SET ALARM'));
+
+    expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
+    expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Stored outage alert');
+    expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>Stored body</p>');
+    expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Ops');
   });
 
   it('schedules reminders through the reminder hook', async () => {
