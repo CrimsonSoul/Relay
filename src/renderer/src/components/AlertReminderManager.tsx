@@ -9,6 +9,10 @@ import {
   type AlertReminderRecord,
 } from '../services/alertReminderService';
 import { getReminderAlarmSource } from '../services/reminderAlarmSoundService';
+import {
+  dispatchReminderAlertLoad,
+  hasLoadableReminderAlert,
+} from '../services/reminderAlertLoadEvent';
 
 const POLL_INTERVAL_MS = 30_000;
 const SNOOZE_MS = 10 * 60_000;
@@ -245,6 +249,15 @@ export function AlertReminderManager() {
     }
   };
 
+  const handleLoadAlert = () => {
+    const reminder = currentRef.current;
+    if (!reminder || !hasLoadableReminderAlert(reminder)) return;
+    dispatchReminderAlertLoad(reminder);
+    stopReminderAlarm();
+    mutedUntilRef.current.set(reminder.id, Date.now() + SNOOZE_MS);
+    setCurrent(null);
+  };
+
   const handleDone = async () => {
     const reminder = currentRef.current;
     if (!reminder) return;
@@ -309,7 +322,12 @@ export function AlertReminderManager() {
           <TactileButton variant="secondary" size="sm" onClick={() => void handleSnooze()}>
             Snooze 10m
           </TactileButton>
-          <TactileButton variant="primary" size="sm" onClick={() => void handleDone()}>
+          {hasLoadableReminderAlert(current) && (
+            <TactileButton variant="primary" size="sm" onClick={handleLoadAlert}>
+              Load Alert
+            </TactileButton>
+          )}
+          <TactileButton variant="secondary" size="sm" onClick={() => void handleDone()}>
             Mark Done
           </TactileButton>
           <TactileButton variant="ghost" size="sm" onClick={() => void handleDismiss()}>

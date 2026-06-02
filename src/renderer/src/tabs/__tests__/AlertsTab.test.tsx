@@ -459,6 +459,29 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
   });
 
+  it('loads an attached reminder alert into the composer', async () => {
+    render(
+      <AlertsTab
+        loadedReminderAlert={{
+          reminderId: 'rem-1',
+          title: 'Stored reminder',
+          severity: 'ISSUE',
+          subject: 'Stored outage alert',
+          bodyHtml: '<p>Stored body</p>',
+          sender: 'Ops',
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('card-severity')).toHaveTextContent('ISSUE');
+    });
+    expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
+    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>Stored body</p>');
+    expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
+    expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from reminder', 'success');
+  });
+
   it('schedules reminders through the reminder hook', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('REMINDERS'));

@@ -25,6 +25,7 @@ import {
   resetReminderAlarmSource,
   saveReminderAlarmSource,
 } from '../services/reminderAlarmSoundService';
+import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
 import '@fontsource/ibm-plex-sans/400.css';
@@ -35,6 +36,7 @@ import '@fontsource/montserrat/800.css';
 
 const ALERT_EXPORT_WIDTH_PX = 840;
 const ALERT_CAPTURE_SCALE = 2;
+const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
 interface AlertFormState {
   severity: Severity;
@@ -109,7 +111,19 @@ function compactHtml(html: string): string {
     .join('');
 }
 
-export const AlertsTab: React.FC = () => {
+type AlertsTabProps = {
+  loadedReminderAlert?: ReminderAlertLoadDetail | null;
+  onLoadedReminderAlertConsumed?: () => void;
+};
+
+function normalizeLoadedSeverity(severity: ReminderAlertLoadDetail['severity']): Severity {
+  return ALERT_SEVERITIES.includes(severity as Severity) ? (severity as Severity) : 'INFO';
+}
+
+export const AlertsTab: React.FC<AlertsTabProps> = ({
+  loadedReminderAlert = null,
+  onLoadedReminderAlertConsumed,
+}) => {
   const { showToast } = useToast();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<AlertFormHandle>(null);
@@ -207,6 +221,28 @@ export const AlertsTab: React.FC = () => {
   const displayRecipient = recipient.trim() || 'All Employees';
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
+
+  useEffect(() => {
+    if (!loadedReminderAlert) return;
+
+    const nextBodyHtml = sanitizeHtml(loadedReminderAlert.bodyHtml);
+    dispatch({
+      type: 'SET_FIELD',
+      field: 'severity',
+      value: normalizeLoadedSeverity(loadedReminderAlert.severity),
+    });
+    dispatch({ type: 'SET_FIELD', field: 'subject', value: loadedReminderAlert.subject.trim() });
+    dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
+    dispatch({ type: 'SET_FIELD', field: 'sender', value: loadedReminderAlert.sender.trim() });
+    dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
+    dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
+    dispatch({ type: 'SET_FIELD', field: 'isCompact', value: false });
+    dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: false });
+    formRef.current?.setEditorContent(nextBodyHtml);
+    originalBodyRef.current = null;
+    showToast('Alert loaded from reminder', 'success');
+    onLoadedReminderAlertConsumed?.();
+  }, [loadedReminderAlert, onLoadedReminderAlertConsumed, showToast]);
 
   // Load persisted logo on mount
   useEffect(() => {

@@ -159,7 +159,8 @@ describe('AlertReminderManager', () => {
     expect(screen.getByRole('alertdialog')).toHaveClass('alert-reminder-due--critical');
     expect(screen.getByText('Due now')).toBeInTheDocument();
     expect(screen.getByText('Snooze 10m')).toHaveAttribute('data-variant', 'secondary');
-    expect(screen.getByText('Mark Done')).toHaveAttribute('data-variant', 'primary');
+    expect(screen.getByText('Load Alert')).toHaveAttribute('data-variant', 'primary');
+    expect(screen.getByText('Mark Done')).toHaveAttribute('data-variant', 'secondary');
     expect(screen.getByText('Dismiss')).toHaveAttribute('data-variant', 'ghost');
   });
 
@@ -291,6 +292,39 @@ describe('AlertReminderManager', () => {
     });
 
     expect(mockPlayAlertSound).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads the attached alert from a due reminder and hides the popup', async () => {
+    installMockAudio();
+    const loadListener = vi.fn();
+    window.addEventListener('relay:load-alert-reminder', loadListener as EventListener);
+    mockListDueAlertReminders.mockResolvedValue([
+      makeReminder({
+        alertSubject: 'Stored outage alert',
+        alertBodyHtml: '<p>Stored body</p>',
+        createdBy: 'Ops',
+      }),
+    ]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+
+    fireEvent.click(screen.getByText('Load Alert'));
+    await flushReminderEffects();
+
+    expect(loadListener).toHaveBeenCalledTimes(1);
+    const event = loadListener.mock.calls[0]?.[0] as CustomEvent;
+    expect(event.detail).toMatchObject({
+      reminderId: 'rem-1',
+      title: 'Send outage alert',
+      subject: 'Stored outage alert',
+      bodyHtml: '<p>Stored body</p>',
+      sender: 'Ops',
+      severity: 'ISSUE',
+    });
+    expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
+
+    window.removeEventListener('relay:load-alert-reminder', loadListener as EventListener);
   });
 
   it('does not offer navigation before the reminder is addressed', async () => {

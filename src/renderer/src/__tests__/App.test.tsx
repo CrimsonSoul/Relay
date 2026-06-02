@@ -360,6 +360,27 @@ describe('MainApp', () => {
     expect(screen.getByTestId('alert-reminder-manager')).toBeInTheDocument();
   });
 
+  it('switches to Alerts when a reminder asks to load an attached alert', () => {
+    renderApp();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent('relay:load-alert-reminder', {
+          detail: {
+            reminderId: 'rem-1',
+            title: 'Stored reminder',
+            severity: 'ISSUE',
+            subject: 'Stored outage alert',
+            bodyHtml: '<p>Stored body</p>',
+            sender: 'Ops',
+          },
+        }),
+      );
+    });
+
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+  });
+
   it('shows LAN server connection details when running in server mode', () => {
     renderApp('', {
       relayConfig: {

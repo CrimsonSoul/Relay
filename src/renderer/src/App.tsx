@@ -22,6 +22,10 @@ import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
+import {
+  REMINDER_ALERT_LOAD_EVENT,
+  type ReminderAlertLoadDetail,
+} from './services/reminderAlertLoadEvent';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -122,6 +126,9 @@ export function MainApp({
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
+  const [loadedReminderAlert, setLoadedReminderAlert] = useState<ReminderAlertLoadDetail | null>(
+    null,
+  );
 
   useEffect(() => {
     setMountedTabs((prev) => {
@@ -131,6 +138,19 @@ export function MainApp({
       return next;
     });
   }, [activeTab]);
+
+  useEffect(() => {
+    const handleReminderAlertLoad = (event: Event) => {
+      const detail = (event as CustomEvent<ReminderAlertLoadDetail>).detail;
+      if (!detail) return;
+      setLoadedReminderAlert(detail);
+      setActiveTab('Alerts');
+    };
+
+    globalThis.addEventListener(REMINDER_ALERT_LOAD_EVENT, handleReminderAlertLoad);
+    return () =>
+      globalThis.removeEventListener(REMINDER_ALERT_LOAD_EVENT, handleReminderAlertLoad);
+  }, [setActiveTab]);
 
   // Header search ref (for Cmd+K focus)
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -363,7 +383,10 @@ export function MainApp({
               >
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <AlertsTab />
+                    <AlertsTab
+                      loadedReminderAlert={loadedReminderAlert}
+                      onLoadedReminderAlertConsumed={() => setLoadedReminderAlert(null)}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </div>
