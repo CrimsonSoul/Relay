@@ -73,6 +73,35 @@ describe('loggerHandlers', () => {
       });
     });
 
+    it('respects rate limit for bridge logs', () => {
+      vi.mocked(rateLimiters.rendererLogging.tryConsume).mockReturnValueOnce({
+        allowed: false,
+        retryAfterMs: 100,
+      });
+
+      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, ['SRE']);
+
+      expect(loggers.bridge.info).not.toHaveBeenCalled();
+    });
+
+    it('bounds oversized bridge group lists and names before logging', () => {
+      const groups = Array.from({ length: 100 }, (_, index) =>
+        index === 0 ? 'x'.repeat(3000) : `group-${index}`,
+      );
+
+      onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, groups);
+
+      const logged = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1] as {
+        groups?: string[];
+        groupCount?: number;
+      };
+      expect(logged.groupCount).toBe(100);
+      expect(logged.groups).toHaveLength(51);
+      expect(logged.groups?.[0]).toHaveLength(1038);
+      expect(logged.groups?.[0]?.endsWith('...[truncated]')).toBe(true);
+      expect(logged.groups?.at(-1)).toBe('...[truncated]');
+    });
+
     it('warns for non-array payload', () => {
       onHandlers[IPC_CHANNELS.LOG_BRIDGE](null, 'not-an-array');
       expect(loggers.ipc.warn).toHaveBeenCalledWith(

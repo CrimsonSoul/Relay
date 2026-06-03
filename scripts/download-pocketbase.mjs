@@ -97,6 +97,11 @@ function extractZip(zipPath, destDir) {
   }
 }
 
+function chmodExecutable(outputPath) {
+  // eslint-disable-next-line sonarjs/os-command -- outputPath is generated from supported platform/arch values
+  execSync(`chmod +x "${outputPath}"`);
+}
+
 export async function verifyChecksum(
   zipPath,
   expectedFilename,
@@ -141,51 +146,73 @@ export async function verifyChecksum(
   }
 }
 
-async function download() {
-  const { platform, arch, pbOs, pbArch, ext } = getPlatformArch();
+export async function downloadPocketBase(options = {}) {
+  const platformArch =
+    options.platform || options.arch
+      ? (() => {
+          const platform = toSupportedPlatform(options.platform ?? process.platform);
+          const arch = toSupportedArch(options.arch ?? process.arch);
+          return {
+            platform,
+            arch,
+            pbOs: platform === 'win32' ? 'windows' : platform,
+            pbArch: arch === 'arm64' ? 'arm64' : 'amd64',
+            ext: platform === 'win32' ? '.exe' : '',
+          };
+        })()
+      : getPlatformArch();
+  const { platform, arch, pbOs, pbArch, ext } = platformArch;
+  const resourcesDir = options.resourcesDir ?? RESOURCES_DIR;
+  const exists = options.exists ?? existsSync;
+  const mkdir = options.mkdir ?? mkdirSync;
+  const download = options.download ?? downloadFile;
+  const verify = options.verify ?? verifyChecksum;
+  const extract = options.extract ?? extractZip;
+  const remove = options.remove ?? unlinkSync;
+  const chmod = options.chmod ?? chmodExecutable;
+  const log = options.log ?? console.log;
+
   const binaryName = `pocketbase${ext}`;
-  const outputDir = join(RESOURCES_DIR, `${platform}-${arch}`);
+  const outputDir = join(resourcesDir, `${platform}-${arch}`);
   const outputPath = join(outputDir, binaryName);
 
-  if (existsSync(outputPath)) {
-    console.log(`PocketBase binary already exists at ${outputPath}`);
-    return;
+  if (exists(outputPath)) {
+    log(`PocketBase binary already exists at ${outputPath}; refreshing verified copy`);
   }
 
-  mkdirSync(outputDir, { recursive: true });
+  mkdir(outputDir, { recursive: true });
 
   const zipFilename = `pocketbase_${PB_VERSION}_${pbOs}_${pbArch}.zip`;
   const url = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/${zipFilename}`;
   const zipPath = join(outputDir, 'pb.zip');
 
-  console.log(`Downloading PocketBase ${PB_VERSION} for ${platform}/${arch}...`);
-  console.log(`URL: ${url}`);
+  log(`Downloading PocketBase ${PB_VERSION} for ${platform}/${arch}...`);
+  log(`URL: ${url}`);
 
   try {
-    await downloadFile(url, zipPath);
-    await verifyChecksum(zipPath, zipFilename);
+    await download(url, zipPath);
+    await verify(zipPath, zipFilename);
   } catch (err) {
     try {
-      unlinkSync(zipPath);
+      remove(zipPath);
     } catch {
       /* already gone */
     }
     throw err;
   }
-  extractZip(zipPath, outputDir);
-  unlinkSync(zipPath);
+  extract(zipPath, outputDir);
+  remove(zipPath);
 
   if (ext === '') {
-    // eslint-disable-next-line sonarjs/os-command -- outputPath is generated from supported platform/arch values
-    execSync(`chmod +x "${outputPath}"`);
+    chmod(outputPath);
   }
 
-  console.log(`PocketBase binary saved to ${outputPath}`);
+  log(`PocketBase binary saved to ${outputPath}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   try {
-    await download();
+    await downloadPocketBase();
   } catch (err) {
     console.error('Failed to download PocketBase:', err);
     process.exit(1);

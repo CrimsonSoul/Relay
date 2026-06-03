@@ -101,6 +101,30 @@ describe('AppConfig', () => {
     expect((loaded as { port: number }).port).toBe(9000);
   });
 
+  it('migrates plaintext secret to encrypted storage when encryption is available', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+        decryptString: (value: Buffer) => value.toString('utf-8').replace(/^encrypted:/, ''),
+      },
+    } as never);
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({ mode: 'server', port: 9000, secret: 'plain-secret' }),
+      'utf-8',
+    );
+
+    const config = new AppConfig(tempDir);
+    const loaded = config.load();
+    const stored = JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'));
+
+    expect(loaded?.secret).toBe('plain-secret');
+    expect(stored.secret).toBeUndefined();
+    expect(stored.encryptedSecret).toBe(Buffer.from('encrypted:plain-secret').toString('base64'));
+  });
+
   it('save stores secret in config file (plaintext fallback when safeStorage unavailable)', () => {
     // In the test environment electron is unavailable, so getSafeStorage() returns null
     // and the code falls back to storing the secret as plaintext.

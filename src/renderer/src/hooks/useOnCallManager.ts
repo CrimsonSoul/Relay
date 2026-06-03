@@ -51,6 +51,9 @@ const replaceRowsForTeamId = (
 const appendUniqueTeamId = (teamOrder: string[], teamId: string) =>
   teamOrder.includes(teamId) ? teamOrder : [...teamOrder, teamId];
 
+const pickCurrentTeamOrder = (primary: string[], fallback: string[]) =>
+  primary.length > 0 ? primary : fallback;
+
 export function useOnCallManager(
   onCall: OnCallRow[],
   dismissAlert: (type: string) => void,
@@ -110,6 +113,27 @@ export function useOnCallManager(
   const teamsRef = useRef(teams);
   teamsRef.current = teams;
 
+  const repairLocalBoardSettings = useCallback(
+    (
+      teamOrder: string[],
+      recordId: string | null,
+      updates: { locked?: boolean; record?: BoardSettingsState['record'] } = {},
+    ) => {
+      onBoardSettingsChange?.((prev) => ({
+        ...prev,
+        record: prev.record
+          ? { ...prev.record, ...(updates.record ?? {}), teamOrder }
+          : (updates.record ?? prev.record),
+        recordId: recordId ?? prev.recordId,
+        status: 'ready',
+        errors: [],
+        effectiveTeamOrder: teamOrder,
+        effectiveLocked: updates.locked ?? prev.effectiveLocked,
+      }));
+    },
+    [onBoardSettingsChange],
+  );
+
   // ---------------------------------------------------------------------------
   // Board lock toggle
   // ---------------------------------------------------------------------------
@@ -122,6 +146,11 @@ export function useOnCallManager(
       let recordId = boardSettings.recordId;
       let baseRecord = boardSettings.record;
       let repairedMissingSettings = false;
+      const repairExistingSettings = boardSettings.status !== 'ready' && !!recordId;
+      const currentTeamOrder = pickCurrentTeamOrder(
+        boardSettings.effectiveTeamOrder,
+        teamsRef.current,
+      );
 
       if (!recordId) {
         const ensuredRecord = await ensurePrimaryBoardSettings(teamsRef.current);
@@ -131,19 +160,30 @@ export function useOnCallManager(
       }
 
       const updated = await updatePrimaryBoardSettings(recordId, {
+        ...(repairExistingSettings ? { teamOrder: currentTeamOrder } : {}),
         locked: newLocked,
       });
+      const fallbackTeamOrder =
+        currentTeamOrder.length > 0
+          ? currentTeamOrder
+          : (baseRecord?.teamOrder ?? updated.teamOrder ?? []);
+      const shouldRepairSettings = repairedMissingSettings || repairExistingSettings;
       // Update local state so the UI reflects the change immediately.
       onBoardSettingsChange?.((prev) => ({
         ...prev,
-        record: { ...(baseRecord ?? prev.record ?? updated), ...updated, locked: newLocked },
+        record: {
+          ...(baseRecord ?? prev.record ?? updated),
+          ...updated,
+          ...(repairExistingSettings ? { teamOrder: currentTeamOrder } : {}),
+          locked: newLocked,
+        },
         recordId,
-        status: repairedMissingSettings ? 'ready' : prev.status,
-        errors: repairedMissingSettings ? [] : prev.errors,
+        status: shouldRepairSettings ? 'ready' : prev.status,
+        errors: shouldRepairSettings ? [] : prev.errors,
         effectiveTeamOrder:
-          prev.effectiveTeamOrder.length > 0
-            ? prev.effectiveTeamOrder
-            : (baseRecord?.teamOrder ?? updated.teamOrder ?? []),
+          repairExistingSettings || prev.effectiveTeamOrder.length === 0
+            ? fallbackTeamOrder
+            : prev.effectiveTeamOrder,
         effectiveLocked: newLocked,
       }));
     } catch {
@@ -154,6 +194,8 @@ export function useOnCallManager(
   }, [
     boardSettings.record,
     boardSettings.recordId,
+    boardSettings.status,
+    boardSettings.effectiveTeamOrder,
     boardSettings.effectiveLocked,
     showToast,
     onBoardSettingsChange,
@@ -292,15 +334,19 @@ export function useOnCallManager(
         const committedRows = savedRows.length > 0 ? savedRows : [initialRow];
 
         // Append new teamId to board settings teamOrder
-        if (boardSettings.status === 'ready' && boardSettings.recordId) {
-          const newTeamOrder = appendUniqueTeamId(boardSettings.effectiveTeamOrder, teamId);
-          await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: newTeamOrder });
-          onBoardSettingsChange?.((prev) => ({
-            ...prev,
-            record: prev.record ? { ...prev.record, teamOrder: newTeamOrder } : prev.record,
-            effectiveTeamOrder: newTeamOrder,
-          }));
+        let recordId = boardSettings.recordId;
+        if (!recordId) {
+          const ensuredRecord = await ensurePrimaryBoardSettings(teamsRef.current);
+          recordId = ensuredRecord.id;
         }
+        const newTeamOrder = appendUniqueTeamId(
+          pickCurrentTeamOrder(boardSettings.effectiveTeamOrder, teamsRef.current),
+          teamId,
+        );
+        const updatedSettings = await updatePrimaryBoardSettings(recordId, {
+          teamOrder: newTeamOrder,
+        });
+        repairLocalBoardSettings(newTeamOrder, recordId, { record: updatedSettings });
 
         setLocalOnCall((prev) => replaceRowsForTeamId(prev, teamId, committedRows));
         showToast(`Added team ${name}`, 'success');
@@ -319,10 +365,9 @@ export function useOnCallManager(
       finishMutation,
       dataRef,
       setLocalOnCall,
-      boardSettings.status,
       boardSettings.recordId,
       boardSettings.effectiveTeamOrder,
-      onBoardSettingsChange,
+      repairLocalBoardSettings,
     ],
   );
 
@@ -333,6 +378,10 @@ export function useOnCallManager(
   const handleReorderTeams = useCallback(
     async (oldIndex: number, newIndex: number) => {
       if (oldIndex === newIndex) return;
+      if (boardSettings.effectiveLocked) {
+        showToast('Unlock board to reorder teams', 'info');
+        return;
+      }
 
       const currentTeams = [...teamsRef.current];
       const [movedTeam] = currentTeams.splice(oldIndex, 1);
@@ -351,18 +400,16 @@ export function useOnCallManager(
       setLocalOnCall(newFlatList);
 
       try {
-        if (boardSettings.status === 'ready' && boardSettings.recordId) {
-          await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: currentTeams });
-          onBoardSettingsChange?.((prev) => ({
-            ...prev,
-            effectiveTeamOrder: currentTeams,
-          }));
-          showToast('Teams reordered', 'success');
-        } else {
-          // Non-ready state: can't persist, rollback
-          setLocalOnCall(oldFlatList);
-          showToast('Board settings not ready', 'error');
+        let recordId = boardSettings.recordId;
+        if (!recordId) {
+          const ensuredRecord = await ensurePrimaryBoardSettings(currentTeams);
+          recordId = ensuredRecord.id;
         }
+        const updatedSettings = await updatePrimaryBoardSettings(recordId, {
+          teamOrder: currentTeams,
+        });
+        repairLocalBoardSettings(currentTeams, recordId, { record: updatedSettings });
+        showToast('Teams reordered', 'success');
       } catch {
         setLocalOnCall(oldFlatList);
         showToast('Failed to save team order', 'error');
@@ -376,9 +423,9 @@ export function useOnCallManager(
       finishMutation,
       dataRef,
       setLocalOnCall,
-      boardSettings.status,
       boardSettings.recordId,
-      onBoardSettingsChange,
+      boardSettings.effectiveLocked,
+      repairLocalBoardSettings,
     ],
   );
 

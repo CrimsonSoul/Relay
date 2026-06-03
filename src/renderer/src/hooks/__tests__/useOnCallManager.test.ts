@@ -523,6 +523,37 @@ describe('useOnCallManager', () => {
       expect(result.current.localOnCall.some((r) => r.team === 'ReorderFailTeam')).toBe(false);
       expect(showToast).toHaveBeenCalledWith('Failed to add team', 'error');
     });
+
+    it('repairs non-ready board settings when adding a team', async () => {
+      mockReplaceTeamRecords.mockResolvedValue([
+        makeRow({ id: 'pb-new-team-row', team: 'NewTeam', teamId: 'newteam' }),
+      ]);
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
+      const invalidSettings = makeReadyBoardSettings({
+        status: 'invalid',
+        errors: ['Team order needs repair'],
+      });
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, invalidSettings, onBoardSettingsChange),
+      );
+
+      await act(async () => {
+        await result.current.handleAddTeam('NewTeam');
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        teamOrder: ['alpha', 'bravo', 'newteam'],
+      });
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(invalidSettings);
+      expect(updatedState.status).toBe('ready');
+      expect(updatedState.errors).toEqual([]);
+      expect(updatedState.effectiveTeamOrder).toEqual(['alpha', 'bravo', 'newteam']);
+    });
   });
 
   describe('handleReorderTeams', () => {
@@ -620,9 +651,26 @@ describe('useOnCallManager', () => {
       expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
     });
 
-    it('shows error when board settings not ready', async () => {
+    it('does not reorder when the board is locked', async () => {
+      const lockedSettings = makeReadyBoardSettings({ effectiveLocked: true });
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, lockedSettings),
+      );
+
+      await act(async () => {
+        await result.current.handleReorderTeams(0, 1);
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
+      expect(result.current.localOnCall).toEqual(defaultRows);
+      expect(showToast).toHaveBeenCalledWith('Unlock board to reorder teams', 'info');
+    });
+
+    it('shows error when board settings repair fails', async () => {
+      mockEnsurePrimaryBoardSettings.mockRejectedValue(new Error('settings unavailable'));
       const loadingSettings = makeReadyBoardSettings({
         status: 'loading',
+        recordId: null,
         effectiveTeamOrder: [],
       });
 
@@ -635,7 +683,36 @@ describe('useOnCallManager', () => {
       });
 
       expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
-      expect(showToast).toHaveBeenCalledWith('Board settings not ready', 'error');
+      expect(showToast).toHaveBeenCalledWith('Failed to save team order', 'error');
+    });
+
+    it('repairs non-ready board settings when reordering teams', async () => {
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
+      const invalidSettings = makeReadyBoardSettings({
+        status: 'invalid',
+        errors: ['Team order needs repair'],
+      });
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, invalidSettings, onBoardSettingsChange),
+      );
+
+      await act(async () => {
+        await result.current.handleReorderTeams(0, 1);
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        teamOrder: ['bravo', 'alpha'],
+      });
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(invalidSettings);
+      expect(updatedState.status).toBe('ready');
+      expect(updatedState.errors).toEqual([]);
+      expect(updatedState.effectiveTeamOrder).toEqual(['bravo', 'alpha']);
+      expect(showToast).toHaveBeenCalledWith('Teams reordered', 'success');
     });
   });
 
@@ -684,13 +761,14 @@ describe('useOnCallManager', () => {
 
     it('toggleBoardLock can update lock state when a settings record exists but board status is not ready', async () => {
       mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
       const invalidSettings = makeReadyBoardSettings({
         status: 'invalid',
         errors: ['Team order needs repair'],
       });
 
       const { result } = renderHook(() =>
-        useOnCallManager(defaultRows, dismissAlert, invalidSettings),
+        useOnCallManager(defaultRows, dismissAlert, invalidSettings, onBoardSettingsChange),
       );
 
       await act(async () => {
@@ -698,8 +776,15 @@ describe('useOnCallManager', () => {
       });
 
       expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        teamOrder: ['alpha', 'bravo'],
         locked: true,
       });
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(invalidSettings);
+      expect(updatedState.status).toBe('ready');
+      expect(updatedState.errors).toEqual([]);
     });
 
     it('toggleBoardLock repairs missing board settings before toggling lock state', async () => {

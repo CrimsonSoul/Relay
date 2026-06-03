@@ -46,11 +46,27 @@ export function setupLoggerHandlers(): void {
   // Bridge group metrics — log which groups are being composed
   ipcMain.on(IPC_CHANNELS.LOG_BRIDGE, (_event, groups: unknown) => {
     try {
-      if (!Array.isArray(groups) || !groups.every((g) => typeof g === 'string')) {
+      const rl = rateLimiters.rendererLogging.tryConsume();
+      if (!rl.allowed) return;
+
+      if (!Array.isArray(groups)) {
         loggers.ipc.warn('Invalid LOG_BRIDGE payload — expected string[]');
         return;
       }
-      loggers.bridge.info('Bridge composed', { groups, groupCount: groups.length });
+
+      const boundedGroups = groups
+        .slice(0, MAX_LOG_DATA_ARRAY_ITEMS)
+        .map((group) => boundRendererLogData(group));
+      if (!boundedGroups.every((g) => typeof g === 'string')) {
+        loggers.ipc.warn('Invalid LOG_BRIDGE payload — expected string[]');
+        return;
+      }
+      if (groups.length > MAX_LOG_DATA_ARRAY_ITEMS) boundedGroups.push(TRUNCATED_SUFFIX);
+
+      loggers.bridge.info('Bridge composed', {
+        groups: boundedGroups,
+        groupCount: groups.length,
+      });
     } catch (err) {
       loggers.ipc.error('Failed to process bridge log', { error: err });
     }

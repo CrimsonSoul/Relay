@@ -187,8 +187,8 @@ export const PersonnelTab: React.FC<{
     }
   };
 
-  // Whether drag is disabled (board locked or not ready)
-  const isDragDisabled = bs.effectiveLocked || bs.status !== 'ready';
+  // `effectiveLocked` is already true for loading/offline safety states.
+  const isDragDisabled = bs.effectiveLocked;
 
   const handleExportCsv = useCallback(async () => {
     try {

@@ -55,6 +55,27 @@ interface StoredConfig {
   secret?: string;
 }
 
+function toRelayConfig(stored: StoredConfig, secret: string): RelayConfig {
+  if (stored.mode === 'server') {
+    return {
+      mode: 'server',
+      port: stored.port ?? 8090,
+      bindHost: stored.bindHost ?? '127.0.0.1',
+      secret,
+    };
+  }
+
+  const clientConfig: ClientConfig = {
+    mode: 'client',
+    serverUrl: stored.serverUrl ?? '',
+    secret,
+  };
+  if (stored.allowInsecureHttp === true) {
+    clientConfig.allowInsecureHttp = true;
+  }
+  return clientConfig;
+}
+
 export class AppConfig {
   private readonly configPath: string;
 
@@ -80,23 +101,11 @@ export class AppConfig {
         return null;
       }
 
-      if (stored.mode === 'server') {
-        return {
-          mode: 'server',
-          port: stored.port ?? 8090,
-          bindHost: stored.bindHost ?? '127.0.0.1',
-          secret,
-        };
+      const config = toRelayConfig(stored, secret);
+      if (stored.secret && ss?.isEncryptionAvailable()) {
+        this.save(config);
       }
-      const clientConfig: ClientConfig = {
-        mode: 'client',
-        serverUrl: stored.serverUrl ?? '',
-        secret,
-      };
-      if (stored.allowInsecureHttp === true) {
-        clientConfig.allowInsecureHttp = true;
-      }
-      return clientConfig;
+      return config;
     } catch (err) {
       loggers.main.error('Failed to parse config file', { path: this.configPath, error: err });
       return null;
