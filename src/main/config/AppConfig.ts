@@ -70,7 +70,7 @@ export class AppConfig {
         return {
           mode: 'server',
           port: stored.port ?? 8090,
-          bindHost: stored.bindHost ?? '0.0.0.0',
+          bindHost: stored.bindHost ?? '127.0.0.1',
           secret,
         };
       }

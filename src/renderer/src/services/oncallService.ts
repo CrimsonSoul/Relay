@@ -42,15 +42,37 @@ export async function deleteOnCallByTeam(team: string): Promise<void> {
 
 export async function replaceTeamRecords(
   team: string,
-  rows: Omit<OnCallInput, 'team'>[],
+  rows: (Omit<OnCallInput, 'team'> & { id?: string })[],
 ): Promise<OnCallRecord[]> {
+  requireOnline();
   try {
-    await deleteOnCallByTeam(team);
+    const existingRecords = await getPb()
+      .collection('oncall')
+      .getFullList<OnCallRecord>({ filter: `team="${escapeFilter(team)}"` });
+    const existingIds = new Set(existingRecords.map((record) => record.id));
+    const keptIds = new Set<string>();
     const results: OnCallRecord[] = [];
+
     for (const row of rows) {
-      const created = await addOnCall({ ...row, team });
-      results.push(created);
+      const { id, ...rowData } = row;
+      const input = { ...rowData, team };
+      if (id && existingIds.has(id)) {
+        const updated = await getPb().collection('oncall').update<OnCallRecord>(id, input);
+        keptIds.add(id);
+        results.push(updated);
+      } else {
+        const created = await getPb().collection('oncall').create<OnCallRecord>(input);
+        keptIds.add(created.id);
+        results.push(created);
+      }
     }
+
+    for (const record of existingRecords) {
+      if (!keptIds.has(record.id)) {
+        await getPb().collection('oncall').delete(record.id);
+      }
+    }
+
     return results;
   } catch (err) {
     handleApiError(err);

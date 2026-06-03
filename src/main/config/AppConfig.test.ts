@@ -147,7 +147,7 @@ describe('AppConfig', () => {
     expect((loaded as { port: number }).port).toBe(8090);
   });
 
-  it('server config uses legacy LAN binding when bindHost is missing in stored file', () => {
+  it('server config defaults to local-only when bindHost is missing in stored file', () => {
     writeFileSync(
       join(tempDir, 'config.json'),
       JSON.stringify({ mode: 'server', port: 8090, secret: 'sec' }),
@@ -155,7 +155,7 @@ describe('AppConfig', () => {
     );
     const config = new AppConfig(tempDir);
     const loaded = config.load();
-    expect((loaded as { bindHost: string }).bindHost).toBe('0.0.0.0');
+    expect((loaded as { bindHost: string }).bindHost).toBe('127.0.0.1');
   });
 
   it('client config uses empty string for serverUrl when missing in stored file', () => {

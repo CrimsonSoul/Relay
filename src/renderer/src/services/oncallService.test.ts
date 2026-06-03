@@ -134,15 +134,25 @@ describe('deleteOnCallByTeam', () => {
 });
 
 describe('replaceTeamRecords', () => {
-  it('deletes existing team records then creates new ones', async () => {
-    // deleteOnCallByTeam path
-    mockGetFullList.mockResolvedValueOnce([sampleRecord]);
-    mockDelete.mockResolvedValueOnce(undefined);
-    // addOnCall path
+  it('updates existing rows, creates new rows, then deletes removed rows', async () => {
+    const removedRecord: OnCallRecord = { ...sampleRecord, id: 'oc2', role: 'Backup' };
+    const updatedRecord: OnCallRecord = { ...sampleRecord, name: 'Alice Updated' };
     const newRecord: OnCallRecord = { ...sampleRecord, id: 'oc3', role: 'Secondary' };
+    mockGetFullList.mockResolvedValueOnce([sampleRecord, removedRecord]);
+    mockUpdate.mockResolvedValueOnce(updatedRecord);
     mockCreate.mockResolvedValueOnce(newRecord);
+    mockDelete.mockResolvedValueOnce(undefined);
 
-    const rows: Omit<OnCallInput, 'team'>[] = [
+    const rows: (Omit<OnCallInput, 'team'> & { id?: string })[] = [
+      {
+        id: 'oc1',
+        role: 'Primary',
+        name: 'Alice Updated',
+        contact: 'alice@example.com',
+        timeWindow: '9-5',
+        sortOrder: 0,
+        teamId: 'team-a',
+      },
       {
         role: 'Secondary',
         name: 'Bob',
@@ -153,7 +163,16 @@ describe('replaceTeamRecords', () => {
       },
     ];
     const results = await replaceTeamRecords('TeamA', rows);
-    expect(results).toEqual([newRecord]);
+    expect(results).toEqual([updatedRecord, newRecord]);
+    expect(mockUpdate).toHaveBeenCalledWith('oc1', {
+      team: 'TeamA',
+      role: 'Primary',
+      name: 'Alice Updated',
+      contact: 'alice@example.com',
+      timeWindow: '9-5',
+      sortOrder: 0,
+      teamId: 'team-a',
+    });
     expect(mockCreate).toHaveBeenCalledWith({
       team: 'TeamA',
       role: 'Secondary',
@@ -163,6 +182,28 @@ describe('replaceTeamRecords', () => {
       sortOrder: 0,
       teamId: 'team-a',
     });
+    expect(mockDelete).toHaveBeenCalledWith('oc2');
+  });
+
+  it('does not delete existing records when creating replacement rows fails', async () => {
+    const err = new Error('create failed');
+    mockGetFullList.mockResolvedValueOnce([sampleRecord]);
+    mockCreate.mockRejectedValueOnce(err);
+
+    await expect(
+      replaceTeamRecords('TeamA', [
+        {
+          role: 'Secondary',
+          name: 'Bob',
+          contact: 'bob@example.com',
+          timeWindow: '9-5',
+          sortOrder: 0,
+          teamId: 'team-a',
+        },
+      ]),
+    ).rejects.toThrow('create failed');
+
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('calls handleApiError and re-throws on failure', async () => {

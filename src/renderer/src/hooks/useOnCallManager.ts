@@ -169,6 +169,7 @@ export function useOnCallManager(
         await replaceTeamRecords(
           team,
           rows.map((r, i) => ({
+            id: r.id,
             teamId: r.teamId,
             role: r.role,
             name: r.name,
