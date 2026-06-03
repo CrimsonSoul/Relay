@@ -706,7 +706,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         <TactileButton
           variant="secondary"
           onClick={handleSetReminder}
-          tooltip="Schedule a reminder"
+          tooltip="Schedule an alarm for this alert"
           icon={
             <svg
               width="14"
@@ -724,7 +724,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             </svg>
           }
         >
-          SET ALARM
+          SCHEDULE ALERT ALARM
         </TactileButton>
         <TactileButton
           variant="primary"

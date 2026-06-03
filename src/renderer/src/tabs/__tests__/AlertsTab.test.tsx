@@ -364,7 +364,7 @@ describe('AlertsTab', () => {
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
-    expect(screen.getByText('SET ALARM')).toBeInTheDocument();
+    expect(screen.getByText('SCHEDULE ALERT ALARM')).toBeInTheDocument();
   });
 
   it('places the alarm action before the Outlook copy action', () => {
@@ -374,9 +374,12 @@ describe('AlertsTab', () => {
       button.textContent?.trim(),
     );
 
-    expect(labels.indexOf('SET ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
-    expect(screen.getByText('SET ALARM')).toHaveAttribute('data-has-icon', 'true');
-    expect(screen.getByText('SET ALARM')).toHaveAttribute('data-tooltip', 'Schedule a reminder');
+    expect(labels.indexOf('SCHEDULE ALERT ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
+    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute('data-has-icon', 'true');
+    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute(
+      'data-tooltip',
+      'Schedule an alarm for this alert',
+    );
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -523,7 +526,7 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('SET ALARM'));
+    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
@@ -580,7 +583,7 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from reminder', 'success');
 
-    fireEvent.click(screen.getByText('SET ALARM'));
+    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
 
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Stored outage alert');
