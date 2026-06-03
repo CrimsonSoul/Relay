@@ -8,6 +8,7 @@ const mockGetConfig = vi.fn();
 const mockGetPbConnection = vi.fn();
 const mockSaveConfig = vi.fn();
 const mockStartPocketBase = vi.fn();
+const mockRelaunchApp = vi.fn();
 const SETUP_SECRET_FIELD = 'secret';
 const buildSetupSecret = () => ['setup', 'fixture', 'value'].join('-');
 const buildClientSetupConfig = () => ({
@@ -641,6 +642,7 @@ describe('App default export', () => {
       getPbConnection: mockGetPbConnection,
       saveConfig: mockSaveConfig,
       startPocketBase: mockStartPocketBase,
+      relaunchApp: mockRelaunchApp,
       platform: 'win32',
     } as typeof globalThis.api;
     (
@@ -826,9 +828,10 @@ describe('App default export', () => {
     expect(await screen.findByTestId('setup-screen')).toBeInTheDocument();
   });
 
-  it('reloads the page after successful client-mode setup', async () => {
+  it('reconfigures the runtime after successful client-mode setup', async () => {
     mockIsConfigured.mockResolvedValue(false);
     mockSaveConfig.mockResolvedValue(true);
+    mockRelaunchApp.mockResolvedValue(undefined);
     const reload = vi.fn();
     Object.defineProperty(globalThis, 'location', {
       value: { search: '', reload },
@@ -842,13 +845,36 @@ describe('App default export', () => {
     fireEvent.click(await screen.findByText('complete-setup'));
 
     await vi.waitFor(() => {
-      expect(reload).toHaveBeenCalled();
+      expect(mockRelaunchApp).toHaveBeenCalled();
     });
-    // Client mode should NOT start PocketBase
+    expect(reload).not.toHaveBeenCalled();
     expect(mockStartPocketBase).not.toHaveBeenCalled();
   });
 
-  it('starts PocketBase and reloads after successful server-mode setup', async () => {
+  it('lets runtime reconfigure start PocketBase once after successful server-mode setup', async () => {
+    mockIsConfigured.mockResolvedValue(false);
+    mockSaveConfig.mockResolvedValue(true);
+    mockRelaunchApp.mockResolvedValue(undefined);
+    const reload = vi.fn();
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '', reload },
+      writable: true,
+      configurable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    fireEvent.click(await screen.findByText('complete-setup-server'));
+
+    await vi.waitFor(() => {
+      expect(mockRelaunchApp).toHaveBeenCalled();
+    });
+    expect(mockStartPocketBase).not.toHaveBeenCalled();
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('starts PocketBase and reloads after server-mode setup when runtime reconfigure is unavailable', async () => {
     mockIsConfigured.mockResolvedValue(false);
     mockSaveConfig.mockResolvedValue(true);
     mockStartPocketBase.mockResolvedValue(true);
@@ -858,6 +884,9 @@ describe('App default export', () => {
       writable: true,
       configurable: true,
     });
+    const apiWithoutRelaunch = { ...globalThis.api };
+    delete apiWithoutRelaunch.relaunchApp;
+    globalThis.api = apiWithoutRelaunch as typeof globalThis.api;
 
     const { default: App } = await import('../App');
     render(<App />);
@@ -879,6 +908,9 @@ describe('App default export', () => {
       writable: true,
       configurable: true,
     });
+    const apiWithoutRelaunch = { ...globalThis.api };
+    delete apiWithoutRelaunch.relaunchApp;
+    globalThis.api = apiWithoutRelaunch as typeof globalThis.api;
 
     const { default: App } = await import('../App');
     render(<App />);

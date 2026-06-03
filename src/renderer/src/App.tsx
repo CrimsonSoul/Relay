@@ -515,14 +515,6 @@ function AppWithSetup() {
           setPhase({ stage: 'error', message: 'Failed to save configuration.' });
           return;
         }
-        // In server mode, start PocketBase before connecting
-        if (config.mode === 'server') {
-          const started = await globalThis.api!.startPocketBase();
-          if (!started) {
-            setPhase({ stage: 'error', message: 'Failed to start PocketBase server.' });
-            return;
-          }
-        }
         // Ask the main process to rebuild per-mode runtime state, then reload this
         // window. A plain renderer reload leaves stale state — e.g. a lingering
         // embedded PocketBase after switching to client mode — that can misroute
@@ -530,9 +522,17 @@ function AppWithSetup() {
         const relaunch = globalThis.api?.relaunchApp;
         if (relaunch) {
           await relaunch();
-        } else {
-          globalThis.location.reload();
+          return;
         }
+        // Legacy/browser fallback: in server mode, start PocketBase before reconnecting.
+        if (config.mode === 'server') {
+          const started = await globalThis.api!.startPocketBase();
+          if (!started) {
+            setPhase({ stage: 'error', message: 'Failed to start PocketBase server.' });
+            return;
+          }
+        }
+        globalThis.location.reload();
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
         setPhase({ stage: 'error', message: 'Failed to save configuration.' });
