@@ -256,6 +256,13 @@ describe('windowHandlers', () => {
 
       expect(shell.openPath).not.toHaveBeenCalled();
     });
+
+    it('returns early for non-string paths', async () => {
+      await expect(handlers[IPC_CHANNELS.OPEN_PATH]({}, 42)).resolves.toBeUndefined();
+
+      expect(validatePath).not.toHaveBeenCalled();
+      expect(shell.openPath).not.toHaveBeenCalled();
+    });
   });
 
   describe('OPEN_EXTERNAL', () => {
@@ -821,6 +828,7 @@ describe('windowHandlers', () => {
 
     it('saves image successfully and returns file path', async () => {
       const { writeFile } = await import('node:fs/promises');
+      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
       vi.mocked(dialog.showSaveDialog).mockResolvedValue({
         canceled: false,
         filePath: '/mock-dir/test-alert.png',
@@ -837,8 +845,26 @@ describe('windowHandlers', () => {
       expect(writeFile).toHaveBeenCalled();
     });
 
+    it('returns error when PNG data URL does not decode to an image', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(nativeImage.createFromDataURL).mockReturnValue({
+        isEmpty: vi.fn(() => true),
+      } as never);
+
+      const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+        {},
+        'data:image/png;base64,not-real-image-data',
+        'test.png',
+      );
+
+      expect(result).toEqual({ success: false, error: 'Invalid image data' });
+      expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
     it('returns error on write failure', async () => {
       const { writeFile } = await import('node:fs/promises');
+      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
       vi.mocked(dialog.showSaveDialog).mockResolvedValue({
         canceled: false,
         filePath: '/mock-dir/test-alert.png',
@@ -856,6 +882,7 @@ describe('windowHandlers', () => {
 
     it('returns non-Error failure message on non-Error throw', async () => {
       const { writeFile } = await import('node:fs/promises');
+      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
       vi.mocked(dialog.showSaveDialog).mockResolvedValue({
         canceled: false,
         filePath: '/mock-dir/test-alert.png',

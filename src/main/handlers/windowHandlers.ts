@@ -47,6 +47,10 @@ export function setupWindowHandlers(
   ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     if (!getDataRoot) return;
+    if (typeof path !== 'string' || path.trim().length === 0) {
+      loggers.security.error('Blocked opening invalid path');
+      return;
+    }
     const root = await getDataRoot();
     const resolvedPath = resolve(root, normalize(path));
 
@@ -187,6 +191,10 @@ export function setupWindowHandlers(
         if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
           return { success: false, error: 'Image data exceeds size limit' };
         }
+        const image = nativeImage.createFromDataURL(dataUrl);
+        if (image.isEmpty()) {
+          return { success: false, error: 'Invalid image data' };
+        }
         const { canceled, filePath } = await dialog.showSaveDialog({
           defaultPath: suggestedName || 'alert.png',
           filters: [{ name: 'PNG Image', extensions: ['png'] }],
@@ -194,8 +202,7 @@ export function setupWindowHandlers(
         if (canceled || !filePath) {
           return { success: false, error: 'Cancelled' };
         }
-        const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-        await writeFile(filePath, Buffer.from(base64, 'base64'));
+        await writeFile(filePath, image.toPNG());
         return { success: true, data: filePath };
       } catch (err) {
         loggers.ipc.warn('Alert image save failed', {
