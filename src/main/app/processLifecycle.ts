@@ -68,6 +68,23 @@ function notifyCrashLoopSuppressed(label: string): void {
   requestAppRelaunch('renderer-crash-loop', { exitCode: 0 });
 }
 
+function shouldRelaunchAfterRendererGone(): boolean {
+  return process.platform === 'win32' && app.isPackaged;
+}
+
+function relaunchAfterRendererGone(
+  contents: WebContents,
+  label: string,
+  details: RenderProcessGoneDetails,
+): void {
+  loggers.main.error(`Relaunching Relay after renderer process gone (${label})`, {
+    reason: details.reason,
+    exitCode: details.exitCode,
+    snapshot: getWebContentsSnapshot(contents),
+  });
+  requestAppRelaunch('renderer-process-gone', { exitCode: 0 });
+}
+
 function reloadWebContents(
   contents: WebContents,
   label: string,
@@ -118,6 +135,11 @@ export function attachWebContentsLifecycleListeners(
 
     // clean-exit is normal shutdown — don't reload.
     if (details.reason === 'clean-exit' || !autoReload) return;
+
+    if (shouldRelaunchAfterRendererGone()) {
+      relaunchAfterRendererGone(contents, label, details);
+      return;
+    }
 
     reloadWebContents(contents, label, 'renderer process exited');
   });

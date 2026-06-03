@@ -3,6 +3,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
   const appHandlers = new Map<string, (...args: unknown[]) => void>();
   const mockApp = {
+    isPackaged: false,
     on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
       appHandlers.set(event, handler);
     }),
@@ -48,6 +49,7 @@ vi.mock('../relaunch', () => ({
 }));
 
 let nextWebContentsId = 1;
+const originalPlatform = process.platform;
 
 function createMockWebContents() {
   const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -89,8 +91,10 @@ describe('processLifecycle', () => {
     vi.clearAllMocks();
     vi.resetModules();
     mocks.appHandlers.clear();
+    mocks.mockApp.isPackaged = false;
     mocks.mockBrowserWindow.getAllWindows.mockReturnValue([]);
     nextWebContentsId = 1;
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
   });
 
   afterEach(() => {
@@ -113,6 +117,28 @@ describe('processLifecycle', () => {
       'Renderer process gone (main)',
       expect.objectContaining({ reason: 'crashed', exitCode: 1 }),
     );
+  });
+
+  it('relaunches packaged Windows builds after a renderer process crash', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    mocks.mockApp.isPackaged = true;
+    const { attachWebContentsLifecycleListeners } = await import('../processLifecycle');
+    const contents = createMockWebContents();
+
+    attachWebContentsLifecycleListeners(contents as never, {
+      label: 'main',
+      autoReload: true,
+    });
+
+    contents.handlers.get('render-process-gone')?.(
+      {},
+      { reason: 'crashed', exitCode: -1073741819 },
+    );
+
+    expect(contents.reload).not.toHaveBeenCalled();
+    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('renderer-process-gone', {
+      exitCode: 0,
+    });
   });
 
   it('requests a relaunch after repeated renderer process crashes', async () => {

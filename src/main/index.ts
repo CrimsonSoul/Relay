@@ -30,6 +30,7 @@ import {
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
+import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
@@ -51,11 +52,7 @@ validateEnv();
 
 const isCrashWatchdog = runCrashWatchdogIfRequested();
 
-const hardwareAccelerationDisabled = process.env.RELAY_DISABLE_HARDWARE_ACCELERATION === '1';
-if (hardwareAccelerationDisabled) {
-  app.disableHardwareAcceleration();
-  app.commandLine.appendSwitch('disable-gpu-compositing');
-}
+const hardwareAccelerationDisabled = configureHardwareAcceleration(app);
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }
