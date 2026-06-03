@@ -80,7 +80,7 @@ describe('authHandlers', () => {
         'user',
         testPassword,
       );
-      expect(callback).toHaveBeenCalledWith(['user', testPassword]);
+      expect(callback).toHaveBeenCalledWith('user', testPassword);
     });
 
     it('should reject invalid nonce', async () => {
@@ -110,7 +110,7 @@ describe('authHandlers', () => {
       const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: validNonce });
 
       expect(result).toBe(true);
-      expect(callback).toHaveBeenCalledWith(['cached-user', cachedSecret]);
+      expect(callback).toHaveBeenCalledWith('cached-user', cachedSecret);
     });
 
     it('should fail if no cached credentials exist', async () => {
@@ -203,7 +203,7 @@ describe('authHandlers', () => {
       };
       await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
       expect(CredentialManager.cacheCredentials).not.toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith(['user', testPassword]);
+      expect(callback).toHaveBeenCalledWith('user', testPassword);
     });
   });
 
@@ -246,7 +246,7 @@ describe('authHandlers', () => {
       });
     });
 
-    it('does not send when window is null', () => {
+    it('cancels the login attempt when window is null', () => {
       vi.mocked(CredentialManager.generateAuthNonce).mockReturnValue('nonce456');
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 
@@ -254,13 +254,15 @@ describe('authHandlers', () => {
       setupAuthInterception(getMainWindow);
 
       const mockEvent = { preventDefault: vi.fn() };
-      loginHandler(mockEvent, {}, {}, { host: 'test.com', isProxy: false }, vi.fn());
+      const callback = vi.fn();
+      loginHandler(mockEvent, {}, {}, { host: 'test.com', isProxy: false }, callback);
 
       expect(mockEvent.preventDefault).toHaveBeenCalled();
-      // No send — no window
+      expect(CredentialManager.registerAuthRequest).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith();
     });
 
-    it('does not send when window is destroyed', () => {
+    it('cancels the login attempt when window is destroyed', () => {
       vi.mocked(CredentialManager.generateAuthNonce).mockReturnValue('nonce789');
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 
@@ -273,8 +275,11 @@ describe('authHandlers', () => {
       setupAuthInterception(getMainWindow);
 
       const mockEvent = { preventDefault: vi.fn() };
-      loginHandler(mockEvent, {}, {}, { host: 'test.com', isProxy: false }, vi.fn());
+      const callback = vi.fn();
+      loginHandler(mockEvent, {}, {}, { host: 'test.com', isProxy: false }, callback);
 
+      expect(CredentialManager.registerAuthRequest).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledWith();
       expect(mockSend).not.toHaveBeenCalled();
     });
 

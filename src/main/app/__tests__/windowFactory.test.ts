@@ -93,6 +93,7 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
+import { isAllowedRendererFileUrl } from '../windowFactory';
 
 describe('windowFactory', () => {
   beforeEach(() => {
@@ -225,6 +226,20 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - will-navigate with allowed file paths', () => {
+    it('allows file URLs that resolve inside the renderer directory', () => {
+      const rendererDir = '/app/dist/renderer';
+      expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(
+        true,
+      );
+    });
+
+    it('blocks file URL traversal out of the renderer directory', () => {
+      const rendererDir = '/app/dist/renderer';
+      expect(
+        isAllowedRendererFileUrl('file:///app/dist/renderer/../main/index.js', rendererDir),
+      ).toBe(false);
+    });
+
     it('allows navigation to dev server URL in dev mode', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = false;
       process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';

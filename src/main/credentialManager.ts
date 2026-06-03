@@ -8,7 +8,7 @@ import * as crypto from 'node:crypto';
 import { loggers } from './logger';
 import { ErrorCategory } from '@shared/logging';
 
-type AuthCallback = (_authParams: [username: string, password: string]) => void;
+type AuthCallback = (username?: string, password?: string) => void;
 
 // In-memory store for pending auth requests (nonce -> callback)
 const pendingAuthRequests = new Map<
@@ -91,6 +91,7 @@ function cleanupExpiredNonces(): void {
   for (const [nonce, request] of pendingAuthRequests.entries()) {
     if (now - request.timestamp > NONCE_EXPIRY_MS) {
       pendingAuthRequests.delete(nonce);
+      request.callback();
     }
   }
 }
@@ -123,6 +124,7 @@ export function consumeAuthRequest(nonce: string): {
   // Check expiry
   if (Date.now() - request.timestamp > NONCE_EXPIRY_MS) {
     pendingAuthRequests.delete(nonce);
+    request.callback();
     return null;
   }
 
@@ -135,7 +137,11 @@ export function consumeAuthRequest(nonce: string): {
  * Cancel a pending auth request
  */
 export function cancelAuthRequest(nonce: string): boolean {
-  return pendingAuthRequests.delete(nonce);
+  const request = pendingAuthRequests.get(nonce);
+  if (!request) return false;
+  pendingAuthRequests.delete(nonce);
+  request.callback();
+  return true;
 }
 
 /**

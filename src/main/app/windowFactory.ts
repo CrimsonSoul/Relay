@@ -1,5 +1,5 @@
 import { app, BrowserWindow } from 'electron';
-import { join, dirname } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loggers } from '../logger';
 import { getMainWindow, setMainWindow } from './appState';
@@ -11,6 +11,21 @@ import { attachWindowLifecycleListeners } from './processLifecycle';
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
 const mainDir = dirname(fileURLToPath(import.meta.url));
+
+export function isAllowedRendererFileUrl(url: string, rendererDir: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'file:') return false;
+
+    const rendererRoot = resolve(rendererDir);
+    const targetPath = resolve(fileURLToPath(parsed));
+    const relativePath = relative(rendererRoot, targetPath);
+
+    return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+  } catch {
+    return false;
+  }
+}
 
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
@@ -78,15 +93,11 @@ export async function createWindow(): Promise<void> {
   }
 
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)
-  const allowedFilePath = join(mainDir, '../renderer/');
+  const allowedFilePath = join(mainDir, '../renderer');
   mainWindow.webContents.on('will-navigate', (event, url) => {
     // Allow dev server and local file reloads
     if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
-    // Only allow file:// navigation within the app's renderer directory
-    if (url.startsWith('file://')) {
-      const decodedUrl = decodeURIComponent(url.replace('file://', ''));
-      if (decodedUrl.startsWith(allowedFilePath)) return;
-    }
+    if (isAllowedRendererFileUrl(url, allowedFilePath)) return;
     loggers.security.warn(`Blocked main window navigation to: ${url}`);
     event.preventDefault();
   });
@@ -157,7 +168,7 @@ export async function createAuxWindow(route: string): Promise<void> {
   });
 
   // Prevent aux window navigation hijacking
-  const auxAllowedFilePath = join(mainDir, '../renderer/');
+  const auxAllowedFilePath = join(mainDir, '../renderer');
   auxWindow.webContents.on('will-navigate', (event, url) => {
     if (
       !app.isPackaged &&
@@ -165,10 +176,7 @@ export async function createAuxWindow(route: string): Promise<void> {
       url.startsWith(process.env.ELECTRON_RENDERER_URL)
     )
       return;
-    if (url.startsWith('file://')) {
-      const decodedUrl = decodeURIComponent(url.replace('file://', ''));
-      if (decodedUrl.startsWith(auxAllowedFilePath)) return;
-    }
+    if (isAllowedRendererFileUrl(url, auxAllowedFilePath)) return;
     loggers.security.warn(`Blocked aux window navigation to: ${url}`);
     event.preventDefault();
   });

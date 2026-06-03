@@ -59,14 +59,16 @@ describe('CredentialManager', () => {
       expect(consumeAuthRequest(nonce)).toBeNull();
     });
 
-    it('should expire nonces after timeout', () => {
+    it('should expire nonces after timeout and cancel the pending auth callback', () => {
       const nonce = generateAuthNonce();
-      registerAuthRequest(nonce, 'host', vi.fn());
+      const callback = vi.fn();
+      registerAuthRequest(nonce, 'host', callback);
 
       // Advance time by 6 minutes (expiry is 5)
       vi.advanceTimersByTime(6 * 60 * 1000);
 
       expect(consumeAuthRequest(nonce)).toBeNull();
+      expect(callback).toHaveBeenCalledWith();
     });
   });
 
@@ -202,11 +204,13 @@ describe('CredentialManager', () => {
   });
 
   describe('cancelAuthRequest', () => {
-    it('should cancel an existing auth request', () => {
+    it('should cancel an existing auth request and release the pending auth callback', () => {
       const nonce = generateAuthNonce();
-      registerAuthRequest(nonce, 'host', vi.fn());
+      const callback = vi.fn();
+      registerAuthRequest(nonce, 'host', callback);
 
       expect(cancelAuthRequest(nonce)).toBe(true);
+      expect(callback).toHaveBeenCalledWith();
       // Should no longer be consumable
       expect(consumeAuthRequest(nonce)).toBeNull();
     });

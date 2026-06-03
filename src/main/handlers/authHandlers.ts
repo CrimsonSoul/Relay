@@ -38,7 +38,7 @@ export function setupAuthHandlers() {
         return false;
       }
       if (remember) cacheCredentials(authRequest.host, username, password);
-      authRequest.callback([username, password]);
+      authRequest.callback(username, password);
       return true;
     },
   );
@@ -58,7 +58,7 @@ export function setupAuthHandlers() {
       loggers.auth.warn('No cached credentials for host', { host: authRequest.host });
       return false;
     }
-    authRequest.callback([cached.username, cached.password]);
+    authRequest.callback(cached.username, cached.password);
     return true;
   });
 
@@ -82,18 +82,21 @@ export function setupAuthInterception(getMainWindow: () => BrowserWindow | null)
       callback: (username?: string, password?: string) => void,
     ) => {
       event.preventDefault();
+      const mainWindow = getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        callback();
+        return;
+      }
+
       const nonce = generateAuthNonce();
       registerAuthRequest(nonce, authInfo.host, callback);
       const cachedCreds = getCachedCredentials(authInfo.host);
-      const mainWindow = getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(IPC_CHANNELS.AUTH_REQUESTED, {
-          host: authInfo.host,
-          isProxy: authInfo.isProxy,
-          nonce,
-          hasCachedCredentials: cachedCreds !== null,
-        });
-      }
+      mainWindow.webContents.send(IPC_CHANNELS.AUTH_REQUESTED, {
+        host: authInfo.host,
+        isProxy: authInfo.isProxy,
+        nonce,
+        hasCachedCredentials: cachedCreds !== null,
+      });
     },
   );
 }
