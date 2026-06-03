@@ -99,8 +99,8 @@ export function useOnCallManager(
       // Update local state so the UI reflects the change immediately.
       onBoardSettingsChange?.((prev) => ({
         ...prev,
-        record: updated,
-        effectiveLocked: updated.locked,
+        record: { ...(prev.record ?? updated), ...updated, locked: newLocked },
+        effectiveLocked: newLocked,
       }));
     } catch {
       showToast('Failed to toggle board lock', 'error');

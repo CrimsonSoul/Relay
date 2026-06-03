@@ -575,6 +575,31 @@ describe('useOnCallManager', () => {
       });
     });
 
+    it('toggleBoardLock locally reflects unlock when the board starts locked', async () => {
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
+      const lockedSettings = makeReadyBoardSettings({ effectiveLocked: true });
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, lockedSettings, onBoardSettingsChange),
+      );
+
+      await act(async () => {
+        await result.current.toggleBoardLock();
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        locked: false,
+      });
+      expect(onBoardSettingsChange).toHaveBeenCalledOnce();
+
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(lockedSettings);
+      expect(updatedState.effectiveLocked).toBe(false);
+    });
+
     it('toggleBoardLock is a no-op when board settings not ready', async () => {
       const loadingSettings = makeReadyBoardSettings({
         status: 'loading',
