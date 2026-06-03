@@ -6,12 +6,12 @@ import React from 'react';
 
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
-    width: 1280,
+    width: 1200,
     height: 1200,
     toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
   };
   const outlookCanvas = {
-    width: 640,
+    width: 600,
     height: 600,
     toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
   };
@@ -195,8 +195,8 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
           set-update
         </button>
-        <button data-testid="set-alert-font-xl" onClick={() => setAlertBodyFontSize('xl')}>
-          set-xl
+        <button data-testid="set-alert-font-large" onClick={() => setAlertBodyFontSize('large')}>
+          set-large
         </button>
         <button data-testid="toggle-compact" onClick={onToggleCompact}>
           toggle-compact
@@ -488,8 +488,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '640px',
-          maxWidth: '640px',
+          minWidth: '600px',
+          maxWidth: '600px',
         }),
       }),
       expect.objectContaining({ scale: 2 }),
@@ -508,8 +508,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '640px',
-          maxWidth: '640px',
+          minWidth: '600px',
+          maxWidth: '600px',
         }),
       }),
       expect.objectContaining({ scale: 1 }),
@@ -698,10 +698,10 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('normal');
     expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('normal');
 
-    fireEvent.click(screen.getByTestId('set-alert-font-xl'));
+    fireEvent.click(screen.getByTestId('set-alert-font-large'));
 
-    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('xl');
-    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('xl');
+    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('large');
+    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('large');
   });
 
   it('shows UPDATE prefix in subject when updateNumber > 0', () => {

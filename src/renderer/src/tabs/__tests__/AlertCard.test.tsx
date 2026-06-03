@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { AlertCard, type AlertCardProps } from '../AlertCard';
@@ -89,10 +90,17 @@ describe('AlertCard', () => {
   });
 
   it('applies the selected alert body font size class', () => {
-    render(<AlertCard {...makeProps({ alertBodyFontSize: 'xl' })} />);
+    render(<AlertCard {...makeProps({ alertBodyFontSize: 'large' })} />);
 
     const body = document.querySelector('.alerts-email-body');
-    expect(body).toHaveClass('alerts-email-body--font-xl');
+    expect(body).toHaveClass('alerts-email-body--font-large');
+  });
+
+  it('defines the large alert body font larger than the previous xl size', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const largeRule = /\.alerts-email-body--font-large\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(largeRule).toContain('font-size: 19px');
   });
 
   it('adds empty class when body has no content', () => {

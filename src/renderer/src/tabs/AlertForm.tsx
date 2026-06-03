@@ -160,10 +160,8 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                 <div className="alerts-font-size-control" role="group" aria-label="Alert font size">
                   {(
                     [
-                      ['small', 'Small'],
                       ['normal', 'Normal'],
                       ['large', 'Large'],
-                      ['xl', 'XL'],
                     ] as const
                   ).map(([value, label]) => (
                     <button

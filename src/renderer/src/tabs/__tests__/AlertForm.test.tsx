@@ -84,6 +84,8 @@ const defaultProps = {
   onToggleCompact: vi.fn(),
   isEnhanced: false,
   onToggleEnhanced: vi.fn(),
+  alertBodyFontSize: 'normal' as const,
+  setAlertBodyFontSize: vi.fn(),
 };
 
 describe('AlertForm', () => {
@@ -436,6 +438,22 @@ describe('AlertForm', () => {
   it('renders the event time hint text', () => {
     render(<AlertForm {...defaultProps} />);
     expect(screen.getByText('Displays as Central Time on card')).toBeInTheDocument();
+  });
+
+  it('offers only normal and large alert body font sizes', () => {
+    const setAlertBodyFontSize = vi.fn();
+    render(<AlertForm {...defaultProps} setAlertBodyFontSize={setAlertBodyFontSize} />);
+
+    const group = screen.getByRole('group', { name: 'Alert font size' });
+    expect(within(group).getByRole('button', { name: 'Normal' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(within(group).getByRole('button', { name: 'Large' }));
+
+    expect(setAlertBodyFontSize).toHaveBeenCalledWith('large');
+    expect(within(group).queryByRole('button', { name: 'Small' })).not.toBeInTheDocument();
+    expect(within(group).queryByRole('button', { name: 'XL' })).not.toBeInTheDocument();
   });
 
   it('renders all timezone options in the Source TZ dropdown', () => {

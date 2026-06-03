@@ -424,7 +424,7 @@
 
 .alerts-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(460px, 640px);
+  grid-template-columns: minmax(520px, 1fr) minmax(460px, 600px);
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -880,8 +880,8 @@
 
 .alerts-email-card {
   background: #ffffff;
-  width: 640px;
-  min-width: 640px;
+  width: 600px;
+  min-width: 600px;
   max-width: none;
   flex: 0 0 auto;
   margin: 0 auto;
@@ -1015,20 +1015,12 @@
   min-height: 132px;
 }
 
-.alerts-email-body--font-small {
-  font-size: 13px;
-}
-
 .alerts-email-body--font-normal {
   font-size: 14.5px;
 }
 
 .alerts-email-body--font-large {
-  font-size: 16px;
-}
-
-.alerts-email-body--font-xl {
-  font-size: 18px;
+  font-size: 19px;
 }
 
 .alerts-email-body ul,

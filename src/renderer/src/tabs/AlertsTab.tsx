@@ -34,7 +34,7 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
 import '@fontsource/montserrat/800.css';
 
-const ALERT_EXPORT_WIDTH_PX = 640;
+const ALERT_EXPORT_WIDTH_PX = 600;
 const ALERT_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_CAPTURE_SCALE = 1;
 const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
