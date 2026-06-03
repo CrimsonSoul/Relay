@@ -156,6 +156,10 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
         });
       },
     );
+
+    return () => {
+      if (gen === initGenRef.current) initGenRef.current += 1;
+    };
   }, [oncallRecords, oncallLoading]);
 
   // --- Realtime subscription for board settings ---

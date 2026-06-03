@@ -286,8 +286,12 @@ export function startMemoryHeartbeat(): () => void {
 
   const interval = setInterval(tick, MEMORY_HEARTBEAT_INTERVAL_MS);
   // First sample shortly after startup settles.
-  setTimeout(tick, 30_000).unref();
+  const startupTimeout = setTimeout(tick, 30_000);
+  startupTimeout.unref();
   interval.unref();
 
-  return () => clearInterval(interval);
+  return () => {
+    clearInterval(interval);
+    clearTimeout(startupTimeout);
+  };
 }

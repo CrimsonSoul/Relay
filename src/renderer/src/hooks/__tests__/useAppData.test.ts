@@ -2,6 +2,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppData } from '../useAppData';
 import type { BoardSettingsInitializationResult } from '../../services/oncallBoardSettingsService';
+import { loggers } from '../../utils/logger';
 
 vi.mock('../../utils/logger', () => ({
   loggers: {
@@ -277,6 +278,29 @@ describe('useAppData', () => {
           'Board settings initialization failed',
         );
       });
+    });
+
+    it('ignores board settings initialization failures after unmount', async () => {
+      let rejectInit: (error: Error) => void = () => {};
+      mockInitializeBoardSettings.mockReturnValue(
+        new Promise((_resolve, reject) => {
+          rejectInit = reject;
+        }),
+      );
+      collectionData.oncall = { data: [], loading: false, error: null };
+
+      const { unmount } = renderHook(() => useAppData(showToast));
+      unmount();
+
+      await act(async () => {
+        rejectInit(new Error('late init failure'));
+        await Promise.resolve();
+      });
+
+      expect(loggers.app.error).not.toHaveBeenCalledWith(
+        'Board settings initialization failed',
+        expect.anything(),
+      );
     });
   });
 

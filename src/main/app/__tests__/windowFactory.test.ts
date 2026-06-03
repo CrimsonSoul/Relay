@@ -93,7 +93,7 @@ vi.mock('../contextMenu', () => ({
 
 import { app } from 'electron';
 import { loggers } from '../../logger';
-import { isAllowedRendererFileUrl } from '../windowFactory';
+import { buildRendererPopoutFileUrl, isAllowedRendererFileUrl } from '../windowFactory';
 
 describe('windowFactory', () => {
   beforeEach(() => {
@@ -226,6 +226,15 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - will-navigate with allowed file paths', () => {
+    it('builds encoded packaged popout file URLs', () => {
+      const url = buildRendererPopoutFileUrl(
+        '/Applications/Relay QA/renderer/index.html',
+        'oncall',
+      );
+
+      expect(url).toBe('file:///Applications/Relay%20QA/renderer/index.html?popout=oncall');
+    });
+
     it('allows file URLs that resolve inside the renderer directory', () => {
       const rendererDir = '/app/dist/renderer';
       expect(isAllowedRendererFileUrl('file:///app/dist/renderer/index.html', rendererDir)).toBe(

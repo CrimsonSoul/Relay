@@ -185,4 +185,14 @@ describe('processLifecycle', () => {
     });
     expect(mocks.mockApp.exit).not.toHaveBeenCalled();
   });
+
+  it('clears memory heartbeat interval and startup timeout on cleanup', async () => {
+    const { startMemoryHeartbeat } = await import('../processLifecycle');
+
+    const stopHeartbeat = startMemoryHeartbeat();
+    stopHeartbeat();
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(mocks.loggers.main.info).not.toHaveBeenCalledWith('memory-heartbeat', expect.anything());
+  });
 });

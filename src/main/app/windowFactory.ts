@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loggers } from '../logger';
 import { getMainWindow, setMainWindow } from './appState';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
@@ -25,6 +25,12 @@ export function isAllowedRendererFileUrl(url: string, rendererDir: string): bool
   } catch {
     return false;
   }
+}
+
+export function buildRendererPopoutFileUrl(indexPath: string, route: string): string {
+  const url = pathToFileURL(indexPath);
+  url.searchParams.set('popout', route);
+  return url.href;
 }
 
 export async function createWindow(): Promise<void> {
@@ -191,7 +197,7 @@ export async function createAuxWindow(route: string): Promise<void> {
     await auxWindow.loadURL(url);
   } else {
     const indexPath = join(mainDir, '../renderer/index.html');
-    const url = `file://${indexPath}?popout=${route}`;
+    const url = buildRendererPopoutFileUrl(indexPath, route);
     loggers.main.info(`Loading aux window file URL: ${url}`);
     await auxWindow.loadURL(url);
   }
