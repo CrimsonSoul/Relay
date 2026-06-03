@@ -27,6 +27,30 @@ const getWeekRange = () => {
   )}, ${sunday.getFullYear()}`;
 };
 
+const replaceRowsForTeamId = (
+  currentRows: OnCallRow[],
+  teamId: string | undefined,
+  replacementRows: OnCallRow[],
+) => {
+  if (!teamId) return currentRows;
+
+  const teamOrder = Array.from(new Set(currentRows.map((r) => r.teamId).filter(Boolean)));
+  if (!teamOrder.includes(teamId)) return [...currentRows, ...replacementRows];
+
+  const nextRows: OnCallRow[] = [];
+  for (const tid of teamOrder) {
+    if (tid === teamId) {
+      nextRows.push(...replacementRows);
+    } else {
+      nextRows.push(...currentRows.filter((r) => r.teamId === tid));
+    }
+  }
+  return nextRows;
+};
+
+const appendUniqueTeamId = (teamOrder: string[], teamId: string) =>
+  teamOrder.includes(teamId) ? teamOrder : [...teamOrder, teamId];
+
 export function useOnCallManager(
   onCall: OnCallRow[],
   dismissAlert: (type: string) => void,
@@ -152,21 +176,11 @@ export function useOnCallManager(
       startMutation();
       const previousList = [...dataRef.current];
 
-      const buildReorderedList = (prev: OnCallRow[]) => {
-        const teamOrder = Array.from(new Set(prev.map((r) => r.teamId)));
-        if (!teamOrder.includes(rows[0]?.teamId ?? '')) return [...prev, ...rows];
-        const newFlatList: OnCallRow[] = [];
-        for (const tid of teamOrder) {
-          newFlatList.push(
-            ...(tid === (rows[0]?.teamId ?? '') ? rows : prev.filter((r) => r.teamId === tid)),
-          );
-        }
-        return newFlatList;
-      };
-      setLocalOnCall(buildReorderedList);
+      const targetTeamId = rows[0]?.teamId ?? previousList.find((r) => r.team === team)?.teamId;
+      setLocalOnCall((prev) => replaceRowsForTeamId(prev, targetTeamId, rows));
 
       try {
-        await replaceTeamRecords(
+        const savedRows = await replaceTeamRecords(
           team,
           rows.map((r, i) => ({
             id: r.id,
@@ -177,6 +191,9 @@ export function useOnCallManager(
             timeWindow: r.timeWindow,
             sortOrder: i,
           })),
+        );
+        setLocalOnCall((prev) =>
+          replaceRowsForTeamId(prev, targetTeamId, savedRows.length > 0 ? savedRows : rows),
         );
       } catch {
         setLocalOnCall(previousList);
@@ -263,16 +280,23 @@ export function useOnCallManager(
 
       // 2. Perform API calls
       try {
-        await replaceTeamRecords(name, [
+        const savedRows = await replaceTeamRecords(name, [
           { teamId, role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
         ]);
+        const committedRows = savedRows.length > 0 ? savedRows : [initialRow];
 
         // Append new teamId to board settings teamOrder
         if (boardSettings.status === 'ready' && boardSettings.recordId) {
-          const newTeamOrder = [...boardSettings.effectiveTeamOrder, teamId];
+          const newTeamOrder = appendUniqueTeamId(boardSettings.effectiveTeamOrder, teamId);
           await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: newTeamOrder });
+          onBoardSettingsChange?.((prev) => ({
+            ...prev,
+            record: prev.record ? { ...prev.record, teamOrder: newTeamOrder } : prev.record,
+            effectiveTeamOrder: newTeamOrder,
+          }));
         }
 
+        setLocalOnCall((prev) => replaceRowsForTeamId(prev, teamId, committedRows));
         showToast(`Added team ${name}`, 'success');
       } catch (err: unknown) {
         // Rollback local state
@@ -292,6 +316,7 @@ export function useOnCallManager(
       boardSettings.status,
       boardSettings.recordId,
       boardSettings.effectiveTeamOrder,
+      onBoardSettingsChange,
     ],
   );
 

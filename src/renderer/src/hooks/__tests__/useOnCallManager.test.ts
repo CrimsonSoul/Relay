@@ -201,6 +201,27 @@ describe('useOnCallManager', () => {
       expect(bravoRows).toEqual([defaultRows[2]]);
     });
 
+    it('replaces temporary row ids with saved PocketBase row ids after adding rows', async () => {
+      mockReplaceTeamRecords.mockResolvedValue([
+        makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice Updated' }),
+        makeRow({ id: 'pb-created-row', team: 'Alpha', teamId: 'alpha', role: 'Backup' }),
+      ]);
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      await act(async () => {
+        await result.current.handleUpdateRows('Alpha', [
+          makeRow({ id: 'r1', team: 'Alpha', teamId: 'alpha', name: 'Alice Updated' }),
+          makeRow({ id: 'temporary-row-id', team: 'Alpha', teamId: 'alpha', role: 'Backup' }),
+        ]);
+      });
+
+      const alphaRows = result.current.localOnCall.filter((r) => r.teamId === 'alpha');
+      expect(alphaRows.map((r) => r.id)).toEqual(['r1', 'pb-created-row']);
+    });
+
     it('rolls back to previous state when API throws', async () => {
       mockReplaceTeamRecords.mockRejectedValue(new Error('Failed'));
 
@@ -410,6 +431,32 @@ describe('useOnCallManager', () => {
 
       expect(result.current.localOnCall.some((r) => r.team === 'NewTeam')).toBe(true);
       expect(showToast).toHaveBeenCalledWith('Added team NewTeam', 'success');
+    });
+
+    it('locally appends the new team to board settings after adding a team', async () => {
+      mockReplaceTeamRecords.mockResolvedValue([
+        makeRow({ id: 'pb-new-team-row', team: 'NewTeam', teamId: 'newteam' }),
+      ]);
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings, onBoardSettingsChange),
+      );
+
+      await act(async () => {
+        await result.current.handleAddTeam('NewTeam');
+      });
+
+      expect(onBoardSettingsChange).toHaveBeenCalledOnce();
+
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(defaultBoardSettings);
+      expect(updatedState.effectiveTeamOrder).toEqual(['alpha', 'bravo', 'newteam']);
+      expect(result.current.localOnCall.some((r) => r.id === 'pb-new-team-row')).toBe(true);
+      expect(result.current.localOnCall.some((r) => r.id === 'test-uuid-1234')).toBe(false);
     });
 
     it('rolls back optimistic add when replaceTeamRecords fails', async () => {
