@@ -62,6 +62,10 @@ function stripMetadata(record: Record<string, unknown>): Record<string, unknown>
   return out;
 }
 
+function isImportRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Protect a CSV field value against formula injection.
  * Fields starting with =, +, -, @, Tab (0x09), or CR (0x0D) are prefixed
@@ -209,7 +213,10 @@ async function bulkUpsert(
   for (let i = 0; i < records.length; i++) {
     try {
       const record = records[i];
-      if (!record) continue;
+      if (!isImportRecord(record)) {
+        errors.push(`Row ${i + 1}: expected an object record`);
+        continue;
+      }
       const result = await upsertOne(collection, record);
       if (result === 'updated') {
         updated++;

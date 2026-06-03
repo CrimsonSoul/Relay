@@ -240,6 +240,35 @@ describe('importFromJson', () => {
     expect(result.imported).toBe(1);
   });
 
+  it('rejects primitive JSON array entries before writing to PocketBase', async () => {
+    const result = await importFromJson(
+      'contacts',
+      JSON.stringify([sampleRecord, 123, 'not-a-record', true]),
+    );
+
+    expect(result.imported).toBe(1);
+    expect(result.updated).toBe(0);
+    expect(result.errors).toEqual([
+      'Row 2: expected an object record',
+      'Row 3: expected an object record',
+      'Row 4: expected an object record',
+    ]);
+    expect(mockCreate).toHaveBeenCalledOnce();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects array JSON entries before writing to PocketBase', async () => {
+    const result = await importFromJson('contacts', JSON.stringify([[['name', 'Alice']]]));
+
+    expect(result).toEqual({
+      imported: 0,
+      updated: 0,
+      errors: ['Row 1: expected an object record'],
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('increments "updated" counter when a record is upserted via update', async () => {
     mockGetFirstListItem.mockResolvedValueOnce(sampleRecord);
     mockUpdate.mockResolvedValueOnce(sampleRecord);
