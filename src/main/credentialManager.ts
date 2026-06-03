@@ -49,6 +49,7 @@ export function startPeriodicCleanup(): void {
     cleanupExpiredNonces();
     cleanupExpiredCredentials();
   }, CLEANUP_INTERVAL_MS);
+  (cleanupTimer as { unref?: () => void }).unref?.();
 }
 
 /**

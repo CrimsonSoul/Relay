@@ -42,8 +42,10 @@ export const Input: React.FC<InputProps> = ({
 
   useEffect(() => {
     if (props.autoFocus && innerRef.current) {
-      setTimeout(() => innerRef.current?.focus(), 150);
+      const focusTimer = setTimeout(() => innerRef.current?.focus(), 150);
+      return () => clearTimeout(focusTimer);
     }
+    return undefined;
   }, [props.autoFocus]);
 
   const handleClear = (e: React.MouseEvent) => {

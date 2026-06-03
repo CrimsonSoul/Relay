@@ -99,6 +99,13 @@ function chooseCurrentReminder(
   return dueReminders[0] ?? null;
 }
 
+function pruneChimedReminderIds(chimedIds: Set<string>, dueReminders: AlertReminderRecord[]): void {
+  const dueIds = new Set(dueReminders.map((reminder) => reminder.id));
+  for (const id of chimedIds) {
+    if (!dueIds.has(id)) chimedIds.delete(id);
+  }
+}
+
 export function AlertReminderManager() {
   const { showToast } = useToast();
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
@@ -126,6 +133,7 @@ export function AlertReminderManager() {
         }
         return false;
       });
+      pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
       setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
     } catch {
       // PocketBase connection health is surfaced elsewhere; polling retries quietly.
@@ -144,6 +152,11 @@ export function AlertReminderManager() {
       stopReminderAudio(alarmAudioRef.current);
       alarmAudioRef.current = null;
     }
+  }, []);
+
+  const releaseReminderTracking = useCallback((id: string) => {
+    chimedIdsRef.current.delete(id);
+    mutedUntilRef.current.delete(id);
   }, []);
 
   const startRepeatingFallbackAlarm = useCallback(() => {
@@ -255,6 +268,7 @@ export function AlertReminderManager() {
     dispatchReminderAlertLoad(reminder);
     try {
       await dismissAlertReminder(reminder.id);
+      releaseReminderTracking(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
       void refreshDue();
@@ -268,6 +282,7 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await markAlertReminderDone(reminder.id);
+      releaseReminderTracking(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
       void refreshDue();
@@ -281,6 +296,7 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await dismissAlertReminder(reminder.id);
+      releaseReminderTracking(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
       void refreshDue();

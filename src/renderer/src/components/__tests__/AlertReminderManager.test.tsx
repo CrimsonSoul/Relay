@@ -402,6 +402,34 @@ describe('AlertReminderManager', () => {
     expect(mockDismissAlertReminder).toHaveBeenCalledWith('rem-2');
   });
 
+  it('clears chimed reminder tracking when a reminder is dismissed', async () => {
+    installMockAudio();
+    mockListDueAlertReminders
+      .mockResolvedValueOnce([makeReminder()])
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([makeReminder()]);
+
+    render(<AlertReminderManager />);
+    await flushReminderEffects();
+    await flushReminderEffects();
+
+    expect(mockAudioInstances).toHaveLength(1);
+
+    fireEvent.click(screen.getByText('Dismiss'));
+    await flushReminderEffects();
+    expect(screen.queryByText('Send outage alert')).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(30_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    await flushReminderEffects();
+
+    expect(screen.getByText('Send outage alert')).toBeInTheDocument();
+    expect(mockAudioInstances).toHaveLength(2);
+  });
+
   it('keeps the visual reminder active when audio playback fails', async () => {
     function BlockedAudioContext() {
       throw new Error('audio blocked');

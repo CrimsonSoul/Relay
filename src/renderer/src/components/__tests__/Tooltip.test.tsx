@@ -148,6 +148,23 @@ describe('Tooltip', () => {
     vi.useRealTimers();
   });
 
+  it('clears delayed tooltip timer on unmount', () => {
+    vi.useFakeTimers();
+    const { unmount } = render(
+      <Tooltip content="Unmounted tip" delay={500}>
+        <button>Trigger</button>
+      </Tooltip>,
+    );
+
+    fireEvent.mouseEnter(screen.getByText('Trigger'));
+    expect(vi.getTimerCount()).toBe(1);
+
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
   it('shows tooltip popup via portal in document.body', () => {
     render(
       <Tooltip content="Portal content">

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import type { StandaloneNote } from '@shared/ipc';
 import { Tooltip } from '../../components/Tooltip';
@@ -33,6 +33,16 @@ function timeAgo(ts: number): string {
 export const NoteCard: React.FC<NoteCardProps> = React.memo(
   ({ note, isDragActive, isDropTarget, onClick, onContextMenu }) => {
     const [copied, setCopied] = useState(false);
+    const copiedResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearCopiedResetTimer = useCallback(() => {
+      if (copiedResetTimerRef.current) {
+        clearTimeout(copiedResetTimerRef.current);
+        copiedResetTimerRef.current = null;
+      }
+    }, []);
+
+    useEffect(() => clearCopiedResetTimer, [clearCopiedResetTimer]);
 
     const {
       attributes,
@@ -61,11 +71,15 @@ export const NoteCard: React.FC<NoteCardProps> = React.memo(
         e.stopPropagation();
         const text = [note.title, note.content].filter(Boolean).join('\n\n');
         void navigator.clipboard.writeText(text).then(() => {
+          clearCopiedResetTimer();
           setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
+          copiedResetTimerRef.current = setTimeout(() => {
+            copiedResetTimerRef.current = null;
+            setCopied(false);
+          }, 1500);
         });
       },
-      [note.title, note.content],
+      [clearCopiedResetTimer, note.title, note.content],
     );
 
     const classNames = [

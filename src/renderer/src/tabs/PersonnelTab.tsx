@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useModalState } from '../hooks/useModalState';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { TactileButton } from '../components/TactileButton';
@@ -99,6 +99,16 @@ export const PersonnelTab: React.FC<{
     });
 
   const [isDragging, setIsDragging] = useState(false);
+  const dragResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearDragResetTimer = useCallback(() => {
+    if (dragResetTimerRef.current) {
+      clearTimeout(dragResetTimerRef.current);
+      dragResetTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => clearDragResetTimer, [clearDragResetTimer]);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const lastUpdatedLabel = useMemo(
     () =>
@@ -413,12 +423,17 @@ export const PersonnelTab: React.FC<{
         onDragEnd={(event) => {
           if (isDragging) {
             handleDragEnd(event);
-            setTimeout(() => setIsDragging(false), 50);
+            clearDragResetTimer();
+            dragResetTimerRef.current = setTimeout(() => {
+              dragResetTimerRef.current = null;
+              setIsDragging(false);
+            }, 50);
             globalThis.api?.notifyDragStop();
           }
         }}
         onDragCancel={() => {
           if (isDragging) {
+            clearDragResetTimer();
             setIsDragging(false);
             globalThis.api?.notifyDragStop();
           }

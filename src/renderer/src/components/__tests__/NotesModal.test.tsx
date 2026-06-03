@@ -58,6 +58,7 @@ const defaultProps = {
 describe('NotesModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useRealTimers();
     document.body.innerHTML = '';
   });
 
@@ -192,5 +193,14 @@ describe('NotesModal', () => {
     await act(async () => {
       resolveSave(true);
     });
+  });
+
+  it('clears the delayed textarea focus timer on unmount', () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<NotesModal {...defaultProps} />);
+
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

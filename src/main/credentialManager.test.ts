@@ -248,5 +248,25 @@ describe('CredentialManager', () => {
 
       stopPeriodicCleanup();
     });
+
+    it('unrefs the cleanup interval so it cannot keep shutdown alive', () => {
+      vi.useRealTimers();
+      const unref = vi.fn();
+      const timer = { unref } as unknown as ReturnType<typeof setInterval>;
+      const setIntervalSpy = vi.spyOn(globalThis, 'setInterval').mockReturnValue(timer);
+      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => {});
+
+      try {
+        startPeriodicCleanup();
+
+        expect(setIntervalSpy).toHaveBeenCalledOnce();
+        expect(unref).toHaveBeenCalledOnce();
+      } finally {
+        stopPeriodicCleanup();
+        setIntervalSpy.mockRestore();
+        clearIntervalSpy.mockRestore();
+        vi.useFakeTimers();
+      }
+    });
   });
 });

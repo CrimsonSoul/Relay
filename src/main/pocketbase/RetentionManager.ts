@@ -17,6 +17,7 @@ export class RetentionManager {
   }
 
   startSchedule(intervalMs = 24 * 60 * 60 * 1000): void {
+    this.stop();
     void this.runCleanup();
     this.interval = setInterval(() => {
       void this.runCleanup();

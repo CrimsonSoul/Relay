@@ -88,8 +88,17 @@ export const Tooltip: React.FC<TooltipProps> = ({
 
   const handleMouseLeave = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
     setIsVisible(false);
   };
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+    },
+    [],
+  );
 
   const childHandlers = children.props as TooltipTriggerHandlers;
   const trigger = React.cloneElement(children, {

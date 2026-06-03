@@ -160,6 +160,20 @@ describe('NoteCard', () => {
     expect(copyBtn.querySelector('polyline')).toBeNull();
   });
 
+  it('clears the copied reset timer on unmount', async () => {
+    vi.useFakeTimers();
+    const props = defaultProps();
+    const { unmount } = render(<NoteCard {...props} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByLabelText('Copy note contents'));
+    });
+
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('copies only content when title is empty', async () => {
     const props = defaultProps();
     props.note.title = '';

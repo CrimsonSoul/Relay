@@ -30,12 +30,20 @@ export const NotesModal: React.FC<NotesModalProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    let focusTimer: ReturnType<typeof setTimeout> | null = null;
+
     if (isOpen) {
       setNote(existingNote?.note || '');
       setTags(existingNote?.tags || []);
       setTagInput('');
-      setTimeout(() => textareaRef.current?.focus(), 50);
+      focusTimer = setTimeout(() => textareaRef.current?.focus(), 50);
     }
+
+    return () => {
+      if (focusTimer) {
+        clearTimeout(focusTimer);
+      }
+    };
   }, [isOpen, existingNote]);
 
   const handleAddTag = () => {

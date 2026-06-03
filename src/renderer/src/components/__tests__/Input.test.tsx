@@ -1,9 +1,13 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Input } from '../Input';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 
 describe('Input Component', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test('renders correctly', () => {
     render(<Input placeholder="Test Input" />);
     expect(screen.getByPlaceholderText('Test Input')).toBeInTheDocument();
@@ -33,5 +37,22 @@ describe('Input Component', () => {
     fireEvent.click(clearBtn);
 
     expect(handleChange).toHaveBeenCalled();
+  });
+
+  test('clears the delayed autofocus timer on unmount', () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+    const { unmount } = render(<Input autoFocus placeholder="Autofocus input" />);
+    const focusTimer = setTimeoutSpy.mock.results.find(
+      (_, index) => setTimeoutSpy.mock.calls[index][1] === 150,
+    )?.value;
+
+    expect(focusTimer).toBeDefined();
+    unmount();
+    expect(clearTimeoutSpy).toHaveBeenCalledWith(focusTimer);
+
+    setTimeoutSpy.mockRestore();
+    clearTimeoutSpy.mockRestore();
   });
 });

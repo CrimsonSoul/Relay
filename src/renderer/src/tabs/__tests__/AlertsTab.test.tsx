@@ -177,6 +177,12 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>
           set-issue
         </button>
+        <button data-testid="set-severity-maintenance" onClick={() => setSeverity('MAINTENANCE')}>
+          set-maintenance
+        </button>
+        <button data-testid="set-severity-info" onClick={() => setSeverity('INFO')}>
+          set-info
+        </button>
         <button data-testid="set-severity-resolved" onClick={() => setSeverity('RESOLVED')}>
           set-resolved
         </button>
@@ -213,16 +219,49 @@ vi.mock('../AlertForm', () => ({
 }));
 
 vi.mock('../AlertCard', () => ({
-  AlertCard: (props: Record<string, unknown>) => (
-    <div data-testid="alert-card" ref={props.cardRef as React.Ref<HTMLDivElement>}>
-      <span data-testid="card-severity">{String(props.severity)}</span>
-      <span data-testid="card-subject">{String(props.displaySubject)}</span>
-      <span data-testid="card-sender">{String(props.displaySender)}</span>
-      <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
-      <span data-testid="card-body">{String(props.bodyHtml)}</span>
-      <span data-testid="card-alert-font-size">{String(props.alertBodyFontSize)}</span>
-    </div>
-  ),
+  AlertCard: (props: Record<string, unknown>) => {
+    const severityColors: Record<string, string> = {
+      ISSUE: '#d32f2f',
+      MAINTENANCE: '#f9a825',
+      INFO: '#1565c0',
+      RESOLVED: '#2e7d32',
+    };
+    return (
+      <div
+        className="alerts-email-card"
+        data-testid="alert-card"
+        ref={props.cardRef as React.Ref<HTMLDivElement>}
+        style={
+          {
+            '--email-banner': severityColors[String(props.severity)] ?? '#1565c0',
+            borderColor: 'var(--email-banner)',
+          } as React.CSSProperties
+        }
+      >
+        <div
+          className="alerts-email-severity-header"
+          style={{ background: 'var(--email-banner)' }}
+        >
+          mock banner
+        </div>
+        <div className="alerts-email-icon-wrapper">
+          <div className="alerts-email-icon">
+            <svg data-testid="mock-alert-icon" />
+          </div>
+        </div>
+        <div className="alerts-email-header">mock subject</div>
+        <div className="alerts-email-meta">mock meta</div>
+        <div className="alerts-email-body">mock body</div>
+        <div className="alerts-email-footer">mock footer</div>
+        <span data-testid="card-severity">{String(props.severity)}</span>
+        <span data-testid="card-subject">{String(props.displaySubject)}</span>
+        <span data-testid="card-sender">{String(props.displaySender)}</span>
+        <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
+        <span data-testid="card-body">{String(props.bodyHtml)}</span>
+        <span data-testid="card-alert-font-size">{String(props.alertBodyFontSize)}</span>
+      </div>
+    );
+  },
 }));
 
 // Mock AlertHistoryModal — render load button when open
@@ -516,6 +555,92 @@ describe('AlertsTab', () => {
         }),
       }),
       expect.objectContaining({ scale: 1 }),
+    );
+  });
+
+  it('resolves banner colors in the shared capture clone before rendering', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+
+    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+
+    await waitFor(() => {
+      expect(mockCapture.html2canvas).toHaveBeenCalled();
+    });
+    const clone = mockCapture.html2canvas.mock.calls.at(-1)?.[0] as HTMLElement;
+    const header = clone.querySelector('.alerts-email-severity-header') as HTMLElement;
+
+    expect(header.style.background).not.toContain('var(');
+    expect(header.style.backgroundColor).toBe('rgb(211, 47, 47)');
+    expect(clone.style.borderColor).toBe('rgb(211, 47, 47)');
+  });
+
+  it.each([
+    ['ISSUE', 'set-severity-issue', 'rgb(211, 47, 47)'],
+    ['MAINTENANCE', 'set-severity-maintenance', 'rgb(249, 168, 37)'],
+    ['INFO', 'set-severity-info', 'rgb(21, 101, 192)'],
+    ['RESOLVED', 'set-severity-resolved', 'rgb(46, 125, 50)'],
+  ])(
+    'resolves %s capture colors for Teams, Discord, and Outlook paste targets',
+    async (_severity, testId, expectedColor) => {
+      render(<AlertsTab />);
+      fireEvent.click(screen.getByTestId(testId));
+
+      fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+
+      await waitFor(() => {
+        expect(mockCapture.html2canvas).toHaveBeenCalled();
+      });
+      const clone = mockCapture.html2canvas.mock.calls.at(-1)?.[0] as HTMLElement;
+      const header = clone.querySelector('.alerts-email-severity-header') as HTMLElement;
+      const icon = clone.querySelector('.alerts-email-icon') as HTMLElement;
+
+      expect(header.style.backgroundColor).toBe(expectedColor);
+      expect(clone.style.borderColor).toBe(expectedColor);
+      expect(icon.style.borderColor).toBe(expectedColor);
+    },
+  );
+
+  it('paints alert capture surfaces so Teams and Discord do not show grey transparency', async () => {
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+
+    await waitFor(() => {
+      expect(mockCapture.html2canvas).toHaveBeenCalled();
+    });
+    const clone = mockCapture.html2canvas.mock.calls.at(-1)?.[0] as HTMLElement;
+
+    expect(clone.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(
+      (clone.querySelector('.alerts-email-header') as HTMLElement).style.backgroundColor,
+    ).toBe('rgb(255, 255, 255)');
+    expect((clone.querySelector('.alerts-email-body') as HTMLElement).style.backgroundColor).toBe(
+      'rgb(255, 255, 255)',
+    );
+    const iconWrapper = clone.querySelector('.alerts-email-icon-wrapper') as HTMLElement;
+    const iconWrapperFill = iconWrapper.querySelector(
+      '.alerts-email-icon-wrapper-fill',
+    ) as HTMLElement;
+    const icon = clone.querySelector('.alerts-email-icon') as HTMLElement;
+    const iconFill = icon.querySelector('.alerts-email-icon-fill') as HTMLElement;
+    const iconSvg = icon.querySelector('svg') as SVGElement;
+    expect(iconWrapper.style.background).toBe('');
+    expect(iconWrapper.style.backgroundColor).toBe('');
+    expect(iconWrapperFill.style.top).toBe('26px');
+    expect(iconWrapperFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(iconFill.style.inset).toBe('3px');
+    expect(iconFill.style.borderRadius).toBe('50%');
+    expect(iconFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(icon.style.position).toBe('relative');
+    expect(icon.style.zIndex).toBe('1');
+    expect(iconSvg.style.position).toBe('relative');
+    expect(iconSvg.style.zIndex).toBe('1');
+    expect((clone.querySelector('.alerts-email-meta') as HTMLElement).style.backgroundColor).toBe(
+      'rgb(250, 250, 250)',
+    );
+    expect((clone.querySelector('.alerts-email-footer') as HTMLElement).style.backgroundColor).toBe(
+      'rgb(250, 250, 250)',
     );
   });
 

@@ -101,6 +101,23 @@ describe('RetentionManager', () => {
 
       manager.stop();
     });
+
+    it('replaces the existing interval when the schedule is restarted', async () => {
+      const getFullList = vi.fn().mockResolvedValue([]);
+      const pb = makePb({ getFullList });
+      const manager = new RetentionManager(pb);
+      const intervalMs = 60_000;
+
+      manager.startSchedule(intervalMs);
+      manager.startSchedule(intervalMs);
+      await vi.advanceTimersByTimeAsync(0);
+      manager.stop();
+
+      const callsAfterStop = getFullList.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(intervalMs * 2);
+
+      expect(getFullList.mock.calls.length).toBe(callsAfterStop);
+    });
   });
 
   describe('stop()', () => {
