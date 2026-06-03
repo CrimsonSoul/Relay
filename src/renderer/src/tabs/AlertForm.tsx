@@ -146,15 +146,6 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                 />
               </div>
 
-              <AlertBodyEditor
-                ref={bodyEditorRef}
-                setBodyHtml={setBodyHtml}
-                isCompact={isCompact}
-                onToggleCompact={onToggleCompact}
-                isEnhanced={isEnhanced}
-                onToggleEnhanced={onToggleEnhanced}
-              />
-
               <div className="alerts-field">
                 <span className="alerts-field-label">Alert Font Size</span>
                 <div className="alerts-font-size-control" role="group" aria-label="Alert font size">
@@ -178,6 +169,15 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                   ))}
                 </div>
               </div>
+
+              <AlertBodyEditor
+                ref={bodyEditorRef}
+                setBodyHtml={setBodyHtml}
+                isCompact={isCompact}
+                onToggleCompact={onToggleCompact}
+                isEnhanced={isEnhanced}
+                onToggleEnhanced={onToggleEnhanced}
+              />
             </div>
           </section>
 

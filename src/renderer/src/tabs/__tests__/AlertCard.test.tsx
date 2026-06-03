@@ -121,7 +121,7 @@ describe('AlertCard', () => {
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
     const bodyRule = /\.alerts-email-body\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(bodyRule).toContain('min-height: 160px');
+    expect(bodyRule).toContain('min-height: 200px');
   });
 
   it('adds empty class when body has no content', () => {

@@ -752,7 +752,9 @@
 
 .alerts-font-size-control {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(112px, 140px));
+  width: max-content;
+  max-width: 100%;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--color-border-subtle);
@@ -1013,7 +1015,7 @@
   color: #2d2d2d;
   white-space: pre-wrap;
   word-break: break-word;
-  min-height: 160px;
+  min-height: 200px;
 }
 
 .alerts-email-body--font-normal {

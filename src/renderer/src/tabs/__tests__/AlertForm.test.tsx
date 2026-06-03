@@ -456,6 +456,22 @@ describe('AlertForm', () => {
     expect(within(group).queryByRole('button', { name: 'XL' })).not.toBeInTheDocument();
   });
 
+  it('places font size before the body editor and keeps the control compact', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    const group = screen.getByRole('group', { name: 'Alert font size' });
+    const bodyEditor = screen.getByTestId('body-editor');
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const controlRule = /\.alerts-font-size-control\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(group.compareDocumentPosition(bodyEditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(controlRule).toContain('grid-template-columns: repeat(2, minmax(112px, 140px))');
+    expect(controlRule).toContain('width: max-content');
+    expect(controlRule).toContain('max-width: 100%');
+  });
+
   it('renders all timezone options in the Source TZ dropdown', () => {
     render(<AlertForm {...defaultProps} />);
     const select = screen.getByLabelText('Source TZ') as HTMLSelectElement;
