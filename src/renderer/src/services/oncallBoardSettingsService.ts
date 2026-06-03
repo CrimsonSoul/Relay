@@ -124,6 +124,26 @@ function lockedResult(
   };
 }
 
+function recordBackedResult(
+  status: BoardStatus,
+  errors: string[],
+  record: BoardSettingsRecord,
+  oncallRows: OnCallRecord[],
+): BoardSettingsInitializationResult {
+  const effectiveTeamOrder = Array.isArray(record.teamOrder)
+    ? reconcileTeamOrder(record.teamOrder, new Set(deriveTeamOrder(oncallRows)))
+    : [];
+
+  return {
+    record,
+    recordId: record.id,
+    effectiveTeamOrder,
+    effectiveLocked: typeof record.locked === 'boolean' ? record.locked : true,
+    status,
+    errors,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Pre-backfill validation
 // ---------------------------------------------------------------------------
@@ -369,6 +389,44 @@ async function deduplicateSettings(records: BoardSettingsRecord[]): Promise<void
   records[0] = keep!;
 }
 
+async function resolveSettingsRecord(
+  oncallRows: OnCallRecord[],
+): Promise<
+  | { ok: true; record: BoardSettingsRecord }
+  | { ok: false; result: BoardSettingsInitializationResult }
+> {
+  const fetchResult = await fetchPrimarySettings();
+  if (!fetchResult.ok) return fetchResult;
+
+  const { records } = fetchResult;
+  if (records.length > 1) {
+    await deduplicateSettings(records);
+  }
+
+  if (records.length === 0) {
+    return bootstrapSettingsRecord(oncallRows);
+  }
+
+  return { ok: true, record: records[0]! };
+}
+
+async function nonReadyResultWithSettingsRecord(
+  status: BoardStatus,
+  errors: string[],
+  oncallRows: OnCallRecord[],
+): Promise<BoardSettingsInitializationResult> {
+  try {
+    const settingsResult = await resolveSettingsRecord(oncallRows);
+    if (!settingsResult.ok) {
+      return lockedResult(status, [...errors, ...settingsResult.result.errors]);
+    }
+    return recordBackedResult(status, errors, settingsResult.record, oncallRows);
+  } catch (err) {
+    handleApiError(err);
+    return lockedResult(status, errors);
+  }
+}
+
 /**
  * - Backfills legacy rows missing `teamId`
  * - Looks up or creates the singleton `primary` board settings record
@@ -380,7 +438,13 @@ export async function initializeBoardSettings(
 ): Promise<BoardSettingsInitializationResult> {
   // --- Pre-backfill validation ---
   const preBackfillError = validatePreBackfill(oncallRows);
-  if (preBackfillError) return preBackfillError;
+  if (preBackfillError) {
+    return nonReadyResultWithSettingsRecord(
+      preBackfillError.status,
+      preBackfillError.errors,
+      oncallRows,
+    );
+  }
 
   // --- Backfill legacy rows ---
   const needsBackfill = oncallRows.filter((r) => !r.teamId);
@@ -391,34 +455,19 @@ export async function initializeBoardSettings(
       const status: BoardStatus = errors.some((e) => e.includes('blank') || e.includes('collision'))
         ? 'invalid'
         : 'migrating';
-      return lockedResult(status, errors);
+      return nonReadyResultWithSettingsRecord(status, errors, oncallRows);
     }
   }
 
-  // --- Fetch existing settings ---
-  const fetchResult = await fetchPrimarySettings();
-  if (!fetchResult.ok) return fetchResult.result;
-  const { records } = fetchResult;
-
-  // --- Handle duplicate primary records ---
-  if (records.length > 1) {
-    await deduplicateSettings(records);
-  }
-
-  // --- Bootstrap or use existing ---
-  let settingsRecord: BoardSettingsRecord;
-  if (records.length === 0) {
-    const bootstrapResult = await bootstrapSettingsRecord(oncallRows);
-    if (!bootstrapResult.ok) return bootstrapResult.result;
-    settingsRecord = bootstrapResult.record;
-  } else {
-    settingsRecord = records[0]!;
-  }
+  // --- Fetch, deduplicate, bootstrap, or use existing settings ---
+  const settingsResult = await resolveSettingsRecord(oncallRows);
+  if (!settingsResult.ok) return settingsResult.result;
+  const settingsRecord = settingsResult.record;
 
   // --- Validate the record ---
   const validationErrors: string[] = [];
   if (!validateSettingsRecord(settingsRecord, validationErrors)) {
-    return lockedResult('invalid', validationErrors, settingsRecord);
+    return recordBackedResult('invalid', validationErrors, settingsRecord, oncallRows);
   }
 
   // --- Reconcile team order ---

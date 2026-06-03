@@ -169,36 +169,54 @@ describe('initializeBoardSettings', () => {
       makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: '', sortOrder: 0 }),
       makeOncallRow({ id: 'oc2', team: 'TeamB', teamId: '', sortOrder: 1 }),
     ];
+    const settings = makeSettingsRecord({ teamOrder: ['teama', 'teamb'], locked: false });
     mockUpdate
       .mockResolvedValueOnce({}) // oc1 backfill succeeds
       .mockRejectedValueOnce(new Error('write failed')); // oc2 fails
+    mockGetFullList.mockResolvedValueOnce([settings]);
 
     const result = await initializeBoardSettings(rows);
 
     expect(result.status).toBe('migrating');
+    expect(result.recordId).toBe('bs1');
+    expect(result.effectiveLocked).toBe(false);
   });
 
-  it('returns invalid for blank team names', async () => {
+  it('returns invalid for blank team names while preserving an existing settings record', async () => {
     const rows = [
       makeOncallRow({ id: 'oc1', team: '', teamId: '', sortOrder: 0 }),
       makeOncallRow({ id: 'oc2', team: 'TeamB', teamId: 'team-b', sortOrder: 1 }),
     ];
+    const settings = makeSettingsRecord({ teamOrder: ['team-b'], locked: false });
+    mockGetFullList.mockResolvedValueOnce([settings]);
 
     const result = await initializeBoardSettings(rows);
 
     expect(result.status).toBe('invalid');
+    expect(result.recordId).toBe('bs1');
+    expect(result.effectiveLocked).toBe(false);
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
-  it('returns invalid for canonical team name collisions', async () => {
+  it('returns invalid for canonical team name collisions while bootstrapping settings when missing', async () => {
     const rows = [
       makeOncallRow({ id: 'oc1', team: 'Team A', teamId: '', sortOrder: 0 }),
       makeOncallRow({ id: 'oc2', team: 'team a', teamId: '', sortOrder: 1 }),
     ];
+    const createdSettings = makeSettingsRecord({ teamOrder: [], locked: false });
+    mockGetFullList.mockResolvedValueOnce([]);
+    mockCreate.mockResolvedValueOnce(createdSettings);
 
     const result = await initializeBoardSettings(rows);
 
     expect(result.status).toBe('invalid');
+    expect(result.recordId).toBe('bs1');
+    expect(result.effectiveLocked).toBe(false);
+    expect(mockCreate).toHaveBeenCalledWith({
+      key: 'primary',
+      teamOrder: [],
+      locked: false,
+    });
     expect(result.errors.some((e) => e.includes('collision'))).toBe(true);
   });
 
@@ -362,10 +380,13 @@ describe('initializeBoardSettings — validation edge cases', () => {
       makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'teama', sortOrder: 0 }),
       makeOncallRow({ id: 'oc2', team: 'TeamA', teamId: '', sortOrder: 1 }),
     ];
+    const settings = makeSettingsRecord({ teamOrder: ['teama'], locked: false });
+    mockGetFullList.mockResolvedValueOnce([settings]);
 
     const result = await initializeBoardSettings(rows);
 
     expect(result.status).toBe('invalid');
+    expect(result.recordId).toBe('bs1');
     expect(result.errors.some((e) => e.includes('collision'))).toBe(true);
   });
 
