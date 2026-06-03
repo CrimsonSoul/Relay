@@ -24,6 +24,11 @@ export class OfflineCache {
     `);
   }
 
+  private getRecordId(record: Record<string, unknown>): string | null {
+    const id = record.id;
+    return typeof id === 'string' && id.trim().length > 0 ? id : null;
+  }
+
   writeCollection(collection: string, records: Record<string, unknown>[]): void {
     try {
       const deleteStmt = this.db.prepare('DELETE FROM cache WHERE collection = ?');
@@ -34,7 +39,11 @@ export class OfflineCache {
       const transaction = this.db.transaction(() => {
         deleteStmt.run(collection);
         for (const record of records) {
-          const id = (record as { id?: string }).id || '';
+          const id = this.getRecordId(record);
+          if (!id) {
+            logger.warn('Skipping cache record without valid id', { collection });
+            continue;
+          }
           insertStmt.run(collection, id, JSON.stringify(record));
         }
       });
@@ -69,7 +78,11 @@ export class OfflineCache {
     record: Record<string, unknown>,
   ): void {
     try {
-      const id = (record as { id?: string }).id || '';
+      const id = this.getRecordId(record);
+      if (!id) {
+        logger.warn('Skipping cache update without valid id', { collection, action });
+        return;
+      }
 
       switch (action) {
         case 'create':

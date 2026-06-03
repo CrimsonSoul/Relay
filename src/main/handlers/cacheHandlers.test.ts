@@ -167,6 +167,19 @@ describe('cacheHandlers', () => {
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
+    it('returns early when record id is missing', () => {
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { name: 'No Id' });
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('returns early when record id is not a non-empty string', () => {
+      for (const id of ['', '   ', 123, null]) {
+        handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id });
+      }
+
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
     it('returns early when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id: '1' });
@@ -204,6 +217,18 @@ describe('cacheHandlers', () => {
 
     it('returns early when records is null', () => {
       handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', null);
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
+    });
+
+    it('returns early when any snapshot record lacks a valid id', () => {
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }, { name: 'No Id' }]);
+
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
+    });
+
+    it('returns early when any snapshot record id is not a non-empty string', () => {
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }, { id: '   ' }]);
+
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 

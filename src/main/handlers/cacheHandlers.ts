@@ -23,6 +23,13 @@ const VALID_COLLECTIONS = new Set([
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);
 
+const hasNonEmptyStringId = (record: unknown): record is Record<string, unknown> & { id: string } =>
+  !!record &&
+  typeof record === 'object' &&
+  !Array.isArray(record) &&
+  typeof (record as { id?: unknown }).id === 'string' &&
+  (record as { id: string }).id.trim().length > 0;
+
 export function setupCacheHandlers(
   getCache: () => OfflineCache | null,
   getPendingChanges?: () => PendingChanges | null,
@@ -54,6 +61,12 @@ export function setupCacheHandlers(
         loggers.cache.error('CACHE_WRITE: invalid record', { record: typeof record });
         return;
       }
+      if (!hasNonEmptyStringId(record)) {
+        loggers.cache.error('CACHE_WRITE: record missing valid id', {
+          idType: typeof (record as { id?: unknown }).id,
+        });
+        return;
+      }
       const cache = getCache();
       if (!cache) return;
       cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record);
@@ -69,6 +82,10 @@ export function setupCacheHandlers(
       }
       if (!Array.isArray(records)) {
         loggers.cache.error('CACHE_SNAPSHOT: records is not an array', { records: typeof records });
+        return;
+      }
+      if (!records.every(hasNonEmptyStringId)) {
+        loggers.cache.error('CACHE_SNAPSHOT: records contain invalid ids');
         return;
       }
       const cache = getCache();

@@ -147,11 +147,24 @@ describe('OfflineCache', () => {
     expect(cache.readCollection('servers')).toHaveLength(1);
   });
 
-  it('records without an id field use empty string as record_id', () => {
-    // Should not throw; the record is stored and retrievable
+  it('does not store update records without a non-empty string id', () => {
     cache.updateRecord('contacts', 'create', { name: 'NoId' });
-    const result = cache.readCollection('contacts');
-    expect(result).toHaveLength(1);
-    expect((result[0] as { name: string }).name).toBe('NoId');
+    cache.updateRecord('contacts', 'create', { id: '', name: 'BlankId' });
+    cache.updateRecord('contacts', 'create', { id: '   ', name: 'WhitespaceId' });
+    cache.updateRecord('contacts', 'create', { id: 123, name: 'NumericId' });
+
+    expect(cache.readCollection('contacts')).toEqual([]);
+  });
+
+  it('does not write snapshot records without a non-empty string id', () => {
+    cache.writeCollection('contacts', [
+      { id: 'valid', name: 'Valid' },
+      { name: 'NoId' },
+      { id: '', name: 'BlankId' },
+      { id: '   ', name: 'WhitespaceId' },
+      { id: 123, name: 'NumericId' },
+    ]);
+
+    expect(cache.readCollection('contacts')).toEqual([{ id: 'valid', name: 'Valid' }]);
   });
 });
