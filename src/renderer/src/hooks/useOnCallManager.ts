@@ -7,7 +7,10 @@ import {
   deleteOnCallByTeam,
   renameTeam as pbRenameTeam,
 } from '../services/oncallService';
-import { updatePrimaryBoardSettings } from '../services/oncallBoardSettingsService';
+import {
+  ensurePrimaryBoardSettings,
+  updatePrimaryBoardSettings,
+} from '../services/oncallBoardSettingsService';
 import { useOptimisticList } from './useOptimisticList';
 import type { BoardSettingsState } from './useAppData';
 
@@ -89,17 +92,30 @@ export function useOnCallManager(
   const [isBoardLockTogglePending, setIsBoardLockTogglePending] = useState(false);
 
   const toggleBoardLock = useCallback(async () => {
-    if (!boardSettings.recordId) return;
     const newLocked = !boardSettings.effectiveLocked;
     setIsBoardLockTogglePending(true);
     try {
-      const updated = await updatePrimaryBoardSettings(boardSettings.recordId, {
+      let recordId = boardSettings.recordId;
+      let baseRecord = boardSettings.record;
+
+      if (!recordId) {
+        const ensuredRecord = await ensurePrimaryBoardSettings(teamsRef.current);
+        recordId = ensuredRecord.id;
+        baseRecord = ensuredRecord;
+      }
+
+      const updated = await updatePrimaryBoardSettings(recordId, {
         locked: newLocked,
       });
       // Update local state so the UI reflects the change immediately.
       onBoardSettingsChange?.((prev) => ({
         ...prev,
-        record: { ...(prev.record ?? updated), ...updated, locked: newLocked },
+        record: { ...(baseRecord ?? prev.record ?? updated), ...updated, locked: newLocked },
+        recordId,
+        effectiveTeamOrder:
+          prev.effectiveTeamOrder.length > 0
+            ? prev.effectiveTeamOrder
+            : (baseRecord?.teamOrder ?? updated.teamOrder ?? []),
         effectiveLocked: newLocked,
       }));
     } catch {
@@ -107,7 +123,13 @@ export function useOnCallManager(
     } finally {
       setIsBoardLockTogglePending(false);
     }
-  }, [boardSettings.recordId, boardSettings.effectiveLocked, showToast, onBoardSettingsChange]);
+  }, [
+    boardSettings.record,
+    boardSettings.recordId,
+    boardSettings.effectiveLocked,
+    showToast,
+    onBoardSettingsChange,
+  ]);
 
   // ---------------------------------------------------------------------------
   // Handlers

@@ -29,6 +29,7 @@ import {
   initializeBoardSettings,
   getPrimaryBoardSettings,
   updatePrimaryBoardSettings,
+  ensurePrimaryBoardSettings,
   canonicalizeTeamName,
   type BoardSettingsRecord,
 } from './oncallBoardSettingsService';
@@ -285,6 +286,45 @@ describe('getPrimaryBoardSettings', () => {
     const result = await getPrimaryBoardSettings();
 
     expect(result).toBeNull();
+  });
+});
+
+describe('ensurePrimaryBoardSettings', () => {
+  it('returns an existing primary settings record', async () => {
+    const settings = makeSettingsRecord({ teamOrder: ['team-a'] });
+    mockGetFullList.mockResolvedValueOnce([settings]);
+
+    const result = await ensurePrimaryBoardSettings(['team-a']);
+
+    expect(result).toEqual(settings);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('creates the primary settings record with the provided team order when missing', async () => {
+    const created = makeSettingsRecord({ teamOrder: ['team-a', 'team-b'], locked: false });
+    mockGetFullList.mockResolvedValueOnce([]);
+    mockCreate.mockResolvedValueOnce(created);
+
+    const result = await ensurePrimaryBoardSettings(['team-a', 'team-b']);
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      key: 'primary',
+      teamOrder: ['team-a', 'team-b'],
+      locked: false,
+    });
+    expect(result).toEqual(created);
+  });
+
+  it('deduplicates primary settings before returning the kept record', async () => {
+    const keep = makeSettingsRecord({ id: 'bs1', created: '2024-01-01T00:00:00Z' });
+    const duplicate = makeSettingsRecord({ id: 'bs2', created: '2024-01-02T00:00:00Z' });
+    mockGetFullList.mockResolvedValueOnce([keep, duplicate]);
+    mockDelete.mockResolvedValueOnce(undefined);
+
+    const result = await ensurePrimaryBoardSettings(['team-a']);
+
+    expect(result).toEqual(keep);
+    expect(mockDelete).toHaveBeenCalledWith('bs2');
   });
 });
 

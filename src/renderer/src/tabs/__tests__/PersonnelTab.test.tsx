@@ -140,7 +140,7 @@ describe('PersonnelTab — board lock button', () => {
     expect(btn).toHaveProperty('disabled', false);
   });
 
-  it('disables the lock button when no board settings record exists yet', () => {
+  it('keeps the lock button enabled when no board settings record exists yet', () => {
     const bs = makeReadyBoardSettings(['network', 'database'], {
       status: 'loading',
       recordId: null,
@@ -148,7 +148,7 @@ describe('PersonnelTab — board lock button', () => {
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
     const btn = screen.getByRole('button', { name: 'Lock Board' });
-    expect(btn).toHaveProperty('disabled', true);
+    expect(btn).toHaveProperty('disabled', false);
   });
 
   it('shows correct tooltip for locked state', () => {

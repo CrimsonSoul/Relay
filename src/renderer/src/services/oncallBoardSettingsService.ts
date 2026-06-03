@@ -371,6 +371,44 @@ export async function updatePrimaryBoardSettings(
 }
 
 /**
+ * Ensure the singleton primary board settings record exists and return it.
+ * Used by direct user actions that can recover from a missing settings record.
+ */
+export async function ensurePrimaryBoardSettings(
+  teamOrder: string[],
+): Promise<BoardSettingsRecord> {
+  requireOnline();
+  try {
+    const records = await getPb()
+      .collection(COLLECTION)
+      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
+
+    if (records.length > 1) {
+      await deduplicateSettings(records);
+    }
+
+    if (records.length > 0) {
+      return records[0]!;
+    }
+
+    try {
+      return await getPb().collection(COLLECTION).create<BoardSettingsRecord>({
+        key: PRIMARY_KEY,
+        teamOrder,
+        locked: false,
+      });
+    } catch {
+      const refetched = await refetchAfterConflict();
+      if (refetched.ok) return refetched.record;
+      throw new Error(refetched.result.errors.join('; '));
+    }
+  } catch (err) {
+    handleApiError(err);
+    throw err;
+  }
+}
+
+/**
  * Initialize board settings for the on-call board.
  *
  * Self-heal duplicate primary settings records by keeping the first and deleting extras.

@@ -28,8 +28,10 @@ vi.mock('../../services/oncallService', () => ({
 
 // Mock board settings service
 const mockUpdatePrimaryBoardSettings = vi.fn();
+const mockEnsurePrimaryBoardSettings = vi.fn();
 vi.mock('../../services/oncallBoardSettingsService', () => ({
   updatePrimaryBoardSettings: (...args: unknown[]) => mockUpdatePrimaryBoardSettings(...args),
+  ensurePrimaryBoardSettings: (...args: unknown[]) => mockEnsurePrimaryBoardSettings(...args),
 }));
 
 const makeRow = (overrides: Partial<OnCallRow> = {}): OnCallRow => ({
@@ -620,21 +622,54 @@ describe('useOnCallManager', () => {
       });
     });
 
-    it('toggleBoardLock is a no-op when board settings record is missing', async () => {
+    it('toggleBoardLock repairs missing board settings before toggling lock state', async () => {
+      mockEnsurePrimaryBoardSettings.mockResolvedValue({
+        id: 'settings-1',
+        key: 'primary',
+        teamOrder: ['alpha', 'bravo'],
+        locked: true,
+        created: '2026-01-01T00:00:00Z',
+        updated: '2026-01-01T00:00:00Z',
+      });
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({
+        id: 'settings-1',
+        key: 'primary',
+        teamOrder: ['alpha', 'bravo'],
+        locked: false,
+        created: '2026-01-01T00:00:00Z',
+        updated: '2026-01-01T00:01:00Z',
+      });
+      const onBoardSettingsChange = vi.fn();
       const loadingSettings = makeReadyBoardSettings({
         status: 'loading',
         recordId: null,
+        record: null,
+        effectiveLocked: true,
+        effectiveTeamOrder: [],
       });
 
       const { result } = renderHook(() =>
-        useOnCallManager(defaultRows, dismissAlert, loadingSettings),
+        useOnCallManager(defaultRows, dismissAlert, loadingSettings, onBoardSettingsChange),
       );
 
       await act(async () => {
         await result.current.toggleBoardLock();
       });
 
-      expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
+      expect(mockEnsurePrimaryBoardSettings).toHaveBeenCalledWith(['alpha', 'bravo']);
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        locked: false,
+      });
+      expect(onBoardSettingsChange).toHaveBeenCalledOnce();
+
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(loadingSettings);
+      expect(updatedState.recordId).toBe('settings-1');
+      expect(updatedState.record?.id).toBe('settings-1');
+      expect(updatedState.effectiveLocked).toBe(false);
+      expect(updatedState.effectiveTeamOrder).toEqual(['alpha', 'bravo']);
     });
 
     it('shows error toast when toggleBoardLock fails', async () => {

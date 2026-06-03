@@ -335,7 +335,7 @@ export const PersonnelTab: React.FC<{
         <TactileButton
           variant="ghost"
           onClick={toggleBoardLock}
-          disabled={!bs.recordId || isBoardLockTogglePending}
+          disabled={isBoardLockTogglePending}
           title={
             bs.effectiveLocked
               ? 'Unlock Board (enable drag reorder)'
