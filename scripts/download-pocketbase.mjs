@@ -102,7 +102,7 @@ export async function verifyChecksum(
   expectedFilename,
   downloadChecksumFile = downloadFile,
 ) {
-  const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_checksums.txt`;
+  const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/checksums.txt`;
   const checksumPath = `${zipPath}.checksums.txt`;
 
   try {
