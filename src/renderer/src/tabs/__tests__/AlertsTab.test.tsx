@@ -238,10 +238,7 @@ vi.mock('../AlertCard', () => ({
           } as React.CSSProperties
         }
       >
-        <div
-          className="alerts-email-severity-header"
-          style={{ background: 'var(--email-banner)' }}
-        >
+        <div className="alerts-email-severity-header" style={{ background: 'var(--email-banner)' }}>
           mock banner
         </div>
         <div className="alerts-email-icon-wrapper">
@@ -612,9 +609,9 @@ describe('AlertsTab', () => {
     const clone = mockCapture.html2canvas.mock.calls.at(-1)?.[0] as HTMLElement;
 
     expect(clone.style.backgroundColor).toBe('rgb(255, 255, 255)');
-    expect(
-      (clone.querySelector('.alerts-email-header') as HTMLElement).style.backgroundColor,
-    ).toBe('rgb(255, 255, 255)');
+    expect((clone.querySelector('.alerts-email-header') as HTMLElement).style.backgroundColor).toBe(
+      'rgb(255, 255, 255)',
+    );
     expect((clone.querySelector('.alerts-email-body') as HTMLElement).style.backgroundColor).toBe(
       'rgb(255, 255, 255)',
     );
