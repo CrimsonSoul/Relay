@@ -424,7 +424,7 @@
 
 .alerts-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(460px, 664px);
+  grid-template-columns: minmax(520px, 1fr) minmax(500px, 704px);
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -882,11 +882,11 @@
 
 .alerts-email-card {
   background: #ffffff;
-  width: 600px;
-  min-width: 600px;
-  max-width: 600px;
+  width: 640px;
+  min-width: 640px;
+  max-width: 640px;
   box-sizing: border-box;
-  flex: 0 0 600px;
+  flex: 0 0 640px;
   margin: 0 auto;
   border-radius: 10px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);

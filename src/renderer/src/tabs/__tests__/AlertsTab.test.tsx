@@ -6,12 +6,12 @@ import React from 'react';
 
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
-    width: 1200,
+    width: 1280,
     height: 1200,
     toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
   };
   const outlookCanvas = {
-    width: 600,
+    width: 640,
     height: 600,
     toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
   };
@@ -527,8 +527,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '600px',
-          maxWidth: '600px',
+          minWidth: '640px',
+          maxWidth: '640px',
         }),
       }),
       expect.objectContaining({ scale: 2 }),
@@ -547,8 +547,8 @@ describe('AlertsTab', () => {
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
       expect.objectContaining({
         style: expect.objectContaining({
-          minWidth: '600px',
-          maxWidth: '600px',
+          minWidth: '640px',
+          maxWidth: '640px',
         }),
       }),
       expect.objectContaining({ scale: 1 }),
@@ -626,9 +626,10 @@ describe('AlertsTab', () => {
     expect(iconWrapper.style.backgroundColor).toBe('');
     expect(iconWrapperFill.style.top).toBe('26px');
     expect(iconWrapperFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
-    expect(iconFill.style.inset).toBe('3px');
+    expect(iconFill.style.inset).toBe('0px');
     expect(iconFill.style.borderRadius).toBe('50%');
     expect(iconFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(icon.style.backgroundColor).toBe('rgb(255, 255, 255)');
     expect(icon.style.position).toBe('relative');
     expect(icon.style.zIndex).toBe('1');
     expect(iconSvg.style.position).toBe('relative');

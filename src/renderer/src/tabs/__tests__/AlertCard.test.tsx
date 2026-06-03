@@ -109,11 +109,11 @@ describe('AlertCard', () => {
     const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
     const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(layoutRule).toContain('minmax(460px, 664px)');
+    expect(layoutRule).toContain('minmax(500px, 704px)');
     expect(scrollRule).toContain('overflow: auto');
-    expect(cardRule).toContain('width: 600px');
-    expect(cardRule).toContain('min-width: 600px');
-    expect(cardRule).toContain('max-width: 600px');
+    expect(cardRule).toContain('width: 640px');
+    expect(cardRule).toContain('min-width: 640px');
+    expect(cardRule).toContain('max-width: 640px');
     expect(cardRule).toContain('box-sizing: border-box');
   });
 
