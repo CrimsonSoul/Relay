@@ -115,6 +115,25 @@ describe('processLifecycle', () => {
     );
   });
 
+  it('requests a relaunch after repeated renderer process crashes', async () => {
+    const { attachWebContentsLifecycleListeners } = await import('../processLifecycle');
+    const contents = createMockWebContents();
+
+    attachWebContentsLifecycleListeners(contents as never, {
+      label: 'main',
+      autoReload: true,
+    });
+
+    for (let i = 0; i < 4; i += 1) {
+      contents.handlers.get('render-process-gone')?.({}, { reason: 'oom', exitCode: 1 });
+    }
+
+    expect(contents.reload).toHaveBeenCalledTimes(3);
+    expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('renderer-crash-loop', {
+      exitCode: 0,
+    });
+  });
+
   it('does not reload clean renderer exits', async () => {
     const { attachWebContentsLifecycleListeners } = await import('../processLifecycle');
     const contents = createMockWebContents();

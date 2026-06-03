@@ -63,8 +63,9 @@ function notifyCrashLoopSuppressed(label: string): void {
   );
   broadcastToAllWindows('app:error-notification', {
     title: 'Relay is unstable',
-    message: 'A window failed repeatedly and was not reloaded automatically. Please restart Relay.',
+    message: 'A window failed repeatedly. Relay will restart automatically.',
   });
+  requestAppRelaunch('renderer-crash-loop', { exitCode: 0 });
 }
 
 function reloadWebContents(

@@ -17,6 +17,7 @@ import {
   setPbClient,
 } from './appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
+import { requestAppRelaunch } from './relaunch';
 
 const APP_USER_EMAIL = 'relay@relay.app';
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
@@ -205,6 +206,7 @@ const doStartPocketBase = async (
       // Notify all renderer windows immediately so they can show an error
       // state without waiting for the next health check poll.
       broadcastToAllWindows('pb:crashed', { error });
+      requestAppRelaunch('pocketbase-crash-loop', { exitCode: 1 });
     });
 
     await pbProcess.start();
