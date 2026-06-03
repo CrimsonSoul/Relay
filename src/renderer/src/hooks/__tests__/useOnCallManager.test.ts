@@ -668,6 +668,8 @@ describe('useOnCallManager', () => {
       const updatedState = applyUpdate(loadingSettings);
       expect(updatedState.recordId).toBe('settings-1');
       expect(updatedState.record?.id).toBe('settings-1');
+      expect(updatedState.status).toBe('ready');
+      expect(updatedState.errors).toEqual([]);
       expect(updatedState.effectiveLocked).toBe(false);
       expect(updatedState.effectiveTeamOrder).toEqual(['alpha', 'bravo']);
     });

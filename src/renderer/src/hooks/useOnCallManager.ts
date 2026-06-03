@@ -97,11 +97,13 @@ export function useOnCallManager(
     try {
       let recordId = boardSettings.recordId;
       let baseRecord = boardSettings.record;
+      let repairedMissingSettings = false;
 
       if (!recordId) {
         const ensuredRecord = await ensurePrimaryBoardSettings(teamsRef.current);
         recordId = ensuredRecord.id;
         baseRecord = ensuredRecord;
+        repairedMissingSettings = true;
       }
 
       const updated = await updatePrimaryBoardSettings(recordId, {
@@ -112,6 +114,8 @@ export function useOnCallManager(
         ...prev,
         record: { ...(baseRecord ?? prev.record ?? updated), ...updated, locked: newLocked },
         recordId,
+        status: repairedMissingSettings ? 'ready' : prev.status,
+        errors: repairedMissingSettings ? [] : prev.errors,
         effectiveTeamOrder:
           prev.effectiveTeamOrder.length > 0
             ? prev.effectiveTeamOrder
