@@ -8,6 +8,7 @@ export interface PocketBaseConfig {
   dataDir: string;
   host: string;
   port: number;
+  platform?: NodeJS.Platform;
 }
 
 export class PocketBaseProcess {
@@ -47,6 +48,8 @@ export class PocketBaseProcess {
   }
 
   async start(): Promise<void> {
+    this.cleanupStalePocketBaseProcesses();
+
     const args = this.getSpawnArgs();
     logger.info('Starting PocketBase', { binary: this.config.binaryPath, args });
 
@@ -177,6 +180,72 @@ export class PocketBaseProcess {
       // Process may already be dead
     }
     this.child = null;
+  }
+
+  private getPlatform(): NodeJS.Platform {
+    return this.config.platform ?? process.platform;
+  }
+
+  private cleanupStalePocketBaseProcesses(): void {
+    if (this.getPlatform() !== 'win32') return;
+
+    for (const pid of this.getListeningPidsOnPort()) {
+      if (!this.isPocketBasePid(pid)) continue;
+      logger.warn('Killing stale PocketBase process before startup', {
+        pid,
+        port: this.config.port,
+      });
+      try {
+        execFileSync('taskkill', ['/F', '/T', '/PID', pid], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
+      } catch (error) {
+        logger.warn('Failed to kill stale PocketBase process', { pid, error });
+      }
+    }
+  }
+
+  private getListeningPidsOnPort(): string[] {
+    try {
+      // eslint-disable-next-line sonarjs/no-os-command-from-path
+      const output = execFileSync('netstat', ['-ano', '-p', 'tcp'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      const pids = new Set<string>();
+
+      for (const line of output.split(/\r?\n/)) {
+        const parts = line.trim().split(/\s+/);
+        const localAddress = parts[1] ?? '';
+        const state = (parts[3] ?? '').toUpperCase();
+        const pid = parts[4] ?? '';
+
+        if (
+          state === 'LISTENING' &&
+          localAddress.endsWith(`:${this.config.port}`) &&
+          /^\d+$/.test(pid)
+        ) {
+          pids.add(pid);
+        }
+      }
+
+      return [...pids];
+    } catch (error) {
+      logger.warn('Failed to inspect Windows ports before PocketBase startup', { error });
+      return [];
+    }
+  }
+
+  private isPocketBasePid(pid: string): boolean {
+    try {
+      // eslint-disable-next-line sonarjs/no-os-command-from-path
+      const output = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/FO', 'CSV', '/NH'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      return /(^|["\s,])pocketbase(?:\.exe)?(["\s,]|$)/i.test(output);
+    } catch (error) {
+      logger.warn('Failed to identify process before PocketBase startup cleanup', { pid, error });
+      return false;
+    }
   }
 
   private async handleCrash(reason: string): Promise<void> {

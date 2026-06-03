@@ -2,14 +2,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PocketBaseProcess } from './PocketBaseProcess';
 
 // Hoist mocks so vi.mock factories can reference them
-const { mockSpawn } = vi.hoisted(() => ({
+const { mockSpawn, mockExecFileSync } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
+  mockExecFileSync: vi.fn(),
 }));
 
 // Mock child_process
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
-  execSync: vi.fn(),
+  execFileSync: mockExecFileSync,
+}));
+
+vi.mock('node:child_process', () => ({
+  spawn: mockSpawn,
+  execFileSync: mockExecFileSync,
 }));
 
 // Mock global fetch
@@ -64,6 +70,7 @@ describe('PocketBaseProcess', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecFileSync.mockReturnValue('');
     pbProcess = new PocketBaseProcess({
       binaryPath: '/fake/pocketbase',
       dataDir: '/fake/data/pb_data',
@@ -124,6 +131,69 @@ describe('PocketBaseProcess', () => {
       '/fake/pocketbase',
       ['serve', '--http=127.0.0.1:8090', '--dir=/fake/data/pb_data'],
       { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+  });
+
+  it('start() clears stale Windows PocketBase processes listening on the configured port', async () => {
+    pbProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'win32',
+    });
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'netstat') {
+        return [
+          '  TCP    0.0.0.0:8090    0.0.0.0:0    LISTENING    4567',
+          '  TCP    0.0.0.0:8091    0.0.0.0:0    LISTENING    9999',
+        ].join('\n');
+      }
+      if (command === 'tasklist' && args.includes('PID eq 4567')) {
+        return '"pocketbase.exe","4567","Console","1","20,000 K"';
+      }
+      return '';
+    });
+
+    await pbProcess.start();
+
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'taskkill',
+      ['/F', '/T', '/PID', '4567'],
+      expect.objectContaining({ timeout: 5000 }),
+    );
+  });
+
+  it('start() does not kill non-PocketBase processes that happen to use the configured port', async () => {
+    pbProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase.exe',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'win32',
+    });
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'netstat') {
+        return '  TCP    0.0.0.0:8090    0.0.0.0:0    LISTENING    4567';
+      }
+      if (command === 'tasklist' && args.includes('PID eq 4567')) {
+        return '"node.exe","4567","Console","1","20,000 K"';
+      }
+      return '';
+    });
+
+    await pbProcess.start();
+
+    expect(mockExecFileSync).not.toHaveBeenCalledWith(
+      'taskkill',
+      expect.any(Array),
+      expect.any(Object),
     );
   });
 
