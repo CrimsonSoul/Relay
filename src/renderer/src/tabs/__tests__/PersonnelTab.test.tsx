@@ -129,12 +129,24 @@ describe('PersonnelTab — board lock button', () => {
     });
   });
 
-  it('disables the lock button when board status is not ready', () => {
-    const bs = makeReadyBoardSettings(['network', 'database'], { status: 'loading' });
+  it('keeps the lock button enabled when a settings record exists but board status is not ready', () => {
+    const bs = makeReadyBoardSettings(['network', 'database'], {
+      status: 'invalid',
+      errors: ['Team order needs repair'],
+    });
     render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
 
-    // When not ready, the button should exist but be disabled
-    // The aria-label is "Lock Board" when unlocked
+    const btn = screen.getByRole('button', { name: 'Lock Board' });
+    expect(btn).toHaveProperty('disabled', false);
+  });
+
+  it('disables the lock button when no board settings record exists yet', () => {
+    const bs = makeReadyBoardSettings(['network', 'database'], {
+      status: 'loading',
+      recordId: null,
+    });
+    render(<PersonnelTab onCall={defaultRows} contacts={defaultContacts} boardSettings={bs} />);
+
     const btn = screen.getByRole('button', { name: 'Lock Board' });
     expect(btn).toHaveProperty('disabled', true);
   });

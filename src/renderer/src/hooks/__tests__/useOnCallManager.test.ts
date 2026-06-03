@@ -600,7 +600,27 @@ describe('useOnCallManager', () => {
       expect(updatedState.effectiveLocked).toBe(false);
     });
 
-    it('toggleBoardLock is a no-op when board settings not ready', async () => {
+    it('toggleBoardLock can update lock state when a settings record exists but board status is not ready', async () => {
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const invalidSettings = makeReadyBoardSettings({
+        status: 'invalid',
+        errors: ['Team order needs repair'],
+      });
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, invalidSettings),
+      );
+
+      await act(async () => {
+        await result.current.toggleBoardLock();
+      });
+
+      expect(mockUpdatePrimaryBoardSettings).toHaveBeenCalledWith('settings-1', {
+        locked: true,
+      });
+    });
+
+    it('toggleBoardLock is a no-op when board settings record is missing', async () => {
       const loadingSettings = makeReadyBoardSettings({
         status: 'loading',
         recordId: null,

@@ -89,7 +89,7 @@ export function useOnCallManager(
   const [isBoardLockTogglePending, setIsBoardLockTogglePending] = useState(false);
 
   const toggleBoardLock = useCallback(async () => {
-    if (boardSettings.status !== 'ready' || !boardSettings.recordId) return;
+    if (!boardSettings.recordId) return;
     const newLocked = !boardSettings.effectiveLocked;
     setIsBoardLockTogglePending(true);
     try {
@@ -107,13 +107,7 @@ export function useOnCallManager(
     } finally {
       setIsBoardLockTogglePending(false);
     }
-  }, [
-    boardSettings.status,
-    boardSettings.recordId,
-    boardSettings.effectiveLocked,
-    showToast,
-    onBoardSettingsChange,
-  ]);
+  }, [boardSettings.recordId, boardSettings.effectiveLocked, showToast, onBoardSettingsChange]);
 
   // ---------------------------------------------------------------------------
   // Handlers
