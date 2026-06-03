@@ -207,4 +207,24 @@ describe('MaintainTeamModal', () => {
     const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
     expect(savedRows).toHaveLength(2);
   });
+
+  it('saves newly added rows with the existing teamId', () => {
+    const onSave = vi.fn();
+    render(
+      <MaintainTeamModal
+        isOpen={true}
+        onClose={vi.fn()}
+        teamName="Alpha"
+        initialRows={[makeRow({ teamId: 'alpha-team-id' })]}
+        contacts={[]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('+ Add Row'));
+    fireEvent.click(screen.getByText('Save Changes'));
+
+    const savedRows = onSave.mock.calls[0][1] as OnCallRow[];
+    expect(savedRows[1].teamId).toBe('alpha-team-id');
+  });
 });

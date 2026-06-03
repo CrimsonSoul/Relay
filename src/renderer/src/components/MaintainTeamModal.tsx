@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { OnCallRow, Contact } from '@shared/ipc';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
@@ -37,6 +37,10 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   onSave,
 }) => {
   const [rows, setRows] = useState<OnCallRow[]>([]);
+  const teamId = useMemo(
+    () => initialRows.find((row) => row.teamId)?.teamId ?? teamName.trim().toLowerCase(),
+    [initialRows, teamName],
+  );
 
   useEffect(() => {
     if (isOpen) setRows(initialRows.map((r) => ({ ...r })));
@@ -67,6 +71,7 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
       {
         id: crypto.randomUUID(),
         team: teamName,
+        teamId,
         role: 'Member',
         name: '',
         contact: '',
@@ -76,6 +81,8 @@ export const MaintainTeamModal: React.FC<MaintainTeamModalProps> = ({
   const handleSave = () => {
     const finalRows = rows.map((r) => ({
       ...r,
+      team: teamName,
+      teamId,
       role: r.role.trim() || 'Member',
     }));
     onSave(teamName, finalRows);
