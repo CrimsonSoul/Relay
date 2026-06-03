@@ -103,6 +103,27 @@ describe('AlertCard', () => {
     expect(largeRule).toContain('font-size: 19px');
   });
 
+  it('keeps the preview card at actual export size with scrolling', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const layoutRule = /\.alerts-layout\s*\{[^}]*\}/m.exec(css)?.[0];
+    const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
+    const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(layoutRule).toContain('minmax(460px, 664px)');
+    expect(scrollRule).toContain('overflow: auto');
+    expect(cardRule).toContain('width: 600px');
+    expect(cardRule).toContain('min-width: 600px');
+    expect(cardRule).toContain('max-width: 600px');
+    expect(cardRule).toContain('box-sizing: border-box');
+  });
+
+  it('defines a taller minimum body height for alerts', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const bodyRule = /\.alerts-email-body\s*\{[^}]*\}/m.exec(css)?.[0];
+
+    expect(bodyRule).toContain('min-height: 160px');
+  });
+
   it('adds empty class when body has no content', () => {
     render(<AlertCard {...makeProps({ bodyHtml: '' })} />);
 

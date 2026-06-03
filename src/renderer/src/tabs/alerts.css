@@ -424,7 +424,7 @@
 
 .alerts-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(460px, 600px);
+  grid-template-columns: minmax(520px, 1fr) minmax(460px, 664px);
   gap: 16px;
   flex: 1;
   min-height: 0;
@@ -882,8 +882,9 @@
   background: #ffffff;
   width: 600px;
   min-width: 600px;
-  max-width: none;
-  flex: 0 0 auto;
+  max-width: 600px;
+  box-sizing: border-box;
+  flex: 0 0 600px;
   margin: 0 auto;
   border-radius: 10px;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
@@ -1012,7 +1013,7 @@
   color: #2d2d2d;
   white-space: pre-wrap;
   word-break: break-word;
-  min-height: 132px;
+  min-height: 160px;
 }
 
 .alerts-email-body--font-normal {
