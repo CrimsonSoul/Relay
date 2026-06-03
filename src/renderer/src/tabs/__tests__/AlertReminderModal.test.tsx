@@ -91,9 +91,9 @@ describe('AlertReminderModal', () => {
     fireEvent.change(screen.getByLabelText('Date and time'), {
       target: { value: '2026-05-28T14:00' },
     });
-    fireEvent.submit(screen.getByRole('form', { name: 'Schedule reminder' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Schedule alarm' }));
 
-    expect(screen.getByText('Choose a future reminder time.')).toBeInTheDocument();
+    expect(screen.getByText('Choose a future alarm time.')).toBeInTheDocument();
     expect(onSchedule).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('AlertReminderModal', () => {
     fireEvent.change(screen.getByLabelText('Note'), {
       target: { value: 'Send before the window starts' },
     });
-    fireEvent.submit(screen.getByRole('form', { name: 'Schedule reminder' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Schedule alarm' }));
 
     await vi.waitFor(() => {
       expect(onSchedule).toHaveBeenCalledWith({
@@ -196,7 +196,7 @@ describe('AlertReminderModal', () => {
       />,
     );
 
-    expect(screen.getByTestId('modal-Edit Reminder')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Edit Alarm')).toBeInTheDocument();
     expect(screen.getByLabelText('Title')).toHaveValue('Existing reminder');
     expect(screen.getByLabelText('Note')).toHaveValue('Existing note');
 
@@ -206,7 +206,7 @@ describe('AlertReminderModal', () => {
     fireEvent.change(screen.getByLabelText('Date and time'), {
       target: { value: '2026-05-28T21:15' },
     });
-    fireEvent.submit(screen.getByRole('form', { name: 'Edit reminder' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit alarm' }));
 
     await vi.waitFor(() => {
       expect(onSchedule).toHaveBeenCalledWith({
@@ -235,9 +235,9 @@ describe('AlertReminderModal', () => {
     fireEvent.change(screen.getByLabelText('Date and time'), {
       target: { value: '2026-05-28T14:00' },
     });
-    fireEvent.submit(screen.getByRole('form', { name: 'Edit reminder' }));
+    fireEvent.submit(screen.getByRole('form', { name: 'Edit alarm' }));
 
-    expect(screen.getByText('Choose a future reminder time.')).toBeInTheDocument();
+    expect(screen.getByText('Choose a future alarm time.')).toBeInTheDocument();
     expect(onSchedule).not.toHaveBeenCalled();
   });
 });

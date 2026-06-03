@@ -249,7 +249,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: 'normal' });
     formRef.current?.setEditorContent(nextBodyHtml);
     originalBodyRef.current = null;
-    showToast('Alert loaded from reminder', 'success');
+    showToast('Alert loaded from alarm', 'success');
     onLoadedReminderAlertConsumed?.();
   }, [loadedReminderAlert, onLoadedReminderAlertConsumed, showToast]);
 
@@ -527,7 +527,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     if (result?.success && result.data) {
       if (saveReminderAlarmSource(result.data)) {
         refreshReminderAlarmState();
-        showToast('Reminder sound saved', 'success');
+        showToast('Alarm sound saved', 'success');
       } else {
         showToast('Select an MP3 file', 'error');
       }
@@ -539,7 +539,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const handleResetReminderAlarmSound = useCallback(() => {
     resetReminderAlarmSource();
     refreshReminderAlarmState();
-    showToast('Reminder sound reset', 'success');
+    showToast('Alarm sound reset', 'success');
   }, [refreshReminderAlarmState, showToast]);
 
   const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
@@ -636,7 +636,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         <TactileButton
           variant="ghost"
           onClick={reminderManagerModal.open}
-          tooltip="Manage alert reminders"
+          tooltip="Manage alert alarms"
           icon={
             <svg
               width="14"
@@ -655,7 +655,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             </svg>
           }
         >
-          REMINDERS
+          ALARMS
         </TactileButton>
         <TactileButton
           variant="ghost"
@@ -755,10 +755,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         <button
           type="button"
           className="alert-reminder-strip alert-reminder-strip--button"
-          aria-label="Upcoming alert reminders"
+          aria-label="Upcoming alert alarms"
           onClick={reminderManagerModal.open}
         >
-          <span className="alert-reminder-strip-label">Next reminder</span>
+          <span className="alert-reminder-strip-label">Next alarm</span>
           <span className="alert-reminder-strip-title">{nextReminder.title}</span>
           <span className="alert-reminder-strip-time">
             {new Date(nextReminder.snoozeUntil || nextReminder.dueAt).toLocaleString([], {

@@ -92,7 +92,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     event.preventDefault();
     const dueAt = new Date(dueAtLocal);
     if (!dueAtLocal || Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
-      setError('Choose a future reminder time.');
+      setError('Choose a future alarm time.');
       return;
     }
 
@@ -123,12 +123,12 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? 'Edit Reminder' : 'Schedule Reminder'}
+      title={isEditing ? 'Edit Alarm' : 'Schedule Alarm'}
       width="440px"
     >
       <form
         className="alert-reminder-form"
-        aria-label={isEditing ? 'Edit reminder' : 'Schedule reminder'}
+        aria-label={isEditing ? 'Edit alarm' : 'Schedule alarm'}
         onSubmit={(event) => void handleSubmit(event)}
       >
         <div className="alerts-field">

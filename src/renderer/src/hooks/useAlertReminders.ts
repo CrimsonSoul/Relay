@@ -60,10 +60,10 @@ export function useAlertReminders() {
     async (input: AlertReminderInput): Promise<boolean> => {
       try {
         await addAlertReminder(input);
-        showToast('Reminder scheduled', 'success');
+        showToast('Alarm scheduled', 'success');
         return true;
       } catch {
-        showToast('Failed to schedule reminder', 'error');
+        showToast('Failed to schedule alarm', 'error');
         return false;
       }
     },
@@ -76,7 +76,7 @@ export function useAlertReminders() {
         await snoozeAlertReminder(id, snoozeUntil);
         return true;
       } catch {
-        showToast('Failed to snooze reminder', 'error');
+        showToast('Failed to snooze alarm', 'error');
         return false;
       }
     },
@@ -89,7 +89,7 @@ export function useAlertReminders() {
         await updateAlertReminder(id, input);
         return true;
       } catch {
-        showToast('Failed to update reminder', 'error');
+        showToast('Failed to update alarm', 'error');
         return false;
       }
     },
@@ -102,7 +102,7 @@ export function useAlertReminders() {
         await markAlertReminderDone(id);
         return true;
       } catch {
-        showToast('Failed to complete reminder', 'error');
+        showToast('Failed to complete alarm', 'error');
         return false;
       }
     },
@@ -115,7 +115,7 @@ export function useAlertReminders() {
         await dismissAlertReminder(id);
         return true;
       } catch {
-        showToast('Failed to dismiss reminder', 'error');
+        showToast('Failed to dismiss alarm', 'error');
         return false;
       }
     },

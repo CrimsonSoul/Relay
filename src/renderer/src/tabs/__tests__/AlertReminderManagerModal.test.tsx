@@ -87,7 +87,7 @@ describe('AlertReminderManagerModal', () => {
       ],
     });
 
-    expect(screen.getByTestId('modal-Reminders')).toBeInTheDocument();
+    expect(screen.getByTestId('modal-Alarms')).toBeInTheDocument();
     expect(screen.getByText('Soon reminder')).toBeInTheDocument();
     expect(screen.getByText('Short note')).toBeInTheDocument();
     expect(screen.getByText('Snoozed reminder')).toBeInTheDocument();
@@ -102,7 +102,7 @@ describe('AlertReminderManagerModal', () => {
     });
 
     expect(screen.queryByText('Finished reminder')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText('Show completed reminders'));
+    fireEvent.click(screen.getByLabelText('Show completed alarms'));
     expect(screen.getByText('Finished reminder')).toBeInTheDocument();
   });
 
@@ -121,10 +121,10 @@ describe('AlertReminderManagerModal', () => {
   it('shows empty, loading, and error states with actions', () => {
     const props = renderModal({ loading: true, error: new Error('load failed') });
 
-    expect(screen.getByText('Loading reminders...')).toBeInTheDocument();
-    expect(screen.getByText('Could not load reminders.')).toBeInTheDocument();
+    expect(screen.getByText('Loading alarms...')).toBeInTheDocument();
+    expect(screen.getByText('Could not load alarms.')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Retry'));
-    fireEvent.click(screen.getByText('Schedule reminder'));
+    fireEvent.click(screen.getByText('Schedule alarm'));
 
     expect(props.onRetry).toHaveBeenCalledOnce();
     expect(props.onScheduleNew).toHaveBeenCalledOnce();

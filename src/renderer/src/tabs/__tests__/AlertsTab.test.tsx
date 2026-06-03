@@ -114,7 +114,7 @@ vi.mock('../AlertReminderModal', () => ({
           data-testid="reminder-schedule"
           onClick={() => void props.onSchedule({ title: 'Scheduled reminder' })}
         >
-          Schedule reminder
+          Schedule alarm
         </button>
       </div>
     ) : null,
@@ -359,7 +359,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     expect(screen.getByText('RESET')).toBeInTheDocument();
     expect(screen.getByText('HISTORY')).toBeInTheDocument();
-    expect(screen.getByText('REMINDERS')).toBeInTheDocument();
+    expect(screen.getByText('ALARMS')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'REMIND' })).not.toBeInTheDocument();
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
@@ -551,7 +551,7 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-schedule'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
@@ -581,7 +581,7 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('Stored outage alert');
     expect(screen.getByTestId('card-body')).toHaveTextContent('<p>Stored body</p>');
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
-    expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from reminder', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from alarm', 'success');
 
     fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
 
@@ -593,7 +593,7 @@ describe('AlertsTab', () => {
 
   it('schedules reminders through the reminder hook', async () => {
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-schedule'));
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
@@ -609,7 +609,7 @@ describe('AlertsTab', () => {
 
     render(<AlertsTab />);
 
-    expect(screen.getByText('Next reminder')).toBeInTheDocument();
+    expect(screen.getByText('Next alarm')).toBeInTheDocument();
     expect(screen.getByText('Send maintenance alert')).toBeInTheDocument();
   });
 
@@ -623,7 +623,7 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
 
     expect(screen.getByText('+2 more')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Upcoming alert reminders' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upcoming alert alarms' }));
     expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
     expect(screen.getByTestId('manager-count')).toHaveTextContent('3');
   });
@@ -631,7 +631,7 @@ describe('AlertsTab', () => {
   it('opens the reminder manager from the header action', () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByText('ALARMS'));
 
     expect(screen.getByTestId('reminder-manager-modal')).toBeInTheDocument();
   });
@@ -642,14 +642,14 @@ describe('AlertsTab', () => {
     ];
 
     render(<AlertsTab />);
-    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-edit'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-modal-mode')).toHaveTextContent('edit');
     expect(screen.getByTestId('reminder-edit-title')).toHaveTextContent('Editable reminder');
 
-    fireEvent.click(screen.getByText('REMINDERS'));
+    fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-done'));
     fireEvent.click(screen.getByTestId('manager-dismiss'));
 

@@ -245,7 +245,7 @@ export function AlertReminderManager() {
       setCurrent(null);
       void refreshDue();
     } catch {
-      showToast('Failed to snooze reminder', 'error');
+      showToast('Failed to snooze alarm', 'error');
     }
   };
 
@@ -259,7 +259,7 @@ export function AlertReminderManager() {
       setCurrent(null);
       void refreshDue();
     } catch {
-      showToast('Failed to dismiss reminder', 'error');
+      showToast('Failed to dismiss alarm', 'error');
     }
   };
 
@@ -272,7 +272,7 @@ export function AlertReminderManager() {
       setCurrent(null);
       void refreshDue();
     } catch {
-      showToast('Failed to complete reminder', 'error');
+      showToast('Failed to complete alarm', 'error');
     }
   };
 
@@ -285,7 +285,7 @@ export function AlertReminderManager() {
       setCurrent(null);
       void refreshDue();
     } catch {
-      showToast('Failed to dismiss reminder', 'error');
+      showToast('Failed to dismiss alarm', 'error');
     }
   };
 
@@ -306,7 +306,7 @@ export function AlertReminderManager() {
         <div className="alert-reminder-due__accent" aria-hidden="true" />
         <div className="alert-reminder-due__content">
           <div className="alert-reminder-due__eyebrow-row">
-            <div className="alert-reminder-due__eyebrow">Alert reminder</div>
+            <div className="alert-reminder-due__eyebrow">Alert alarm</div>
             <div className="alert-reminder-due__status">Due now</div>
           </div>
           <h2 id="due-reminder-title" className="alert-reminder-due__title">

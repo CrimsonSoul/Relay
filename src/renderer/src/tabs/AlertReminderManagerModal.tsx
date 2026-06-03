@@ -115,7 +115,7 @@ export function AlertReminderManagerModal({
   const [showCompleted, setShowCompleted] = useState(false);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Reminders" width="640px">
+    <Modal isOpen={isOpen} onClose={onClose} title="Alarms" width="640px">
       <div className="alert-reminder-manager">
         <div className="alert-reminder-manager-toolbar">
           <label className="alert-reminder-manager-toggle">
@@ -124,10 +124,10 @@ export function AlertReminderManagerModal({
               checked={showCompleted}
               onChange={(event) => setShowCompleted(event.target.checked)}
             />
-            Show completed reminders
+            Show completed alarms
           </label>
           <TactileButton variant="primary" size="sm" onClick={onScheduleNew}>
-            Schedule reminder
+            Schedule alarm
           </TactileButton>
         </div>
 
@@ -145,11 +145,11 @@ export function AlertReminderManagerModal({
           </div>
         </div>
 
-        {loading && <div className="alert-reminder-manager-state">Loading reminders...</div>}
+        {loading && <div className="alert-reminder-manager-state">Loading alarms...</div>}
 
         {error && (
           <div className="alert-reminder-manager-error">
-            <span>Could not load reminders.</span>
+            <span>Could not load alarms.</span>
             <TactileButton variant="secondary" size="sm" onClick={onRetry}>
               Retry
             </TactileButton>
@@ -157,7 +157,7 @@ export function AlertReminderManagerModal({
         )}
 
         {pendingReminders.length === 0 ? (
-          <div className="alert-reminder-manager-empty">No pending reminders.</div>
+          <div className="alert-reminder-manager-empty">No pending alarms.</div>
         ) : (
           <ul className="alert-reminder-manager-list">
             {pendingReminders.map((reminder) => (
