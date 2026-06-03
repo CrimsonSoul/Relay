@@ -165,6 +165,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
   // --- Realtime subscription for board settings ---
   // Keeps boardSettings in sync across popout windows and connected clients.
   const boardSettingsSubRef = useRef<(() => void | Promise<void>) | null>(null);
+  const boardSettingsSubGenRef = useRef(0);
 
   useEffect(() => {
     if (boardSettings.status !== 'ready' || !boardSettings.recordId) return;
@@ -186,11 +187,13 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
     }
 
     async function subscribe(): Promise<void> {
+      const gen = ++boardSettingsSubGenRef.current;
       void boardSettingsSubRef.current?.();
+      boardSettingsSubRef.current = null;
       const unsub = await getPb()
         .collection('oncall_board_settings')
         .subscribe('*', (e) => handleSettingsEvent(e.action, e.record));
-      if (cancelled) {
+      if (cancelled || gen !== boardSettingsSubGenRef.current) {
         void unsub();
         return;
       }
@@ -213,6 +216,7 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
 
     return () => {
       cancelled = true;
+      boardSettingsSubGenRef.current += 1;
       void boardSettingsSubRef.current?.();
       boardSettingsSubRef.current = null;
       unsubConnection();

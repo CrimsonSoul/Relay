@@ -220,6 +220,11 @@ export function useOnCallManager(
               (id) => id !== removedTeamId,
             );
             await updatePrimaryBoardSettings(boardSettings.recordId, { teamOrder: newTeamOrder });
+            onBoardSettingsChange?.((prev) => ({
+              ...prev,
+              record: prev.record ? { ...prev.record, teamOrder: newTeamOrder } : prev.record,
+              effectiveTeamOrder: newTeamOrder,
+            }));
           }
         }
 
@@ -239,6 +244,7 @@ export function useOnCallManager(
       boardSettings.recordId,
       boardSettings.effectiveTeamOrder,
       localOnCall,
+      onBoardSettingsChange,
     ],
   );
 

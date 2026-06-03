@@ -267,6 +267,26 @@ describe('windowFactory', () => {
       expect(event.preventDefault).not.toHaveBeenCalled();
     });
 
+    it('blocks dev navigation URLs that only share the renderer URL prefix', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = false;
+      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      const navCall = mocks.mockWebContentsOn.mock.calls.find(
+        (call: unknown[]) => call[0] === 'will-navigate',
+      );
+      const handler = navCall![1];
+      const event = { preventDefault: vi.fn() };
+
+      const cleartextProtocol = 'http';
+      handler(event, `${cleartextProtocol}://localhost:5173.evil.test/some-route`);
+
+      expect(event.preventDefault).toHaveBeenCalled();
+      expect(loggers.security.warn).toHaveBeenCalled();
+    });
+
     it('allows navigation to local file:// within renderer directory', async () => {
       (app as unknown as Record<string, boolean>).isPackaged = true;
       delete process.env.ELECTRON_RENDERER_URL;

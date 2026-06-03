@@ -176,6 +176,43 @@ describe('loggerHandlers', () => {
       expect(loggers.bridge.info).toHaveBeenCalledWith('[comp] msg', data);
     });
 
+    it('bounds deeply nested renderer log data before writing to main logs', () => {
+      const deepPayload = { level0: { level1: { level2: { level3: { level4: 'too deep' } } } } };
+
+      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: deepPayload,
+      });
+
+      expect(loggers.bridge.info).toHaveBeenCalledWith(
+        '[comp] msg',
+        expect.objectContaining({
+          level0: expect.objectContaining({
+            level1: expect.objectContaining({
+              level2: '[MaxDepth]',
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('truncates oversized renderer log strings before writing to main logs', () => {
+      onHandlers[IPC_CHANNELS.LOG_TO_MAIN](null, {
+        level: 'info',
+        module: 'comp',
+        message: 'msg',
+        data: { huge: 'x'.repeat(3000) },
+      });
+
+      const loggedData = vi.mocked(loggers.bridge.info).mock.calls[0]?.[1] as {
+        huge?: string;
+      };
+      expect(loggedData.huge).toHaveLength(1038);
+      expect(loggedData.huge?.endsWith('...[truncated]')).toBe(true);
+    });
+
     it('handles error thrown during processing gracefully', () => {
       vi.mocked(loggers.bridge.info).mockImplementationOnce(() => {
         throw new Error('crash');

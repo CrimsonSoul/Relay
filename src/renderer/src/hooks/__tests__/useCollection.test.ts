@@ -603,6 +603,59 @@ describe('useCollection', () => {
     expect(syncPendingMock).toHaveBeenCalled();
   });
 
+  it('waits for pending sync before refetching and snapshotting on reconnect', async () => {
+    vi.mocked(isOnline).mockReturnValue(true);
+    const initialRecords = [makeRecord('stale')];
+    const syncedRecords = [makeRecord('synced')];
+    mockGetFullList.mockResolvedValueOnce(initialRecords).mockResolvedValueOnce(syncedRecords);
+    const cacheSnapshotMock = vi.fn();
+    let resolveSync: (() => void) | undefined;
+    const syncPendingMock = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+    (globalThis as Record<string, unknown>).api = {
+      syncPending: syncPendingMock,
+      cacheSnapshot: cacheSnapshotMock,
+      cacheRead: vi.fn().mockResolvedValue([]),
+    };
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('stale'));
+    expect(cacheSnapshotMock).toHaveBeenCalledTimes(1);
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => {
+      connectionChangeCallback?.('offline');
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => {
+      connectionChangeCallback?.('online');
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(syncPendingMock).toHaveBeenCalledOnce();
+    expect(mockGetFullList).toHaveBeenCalledTimes(1);
+    expect(cacheSnapshotMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSync?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('synced'));
+    expect(mockGetFullList).toHaveBeenCalledTimes(2);
+    expect(cacheSnapshotMock).toHaveBeenLastCalledWith('test', syncedRecords);
+  });
+
   it('handles subscribe error gracefully', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSubscribe.mockRejectedValue(new Error('subscribe failed'));

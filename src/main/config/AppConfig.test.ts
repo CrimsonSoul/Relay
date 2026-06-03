@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { AppConfig, type RelayConfig } from './AppConfig';
+import { AppConfig, __setElectronModuleForTests, type RelayConfig } from './AppConfig';
 
 describe('AppConfig', () => {
   let tempDir: string;
@@ -16,6 +16,7 @@ describe('AppConfig', () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+    __setElectronModuleForTests(null);
     vi.restoreAllMocks();
   });
 
@@ -113,6 +114,20 @@ describe('AppConfig', () => {
     const stored = JSON.parse(raw);
     const hasSecret = 'secret' in stored || 'encryptedSecret' in stored;
     expect(hasSecret).toBe(true);
+  });
+
+  it('does not write plaintext secret in packaged builds when encryption is unavailable', () => {
+    __setElectronModuleForTests({
+      app: { isPackaged: true },
+      safeStorage: { isEncryptionAvailable: () => false },
+    } as never);
+    const config = new AppConfig(tempDir);
+
+    expect(() =>
+      config.save({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'my-secret' }),
+    ).toThrow(/secure storage is unavailable/i);
+
+    expect(existsSync(join(tempDir, 'config.json'))).toBe(false);
   });
 
   it('mode switching: save server then overwrite with client', () => {

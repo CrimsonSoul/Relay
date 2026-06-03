@@ -1,8 +1,8 @@
 import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
-import { extname, normalize, resolve, join } from 'node:path';
+import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
@@ -23,6 +23,13 @@ const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data U
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
 
+function sanitizePngSuggestedName(suggestedName: unknown): string {
+  if (typeof suggestedName !== 'string') return 'alert.png';
+  const parsed = parse(basename(suggestedName.trim()));
+  const stem = parsed.name.replaceAll(/[^a-zA-Z0-9._ -]/g, '').trim();
+  return `${stem || 'alert'}.png`;
+}
+
 /** Safe file extensions allowed for shell.openPath */
 const SAFE_OPEN_EXTENSIONS = new Set([
   '.csv',
@@ -37,6 +44,40 @@ const SAFE_OPEN_EXTENSIONS = new Set([
   '.gif',
   '.svg',
 ]);
+
+const ALLOWED_EXTERNAL_HOSTS = new Set([
+  ...Object.values(CLOUD_STATUS_PROVIDERS).map((provider) =>
+    new URL(provider.statusUrl).hostname.toLowerCase(),
+  ),
+  'teams.microsoft.com',
+  'stspg.io',
+  'statuspage.io',
+  'x.com',
+  'twitter.com',
+]);
+
+function isAllowedExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'mailto:') {
+      const address = parsed.pathname;
+      const at = address.indexOf('@');
+      const dotAfterAt = address.indexOf('.', at + 1);
+      return (
+        parsed.search === '' &&
+        at > 0 &&
+        dotAfterAt > at + 1 &&
+        dotAfterAt < address.length - 1 &&
+        !address.includes(' ') &&
+        address.indexOf('@', at + 1) === -1
+      );
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 
 export function setupWindowHandlers(
   getMainWindow: () => BrowserWindow | null,
@@ -69,11 +110,10 @@ export function setupWindowHandlers(
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     try {
-      const parsed = new URL(url);
-      if (['http:', 'https:', 'mailto:'].includes(parsed.protocol)) {
+      if (typeof url === 'string' && isAllowedExternalUrl(url)) {
         await shell.openExternal(url);
       } else {
-        loggers.security.error(`Blocked opening external URL with unsafe protocol: ${url}`);
+        loggers.security.error(`Blocked opening external URL: ${url}`);
       }
     } catch {
       loggers.security.error(`Invalid URL provided to openExternal: ${url}`);
@@ -196,7 +236,7 @@ export function setupWindowHandlers(
           return { success: false, error: 'Invalid image data' };
         }
         const { canceled, filePath } = await dialog.showSaveDialog({
-          defaultPath: suggestedName || 'alert.png',
+          defaultPath: sanitizePngSuggestedName(suggestedName),
           filters: [{ name: 'PNG Image', extensions: ['png'] }],
         });
         if (canceled || !filePath) {

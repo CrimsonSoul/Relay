@@ -2,14 +2,28 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { join } from 'node:path';
 import { loggers } from '../logger';
 
+let electronModuleForTests: typeof import('electron') | null | undefined;
+
+export function __setElectronModuleForTests(module: typeof import('electron') | null): void {
+  electronModuleForTests = module;
+}
+
 /** Safe wrapper — safeStorage is unavailable in tests and non-Electron environments. */
-function getSafeStorage(): typeof import('electron').safeStorage | null {
+function getElectronModule(): typeof import('electron') | null {
+  if (electronModuleForTests !== undefined) return electronModuleForTests;
   try {
-    const { safeStorage } = require('electron') as typeof import('electron');
-    return safeStorage;
+    return require('electron') as typeof import('electron');
   } catch {
     return null;
   }
+}
+
+function getSafeStorage(): typeof import('electron').safeStorage | null {
+  return getElectronModule()?.safeStorage ?? null;
+}
+
+function isPackagedElectronRuntime(): boolean {
+  return getElectronModule()?.app?.isPackaged === true;
 }
 
 export interface ServerConfig {
@@ -109,6 +123,9 @@ export class AppConfig {
     if (ss?.isEncryptionAvailable()) {
       stored.encryptedSecret = ss.encryptString(config.secret).toString('base64');
     } else {
+      if (isPackagedElectronRuntime()) {
+        throw new Error('Secure storage is unavailable; refusing to write plaintext Relay secret');
+      }
       stored.secret = config.secret;
     }
 

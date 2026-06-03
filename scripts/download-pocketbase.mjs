@@ -97,25 +97,25 @@ function extractZip(zipPath, destDir) {
   }
 }
 
-async function verifyChecksum(zipPath, expectedFilename) {
+export async function verifyChecksum(
+  zipPath,
+  expectedFilename,
+  downloadChecksumFile = downloadFile,
+) {
   const checksumUrl = `https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_checksums.txt`;
   const checksumPath = `${zipPath}.checksums.txt`;
 
   try {
-    await downloadFile(checksumUrl, checksumPath);
-  } catch {
-    console.warn(`Checksums file not available for v${PB_VERSION} - skipping verification`);
-    return;
+    await downloadChecksumFile(checksumUrl, checksumPath);
+  } catch (err) {
+    throw new Error(`Checksums file not available for v${PB_VERSION}`, { cause: err });
   }
 
   try {
     const checksumFile = readFileSync(checksumPath, 'utf-8');
     const line = checksumFile.split('\n').find((l) => l.includes(expectedFilename));
     if (!line) {
-      console.warn(
-        `Checksum for ${expectedFilename} not found in checksums file - skipping verification`,
-      );
-      return;
+      throw new Error(`Checksum for ${expectedFilename} not found in checksums file`);
     }
 
     const expectedHash = line.trim().split(/\s+/)[0];

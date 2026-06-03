@@ -266,22 +266,48 @@ describe('windowHandlers', () => {
   });
 
   describe('OPEN_EXTERNAL', () => {
-    it('opens valid http URL', async () => {
+    it('blocks unknown http URL', async () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'http://example.com');
 
-      expect(shell.openExternal).toHaveBeenCalledWith('http://example.com');
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
-    it('opens valid https URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
+    it('opens known cloud status URL', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://status.openai.com/incidents/1');
 
-      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com');
+      expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
+    });
+
+    it('opens Teams meeting draft URL', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'https://teams.microsoft.com/l/meeting/new?subject=test',
+      );
+
+      expect(shell.openExternal).toHaveBeenCalledWith(
+        'https://teams.microsoft.com/l/meeting/new?subject=test',
+      );
+    });
+
+    it('blocks unknown https URL', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('opens valid mailto URL', async () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'mailto:user@example.com');
 
       expect(shell.openExternal).toHaveBeenCalledWith('mailto:user@example.com');
+    });
+
+    it('blocks mailto URLs with extra headers', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'mailto:user@example.com?subject=Injected&body=payload',
+      );
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('blocks file: protocol', async () => {
@@ -843,6 +869,25 @@ describe('windowHandlers', () => {
 
       expect(result).toEqual({ success: true, data: '/mock-dir/test-alert.png' });
       expect(writeFile).toHaveBeenCalled();
+    });
+
+    it('sanitizes renderer-controlled suggested save names to a PNG basename', async () => {
+      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
+      vi.mocked(dialog.showSaveDialog).mockResolvedValue({
+        canceled: true,
+        filePath: undefined,
+      } as never);
+
+      await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE](
+        {},
+        'data:image/png;base64,iVBORw0KGgo=',
+        '../secrets/../../owned.exe',
+      );
+
+      expect(dialog.showSaveDialog).toHaveBeenCalledWith({
+        defaultPath: 'owned.png',
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      });
     });
 
     it('returns error when PNG data URL does not decode to an image', async () => {

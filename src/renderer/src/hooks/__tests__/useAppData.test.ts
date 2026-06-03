@@ -4,6 +4,25 @@ import { useAppData } from '../useAppData';
 import type { BoardSettingsInitializationResult } from '../../services/oncallBoardSettingsService';
 import { loggers } from '../../utils/logger';
 
+const mockSubscribe = vi.fn();
+const mockIsOnline = vi.fn(() => true);
+let connectionStateCallback: ((state: string) => void) | null = null;
+
+vi.mock('../../services/pocketbase', () => ({
+  getPb: () => ({
+    collection: () => ({
+      subscribe: mockSubscribe,
+    }),
+  }),
+  isOnline: () => mockIsOnline(),
+  onConnectionStateChange: (callback: (state: string) => void) => {
+    connectionStateCallback = callback;
+    return () => {
+      connectionStateCallback = null;
+    };
+  },
+}));
+
 vi.mock('../../utils/logger', () => ({
   loggers: {
     app: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
@@ -78,6 +97,9 @@ describe('useAppData', () => {
     collectionData.bridge_groups = { data: [], loading: false, error: null };
     collectionData.oncall = { data: [], loading: false, error: null };
     mockInitializeBoardSettings.mockResolvedValue(makeReadyResult());
+    mockIsOnline.mockReturnValue(true);
+    mockSubscribe.mockResolvedValue(vi.fn());
+    connectionStateCallback = null;
   });
 
   it('returns empty data when collections are empty', () => {
@@ -301,6 +323,52 @@ describe('useAppData', () => {
         'Board settings initialization failed',
         expect.anything(),
       );
+    });
+
+    it('unsubscribes superseded in-flight board settings subscriptions on repeated online events', async () => {
+      const unsubscribeFirst = vi.fn();
+      const unsubscribeSecond = vi.fn();
+      const unsubscribeThird = vi.fn();
+      let resolveFirst: ((unsubscribe: typeof unsubscribeFirst) => void) | undefined;
+      let resolveSecond: ((unsubscribe: typeof unsubscribeSecond) => void) | undefined;
+      mockSubscribe
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveSecond = resolve;
+            }),
+        )
+        .mockResolvedValueOnce(unsubscribeThird);
+
+      renderHook(() => useAppData(showToast));
+
+      await waitFor(() => expect(connectionStateCallback).toBeTruthy());
+
+      act(() => {
+        connectionStateCallback?.('online');
+        connectionStateCallback?.('online');
+      });
+
+      await act(async () => {
+        resolveFirst?.(unsubscribeFirst);
+        await Promise.resolve();
+      });
+
+      expect(unsubscribeFirst).toHaveBeenCalledOnce();
+
+      await act(async () => {
+        resolveSecond?.(unsubscribeSecond);
+        await Promise.resolve();
+      });
+
+      expect(unsubscribeSecond).toHaveBeenCalledOnce();
+      expect(unsubscribeThird).not.toHaveBeenCalled();
     });
   });
 

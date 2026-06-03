@@ -4,6 +4,41 @@ import { LogEntrySchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
 
+const MAX_LOG_DATA_DEPTH = 3;
+const MAX_LOG_DATA_STRING = 1024;
+const MAX_LOG_DATA_ARRAY_ITEMS = 50;
+const MAX_LOG_DATA_OBJECT_KEYS = 50;
+const TRUNCATED_SUFFIX = '...[truncated]';
+
+function boundRendererLogData(data: unknown, depth = 0): unknown {
+  if (data === null || data === undefined) return data;
+  if (typeof data === 'string') {
+    return data.length > MAX_LOG_DATA_STRING
+      ? `${data.slice(0, MAX_LOG_DATA_STRING)}${TRUNCATED_SUFFIX}`
+      : data;
+  }
+  if (typeof data !== 'object') return data;
+  if (depth >= MAX_LOG_DATA_DEPTH) return '[MaxDepth]';
+
+  if (Array.isArray(data)) {
+    const bounded = data
+      .slice(0, MAX_LOG_DATA_ARRAY_ITEMS)
+      .map((item) => boundRendererLogData(item, depth + 1));
+    if (data.length > MAX_LOG_DATA_ARRAY_ITEMS) bounded.push(TRUNCATED_SUFFIX);
+    return bounded;
+  }
+
+  const result: Record<string, unknown> = {};
+  const entries = Object.entries(data).slice(0, MAX_LOG_DATA_OBJECT_KEYS);
+  for (const [key, value] of entries) {
+    result[key] = boundRendererLogData(value, depth + 1);
+  }
+  if (Object.keys(data).length > MAX_LOG_DATA_OBJECT_KEYS) {
+    result.__truncated = TRUNCATED_SUFFIX;
+  }
+  return result;
+}
+
 /**
  * Setup IPC handlers for renderer-to-main logging and bridge metrics
  */
@@ -38,7 +73,8 @@ export function setupLoggerHandlers(): void {
         return;
       }
 
-      const { level, message, data } = validated.data;
+      const { level, message } = validated.data;
+      const data = boundRendererLogData(validated.data.data);
       // Sanitize renderer-controlled module name: allow only alphanumeric, dots, hyphens; truncate to 50 chars
       const module = validated.data.module.replaceAll(/[^a-zA-Z0-9.-]/g, '').slice(0, 50);
 

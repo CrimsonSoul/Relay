@@ -171,7 +171,11 @@ async function authenticatePbConnectionOnce(
           });
         });
 
-        return { ok: true, result: getPbConnectionResult(pbUrl, pb) };
+        loggers.pocketbase.warn(
+          'PocketBase app-user authentication failed; superuser credentials validated but were not returned to the renderer',
+          { pbUrl },
+        );
+        return { ok: false, failure: toAuthFailure(error) };
       } catch (fallbackError) {
         return { ok: false, failure: toAuthFailure(fallbackError) };
       }

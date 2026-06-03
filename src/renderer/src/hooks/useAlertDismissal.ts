@@ -48,13 +48,19 @@ export function useAlertDismissal() {
         return next;
       });
 
-      // Persist to PocketBase
-      pbDismissAlert(type, todayKey).catch((err: unknown) => {
-        loggers.app.error('Failed to persist alert dismissal', { error: err });
-      });
-
-      // Broadcast to popout windows on same instance (fast path)
-      globalThis.api?.notifyAlertDismissed(type);
+      // Persist to PocketBase, then broadcast to popout windows on success.
+      pbDismissAlert(type, todayKey)
+        .then(() => {
+          globalThis.api?.notifyAlertDismissed(type);
+        })
+        .catch((err: unknown) => {
+          setOptimisticDismissals((prev) => {
+            const next = new Set(prev);
+            next.delete(type);
+            return next;
+          });
+          loggers.app.error('Failed to persist alert dismissal', { error: err });
+        });
     },
     [dismissedAlerts, todayKey],
   );

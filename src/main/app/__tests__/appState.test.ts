@@ -292,6 +292,23 @@ describe('setupPermissions', () => {
     expect(callback).toHaveBeenCalledWith(false);
   });
 
+  it('blocks media permissions in request handler even for the main window', () => {
+    const mockSession = {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+    };
+    const webContents = { id: 1 };
+    setMainWindow({ webContents } as never);
+
+    setupPermissions(mockSession as never);
+
+    const requestHandler = mockSession.setPermissionRequestHandler.mock.calls[0][0];
+    const callback = vi.fn();
+
+    requestHandler(webContents, 'media', callback, { requestingUrl: 'file:///app/index.html' });
+    expect(callback).toHaveBeenCalledWith(false);
+  });
+
   it('blocks non-geo/media permissions in check handler', () => {
     const mockSession = {
       setPermissionRequestHandler: vi.fn(),
@@ -317,6 +334,22 @@ describe('setupPermissions', () => {
     const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
 
     const result = checkHandler({ id: 999 }, 'geolocation', 'https://example.com');
+    expect(result).toBe(false);
+  });
+
+  it('blocks media permissions in check handler even for the main window', () => {
+    const mockSession = {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+    };
+    const webContents = { id: 1 };
+    setMainWindow({ webContents } as never);
+
+    setupPermissions(mockSession as never);
+
+    const checkHandler = mockSession.setPermissionCheckHandler.mock.calls[0][0];
+
+    const result = checkHandler(webContents, 'media', 'file:///app/index.html');
     expect(result).toBe(false);
   });
 });

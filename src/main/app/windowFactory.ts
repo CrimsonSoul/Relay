@@ -33,6 +33,14 @@ export function buildRendererPopoutFileUrl(indexPath: string, route: string): st
   return url.href;
 }
 
+export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boolean {
+  try {
+    return new URL(url).origin === new URL(rendererUrl).origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
 
@@ -102,7 +110,7 @@ export async function createWindow(): Promise<void> {
   const allowedFilePath = join(mainDir, '../renderer');
   mainWindow.webContents.on('will-navigate', (event, url) => {
     // Allow dev server and local file reloads
-    if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+    if (isDev && isAllowedDevRendererUrl(url, process.env.ELECTRON_RENDERER_URL!)) return;
     if (isAllowedRendererFileUrl(url, allowedFilePath)) return;
     loggers.security.warn(`Blocked main window navigation to: ${url}`);
     event.preventDefault();
@@ -179,7 +187,7 @@ export async function createAuxWindow(route: string): Promise<void> {
     if (
       !app.isPackaged &&
       process.env.ELECTRON_RENDERER_URL &&
-      url.startsWith(process.env.ELECTRON_RENDERER_URL)
+      isAllowedDevRendererUrl(url, process.env.ELECTRON_RENDERER_URL)
     )
       return;
     if (isAllowedRendererFileUrl(url, auxAllowedFilePath)) return;

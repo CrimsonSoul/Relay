@@ -6,17 +6,31 @@ import { setupPocketbaseConnectionHandlers } from './pocketbaseConnectionHandler
 const mockAppUserAuthWithPassword = vi.fn();
 const mockSuperuserAuthWithPassword = vi.fn();
 const mockAuthRefresh = vi.fn();
-const mockAuthStoreSave = vi.fn();
+let currentAuthStore = {
+  token: 'pb-token',
+  record: { id: 'user-1', email: 'relay@relay.app' },
+};
+
 const mockCollection = vi.fn((name: string) => {
   if (name === '_superusers') {
     return {
-      authWithPassword: mockSuperuserAuthWithPassword,
+      authWithPassword: async (...args: unknown[]) => {
+        const result = await mockSuperuserAuthWithPassword(...args);
+        currentAuthStore.token = 'superuser-token';
+        currentAuthStore.record = { id: 'superuser-1', email: 'admin@relay.app' };
+        return result;
+      },
       authRefresh: mockAuthRefresh,
     };
   }
 
   return {
-    authWithPassword: mockAppUserAuthWithPassword,
+    authWithPassword: async (...args: unknown[]) => {
+      const result = await mockAppUserAuthWithPassword(...args);
+      currentAuthStore.token = 'pb-token';
+      currentAuthStore.record = { id: 'user-1', email: 'relay@relay.app' };
+      return result;
+    },
     authRefresh: mockAuthRefresh,
   };
 });
@@ -33,11 +47,7 @@ vi.mock('pocketbase', () => ({
   default: vi.fn().mockImplementation(function MockPocketBase() {
     return {
       collection: mockCollection,
-      authStore: {
-        save: mockAuthStoreSave,
-        token: 'pb-token',
-        record: { id: 'user-1', email: 'relay@relay.app' },
-      },
+      authStore: currentAuthStore,
     };
   }),
 }));
@@ -63,6 +73,10 @@ describe('pocketbaseConnectionHandlers', () => {
     vi.useRealTimers();
     mockPbProcess.isRunning.mockReturnValue(false);
     mockPbProcess.getLocalUrl.mockReturnValue('http://127.0.0.1:8090');
+    currentAuthStore = {
+      token: 'pb-token',
+      record: { id: 'user-1', email: 'relay@relay.app' },
+    };
 
     vi.mocked(ipcMain.handle).mockImplementation(
       (channel: string, handler: (...args: unknown[]) => unknown) => {
@@ -141,7 +155,7 @@ describe('pocketbaseConnectionHandlers', () => {
     });
   });
 
-  it('falls back to local superuser auth in server mode when app-user auth fails', async () => {
+  it('does not return a superuser token when server-mode app-user auth fails', async () => {
     getPbProcess.mockReturnValueOnce(mockPbProcess as never);
     mockPbProcess.isRunning.mockReturnValue(true);
     mockPbProcess.getLocalUrl.mockReturnValue('http://127.0.0.1:8090');
@@ -150,7 +164,7 @@ describe('pocketbaseConnectionHandlers', () => {
       port: 8090,
       secret: 'super-secret-passphrase',
     });
-    mockAppUserAuthWithPassword.mockRejectedValueOnce(new Error('stale app user'));
+    mockAppUserAuthWithPassword.mockRejectedValue(new Error('stale app user'));
     mockSuperuserAuthWithPassword.mockResolvedValueOnce({});
 
     const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
@@ -165,16 +179,9 @@ describe('pocketbaseConnectionHandlers', () => {
       'super-secret-passphrase',
       expect.objectContaining({ requestKey: null, signal: expect.any(AbortSignal) }),
     );
-    expect(result).toEqual({
-      ok: true,
-      connection: {
-        pbUrl: 'http://127.0.0.1:8090',
-        auth: {
-          token: 'pb-token',
-          record: { id: 'user-1', email: 'relay@relay.app' },
-        },
-      },
-    });
+    expect(result).toEqual({ ok: false, error: 'auth-failed' });
+    expect(JSON.stringify(result)).not.toContain('superuser-token');
+    expect(JSON.stringify(result)).not.toContain('admin@relay.app');
   });
 
   it('does not attempt superuser fallback in client mode when app-user auth fails', async () => {

@@ -56,7 +56,7 @@ describe('useAlertDismissal', () => {
     expect(typeof result.current.tick).toBe('number');
   });
 
-  it('dismissAlert adds to optimistic dismissals', () => {
+  it('dismissAlert adds to optimistic dismissals and broadcasts after persistence', async () => {
     const { result } = renderHook(() => useAlertDismissal());
 
     act(() => {
@@ -65,7 +65,32 @@ describe('useAlertDismissal', () => {
 
     expect(result.current.dismissedAlerts.has('staffing')).toBe(true);
     expect(mockDismissAlert).toHaveBeenCalledWith('staffing', expect.any(String));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
     expect(mockNotifyAlertDismissed).toHaveBeenCalledWith('staffing');
+  });
+
+  it('rolls back optimistic dismissal and skips broadcast when persistence fails', async () => {
+    vi.useRealTimers();
+    mockDismissAlert.mockRejectedValueOnce(new Error('offline'));
+    const { result } = renderHook(() => useAlertDismissal());
+
+    act(() => {
+      result.current.dismissAlert('staffing');
+    });
+
+    expect(result.current.dismissedAlerts.has('staffing')).toBe(true);
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(result.current.dismissedAlerts.has('staffing')).toBe(false);
+    expect(mockNotifyAlertDismissed).not.toHaveBeenCalledWith('staffing');
+    vi.useFakeTimers();
   });
 
   it('dismissAlert skips if already dismissed', () => {

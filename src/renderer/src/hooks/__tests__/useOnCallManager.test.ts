@@ -356,6 +356,39 @@ describe('useOnCallManager', () => {
       });
     });
 
+    it('locally removes the team from board settings after removing a team', async () => {
+      mockDeleteOnCallByTeam.mockResolvedValue(undefined);
+      mockUpdatePrimaryBoardSettings.mockResolvedValue({});
+      const onBoardSettingsChange = vi.fn();
+      const boardSettings = makeReadyBoardSettings({
+        record: {
+          id: 'settings-1',
+          key: 'primary',
+          teamOrder: ['alpha', 'bravo'],
+          locked: false,
+          created: '2026-01-01T00:00:00Z',
+          updated: '2026-01-01T00:00:00Z',
+        },
+      });
+
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, boardSettings, onBoardSettingsChange),
+      );
+
+      await act(async () => {
+        await result.current.handleRemoveTeam('Alpha');
+      });
+
+      expect(onBoardSettingsChange).toHaveBeenCalledOnce();
+
+      const applyUpdate = onBoardSettingsChange.mock.calls[0]?.[0] as (
+        prev: BoardSettingsState,
+      ) => BoardSettingsState;
+      const updatedState = applyUpdate(boardSettings);
+      expect(updatedState.effectiveTeamOrder).toEqual(['bravo']);
+      expect(updatedState.record?.teamOrder).toEqual(['bravo']);
+    });
+
     it('does not remove team on API failure and shows error toast', async () => {
       mockDeleteOnCallByTeam.mockRejectedValue(new Error('Failed'));
 

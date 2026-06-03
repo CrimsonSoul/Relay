@@ -390,9 +390,17 @@ export async function importFromExcel(
 ): Promise<ImportResult> {
   requireOnline();
   const sheets = await readWorkbook(buffer);
-  const worksheet = sheets.find((sheet) => sheet.sheet === collection) ?? sheets[0];
+  const matchingWorksheet = sheets.find((sheet) => sheet.sheet === collection);
+  const worksheet = matchingWorksheet ?? (sheets.length === 1 ? sheets[0] : undefined);
 
   if (!worksheet) {
+    if (sheets.length > 1) {
+      return {
+        imported: 0,
+        updated: 0,
+        errors: [`Excel workbook does not contain a "${collection}" worksheet`],
+      };
+    }
     return { imported: 0, updated: 0, errors: ['No worksheets found in the Excel file'] };
   }
 

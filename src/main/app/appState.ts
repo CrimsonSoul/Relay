@@ -212,7 +212,11 @@ export function setupPermissions(sess: Electron.Session) {
     }
 
     if (permission === 'media') {
-      callback(!!isMainWindow);
+      loggers.security.warn('Blocked media permission request', {
+        requestingUrl: details.requestingUrl,
+        isMainWindow,
+      });
+      callback(false);
       return;
     }
 
@@ -232,7 +236,11 @@ export function setupPermissions(sess: Electron.Session) {
     }
 
     if (permission === 'media') {
-      return !!isMainWindow;
+      loggers.security.warn('Blocked media permission check', {
+        requestingOrigin,
+        isMainWindow,
+      });
+      return false;
     }
 
     return false;

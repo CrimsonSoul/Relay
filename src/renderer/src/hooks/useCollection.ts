@@ -1,4 +1,12 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { type RecordModel } from 'pocketbase';
 import { getPb, isOnline, onConnectionStateChange, handleApiError } from '../services/pocketbase';
 
@@ -24,10 +32,31 @@ interface ExtendedApi {
   cacheRead?: (collection: string) => Promise<RecordModel[] | null>;
   cacheWrite?: (collection: string, action: string, record: RecordModel) => void;
   cacheSnapshot?: (collection: string, records: RecordModel[]) => void;
+  syncPending?: () => Promise<unknown>;
 }
 
 function getApi(): ExtendedApi | undefined {
   return globalThis.api as (ExtendedApi & typeof globalThis.api) | undefined;
+}
+
+let pendingReconnectSync: Promise<void> | null = null;
+
+function syncPendingOnce(): Promise<void> {
+  pendingReconnectSync ??= Promise.resolve(getApi()?.syncPending?.()).finally(() => {
+    pendingReconnectSync = null;
+  });
+  return pendingReconnectSync;
+}
+
+function queueReconnectRefetch(
+  connectedRef: { current: boolean },
+  setConnectGeneration: Dispatch<SetStateAction<number>>,
+): void {
+  void syncPendingOnce().finally(() => {
+    if (connectedRef.current) {
+      setConnectGeneration((g) => g + 1);
+    }
+  });
 }
 
 /** Compare two values for a single sort field, returning -1 / 0 / 1. */
@@ -167,9 +196,9 @@ export function useCollection<T extends RecordModel>(
       connectedRef.current = online;
 
       if (online && wasOffline) {
-        // Flush pending offline writes then bump generation to trigger re-subscribe
-        void globalThis.api?.syncPending?.();
-        setConnectGeneration((g) => g + 1);
+        // Flush pending offline writes once across mounted collections before
+        // refetching; otherwise a stale server snapshot can overwrite cache.
+        queueReconnectRefetch(connectedRef, setConnectGeneration);
       } else if (!online && !wasOffline) {
         // Going offline — bump to tear down stale subscription
         setConnectGeneration((g) => g + 1);

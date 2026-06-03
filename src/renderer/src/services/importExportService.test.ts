@@ -354,6 +354,35 @@ describe('importFromExcel', () => {
     expect(result.imported).toBe(1);
   });
 
+  it('rejects a multi-sheet workbook when the requested collection sheet is missing', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'servers',
+        data: [
+          ['name', 'owner'],
+          ['srv-1', 'ops'],
+        ],
+      },
+      {
+        sheet: 'notes',
+        data: [
+          ['title', 'content'],
+          ['note', 'body'],
+        ],
+      },
+    ]);
+
+    const result = await importFromExcel('contacts', new ArrayBuffer(8));
+
+    expect(result).toEqual({
+      imported: 0,
+      updated: 0,
+      errors: ['Excel workbook does not contain a "contacts" worksheet'],
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('returns an error when no worksheets exist', async () => {
     mockReadExcelFile.mockResolvedValueOnce([]);
     const result = await importFromExcel('contacts', new ArrayBuffer(8));
