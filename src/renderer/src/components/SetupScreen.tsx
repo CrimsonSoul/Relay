@@ -144,7 +144,7 @@ const EyeClosed = () => (
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
-  const [allowLanAccess, setAllowLanAccess] = useState(false);
+  const [allowLanAccess, setAllowLanAccess] = useState(true);
   const [serverUrl, setServerUrl] = useState('');
   const [allowInsecureHttp, setAllowInsecureHttp] = useState(false);
   const [secret, setSecret] = useState('');
@@ -310,7 +310,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 placeholder="8090"
               />
               <p className="setup-config__hint">
-                Local-only by default. Put HTTPS in front before connecting production clients.
+                Direct LAN access is enabled by default for trusted Relay stations.
               </p>
               <label className="setup-config__checkbox">
                 <input

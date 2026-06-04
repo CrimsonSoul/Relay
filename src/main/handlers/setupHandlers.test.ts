@@ -132,6 +132,19 @@ describe('setupHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it('defaults server mode config to direct LAN access when bindHost is omitted', () => {
+      const config = buildServerConfig();
+      delete config.bindHost;
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(mockAppConfig.save).toHaveBeenCalledWith({
+        ...config,
+        bindHost: '0.0.0.0',
+      });
+      expect(result).toBe(true);
+    });
+
     it('saves valid client mode config and returns true', () => {
       const config = buildClientConfig();
 

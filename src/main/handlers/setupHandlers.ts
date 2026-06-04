@@ -20,7 +20,7 @@ const relayServerUrlSchema = z
 const serverConfigSchema = z.object({
   mode: z.literal('server'),
   port: z.number().int().min(1024).max(65535),
-  bindHost: z.enum(['127.0.0.1', '0.0.0.0']),
+  bindHost: z.enum(['127.0.0.1', '0.0.0.0']).default('0.0.0.0'),
   secret: relaySecretSchema,
 });
 

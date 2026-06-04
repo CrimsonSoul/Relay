@@ -281,11 +281,18 @@ describe('SetupScreen', () => {
 
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(getSubmittedConfig()).toMatchObject({ mode: 'server', port: 9090 });
-    expect(getSubmittedConfig()).toMatchObject({ bindHost: '127.0.0.1' });
+    expect(getSubmittedConfig()).toMatchObject({ bindHost: '0.0.0.0' });
     expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
-  it('can opt server mode into direct LAN HTTP binding', async () => {
+  it('checks direct LAN access by default in server mode', () => {
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Server'));
+
+    expect(screen.getByLabelText('Allow direct LAN access')).toBeChecked();
+  });
+
+  it('can opt server mode out of direct LAN HTTP binding', async () => {
     onComplete.mockResolvedValue(undefined);
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Server'));
@@ -297,7 +304,7 @@ describe('SetupScreen', () => {
       fireEvent.submit(screen.getByText('Save & Start Server').closest('form')!);
     });
 
-    expect(getSubmittedConfig()).toMatchObject({ mode: 'server', bindHost: '0.0.0.0' });
+    expect(getSubmittedConfig()).toMatchObject({ mode: 'server', bindHost: '127.0.0.1' });
   });
 
   it('calls onComplete with client config on valid client submission', async () => {

@@ -186,10 +186,38 @@ describe('AppConfig', () => {
     expect((loaded as { port: number }).port).toBe(8090);
   });
 
-  it('server config defaults to local-only when bindHost is missing in stored file', () => {
+  it('server config defaults to direct LAN access when bindHost is missing in stored file', () => {
     writeFileSync(
       join(tempDir, 'config.json'),
       JSON.stringify({ mode: 'server', port: 8090, secret: 'sec' }),
+      'utf-8',
+    );
+    const config = new AppConfig(tempDir);
+    const loaded = config.load();
+    expect((loaded as { bindHost: string }).bindHost).toBe('0.0.0.0');
+  });
+
+  it('migrates legacy unmarked local-only server configs to direct LAN access', () => {
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({ mode: 'server', port: 8090, bindHost: '127.0.0.1', secret: 'sec' }),
+      'utf-8',
+    );
+    const config = new AppConfig(tempDir);
+    const loaded = config.load();
+    expect((loaded as { bindHost: string }).bindHost).toBe('0.0.0.0');
+  });
+
+  it('preserves explicitly configured local-only server configs', () => {
+    writeFileSync(
+      join(tempDir, 'config.json'),
+      JSON.stringify({
+        mode: 'server',
+        port: 8090,
+        bindHost: '127.0.0.1',
+        lanAccessConfigured: true,
+        secret: 'sec',
+      }),
       'utf-8',
     );
     const config = new AppConfig(tempDir);
@@ -292,6 +320,7 @@ describe('AppConfig', () => {
     const raw = readFileSync(join(tempDir, 'config.json'), 'utf-8');
     const stored = JSON.parse(raw);
     expect(stored.bindHost).toBe('127.0.0.1');
+    expect(stored.lanAccessConfigured).toBe(true);
   });
 
   it('save writes allowInsecureHttp only when explicitly enabled', () => {

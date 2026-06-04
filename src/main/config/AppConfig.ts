@@ -47,6 +47,7 @@ interface StoredConfig {
   mode: string;
   port?: number;
   bindHost?: '127.0.0.1' | '0.0.0.0';
+  lanAccessConfigured?: boolean;
   serverUrl?: string;
   allowInsecureHttp?: boolean;
   /** Encrypted secret (base64-encoded buffer) — used when safeStorage is available. */
@@ -57,10 +58,13 @@ interface StoredConfig {
 
 function toRelayConfig(stored: StoredConfig, secret: string): RelayConfig {
   if (stored.mode === 'server') {
+    const isLegacyLocalOnlyConfig =
+      stored.bindHost === '127.0.0.1' && stored.lanAccessConfigured !== true;
+
     return {
       mode: 'server',
       port: stored.port ?? 8090,
-      bindHost: stored.bindHost ?? '127.0.0.1',
+      bindHost: isLegacyLocalOnlyConfig ? '0.0.0.0' : (stored.bindHost ?? '0.0.0.0'),
       secret,
     };
   }
@@ -120,6 +124,7 @@ export class AppConfig {
     if (config.mode === 'server') {
       stored.port = config.port;
       stored.bindHost = config.bindHost;
+      stored.lanAccessConfigured = true;
     } else {
       stored.serverUrl = config.serverUrl;
       if (config.allowInsecureHttp) {
