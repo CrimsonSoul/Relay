@@ -85,24 +85,48 @@ export const AlertCard: React.FC<AlertCardProps> = ({
 
   const [whiteLogoUrl, setWhiteLogoUrl] = useState<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
+
     if (!logoDataUrl) {
       setWhiteLogoUrl(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
     void makeWhite(logoDataUrl)
-      .then(setWhiteLogoUrl)
-      .catch(() => setWhiteLogoUrl(null));
+      .then((url) => {
+        if (!cancelled) setWhiteLogoUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setWhiteLogoUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [logoDataUrl]);
 
   const [grayFooterLogoUrl, setGrayFooterLogoUrl] = useState<string | null>(null);
   useEffect(() => {
+    let cancelled = false;
+
     if (!footerLogoDataUrl) {
       setGrayFooterLogoUrl(null);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
     void makeGrayscale(footerLogoDataUrl)
-      .then(setGrayFooterLogoUrl)
-      .catch(() => setGrayFooterLogoUrl(null));
+      .then((url) => {
+        if (!cancelled) setGrayFooterLogoUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setGrayFooterLogoUrl(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [footerLogoDataUrl]);
 
   // Always sanitize HTML at the render boundary to prevent XSS

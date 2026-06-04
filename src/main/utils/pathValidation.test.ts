@@ -5,12 +5,15 @@ import fsPromises from 'node:fs/promises';
 import { join } from 'node:path';
 import os from 'node:os';
 
+const testHomeDir = join(os.tmpdir(), `relay-path-validation-${process.pid}`);
+const testUserDataDir = join(testHomeDir, 'Library', 'Application Support', 'Relay');
+
 // Mock electron app
 vi.mock('electron', () => ({
   app: {
     getPath: vi.fn((name: string) => {
-      if (name === 'userData') return join(os.homedir(), 'Library', 'Application Support', 'Relay');
-      if (name === 'home') return os.homedir();
+      if (name === 'userData') return testUserDataDir;
+      if (name === 'home') return testHomeDir;
       return os.tmpdir();
     }),
   },
@@ -33,17 +36,18 @@ vi.mock('../logger', async (importOriginal) => {
 
 describe('validateDataPath', () => {
   // Use a path within home dir since validation now requires it
-  const testDir = join(os.homedir(), '.relay-test-data');
+  const testDir = join(testHomeDir, '.relay-test-data');
 
   beforeEach(() => {
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
+    if (fs.existsSync(testHomeDir)) {
+      fs.rmSync(testHomeDir, { recursive: true, force: true });
     }
+    fs.mkdirSync(testHomeDir, { recursive: true });
   });
 
   afterEach(() => {
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
+    if (fs.existsSync(testHomeDir)) {
+      fs.rmSync(testHomeDir, { recursive: true, force: true });
     }
   });
 
@@ -74,7 +78,7 @@ describe('validateDataPath', () => {
   });
 
   it('should reject sibling prefix paths outside home directory', async () => {
-    const outsideHomeWithPrefix = `${os.homedir()}-malicious`;
+    const outsideHomeWithPrefix = `${testHomeDir}-malicious`;
     const result = await validateDataPath(outsideHomeWithPrefix);
     expect(result.success).toBe(false);
     expect(result.error).toContain('within user home directory');
@@ -152,7 +156,7 @@ describe('validateDataPath', () => {
   });
 
   it('should accept paths within userData directory', async () => {
-    const userDataPath = join(os.homedir(), 'Library', 'Application Support', 'Relay', 'test-data');
+    const userDataPath = join(testUserDataDir, 'test-data');
     const result = await validateDataPath(userDataPath);
     expect(result.success).toBe(true);
 

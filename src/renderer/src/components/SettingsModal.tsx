@@ -22,14 +22,25 @@ export const SettingsModal: React.FC<Props> = ({
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      setPbConfigLoading(true);
-      globalThis.api
-        ?.getConfig()
-        .then((config) => setPbConfig(config))
-        .catch(() => setPbConfig(null))
-        .finally(() => setPbConfigLoading(false));
-    }
+    if (!isOpen) return;
+
+    let cancelled = false;
+    setPbConfigLoading(true);
+    globalThis.api
+      ?.getConfig()
+      .then((config) => {
+        if (!cancelled) setPbConfig(config);
+      })
+      .catch(() => {
+        if (!cancelled) setPbConfig(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPbConfigLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen]);
 
   const handleReconfigure = async () => {

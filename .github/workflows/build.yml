@@ -41,6 +41,8 @@ jobs:
           key: electron-linux-x64-${{ steps.electron-version.outputs.version }}
 
       - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
       - name: Type check
@@ -91,6 +93,8 @@ jobs:
           key: electron-win-x64-${{ steps.electron-version.outputs.version }}
 
       - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
       - name: Download PocketBase binary
@@ -109,7 +113,7 @@ jobs:
           fi
 
       - name: Build and package
-        run: npm run build:win
+        run: npm run package:win
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

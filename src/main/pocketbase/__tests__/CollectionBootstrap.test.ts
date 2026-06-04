@@ -5,6 +5,9 @@ const mockCreate = vi.fn();
 const mockDelete = vi.fn();
 const mockGetOne = vi.fn();
 const mockUpdate = vi.fn();
+const mockCollectionGetFullList = vi.fn();
+const mockCollectionUpdate = vi.fn();
+const mockCollectionDelete = vi.fn();
 
 const mockPb = {
   collections: {
@@ -14,6 +17,11 @@ const mockPb = {
     getOne: mockGetOne,
     update: mockUpdate,
   },
+  collection: () => ({
+    getFullList: mockCollectionGetFullList,
+    update: mockCollectionUpdate,
+    delete: mockCollectionDelete,
+  }),
 } as never;
 
 import { ensureCollections } from '../CollectionBootstrap';
@@ -164,6 +172,98 @@ describe('ensureCollections', () => {
     const lockedField = schema.find((f) => f.name === 'locked');
     expect(lockedField).toBeDefined();
     expect(lockedField!.type).toBe('bool');
+    expect((settingsCall![0] as { indexes: string[] }).indexes).toContain(
+      'CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)',
+    );
+  });
+
+  it('repairs duplicate oncall board settings before patching the unique index', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'settings-col', name: 'oncall_board_settings' }]);
+    mockCollectionGetFullList.mockResolvedValue([
+      {
+        id: 'older',
+        key: 'primary',
+        teamOrder: ['alpha', 'charlie'],
+        created: '2024-01-01T00:00:00Z',
+        updated: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 'newer',
+        key: 'primary',
+        teamOrder: ['bravo', 'alpha'],
+        created: '2024-01-02T00:00:00Z',
+        updated: '2024-01-02T00:00:00Z',
+      },
+    ]);
+    mockCollectionUpdate.mockResolvedValue({});
+    mockCollectionDelete.mockResolvedValue(undefined);
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'key', required: true },
+        { type: 'json', name: 'teamOrder' },
+        { type: 'bool', name: 'locked' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: [],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.id != ""',
+      updateRule: '@request.auth.id != ""',
+      deleteRule: '@request.auth.id != ""',
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionUpdate).toHaveBeenCalledWith('newer', {
+      teamOrder: ['bravo', 'alpha', 'charlie'],
+    });
+    expect(mockCollectionDelete).toHaveBeenCalledWith('older');
+    expect(mockUpdate).toHaveBeenCalledWith('settings-col', {
+      indexes: ['CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)'],
+    });
+  });
+
+  it('preserves duplicate oncall board settings when merged order cannot be saved', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'settings-col', name: 'oncall_board_settings' }]);
+    mockCollectionGetFullList.mockResolvedValue([
+      {
+        id: 'older',
+        key: 'primary',
+        teamOrder: ['alpha'],
+        created: '2024-01-01T00:00:00Z',
+        updated: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 'newer',
+        key: 'primary',
+        teamOrder: ['bravo'],
+        created: '2024-01-02T00:00:00Z',
+        updated: '2024-01-02T00:00:00Z',
+      },
+    ]);
+    mockCollectionUpdate.mockRejectedValueOnce(new Error('merge failed'));
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'key', required: true },
+        { type: 'json', name: 'teamOrder' },
+        { type: 'bool', name: 'locked' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: [],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.id != ""',
+      updateRule: '@request.auth.id != ""',
+      deleteRule: '@request.auth.id != ""',
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionDelete).not.toHaveBeenCalled();
   });
 
   it('patches existing oncall collection to add missing teamId', async () => {

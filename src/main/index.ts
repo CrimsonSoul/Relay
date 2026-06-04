@@ -106,6 +106,39 @@ if (gotLock) {
   const configDataDir = join(app.getPath('userData'), 'data');
 
   const bootstrap = async () => {
+    let cleanupMaintenance: (() => void) | null = null;
+    let stopMemoryHeartbeat: (() => void) | null = null;
+    let cleanupComplete = false;
+
+    const cleanupAppResources = () => {
+      if (cleanupComplete) return;
+      cleanupComplete = true;
+
+      loggers.main.info('App quitting — cleaning up resources');
+      stopPeriodicCleanup();
+      cleanupMaintenance?.();
+      cleanupMaintenance = null;
+      stopMemoryHeartbeat?.();
+      stopMemoryHeartbeat = null;
+      // PocketBase cleanup — synchronous kill to ensure process dies before app exits
+      if (getRetentionManager()) {
+        getRetentionManager()!.stop();
+        setRetentionManager(null);
+      }
+      if (getPbProcess()) {
+        getPbProcess()!.killSync();
+        setPbProcess(null);
+      }
+      if (getOfflineCache()) {
+        getOfflineCache()!.close();
+        setOfflineCache(null);
+      }
+      if (getPendingChanges()) {
+        getPendingChanges()!.close();
+        setPendingChanges(null);
+      }
+    };
+
     try {
       if (!app.isReady()) {
         await app.whenReady();
@@ -169,6 +202,10 @@ if (gotLock) {
       };
       setupIpc(createAuxWindow, restartPb);
 
+      // Register shutdown cleanup before starting embedded services so an early
+      // startup failure cannot leave PocketBase or SQLite handles behind.
+      app.on('before-quit', cleanupAppResources);
+
       // Start PocketBase before the window in server mode so bootstrap
       // connection checks can succeed as soon as the renderer loads.
       const relayConfig = getAppConfig()?.load();
@@ -180,8 +217,8 @@ if (gotLock) {
       // loading/connecting states and doesn't need the offline cache to be ready.
       await createWindow();
       startPeriodicCleanup();
-      const cleanupMaintenance = setupMaintenanceTasks();
-      const stopMemoryHeartbeat = startMemoryHeartbeat();
+      cleanupMaintenance = setupMaintenanceTasks();
+      stopMemoryHeartbeat = startMemoryHeartbeat();
 
       // Initialize offline cache infrastructure for client mode AFTER the
       // window is visible. All three components (cache, pending, sync) are
@@ -223,32 +260,6 @@ if (gotLock) {
           );
         }
       }
-
-      // Graceful shutdown: clean up file watchers, timers, etc.
-      app.on('before-quit', () => {
-        loggers.main.info('App quitting — cleaning up resources');
-        stopPeriodicCleanup();
-        cleanupMaintenance();
-        stopMemoryHeartbeat();
-        // PocketBase cleanup — synchronous kill to ensure process dies before app exits
-        if (getRetentionManager()) {
-          getRetentionManager()!.stop();
-          setRetentionManager(null);
-        }
-        if (getPbProcess()) {
-          getPbProcess()!.killSync();
-          setPbProcess(null);
-        }
-        if (getOfflineCache()) {
-          getOfflineCache()!.close();
-          setOfflineCache(null);
-        }
-        if (getPendingChanges()) {
-          getPendingChanges()!.close();
-          setPendingChanges(null);
-        }
-      });
-
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow().catch((error_) => {
@@ -261,6 +272,7 @@ if (gotLock) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });
       dialog.showErrorBox('Critical Startup Error', errorMessage);
+      cleanupAppResources();
       requestAppQuit('startup-failed');
     }
   };

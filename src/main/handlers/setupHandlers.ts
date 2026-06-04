@@ -2,25 +2,34 @@ import { ipcMain } from 'electron';
 import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
-import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
+import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import { loggers } from '../logger';
 
+const MAX_RELAY_SECRET_LENGTH = 256;
+const MAX_SERVER_URL_LENGTH = 2048;
+
+const relaySecretSchema = z.string().min(8).max(MAX_RELAY_SECRET_LENGTH);
+const relayServerUrlSchema = z
+  .string()
+  .max(MAX_SERVER_URL_LENGTH)
+  .refine((value) => z.url().safeParse(value).success, { message: 'Invalid URL' });
+
 const serverConfigSchema = z.object({
   mode: z.literal('server'),
   port: z.number().int().min(1024).max(65535),
   bindHost: z.enum(['127.0.0.1', '0.0.0.0']),
-  secret: z.string().min(8),
+  secret: relaySecretSchema,
 });
 
 const clientConfigSchema = z
   .object({
     mode: z.literal('client'),
-    serverUrl: z.url(),
+    serverUrl: relayServerUrlSchema,
     allowInsecureHttp: z.boolean().optional(),
-    secret: z.string().min(8),
+    secret: relaySecretSchema,
   })
   .refine(
     (config) => isAllowedRelayServerUrl(config.serverUrl, config.allowInsecureHttp === true),
@@ -74,7 +83,16 @@ export function setupSetupHandlers(
       loggers.main.warn('Invalid config data rejected', { errors: result.error.issues });
       return false;
     }
-    config.save(result.data);
+    const configToSave =
+      result.data.mode === 'client'
+        ? { ...result.data, serverUrl: normalizeRelayServerUrl(result.data.serverUrl) }
+        : result.data;
+    if (configToSave.mode === 'client' && !configToSave.serverUrl) {
+      loggers.main.warn('Invalid config data rejected', { errors: ['Invalid server URL'] });
+      return false;
+    }
+
+    config.save(configToSave);
 
     // Invalidate offline cache and pending changes when server config changes,
     // since cached data from the old server is stale and potentially wrong.

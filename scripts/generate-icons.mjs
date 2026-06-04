@@ -16,7 +16,7 @@
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import pngToIco from 'png-to-ico';
 
@@ -24,6 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const buildDir = join(__dirname, '..', 'build');
 const svgPath = join(buildDir, 'icon.svg');
 const svgBuffer = readFileSync(svgPath);
+const MACOS_ICONUTIL_PATH = '/usr/bin/iconutil';
 
 // All sizes needed across platforms
 const ICO_SIZES = [16, 24, 32, 48, 64, 128, 256];
@@ -87,10 +88,13 @@ async function generateIcns() {
   );
 
   try {
-    // eslint-disable-next-line sonarjs/os-command
-    execSync(`iconutil -c icns "${iconsetDir}" -o "${join(buildDir, 'icon.icns')}"`, {
-      stdio: 'pipe',
-    });
+    execFileSync(
+      MACOS_ICONUTIL_PATH,
+      ['-c', 'icns', iconsetDir, '-o', join(buildDir, 'icon.icns')],
+      {
+        stdio: 'pipe',
+      },
+    );
     console.log('  icon.icns');
   } catch (err) {
     console.error('  Failed to generate ICNS (iconutil not available?):', err.message);

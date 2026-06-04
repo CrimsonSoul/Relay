@@ -75,4 +75,25 @@ describe('download-pocketbase script', () => {
       await rm(tmp, { recursive: true, force: true });
     }
   });
+
+  it('rejects insecure redirects while allowing HTTPS redirects', async () => {
+    const scriptUrl = pathToFileURL(resolve('scripts/download-pocketbase.mjs')).href;
+    const mod = await import(scriptUrl);
+
+    expect(
+      mod.__downloadTestHooks.resolveRedirect(
+        'pocketbase_0.25.9_windows_amd64.zip',
+        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
+      ),
+    ).toBe(
+      'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/pocketbase_0.25.9_windows_amd64.zip',
+    );
+
+    expect(() =>
+      mod.__downloadTestHooks.resolveRedirect(
+        'http://example.test/pocketbase_0.25.9_windows_amd64.zip',
+        'https://github.com/pocketbase/pocketbase/releases/download/v0.25.9/',
+      ),
+    ).toThrow(/refusing insecure pocketbase download url/i);
+  });
 });

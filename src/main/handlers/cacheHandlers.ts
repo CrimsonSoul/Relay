@@ -22,6 +22,9 @@ const VALID_COLLECTIONS = new Set([
 ]);
 
 const VALID_ACTIONS = new Set(['create', 'update', 'delete']);
+const MAX_CACHE_RECORDS = 10_000;
+const MAX_CACHE_RECORD_BYTES = 256 * 1024;
+const MAX_CACHE_SNAPSHOT_BYTES = 10 * 1024 * 1024;
 
 const hasNonEmptyStringId = (record: unknown): record is Record<string, unknown> & { id: string } =>
   !!record &&
@@ -29,6 +32,33 @@ const hasNonEmptyStringId = (record: unknown): record is Record<string, unknown>
   !Array.isArray(record) &&
   typeof (record as { id?: unknown }).id === 'string' &&
   (record as { id: string }).id.trim().length > 0;
+
+function serializedByteLength(value: unknown): number | null {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function isRecordWithinCacheLimit(record: Record<string, unknown>): boolean {
+  const bytes = serializedByteLength(record);
+  return bytes !== null && bytes <= MAX_CACHE_RECORD_BYTES;
+}
+
+function isSnapshotWithinCacheLimit(records: Record<string, unknown>[]): boolean {
+  if (records.length > MAX_CACHE_RECORDS) return false;
+
+  let totalBytes = 0;
+  for (const record of records) {
+    const bytes = serializedByteLength(record);
+    if (bytes === null || bytes > MAX_CACHE_RECORD_BYTES) return false;
+    totalBytes += bytes;
+    if (totalBytes > MAX_CACHE_SNAPSHOT_BYTES) return false;
+  }
+
+  return true;
+}
 
 export function setupCacheHandlers(
   getCache: () => OfflineCache | null,
@@ -67,6 +97,10 @@ export function setupCacheHandlers(
         });
         return;
       }
+      if (!isRecordWithinCacheLimit(record)) {
+        loggers.cache.error('CACHE_WRITE: record exceeds cache size limit', { id: record.id });
+        return;
+      }
       const cache = getCache();
       if (!cache) return;
       cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record);
@@ -86,6 +120,13 @@ export function setupCacheHandlers(
       }
       if (!records.every(hasNonEmptyStringId)) {
         loggers.cache.error('CACHE_SNAPSHOT: records contain invalid ids');
+        return;
+      }
+      if (!isSnapshotWithinCacheLimit(records)) {
+        loggers.cache.error('CACHE_SNAPSHOT: records exceed cache size limit', {
+          collection,
+          count: records.length,
+        });
         return;
       }
       const cache = getCache();

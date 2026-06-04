@@ -199,6 +199,25 @@ describe('backupHandlers', () => {
       });
     });
 
+    it('rejects a second restore while one is already running', async () => {
+      let resolveRestore: (() => void) | undefined;
+      mockBackupManager.restore.mockReturnValue(
+        new Promise<void>((resolve) => {
+          resolveRestore = resolve;
+        }),
+      );
+      restartPb.mockResolvedValue(true);
+
+      const first = handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup-a.zip') as Promise<unknown>;
+      const second = await handlers[IPC_CHANNELS.BACKUP_RESTORE]({}, 'backup-b.zip');
+
+      expect(second).toEqual({ success: false, error: 'Backup restore already in progress' });
+      expect(mockBackupManager.restore).toHaveBeenCalledOnce();
+
+      resolveRestore?.();
+      await first;
+    });
+
     it('handles offline cache clear failure gracefully during restore', async () => {
       mockBackupManager.restore.mockResolvedValue(undefined);
       mockOfflineCache.clear.mockImplementation(() => {

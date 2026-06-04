@@ -8,7 +8,14 @@ import {
   type SetStateAction,
 } from 'react';
 import { type RecordModel } from 'pocketbase';
-import { getPb, isOnline, onConnectionStateChange, handleApiError } from '../services/pocketbase';
+import {
+  getPb,
+  isOnline,
+  onConnectionStateChange,
+  handleApiError,
+  getPocketBaseClientGeneration,
+  onPocketBaseClientChange,
+} from '../services/pocketbase';
 
 interface UseCollectionOptions {
   sort?: string;
@@ -50,10 +57,11 @@ function syncPendingOnce(): Promise<void> {
 
 function queueReconnectRefetch(
   connectedRef: { current: boolean },
+  mountedRef: { current: boolean },
   setConnectGeneration: Dispatch<SetStateAction<number>>,
 ): void {
   void syncPendingOnce().finally(() => {
-    if (connectedRef.current) {
+    if (mountedRef.current && connectedRef.current) {
       setConnectGeneration((g) => g + 1);
     }
   });
@@ -131,6 +139,30 @@ async function tryOfflineCache<T>(collectionName: string): Promise<T[] | null> {
   }
 }
 
+function isAutocancelledError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return msg.includes('autocancelled');
+}
+
+function getFetchErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchRemoteCollection<T extends RecordModel>(
+  collectionName: string,
+  options: UseCollectionOptions,
+): Promise<T[]> {
+  return getPb()
+    .collection(collectionName)
+    .getFullList<T>({
+      sort: options.sort || '-created',
+      filter: options.filter || '',
+      // Disable auto-cancellation so parallel fetches for different
+      // collections don't abort each other (PB SDK groups by collection).
+      requestKey: null,
+    });
+}
+
 export function useCollection<T extends RecordModel>(
   collectionName: string,
   options: UseCollectionOptions = {},
@@ -139,55 +171,64 @@ export function useCollection<T extends RecordModel>(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const subscriptionRef = useRef<(() => void | Promise<void>) | null>(null);
+  const mountedRef = useRef(false);
+  const fetchGenerationRef = useRef(0);
   // Ref to latest data so the realtime handler can read it without a closure
   // over stale state (avoids functional updater nesting flagged by sonarjs).
   const dataRef = useRef<T[]>([]);
-  const comparator = useMemo(() => buildComparator<T>(options.sort), [options.sort]);
+  const { sort, filter } = options;
+  const comparator = useMemo(() => buildComparator<T>(sort), [sort]);
+
+  const commitRecords = useCallback((records: T[]) => {
+    dataRef.current = records;
+    setData(records);
+  }, []);
 
   const fetchData = useCallback(async () => {
+    const generation = ++fetchGenerationRef.current;
+    const isCurrentFetch = () => mountedRef.current && generation === fetchGenerationRef.current;
+
     try {
       if (isOnline()) {
-        const records = await getPb()
-          .collection(collectionName)
-          .getFullList<T>({
-            sort: options.sort || '-created',
-            filter: options.filter || '',
-            // Disable auto-cancellation so parallel fetches for different
-            // collections don't abort each other (PB SDK groups by collection).
-            requestKey: null,
-          });
-        dataRef.current = records;
-        setData(records);
+        const records = await fetchRemoteCollection<T>(collectionName, { sort, filter });
+        if (!isCurrentFetch()) return;
+        commitRecords(records);
         setError(null);
         // Populate offline cache with the full collection so going offline
         // before any realtime events still has cached data available.
         getApi()?.cacheSnapshot?.(collectionName, records);
-      } else {
-        const cached = await tryOfflineCache<T>(collectionName);
-        if (cached) {
-          dataRef.current = cached;
-          setData(cached);
-        }
+        return;
       }
-    } catch (err) {
-      handleApiError(err);
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('autocancelled')) return; // PB SDK auto-cancellation, not a real error
-      setError(msg);
+
       const cached = await tryOfflineCache<T>(collectionName);
-      if (cached) {
-        dataRef.current = cached;
-        setData(cached);
-      }
+      if (!isCurrentFetch()) return;
+      if (cached) commitRecords(cached);
+    } catch (err) {
+      if (isAutocancelledError(err)) return; // PB SDK auto-cancellation, not a real error
+      if (!isCurrentFetch()) return;
+      handleApiError(err);
+      setError(getFetchErrorMessage(err));
+      const cached = await tryOfflineCache<T>(collectionName);
+      if (!isCurrentFetch()) return;
+      if (cached) commitRecords(cached);
     } finally {
-      setLoading(false);
+      if (isCurrentFetch()) setLoading(false);
     }
-  }, [collectionName, options.sort, options.filter]);
+  }, [collectionName, sort, filter, commitRecords]);
 
   // Track connection state with a ref (avoids cascading effect re-runs)
   // and a counter to trigger re-subscription on reconnect.
   const connectedRef = useRef(isOnline());
   const [connectGeneration, setConnectGeneration] = useState(0);
+  const [clientGeneration, setClientGeneration] = useState(getPocketBaseClientGeneration);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      fetchGenerationRef.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onConnectionStateChange((s) => {
@@ -198,16 +239,21 @@ export function useCollection<T extends RecordModel>(
       if (online && wasOffline) {
         // Flush pending offline writes once across mounted collections before
         // refetching; otherwise a stale server snapshot can overwrite cache.
-        queueReconnectRefetch(connectedRef, setConnectGeneration);
+        queueReconnectRefetch(connectedRef, mountedRef, setConnectGeneration);
       } else if (!online && !wasOffline) {
         // Going offline — bump to tear down stale subscription
         setConnectGeneration((g) => g + 1);
       }
     });
-    return unsubscribe;
+    return () => {
+      connectedRef.current = false;
+      unsubscribe();
+    };
   }, []);
 
-  // Subscribe to realtime changes — re-runs on reconnect via connectGeneration
+  useEffect(() => onPocketBaseClientChange(setClientGeneration), []);
+
+  // Subscribe to realtime changes — re-runs on reconnect or PB client replacement.
   useEffect(() => {
     let cancelled = false;
     void fetchData();
@@ -241,7 +287,7 @@ export function useCollection<T extends RecordModel>(
       void subscriptionRef.current?.();
       subscriptionRef.current = null;
     };
-  }, [collectionName, fetchData, connectGeneration, comparator]);
+  }, [collectionName, fetchData, connectGeneration, clientGeneration, comparator]);
 
   return { data, loading, error, refetch: fetchData };
 }

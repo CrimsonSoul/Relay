@@ -180,6 +180,21 @@ describe('cacheHandlers', () => {
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
+    it('returns early when record exceeds the cache size limit', () => {
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', {
+        id: '1',
+        body: 'x'.repeat(257 * 1024),
+      });
+
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('returns early when record cannot be serialized', () => {
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id: '1', value: 1n });
+
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
     it('returns early when cache is null', () => {
       getCache.mockReturnValueOnce(null as never);
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'contacts', 'create', { id: '1' });
@@ -228,6 +243,22 @@ describe('cacheHandlers', () => {
 
     it('returns early when any snapshot record id is not a non-empty string', () => {
       handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', [{ id: '1' }, { id: '   ' }]);
+
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
+    });
+
+    it('returns early when snapshot has too many records', () => {
+      const records = Array.from({ length: 10_001 }, (_, index) => ({ id: `r${index}` }));
+
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', records);
+
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
+    });
+
+    it('returns early when snapshot exceeds serialized size limits', () => {
+      const records = [{ id: '1', body: 'x'.repeat(257 * 1024) }];
+
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', records);
 
       expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });

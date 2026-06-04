@@ -187,6 +187,7 @@ describe('BackupManager', () => {
     it('creates a safety backup then restores the named backup', async () => {
       const manager = new BackupManager(dataDir);
       const pb = makePbClient();
+      mockReaddirSync.mockReturnValue([] as unknown as string[]);
       manager.setPocketBase(pb);
 
       await manager.restore('my-backup.zip');
@@ -202,6 +203,27 @@ describe('BackupManager', () => {
 
       // Then restore the requested backup
       expect(restoreMock).toHaveBeenCalledWith('my-backup.zip');
+    });
+
+    it('prunes old backups after creating a restore safety backup', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+
+      const files = Array.from(
+        { length: 12 },
+        (_, i) => `pre_restore-${String(i).padStart(2, '0')}.zip`,
+      );
+      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      mockStatSync.mockImplementation((filePath) => {
+        const name = String(filePath).split('/').pop()!;
+        const idx = files.indexOf(name);
+        return makeStatResult(new Date(2025 - idx, 0, 1));
+      });
+
+      await manager.restore('my-backup.zip');
+
+      expect(mockRmSync).toHaveBeenCalledTimes(2);
     });
 
     it('throws when safety backup creation fails', async () => {
@@ -224,6 +246,7 @@ describe('BackupManager', () => {
         () => Promise.resolve(),
         () => Promise.reject(new Error('Restore failed')),
       );
+      mockReaddirSync.mockReturnValue([] as unknown as string[]);
       manager.setPocketBase(pb);
 
       await expect(manager.restore('backup.zip')).rejects.toThrow('Restore failed');

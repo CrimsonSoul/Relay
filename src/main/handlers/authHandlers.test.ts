@@ -138,6 +138,12 @@ describe('authHandlers', () => {
       handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, { nonce: 'tooshort' });
       expect(CredentialManager.cancelAuthRequest).not.toHaveBeenCalled();
     });
+
+    it('ignores malformed payloads without throwing', () => {
+      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, undefined)).not.toThrow();
+      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, 'bad')).not.toThrow();
+      expect(CredentialManager.cancelAuthRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('AUTH_USE_CACHED invalid nonce', () => {

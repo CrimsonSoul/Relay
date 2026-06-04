@@ -11,7 +11,12 @@ import {
   type BoardSettingsInitializationResult,
   type BoardSettingsRecord,
 } from '../services/oncallBoardSettingsService';
-import { getPb, isOnline, onConnectionStateChange } from '../services/pocketbase';
+import {
+  getPb,
+  isOnline,
+  onConnectionStateChange,
+  onPocketBaseClientChange,
+} from '../services/pocketbase';
 import { loggers } from '../utils/logger';
 import { getDevMockData } from '../utils/mockData';
 
@@ -200,6 +205,12 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
       boardSettingsSubRef.current = unsub;
     }
 
+    function stopSubscription(): void {
+      boardSettingsSubGenRef.current += 1;
+      void boardSettingsSubRef.current?.();
+      boardSettingsSubRef.current = null;
+    }
+
     if (isOnline()) {
       void subscribe().catch((err: unknown) => {
         loggers.app.error('Board settings subscription failed', { error: err });
@@ -211,15 +222,23 @@ export function useAppData(showToast: (msg: string, type: 'success' | 'error' | 
         void subscribe().catch((err: unknown) => {
           loggers.app.error('Board settings re-subscription failed', { error: err });
         });
+      } else if (s !== 'online') {
+        stopSubscription();
+      }
+    });
+    const unsubClient = onPocketBaseClientChange(() => {
+      if (!cancelled && isOnline()) {
+        void subscribe().catch((err: unknown) => {
+          loggers.app.error('Board settings client-change subscription failed', { error: err });
+        });
       }
     });
 
     return () => {
       cancelled = true;
-      boardSettingsSubGenRef.current += 1;
-      void boardSettingsSubRef.current?.();
-      boardSettingsSubRef.current = null;
+      stopSubscription();
       unsubConnection();
+      unsubClient();
     };
   }, [boardSettings.status, boardSettings.recordId]);
 

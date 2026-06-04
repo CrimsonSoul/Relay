@@ -12,6 +12,7 @@
     "dev": "ELECTRON_RUN_AS_NODE= electron-vite dev",
     "build": "electron-vite build",
     "build:win": "node scripts/download-pocketbase.mjs --platform=win32 --arch=x64 && npm run build && electron-builder --win --x64 --config electron-builder.yml",
+    "package:win": "npm run build && electron-builder --win --x64 --config electron-builder.yml",
     "build:mac": "node scripts/download-pocketbase.mjs --platform=darwin --arch=arm64 && node scripts/download-pocketbase.mjs --platform=darwin --arch=x64 && npm run build && electron-builder --mac --config electron-builder.yml",
     "release": "npm run build:win -- --publish always",
     "preview": "electron-vite preview",

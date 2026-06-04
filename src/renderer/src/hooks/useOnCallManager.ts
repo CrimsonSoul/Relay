@@ -54,6 +54,8 @@ const appendUniqueTeamId = (teamOrder: string[], teamId: string) =>
 const pickCurrentTeamOrder = (primary: string[], fallback: string[]) =>
   primary.length > 0 ? primary : fallback;
 
+const normalizeTeamId = (name: string) => name.trim().toLowerCase();
+
 export function useOnCallManager(
   onCall: OnCallRow[],
   dismissAlert: (type: string) => void,
@@ -310,10 +312,24 @@ export function useOnCallManager(
 
   const handleAddTeam = useCallback(
     async (name: string) => {
-      const teamId = name.trim().toLowerCase();
+      const trimmedName = name.trim();
+      const teamId = normalizeTeamId(trimmedName);
+      if (!teamId) {
+        showToast('Enter a team name before adding', 'error');
+        return;
+      }
+
+      const duplicate = dataRef.current.some(
+        (row) => normalizeTeamId(row.teamId || row.team) === teamId,
+      );
+      if (duplicate) {
+        showToast(`${trimmedName} already exists`, 'info');
+        return;
+      }
+
       const initialRow: OnCallRow = {
         id: crypto.randomUUID(),
-        team: name,
+        team: trimmedName,
         teamId,
         role: 'Primary',
         name: '',
@@ -328,7 +344,7 @@ export function useOnCallManager(
 
       // 2. Perform API calls
       try {
-        const savedRows = await replaceTeamRecords(name, [
+        const savedRows = await replaceTeamRecords(trimmedName, [
           { teamId, role: 'Primary', name: '', contact: '', timeWindow: '', sortOrder: 0 },
         ]);
         const committedRows = savedRows.length > 0 ? savedRows : [initialRow];
@@ -349,7 +365,7 @@ export function useOnCallManager(
         repairLocalBoardSettings(newTeamOrder, recordId, { record: updatedSettings });
 
         setLocalOnCall((prev) => replaceRowsForTeamId(prev, teamId, committedRows));
-        showToast(`Added team ${name}`, 'success');
+        showToast(`Added team ${trimmedName}`, 'success');
       } catch (err: unknown) {
         // Rollback local state
         setLocalOnCall((p) => p.filter((r) => r.id !== initialRow.id));

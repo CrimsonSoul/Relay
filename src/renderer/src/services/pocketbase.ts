@@ -5,19 +5,27 @@ import { loggers } from '../utils/logger';
 export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
 
 type StateListener = (state: ConnectionState) => void;
+type ClientListener = (generation: number) => void;
 
 let pb: PocketBase | null = null;
 let connectionState: ConnectionState = 'connecting';
+let clientGeneration = 0;
 let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 let healthCheckInFlight = false;
 let healthCheckAbortController: AbortController | null = null;
 let healthCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 const stateListeners = new Set<StateListener>();
+const clientListeners = new Set<ClientListener>();
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
 
 export function initPocketBase(url: string): PocketBase {
+  const previousUrl = pb?.baseURL ?? null;
   pb = new PocketBase(url);
-  connectionState = 'connecting';
+  setConnectionState('connecting');
+  if (previousUrl !== null && previousUrl !== url) {
+    clientGeneration++;
+    clientListeners.forEach((fn) => fn(clientGeneration));
+  }
   return pb;
 }
 
@@ -33,6 +41,15 @@ export function getConnectionState(): ConnectionState {
 export function onConnectionStateChange(listener: StateListener): () => void {
   stateListeners.add(listener);
   return () => stateListeners.delete(listener);
+}
+
+export function getPocketBaseClientGeneration(): number {
+  return clientGeneration;
+}
+
+export function onPocketBaseClientChange(listener: ClientListener): () => void {
+  clientListeners.add(listener);
+  return () => clientListeners.delete(listener);
 }
 
 function setConnectionState(state: ConnectionState): void {
@@ -87,7 +104,17 @@ function finishHealthCheckProbe(controller: AbortController): void {
 }
 
 async function handleHealthyProbe(): Promise<void> {
-  if (connectionState === 'online') return;
+  if (connectionState === 'online') {
+    if (getPb().authStore.isValid) return;
+
+    setConnectionState('reconnecting');
+    const refreshed = await refreshAuthSession(true);
+    if (!refreshed) {
+      loggers.network.warn('Auth session refresh failed while online');
+      setConnectionState('offline');
+    }
+    return;
+  }
 
   // Rehydrate auth if the token expired during offline time.
   // Do NOT emit 'reconnecting' — subscribers listen for state changes
@@ -160,6 +187,18 @@ export function handleApiError(error: unknown): void {
     !('isAbort' in error && (error as { isAbort: boolean }).isAbort)
   ) {
     setConnectionState('offline');
+    return;
+  }
+  if (
+    error &&
+    typeof error === 'object' &&
+    'status' in error &&
+    ((error as { status: number }).status === 401 || (error as { status: number }).status === 403)
+  ) {
+    setConnectionState('reconnecting');
+    void refreshAuthSession().then((refreshed) => {
+      if (!refreshed) setConnectionState('offline');
+    });
   }
 }
 

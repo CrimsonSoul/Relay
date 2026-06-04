@@ -49,17 +49,23 @@ export class BackupManager {
 
     // Safety backup before overwriting
     const safetyName = makeBackupName('pre_restore');
+    let safetyBackupCreated = false;
     try {
       await this.pb.backups.create(safetyName);
+      safetyBackupCreated = true;
       logger.info('Pre-restore safety backup created', { name: safetyName });
     } catch (err) {
       logger.error('Failed to create pre-restore safety backup', { error: err });
       throw new Error('Could not create safety backup before restore');
     }
 
-    // Restore the requested backup
-    await this.pb.backups.restore(name);
-    logger.info('Backup restored', { name });
+    try {
+      // Restore the requested backup
+      await this.pb.backups.restore(name);
+      logger.info('Backup restored', { name });
+    } finally {
+      if (safetyBackupCreated) this.pruneOldBackups();
+    }
   }
 
   private pruneOldBackups(): void {

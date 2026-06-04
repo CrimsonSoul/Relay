@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { BackupEntry } from '@shared/ipc';
 import { TactileButton } from '../TactileButton';
+import { useMounted } from '../../hooks/useMounted';
 
 declare const api: {
   listBackups: () => Promise<BackupEntry[]>;
@@ -31,19 +32,22 @@ export const DataManagerBackups: React.FC = () => {
   const [restoring, setRestoring] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useMounted();
 
   const loadBackups = useCallback(async () => {
+    if (!mounted.current) return;
     setLoading(true);
     try {
       const list = await api.listBackups();
+      if (!mounted.current) return;
       setBackups(list);
       setError(null);
     } catch {
-      setError('Failed to load backups');
+      if (mounted.current) setError('Failed to load backups');
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
     }
-  }, []);
+  }, [mounted]);
 
   useEffect(() => {
     void loadBackups();
@@ -54,14 +58,14 @@ export const DataManagerBackups: React.FC = () => {
     try {
       const result = await api.createBackup();
       if (result.success) {
-        await loadBackups();
+        if (mounted.current) await loadBackups();
       } else {
-        setError(result.error ?? 'Failed to create backup');
+        if (mounted.current) setError(result.error ?? 'Failed to create backup');
       }
     } catch {
-      setError('Failed to create backup');
+      if (mounted.current) setError('Failed to create backup');
     } finally {
-      setCreating(false);
+      if (mounted.current) setCreating(false);
     }
   };
 
@@ -73,12 +77,16 @@ export const DataManagerBackups: React.FC = () => {
       if (result.success) {
         globalThis.location.reload();
       } else {
-        setError(result.error ?? 'Restore failed');
-        setRestoring(false);
+        if (mounted.current) {
+          setError(result.error ?? 'Restore failed');
+          setRestoring(false);
+        }
       }
     } catch {
-      setError('Restore failed unexpectedly');
-      setRestoring(false);
+      if (mounted.current) {
+        setError('Restore failed unexpectedly');
+        setRestoring(false);
+      }
     }
   };
 

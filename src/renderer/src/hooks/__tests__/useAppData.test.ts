@@ -7,6 +7,7 @@ import { loggers } from '../../utils/logger';
 const mockSubscribe = vi.fn();
 const mockIsOnline = vi.fn(() => true);
 let connectionStateCallback: ((state: string) => void) | null = null;
+let clientChangeCallback: ((generation: number) => void) | null = null;
 
 vi.mock('../../services/pocketbase', () => ({
   getPb: () => ({
@@ -19,6 +20,12 @@ vi.mock('../../services/pocketbase', () => ({
     connectionStateCallback = callback;
     return () => {
       connectionStateCallback = null;
+    };
+  },
+  onPocketBaseClientChange: (callback: (generation: number) => void) => {
+    clientChangeCallback = callback;
+    return () => {
+      clientChangeCallback = null;
     };
   },
 }));
@@ -100,6 +107,7 @@ describe('useAppData', () => {
     mockIsOnline.mockReturnValue(true);
     mockSubscribe.mockResolvedValue(vi.fn());
     connectionStateCallback = null;
+    clientChangeCallback = null;
   });
 
   it('returns empty data when collections are empty', () => {
@@ -369,6 +377,43 @@ describe('useAppData', () => {
 
       expect(unsubscribeSecond).toHaveBeenCalledOnce();
       expect(unsubscribeThird).not.toHaveBeenCalled();
+    });
+
+    it('resubscribes board settings when the PocketBase client changes', async () => {
+      const unsubscribeFirst = vi.fn();
+      const unsubscribeSecond = vi.fn();
+      mockSubscribe
+        .mockResolvedValueOnce(unsubscribeFirst)
+        .mockResolvedValueOnce(unsubscribeSecond);
+
+      renderHook(() => useAppData(showToast));
+
+      await waitFor(() => expect(clientChangeCallback).toBeTruthy());
+      await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        clientChangeCallback?.(1);
+      });
+
+      await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(2));
+      expect(unsubscribeFirst).toHaveBeenCalledOnce();
+      expect(unsubscribeSecond).not.toHaveBeenCalled();
+    });
+
+    it('unsubscribes board settings when the connection goes offline', async () => {
+      const unsubscribe = vi.fn();
+      mockSubscribe.mockResolvedValueOnce(unsubscribe);
+
+      renderHook(() => useAppData(showToast));
+
+      await waitFor(() => expect(connectionStateCallback).toBeTruthy());
+      await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(1));
+
+      act(() => {
+        connectionStateCallback?.('offline');
+      });
+
+      expect(unsubscribe).toHaveBeenCalledOnce();
     });
   });
 

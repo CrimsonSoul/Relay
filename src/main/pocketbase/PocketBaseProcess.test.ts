@@ -221,6 +221,8 @@ describe('PocketBaseProcess', () => {
     // Advance time past the 10 s health timeout
     await vi.advanceTimersByTimeAsync(11000);
     await assertion;
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    expect(pbProcess.isRunning()).toBe(false);
 
     vi.useRealTimers();
   });

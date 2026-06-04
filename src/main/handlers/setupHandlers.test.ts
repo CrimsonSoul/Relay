@@ -141,6 +141,18 @@ describe('setupHandlers', () => {
       expect(result).toBe(true);
     });
 
+    it('canonicalizes client serverUrl before saving', () => {
+      const config = buildClientConfig({ serverUrl: 'https://relay.example.com/' });
+
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG]({}, config);
+
+      expect(mockAppConfig.save).toHaveBeenCalledWith({
+        ...config,
+        serverUrl: 'https://relay.example.com',
+      });
+      expect(result).toBe(true);
+    });
+
     it('returns false when appConfig is null', () => {
       getAppConfig.mockReturnValueOnce(null as never);
 
@@ -207,6 +219,16 @@ describe('setupHandlers', () => {
       expect(result).toBe(false);
     });
 
+    it('rejects config with oversized secret', () => {
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildServerConfig({ secret: 's'.repeat(257) }),
+      );
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
     it('rejects client config with invalid URL', () => {
       const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
         {},
@@ -215,6 +237,33 @@ describe('setupHandlers', () => {
 
       expect(mockAppConfig.save).not.toHaveBeenCalled();
       expect(result).toBe(false);
+    });
+
+    it('rejects client config with oversized serverUrl', () => {
+      const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+        {},
+        buildClientConfig({ serverUrl: `https://${'a'.repeat(2040)}.example.com` }),
+      );
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
+      expect(result).toBe(false);
+    });
+
+    it('rejects client config with path, query, hash, or credentials in serverUrl', () => {
+      for (const serverUrl of [
+        'https://relay.example.com/pb',
+        'https://relay.example.com?team=ops',
+        'https://relay.example.com#setup',
+        'https://user:pass@relay.example.com',
+      ]) {
+        const result = handlers[IPC_CHANNELS.SETUP_SAVE_CONFIG](
+          {},
+          buildClientConfig({ serverUrl }),
+        );
+        expect(result).toBe(false);
+      }
+
+      expect(mockAppConfig.save).not.toHaveBeenCalled();
     });
 
     it('accepts private LAN HTTP client config without requiring insecure HTTP opt-in', () => {

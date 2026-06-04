@@ -1,4 +1,5 @@
 import { session } from 'electron';
+import { getRelayServerConnectOrigins } from '@shared/urlSecurity';
 import { getAppConfig } from './appState';
 
 /**
@@ -21,11 +22,8 @@ export function setupSecurityHeaders(isDev: boolean): void {
         return `http://127.0.0.1:${config.port} ws://127.0.0.1:${config.port}`;
       }
       if (config?.mode === 'client' && config.serverUrl) {
-        // Derive ws:// URL from the configured http:// server URL
-        const wsUrl = config.serverUrl
-          .replace(/^http:\/\//, 'ws://')
-          .replace(/^https:\/\//, 'wss://');
-        return `${config.serverUrl} ${wsUrl}`;
+        const origins = getRelayServerConnectOrigins(config.serverUrl);
+        if (origins) return `${origins.http} ${origins.ws}`;
       }
       // Not yet configured — allow localhost on common PB ports for setup flow
       // eslint-disable-next-line sonarjs/no-clear-text-protocols

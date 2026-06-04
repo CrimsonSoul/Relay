@@ -27,12 +27,14 @@ interface CollectionDef {
   name: string;
   type: 'base';
   fields: FieldDef[];
+  indexes?: string[];
 }
 
 type ExistingCollection = {
   id: string;
   name: string;
   fields?: FieldDef[];
+  indexes?: string[];
   listRule?: string | null;
   viewRule?: string | null;
   createRule?: string | null;
@@ -40,11 +42,25 @@ type ExistingCollection = {
   deleteRule?: string | null;
 };
 
+type BoardSettingsRecord = {
+  id: string;
+  key: string;
+  teamOrder?: unknown;
+  locked?: boolean;
+  created: string;
+  updated: string;
+};
+
 /** Autodate fields added to every collection for created/updated timestamps. */
 const AUTODATE_FIELDS: FieldDef[] = [
   { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
   { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
 ];
+
+const BOARD_SETTINGS_COLLECTION = 'oncall_board_settings';
+const PRIMARY_BOARD_SETTINGS_KEY = 'primary';
+const BOARD_SETTINGS_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)';
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -194,13 +210,14 @@ const COLLECTIONS: CollectionDef[] = [
     ],
   },
   {
-    name: 'oncall_board_settings',
+    name: BOARD_SETTINGS_COLLECTION,
     type: 'base',
     fields: [
       { type: 'text', name: 'key', required: true },
       { type: 'json', name: 'teamOrder' },
       { type: 'bool', name: 'locked' },
     ],
+    indexes: [BOARD_SETTINGS_KEY_INDEX],
   },
 ];
 
@@ -220,22 +237,28 @@ async function patchCollectionDefinition(
   colId: string,
   colName: string,
   expectedSchemaFields: FieldDef[],
+  expectedIndexes: string[] = [],
 ): Promise<boolean> {
   const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
   const fields = colFull.fields || [];
   const fieldNames = new Set(fields.map((f) => f.name));
   const allExpected = [...expectedSchemaFields, ...AUTODATE_FIELDS];
   const missing = allExpected.filter((f) => !fieldNames.has(f.name));
+  const indexes = colFull.indexes || [];
+  const missingIndexes = expectedIndexes.filter((index) => !indexes.includes(index));
   const rulesPatch = Object.fromEntries(
     Object.entries(AUTH_RULE_PATCH).filter(([key, value]) => {
       return colFull[key as keyof typeof AUTH_RULE_PATCH] !== value;
     }),
   );
 
-  if (missing.length === 0 && Object.keys(rulesPatch).length === 0) return false;
+  if (missing.length === 0 && missingIndexes.length === 0 && Object.keys(rulesPatch).length === 0) {
+    return false;
+  }
 
   await pb.collections.update(colId, {
     ...(missing.length > 0 ? { fields: [...fields, ...missing] } : {}),
+    ...(missingIndexes.length > 0 ? { indexes: [...indexes, ...missingIndexes] } : {}),
     ...rulesPatch,
   });
 
@@ -246,6 +269,9 @@ async function patchCollectionDefinition(
   }
   if (Object.keys(rulesPatch).length > 0) {
     logger.info(`Patched API rules on collection: ${colName}`);
+  }
+  if (missingIndexes.length > 0) {
+    logger.info(`Patched indexes on collection: ${colName} (+${missingIndexes.length})`);
   }
   return true;
 }
@@ -260,6 +286,7 @@ async function createMissing(pb: PocketBase, existing: Set<string>): Promise<num
         name: def.name,
         type: def.type,
         fields: [...def.fields, ...AUTODATE_FIELDS],
+        ...(def.indexes ? { indexes: def.indexes } : {}),
         listRule: AUTH_RULE,
         viewRule: AUTH_RULE,
         createRule: AUTH_RULE,
@@ -287,12 +314,99 @@ async function patchExisting(
     const col = allCols.find((c) => c.name === def.name);
     if (!col) continue;
     try {
-      if (await patchCollectionDefinition(pb, col.id, def.name, def.fields)) patched++;
+      if (await patchCollectionDefinition(pb, col.id, def.name, def.fields, def.indexes)) {
+        patched++;
+      }
     } catch (err) {
       logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
     }
   }
   return patched;
+}
+
+async function repairDuplicateBoardSettings(pb: PocketBase, existing: Set<string>): Promise<void> {
+  if (!existing.has(BOARD_SETTINGS_COLLECTION)) return;
+
+  let records: BoardSettingsRecord[];
+  try {
+    records = await pb.collection(BOARD_SETTINGS_COLLECTION).getFullList<BoardSettingsRecord>({
+      filter: `key="${PRIMARY_BOARD_SETTINGS_KEY}"`,
+      sort: '-updated,-created,-id',
+      requestKey: null,
+    });
+  } catch (error) {
+    logger.warn('Failed to inspect on-call board settings before index patch', { error });
+    return;
+  }
+
+  if (records.length <= 1) return;
+
+  records.sort(compareBoardSettingsNewestFirst);
+  const [keep, ...duplicates] = records;
+  if (!keep) return;
+
+  const mergedTeamOrder = mergeBoardTeamOrders([keep, ...duplicates]);
+  let canDeleteDuplicates = true;
+  if (mergedTeamOrder.length > 0 && !arraysEqual(asStringArray(keep.teamOrder), mergedTeamOrder)) {
+    try {
+      await pb
+        .collection(BOARD_SETTINGS_COLLECTION)
+        .update(keep.id, { teamOrder: mergedTeamOrder });
+    } catch (error) {
+      canDeleteDuplicates = false;
+      logger.warn('Failed to merge duplicate on-call board settings order', { error });
+    }
+  }
+
+  if (!canDeleteDuplicates) return;
+
+  for (const duplicate of duplicates) {
+    try {
+      await pb.collection(BOARD_SETTINGS_COLLECTION).delete(duplicate.id);
+    } catch (error) {
+      logger.warn('Failed to remove duplicate on-call board settings record', {
+        id: duplicate.id,
+        error,
+      });
+    }
+  }
+
+  logger.warn('Repaired duplicate on-call board settings records before unique index patch', {
+    kept: keep.id,
+    removed: duplicates.map((record) => record.id),
+  });
+}
+
+function compareBoardSettingsNewestFirst(a: BoardSettingsRecord, b: BoardSettingsRecord): number {
+  const updated = b.updated.localeCompare(a.updated);
+  if (updated !== 0) return updated;
+  const created = b.created.localeCompare(a.created);
+  if (created !== 0) return created;
+  return b.id.localeCompare(a.id);
+}
+
+function mergeBoardTeamOrders(records: BoardSettingsRecord[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const record of records) {
+    for (const teamId of asStringArray(record.teamOrder)) {
+      if (seen.has(teamId)) continue;
+      seen.add(teamId);
+      merged.push(teamId);
+    }
+  }
+
+  return merged;
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 /** Warn about collections Relay does not manage. Startup never deletes user data. */
@@ -325,6 +439,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
 
   const existing = new Set(allCols.map((c) => c.name));
   const created = await createMissing(pb, existing);
+  await repairDuplicateBoardSettings(pb, existing);
   const patched = await patchExisting(pb, existing, allCols);
   const unmanaged = warnAboutUnknownCollections(allCols);
 

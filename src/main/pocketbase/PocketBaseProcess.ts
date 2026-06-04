@@ -15,7 +15,9 @@ export class PocketBaseProcess {
   private child: ChildProcess | null = null;
   private readonly config: PocketBaseConfig;
   private restartCount = 0;
+  private firstCrashAt: number | null = null;
   private readonly maxRestarts = 3;
+  private readonly restartWindowMs = 60_000;
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
 
@@ -105,12 +107,16 @@ export class PocketBaseProcess {
 
     try {
       await Promise.race([this.waitForHealthy(), startupError]);
+    } catch (error) {
+      startupSettled = true;
+      rejectStartupError = null;
+      this.killSpawnedChildAfterStartupFailure();
+      throw error;
     } finally {
       startupSettled = true;
       rejectStartupError = null;
     }
 
-    this.restartCount = 0;
     logger.info('PocketBase is healthy', { url: this.getUrl() });
   }
 
@@ -249,6 +255,12 @@ export class PocketBaseProcess {
   }
 
   private async handleCrash(reason: string): Promise<void> {
+    const now = Date.now();
+    if (this.firstCrashAt === null || now - this.firstCrashAt > this.restartWindowMs) {
+      this.firstCrashAt = now;
+      this.restartCount = 0;
+    }
+
     this.restartCount++;
     if (this.restartCount <= this.maxRestarts) {
       logger.warn(`Restarting PocketBase (attempt ${this.restartCount}/${this.maxRestarts})`);
@@ -260,6 +272,24 @@ export class PocketBaseProcess {
       }
     } else {
       this.onCrashCallback?.(reason);
+    }
+  }
+
+  private killSpawnedChildAfterStartupFailure(): void {
+    const child = this.child;
+    if (!child) return;
+    this.child = null;
+
+    if (child.exitCode !== null) return;
+
+    try {
+      if (this.getPlatform() === 'win32' && child.pid) {
+        execFileSync('taskkill', ['/F', '/T', '/PID', child.pid.toString()], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
+      } else {
+        child.kill('SIGKILL');
+      }
+    } catch (error) {
+      logger.warn('Failed to kill PocketBase after startup failure', { error });
     }
   }
 

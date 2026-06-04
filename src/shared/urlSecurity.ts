@@ -32,12 +32,9 @@ export function normalizeRelayServerUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
   const withProtocol = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
-  const minLength = withProtocol.indexOf('://') + 3;
-  let end = withProtocol.length;
-  while (end > minLength && withProtocol[end - 1] === '/') {
-    end--;
-  }
-  return withProtocol.slice(0, end);
+  const parsed = parseUrl(withProtocol);
+  if (!parsed || !isRelayServerOriginUrl(parsed)) return '';
+  return parsed.origin;
 }
 
 export function isLoopbackRelayServerUrl(value: string): boolean {
@@ -63,7 +60,28 @@ export function isLanRelayServerUrl(value: string): boolean {
 export function isAllowedRelayServerUrl(value: string, allowInsecureHttp = false): boolean {
   const parsed = parseUrl(value);
   if (!parsed) return false;
+  if (!isRelayServerOriginUrl(parsed)) return false;
   if (parsed.protocol === 'https:') return true;
   if (parsed.protocol !== 'http:') return false;
   return allowInsecureHttp || isLanRelayServerUrl(value);
+}
+
+export function getRelayServerConnectOrigins(value: string): { http: string; ws: string } | null {
+  const parsed = parseUrl(value);
+  if (!parsed) return null;
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  if (!parsed.host) return null;
+  const http = parsed.origin;
+  const wsProtocol = parsed.protocol === 'https:' ? 'wss:' : 'ws:';
+  return { http, ws: `${wsProtocol}//${parsed.host}` };
+}
+
+function isRelayServerOriginUrl(parsed: URL): boolean {
+  return (
+    parsed.username === '' &&
+    parsed.password === '' &&
+    parsed.pathname === '/' &&
+    parsed.search === '' &&
+    parsed.hash === ''
+  );
 }

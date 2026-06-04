@@ -55,6 +55,8 @@ import {
   requireOnline,
   escapeFilter,
   isOnline,
+  getPocketBaseClientGeneration,
+  onPocketBaseClientChange,
 } from '../pocketbase';
 
 // ---------------------------------------------------------------------------
@@ -96,6 +98,25 @@ describe('pocketbase service', () => {
       const pb = getPb();
       expect(pb).toBeDefined();
       expect(pb.baseURL).toBe('http://localhost:8090');
+    });
+  });
+
+  describe('PocketBase client generation', () => {
+    it('notifies listeners when initPocketBase replaces the client URL', () => {
+      const listener = vi.fn();
+      const unsubscribe = onPocketBaseClientChange(listener);
+      const before = getPocketBaseClientGeneration();
+
+      initPocketBase('http://localhost:8091');
+
+      expect(getPocketBaseClientGeneration()).toBe(before + 1);
+      expect(listener).toHaveBeenCalledWith(before + 1);
+
+      listener.mockClear();
+      initPocketBase('http://localhost:8091');
+      expect(listener).not.toHaveBeenCalled();
+
+      unsubscribe();
     });
   });
 
@@ -381,6 +402,37 @@ describe('pocketbase service', () => {
       vi.unstubAllGlobals();
     });
 
+    it('refreshes through main when health is OK but online auth has expired', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      mockAuthStore.isValid = false;
+
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      const refreshedAuth: PbAuthSession = {
+        token: 'refreshed-token',
+        record: { id: 'user-1' },
+      };
+      const resultFromMain: PbConnectionResult = {
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth: refreshedAuth,
+        },
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue(resultFromMain);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      startHealthCheck(5000);
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(getConnectionState()).toBe('online');
+      expect(refreshPbConnection).toHaveBeenCalledTimes(1);
+      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+
+      mockAuthStore.isValid = true;
+      vi.unstubAllGlobals();
+    });
+
     it('does not reconnect when auth is invalid and main refresh fails', async () => {
       loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
 
@@ -551,6 +603,32 @@ describe('pocketbase service', () => {
       handleApiError({ status: 400, message: 'bad request' });
 
       expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('refreshes auth for unauthorized API errors', async () => {
+      loadAuthSession({ token: 'token', record: { id: 'user-1' } }, true);
+      const listener = vi.fn();
+      onConnectionStateChange(listener);
+      const refreshedAuth: PbAuthSession = {
+        token: 'refreshed-token',
+        record: { id: 'user-1' },
+      };
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: true,
+        connection: {
+          pbUrl: 'http://localhost:8090',
+          auth: refreshedAuth,
+        },
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      handleApiError({ status: 401, message: 'unauthorized' });
+      await Promise.resolve();
+
+      expect(listener).toHaveBeenCalledWith('reconnecting');
+      expect(refreshPbConnection).toHaveBeenCalledOnce();
+      expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
+      expect(getConnectionState()).toBe('online');
     });
 
     it('handles null/undefined errors gracefully', () => {

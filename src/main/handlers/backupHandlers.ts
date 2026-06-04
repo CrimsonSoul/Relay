@@ -12,6 +12,8 @@ export function setupBackupHandlers(
   restartPb: () => Promise<boolean>,
   getOfflineCache?: () => OfflineCache | null,
 ): void {
+  let restoreInProgress = false;
+
   ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (): Promise<BackupEntry[]> => {
     const mgr = getBackupManager();
     if (!mgr) return [];
@@ -43,8 +45,10 @@ export function setupBackupHandlers(
 
     const mgr = getBackupManager();
     if (!mgr) return { success: false, error: 'Backup manager not available' };
+    if (restoreInProgress) return { success: false, error: 'Backup restore already in progress' };
 
     try {
+      restoreInProgress = true;
       await mgr.restore(name);
 
       // Invalidate offline cache after restore so stale data isn't served
@@ -67,6 +71,8 @@ export function setupBackupHandlers(
     } catch (err) {
       logger.error('Backup restore failed', { error: err });
       return { success: false, error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      restoreInProgress = false;
     }
   });
 }

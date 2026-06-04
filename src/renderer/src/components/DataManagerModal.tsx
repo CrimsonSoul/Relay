@@ -37,12 +37,18 @@ export const DataManagerModal: React.FC<Props> = ({ isOpen, onClose }) => {
   } = useDataManager();
 
   useEffect(() => {
-    if (isOpen) {
-      loadStats().catch((error_) => {
-        loggers.app.error('[DataManagerModal] Failed to load stats', { error: error_ });
-        showToast('Failed to load data manager stats.', 'error');
-      });
-    }
+    if (!isOpen) return;
+
+    let cancelled = false;
+    loadStats().catch((error_) => {
+      if (cancelled) return;
+      loggers.app.error('[DataManagerModal] Failed to load stats', { error: error_ });
+      showToast('Failed to load data manager stats.', 'error');
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, loadStats, showToast]);
 
   const handleExport = async () => {

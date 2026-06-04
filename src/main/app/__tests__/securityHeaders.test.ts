@@ -200,6 +200,22 @@ describe('setupSecurityHeaders', () => {
       expect(connectSrc).toContain('wss://secure.example.com');
     });
 
+    it('derives client connect-src from parsed origins instead of raw serverUrl text', () => {
+      mockAppConfig = {
+        load: () => ({
+          mode: 'client',
+          serverUrl: "https://secure.example.com/path; script-src 'unsafe-inline'",
+        }),
+      };
+      setupSecurityHeaders(false);
+      const headers = getResponseHeaders();
+      const csp = headers['Content-Security-Policy']![0];
+      const connectSrc = csp.match(/connect-src[^;]*/)?.[0] ?? '';
+      expect(connectSrc).toBe(
+        "connect-src 'self' https://secure.example.com wss://secure.example.com",
+      );
+    });
+
     it('falls back to defaults when config load returns undefined', () => {
       mockAppConfig = {
         load: () => undefined,

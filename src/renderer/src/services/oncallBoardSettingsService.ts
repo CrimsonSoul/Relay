@@ -38,6 +38,11 @@ export interface BoardSettingsInitializationResult {
 const COLLECTION = 'oncall_board_settings';
 const ONCALL_COLLECTION = 'oncall';
 const PRIMARY_KEY = 'primary';
+const PRIMARY_SETTINGS_QUERY = {
+  filter: 'key="primary"',
+  sort: '-updated,-created,-id',
+  requestKey: null,
+};
 
 /** Canonical form of a team name for backfill-derived teamId generation. */
 export function canonicalizeTeamName(name: string): string {
@@ -200,7 +205,7 @@ async function fetchPrimarySettings(): Promise<
   try {
     const records = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
+      .getFullList<BoardSettingsRecord>(PRIMARY_SETTINGS_QUERY);
     return { ok: true, records };
   } catch (err) {
     handleApiError(err);
@@ -232,10 +237,26 @@ async function bootstrapSettingsRecord(
       locked: false,
     });
     return { ok: true, record };
-  } catch {
-    // Concurrent bootstrap — another client created the record first
+  } catch (err) {
+    if (!isCreateConflict(err)) {
+      handleApiError(err);
+      throw err;
+    }
+    // Concurrent bootstrap — another client created the record first.
     return refetchAfterConflict();
   }
+}
+
+function getErrorStatus(error: unknown): number | null {
+  if (error && typeof error === 'object' && 'status' in error && typeof error.status === 'number') {
+    return error.status;
+  }
+  return null;
+}
+
+function isCreateConflict(error: unknown): boolean {
+  const status = getErrorStatus(error);
+  return status === 400 || status === 409;
 }
 
 async function refetchAfterConflict(): Promise<
@@ -245,7 +266,7 @@ async function refetchAfterConflict(): Promise<
   try {
     const refetched = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
+      .getFullList<BoardSettingsRecord>(PRIMARY_SETTINGS_QUERY);
     if (refetched.length === 0) {
       return {
         ok: false,
@@ -345,7 +366,7 @@ export async function getPrimaryBoardSettings(): Promise<BoardSettingsRecord | n
   try {
     const records = await getPb()
       .collection(COLLECTION)
-      .getFullList<BoardSettingsRecord>({ filter: 'key="primary"', requestKey: null });
+      .getFullList<BoardSettingsRecord>(PRIMARY_SETTINGS_QUERY);
     return records.length > 0 ? records[0]! : null;
   } catch (err) {
     handleApiError(err);
@@ -397,7 +418,8 @@ export async function ensurePrimaryBoardSettings(
         teamOrder,
         locked: false,
       });
-    } catch {
+    } catch (err) {
+      if (!isCreateConflict(err)) throw err;
       const refetched = await refetchAfterConflict();
       if (refetched.ok) return refetched.record;
       throw new Error(refetched.result.errors.join('; '));
@@ -411,20 +433,65 @@ export async function ensurePrimaryBoardSettings(
 /**
  * Initialize board settings for the on-call board.
  *
- * Self-heal duplicate primary settings records by keeping the first and deleting extras.
+ * Self-heal duplicate primary settings records by keeping the newest and deleting extras.
  * Mutates the array in-place to contain only the kept record.
  */
 async function deduplicateSettings(records: BoardSettingsRecord[]): Promise<void> {
-  const [keep, ...extras] = records;
-  for (const dup of extras) {
+  records.sort(compareSettingsNewestFirst);
+  const [initialKeep, ...extras] = records;
+  let keep = initialKeep!;
+  const mergedTeamOrder = mergeTeamOrders(keep, extras);
+  let canDeleteExtras = true;
+
+  if (!arraysEqual(keep.teamOrder, mergedTeamOrder)) {
     try {
-      await getPb().collection(COLLECTION).delete(dup.id);
+      keep = await getPb()
+        .collection(COLLECTION)
+        .update<BoardSettingsRecord>(keep.id, { teamOrder: mergedTeamOrder });
     } catch {
-      // Best-effort cleanup — if delete fails, continue with the first record.
+      canDeleteExtras = false;
+    }
+  }
+
+  if (canDeleteExtras) {
+    for (const dup of extras) {
+      try {
+        await getPb().collection(COLLECTION).delete(dup.id);
+      } catch {
+        // Best-effort cleanup — if delete fails, continue with the kept record.
+      }
     }
   }
   records.length = 1;
   records[0] = keep!;
+}
+
+function compareSettingsNewestFirst(a: BoardSettingsRecord, b: BoardSettingsRecord): number {
+  const updated = b.updated.localeCompare(a.updated);
+  if (updated !== 0) return updated;
+  const created = b.created.localeCompare(a.created);
+  if (created !== 0) return created;
+  return b.id.localeCompare(a.id);
+}
+
+function mergeTeamOrders(keep: BoardSettingsRecord, extras: BoardSettingsRecord[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+
+  for (const record of [keep, ...extras]) {
+    if (!Array.isArray(record.teamOrder)) continue;
+    for (const teamId of record.teamOrder) {
+      if (typeof teamId !== 'string' || seen.has(teamId)) continue;
+      seen.add(teamId);
+      merged.push(teamId);
+    }
+  }
+
+  return merged;
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
 async function resolveSettingsRecord(

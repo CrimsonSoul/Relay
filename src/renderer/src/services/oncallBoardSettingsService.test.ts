@@ -221,26 +221,32 @@ describe('initializeBoardSettings', () => {
     expect(result.errors.some((e) => e.includes('collision'))).toBe(true);
   });
 
-  it('self-heals duplicate primary settings records by keeping first and deleting extras', async () => {
+  it('self-heals duplicate primary settings records by keeping newest, merging order, and deleting extras', async () => {
     const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
     const s1 = makeSettingsRecord({
       id: 'bs1',
-      teamOrder: ['team-a'],
+      teamOrder: ['team-a', 'team-c'],
       created: '2024-01-01T00:00:00Z',
+      updated: '2024-01-01T00:00:00Z',
     });
     const s2 = makeSettingsRecord({
       id: 'bs2',
-      teamOrder: ['team-a'],
+      teamOrder: ['team-b', 'team-a'],
       created: '2024-01-02T00:00:00Z',
+      updated: '2024-01-02T00:00:00Z',
     });
     mockGetFullList.mockResolvedValueOnce([s1, s2]);
+    mockUpdate.mockResolvedValueOnce({ ...s2, teamOrder: ['team-b', 'team-a', 'team-c'] });
     mockDelete.mockResolvedValueOnce(undefined);
 
     const result = await initializeBoardSettings(rows);
 
     expect(result.status).toBe('ready');
-    expect(result.recordId).toBe('bs1');
-    expect(mockDelete).toHaveBeenCalledWith('bs2');
+    expect(result.recordId).toBe('bs2');
+    expect(mockUpdate).toHaveBeenCalledWith('bs2', {
+      teamOrder: ['team-b', 'team-a', 'team-c'],
+    });
+    expect(mockDelete).toHaveBeenCalledWith('bs1');
   });
 
   it('returns invalid for malformed teamOrder', async () => {
@@ -259,7 +265,7 @@ describe('initializeBoardSettings', () => {
     const existingSettings = makeSettingsRecord({ teamOrder: ['team-a'] });
     mockGetFullList.mockResolvedValueOnce([]); // initially empty
     // Create fails (concurrent race)
-    mockCreate.mockRejectedValueOnce(new Error('unique constraint'));
+    mockCreate.mockRejectedValueOnce({ status: 400 });
     // Refetch finds the record another client created
     mockGetFullList.mockResolvedValueOnce([existingSettings]);
 
@@ -316,15 +322,48 @@ describe('ensurePrimaryBoardSettings', () => {
   });
 
   it('deduplicates primary settings before returning the kept record', async () => {
-    const keep = makeSettingsRecord({ id: 'bs1', created: '2024-01-01T00:00:00Z' });
-    const duplicate = makeSettingsRecord({ id: 'bs2', created: '2024-01-02T00:00:00Z' });
-    mockGetFullList.mockResolvedValueOnce([keep, duplicate]);
+    const older = makeSettingsRecord({
+      id: 'bs1',
+      teamOrder: ['team-a'],
+      created: '2024-01-01T00:00:00Z',
+      updated: '2024-01-01T00:00:00Z',
+    });
+    const keep = makeSettingsRecord({
+      id: 'bs2',
+      teamOrder: ['team-b'],
+      created: '2024-01-02T00:00:00Z',
+      updated: '2024-01-02T00:00:00Z',
+    });
+    mockGetFullList.mockResolvedValueOnce([older, keep]);
+    mockUpdate.mockResolvedValueOnce({ ...keep, teamOrder: ['team-b', 'team-a'] });
     mockDelete.mockResolvedValueOnce(undefined);
 
     const result = await ensurePrimaryBoardSettings(['team-a']);
 
+    expect(result).toEqual({ ...keep, teamOrder: ['team-b', 'team-a'] });
+    expect(mockDelete).toHaveBeenCalledWith('bs1');
+  });
+
+  it('does not delete duplicate settings when merged order cannot be saved', async () => {
+    const older = makeSettingsRecord({
+      id: 'bs1',
+      teamOrder: ['team-a'],
+      created: '2024-01-01T00:00:00Z',
+      updated: '2024-01-01T00:00:00Z',
+    });
+    const keep = makeSettingsRecord({
+      id: 'bs2',
+      teamOrder: ['team-b'],
+      created: '2024-01-02T00:00:00Z',
+      updated: '2024-01-02T00:00:00Z',
+    });
+    mockGetFullList.mockResolvedValueOnce([older, keep]);
+    mockUpdate.mockRejectedValueOnce(new Error('merge failed'));
+
+    const result = await ensurePrimaryBoardSettings(['team-a']);
+
     expect(result).toEqual(keep);
-    expect(mockDelete).toHaveBeenCalledWith('bs2');
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });
 
@@ -433,7 +472,7 @@ describe('initializeBoardSettings — validation edge cases', () => {
   it('handles concurrent bootstrap where refetch also returns empty', async () => {
     const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
     mockGetFullList.mockResolvedValueOnce([]); // initially empty
-    mockCreate.mockRejectedValueOnce(new Error('unique constraint')); // create fails
+    mockCreate.mockRejectedValueOnce({ status: 400 }); // create conflict
     mockGetFullList.mockResolvedValueOnce([]); // refetch also empty
 
     const result = await initializeBoardSettings(rows);
@@ -445,7 +484,7 @@ describe('initializeBoardSettings — validation edge cases', () => {
   it('handles concurrent bootstrap where refetch also fails', async () => {
     const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
     mockGetFullList.mockResolvedValueOnce([]); // initially empty
-    mockCreate.mockRejectedValueOnce(new Error('unique constraint')); // create fails
+    mockCreate.mockRejectedValueOnce({ status: 400 }); // create conflict
     mockGetFullList.mockRejectedValueOnce(new Error('refetch failed')); // refetch fails
 
     const result = await initializeBoardSettings(rows);

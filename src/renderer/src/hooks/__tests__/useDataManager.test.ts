@@ -69,6 +69,7 @@ function setupDownloadMocks() {
 describe('useDataManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    document.body.innerHTML = '';
   });
 
   // -------------------------------------------------------------------------
@@ -347,6 +348,29 @@ describe('useDataManager', () => {
       // The file picker uses DOM, which is hard to mock in unit tests.
       // We'll verify the category guard and error handling paths instead.
       expect(result.current.importing).toBe(false);
+    });
+
+    it('cleans up hidden file input when picker closes without a cancel event', async () => {
+      const { result } = renderHook(() => useDataManager());
+      let importPromise: Promise<unknown>;
+
+      act(() => {
+        importPromise = result.current.importData('contacts');
+      });
+
+      expect(document.body.querySelector('input[type="file"]')).not.toBeNull();
+
+      await act(async () => {
+        globalThis.dispatchEvent(new Event('focus'));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await importPromise;
+      });
+
+      expect(document.body.querySelector('input[type="file"]')).toBeNull();
+      expect(result.current.importing).toBe(false);
+      expect(mockImportFromJson).not.toHaveBeenCalled();
+      expect(mockImportFromCsv).not.toHaveBeenCalled();
+      expect(mockImportFromExcel).not.toHaveBeenCalled();
     });
 
     it('handles import errors and sets error result', async () => {

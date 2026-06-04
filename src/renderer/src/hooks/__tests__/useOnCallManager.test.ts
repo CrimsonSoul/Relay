@@ -466,6 +466,35 @@ describe('useOnCallManager', () => {
       expect(showToast).toHaveBeenCalledWith('Added team NewTeam', 'success');
     });
 
+    it('does not call replaceTeamRecords when the normalized team already exists', async () => {
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      await act(async () => {
+        await result.current.handleAddTeam(' alpha ');
+      });
+
+      expect(mockReplaceTeamRecords).not.toHaveBeenCalled();
+      expect(mockUpdatePrimaryBoardSettings).not.toHaveBeenCalled();
+      expect(result.current.localOnCall).toEqual(defaultRows);
+      expect(showToast).toHaveBeenCalledWith('alpha already exists', 'info');
+    });
+
+    it('does not add a blank team', async () => {
+      const { result } = renderHook(() =>
+        useOnCallManager(defaultRows, dismissAlert, defaultBoardSettings),
+      );
+
+      await act(async () => {
+        await result.current.handleAddTeam('   ');
+      });
+
+      expect(mockReplaceTeamRecords).not.toHaveBeenCalled();
+      expect(result.current.localOnCall).toEqual(defaultRows);
+      expect(showToast).toHaveBeenCalledWith('Enter a team name before adding', 'error');
+    });
+
     it('locally appends the new team to board settings after adding a team', async () => {
       mockReplaceTeamRecords.mockResolvedValue([
         makeRow({ id: 'pb-new-team-row', team: 'NewTeam', teamId: 'newteam' }),

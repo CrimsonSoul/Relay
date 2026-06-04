@@ -8,6 +8,7 @@ const mockSubscribe = vi.fn<() => Promise<() => void>>();
 const mockUnsubscribe = vi.fn();
 
 let connectionChangeCallback: ((state: string) => void) | null = null;
+let clientChangeCallback: ((generation: number) => void) | null = null;
 vi.mock('../../services/pocketbase', () => ({
   getPb: () => ({
     collection: () => ({
@@ -20,6 +21,13 @@ vi.mock('../../services/pocketbase', () => ({
     connectionChangeCallback = cb;
     return () => {
       connectionChangeCallback = null;
+    };
+  }),
+  getPocketBaseClientGeneration: vi.fn(() => 0),
+  onPocketBaseClientChange: vi.fn((cb: (generation: number) => void) => {
+    clientChangeCallback = cb;
+    return () => {
+      clientChangeCallback = null;
     };
   }),
   handleApiError: vi.fn(),
@@ -45,6 +53,7 @@ beforeEach(() => {
   mockSubscribe.mockResolvedValue(mockUnsubscribe);
   vi.mocked(isOnline).mockReturnValue(true);
   connectionChangeCallback = null;
+  clientChangeCallback = null;
   // Reset globalThis.api
   (globalThis as Record<string, unknown>).api = undefined;
 });
@@ -520,6 +529,66 @@ describe('useCollection', () => {
     expect(result.current.data).toHaveLength(0);
   });
 
+  it('ignores stale fetch completions after unmount', async () => {
+    let resolveFetch: ((records: RecordModel[]) => void) | undefined;
+    const cacheSnapshotMock = vi.fn();
+    mockGetFullList.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    (globalThis as Record<string, unknown>).api = {
+      cacheSnapshot: cacheSnapshotMock,
+    };
+
+    const { unmount } = renderHook(() => useCollection('test'));
+    unmount();
+
+    await act(async () => {
+      resolveFetch?.([makeRecord('late')]);
+      await Promise.resolve();
+    });
+
+    expect(cacheSnapshotMock).not.toHaveBeenCalled();
+  });
+
+  it('does not refetch from pending reconnect sync after unmount', async () => {
+    let resolveSync: (() => void) | undefined;
+    const syncPendingMock = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSync = resolve;
+        }),
+    );
+    (globalThis as Record<string, unknown>).api = {
+      syncPending: syncPendingMock,
+      cacheRead: vi.fn().mockResolvedValue([]),
+    };
+    mockGetFullList.mockResolvedValue([]);
+
+    const { result, unmount } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => {
+      connectionChangeCallback?.('offline');
+    });
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => {
+      connectionChangeCallback?.('online');
+    });
+    unmount();
+
+    await act(async () => {
+      resolveSync?.();
+      await Promise.resolve();
+    });
+
+    expect(syncPendingMock).toHaveBeenCalledOnce();
+    expect(mockGetFullList).toHaveBeenCalledTimes(1);
+  });
+
   it('does not duplicate when receiving online event while already online', async () => {
     mockGetFullList.mockResolvedValue([makeRecord('1')]);
 
@@ -559,6 +628,22 @@ describe('useCollection', () => {
     }
 
     await waitFor(() => expect(result.current.data).toHaveLength(2));
+  });
+
+  it('re-fetches when the PocketBase client is replaced', async () => {
+    const records1 = [makeRecord('old-client')];
+    const records2 = [makeRecord('new-client')];
+    mockGetFullList.mockResolvedValueOnce(records1).mockResolvedValueOnce(records2);
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('old-client'));
+
+    act(() => {
+      clientChangeCallback?.(1);
+    });
+
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('new-client'));
   });
 
   it('triggers re-subscribe when going offline', async () => {
