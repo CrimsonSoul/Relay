@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import PocketBase from 'pocketbase';
 import { IPC_CHANNELS, type PbConnectionResult } from '@shared/ipc';
-import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
+import { isAllowedRelayServerUrl, isLanRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { loggers } from '../logger';
@@ -86,6 +86,24 @@ function getPbConnectionResult(pbUrl: string, pb: PocketBase): PbConnectionResul
       },
     },
   };
+}
+
+function getLanHttpFallbackUrl(pbUrl: string): string | null {
+  const parsed = (() => {
+    try {
+      return new URL(pbUrl);
+    } catch {
+      return null;
+    }
+  })();
+
+  if (!parsed || parsed.protocol !== 'https:' || !isLanRelayServerUrl(pbUrl)) {
+    return null;
+  }
+
+  parsed.protocol = 'http:';
+  const fallbackUrl = parsed.origin;
+  return isAllowedRelayServerUrl(fallbackUrl) ? fallbackUrl : null;
 }
 
 function isServerModeConfig(
@@ -186,6 +204,40 @@ async function authenticatePbConnectionOnce(
 }
 
 async function authenticatePbConnection(
+  config: ReturnType<AppConfig['load']>,
+  pbUrl: string,
+  secret: string,
+  logMessage: string,
+): Promise<PbConnectionResult> {
+  const primaryResult = await authenticatePbConnectionWithRetries(
+    config,
+    pbUrl,
+    secret,
+    logMessage,
+  );
+  if (primaryResult.ok || primaryResult.error !== 'pb-unavailable') {
+    return primaryResult;
+  }
+
+  const fallbackUrl = getLanHttpFallbackUrl(pbUrl);
+  if (!fallbackUrl) {
+    return primaryResult;
+  }
+
+  loggers.pocketbase.warn(
+    'Retrying LAN PocketBase client connection over HTTP after HTTPS bootstrap failed',
+    { fallbackUrl, pbUrl },
+  );
+
+  return authenticatePbConnectionWithRetries(
+    config,
+    fallbackUrl,
+    secret,
+    `${logMessage} over LAN HTTP fallback`,
+  );
+}
+
+async function authenticatePbConnectionWithRetries(
   config: ReturnType<AppConfig['load']>,
   pbUrl: string,
   secret: string,

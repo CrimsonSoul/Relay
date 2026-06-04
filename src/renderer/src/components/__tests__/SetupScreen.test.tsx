@@ -42,6 +42,7 @@ describe('SetupScreen', () => {
   const PRIVATE_LAN_HTTP_URL = ['http', '://', ['192', '168', '1', '50'].join('.'), ':8090'].join(
     '',
   );
+  const DOT_LOCAL_HTTP_URL = ['http', '://', 'relay-server.local', ':8090'].join('');
   const PUBLIC_HTTP_URL = ['http', '://', 'relay.example.com', ':8090'].join('');
   const getSubmittedConfig = () => onComplete.mock.calls.at(-1)?.[0] as Record<string, unknown>;
   let onComplete: ReturnType<typeof vi.fn>;
@@ -337,7 +338,7 @@ describe('SetupScreen', () => {
     expect(getSubmittedConfig()[SECRET_FIELD]).toBe(validPassphrase);
   });
 
-  it('normalizes client server URL before submitting', async () => {
+  it('normalizes host-only LAN client server URLs to HTTP before submitting', async () => {
     onComplete.mockResolvedValue(undefined);
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
@@ -353,7 +354,7 @@ describe('SetupScreen', () => {
 
     expect(getSubmittedConfig()).toMatchObject({
       mode: 'client',
-      serverUrl: 'https://relay-server.local:8090',
+      serverUrl: DOT_LOCAL_HTTP_URL,
     });
   });
 

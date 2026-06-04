@@ -20,6 +20,17 @@ describe('urlSecurity', () => {
     );
   });
 
+  it('normalizes host-only LAN Relay server URLs to HTTP', () => {
+    expect(normalizeRelayServerUrl('192.168.1.50:8090')).toBe(privateLanHttpUrl);
+    expect(normalizeRelayServerUrl('localhost:8090')).toBe(localhostUrl);
+    expect(normalizeRelayServerUrl('noc-admin-pc:8090')).toBe(localHostnameHttpUrl);
+    expect(normalizeRelayServerUrl('relay-server.local:8090')).toBe(dotLocalHttpUrl);
+  });
+
+  it('preserves explicit HTTPS LAN server URLs while normalizing', () => {
+    expect(normalizeRelayServerUrl('https://192.168.1.50:8090')).toBe('https://192.168.1.50:8090');
+  });
+
   it('rejects credentials, paths, search params, and hashes while normalizing', () => {
     expect(normalizeRelayServerUrl('https://user:pass@relay.example.com')).toBe('');
     expect(normalizeRelayServerUrl('https://relay.example.com/pb')).toBe('');

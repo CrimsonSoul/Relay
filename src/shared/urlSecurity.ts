@@ -28,10 +28,28 @@ function parseUrl(value: string): URL | null {
   }
 }
 
+function isLanHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return (
+    LOOPBACK_HOSTS.has(normalized) ||
+    isPrivateIpv4(normalized) ||
+    isPrivateIpv6(normalized) ||
+    normalized.endsWith('.local') ||
+    !normalized.includes('.')
+  );
+}
+
+function getDefaultProtocolForBareRelayServerUrl(value: string): 'http' | 'https' {
+  const parsed = parseUrl(`https://${value}`);
+  if (!parsed) return 'https';
+  return isLanHostname(parsed.hostname) ? 'http' : 'https';
+}
+
 export function normalizeRelayServerUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return '';
-  const withProtocol = trimmed.includes('://') ? trimmed : `https://${trimmed}`;
+  const protocol = getDefaultProtocolForBareRelayServerUrl(trimmed);
+  const withProtocol = trimmed.includes('://') ? trimmed : `${protocol}://${trimmed}`;
   const parsed = parseUrl(withProtocol);
   if (!parsed || !isRelayServerOriginUrl(parsed)) return '';
   return parsed.origin;
@@ -47,14 +65,7 @@ export function isLanRelayServerUrl(value: string): boolean {
   const parsed = parseUrl(value);
   if (!parsed) return false;
 
-  const hostname = parsed.hostname.toLowerCase();
-  return (
-    LOOPBACK_HOSTS.has(hostname) ||
-    isPrivateIpv4(hostname) ||
-    isPrivateIpv6(hostname) ||
-    hostname.endsWith('.local') ||
-    !hostname.includes('.')
-  );
+  return isLanHostname(parsed.hostname);
 }
 
 export function isAllowedRelayServerUrl(value: string, allowInsecureHttp = false): boolean {
