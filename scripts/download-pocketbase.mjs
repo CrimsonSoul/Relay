@@ -104,15 +104,19 @@ function downloadFile(url, dest) {
   return new Promise((resolve, reject) => requestDownload(url, dest, resolve, reject));
 }
 
+function getWindowsExpandArchiveArgs(zipPath, destDir) {
+  return [
+    '-NoProfile',
+    '-Command',
+    '& { param($zipPath, $destDir) Expand-Archive -Force -LiteralPath $zipPath -DestinationPath $destDir }',
+    zipPath,
+    destDir,
+  ];
+}
+
 function extractZip(zipPath, destDir) {
   if (process.platform === 'win32') {
-    execFileSync(WINDOWS_POWERSHELL_PATH, [
-      '-NoProfile',
-      '-Command',
-      'Expand-Archive -Force -LiteralPath $args[0] -DestinationPath $args[1]',
-      zipPath,
-      destDir,
-    ]);
+    execFileSync(WINDOWS_POWERSHELL_PATH, getWindowsExpandArchiveArgs(zipPath, destDir));
   } else {
     execFileSync(POSIX_UNZIP_PATH, ['-o', zipPath, '-d', destDir]);
   }
@@ -123,6 +127,7 @@ function chmodExecutable(outputPath) {
 }
 
 export const __downloadTestHooks = {
+  getWindowsExpandArchiveArgs,
   resolveRedirect,
 };
 

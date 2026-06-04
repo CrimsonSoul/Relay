@@ -96,4 +96,19 @@ describe('download-pocketbase script', () => {
       ),
     ).toThrow(/refusing insecure pocketbase download url/i);
   });
+
+  it('builds a Windows Expand-Archive command that receives zip and destination paths', async () => {
+    const scriptUrl = pathToFileURL(resolve('scripts/download-pocketbase.mjs')).href;
+    const mod = await import(scriptUrl);
+    const zipPath = 'D:\\a\\Relay\\Relay\\resources\\pocketbase\\win32-x64\\pb.zip';
+    const destDir = 'D:\\a\\Relay\\Relay\\resources\\pocketbase\\win32-x64';
+
+    expect(mod.__downloadTestHooks.getWindowsExpandArchiveArgs(zipPath, destDir)).toEqual([
+      '-NoProfile',
+      '-Command',
+      '& { param($zipPath, $destDir) Expand-Archive -Force -LiteralPath $zipPath -DestinationPath $destDir }',
+      zipPath,
+      destDir,
+    ]);
+  });
 });
