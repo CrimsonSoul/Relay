@@ -13,6 +13,8 @@ import {
   type CollectionName,
 } from '../services/importExportService';
 
+const MAX_IMPORT_FILE_BYTES = 25 * 1024 * 1024;
+
 /** Map UI data categories to PocketBase collection names. */
 const CATEGORY_TO_COLLECTION: Record<Exclude<DataCategory, 'all'>, CollectionName> = {
   contacts: 'contacts',
@@ -44,7 +46,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 function pickFile(
   accept: string,
 ): Promise<{ text: string; buffer: ArrayBuffer; name: string } | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     let settled = false;
     let focusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,10 +73,21 @@ function pickFile(
       resolve(value);
     }
 
+    function rejectOnce(error: Error): void {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
+
     async function handleChange(): Promise<void> {
       const file = input.files?.[0];
       if (!file) {
         resolveOnce(null);
+        return;
+      }
+      if (file.size > MAX_IMPORT_FILE_BYTES) {
+        rejectOnce(new Error('Import file is too large. Choose a file under 25 MB.'));
         return;
       }
       try {
@@ -234,10 +247,11 @@ export function useDataManager() {
 
         const collection = CATEGORY_TO_COLLECTION[category];
         let result: { imported: number; updated: number; errors: string[] };
+        const lowerFileName = file.name.toLowerCase();
 
-        if (file.name.endsWith('.xlsx')) {
+        if (lowerFileName.endsWith('.xlsx')) {
           result = await importFromExcel(collection, file.buffer);
-        } else if (file.name.endsWith('.csv')) {
+        } else if (lowerFileName.endsWith('.csv')) {
           result = await importFromCsv(collection, file.text);
         } else {
           // Default to JSON

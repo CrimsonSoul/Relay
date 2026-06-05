@@ -276,6 +276,24 @@ describe('importFromJson', () => {
     expect(result.updated).toBe(1);
     expect(result.imported).toBe(0);
   });
+
+  it('rejects oversized JSON imports before writing to PocketBase', async () => {
+    const records = Array.from({ length: 10001 }, (_, i) => ({
+      email: `person-${i}@example.com`,
+      name: `Person ${i}`,
+    }));
+
+    const result = await importFromJson('contacts', JSON.stringify(records));
+
+    expect(result).toEqual({
+      imported: 0,
+      updated: 0,
+      errors: ['Import contains 10001 records. The maximum is 10000 records per import.'],
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstListItem).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -305,6 +323,21 @@ describe('importFromCsv', () => {
     expect(result.errors[0]).toMatch(/CSV parse error/);
   });
 
+  it('preserves CSV parse warnings when valid rows are still imported', async () => {
+    mockPapaParse.mockReturnValueOnce({
+      data: [{ email: 'alice@example.com', name: 'Alice' }],
+      errors: [{ row: 2, message: 'Too few fields' }],
+    });
+    const notFound = Object.assign(new Error('Not found'), { status: 404 });
+    mockGetFirstListItem.mockRejectedValueOnce(notFound);
+    mockCreate.mockResolvedValueOnce(sampleRecord);
+
+    const result = await importFromCsv('contacts', 'email,name\nalice@example.com,Alice\nbroken');
+
+    expect(result.imported).toBe(1);
+    expect(result.errors).toEqual(['CSV parse error (row 2): Too few fields']);
+  });
+
   it('strips formula-injection prefix on import via transform function', async () => {
     mockPapaParse.mockReturnValueOnce({ data: [], errors: [] });
     await importFromCsv('contacts', 'email\n=test');
@@ -315,6 +348,26 @@ describe('importFromCsv', () => {
     expect(parseOptions.transform('normal')).toBe('normal');
     // Single quote not followed by injection char unchanged
     expect(parseOptions.transform("'hello")).toBe("'hello");
+  });
+
+  it('limits CSV parsing and rejects oversized CSV imports before writing to PocketBase', async () => {
+    const rows = Array.from({ length: 10001 }, (_, i) => ({ email: `person-${i}@example.com` }));
+    mockPapaParse.mockReturnValueOnce({ data: rows, errors: [] });
+
+    const result = await importFromCsv('contacts', 'email\nmany');
+
+    expect(mockPapaParse).toHaveBeenCalledWith(
+      'email\nmany',
+      expect.objectContaining({ preview: 10001 }),
+    );
+    expect(result).toEqual({
+      imported: 0,
+      updated: 0,
+      errors: ['Import contains 10001 records. The maximum is 10000 records per import.'],
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstListItem).not.toHaveBeenCalled();
   });
 });
 
@@ -394,5 +447,25 @@ describe('importFromExcel', () => {
     mockReadExcelFile.mockResolvedValueOnce([{ sheet: 'contacts', data: [] }]);
     const result = await importFromExcel('contacts', new ArrayBuffer(8));
     expect(result.errors[0]).toMatch(/no header row/);
+  });
+
+  it('rejects oversized Excel imports before writing to PocketBase', async () => {
+    mockReadExcelFile.mockResolvedValueOnce([
+      {
+        sheet: 'contacts',
+        data: [['email'], ...Array.from({ length: 10001 }, (_, i) => [`person-${i}@example.com`])],
+      },
+    ]);
+
+    const result = await importFromExcel('contacts', new ArrayBuffer(8));
+
+    expect(result).toEqual({
+      imported: 0,
+      updated: 0,
+      errors: ['Import contains 10001 records. The maximum is 10000 records per import.'],
+    });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(mockGetFirstListItem).not.toHaveBeenCalled();
   });
 });

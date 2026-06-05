@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
-import { writeFile, readFile, mkdir, unlink } from 'node:fs/promises';
+import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
@@ -269,11 +269,13 @@ export function setupWindowHandlers(
         });
         if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
 
-        const buf = await readFile(filePaths[0]);
-        if (buf.length > MAX_LOGO_SIZE) {
+        const selectedFile = filePaths[0];
+        const fileStat = await stat(selectedFile);
+        if (fileStat.size > MAX_LOGO_SIZE) {
           return { success: false, error: 'Image must be under 2MB' };
         }
 
+        const buf = await readFile(selectedFile);
         let image = nativeImage.createFromBuffer(buf);
         if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
 

@@ -36,6 +36,17 @@ const mocks = vi.hoisted(() => ({
   setPbProcess: vi.fn(),
   getMainWindow: vi.fn(),
   startPocketBase: vi.fn(),
+  syncPbClient: {
+    collection: vi.fn(),
+  },
+  authWithPassword: vi.fn(),
+  PocketBase: vi.fn(),
+  offlineCacheInstance: { kind: 'offline-cache', close: vi.fn() },
+  pendingChangesInstance: { kind: 'pending-changes', close: vi.fn() },
+  syncManagerInstance: { kind: 'sync-manager' },
+  OfflineCache: vi.fn(),
+  PendingChanges: vi.fn(),
+  SyncManager: vi.fn(),
 }));
 
 vi.mock('../appState', () => ({
@@ -58,6 +69,22 @@ vi.mock('../pocketbaseBootstrap', () => ({
   startPocketBase: mocks.startPocketBase,
 }));
 
+vi.mock('pocketbase', () => ({
+  default: mocks.PocketBase,
+}));
+
+vi.mock('../../cache/OfflineCache', () => ({
+  OfflineCache: mocks.OfflineCache,
+}));
+
+vi.mock('../../cache/PendingChanges', () => ({
+  PendingChanges: mocks.PendingChanges,
+}));
+
+vi.mock('../../cache/SyncManager', () => ({
+  SyncManager: mocks.SyncManager,
+}));
+
 describe('reconfigureRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,6 +101,38 @@ describe('reconfigureRuntime', () => {
     mocks.getMainWindow.mockReturnValue(mocks.mainWindow);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue(true);
+    mocks.offlineCacheInstance.close.mockClear();
+    mocks.pendingChangesInstance.close.mockClear();
+    mocks.authWithPassword.mockResolvedValue({});
+    mocks.syncPbClient.collection.mockReturnValue({ authWithPassword: mocks.authWithPassword });
+    mocks.PocketBase.mockImplementation(
+      class MockPocketBase {
+        constructor() {
+          return mocks.syncPbClient;
+        }
+      } as never,
+    );
+    mocks.OfflineCache.mockImplementation(
+      class MockOfflineCache {
+        constructor() {
+          return mocks.offlineCacheInstance;
+        }
+      } as never,
+    );
+    mocks.PendingChanges.mockImplementation(
+      class MockPendingChanges {
+        constructor() {
+          return mocks.pendingChangesInstance;
+        }
+      } as never,
+    );
+    mocks.SyncManager.mockImplementation(
+      class MockSyncManager {
+        constructor() {
+          return mocks.syncManagerInstance;
+        }
+      } as never,
+    );
   });
 
   it('switches to client mode without relaunching or closing the window', async () => {
@@ -93,6 +152,46 @@ describe('reconfigureRuntime', () => {
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.setPbProcess).toHaveBeenCalledWith(null);
     expect(mocks.startPocketBase).not.toHaveBeenCalled();
+    expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
+  });
+
+  it('rebuilds client-mode offline infrastructure during runtime reconfigure', async () => {
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(mocks.PocketBase).toHaveBeenCalledWith('https://relay.example.com');
+    expect(mocks.authWithPassword).toHaveBeenCalledWith(
+      'relay@relay.app',
+      'super-secret-passphrase',
+      expect.objectContaining({ requestKey: null }),
+    );
+    expect(mocks.OfflineCache).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
+    expect(mocks.PendingChanges).toHaveBeenCalledWith(
+      '/Users/test/RelayData/data/pending_changes.db',
+    );
+    expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient);
+    expect(mocks.setOfflineCache).toHaveBeenLastCalledWith(mocks.offlineCacheInstance);
+    expect(mocks.setPendingChanges).toHaveBeenLastCalledWith(mocks.pendingChangesInstance);
+    expect(mocks.setSyncManager).toHaveBeenLastCalledWith(mocks.syncManagerInstance);
+  });
+
+  it('does not leave partially rebuilt client offline state when pending queue creation fails', async () => {
+    mocks.PendingChanges.mockImplementation(
+      class MockPendingChanges {
+        constructor() {
+          throw new Error('pending db unavailable');
+        }
+      } as never,
+    );
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(mocks.offlineCacheInstance.close).toHaveBeenCalledOnce();
+    expect(mocks.setOfflineCache).not.toHaveBeenCalledWith(mocks.offlineCacheInstance);
+    expect(mocks.setPendingChanges).not.toHaveBeenCalledWith(mocks.pendingChangesInstance);
+    expect(mocks.setSyncManager).not.toHaveBeenCalledWith(mocks.syncManagerInstance);
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
 });

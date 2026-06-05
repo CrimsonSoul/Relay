@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockGetFullList = vi.fn();
-const mockCreate = vi.fn();
+const { mockGetFullList, mockCreate, mockRequireOnline } = vi.hoisted(() => ({
+  mockGetFullList: vi.fn(),
+  mockCreate: vi.fn(),
+  mockRequireOnline: vi.fn(),
+}));
 
 vi.mock('./pocketbase', () => ({
   getPb: () => ({
@@ -12,6 +15,7 @@ vi.mock('./pocketbase', () => ({
   }),
   handleApiError: vi.fn(),
   escapeFilter: (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"'),
+  requireOnline: mockRequireOnline,
 }));
 
 import { getDismissalsForDate, dismissAlert } from './oncallDismissalService';
@@ -45,5 +49,15 @@ describe('oncallDismissalService', () => {
       dateKey: '2026-03-26',
     });
     expect(result).toEqual(record);
+  });
+
+  it('dismissAlert requires an online connection before writing', async () => {
+    mockRequireOnline.mockImplementationOnce(() => {
+      throw new Error('offline');
+    });
+
+    await expect(dismissAlert('oracle', '2026-03-26')).rejects.toThrow('offline');
+
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });

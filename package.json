@@ -21,8 +21,9 @@
     "lint:fix": "eslint . --fix",
     "build:renderer": "vite build --config vite.renderer.config.ts",
     "dev:test": "vite --config vite.renderer.config.ts --port 4173",
-    "test": "npm run test:unit && npm run test:renderer",
+    "test": "npm run test:unit && npm run test:cache && npm run test:renderer",
     "test:electron": "playwright test -c playwright.electron.config.ts",
+    "test:cache": "vitest run --config vitest.cache.config.ts",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:renderer": "node scripts/run-renderer-tests.mjs",
@@ -66,6 +67,10 @@
   },
   "overrides": {
     "@electron/asar": "^4.2.0",
+    "minimatch@10.2.5": {
+      "brace-expansion": "5.0.6"
+    },
+    "tmp": "0.2.6",
     "inflight": "npm:lru-cache@7.18.3"
   },
   "devDependencies": {

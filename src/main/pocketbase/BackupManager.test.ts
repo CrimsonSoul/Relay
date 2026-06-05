@@ -141,7 +141,7 @@ describe('BackupManager', () => {
       expect(result).toEqual([]);
     });
 
-    it('returns sorted list of .zip and .db files with name/date/size', () => {
+    it('returns sorted list of .zip files with name/date/size', () => {
       mockExistsSync.mockReturnValue(true);
       const files = ['backup-a.zip', 'backup-b.db', 'not-a-backup.txt'];
       mockReaddirSync.mockReturnValue(files as unknown as string[]);
@@ -157,11 +157,10 @@ describe('BackupManager', () => {
       const manager = new BackupManager(dataDir);
       const result = manager.listBackups();
 
-      // .txt file excluded, result sorted descending by date
-      expect(result).toHaveLength(2);
-      expect(result[0].name).toBe('backup-b.db');
-      expect(result[1].name).toBe('backup-a.zip');
-      expect(result[0].date).toEqual(dates['backup-b.db']);
+      // .txt and legacy .db files excluded, result sorted descending by date
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('backup-a.zip');
+      expect(result[0].date).toEqual(dates['backup-a.zip']);
       expect(result[0].size).toBe(2048);
     });
 
@@ -175,6 +174,17 @@ describe('BackupManager', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].name).toBe('file.zip');
+    });
+
+    it('excludes legacy .db files from the restorable backup list', () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReaddirSync.mockReturnValue(['legacy.db', 'backup.zip'] as unknown as string[]);
+      mockStatSync.mockReturnValue(makeStatResult(new Date('2025-01-01')));
+
+      const manager = new BackupManager(dataDir);
+      const result = manager.listBackups();
+
+      expect(result.map((backup) => backup.name)).toEqual(['backup.zip']);
     });
   });
 

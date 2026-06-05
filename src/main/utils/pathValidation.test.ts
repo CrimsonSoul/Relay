@@ -98,6 +98,15 @@ describe('validateDataPath', () => {
     expect(result.error).toBeDefined();
   });
 
+  it('should allow folder names that contain dots without traversal segments', async () => {
+    const dottedFolder = join(testHomeDir, 'Relay..Archive');
+
+    const result = await validateDataPath(dottedFolder);
+
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(dottedFolder)).toBe(true);
+  });
+
   it('should reject relative paths', async () => {
     const result = await validateDataPath('relative/path');
     expect(result.success).toBe(false);

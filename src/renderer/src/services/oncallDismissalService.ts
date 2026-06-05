@@ -1,5 +1,5 @@
 import type { RecordModel } from 'pocketbase';
-import { getPb, handleApiError, escapeFilter } from './pocketbase';
+import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
 
 export interface OncallDismissalRecord extends RecordModel {
   alertType: string;
@@ -23,6 +23,7 @@ export async function dismissAlert(
   alertType: string,
   dateKey: string,
 ): Promise<OncallDismissalRecord> {
+  requireOnline();
   try {
     return await getPb().collection('oncall_dismissals').create<OncallDismissalRecord>({
       alertType,

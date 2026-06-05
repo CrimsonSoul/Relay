@@ -39,6 +39,8 @@ const METADATA_FIELDS = new Set([
   'expand',
 ]);
 
+const MAX_IMPORT_RECORDS = 10000;
+
 // Unique-key field per collection (undefined = always create new)
 const UNIQUE_KEYS: Partial<Record<CollectionName, string>> = {
   contacts: 'email',
@@ -206,6 +208,11 @@ async function bulkUpsert(
   collection: CollectionName,
   records: Record<string, unknown>[],
 ): Promise<ImportResult> {
+  const limitError = getImportLimitError(records.length);
+  if (limitError) {
+    return { imported: 0, updated: 0, errors: [limitError] };
+  }
+
   let imported = 0;
   let updated = 0;
   const errors: string[] = [];
@@ -230,6 +237,11 @@ async function bulkUpsert(
   }
 
   return { imported, updated, errors };
+}
+
+function getImportLimitError(recordCount: number): string | null {
+  if (recordCount <= MAX_IMPORT_RECORDS) return null;
+  return `Import contains ${recordCount} records. The maximum is ${MAX_IMPORT_RECORDS} records per import.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -354,6 +366,7 @@ export async function importFromCsv(
   requireOnline();
   const parseResult = Papa.parse<Record<string, string>>(csvString, {
     header: true,
+    preview: MAX_IMPORT_RECORDS + 1,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
     transform: (value) => {
@@ -368,15 +381,16 @@ export async function importFromCsv(
     },
   });
 
-  if (parseResult.errors.length > 0) {
-    const errMsgs = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
+  const parseErrors = parseResult.errors.map((e) => `CSV parse error (row ${e.row}): ${e.message}`);
+  if (parseErrors.length > 0) {
     // Non-fatal parse errors: proceed with what we got, but surface warnings
     if (parseResult.data.length === 0) {
-      return { imported: 0, updated: 0, errors: errMsgs };
+      return { imported: 0, updated: 0, errors: parseErrors };
     }
   }
 
-  return bulkUpsert(collection, parseResult.data);
+  const result = await bulkUpsert(collection, parseResult.data);
+  return { ...result, errors: [...parseErrors, ...result.errors] };
 }
 
 // ---------------------------------------------------------------------------

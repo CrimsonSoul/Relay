@@ -329,4 +329,32 @@ describe('ensureCollections', () => {
       deleteRule: '@request.auth.id != ""',
     });
   });
+
+  it('rejects when required collections cannot be listed', async () => {
+    mockGetFullList.mockRejectedValue(new Error('list unavailable'));
+
+    await expect(ensureCollections(mockPb)).rejects.toThrow(
+      'Failed to list PocketBase collections',
+    );
+  });
+
+  it('rejects when a required missing collection cannot be created', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockRejectedValueOnce(new Error('create denied'));
+
+    await expect(ensureCollections(mockPb)).rejects.toThrow(
+      'Failed to create collection: contacts',
+    );
+  });
+
+  it('rejects when an existing required collection cannot be patched', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'contacts-col', name: 'contacts' }]);
+    mockCreate.mockResolvedValue({});
+    mockGetOne.mockResolvedValue({
+      fields: [{ type: 'text', name: 'name', required: true }],
+    });
+    mockUpdate.mockRejectedValueOnce(new Error('patch denied'));
+
+    await expect(ensureCollections(mockPb)).rejects.toThrow('Failed to patch collection: contacts');
+  });
 });

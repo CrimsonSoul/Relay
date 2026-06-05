@@ -2,9 +2,6 @@ import { app, BrowserWindow, session, dialog, ipcMain, crashReporter } from 'ele
 import { join } from 'node:path';
 import { loggers } from './logger';
 import { AppConfig } from './config/AppConfig';
-import { OfflineCache } from './cache/OfflineCache';
-import { PendingChanges } from './cache/PendingChanges';
-import { SyncManager } from './cache/SyncManager';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 import { validateEnv } from './env';
@@ -25,7 +22,6 @@ import {
   setOfflineCache,
   getPendingChanges,
   setPendingChanges,
-  setSyncManager,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -34,6 +30,7 @@ import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { requestAppQuit } from './app/relaunch';
 import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processLifecycle';
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
+import { initializeClientOfflineInfrastructure } from './app/clientOfflineInfrastructure';
 import { startPocketBase } from './app/pocketbaseBootstrap';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
@@ -227,29 +224,7 @@ if (gotLock) {
       // Auth is capped at 15 s to avoid hanging if the server is unreachable.
       if (relayConfig?.mode === 'client') {
         try {
-          const PocketBase = (await import('pocketbase')).default;
-          const syncPb = new PocketBase(relayConfig.serverUrl);
-          const controller = new AbortController();
-          const authTimeout = setTimeout(() => controller.abort(), 15_000);
-          try {
-            // requestKey: null prevents the PB SDK from replacing our signal
-            // with its own internal AbortController.
-            await syncPb
-              .collection('_pb_users_auth_')
-              .authWithPassword('relay@relay.app', relayConfig.secret, {
-                signal: controller.signal,
-                requestKey: null,
-              });
-          } finally {
-            clearTimeout(authTimeout);
-          }
-
-          setOfflineCache(new OfflineCache(join(configDataDir, 'cache.db')));
-          setPendingChanges(new PendingChanges(join(configDataDir, 'pending_changes.db')));
-          // SyncManager is pre-built infrastructure for future offline-write support.
-          // Currently it processes pending changes when explicitly triggered via IPC,
-          // but no production code path enqueues changes into PendingChanges yet.
-          setSyncManager(new SyncManager(syncPb));
+          await initializeClientOfflineInfrastructure(configDataDir, relayConfig);
           loggers.pocketbase.info('Client-mode offline infrastructure initialized');
         } catch (syncErr) {
           loggers.pocketbase.warn(

@@ -90,7 +90,7 @@ export class BackupManager {
   listBackups(): Array<{ name: string; date: Date; size: number }> {
     if (!existsSync(this.backupsDir)) return [];
     return readdirSync(this.backupsDir)
-      .filter((f) => f.endsWith('.db') || f.endsWith('.zip'))
+      .filter((f) => f.endsWith('.zip'))
       .map((f) => {
         const stat = statSync(join(this.backupsDir, f));
         return { name: f, date: stat.mtime, size: stat.size };

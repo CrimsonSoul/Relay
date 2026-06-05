@@ -297,6 +297,7 @@ async function createMissing(pb: PocketBase, existing: Set<string>): Promise<num
       logger.info(`Created collection: ${def.name}`);
     } catch (err) {
       logger.error(`Failed to create collection: ${def.name}`, { error: err });
+      throw new Error(`Failed to create collection: ${def.name}`, { cause: err });
     }
   }
   return created;
@@ -319,6 +320,7 @@ async function patchExisting(
       }
     } catch (err) {
       logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
+      throw new Error(`Failed to patch collection: ${def.name}`, { cause: err });
     }
   }
   return patched;
@@ -434,7 +436,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
     allCols = await pb.collections.getFullList();
   } catch (err) {
     logger.error('Failed to list collections', { error: err });
-    return;
+    throw new Error('Failed to list PocketBase collections', { cause: err });
   }
 
   const existing = new Set(allCols.map((c) => c.name));

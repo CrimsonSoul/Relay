@@ -16,8 +16,15 @@ function isPrivateIpv4(hostname: string): boolean {
 }
 
 function isPrivateIpv6(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return normalized === '::1' || normalized.startsWith('fc') || normalized.startsWith('fd');
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const firstSegment = normalized.split(':')[0] ?? '';
+
+  return (
+    normalized === '::1' ||
+    firstSegment.startsWith('fc') ||
+    firstSegment.startsWith('fd') ||
+    /^fe[89ab]$/i.test(firstSegment)
+  );
 }
 
 function parseUrl(value: string): URL | null {
@@ -30,10 +37,16 @@ function parseUrl(value: string): URL | null {
 
 function isLanHostname(hostname: string): boolean {
   const normalized = hostname.toLowerCase();
+  const bracketless = normalized.replace(/^\[|\]$/g, '');
+  const isIpv6Literal = bracketless.includes(':');
+
+  if (isIpv6Literal) {
+    return LOOPBACK_HOSTS.has(normalized) || isPrivateIpv6(normalized);
+  }
+
   return (
     LOOPBACK_HOSTS.has(normalized) ||
     isPrivateIpv4(normalized) ||
-    isPrivateIpv6(normalized) ||
     normalized.endsWith('.local') ||
     !normalized.includes('.')
   );

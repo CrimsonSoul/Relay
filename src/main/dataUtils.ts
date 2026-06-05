@@ -8,6 +8,7 @@ export async function ensureDataDirectoryAsync(targetRoot: string) {
     await fsPromises.mkdir(targetRoot, { recursive: true });
   } catch (e) {
     loggers.fileManager.error('Failed to create persistent data directory', { error: e });
+    throw e;
   }
 }
 
@@ -41,5 +42,6 @@ export async function saveConfigAsync(config: { dataRoot?: string }): Promise<vo
     await fsPromises.writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (error) {
     loggers.fileManager.error('Failed to save config', { error });
+    throw error;
   }
 }

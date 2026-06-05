@@ -41,9 +41,10 @@ describe('dataUtils', () => {
       expect(fsPromises.mkdir).toHaveBeenCalledWith('/data/relay', { recursive: true });
     });
 
-    it('handles mkdir error gracefully', async () => {
+    it('rejects when the target directory cannot be created', async () => {
       vi.mocked(fsPromises.mkdir).mockRejectedValueOnce(new Error('permission denied'));
-      await expect(ensureDataDirectoryAsync('/data/relay')).resolves.toBeUndefined();
+
+      await expect(ensureDataDirectoryAsync('/data/relay')).rejects.toThrow('permission denied');
     });
   });
 
@@ -102,9 +103,10 @@ describe('dataUtils', () => {
       );
     });
 
-    it('handles write error gracefully', async () => {
+    it('rejects when the config file cannot be written', async () => {
       vi.mocked(fsPromises.writeFile).mockRejectedValueOnce(new Error('disk full'));
-      await expect(saveConfigAsync({})).resolves.toBeUndefined();
+
+      await expect(saveConfigAsync({})).rejects.toThrow('disk full');
     });
   });
 });

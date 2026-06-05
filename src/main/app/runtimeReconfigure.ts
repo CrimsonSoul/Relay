@@ -1,3 +1,4 @@
+import { loggers } from '../logger';
 import {
   getAppConfig,
   getMainWindow,
@@ -13,6 +14,7 @@ import {
   setRetentionManager,
   setSyncManager,
 } from './appState';
+import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastructure';
 import { startPocketBase } from './pocketbaseBootstrap';
 
 export async function reconfigureRuntime(configDataDir: string): Promise<void> {
@@ -46,6 +48,18 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   } else if (pbProcess) {
     await pbProcess.stop();
     setPbProcess(null);
+  }
+
+  if (config?.mode === 'client') {
+    try {
+      await initializeClientOfflineInfrastructure(configDataDir, config);
+      loggers.pocketbase.info('Client-mode offline infrastructure initialized after reconfigure');
+    } catch (error) {
+      loggers.pocketbase.warn(
+        'Could not initialize client-mode offline infrastructure after reconfigure',
+        { error },
+      );
+    }
   }
 
   const mainWindow = getMainWindow();

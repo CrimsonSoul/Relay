@@ -60,6 +60,7 @@ vi.mock('electron', () => {
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
   readFile: vi.fn(),
+  stat: vi.fn(),
   mkdir: vi.fn(),
   unlink: vi.fn(),
 }));
@@ -98,7 +99,7 @@ vi.mock('../rateLimiter', () => ({
 
 import { validatePath } from '../utils/pathSafety';
 import { rateLimiters } from '../rateLimiter';
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile, stat, unlink } from 'node:fs/promises';
 import { loggers } from '../logger';
 
 describe('windowHandlers', () => {
@@ -141,6 +142,7 @@ describe('windowHandlers', () => {
     );
 
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
+    vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
 
     setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot);
   });
@@ -788,18 +790,18 @@ describe('windowHandlers', () => {
       expect(result).toEqual({ success: false, error: 'Cancelled' });
     });
 
-    it('returns error when image exceeds 2MB', async () => {
+    it('returns error when image exceeds 2MB before reading file contents', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
         filePaths: ['/mock-dir/huge.png'],
       });
-      // Create a buffer larger than 2MB
-      const bigBuffer = Buffer.alloc(2 * 1024 * 1024 + 1);
-      vi.mocked(readFile).mockResolvedValue(bigBuffer as never);
+      vi.mocked(stat).mockResolvedValue({ size: 2 * 1024 * 1024 + 1 } as never);
+      vi.mocked(readFile).mockRejectedValue(new Error('should not read oversized logo'));
 
       const result = await handlers[IPC_CHANNELS.SAVE_COMPANY_LOGO]();
 
       expect(result).toEqual({ success: false, error: 'Image must be under 2MB' });
+      expect(readFile).not.toHaveBeenCalled();
     });
 
     it('returns error when image is invalid (empty)', async () => {

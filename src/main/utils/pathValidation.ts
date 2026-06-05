@@ -15,6 +15,10 @@ function isWithinDirectory(parentDir: string, targetPath: string): boolean {
   return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
 }
 
+function hasTraversalSegment(path: string): boolean {
+  return path.split(/[\\/]+/).includes('..');
+}
+
 function handleVerificationError(error: unknown): ValidationResult {
   const errorCode = isNodeError(error) ? error.code : undefined;
   const message = error instanceof Error ? error.message : String(error);
@@ -68,7 +72,7 @@ export async function validateDataPath(path: string): Promise<ValidationResult> 
 
   // Reject path traversal attempts
   const normalized = normalize(path);
-  if (normalized.includes('..')) {
+  if (hasTraversalSegment(path)) {
     return { success: false, error: 'Path traversal is not allowed.' };
   }
 

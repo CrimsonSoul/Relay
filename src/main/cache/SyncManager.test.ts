@@ -110,7 +110,9 @@ describe('SyncManager', () => {
   });
 
   it('falls back to create when record not found on server during update', async () => {
-    const mockGetOne = vi.fn().mockRejectedValue(new Error('Not found'));
+    const notFoundError = new Error('Not found') as Error & { status: number };
+    notFoundError.status = 404;
+    const mockGetOne = vi.fn().mockRejectedValue(notFoundError);
     const mockCreate = vi.fn().mockResolvedValue({ id: '1' });
     mockPb.collection.mockReturnValue({ getOne: mockGetOne, create: mockCreate });
 
@@ -178,7 +180,9 @@ describe('SyncManager', () => {
   });
 
   it('swallows error when deleting an already-deleted record', async () => {
-    const mockDelete = vi.fn().mockRejectedValue(new Error('Record not found'));
+    const notFoundError = new Error('Record not found') as Error & { status: number };
+    notFoundError.status = 404;
+    const mockDelete = vi.fn().mockRejectedValue(notFoundError);
     mockPb.collection.mockReturnValue({ delete: mockDelete });
 
     const change: PendingChange = {

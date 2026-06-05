@@ -13,6 +13,8 @@ describe('urlSecurity', () => {
   const localHostnameHttpUrl = `${httpProtocol}://noc-admin-pc:8090`;
   const dotLocalHttpUrl = `${httpProtocol}://relay-server.local:8090`;
   const publicHttpUrl = `${httpProtocol}://relay.example.com:8090`;
+  const privateIpv6HttpUrl = `${httpProtocol}://[fd00::1]:8090`;
+  const publicIpv6HttpUrl = `${httpProtocol}://[2001:4860:4860::8888]:8090`;
 
   it('normalizes host-only Relay server URLs to HTTPS', () => {
     expect(normalizeRelayServerUrl(' relay.example.com:8090/ ')).toBe(
@@ -53,9 +55,16 @@ describe('urlSecurity', () => {
     expect(isAllowedRelayServerUrl(dotLocalHttpUrl)).toBe(true);
   });
 
+  it('allows HTTP private IPv6 LAN server URLs', () => {
+    expect(normalizeRelayServerUrl('[fd00::1]:8090')).toBe(privateIpv6HttpUrl);
+    expect(isAllowedRelayServerUrl(privateIpv6HttpUrl)).toBe(true);
+  });
+
   it('blocks public HTTP server URLs unless explicitly allowed', () => {
     expect(isAllowedRelayServerUrl(publicHttpUrl)).toBe(false);
+    expect(isAllowedRelayServerUrl(publicIpv6HttpUrl)).toBe(false);
     expect(isAllowedRelayServerUrl(publicHttpUrl, true)).toBe(true);
+    expect(isAllowedRelayServerUrl(publicIpv6HttpUrl, true)).toBe(true);
   });
 
   it('rejects non-origin Relay server URLs even when the protocol is otherwise allowed', () => {

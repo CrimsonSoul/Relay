@@ -221,6 +221,17 @@ describe('handleDataPathChange', () => {
 
     await expect(handleDataPathChange('/bad/path')).rejects.toThrow('Bad path');
   });
+
+  it('does not update cached data root when saving the new path fails', async () => {
+    setMainWindow({ webContents: {} } as never);
+    setCurrentDataRoot('/old/path');
+    vi.mocked(validateDataPath).mockResolvedValueOnce({ success: true });
+    vi.mocked(saveConfigAsync).mockRejectedValueOnce(new Error('disk full'));
+
+    await expect(handleDataPathChange('/new/path')).rejects.toThrow('disk full');
+
+    expect(getCurrentDataRoot()).toBe('/old/path');
+  });
 });
 
 describe('setupIpc', () => {

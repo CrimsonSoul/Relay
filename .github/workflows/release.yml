@@ -3,6 +3,9 @@ name: Build and Release
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -115,6 +118,9 @@ jobs:
   release:
     needs: [quality, package-windows]
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6

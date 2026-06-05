@@ -373,6 +373,42 @@ describe('useDataManager', () => {
       expect(mockImportFromExcel).not.toHaveBeenCalled();
     });
 
+    it('rejects oversized import files before reading or importing them', async () => {
+      const { result } = renderHook(() => useDataManager());
+      let importPromise: Promise<unknown>;
+
+      act(() => {
+        importPromise = result.current.importData('contacts');
+      });
+
+      const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
+
+      const file = new File(['{}'], 'huge.json', { type: 'application/json' });
+      Object.defineProperty(file, 'size', { value: 26 * 1024 * 1024 });
+      const readText = vi.spyOn(file, 'text');
+      const readBuffer = vi.spyOn(file, 'arrayBuffer');
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+
+      await act(async () => {
+        input!.dispatchEvent(new Event('change'));
+        await importPromise;
+      });
+
+      expect(readText).not.toHaveBeenCalled();
+      expect(readBuffer).not.toHaveBeenCalled();
+      expect(mockImportFromJson).not.toHaveBeenCalled();
+      expect(mockImportFromCsv).not.toHaveBeenCalled();
+      expect(mockImportFromExcel).not.toHaveBeenCalled();
+      expect(result.current.lastImportResult).toEqual({
+        success: false,
+        imported: 0,
+        updated: 0,
+        skipped: 0,
+        errors: ['Import file is too large. Choose a file under 25 MB.'],
+      });
+    });
+
     it('handles import errors and sets error result', async () => {
       const { result } = renderHook(() => useDataManager());
 
@@ -411,6 +447,59 @@ describe('useDataManager', () => {
       });
 
       expect(result.current.importing).toBe(false);
+    });
+
+    it('routes uppercase CSV filenames to CSV import', async () => {
+      const { result } = renderHook(() => useDataManager());
+      let importPromise: Promise<unknown>;
+
+      act(() => {
+        importPromise = result.current.importData('contacts');
+      });
+
+      const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
+      const file = new File(['email,name\nalice@example.com,Alice'], 'CONTACTS.CSV', {
+        type: 'text/csv',
+      });
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+
+      await act(async () => {
+        input!.dispatchEvent(new Event('change'));
+        await importPromise;
+      });
+
+      expect(mockImportFromCsv).toHaveBeenCalledWith(
+        'contacts',
+        'email,name\nalice@example.com,Alice',
+      );
+      expect(mockImportFromJson).not.toHaveBeenCalled();
+      expect(mockImportFromExcel).not.toHaveBeenCalled();
+    });
+
+    it('routes uppercase XLSX filenames to Excel import', async () => {
+      const { result } = renderHook(() => useDataManager());
+      let importPromise: Promise<unknown>;
+
+      act(() => {
+        importPromise = result.current.importData('contacts');
+      });
+
+      const input = document.body.querySelector('input[type="file"]') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
+      const file = new File([new Uint8Array([1, 2, 3])], 'CONTACTS.XLSX', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      Object.defineProperty(input, 'files', { value: [file], configurable: true });
+
+      await act(async () => {
+        input!.dispatchEvent(new Event('change'));
+        await importPromise;
+      });
+
+      expect(mockImportFromExcel).toHaveBeenCalledWith('contacts', expect.any(ArrayBuffer));
+      expect(mockImportFromCsv).not.toHaveBeenCalled();
+      expect(mockImportFromJson).not.toHaveBeenCalled();
     });
   });
 
