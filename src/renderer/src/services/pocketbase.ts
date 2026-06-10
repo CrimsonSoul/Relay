@@ -10,13 +10,18 @@ type ClientListener = (generation: number) => void;
 let pb: PocketBase | null = null;
 let connectionState: ConnectionState = 'connecting';
 let clientGeneration = 0;
-let healthCheckInterval: ReturnType<typeof setInterval> | null = null;
 let healthCheckInFlight = false;
 let healthCheckAbortController: AbortController | null = null;
 let healthCheckTimeout: ReturnType<typeof setTimeout> | null = null;
 const stateListeners = new Set<StateListener>();
 const clientListeners = new Set<ClientListener>();
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
+const HEALTH_INTERVAL_ONLINE_MS = 30_000;
+const HEALTH_INTERVAL_DEGRADED_MS = 5_000;
+
+let healthLoopTimer: ReturnType<typeof setTimeout> | null = null;
+let healthLoopActive = false;
+let networkListenersInstalled = false;
 
 export function initPocketBase(url: string): PocketBase {
   const previousUrl = pb?.baseURL ?? null;
@@ -154,15 +159,47 @@ async function runHealthCheckProbe(): Promise<void> {
   }
 }
 
-export function startHealthCheck(intervalMs = 30000): void {
+function scheduleNextProbe(): void {
+  if (!healthLoopActive) return;
+  if (healthLoopTimer) clearTimeout(healthLoopTimer);
+  const interval =
+    connectionState === 'online' ? HEALTH_INTERVAL_ONLINE_MS : HEALTH_INTERVAL_DEGRADED_MS;
+  healthLoopTimer = setTimeout(() => void runProbeAndReschedule(), interval);
+}
+
+async function runProbeAndReschedule(): Promise<void> {
+  await runHealthCheckProbe();
+  scheduleNextProbe();
+}
+
+function handleNetworkEvent(): void {
+  if (!healthLoopActive) return;
+  // Reset the pending timer and probe now — cadence resumes from this probe.
+  if (healthLoopTimer) clearTimeout(healthLoopTimer);
+  void runProbeAndReschedule();
+}
+
+export function startHealthCheck(): void {
   stopHealthCheck();
-  healthCheckInterval = setInterval(() => void runHealthCheckProbe(), intervalMs);
+  healthLoopActive = true;
+  if (!networkListenersInstalled) {
+    globalThis.window.addEventListener('online', handleNetworkEvent);
+    globalThis.window.addEventListener('offline', handleNetworkEvent);
+    networkListenersInstalled = true;
+  }
+  void runProbeAndReschedule();
 }
 
 export function stopHealthCheck(): void {
-  if (healthCheckInterval) {
-    clearInterval(healthCheckInterval);
-    healthCheckInterval = null;
+  healthLoopActive = false;
+  if (healthLoopTimer) {
+    clearTimeout(healthLoopTimer);
+    healthLoopTimer = null;
+  }
+  if (networkListenersInstalled) {
+    globalThis.window.removeEventListener('online', handleNetworkEvent);
+    globalThis.window.removeEventListener('offline', handleNetworkEvent);
+    networkListenersInstalled = false;
   }
   if (healthCheckTimeout) clearTimeout(healthCheckTimeout);
   healthCheckTimeout = null;
