@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => {
     execFileSync: vi.fn(),
     existsSync: vi.fn(() => false),
     ensureCollections: vi.fn().mockResolvedValue(undefined),
+    startAdvertising: vi.fn(),
+    stopAdvertising: vi.fn(),
     requestAppRelaunch: vi.fn(),
     broadcastToAllWindows: vi.fn(),
     loggers: {
@@ -94,6 +96,11 @@ vi.mock('../../utils/broadcastToAllWindows', () => ({
   broadcastToAllWindows: mocks.broadcastToAllWindows,
 }));
 
+vi.mock('../../discovery/RelayDiscovery', () => ({
+  startAdvertising: mocks.startAdvertising,
+  stopAdvertising: mocks.stopAdvertising,
+}));
+
 vi.mock('../relaunch', () => ({
   requestAppRelaunch: mocks.requestAppRelaunch,
 }));
@@ -137,6 +144,8 @@ describe('pocketbaseBootstrap', () => {
         'C:\\Users\\Relay\\data',
       ),
     ).resolves.toBe(true);
+
+    expect(mocks.startAdvertising).toHaveBeenCalledWith(8090);
 
     mocks.getCrashCallback()?.('PocketBase exited with code 1');
 

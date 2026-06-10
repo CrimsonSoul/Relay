@@ -170,6 +170,10 @@ export function setupSetupHandlers(
       return { ok: true };
     },
   );
+  ipcMain.handle(IPC_CHANNELS.SETUP_DISCOVER_SERVERS, async () => {
+    const { discoverServers } = await import('../discovery/RelayDiscovery');
+    return discoverServers();
+  });
   ipcMain.handle(IPC_CHANNELS.SETUP_IS_CONFIGURED, () => {
     const config = getAppConfig();
     return config ? config.isConfigured() : false;

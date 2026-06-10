@@ -18,6 +18,7 @@ import {
 } from './appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
+import { startAdvertising, stopAdvertising } from '../discovery/RelayDiscovery';
 
 const APP_USER_EMAIL = 'relay@relay.app';
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
@@ -146,6 +147,9 @@ const doStartPocketBase = async (
   serverConfig: ServerConfig,
   configDataDir: string,
 ): Promise<boolean> => {
+  // Stop any previous mDNS advertisement before (re)starting the server.
+  stopAdvertising();
+
   // If PB is already running (reconfigure), stop it so we can re-upsert credentials
   if (getPbProcess()?.isRunning()) {
     loggers.pocketbase.info('Stopping PocketBase for reconfigure');
@@ -223,6 +227,11 @@ const doStartPocketBase = async (
     await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
     await ensureCollections(pb);
     setPbClient(pb);
+
+    // Advertise on the LAN so client setup can discover this server (best-effort).
+    if (serverConfig.bindHost === '0.0.0.0') {
+      startAdvertising(serverConfig.port);
+    }
 
     // Fire-and-forget: backup and retention run in the background
     // so the UI can proceed as soon as PB is up and collections are ready.

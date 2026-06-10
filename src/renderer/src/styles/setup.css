@@ -501,6 +501,19 @@
   color: var(--color-accent-green);
 }
 
+/* Find servers — mDNS discovery above the URL input */
+.setup-config__discover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.setup-config__discover-result {
+  justify-content: flex-start;
+  border-color: var(--color-accent);
+}
+
 /* Submit button — full-width primary */
 .setup-config__submit {
   display: flex;

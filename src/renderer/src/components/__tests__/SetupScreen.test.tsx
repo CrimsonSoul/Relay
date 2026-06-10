@@ -50,9 +50,9 @@ describe('SetupScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     onComplete = vi.fn();
-    // Mock window.api for the CloseButton and the test-connection probe
+    // Mock window.api for the CloseButton, the test-connection probe, and server discovery
     (globalThis as unknown as { window: unknown }).window = {
-      api: { windowClose: vi.fn(), testConnection: vi.fn() },
+      api: { windowClose: vi.fn(), testConnection: vi.fn(), discoverServers: vi.fn() },
     } as unknown as typeof globalThis.window;
   });
 
@@ -301,6 +301,92 @@ describe('SetupScreen', () => {
     expect(
       screen.queryByText('Connected — server and passphrase look good.'),
     ).not.toBeInTheDocument();
+  });
+
+  // ── Find Servers (mDNS discovery) ──
+
+  it('discovers LAN servers and fills the URL when one is picked', async () => {
+    (globalThis.window.api!.discoverServers as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: 'Relay on ops-mac',
+        host: ['192', '168', '1', '50'].join('.'),
+        port: 8090,
+        url: PRIVATE_LAN_HTTP_URL,
+      },
+    ]);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+
+    const result = await screen.findByRole('button', { name: /Relay on ops-mac/ });
+    fireEvent.click(result);
+
+    expect(screen.getByLabelText('Server URL')).toHaveValue(PRIVATE_LAN_HTTP_URL);
+  });
+
+  it('shows a hint when no LAN servers are found', async () => {
+    (globalThis.window.api!.discoverServers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+
+    expect(
+      await screen.findByText(
+        "No servers found — enter the address shown on the server's status bar.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('treats a thrown discovery IPC error as no servers found', async () => {
+    (globalThis.window.api!.discoverServers as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('ipc failure'),
+    );
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+
+    expect(
+      await screen.findByText(
+        "No servers found — enter the address shown on the server's status bar.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('clears a stale test result when a discovered server is picked', async () => {
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
+    (globalThis.window.api!.discoverServers as ReturnType<typeof vi.fn>).mockResolvedValue([
+      {
+        name: 'Relay on ops-mac',
+        host: ['192', '168', '1', '50'].join('.'),
+        port: 8090,
+        url: PRIVATE_LAN_HTTP_URL,
+      },
+    ]);
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: `${PRIVATE_LAN_HTTP_URL}1` },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find servers on this network' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Relay on ops-mac/ }));
+
+    expect(
+      screen.queryByText('Connected — server and passphrase look good.'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Server URL')).toHaveValue(PRIVATE_LAN_HTTP_URL);
   });
 
   // ── Back Button ──

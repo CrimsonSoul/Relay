@@ -16,9 +16,13 @@ import {
 } from './appState';
 import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastructure';
 import { startPocketBase } from './pocketbaseBootstrap';
+import { stopAdvertising } from '../discovery/RelayDiscovery';
 
 export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   const config = getAppConfig()?.load();
+
+  // Stop mDNS advertising; startPocketBase re-starts it for LAN-bound server mode.
+  stopAdvertising();
 
   const retentionManager = getRetentionManager();
   if (retentionManager) {

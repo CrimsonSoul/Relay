@@ -32,6 +32,7 @@ import { setupAppLifecycleListeners, startMemoryHeartbeat } from './app/processL
 import { runCrashWatchdogIfRequested, startCrashWatchdog } from './app/watchdog';
 import { initializeClientOfflineInfrastructure } from './app/clientOfflineInfrastructure';
 import { startPocketBase } from './app/pocketbaseBootstrap';
+import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
@@ -122,6 +123,7 @@ if (gotLock) {
         getRetentionManager()!.stop();
         setRetentionManager(null);
       }
+      stopAdvertising();
       if (getPbProcess()) {
         getPbProcess()!.killSync();
         setPbProcess(null);

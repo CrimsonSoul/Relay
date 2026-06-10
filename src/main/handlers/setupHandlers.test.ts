@@ -33,6 +33,17 @@ vi.mock('../logger', () => ({
   },
 }));
 
+vi.mock('../discovery/RelayDiscovery', () => ({
+  discoverServers: vi.fn().mockResolvedValue([
+    {
+      name: 'Relay on ops-mac',
+      host: ['192', '168', '1', '50'].join('.'),
+      port: 8090,
+      url: ['http', '://', ['192', '168', '1', '50'].join('.'), ':8090'].join(''),
+    },
+  ]),
+}));
+
 describe('setupHandlers', () => {
   const SECRET_FIELD = 'secret';
   const remoteIp = ['192', '168', '1', '50'].join('.');
@@ -535,6 +546,21 @@ describe('setupHandlers', () => {
       );
 
       expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe('SETUP_DISCOVER_SERVERS', () => {
+    it('returns the discovered LAN servers from the discovery module', async () => {
+      const result = await handlers[IPC_CHANNELS.SETUP_DISCOVER_SERVERS]({});
+
+      expect(result).toEqual([
+        {
+          name: 'Relay on ops-mac',
+          host: remoteIp,
+          port: 8090,
+          url: privateLanHttpUrl,
+        },
+      ]);
     });
   });
 

@@ -54,6 +54,7 @@
     "@fontsource/montserrat": "5.2.8",
     "@formkit/auto-animate": "^0.9.0",
     "better-sqlite3": "12.9.0",
+    "bonjour-service": "1.4.1",
     "html2canvas": "^1.4.1",
     "papaparse": "5.5.3",
     "pocketbase": "0.26.8",

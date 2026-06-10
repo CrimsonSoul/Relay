@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import type { DiscoveredRelayServer } from '@shared/ipc';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import { Input } from './Input';
 
@@ -161,6 +162,20 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatus>('idle');
+  const [discovering, setDiscovering] = useState(false);
+  const [discovered, setDiscovered] = useState<DiscoveredRelayServer[] | null>(null);
+
+  const handleDiscoverServers = async () => {
+    setDiscovering(true);
+    try {
+      const results = await globalThis.window.api?.discoverServers();
+      setDiscovered(results ?? []);
+    } catch {
+      setDiscovered([]);
+    } finally {
+      setDiscovering(false);
+    }
+  };
 
   const handleTestConnection = async () => {
     setTestStatus('testing');
@@ -307,6 +322,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 setError(null);
                 setShowPassword(false);
                 setTestStatus('idle');
+                setDiscovered(null);
               }}
             >
               <BackArrow />
@@ -354,6 +370,34 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
           )}
           {mode === 'client' && (
             <div className="setup-config__field">
+              <div className="setup-config__discover">
+                <button
+                  type="button"
+                  className="setup-config__test-btn"
+                  onClick={() => void handleDiscoverServers()}
+                  disabled={discovering}
+                >
+                  {discovering ? 'Searching…' : 'Find servers on this network'}
+                </button>
+                {discovered && discovered.length === 0 && (
+                  <p className="setup-config__hint">
+                    No servers found — enter the address shown on the server&apos;s status bar.
+                  </p>
+                )}
+                {discovered?.map((s) => (
+                  <button
+                    key={s.url}
+                    type="button"
+                    className="setup-config__test-btn setup-config__discover-result"
+                    onClick={() => {
+                      setServerUrl(s.url);
+                      setTestStatus('idle');
+                    }}
+                  >
+                    {s.name} — {s.host}:{s.port}
+                  </button>
+                ))}
+              </div>
               <Input
                 label="Server URL"
                 type="text"
