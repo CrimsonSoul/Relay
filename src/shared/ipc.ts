@@ -114,60 +114,80 @@ export const CLOUD_STATUS_PROVIDER_ORDER: CloudStatusProvider[] = [
 
 export const CLOUD_STATUS_PROVIDERS: Record<
   CloudStatusProvider,
-  { label: string; shortLabel?: string; statusUrl: string; twitterHandle?: string }
+  {
+    label: string;
+    shortLabel?: string;
+    statusUrl: string;
+    twitterHandle?: string;
+    downdetectorSlug?: string;
+  }
 > = {
   aws: {
     label: 'AWS',
     statusUrl: 'https://status.aws.amazon.com/',
     twitterHandle: 'AWSCloud',
+    downdetectorSlug: 'aws-amazon-web-services',
   },
   azure: {
     label: 'Azure',
     statusUrl: 'https://status.azure.com/',
     twitterHandle: 'AzureSupport',
+    downdetectorSlug: 'windows-azure',
   },
   m365: {
     label: 'Microsoft 365',
     shortLabel: 'M365',
     statusUrl: 'https://status.cloud.microsoft',
     twitterHandle: 'MSFT365Status',
+    downdetectorSlug: 'microsoft-365',
   },
   jira: {
     label: 'Jira',
     statusUrl: 'https://jira-software.status.atlassian.com/',
     twitterHandle: 'Atlassian',
+    downdetectorSlug: 'jira',
   },
   github: {
     label: 'GitHub',
     statusUrl: 'https://www.githubstatus.com/',
     twitterHandle: 'githubstatus',
+    downdetectorSlug: 'github',
   },
   cloudflare: {
     label: 'Cloudflare',
     statusUrl: 'https://www.cloudflarestatus.com/',
     twitterHandle: 'CloudflareHelp',
+    downdetectorSlug: 'cloudflare',
   },
   google: {
     label: 'Google Cloud',
     shortLabel: 'Google',
     statusUrl: 'https://status.cloud.google.com/',
     twitterHandle: 'googlecloud',
+    downdetectorSlug: 'google-cloud',
   },
   anthropic: {
     label: 'Claude',
     statusUrl: 'https://status.anthropic.com/',
+    downdetectorSlug: 'claude-ai',
   },
   openai: {
     label: 'ChatGPT',
     statusUrl: 'https://status.openai.com/',
     twitterHandle: 'OpenAIDevs',
+    downdetectorSlug: 'chatgpt',
   },
   salesforce: {
     label: 'Salesforce',
     shortLabel: 'SFDC',
     statusUrl: 'https://status.salesforce.com/',
+    downdetectorSlug: 'salesforce',
   },
 };
+
+export function downdetectorUrl(slug: string): string {
+  return `https://downdetector.com/status/${slug}/`;
+}
 
 export type NoteColor = 'amber' | 'blue' | 'green' | 'red' | 'purple' | 'slate';
 
