@@ -19,6 +19,7 @@ export function ConnectionStatus() {
     online: 'Connected',
     offline: 'Offline — using cached data',
     reconnecting: 'Reconnecting...',
+    'auth-failed': 'Sign-in failed — check the passphrase in Settings',
   };
 
   const colors: Record<ConnectionState, string> = {
@@ -26,6 +27,7 @@ export function ConnectionStatus() {
     online: '#10b981',
     offline: '#ef4444',
     reconnecting: '#e11d48',
+    'auth-failed': '#ef4444',
   };
 
   return (

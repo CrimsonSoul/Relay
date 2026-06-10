@@ -2,7 +2,7 @@ import PocketBase from 'pocketbase';
 import type { PbAuthSession, PbConnectionResult } from '@shared/ipc';
 import { loggers } from '../utils/logger';
 
-export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
+export type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting' | 'auth-failed';
 
 type StateListener = (state: ConnectionState) => void;
 type ClientListener = (generation: number) => void;
@@ -70,22 +70,32 @@ export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false):
   if (!skipHealthRestart) startHealthCheck();
 }
 
-export async function refreshAuthSession(skipHealthRestart = false): Promise<boolean> {
+export type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
+
+export async function refreshAuthSession(skipHealthRestart = false): Promise<RefreshResult> {
   try {
     const result: PbConnectionResult | null | undefined =
       await globalThis.api?.refreshPbConnection?.();
-    if (!result?.ok) return false;
+    if (!result?.ok) {
+      return result && 'error' in result && result.error === 'auth-failed'
+        ? 'auth-failed'
+        : 'unavailable';
+    }
     if (result.connection.pbUrl !== getPb().baseURL) {
       initPocketBase(result.connection.pbUrl);
     }
     loadAuthSession(result.connection.auth, skipHealthRestart);
-    return true;
+    return 'ok';
   } catch (error) {
     loggers.network.warn('Session refresh failed', {
       error: error instanceof Error ? error.message : String(error),
     });
-    return false;
+    return 'unavailable';
   }
+}
+
+function applyRefreshFailure(result: RefreshResult): void {
+  setConnectionState(result === 'auth-failed' ? 'auth-failed' : 'offline');
 }
 
 function beginHealthCheckProbe(): AbortController | null {
@@ -114,9 +124,9 @@ async function handleHealthyProbe(): Promise<void> {
 
     setConnectionState('reconnecting');
     const refreshed = await refreshAuthSession(true);
-    if (!refreshed) {
+    if (refreshed !== 'ok') {
       loggers.network.warn('Auth session refresh failed while online');
-      setConnectionState('offline');
+      applyRefreshFailure(refreshed);
     }
     return;
   }
@@ -130,8 +140,9 @@ async function handleHealthyProbe(): Promise<void> {
   }
 
   const refreshed = await refreshAuthSession(true);
-  if (!refreshed) {
+  if (refreshed !== 'ok') {
     loggers.network.warn('Auth session refresh failed on reconnect');
+    applyRefreshFailure(refreshed);
   }
 }
 
@@ -162,8 +173,12 @@ async function runHealthCheckProbe(): Promise<void> {
 function scheduleNextProbe(): void {
   if (!healthLoopActive) return;
   if (healthLoopTimer) clearTimeout(healthLoopTimer);
+  // auth-failed uses the relaxed cadence too — a hot retry loop would hammer
+  // the server's rate-limited auth endpoint without helping the user.
   const interval =
-    connectionState === 'online' ? HEALTH_INTERVAL_ONLINE_MS : HEALTH_INTERVAL_DEGRADED_MS;
+    connectionState === 'online' || connectionState === 'auth-failed'
+      ? HEALTH_INTERVAL_ONLINE_MS
+      : HEALTH_INTERVAL_DEGRADED_MS;
   healthLoopTimer = setTimeout(() => void runProbeAndReschedule(), interval);
 }
 
@@ -234,7 +249,7 @@ export function handleApiError(error: unknown): void {
   ) {
     setConnectionState('reconnecting');
     void refreshAuthSession().then((refreshed) => {
-      if (!refreshed) setConnectionState('offline');
+      if (refreshed !== 'ok') applyRefreshFailure(refreshed);
     });
   }
 }

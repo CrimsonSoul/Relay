@@ -81,8 +81,12 @@ describe('pocketbase service', () => {
       refreshPbConnection: vi.fn(),
     } as typeof globalThis.api;
     // startHealthCheck probes immediately, so give tests that don't stub
-    // fetch themselves a benign default to avoid real network calls.
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
+    // fetch themselves a never-settling default — it avoids real network
+    // calls AND can't drive state changes that would mask test assertions.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {})),
+    );
     // Reset the module-level connection state by re-initializing
     resetPbState();
   });
@@ -206,7 +210,7 @@ describe('pocketbase service', () => {
 
       const result = await refreshAuthSession();
 
-      expect(result).toBe(true);
+      expect(result).toBe('ok');
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
       expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
       expect(getConnectionState()).toBe('online');
@@ -231,12 +235,12 @@ describe('pocketbase service', () => {
 
       const result = await refreshAuthSession(true);
 
-      expect(result).toBe(true);
+      expect(result).toBe('ok');
       expect(getPb().baseURL).toBe('http://localhost:8091');
       expect(mockAuthSave).toHaveBeenCalledWith(auth.token, auth.record);
     });
 
-    it('returns false when main refresh does not provide an auth session', async () => {
+    it('returns auth-failed when main refresh reports an auth failure', async () => {
       const resultFromMain: PbConnectionResult = {
         ok: false,
         error: 'auth-failed',
@@ -246,17 +250,17 @@ describe('pocketbase service', () => {
 
       const result = await refreshAuthSession();
 
-      expect(result).toBe(false);
+      expect(result).toBe('auth-failed');
       expect(mockAuthSave).not.toHaveBeenCalled();
     });
 
-    it('returns false when main refresh is unavailable', async () => {
+    it('returns unavailable when main refresh is unavailable', async () => {
       const refreshPbConnection = vi.fn().mockResolvedValue(null);
       globalThis.api = { refreshPbConnection } as typeof globalThis.api;
 
       const result = await refreshAuthSession();
 
-      expect(result).toBe(false);
+      expect(result).toBe('unavailable');
       expect(mockAuthSave).not.toHaveBeenCalled();
     });
   });
@@ -278,8 +282,6 @@ describe('pocketbase service', () => {
         'http://localhost:8090/api/health',
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
-
-      vi.unstubAllGlobals();
     });
 
     it('does not start overlapping health checks while a previous probe is still pending', async () => {
@@ -291,8 +293,6 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(fetchMock).toHaveBeenCalledTimes(1);
-
-      vi.unstubAllGlobals();
     });
 
     it('aborts a stuck health check probe', async () => {
@@ -312,8 +312,6 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(10_000);
 
       expect(signal?.aborted).toBe(true);
-
-      vi.unstubAllGlobals();
     });
 
     it('aborts an in-flight probe when stopping health checks', async () => {
@@ -332,8 +330,6 @@ describe('pocketbase service', () => {
       stopHealthCheck();
 
       expect(signal?.aborted).toBe(true);
-
-      vi.unstubAllGlobals();
     });
 
     it('sets state to offline when health check fetch fails', async () => {
@@ -347,8 +343,6 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(getConnectionState()).toBe('offline');
-
-      vi.unstubAllGlobals();
     });
 
     it('sets state to offline when health check returns non-ok response', async () => {
@@ -362,8 +356,6 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0);
 
       expect(getConnectionState()).toBe('offline');
-
-      vi.unstubAllGlobals();
     });
 
     it('refreshes through main when coming back online with invalid auth', async () => {
@@ -402,8 +394,6 @@ describe('pocketbase service', () => {
       expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
       // Restore
       mockAuthStore.isValid = true;
-
-      vi.unstubAllGlobals();
     });
 
     it('refreshes through main when health is OK but online auth has expired', async () => {
@@ -434,7 +424,6 @@ describe('pocketbase service', () => {
       expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
 
       mockAuthStore.isValid = true;
-      vi.unstubAllGlobals();
     });
 
     it('does not reconnect when auth is invalid and main refresh fails', async () => {
@@ -465,7 +454,6 @@ describe('pocketbase service', () => {
       expect(refreshPbConnection).toHaveBeenCalledTimes(1);
 
       mockAuthStore.isValid = true;
-      vi.unstubAllGlobals();
     });
 
     it('sets state to online when coming back with valid auth (no re-auth needed)', async () => {
@@ -487,8 +475,6 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(getConnectionState()).toBe('online');
-
-      vi.unstubAllGlobals();
     });
 
     it('logs warning when main refresh fails on reconnect', async () => {
@@ -516,7 +502,6 @@ describe('pocketbase service', () => {
       expect(networkWarn).toHaveBeenCalled();
 
       mockAuthStore.isValid = true;
-      vi.unstubAllGlobals();
     });
 
     it('stopHealthCheck stops further probes', async () => {
@@ -532,8 +517,6 @@ describe('pocketbase service', () => {
 
       // No further probes after the health check was stopped
       expect(fetchMock.mock.calls.length).toBe(callsAfterStart);
-
-      vi.unstubAllGlobals();
     });
 
     it('stopHealthCheck is safe to call when no health check is running', () => {
@@ -554,8 +537,6 @@ describe('pocketbase service', () => {
       // State was 'connecting', catch block only sets offline if currently 'online'
       // so the listener should NOT have been called with 'offline'
       expect(listener).not.toHaveBeenCalledWith('offline');
-
-      vi.unstubAllGlobals();
     });
   });
 
@@ -570,7 +551,6 @@ describe('pocketbase service', () => {
       loadAuthSession({ token: 't', record: null }); // starts health check
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchSpy).toHaveBeenCalledWith('http://localhost:8090/api/health', expect.anything());
-      vi.unstubAllGlobals();
     });
 
     it('polls every 5s while offline and 30s while online', async () => {
@@ -593,7 +573,6 @@ describe('pocketbase service', () => {
       expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline);
       await vi.advanceTimersByTimeAsync(25_000);
       expect(fetchSpy.mock.calls.length).toBe(callsWhenOnline + 1);
-      vi.unstubAllGlobals();
     });
 
     it('probes immediately on a window online event', async () => {
@@ -606,7 +585,76 @@ describe('pocketbase service', () => {
       globalThis.window.dispatchEvent(new Event('online'));
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchSpy.mock.calls.length).toBe(before + 1);
-      vi.unstubAllGlobals();
+    });
+
+    it('probes immediately on a window offline event', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0);
+      const before = fetchSpy.mock.calls.length;
+      globalThis.window.dispatchEvent(new Event('offline'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchSpy.mock.calls.length).toBe(before + 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // auth-failed state
+  // -------------------------------------------------------------------------
+  describe('auth-failed state', () => {
+    it('enters auth-failed state when refresh reports auth-failed', async () => {
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'auth-failed',
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      handleApiError({ status: 401 });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(getConnectionState()).toBe('auth-failed');
+    });
+
+    it('stays offline (not auth-failed) when refresh reports pb-unavailable', async () => {
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'pb-unavailable',
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+
+      handleApiError({ status: 401 });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(getConnectionState()).toBe('offline');
+    });
+
+    it('uses the relaxed 30s cadence while auth-failed (no hot auth retry loop)', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'auth-failed',
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0); // immediate probe → online (token valid)
+
+      handleApiError({ status: 401 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getConnectionState()).toBe('auth-failed');
+
+      const callsAfter = fetchSpy.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetchSpy.mock.calls.length).toBe(callsAfter); // NOT the 5s degraded cadence
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(fetchSpy.mock.calls.length).toBe(callsAfter + 1); // 30s cadence
     });
   });
 

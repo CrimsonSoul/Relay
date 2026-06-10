@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock pocketbase service
 // ---------------------------------------------------------------------------
 
-type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting';
+type ConnectionState = 'connecting' | 'online' | 'offline' | 'reconnecting' | 'auth-failed';
 
 let mockState: ConnectionState = 'online';
 let registeredListener: ((state: ConnectionState) => void) | null = null;
@@ -81,6 +81,23 @@ describe('ConnectionStatus', () => {
     render(<ConnectionStatus />);
     const banner = screen.getByText('Reconnecting...');
     expect(banner.style.backgroundColor).toBe('rgb(225, 29, 72)');
+  });
+
+  // ── Auth-Failed State ──
+
+  it('shows an actionable label for auth-failed', () => {
+    mockState = 'auth-failed';
+    render(<ConnectionStatus />);
+    expect(
+      screen.getByText('Sign-in failed — check the passphrase in Settings'),
+    ).toBeInTheDocument();
+  });
+
+  it('uses red background color for auth-failed state', () => {
+    mockState = 'auth-failed';
+    render(<ConnectionStatus />);
+    const banner = screen.getByText('Sign-in failed — check the passphrase in Settings');
+    expect(banner.style.backgroundColor).toBe('rgb(239, 68, 68)');
   });
 
   // ── State Transitions ──
