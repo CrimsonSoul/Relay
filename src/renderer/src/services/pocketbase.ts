@@ -31,6 +31,15 @@ let networkListenersInstalled = false;
 export function initPocketBase(url: string): PocketBase {
   const previousUrl = pb?.baseURL ?? null;
   pb = new PocketBase(url);
+  // SSE can drop while HTTP health stays green; events in the gap are never
+  // replayed by the SDK. Drop to 'reconnecting' so useCollection tears down,
+  // then probe immediately — the recovery path refetches and resubscribes.
+  pb.realtime.onDisconnect = () => {
+    if (connectionState !== 'online') return;
+    setConnectionState('reconnecting');
+    if (healthLoopTimer) clearTimeout(healthLoopTimer);
+    void runProbeAndReschedule();
+  };
   setConnectionState('connecting');
   if (previousUrl !== null && previousUrl !== url) {
     clientGeneration++;

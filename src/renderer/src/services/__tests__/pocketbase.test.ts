@@ -23,6 +23,9 @@ vi.mock('pocketbase', () => {
     default: class MockPocketBase {
       baseURL: string;
       authStore = mockAuthStore;
+      realtime: { onDisconnect: undefined | ((subs: string[]) => void) } = {
+        onDisconnect: undefined,
+      };
       constructor(url: string) {
         this.baseURL = url;
       }
@@ -597,6 +600,45 @@ describe('pocketbase service', () => {
       globalThis.window.dispatchEvent(new Event('offline'));
       await vi.advanceTimersByTimeAsync(0);
       expect(fetchSpy.mock.calls.length).toBe(before + 1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // realtime disconnect resync
+  // -------------------------------------------------------------------------
+  describe('realtime disconnect resync', () => {
+    it('drops to reconnecting and probes immediately when realtime disconnects while online', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const client = initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getConnectionState()).toBe('online');
+
+      const states: string[] = [];
+      const unsub = onConnectionStateChange((s) => states.push(s));
+
+      const before = fetchSpy.mock.calls.length;
+      (
+        client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
+      ).realtime.onDisconnect?.([]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(states).toContain('reconnecting'); // tears down + retriggers subscriptions
+      expect(fetchSpy.mock.calls.length).toBeGreaterThan(before); // immediate probe
+      expect(getConnectionState()).toBe('online'); // healthy probe + valid token → recovered
+      unsub();
+    });
+
+    it('ignores realtime disconnects when not online (e.g. during teardown)', () => {
+      const client = initPocketBase('http://localhost:8090'); // state: connecting
+      const states: string[] = [];
+      const unsub = onConnectionStateChange((s) => states.push(s));
+      (
+        client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
+      ).realtime.onDisconnect?.([]);
+      expect(states).not.toContain('reconnecting');
+      unsub();
     });
   });
 
