@@ -6,6 +6,7 @@ import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSec
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
+import { discoverServers } from '../discovery/RelayDiscovery';
 import { loggers } from '../logger';
 
 const MAX_RELAY_SECRET_LENGTH = 256;
@@ -170,10 +171,7 @@ export function setupSetupHandlers(
       return { ok: true };
     },
   );
-  ipcMain.handle(IPC_CHANNELS.SETUP_DISCOVER_SERVERS, async () => {
-    const { discoverServers } = await import('../discovery/RelayDiscovery');
-    return discoverServers();
-  });
+  ipcMain.handle(IPC_CHANNELS.SETUP_DISCOVER_SERVERS, () => discoverServers());
   ipcMain.handle(IPC_CHANNELS.SETUP_IS_CONFIGURED, () => {
     const config = getAppConfig();
     return config ? config.isConfigured() : false;

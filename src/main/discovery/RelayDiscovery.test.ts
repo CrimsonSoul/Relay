@@ -64,6 +64,8 @@ describe('RelayDiscovery', () => {
       addresses: [linkLocalIpv6, lanIp],
     });
     browserOnUp?.({ name: 'No address service', port: 8090, addresses: [] });
+    browserOnUp?.({ name: 'Public WAN impostor', port: 8090, addresses: ['203.0.113.5'] });
+    browserOnUp?.({ name: 'Malformed octets', port: 8090, addresses: ['999.1.1.1'] });
     await vi.advanceTimersByTimeAsync(1000);
     const results = await resultPromise;
     expect(results).toEqual([

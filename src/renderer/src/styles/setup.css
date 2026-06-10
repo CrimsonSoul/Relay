@@ -512,6 +512,9 @@
 .setup-config__discover-result {
   justify-content: flex-start;
   border-color: var(--color-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Submit button — full-width primary */
