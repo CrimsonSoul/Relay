@@ -445,16 +445,16 @@ describe('CloudStatusTab', () => {
       expect(xLinks).toHaveLength(0);
     });
 
-    it('renders a Crowd link that opens the Downdetector page', () => {
+    it('renders a Downdetector link that opens the Downdetector page', () => {
       const { container } = render(
         <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
       );
       const githubCard = getCard(container, 'GitHub');
-      const crowdLink = Array.from(githubCard.querySelectorAll('button')).find((b) =>
-        b.textContent?.includes('Crowd'),
+      const downdetectorLink = Array.from(githubCard.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Downdetector'),
       );
-      expect(crowdLink).toBeDefined();
-      fireEvent.click(crowdLink!);
+      expect(downdetectorLink).toBeDefined();
+      fireEvent.click(downdetectorLink!);
       expect(openExternal()).toHaveBeenCalledWith('https://downdetector.com/status/github/');
     });
   });

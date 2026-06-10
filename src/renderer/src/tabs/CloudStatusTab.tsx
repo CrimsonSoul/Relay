@@ -219,10 +219,9 @@ const ProviderCard: React.FC<{
             <button
               type="button"
               className="cloud-status-provider__link"
-              aria-label="Downdetector crowd reports"
               onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
             >
-              Crowd ↗
+              Downdetector ↗
             </button>
           )}
         </div>
