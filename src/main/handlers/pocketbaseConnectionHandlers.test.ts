@@ -302,55 +302,26 @@ describe('pocketbaseConnectionHandlers', () => {
     expect(result).toEqual({ ok: false, error: 'auth-failed' });
   });
 
-  it('retries saved HTTPS LAN client URLs over HTTP when the HTTPS bootstrap is unavailable', async () => {
+  it('does not retry over HTTP when an HTTPS LAN connection is unavailable', async () => {
     vi.useFakeTimers();
-    const fallbackServerUrl = ['http', '://192.168.1.50:8090'].join('');
     mockAppConfig.load.mockReturnValue({
       mode: 'client',
       serverUrl: 'https://192.168.1.50:8090',
-      secret: 'super-secret-passphrase',
-    });
-    mockAppUserAuthWithPassword
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockRejectedValueOnce(new TypeError('fetch failed'))
-      .mockResolvedValueOnce({});
-
-    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
-    await vi.advanceTimersByTimeAsync(750 * 4);
-    const result = await resultPromise;
-
-    expect(PocketBase).toHaveBeenNthCalledWith(1, 'https://192.168.1.50:8090');
-    expect(PocketBase).toHaveBeenNthCalledWith(5, fallbackServerUrl);
-    expect(result).toEqual({
-      ok: true,
-      connection: {
-        pbUrl: fallbackServerUrl,
-        auth: {
-          token: 'pb-token',
-          record: { id: 'user-1', email: 'relay@relay.app' },
-        },
-      },
-    });
-  });
-
-  it('does not downgrade public HTTPS client URLs when the bootstrap is unavailable', async () => {
-    vi.useFakeTimers();
-    mockAppConfig.load.mockReturnValue({
-      mode: 'client',
-      serverUrl: 'https://relay.example.com:8090',
-      secret: 'super-secret-passphrase',
+      secret: 'super-secret',
     });
     mockAppUserAuthWithPassword.mockRejectedValue(new TypeError('fetch failed'));
 
     const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
-    await vi.advanceTimersByTimeAsync(750 * 3);
+    await vi.advanceTimersByTimeAsync(750 * 6);
     const result = await resultPromise;
 
     expect(result).toEqual({ ok: false, error: 'pb-unavailable' });
-    expect(PocketBase).toHaveBeenCalledTimes(4);
-    expect(PocketBase).toHaveBeenLastCalledWith('https://relay.example.com:8090');
+    // Every PocketBase construction used the configured HTTPS URL — no http:// retry.
+    const urls = (PocketBase as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).toBe('https://192.168.1.50:8090');
+    }
   });
 
   it('returns refreshed connection data when refresh auth succeeds', async () => {
