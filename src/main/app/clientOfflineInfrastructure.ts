@@ -4,6 +4,7 @@ import { OfflineCache } from '../cache/OfflineCache';
 import { PendingChanges } from '../cache/PendingChanges';
 import { SyncManager } from '../cache/SyncManager';
 import { setOfflineCache, setPendingChanges, setSyncManager } from './appState';
+import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 
 const CLIENT_OFFLINE_AUTH_TIMEOUT_MS = 15_000;
 
@@ -16,10 +17,12 @@ export async function initializeClientOfflineInfrastructure(
   const authTimeout = setTimeout(() => controller.abort(), CLIENT_OFFLINE_AUTH_TIMEOUT_MS);
 
   try {
-    await syncPb.collection('_pb_users_auth_').authWithPassword('relay@relay.app', config.secret, {
-      signal: controller.signal,
-      requestKey: null,
-    });
+    await syncPb
+      .collection('_pb_users_auth_')
+      .authWithPassword(RELAY_APP_USER_EMAIL, config.secret, {
+        signal: controller.signal,
+        requestKey: null,
+      });
   } finally {
     clearTimeout(authTimeout);
   }

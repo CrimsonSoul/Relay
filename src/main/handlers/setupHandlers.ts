@@ -1,7 +1,12 @@
 import { ipcMain } from 'electron';
 import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
-import { IPC_CHANNELS, type PublicRelayConfig, type SetupTestConnectionResult } from '@shared/ipc';
+import {
+  IPC_CHANNELS,
+  RELAY_APP_USER_EMAIL,
+  type PublicRelayConfig,
+  type SetupTestConnectionResult,
+} from '@shared/ipc';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
@@ -158,7 +163,7 @@ export function setupSetupHandlers(
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ identity: 'relay@relay.app', password: parsed.data.secret }),
+            body: JSON.stringify({ identity: RELAY_APP_USER_EMAIL, password: parsed.data.secret }),
             redirect: 'error',
             signal: AbortSignal.timeout(TEST_CONNECTION_TIMEOUT_MS),
           },

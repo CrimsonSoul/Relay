@@ -303,6 +303,30 @@ describe('SetupScreen', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('clears a stale test result when the public HTTP opt-in toggles', async () => {
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Allow public HTTP'));
+
+    expect(
+      screen.queryByText('Connected — server and passphrase look good.'),
+    ).not.toBeInTheDocument();
+  });
+
   // ── Find Servers (mDNS discovery) ──
 
   it('discovers LAN servers and fills the URL when one is picked', async () => {

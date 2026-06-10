@@ -19,8 +19,8 @@ import {
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
 import { startAdvertising, stopAdvertising } from '../discovery/RelayDiscovery';
+import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 
-const APP_USER_EMAIL = 'relay@relay.app';
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
 const APP_USER_ENSURE_ATTEMPTS = 3;
@@ -70,7 +70,7 @@ async function ensureAppUserOnce(localUrl: string, secret: string): Promise<void
 
   // If app user already works with current password, nothing to do
   try {
-    await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
+    await pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret);
     loggers.pocketbase.info('App user auth OK');
     return;
   } catch {
@@ -84,7 +84,7 @@ async function ensureAppUserOnce(localUrl: string, secret: string): Promise<void
   try {
     const existing = await pb
       .collection('_pb_users_auth_')
-      .getFirstListItem(`email="${APP_USER_EMAIL}"`);
+      .getFirstListItem(`email="${RELAY_APP_USER_EMAIL}"`);
     await pb.collection('_pb_users_auth_').delete(existing.id);
   } catch {
     // User doesn't exist yet
@@ -92,14 +92,14 @@ async function ensureAppUserOnce(localUrl: string, secret: string): Promise<void
 
   // Create with current passphrase
   const appUserCreateEntries = [
-    ['email', APP_USER_EMAIL],
+    ['email', RELAY_APP_USER_EMAIL],
     [APP_USER_AUTH_FIELD, secret],
     [APP_USER_AUTH_CONFIRM_FIELD, secret],
   ];
   await pb.collection('_pb_users_auth_').create(Object.fromEntries(appUserCreateEntries));
 
   // Prove remote clients will be able to authenticate before reporting server ready.
-  await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret);
+  await pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret);
   loggers.pocketbase.info('App user created');
 }
 

@@ -415,7 +415,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 <input
                   type="checkbox"
                   checked={allowInsecureHttp}
-                  onChange={(e) => setAllowInsecureHttp(e.target.checked)}
+                  onChange={(e) => {
+                    setAllowInsecureHttp(e.target.checked);
+                    setTestStatus('idle');
+                  }}
                   aria-label="Allow public HTTP"
                 />
                 <span>Allow public HTTP</span>

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockPublish = vi.fn();
@@ -5,10 +6,13 @@ const mockUnpublishAll = vi.fn();
 const mockDestroy = vi.fn();
 let browserOnUp: ((service: unknown) => void) | null = null;
 const mockBrowserStop = vi.fn();
+let lastMdnsEmitter: EventEmitter | null = null;
 
 vi.mock('bonjour-service', () => ({
   Bonjour: vi.fn().mockImplementation(function () {
+    lastMdnsEmitter = new EventEmitter();
     return {
+      server: { mdns: lastMdnsEmitter },
       publish: mockPublish,
       unpublishAll: mockUnpublishAll,
       destroy: mockDestroy,
@@ -24,6 +28,7 @@ vi.mock('../logger', () => ({
   loggers: { main: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
 }));
 
+import { loggers } from '../logger';
 import { startAdvertising, stopAdvertising, discoverServers } from './RelayDiscovery';
 
 describe('RelayDiscovery', () => {
@@ -31,6 +36,7 @@ describe('RelayDiscovery', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     browserOnUp = null;
+    lastMdnsEmitter = null;
     stopAdvertising();
   });
 
@@ -77,5 +83,27 @@ describe('RelayDiscovery', () => {
       },
     ]);
     expect(mockBrowserStop).toHaveBeenCalled();
+  });
+
+  it('survives async mDNS socket errors while advertising', () => {
+    startAdvertising(8090);
+    expect(lastMdnsEmitter).not.toBeNull();
+    expect(() => lastMdnsEmitter?.emit('error', new Error('bind EADDRINUSE 5353'))).not.toThrow();
+    expect(loggers.main.warn).toHaveBeenCalledWith(
+      'mDNS socket error',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+  });
+
+  it('survives async mDNS socket errors during discovery', async () => {
+    const resultPromise = discoverServers(1000);
+    expect(lastMdnsEmitter).not.toBeNull();
+    expect(() => lastMdnsEmitter?.emit('error', new Error('bind EACCES 5353'))).not.toThrow();
+    expect(loggers.main.warn).toHaveBeenCalledWith(
+      'mDNS socket error',
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(resultPromise).resolves.toEqual([]);
   });
 });

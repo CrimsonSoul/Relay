@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron';
 import PocketBase from 'pocketbase';
-import { IPC_CHANNELS, type PbConnectionResult } from '@shared/ipc';
+import { IPC_CHANNELS, RELAY_APP_USER_EMAIL, type PbConnectionResult } from '@shared/ipc';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
@@ -9,7 +9,6 @@ import { loggers } from '../logger';
 const PB_BOOTSTRAP_AUTH_TIMEOUT_MS = 15_000;
 const PB_BOOTSTRAP_AUTH_ATTEMPTS = 4;
 const PB_BOOTSTRAP_AUTH_RETRY_MS = 750;
-const APP_USER_EMAIL = 'relay@relay.app';
 const SUPERUSER_EMAIL = 'admin@relay.app';
 
 class PbAuthTimeoutError extends Error {
@@ -155,7 +154,7 @@ async function authenticatePbConnectionOnce(
 
   try {
     await withPbAuthTimeout(async (signal) => {
-      await pb.collection('_pb_users_auth_').authWithPassword(APP_USER_EMAIL, secret, {
+      await pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret, {
         signal,
         requestKey: null,
       });
@@ -186,15 +185,6 @@ async function authenticatePbConnectionOnce(
 }
 
 async function authenticatePbConnection(
-  config: ReturnType<AppConfig['load']>,
-  pbUrl: string,
-  secret: string,
-  logMessage: string,
-): Promise<PbConnectionResult> {
-  return authenticatePbConnectionWithRetries(config, pbUrl, secret, logMessage);
-}
-
-async function authenticatePbConnectionWithRetries(
   config: ReturnType<AppConfig['load']>,
   pbUrl: string,
   secret: string,

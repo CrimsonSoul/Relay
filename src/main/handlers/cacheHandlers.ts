@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
@@ -149,7 +149,7 @@ export function setupCacheHandlers(
       const config = getAppConfig?.()?.load();
       if (config?.secret) {
         try {
-          await sync.reauthenticate('relay@relay.app', config.secret);
+          await sync.reauthenticate(RELAY_APP_USER_EMAIL, config.secret);
           loggers.sync.info('SyncManager re-authenticated');
         } catch (authErr) {
           loggers.sync.error('SyncManager re-auth failed', { error: authErr });

@@ -9,11 +9,29 @@ const IPV4_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
 
 let advertiser: Bonjour | null = null;
 
+/** Swallow async mDNS errors so they log instead of crashing the main process. */
+function logMdnsError(err: unknown): void {
+  loggers.main.warn('mDNS error', { error: err });
+}
+
+/**
+ * The underlying multicast-dns emitter emits 'error' on socket failures
+ * (e.g. EACCES/EADDRINUSE on port 5353). bonjour-service attaches no listener,
+ * so an unhandled emit would crash the main process. Attach one ourselves.
+ */
+function muzzleMdnsErrors(instance: Bonjour): void {
+  const mdns = (instance as unknown as { server?: { mdns?: NodeJS.EventEmitter } }).server?.mdns;
+  mdns?.on('error', (err: unknown) => {
+    loggers.main.warn('mDNS socket error', { error: err });
+  });
+}
+
 /** Advertise this server-mode instance as _relay._tcp on the LAN. Idempotent. */
 export function startAdvertising(port: number): void {
   if (advertiser) return;
   try {
-    advertiser = new Bonjour();
+    advertiser = new Bonjour(undefined, logMdnsError);
+    muzzleMdnsErrors(advertiser);
     advertiser.publish({ name: `Relay on ${hostname()}`, type: SERVICE_TYPE, port });
     loggers.main.info('mDNS advertising started', { port });
   } catch (err) {
@@ -49,7 +67,8 @@ export function discoverServers(timeoutMs = 3000): Promise<DiscoveredRelayServer
   return new Promise((resolve) => {
     let bonjour: Bonjour;
     try {
-      bonjour = new Bonjour();
+      bonjour = new Bonjour(undefined, logMdnsError);
+      muzzleMdnsErrors(bonjour);
     } catch (err) {
       loggers.main.warn('Failed to start mDNS discovery', { error: err });
       resolve([]);

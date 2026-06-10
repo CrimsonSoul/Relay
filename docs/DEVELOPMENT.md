@@ -122,6 +122,9 @@ Current connection states:
 - `online`
 - `offline`
 - `reconnecting`
+- `auth-failed` (server reachable but credentials rejected — recover via Settings → Reconfigure)
+
+Health checks use an adaptive cadence: an immediate probe on startup and reconnect attempts, then every 5 seconds while degraded and every 30 seconds while `online` or `auth-failed`, with browser `online`/`offline` window events triggering immediate re-evaluation. If the realtime SSE connection drops while subscriptions are active, the client treats it as a disconnect and runs a reconnect cycle plus a refetch so list data cannot silently go stale.
 
 Use:
 

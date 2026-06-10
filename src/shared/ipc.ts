@@ -323,6 +323,9 @@ export type BridgeAPI = {
     | 'netbsd';
 };
 
+/** Email identity of the single PocketBase app user Relay authenticates as. */
+export const RELAY_APP_USER_EMAIL = 'relay@relay.app';
+
 export const IPC_CHANNELS = {
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',
