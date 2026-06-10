@@ -12,7 +12,7 @@ import { AlertReminderManager } from './components/AlertReminderManager';
 import { ShortcutsModal } from './components/ShortcutsModal';
 import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
-import { TactileButton } from './components/TactileButton';
+import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
 import { Contact, TabName, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
 import { loggers } from './utils/logger';
@@ -443,7 +443,7 @@ type AppPhase =
       pbAuth: PbAuthSession;
       relayConfig: PublicRelayConfig | null;
     }
-  | { stage: 'error'; message: string };
+  | { stage: 'error'; message: string; retryable: boolean };
 
 function AppWithSetup() {
   const [phase, setPhase] = useState<AppPhase>({ stage: 'checking' });
@@ -466,13 +466,11 @@ function AppWithSetup() {
           return;
         }
 
-        setPhase({
-          stage: 'error',
-          message:
-            result.error === 'auth-failed'
-              ? 'PocketBase authentication failed.'
-              : 'PocketBase server is unavailable.',
-        });
+        setPhase(
+          result.error === 'auth-failed'
+            ? { stage: 'error', message: 'PocketBase authentication failed.', retryable: false }
+            : { stage: 'error', message: 'PocketBase server is unavailable.', retryable: true },
+        );
         return;
       }
 
@@ -487,12 +485,13 @@ function AppWithSetup() {
         setPhase({
           stage: 'error',
           message: 'Connection timed out. The server may be unreachable.',
+          retryable: true,
         });
         return;
       }
 
       loggers.app.error('Failed to check configuration', { error: err });
-      setPhase({ stage: 'error', message: 'Failed to read configuration.' });
+      setPhase({ stage: 'error', message: 'Failed to read configuration.', retryable: false });
     }
   }, []);
 
@@ -512,7 +511,7 @@ function AppWithSetup() {
       try {
         const saved = await globalThis.api!.saveConfig(config);
         if (!saved) {
-          setPhase({ stage: 'error', message: 'Failed to save configuration.' });
+          setPhase({ stage: 'error', message: 'Failed to save configuration.', retryable: false });
           return;
         }
         // Ask the main process to rebuild per-mode runtime state, then reload this
@@ -528,14 +527,18 @@ function AppWithSetup() {
         if (config.mode === 'server') {
           const started = await globalThis.api!.startPocketBase();
           if (!started) {
-            setPhase({ stage: 'error', message: 'Failed to start PocketBase server.' });
+            setPhase({
+              stage: 'error',
+              message: 'Failed to start PocketBase server.',
+              retryable: false,
+            });
             return;
           }
         }
         globalThis.location.reload();
       } catch (err) {
         loggers.app.error('Failed to save configuration', { error: err });
-        setPhase({ stage: 'error', message: 'Failed to save configuration.' });
+        setPhase({ stage: 'error', message: 'Failed to save configuration.', retryable: false });
       }
     },
     [],
@@ -563,22 +566,15 @@ function AppWithSetup() {
 
   if (phase.stage === 'error') {
     return (
-      <div className="app-state">
-        <button
-          className="app-state__close-btn"
-          onClick={() => globalThis.window.api?.windowClose()}
-          aria-label="Close"
-        >
-          &#10005;
-        </button>
-        <div className="app-state__error-icon" aria-hidden="true">
-          !
-        </div>
-        <p className="app-state__error-text">{phase.message}</p>
-        <TactileButton variant="primary" onClick={() => setPhase({ stage: 'setup' })}>
-          Reconfigure
-        </TactileButton>
-      </div>
+      <StartupErrorScreen
+        message={phase.message}
+        retryable={phase.retryable}
+        onRetry={() => {
+          setPhase({ stage: 'checking' });
+          void checkConfig();
+        }}
+        onReconfigure={() => setPhase({ stage: 'setup' })}
+      />
     );
   }
 
