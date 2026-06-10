@@ -156,6 +156,25 @@ describe('pocketbaseConnectionHandlers', () => {
     });
   });
 
+  it('uses the configured server URL in client mode even if a local PB process is running', async () => {
+    mockAppConfig.load.mockReturnValue({
+      mode: 'client',
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols
+      serverUrl: 'http://192.168.1.50:8090',
+      secret: 'super-secret',
+    });
+    getPbProcess.mockReturnValue(mockPbProcess as never);
+    mockPbProcess.isRunning.mockReturnValue(true);
+    mockAppUserAuthWithPassword.mockResolvedValue({});
+
+    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+
+    expect(result.ok).toBe(true);
+    // eslint-disable-next-line sonarjs/no-clear-text-protocols
+    expect(PocketBase).toHaveBeenCalledWith('http://192.168.1.50:8090');
+    expect(mockPbProcess.getLocalUrl).not.toHaveBeenCalled();
+  });
+
   it('does not return a superuser token when server-mode app-user auth fails', async () => {
     getPbProcess.mockReturnValueOnce(mockPbProcess as never);
     mockPbProcess.isRunning.mockReturnValue(true);
@@ -312,16 +331,13 @@ describe('pocketbaseConnectionHandlers', () => {
     mockAppUserAuthWithPassword.mockRejectedValue(new TypeError('fetch failed'));
 
     const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
-    await vi.advanceTimersByTimeAsync(750 * 6);
+    await vi.advanceTimersByTimeAsync(750 * 3);
     const result = await resultPromise;
 
     expect(result).toEqual({ ok: false, error: 'pb-unavailable' });
     // Every PocketBase construction used the configured HTTPS URL — no http:// retry.
     const urls = (PocketBase as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
-    expect(urls.length).toBeGreaterThan(0);
-    for (const url of urls) {
-      expect(url).toBe('https://192.168.1.50:8090');
-    }
+    expect(urls).toEqual(Array(4).fill('https://192.168.1.50:8090'));
   });
 
   it('returns refreshed connection data when refresh auth succeeds', async () => {

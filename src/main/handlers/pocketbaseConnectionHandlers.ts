@@ -37,7 +37,7 @@ function getPbUrl(
   config: ReturnType<AppConfig['load']>,
   pbProcess: PocketBaseProcess | null,
 ): string | null {
-  if (pbProcess?.isRunning()) {
+  if (config?.mode === 'server' && pbProcess?.isRunning()) {
     return pbProcess.getLocalUrl();
   }
 
