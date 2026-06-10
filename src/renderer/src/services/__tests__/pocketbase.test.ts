@@ -662,6 +662,34 @@ describe('pocketbase service', () => {
       expect(getConnectionState()).toBe('auth-failed'); // no flap back to online
     });
 
+    it('does not trust a rejected token after an offline detour', async () => {
+      // 401 with locally-valid token → auth-failed
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'auth-failed',
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      handleApiError({ status: 401 });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getConnectionState()).toBe('auth-failed');
+
+      // server outage → offline
+      fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getConnectionState()).toBe('offline');
+
+      // server returns, passphrase still broken: must NOT go online off the stale token
+      fetchSpy.mockResolvedValue({ ok: true });
+      const refreshCallsBefore = refreshPbConnection.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5_000); // degraded cadence probe
+      expect(getConnectionState()).toBe('auth-failed'); // re-derived via refresh, not laundered to online
+      expect(refreshPbConnection.mock.calls.length).toBeGreaterThan(refreshCallsBefore);
+    });
+
     it('demotes auth-failed to offline when the server becomes unreachable', async () => {
       const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchSpy);

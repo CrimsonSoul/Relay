@@ -13,6 +13,11 @@ let clientGeneration = 0;
 let healthCheckInFlight = false;
 let healthCheckAbortController: AbortController | null = null;
 let healthCheckTimeout: ReturnType<typeof setTimeout> | null = null;
+// True once the server has rejected the current token (auth-failed). Survives
+// state transitions (e.g. auth-failed → offline on outage) so a locally-valid
+// token is never re-trusted without a successful refresh. Cleared only when a
+// fresh trusted session arrives via loadAuthSession.
+let authRejected = false;
 const stateListeners = new Set<StateListener>();
 const clientListeners = new Set<ClientListener>();
 const HEALTH_CHECK_TIMEOUT_MS = 10_000;
@@ -64,6 +69,7 @@ function setConnectionState(state: ConnectionState): void {
 }
 
 export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false): void {
+  authRejected = false;
   const pb = getPb();
   pb.authStore.save(auth.token, auth.record);
   setConnectionState('online');
@@ -98,6 +104,7 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
 }
 
 function applyRefreshFailure(result: RefreshResult): void {
+  if (result === 'auth-failed') authRejected = true;
   setConnectionState(result === 'auth-failed' ? 'auth-failed' : 'offline');
 }
 
@@ -137,9 +144,10 @@ async function handleHealthyProbe(): Promise<void> {
   // Rehydrate auth if the token expired during offline time.
   // Do NOT emit 'reconnecting' — subscribers listen for state changes
   // and would resubscribe before auth is complete.
-  // A locally-unexpired token can't be trusted out of auth-failed — the server
-  // already rejected it. Recovery must go through a successful refresh.
-  if (connectionState !== 'auth-failed' && getPb().authStore.isValid) {
+  // A locally-unexpired token can't be trusted after the server rejected it —
+  // the rejection survives offline detours (authRejected), so recovery always
+  // goes through a successful refresh.
+  if (!authRejected && getPb().authStore.isValid) {
     setConnectionState('online');
     return;
   }
