@@ -280,6 +280,12 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
     });
 
+    it('allows downdetector.com URLs', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://downdetector.com/status/github/');
+
+      expect(shell.openExternal).toHaveBeenCalledWith('https://downdetector.com/status/github/');
+    });
+
     it('opens Teams meeting draft URL', async () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
         {},

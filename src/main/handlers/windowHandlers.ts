@@ -54,6 +54,7 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'statuspage.io',
   'x.com',
   'twitter.com',
+  'downdetector.com',
 ]);
 
 function isAllowedExternalUrl(url: string): boolean {
