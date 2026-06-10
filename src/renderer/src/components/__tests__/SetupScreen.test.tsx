@@ -54,6 +54,10 @@ describe('SetupScreen', () => {
     (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
       api: { windowClose: vi.fn() },
     } as unknown as typeof globalThis.window;
+    // Stub globalThis.api for the test-connection probe
+    (globalThis as Record<string, unknown>).api = {
+      testConnection: vi.fn(),
+    };
   });
 
   // ── Initial Render (mode selection) ──
@@ -139,6 +143,88 @@ describe('SetupScreen', () => {
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     expect(screen.getByText('Save & Connect')).toBeInTheDocument();
+  });
+
+  // ── Test Connection ──
+
+  it('tests the connection from the client form and shows the result', async () => {
+    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    const rawServerUrl = `${['192', '168', '1', '50'].join('.')}:8090`;
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: rawServerUrl },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+    expect(globalThis.api!.testConnection).toHaveBeenCalledWith({
+      serverUrl: rawServerUrl,
+      [SECRET_FIELD]: validPassphrase,
+    });
+  });
+
+  it('shows the failure message when the connection test reports auth-failed', async () => {
+    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      error: 'auth-failed',
+    });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(await screen.findByText('Wrong passphrase for this server.')).toBeInTheDocument();
+  });
+
+  it('disables the test connection button until URL and passphrase are filled', () => {
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+
+    expect(screen.getByRole('button', { name: 'Test connection' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'short' } });
+    expect(screen.getByRole('button', { name: 'Test connection' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    expect(screen.getByRole('button', { name: 'Test connection' })).toBeEnabled();
+  });
+
+  it('treats a thrown IPC error as unreachable', async () => {
+    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('ipc failure'),
+    );
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(
+      await screen.findByText('No Relay server responded at that address.'),
+    ).toBeInTheDocument();
   });
 
   // ── Back Button ──

@@ -141,6 +141,13 @@ const EyeClosed = () => (
   </svg>
 );
 
+const TEST_RESULT_MESSAGES: Record<string, string> = {
+  ok: 'Connected — server and passphrase look good.',
+  'auth-failed': 'Wrong passphrase for this server.',
+  unreachable: 'No Relay server responded at that address.',
+  'invalid-url': 'That address is not a valid LAN server URL.',
+};
+
 export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [mode, setMode] = useState<'server' | 'client' | null>(null);
   const [port, setPort] = useState('8090');
@@ -151,6 +158,17 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | string>('idle');
+
+  const handleTestConnection = async () => {
+    setTestStatus('testing');
+    try {
+      const result = await globalThis.api!.testConnection({ serverUrl, secret });
+      setTestStatus(TEST_RESULT_MESSAGES[result.ok ? 'ok' : result.error]);
+    } catch {
+      setTestStatus(TEST_RESULT_MESSAGES.unreachable);
+    }
+  };
 
   const validatePassphrase = (): boolean => {
     if (!secret.trim()) {
@@ -278,6 +296,7 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 setMode(null);
                 setError(null);
                 setShowPassword(false);
+                setTestStatus('idle');
               }}
             >
               <BackArrow />
@@ -379,6 +398,30 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
             <div className="setup-config__error">
               <ErrorIcon />
               {error}
+            </div>
+          )}
+
+          {mode === 'client' && (
+            <div className="setup-config__test">
+              <button
+                type="button"
+                className="setup-config__test-btn"
+                onClick={() => void handleTestConnection()}
+                disabled={testStatus === 'testing' || !serverUrl || secret.length < 8}
+              >
+                Test connection
+              </button>
+              {testStatus === 'testing' && <p className="setup-config__hint">Testing…</p>}
+              {testStatus !== 'idle' &&
+                testStatus !== 'testing' &&
+                (testStatus === TEST_RESULT_MESSAGES.ok ? (
+                  <p className="setup-config__hint setup-config__test-ok">{testStatus}</p>
+                ) : (
+                  <div className="setup-config__error">
+                    <ErrorIcon />
+                    {testStatus}
+                  </div>
+                ))}
             </div>
           )}
 

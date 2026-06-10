@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { networkInterfaces } from 'node:os';
 import { z } from 'zod';
-import { IPC_CHANNELS, type PublicRelayConfig } from '@shared/ipc';
+import { IPC_CHANNELS, type PublicRelayConfig, type SetupTestConnectionResult } from '@shared/ipc';
 import { isAllowedRelayServerUrl, normalizeRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig, RelayConfig } from '../config/AppConfig';
 import type { OfflineCache } from '../cache/OfflineCache';
@@ -40,6 +40,15 @@ const clientConfigSchema = z
   );
 
 const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clientConfigSchema]);
+
+// serverUrl is intentionally looser than relayServerUrlSchema: the renderer sends the
+// raw input (possibly a bare "host:port") and normalizeRelayServerUrl +
+// isAllowedRelayServerUrl below decide validity after normalization.
+const testConnectionSchema = z.object({
+  serverUrl: z.string().max(MAX_SERVER_URL_LENGTH),
+  secret: relaySecretSchema,
+});
+const TEST_CONNECTION_TIMEOUT_MS = 5000;
 
 function getLanIpAddress(): string | undefined {
   for (const addresses of Object.values(networkInterfaces())) {
@@ -117,6 +126,44 @@ export function setupSetupHandlers(
 
     return true;
   });
+  ipcMain.handle(
+    IPC_CHANNELS.SETUP_TEST_CONNECTION,
+    async (_event, payload): Promise<SetupTestConnectionResult> => {
+      const parsed = testConnectionSchema.safeParse(payload);
+      if (!parsed.success) return { ok: false, error: 'invalid-url' };
+
+      const serverUrl = normalizeRelayServerUrl(parsed.data.serverUrl);
+      if (!serverUrl || !isAllowedRelayServerUrl(serverUrl, true)) {
+        return { ok: false, error: 'invalid-url' };
+      }
+
+      try {
+        const health = await fetch(`${serverUrl}/api/health`, {
+          signal: AbortSignal.timeout(TEST_CONNECTION_TIMEOUT_MS),
+        });
+        if (!health.ok) return { ok: false, error: 'unreachable' };
+      } catch {
+        return { ok: false, error: 'unreachable' };
+      }
+
+      try {
+        const auth = await fetch(
+          `${serverUrl}/api/collections/_pb_users_auth_/auth-with-password`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity: 'relay@relay.app', password: parsed.data.secret }),
+            signal: AbortSignal.timeout(TEST_CONNECTION_TIMEOUT_MS),
+          },
+        );
+        if (!auth.ok) return { ok: false, error: 'auth-failed' };
+      } catch {
+        return { ok: false, error: 'unreachable' };
+      }
+
+      return { ok: true };
+    },
+  );
   ipcMain.handle(IPC_CHANNELS.SETUP_IS_CONFIGURED, () => {
     const config = getAppConfig();
     return config ? config.isConfigured() : false;

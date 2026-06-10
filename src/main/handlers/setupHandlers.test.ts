@@ -384,6 +384,97 @@ describe('setupHandlers', () => {
     });
   });
 
+  describe('SETUP_TEST_CONNECTION', () => {
+    it('returns invalid-url for a malformed or disallowed URL', async () => {
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: 'not a url',
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'invalid-url' });
+    });
+
+    it('normalizes a bare LAN host:port before probing', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: `${remoteIp}:8090`,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: true });
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${privateLanHttpUrl}/api/health`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+      vi.unstubAllGlobals();
+    });
+
+    it('returns unreachable when the health endpoint does not respond', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'unreachable' });
+      vi.unstubAllGlobals();
+    });
+
+    it('returns auth-failed when health passes but auth is rejected', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce({ ok: true }) // /api/health
+          .mockResolvedValueOnce({ ok: false, status: 400 }), // auth-with-password
+      );
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'auth-failed' });
+      vi.unstubAllGlobals();
+    });
+
+    it('returns ok when health and auth both succeed', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
+      );
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: true });
+      vi.unstubAllGlobals();
+    });
+  });
+
   describe('SETUP_IS_CONFIGURED', () => {
     it('returns true when config is configured', () => {
       mockAppConfig.isConfigured.mockReturnValue(true);

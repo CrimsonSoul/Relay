@@ -230,6 +230,10 @@ export type PbConnectionResult =
   | { ok: true; connection: PbConnection }
   | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
 
+export type SetupTestConnectionResult =
+  | { ok: true }
+  | { ok: false; error: 'invalid-url' | 'unreachable' | 'auth-failed' };
+
 export type PublicRelayConfig =
   | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0'; lanIp?: string }
   | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
@@ -282,6 +286,10 @@ export type BridgeAPI = {
   saveConfig: (config: unknown) => Promise<boolean>;
   clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
+  testConnection: (payload: {
+    serverUrl: string;
+    secret: string;
+  }) => Promise<SetupTestConnectionResult>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
@@ -350,6 +358,7 @@ export const IPC_CHANNELS = {
   SETUP_SAVE_CONFIG: 'setup:saveConfig',
   SETUP_CLEAR_CONFIG: 'setup:clearConfig',
   SETUP_IS_CONFIGURED: 'setup:isConfigured',
+  SETUP_TEST_CONNECTION: 'setup:testConnection',
   // Cache (offline mode)
   CACHE_READ: 'cache:read',
   CACHE_WRITE: 'cache:write',
