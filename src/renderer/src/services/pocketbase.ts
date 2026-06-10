@@ -30,12 +30,15 @@ let networkListenersInstalled = false;
 
 export function initPocketBase(url: string): PocketBase {
   const previousUrl = pb?.baseURL ?? null;
-  pb = new PocketBase(url);
+  const client = new PocketBase(url);
+  pb = client;
   // SSE can drop while HTTP health stays green; events in the gap are never
   // replayed by the SDK. Drop to 'reconnecting' so useCollection tears down,
   // then probe immediately — the recovery path refetches and resubscribes.
-  pb.realtime.onDisconnect = () => {
-    if (connectionState !== 'online') return;
+  client.realtime.onDisconnect = (activeSubscriptions) => {
+    if (pb !== client) return; // stale client after initPocketBase replacement
+    // Empty list = intentional unsubscribe/teardown, not a dropped connection.
+    if (activeSubscriptions.length === 0 || connectionState !== 'online') return;
     setConnectionState('reconnecting');
     if (healthLoopTimer) clearTimeout(healthLoopTimer);
     void runProbeAndReschedule();
@@ -169,7 +172,11 @@ async function handleHealthyProbe(): Promise<void> {
 }
 
 function handleFailedProbe(): void {
-  if (connectionState === 'online' || connectionState === 'auth-failed') {
+  if (
+    connectionState === 'online' ||
+    connectionState === 'auth-failed' ||
+    connectionState === 'reconnecting'
+  ) {
     setConnectionState('offline');
   }
 }

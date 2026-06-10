@@ -621,7 +621,7 @@ describe('pocketbase service', () => {
       const before = fetchSpy.mock.calls.length;
       (
         client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
-      ).realtime.onDisconnect?.([]);
+      ).realtime.onDisconnect?.(['oncall_board_settings/*']);
       await vi.advanceTimersByTimeAsync(0);
 
       expect(states).toContain('reconnecting'); // tears down + retriggers subscriptions
@@ -636,9 +636,50 @@ describe('pocketbase service', () => {
       const unsub = onConnectionStateChange((s) => states.push(s));
       (
         client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
-      ).realtime.onDisconnect?.([]);
+      ).realtime.onDisconnect?.(['oncall_board_settings/*']);
       expect(states).not.toContain('reconnecting');
       unsub();
+    });
+
+    it('ignores intentional disconnects (empty subscription list) while online', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const client = initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getConnectionState()).toBe('online');
+
+      const states: string[] = [];
+      const unsub = onConnectionStateChange((s) => states.push(s));
+
+      const before = fetchSpy.mock.calls.length;
+      (
+        client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
+      ).realtime.onDisconnect?.([]);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(states).not.toContain('reconnecting'); // no spurious teardown
+      expect(fetchSpy.mock.calls.length).toBe(before); // no extra probe
+      expect(getConnectionState()).toBe('online');
+      unsub();
+    });
+
+    it('demotes reconnecting to offline when the probe fails during a real outage', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const client = initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getConnectionState()).toBe('online');
+
+      // Server goes away, then the SSE connection drops.
+      fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+      (
+        client as unknown as { realtime: { onDisconnect?: (s: string[]) => void } }
+      ).realtime.onDisconnect?.(['oncall_board_settings/*']);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(getConnectionState()).toBe('offline'); // not stuck in 'reconnecting'
     });
   });
 
