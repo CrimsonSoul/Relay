@@ -642,19 +642,49 @@ describe('pocketbase service', () => {
         error: 'auth-failed',
       } satisfies PbConnectionResult);
       globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      // Probe path: healthy fetch, invalid token → refresh → auth-failed, so
+      // scheduleNextProbe fires while state is already 'auth-failed'.
+      mockAuthStore.isValid = false;
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
-      await vi.advanceTimersByTimeAsync(0); // immediate probe → online (token valid)
-
-      handleApiError({ status: 401 });
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0); // immediate probe lands in auth-failed via applyRefreshFailure
       expect(getConnectionState()).toBe('auth-failed');
+
+      // Token now looks locally valid again — out of auth-failed it must NOT
+      // be trusted (the server already rejected it), so no flap to online.
+      mockAuthStore.isValid = true;
 
       const callsAfter = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
       expect(fetchSpy.mock.calls.length).toBe(callsAfter); // NOT the 5s degraded cadence
       await vi.advanceTimersByTimeAsync(25_000);
       expect(fetchSpy.mock.calls.length).toBe(callsAfter + 1); // 30s cadence
+      expect(getConnectionState()).toBe('auth-failed'); // no flap back to online
+    });
+
+    it('demotes auth-failed to offline when the server becomes unreachable', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchSpy);
+      const refreshPbConnection = vi.fn().mockResolvedValue({
+        ok: false,
+        error: 'auth-failed',
+      } satisfies PbConnectionResult);
+      globalThis.api = { refreshPbConnection } as typeof globalThis.api;
+      mockAuthStore.isValid = false;
+      initPocketBase('http://localhost:8090');
+      loadAuthSession({ token: 't', record: null });
+      await vi.advanceTimersByTimeAsync(0); // immediate probe lands in auth-failed
+      expect(getConnectionState()).toBe('auth-failed');
+
+      // Server outage: the diagnosis is now connectivity, not credentials.
+      fetchSpy.mockRejectedValue(new Error('net down'));
+      await vi.advanceTimersByTimeAsync(30_000); // next probe (30s cadence) fails
+      expect(getConnectionState()).toBe('offline');
+
+      // Offline resumes the 5s degraded cadence.
+      const callsAfterOutage = fetchSpy.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage + 1);
     });
   });
 

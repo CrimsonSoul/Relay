@@ -77,6 +77,9 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
     const result: PbConnectionResult | null | undefined =
       await globalThis.api?.refreshPbConnection?.();
     if (!result?.ok) {
+      loggers.network.warn('PB connection refresh rejected', {
+        error: result && 'error' in result ? result.error : 'no-result',
+      });
       return result && 'error' in result && result.error === 'auth-failed'
         ? 'auth-failed'
         : 'unavailable';
@@ -134,7 +137,9 @@ async function handleHealthyProbe(): Promise<void> {
   // Rehydrate auth if the token expired during offline time.
   // Do NOT emit 'reconnecting' — subscribers listen for state changes
   // and would resubscribe before auth is complete.
-  if (getPb().authStore.isValid) {
+  // A locally-unexpired token can't be trusted out of auth-failed — the server
+  // already rejected it. Recovery must go through a successful refresh.
+  if (connectionState !== 'auth-failed' && getPb().authStore.isValid) {
     setConnectionState('online');
     return;
   }
@@ -147,7 +152,7 @@ async function handleHealthyProbe(): Promise<void> {
 }
 
 function handleFailedProbe(): void {
-  if (connectionState === 'online') {
+  if (connectionState === 'online' || connectionState === 'auth-failed') {
     setConnectionState('offline');
   }
 }
@@ -263,7 +268,11 @@ export function isOnline(): boolean {
 /** Throws immediately if offline — prevents writes from silently failing with a network error. */
 export function requireOnline(): void {
   if (!isOnline()) {
-    throw new Error('You are offline. Changes cannot be saved until the connection is restored.');
+    throw new Error(
+      connectionState === 'auth-failed'
+        ? 'Sign-in to the Relay server failed. Update the passphrase before saving changes.'
+        : 'You are offline. Changes cannot be saved until the connection is restored.',
+    );
   }
 }
 
