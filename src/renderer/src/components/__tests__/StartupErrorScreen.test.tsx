@@ -76,4 +76,21 @@ describe('StartupErrorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reconfigure' }));
     expect(onReconfigure).toHaveBeenCalledOnce();
   });
+
+  it('stops auto-retrying after unmount', () => {
+    const onRetry = vi.fn();
+    const { unmount } = render(
+      <StartupErrorScreen
+        message="PocketBase server is unavailable."
+        retryable={true}
+        onRetry={onRetry}
+        onReconfigure={vi.fn()}
+      />,
+    );
+    unmount();
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    expect(onRetry).not.toHaveBeenCalled();
+  });
 });

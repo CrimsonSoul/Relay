@@ -544,6 +544,11 @@ function AppWithSetup() {
     [],
   );
 
+  const handleRetry = useCallback(() => {
+    setPhase({ stage: 'checking' });
+    void checkConfig();
+  }, [checkConfig]);
+
   if (phase.stage === 'checking') {
     return (
       <div className="app-state">
@@ -569,10 +574,7 @@ function AppWithSetup() {
       <StartupErrorScreen
         message={phase.message}
         retryable={phase.retryable}
-        onRetry={() => {
-          setPhase({ stage: 'checking' });
-          void checkConfig();
-        }}
+        onRetry={handleRetry}
         onReconfigure={() => setPhase({ stage: 'setup' })}
       />
     );
