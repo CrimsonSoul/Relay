@@ -141,7 +141,9 @@ const EyeClosed = () => (
   </svg>
 );
 
-const TEST_RESULT_MESSAGES: Record<string, string> = {
+type TestStatus = 'idle' | 'testing' | 'ok' | 'invalid-url' | 'unreachable' | 'auth-failed';
+
+const TEST_RESULT_MESSAGES: Record<Exclude<TestStatus, 'idle' | 'testing'>, string> = {
   ok: 'Connected — server and passphrase look good.',
   'auth-failed': 'Wrong passphrase for this server.',
   unreachable: 'No Relay server responded at that address.',
@@ -158,15 +160,23 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | string>('idle');
+  const [testStatus, setTestStatus] = useState<TestStatus>('idle');
 
   const handleTestConnection = async () => {
     setTestStatus('testing');
     try {
-      const result = await globalThis.api!.testConnection({ serverUrl, secret });
-      setTestStatus(TEST_RESULT_MESSAGES[result.ok ? 'ok' : result.error]);
+      const result = await globalThis.window.api?.testConnection({
+        serverUrl,
+        secret,
+        ...(allowInsecureHttp ? { allowInsecureHttp: true } : {}),
+      });
+      if (result === undefined) {
+        setTestStatus('unreachable');
+      } else {
+        setTestStatus(result.ok ? 'ok' : result.error);
+      }
     } catch {
-      setTestStatus(TEST_RESULT_MESSAGES.unreachable);
+      setTestStatus('unreachable');
     }
   };
 
@@ -348,7 +358,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 label="Server URL"
                 type="text"
                 value={serverUrl}
-                onChange={(e) => setServerUrl(e.target.value)}
+                onChange={(e) => {
+                  setServerUrl(e.target.value);
+                  setTestStatus('idle');
+                }}
                 placeholder="https://relay.example.com:8090"
               />
               <p className="setup-config__hint">
@@ -375,7 +388,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                 label="Passphrase"
                 type={showPassword ? 'text' : 'password'}
                 value={secret}
-                onChange={(e) => setSecret(e.target.value)}
+                onChange={(e) => {
+                  setSecret(e.target.value);
+                  setTestStatus('idle');
+                }}
                 placeholder="Shared passphrase (min 8 chars)"
               />
               <button
@@ -414,12 +430,14 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
               {testStatus === 'testing' && <p className="setup-config__hint">Testing…</p>}
               {testStatus !== 'idle' &&
                 testStatus !== 'testing' &&
-                (testStatus === TEST_RESULT_MESSAGES.ok ? (
-                  <p className="setup-config__hint setup-config__test-ok">{testStatus}</p>
+                (testStatus === 'ok' ? (
+                  <p className="setup-config__hint setup-config__test-ok">
+                    {TEST_RESULT_MESSAGES.ok}
+                  </p>
                 ) : (
                   <div className="setup-config__error">
                     <ErrorIcon />
-                    {testStatus}
+                    {TEST_RESULT_MESSAGES[testStatus]}
                   </div>
                 ))}
             </div>

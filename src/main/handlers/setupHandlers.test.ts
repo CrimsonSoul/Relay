@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { setupSetupHandlers } from './setupHandlers';
@@ -385,6 +385,10 @@ describe('setupHandlers', () => {
   });
 
   describe('SETUP_TEST_CONNECTION', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
     it('returns invalid-url for a malformed or disallowed URL', async () => {
       const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
         {},
@@ -417,7 +421,69 @@ describe('setupHandlers', () => {
         `${privateLanHttpUrl}/api/health`,
         expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
-      vi.unstubAllGlobals();
+    });
+
+    it('returns invalid-url for a public HTTP URL without insecure HTTP opt-in and never probes', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: publicHttpUrl,
+          secret: createFixturePassphrase(),
+        },
+      );
+
+      expect(result).toEqual({ ok: false, error: 'invalid-url' });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('probes a public HTTP URL when insecure HTTP is explicitly allowed', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
+      );
+
+      const result = await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: publicHttpUrl,
+          secret: createFixturePassphrase(),
+          allowInsecureHttp: true,
+        },
+      );
+
+      expect(result).toEqual({ ok: true });
+    });
+
+    it('POSTs the secret to the PocketBase auth endpoint in the JSON body, not the URL', async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      const secret = createFixturePassphrase();
+
+      await handlers[IPC_CHANNELS.SETUP_TEST_CONNECTION](
+        {},
+        {
+          serverUrl: privateLanHttpUrl,
+          secret,
+        },
+      );
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const [authUrl, authOptions] = fetchMock.mock.calls[1] as [
+        string,
+        { method: string; body: string },
+      ];
+      expect(authUrl).toBe(
+        `${privateLanHttpUrl}/api/collections/_pb_users_auth_/auth-with-password`,
+      );
+      expect(authUrl).not.toContain(secret);
+      expect(authOptions.method).toBe('POST');
+      expect(JSON.parse(authOptions.body)).toMatchObject({ password: secret });
     });
 
     it('returns unreachable when the health endpoint does not respond', async () => {
@@ -432,7 +498,6 @@ describe('setupHandlers', () => {
       );
 
       expect(result).toEqual({ ok: false, error: 'unreachable' });
-      vi.unstubAllGlobals();
     });
 
     it('returns auth-failed when health passes but auth is rejected', async () => {
@@ -453,7 +518,6 @@ describe('setupHandlers', () => {
       );
 
       expect(result).toEqual({ ok: false, error: 'auth-failed' });
-      vi.unstubAllGlobals();
     });
 
     it('returns ok when health and auth both succeed', async () => {
@@ -471,7 +535,6 @@ describe('setupHandlers', () => {
       );
 
       expect(result).toEqual({ ok: true });
-      vi.unstubAllGlobals();
     });
   });
 

@@ -289,6 +289,7 @@ export type BridgeAPI = {
   testConnection: (payload: {
     serverUrl: string;
     secret: string;
+    allowInsecureHttp?: boolean;
   }) => Promise<SetupTestConnectionResult>;
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;

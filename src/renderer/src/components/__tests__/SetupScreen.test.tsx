@@ -50,14 +50,10 @@ describe('SetupScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     onComplete = vi.fn();
-    // Mock window.api for the CloseButton
-    (globalThis as unknown as { window: { api: { windowClose: () => void } } }).window = {
-      api: { windowClose: vi.fn() },
+    // Mock window.api for the CloseButton and the test-connection probe
+    (globalThis as unknown as { window: unknown }).window = {
+      api: { windowClose: vi.fn(), testConnection: vi.fn() },
     } as unknown as typeof globalThis.window;
-    // Stub globalThis.api for the test-connection probe
-    (globalThis as Record<string, unknown>).api = {
-      testConnection: vi.fn(),
-    };
   });
 
   // ── Initial Render (mode selection) ──
@@ -148,7 +144,9 @@ describe('SetupScreen', () => {
   // ── Test Connection ──
 
   it('tests the connection from the client form and shows the result', async () => {
-    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true });
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
     render(<SetupScreen onComplete={onComplete} />);
     fireEvent.click(screen.getByText('Client'));
     const rawServerUrl = `${['192', '168', '1', '50'].join('.')}:8090`;
@@ -164,14 +162,14 @@ describe('SetupScreen', () => {
     expect(
       await screen.findByText('Connected — server and passphrase look good.'),
     ).toBeInTheDocument();
-    expect(globalThis.api!.testConnection).toHaveBeenCalledWith({
+    expect(globalThis.window.api!.testConnection).toHaveBeenCalledWith({
       serverUrl: rawServerUrl,
       [SECRET_FIELD]: validPassphrase,
     });
   });
 
   it('shows the failure message when the connection test reports auth-failed', async () => {
-    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
       ok: false,
       error: 'auth-failed',
     });
@@ -208,7 +206,7 @@ describe('SetupScreen', () => {
   });
 
   it('treats a thrown IPC error as unreachable', async () => {
-    (globalThis.api!.testConnection as ReturnType<typeof vi.fn>).mockRejectedValue(
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('ipc failure'),
     );
     render(<SetupScreen onComplete={onComplete} />);
@@ -225,6 +223,84 @@ describe('SetupScreen', () => {
     expect(
       await screen.findByText('No Relay server responded at that address.'),
     ).toBeInTheDocument();
+  });
+
+  it('passes the insecure HTTP opt-in to the connection test', async () => {
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PUBLIC_HTTP_URL },
+    });
+    fireEvent.click(screen.getByLabelText('Allow public HTTP'));
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+    expect(globalThis.window.api!.testConnection).toHaveBeenCalledWith({
+      serverUrl: PUBLIC_HTTP_URL,
+      [SECRET_FIELD]: validPassphrase,
+      allowInsecureHttp: true,
+    });
+  });
+
+  it('clears a stale test result when the server URL changes', async () => {
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: `${PRIVATE_LAN_HTTP_URL}1` },
+    });
+
+    expect(
+      screen.queryByText('Connected — server and passphrase look good.'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('clears a stale test result when the passphrase changes', async () => {
+    (globalThis.window.api!.testConnection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+    });
+    render(<SetupScreen onComplete={onComplete} />);
+    fireEvent.click(screen.getByText('Client'));
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: PRIVATE_LAN_HTTP_URL },
+    });
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: validPassphrase },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test connection' }));
+    expect(
+      await screen.findByText('Connected — server and passphrase look good.'),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Passphrase'), {
+      target: { value: `${validPassphrase}-changed` },
+    });
+
+    expect(
+      screen.queryByText('Connected — server and passphrase look good.'),
+    ).not.toBeInTheDocument();
   });
 
   // ── Back Button ──

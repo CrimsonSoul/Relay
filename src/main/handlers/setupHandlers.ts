@@ -47,6 +47,7 @@ const relayConfigSchema = z.discriminatedUnion('mode', [serverConfigSchema, clie
 const testConnectionSchema = z.object({
   serverUrl: z.string().max(MAX_SERVER_URL_LENGTH),
   secret: relaySecretSchema,
+  allowInsecureHttp: z.boolean().optional(),
 });
 const TEST_CONNECTION_TIMEOUT_MS = 5000;
 
@@ -133,12 +134,16 @@ export function setupSetupHandlers(
       if (!parsed.success) return { ok: false, error: 'invalid-url' };
 
       const serverUrl = normalizeRelayServerUrl(parsed.data.serverUrl);
-      if (!serverUrl || !isAllowedRelayServerUrl(serverUrl, true)) {
+      if (
+        !serverUrl ||
+        !isAllowedRelayServerUrl(serverUrl, parsed.data.allowInsecureHttp === true)
+      ) {
         return { ok: false, error: 'invalid-url' };
       }
 
       try {
         const health = await fetch(`${serverUrl}/api/health`, {
+          redirect: 'error',
           signal: AbortSignal.timeout(TEST_CONNECTION_TIMEOUT_MS),
         });
         if (!health.ok) return { ok: false, error: 'unreachable' };
@@ -153,6 +158,7 @@ export function setupSetupHandlers(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ identity: 'relay@relay.app', password: parsed.data.secret }),
+            redirect: 'error',
             signal: AbortSignal.timeout(TEST_CONNECTION_TIMEOUT_MS),
           },
         );
