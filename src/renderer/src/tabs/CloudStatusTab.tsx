@@ -6,6 +6,7 @@ import { ProviderIcon } from '../components/icons/ProviderIcons';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
   CLOUD_STATUS_PROVIDERS,
+  downdetectorUrl,
   type CloudStatusData,
   type CloudStatusItem,
   type CloudStatusProvider,
@@ -159,43 +160,73 @@ const ProviderCard: React.FC<{
     );
   };
 
+  const { twitterHandle, downdetectorSlug } = CLOUD_STATUS_PROVIDERS[provider];
+
   return (
-    <button
-      type="button"
+    <div
       className={`cloud-status-provider cloud-status-provider--${provider}${
         stats.isImpacted ? ' cloud-status-provider--impacted' : ''
       }${stats.outages > 0 ? ' cloud-status-provider--outage' : ''}`}
-      onClick={() => void globalThis.api?.openExternal(CLOUD_STATUS_PROVIDERS[provider].statusUrl)}
     >
-      <div className="cloud-status-provider__header">
-        <span className="cloud-status-provider__name">
-          <span className="cloud-status-provider__icon">
-            <ProviderIcon provider={provider} size={16} />
+      <button
+        type="button"
+        className="cloud-status-provider__main"
+        onClick={() =>
+          void globalThis.api?.openExternal(CLOUD_STATUS_PROVIDERS[provider].statusUrl)
+        }
+      >
+        <div className="cloud-status-provider__header">
+          <span className="cloud-status-provider__name">
+            <span className="cloud-status-provider__icon">
+              <ProviderIcon provider={provider} size={16} />
+            </span>
+            {providerLabel(provider)}
           </span>
-          {providerLabel(provider)}
-        </span>
-        <span
-          className={`cloud-status-provider__indicator cloud-status-provider__indicator--${getIndicatorVariant()}`}
-        />
-      </div>
-      <div className="cloud-status-provider__body">
-        {renderStatus()}
-        {!hasError && !isOk && (
-          <span className="cloud-status-provider__counts">
-            {stats.outages > 0 && (
-              <span className="cloud-status-provider__count cloud-status-provider__count--error">
-                Outage {stats.outages}
-              </span>
-            )}
-            {stats.degraded > 0 && (
-              <span className="cloud-status-provider__count cloud-status-provider__count--warning">
-                Degraded {stats.degraded}
-              </span>
-            )}
-          </span>
-        )}
-      </div>
-    </button>
+          <span
+            className={`cloud-status-provider__indicator cloud-status-provider__indicator--${getIndicatorVariant()}`}
+          />
+        </div>
+        <div className="cloud-status-provider__body">
+          {renderStatus()}
+          {!hasError && !isOk && (
+            <span className="cloud-status-provider__counts">
+              {stats.outages > 0 && (
+                <span className="cloud-status-provider__count cloud-status-provider__count--error">
+                  Outage {stats.outages}
+                </span>
+              )}
+              {stats.degraded > 0 && (
+                <span className="cloud-status-provider__count cloud-status-provider__count--warning">
+                  Degraded {stats.degraded}
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      </button>
+      {(twitterHandle || downdetectorSlug) && (
+        <div className="cloud-status-provider__links">
+          {twitterHandle && (
+            <button
+              type="button"
+              className="cloud-status-provider__link"
+              onClick={() => void globalThis.api?.openExternal(`https://x.com/${twitterHandle}`)}
+            >
+              @{twitterHandle}
+            </button>
+          )}
+          {downdetectorSlug && (
+            <button
+              type="button"
+              className="cloud-status-provider__link cloud-status-provider__link--crowd"
+              onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
+            >
+              Crowd ↗
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 };
 

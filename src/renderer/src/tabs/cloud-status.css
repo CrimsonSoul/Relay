@@ -248,7 +248,6 @@
   border-radius: 8px;
   background: var(--color-bg-surface);
   color: inherit;
-  cursor: pointer;
   text-align: left;
   transition:
     border-color 0.15s,
@@ -382,6 +381,41 @@
 .cloud-status-provider__count--warning {
   background: var(--cloud-status-degraded-subtle);
   color: var(--cloud-status-degraded);
+}
+
+.cloud-status-provider__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.cloud-status-provider__links {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cloud-status-provider__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-xs);
+}
+
+.cloud-status-provider__link:hover {
+  color: var(--color-accent);
+  text-decoration: underline;
 }
 
 .cloud-status__feed {

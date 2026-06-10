@@ -400,4 +400,63 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('Socials')).toBeInTheDocument();
     expect(screen.queryByText('Sources')).not.toBeInTheDocument();
   });
+
+  describe('provider card links', () => {
+    const getCard = (container: HTMLElement, name: string): HTMLElement => {
+      const cards = Array.from(container.querySelectorAll<HTMLElement>('.cloud-status-provider'));
+      const card = cards.find((c) =>
+        c.querySelector('.cloud-status-provider__name')?.textContent?.includes(name),
+      );
+      expect(card).toBeDefined();
+      return card!;
+    };
+    const openExternal = () =>
+      (globalThis as { api?: { openExternal: ReturnType<typeof vi.fn> } }).api!.openExternal;
+
+    it('opens the vendor status page from the card main button', () => {
+      const { container } = render(
+        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+      );
+      const awsCard = getCard(container, 'AWS');
+      fireEvent.click(awsCard.querySelector('.cloud-status-provider__main')!);
+      expect(openExternal()).toHaveBeenCalledWith('https://status.aws.amazon.com/');
+    });
+
+    it('renders an X link that opens the provider profile', () => {
+      const { container } = render(
+        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+      );
+      const awsCard = getCard(container, 'AWS');
+      const xLink = Array.from(awsCard.querySelectorAll('button')).find(
+        (b) => b.textContent === '@AWSCloud',
+      );
+      expect(xLink).toBeDefined();
+      fireEvent.click(xLink!);
+      expect(openExternal()).toHaveBeenCalledWith('https://x.com/AWSCloud');
+    });
+
+    it('omits the X link for providers without a handle', () => {
+      const { container } = render(
+        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+      );
+      const claudeCard = getCard(container, 'Claude');
+      const xLinks = Array.from(claudeCard.querySelectorAll('button')).filter((b) =>
+        b.textContent?.startsWith('@'),
+      );
+      expect(xLinks).toHaveLength(0);
+    });
+
+    it('renders a Crowd link that opens the Downdetector page', () => {
+      const { container } = render(
+        <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
+      );
+      const githubCard = getCard(container, 'GitHub');
+      const crowdLink = Array.from(githubCard.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('Crowd'),
+      );
+      expect(crowdLink).toBeDefined();
+      fireEvent.click(crowdLink!);
+      expect(openExternal()).toHaveBeenCalledWith('https://downdetector.com/status/github/');
+    });
+  });
 });
