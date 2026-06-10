@@ -395,10 +395,9 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('Updated Never')).toBeInTheDocument();
   });
 
-  it('labels provider social links as socials', () => {
+  it('does not render a footer socials block', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    expect(screen.getByText('Socials')).toBeInTheDocument();
-    expect(screen.queryByText('Sources')).not.toBeInTheDocument();
+    expect(screen.queryByText('Socials')).not.toBeInTheDocument();
   });
 
   describe('provider card links', () => {

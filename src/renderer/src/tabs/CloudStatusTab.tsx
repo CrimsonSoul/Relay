@@ -218,7 +218,8 @@ const ProviderCard: React.FC<{
           {downdetectorSlug && (
             <button
               type="button"
-              className="cloud-status-provider__link cloud-status-provider__link--crowd"
+              className="cloud-status-provider__link"
+              aria-label="Downdetector crowd reports"
               onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
             >
               Crowd ↗
@@ -516,33 +517,6 @@ export const CloudStatusTab: React.FC<{
           )}
         </section>
       </div>
-
-      <details className="cloud-status__footer">
-        <summary>Socials</summary>
-        <div className="cloud-status__footer-body">
-          <span className="cloud-status__footer-links">
-            𝕏{' '}
-            {CLOUD_STATUS_PROVIDER_ORDER.filter((p) => CLOUD_STATUS_PROVIDERS[p].twitterHandle).map(
-              (p, i) => (
-                <React.Fragment key={p}>
-                  {i > 0 && ' · '}
-                  <button
-                    type="button"
-                    className="cloud-status__ext-link"
-                    onClick={() =>
-                      void globalThis.api?.openExternal(
-                        `https://x.com/${CLOUD_STATUS_PROVIDERS[p].twitterHandle}`,
-                      )
-                    }
-                  >
-                    @{CLOUD_STATUS_PROVIDERS[p].twitterHandle}
-                  </button>
-                </React.Fragment>
-              ),
-            )}
-          </span>
-        </div>
-      </details>
 
       <StatusBar
         left={<StatusBarLive />}
