@@ -196,6 +196,39 @@
   --chrome-bg: var(--color-bg-chrome);
 }
 
+/* === Accent Schemes (set via data-accent on <html>) ===
+   Only the three base colors vary; dims derive via color-mix in :root.
+   Tuned for ≥4.5:1 of --accent-bright text on #000. */
+:root[data-accent='red'] {
+  --accent: #e63946;
+  --accent-hover: #f25c67;
+  --accent-bright: #ff7b85;
+}
+
+:root[data-accent='blue'] {
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-bright: #7ab8ff;
+}
+
+:root[data-accent='green'] {
+  --accent: #22c55e;
+  --accent-hover: #4ade80;
+  --accent-bright: #5ef098;
+}
+
+:root[data-accent='pink'] {
+  --accent: #ec4899;
+  --accent-hover: #f472b6;
+  --accent-bright: #ff8cc6;
+}
+
+:root[data-accent='purple'] {
+  --accent: #a855f7;
+  --accent-hover: #c084fc;
+  --accent-bright: #cf9bff;
+}
+
 * {
   box-sizing: border-box;
   scrollbar-width: thin;
