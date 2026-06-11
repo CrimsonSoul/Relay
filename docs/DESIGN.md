@@ -55,7 +55,7 @@ Large section titles follow the ink heading pattern:
 Two shared classes apply the full pattern:
 
 - **`.display-heading`** — standalone section headings (`utilities.css`)
-- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (`components.css`)
+- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (defined in both `utilities.css` and `components.css`)
 
 **Moderated variant — `.toolbar-title`** (`components.css`): same weight-200 lowercase
 style but at `var(--text-xl)` (`clamp(24px, 1.6vw, 32px)`), used in list toolbar
@@ -212,12 +212,12 @@ All four variants use 2 px border-radius and `font-weight: 700`:
 
 Sizes:
 
-| Size prop      | Height | Padding                   | Font size   |
-| -------------- | ------ | ------------------------- | ----------- |
-| `sm` (default) | —      | `7px 16px`                | 13 px       |
-| (base)         | —      | `9px 20px`                | `--text-sm` |
-| `md`           | 48 px  | `0 24px`                  | `--text-md` |
-| icon-only      | —      | 0, width 40 px (34 px sm) | —           |
+| Size prop       | Height | Padding                   | Font size   |
+| --------------- | ------ | ------------------------- | ----------- |
+| (base, default) | —      | `9px 20px`                | `--text-sm` |
+| `sm`            | —      | `7px 16px`                | 13 px       |
+| `md`            | 48 px  | `0 24px`                  | `--text-md` |
+| icon-only       | —      | 0, width 40 px (34 px sm) | —           |
 
 Focus ring: `box-shadow: 0 0 0 2px var(--color-accent-dim)` + `border-color: --accent`.
 
@@ -272,13 +272,17 @@ and 55" TV at approximately 10 ft (both at 1080p).
 
 ## 10. Alerts Email-Preview Exemption
 
-`src/renderer/src/tabs/alerts.css` contains two fenced regions marked with:
+`src/renderer/src/tabs/alerts.css` contains two fenced regions marked with full-width banner comments:
 
 ```
-/* === EMAIL CONTENT — DO NOT RESTYLE … */
-…
-/* === END EMAIL CONTENT … */
+/* ==========================================================================
+   EMAIL CONTENT — DO NOT RESTYLE. ...
+   ========================================================================== */
 ```
+
+The first region spans from `.alerts-email-card` through the highlight-pill rules,
+ending with an "END EMAIL CONTENT" banner. The second region is the `.alerts-email-event-time*`
+banner rules, marked with its own EMAIL CONTENT and END EMAIL CONTENT banners.
 
 Everything within those fences is **exported content** — the white-canvas email
 preview card that matches the actual sent alert email. Its hardcoded colors (white
