@@ -1,6 +1,5 @@
 import React from 'react';
 import { Contact, Server } from '@shared/ipc';
-import { AMBER } from '../utils/colors';
 import { formatPhoneNumber } from '@shared/phoneUtils';
 import { GroupPill, getInitials } from './shared/AvatarUtils';
 import {
@@ -52,18 +51,7 @@ export const ContactDetailPanel: React.FC<ContactDetailPanelProps> = ({
     <div className="detail-panel">
       <div className="detail-panel-body">
         <div className="detail-panel-identity">
-          <div
-            className="detail-panel-avatar"
-            style={
-              {
-                '--avatar-bg': AMBER.bg,
-                '--avatar-border': AMBER.border,
-                '--avatar-text': AMBER.text,
-              } as React.CSSProperties
-            }
-          >
-            {initials}
-          </div>
+          <div className="detail-panel-avatar">{initials}</div>
           <div className="detail-panel-name">{displayName}</div>
           {contact.title && <div className="detail-panel-title">{contact.title}</div>}
         </div>

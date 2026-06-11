@@ -40,16 +40,7 @@ export const ServerDetailPanel: React.FC<ServerDetailPanelProps> = ({
     <div className="detail-panel">
       <div className="detail-panel-body">
         <div className="detail-panel-identity">
-          <div
-            className="detail-panel-avatar detail-panel-avatar--server"
-            style={
-              {
-                '--avatar-bg': osInfo.bg,
-                '--avatar-border': osInfo.border,
-                '--avatar-text': osInfo.text,
-              } as React.CSSProperties
-            }
-          >
+          <div className="detail-panel-avatar">
             <svg
               width="24"
               height="24"

@@ -58,9 +58,9 @@
   font-size: var(--text-xl);
   font-weight: 700;
   flex-shrink: 0;
-  background: var(--avatar-bg);
-  border: 1.5px solid var(--avatar-border);
-  color: var(--avatar-text);
+  background: var(--accent-dim);
+  border: 1.5px solid var(--color-border-accent);
+  color: var(--accent-bright);
 }
 
 .detail-panel-name {
@@ -74,12 +74,6 @@
 .detail-panel-title {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
-}
-
-.detail-panel-avatar--server {
-  background: var(--color-accent-dim) !important;
-  border-color: var(--color-border-accent) !important;
-  color: var(--color-accent-text) !important;
 }
 
 .detail-panel-os-badge {

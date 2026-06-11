@@ -1,18 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { getColorForString, AMBER } from '../colors';
+import { getColorForString } from '../colors';
 
 describe('colors', () => {
-  describe('AMBER', () => {
-    it('exports AMBER color scheme with expected properties', () => {
-      expect(AMBER).toMatchObject({
-        bg: expect.stringContaining('rgba'),
-        border: expect.stringContaining('rgba'),
-        text: expect.any(String),
-        fill: expect.any(String),
-      });
-    });
-  });
-
   describe('getColorForString', () => {
     it('returns a color scheme with all required fields', () => {
       const scheme = getColorForString('hello');

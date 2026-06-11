@@ -29,13 +29,6 @@ const PALETTE: ColorScheme[] = [
   makeColorScheme('168, 85, 247', '#D8B4FE', '#A855F7'),
 ];
 
-export const AMBER: ColorScheme = {
-  bg: 'rgba(225, 29, 72, 0.15)',
-  border: 'rgba(225, 29, 72, 0.3)',
-  text: '#fb7185',
-  fill: '#e11d48',
-};
-
 export const getColorForString = (str: string): ColorScheme => {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
