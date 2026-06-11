@@ -296,6 +296,19 @@ test.describe('Redesign screenshot harness', () => {
       });
       expect(truncated).toEqual([]);
 
+      // Verify sidebar buttons are not clipped by parent flex container (≥ 100px wide).
+      const buttonWidths = await window.evaluate(() => {
+        return [...globalThis.document.querySelectorAll('.sidebar-button')].map((el) => {
+          const rect = el.getBoundingClientRect();
+          const label = el.querySelector('.sidebar-button-label');
+          return { width: rect.width, label: label?.textContent };
+        });
+      });
+      for (const btn of buttonWidths) {
+        expect(btn.width).toBeGreaterThanOrEqual(100);
+      }
+      console.log('Sidebar button widths:', buttonWidths);
+
       // Default accent (red) for the tab tour.
       await setAccentViaStorage(window, 'red');
 
