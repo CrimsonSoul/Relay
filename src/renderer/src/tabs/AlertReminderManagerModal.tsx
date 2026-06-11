@@ -51,14 +51,41 @@ function ReminderRow({
   onDone,
   onDismiss,
 }: Readonly<ReminderRowProps>) {
+  const effectiveTime = getReminderEffectiveDate(reminder).getTime();
+  const isOverdue = !isCompleted && !Number.isNaN(effectiveTime) && effectiveTime <= Date.now();
+  const rowClassName = [
+    'alert-reminder-manager-row',
+    isCompleted && 'alert-reminder-manager-row--completed',
+    isOverdue && 'alert-reminder-manager-row--overdue',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <li className="alert-reminder-manager-row">
+    <li className={rowClassName}>
       <div className="alert-reminder-manager-row-main">
         <div className="alert-reminder-manager-row-title">{reminder.title}</div>
         <div className="alert-reminder-manager-row-meta">
-          <span>{formatReminderTime(reminder)}</span>
-          {reminder.snoozeUntil && <span className="alert-reminder-manager-badge">Snoozed</span>}
-          {isCompleted && <span className="alert-reminder-manager-badge">{reminder.status}</span>}
+          <span className="alert-reminder-manager-row-time">{formatReminderTime(reminder)}</span>
+          {isOverdue && (
+            <span className="alert-reminder-manager-badge alert-reminder-manager-badge--overdue">
+              Overdue
+            </span>
+          )}
+          {!isCompleted && reminder.snoozeUntil && (
+            <span className="alert-reminder-manager-badge">Snoozed</span>
+          )}
+          {isCompleted && (
+            <span
+              className={`alert-reminder-manager-badge ${
+                reminder.status === 'done'
+                  ? 'alert-reminder-manager-badge--done'
+                  : 'alert-reminder-manager-badge--muted'
+              }`}
+            >
+              {reminder.status}
+            </span>
+          )}
         </div>
         {reminder.note && <div className="alert-reminder-manager-note">{reminder.note}</div>}
       </div>

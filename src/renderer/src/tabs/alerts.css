@@ -80,7 +80,9 @@
 
 .alert-history-empty-text {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
+  font-weight: 200;
+  font-style: italic;
 }
 
 .alert-history-list {
@@ -112,31 +114,42 @@
   gap: 8px;
 }
 
+/* Ink rows: no boxed sub-card — a 4px left edge-rail carries the FIXED
+   severity color (ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok,
+   INFO = white, matching the severity grid). */
 .alert-history-entry {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 10px;
-  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border: none;
   border-left: 4px solid var(--color-border-strong);
   border-radius: 0;
   background: transparent;
   cursor: pointer;
   color: inherit;
   font-family: inherit;
-  transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast);
+  transition: background var(--transition-fast);
 }
 
 .alert-history-entry:hover {
   background: var(--color-bg-card-hover);
-  border-color: var(--color-border-strong);
-  border-left-color: var(--color-text-tertiary);
 }
 
-.alert-history-entry.pinned {
-  border-left-color: var(--accent);
+.alert-history-entry:has([data-sev='ISSUE']) {
+  border-left-color: var(--alarm);
+}
+
+.alert-history-entry:has([data-sev='MAINTENANCE']) {
+  border-left-color: var(--color-warning);
+}
+
+.alert-history-entry:has([data-sev='INFO']) {
+  border-left-color: #ffffff;
+}
+
+.alert-history-entry:has([data-sev='RESOLVED']) {
+  border-left-color: var(--ok);
 }
 
 .alert-history-pin-icon {
@@ -233,17 +246,36 @@
   white-space: nowrap;
 }
 
+/* Severity chips — FIXED severity tokens, never the themed accent.
+   ISSUE reads as the alarm chip (solid); the rest are outline chips. */
 .alert-history-entry-severity {
   font-size: var(--text-2xs);
   font-weight: 800;
   font-family: var(--font-family-mono);
   letter-spacing: 0.05em;
-  color: #fff;
   padding: 2px 8px;
   border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
   text-transform: uppercase;
   flex-shrink: 0;
-  background: var(--severity-color, #555);
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.alert-history-entry-severity[data-sev='ISSUE'] {
+  background: var(--alarm);
+  border-color: var(--alarm);
+  color: #000;
+}
+
+.alert-history-entry-severity[data-sev='MAINTENANCE'] {
+  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+  color: var(--color-warning);
+}
+
+.alert-history-entry-severity[data-sev='RESOLVED'] {
+  border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+  color: var(--ok);
 }
 
 .alert-history-entry-subject {
@@ -1418,16 +1450,28 @@
   list-style: none;
 }
 
+/* Ink rows: edge-rail grammar, no boxed sub-cards. Pending rows carry a
+   neutral rail; overdue rows take the FIXED alarm treatment; completed rows
+   recede to quaternary ink. */
 .alert-reminder-manager-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 12px;
-  border: 1px solid var(--color-border);
+  padding: 10px 12px;
+  border: none;
   border-left: 4px solid var(--color-border-strong);
   border-radius: 0;
   background: transparent;
+}
+
+.alert-reminder-manager-row--overdue {
+  border-left-color: var(--alarm);
+  background: var(--alarm-dim);
+}
+
+.alert-reminder-manager-row--completed {
+  border-left-color: var(--color-border);
 }
 
 .alert-reminder-manager-row-main {
@@ -1440,6 +1484,13 @@
   font-weight: 700;
 }
 
+.alert-reminder-manager-row--completed .alert-reminder-manager-row-title {
+  color: var(--color-text-quaternary);
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-color: var(--color-border-strong);
+}
+
 .alert-reminder-manager-row-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1449,6 +1500,17 @@
   color: var(--color-text-tertiary);
   font-family: var(--font-family-mono);
   font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.alert-reminder-manager-row--overdue .alert-reminder-manager-row-time {
+  color: var(--alarm-bright);
+  font-weight: 700;
+}
+
+.alert-reminder-manager-row--completed .alert-reminder-manager-row-meta,
+.alert-reminder-manager-row--completed .alert-reminder-manager-note {
+  color: var(--color-text-quaternary);
 }
 
 .alert-reminder-manager-note {
@@ -1458,6 +1520,7 @@
   line-height: 1.4;
 }
 
+/* Default badge = snooze chip (FIXED warning tokens) */
 .alert-reminder-manager-badge {
   padding: 2px 7px;
   border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
@@ -1468,6 +1531,27 @@
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+}
+
+/* Overdue = alarm chip: solid fixed alarm, black ink */
+.alert-reminder-manager-badge--overdue {
+  border-color: var(--alarm);
+  background: var(--alarm);
+  color: #000;
+}
+
+/* Completed "done" = ok outline chip */
+.alert-reminder-manager-badge--done {
+  border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+  background: transparent;
+  color: var(--ok);
+}
+
+/* Completed "dismissed" = neutral outline chip */
+.alert-reminder-manager-badge--muted {
+  border-color: var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-quaternary);
 }
 
 .alert-reminder-manager-row-actions {

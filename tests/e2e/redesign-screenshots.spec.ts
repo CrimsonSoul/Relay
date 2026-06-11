@@ -353,6 +353,14 @@ test.describe('Redesign screenshot harness', () => {
       await goToTab(window, 'sidebar-alerts', 'Alerts');
       await shoot(window, 'alerts.png');
 
+      // --- Alert history modal (seeded with one ISSUE entry) ---
+      await window.getByRole('button', { name: 'HISTORY' }).click();
+      await expect(window.locator('.alert-history-content')).toBeVisible();
+      await expect(window.locator('.alert-history-entry').first()).toBeVisible();
+      await shoot(window, 'alert-history.png');
+      await window.keyboard.press('Escape');
+      await expect(window.locator('.alert-history-content')).not.toBeVisible();
+
       // --- Notes ---
       await goToTab(window, 'sidebar-notes', 'Notes');
       await expect(window.locator('.tab-panel--active')).toContainText('Failover Runbook');

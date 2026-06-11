@@ -171,7 +171,9 @@
 
 .bridge-history-empty-text {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: var(--text-lg);
+  font-weight: 200;
+  font-style: italic;
 }
 
 .bridge-history-list {
@@ -181,13 +183,15 @@
   padding: 0 24px;
 }
 
+/* Ink rows: edge-rail grammar only (no boxes, no dividers fighting the rail).
+   Equal rhythm: every entry is 12px / 14px with an 8px gap. */
 .bridge-history-entry {
   display: block;
   width: 100%;
   text-align: left;
   font: inherit;
   color: inherit;
-  padding: 14px 18px 14px 14px;
+  padding: 12px 14px;
   border-radius: 0;
   margin-bottom: 8px;
   background: transparent;
@@ -195,8 +199,8 @@
   border-left: 4px solid var(--color-border-strong);
   cursor: pointer;
   transition:
-    background-color 0.12s,
-    border-color 0.12s;
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .bridge-history-entry:hover {
@@ -207,18 +211,19 @@
 .bridge-history-entry-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
+/* Date is secondary — the featured recipient-count chip carries the row */
 .bridge-history-entry-date {
   flex: 1 1 auto;
   min-width: 0;
   font-size: var(--text-sm);
-  font-weight: 700;
-  color: var(--color-text-primary);
+  font-weight: 600;
+  color: var(--color-text-secondary);
 }
 
 .bridge-history-entry-count {
@@ -232,11 +237,15 @@
   border-radius: 2px;
 }
 
+/* Recipient preview — tertiary, single line */
 .bridge-history-entry-note {
-  font-size: var(--text-base);
-  font-weight: 500;
-  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  color: var(--color-text-tertiary);
   margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bridge-history-entry-groups {

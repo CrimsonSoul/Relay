@@ -134,7 +134,7 @@ export const PersonnelTab: React.FC<{
     if (!node) return;
     const width = node.clientWidth;
     if (width < 1) return;
-    const minCol = 340;
+    const minCol = 320;
     const gap = 24;
     const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
     setColumnCount((prev) => (prev === next ? prev : next));

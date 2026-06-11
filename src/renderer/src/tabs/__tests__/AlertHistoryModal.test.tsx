@@ -260,34 +260,34 @@ describe('AlertHistoryModal', () => {
     expect(screen.queryByText('Firewall maintenance')).not.toBeInTheDocument();
   });
 
-  it('renders severity dot with correct color for ISSUE', () => {
+  it('tags severity chip with data-sev for ISSUE', () => {
     const { container } = render(<AlertHistoryModal {...defaultProps} />);
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#d32f2f');
+    expect(sevEl?.getAttribute('data-sev')).toBe('ISSUE');
   });
 
-  it('renders severity dot with correct color for INFO', () => {
+  it('tags severity chip with data-sev for INFO', () => {
     const { container } = render(
       <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'INFO' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#1565c0');
+    expect(sevEl?.getAttribute('data-sev')).toBe('INFO');
   });
 
-  it('renders severity dot with correct color for RESOLVED', () => {
+  it('tags severity chip with data-sev for RESOLVED', () => {
     const { container } = render(
       <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'RESOLVED' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#2e7d32');
+    expect(sevEl?.getAttribute('data-sev')).toBe('RESOLVED');
   });
 
-  it('renders severity dot with correct color for MAINTENANCE', () => {
+  it('tags severity chip with data-sev for MAINTENANCE', () => {
     const { container } = render(
       <AlertHistoryModal {...defaultProps} history={[makeEntry({ severity: 'MAINTENANCE' })]} />,
     );
     const sevEl = container.querySelector('.alert-history-entry-severity') as HTMLElement;
-    expect(sevEl?.style.getPropertyValue('--severity-color')).toBe('#f9a825');
+    expect(sevEl?.getAttribute('data-sev')).toBe('MAINTENANCE');
   });
 
   it('does not show extra content (label editor) by default', () => {

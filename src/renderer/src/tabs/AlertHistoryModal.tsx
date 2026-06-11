@@ -4,6 +4,9 @@ import { TactileButton } from '../components/TactileButton';
 import { sanitizeHtml } from './alertUtils';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
+/* Email banner hexes — used only inside the miniature document thumbnails,
+   which depict the exported email (NOT app chrome). App-side rails/chips use
+   the FIXED severity tokens via [data-sev] rules in alerts.css. */
 const SEVERITY_DOT_COLORS: Record<string, string> = {
   ISSUE: '#d32f2f',
   MAINTENANCE: '#f9a825',
@@ -130,7 +133,10 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
         const isPinned = Boolean(entry.pinned);
 
         return (
-          <div className={isPinned ? 'alert-history-template-card' : 'alert-history-recent-row'}>
+          <div
+            className={isPinned ? 'alert-history-template-card' : 'alert-history-recent-row'}
+            data-sev={entry.severity}
+          >
             <div
               className={
                 isPinned
@@ -165,14 +171,7 @@ export const AlertHistoryModal: React.FC<AlertHistoryModalProps> = ({
                   )}
                   {title}
                 </span>
-                <span
-                  className="alert-history-entry-severity"
-                  style={
-                    {
-                      '--severity-color': SEVERITY_DOT_COLORS[entry.severity],
-                    } as React.CSSProperties
-                  }
-                >
+                <span className="alert-history-entry-severity" data-sev={entry.severity}>
                   {entry.severity}
                 </span>
               </div>

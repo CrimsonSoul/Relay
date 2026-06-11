@@ -191,7 +191,7 @@
    ============================================================================ */
 
 .team-row {
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border-subtle);
   transition: background 0.12s;
   position: relative;
@@ -218,7 +218,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 
 .team-row-bottom {
@@ -261,7 +261,7 @@
 }
 
 .team-row-name {
-  font-size: var(--text-xl);
+  font-size: var(--text-base);
   font-weight: 700;
   color: var(--color-text-primary);
   display: block;
@@ -573,7 +573,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  padding: 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
