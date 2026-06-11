@@ -1,5 +1,7 @@
 /* ============================================================================
-   Alert History Modal
+   Alert History Modal — ink language: divider/rail rows, eyebrow labels,
+   mono timestamps. NOTE: .alerts-email-* rules further down are EMAIL
+   CONTENT (exported as PNG/HTML) and must never be restyled.
    ========================================================================= */
 
 .alert-history-content {
@@ -32,24 +34,28 @@
 .alert-history-search {
   width: 100%;
   height: 40px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   padding: 0 13px;
-  background: var(--color-bg-app);
+  background: transparent;
   color: var(--color-text-primary);
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   outline: none;
+  transition: border-color var(--transition-fast);
 }
 
 .alert-history-search::placeholder {
   color: var(--color-text-quaternary);
 }
 
+.alert-history-search:hover {
+  border-color: var(--color-text-tertiary);
+}
+
 .alert-history-search:focus,
 .alert-history-search:focus-visible {
-  border-color: var(--color-accent);
-  background: var(--color-bg-surface);
+  border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--color-accent-dim);
 }
 
@@ -111,31 +117,30 @@
   width: 100%;
   text-align: left;
   padding: 10px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
-  background: var(--color-bg-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
   color: inherit;
   font-family: inherit;
   transition:
-    background 0.15s,
-    border-color 0.15s,
-    transform 0.15s;
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .alert-history-entry:hover {
   background: var(--color-bg-card-hover);
   border-color: var(--color-border-strong);
-  transform: translateY(-1px);
+  border-left-color: var(--color-text-tertiary);
 }
 
 .alert-history-entry.pinned {
-  border-color: rgba(225, 29, 72, 0.28);
-  box-shadow: 0 0 0 1px var(--color-accent-subtle);
+  border-left-color: var(--accent);
 }
 
 .alert-history-pin-icon {
-  color: var(--color-accent);
+  color: var(--accent);
   display: inline-flex;
   margin-right: 5px;
   vertical-align: -1px;
@@ -153,19 +158,19 @@
   gap: 11px;
 }
 
+/* Miniature document thumbnails — depict the white email card; the light
+   interior hexes are intentional (they portray the email, not app chrome). */
 .alert-history-card-preview {
   overflow: hidden;
   min-height: 92px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  border-radius: 7px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   background: #f8fafc;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 
 .alert-history-mini-preview {
   min-height: 42px;
   height: 42px;
-  box-shadow: none;
 }
 
 .alert-history-preview-banner {
@@ -219,7 +224,8 @@
 }
 
 .alert-history-entry-date {
-  font-size: var(--text-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-xs);
   color: var(--color-text-tertiary);
   min-width: 0;
   overflow: hidden;
@@ -229,12 +235,12 @@
 
 .alert-history-entry-severity {
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: 800;
   font-family: var(--font-family-mono);
   letter-spacing: 0.05em;
   color: #fff;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 2px;
   text-transform: uppercase;
   flex-shrink: 0;
   background: var(--severity-color, #555);
@@ -279,8 +285,8 @@
   justify-content: space-between;
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-text-quaternary);
   padding: 2px 0 8px;
@@ -295,10 +301,10 @@
   justify-content: flex-end;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border);
 }
 
-/* --- Label Editor Overlay --- */
+/* --- Label Editor Overlay (floating surface — keeps its elevated box) --- */
 
 .alert-history-label-overlay {
   position: fixed;
@@ -311,9 +317,9 @@
 }
 
 .alert-history-label-editor {
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  background: var(--color-bg-surface-opaque);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   padding: 20px;
   min-width: 320px;
   display: flex;
@@ -322,10 +328,10 @@
 }
 
 .alert-history-label-editor-label {
-  font-family: var(--font-family-mono);
+  font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-text-tertiary);
 }
@@ -334,16 +340,16 @@
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-app);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
   color: var(--color-text-primary);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
 }
 
 .alert-history-label-input:focus {
-  border-color: var(--color-accent);
+  border-color: var(--accent);
 }
 
 .alert-history-label-editor-actions {
@@ -366,6 +372,7 @@
   overflow: hidden;
 }
 
+/* Reminder strip — warning edge-rail row, fixed severity token */
 .alert-reminder-strip {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;
@@ -374,9 +381,10 @@
   width: 100%;
   min-height: 34px;
   padding: 7px 10px;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  border-radius: 8px;
-  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-warning);
+  border-radius: 0;
+  background: transparent;
   color: var(--color-text-secondary);
   font-family: inherit;
   text-align: left;
@@ -384,19 +392,23 @@
 
 .alert-reminder-strip--button {
   cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .alert-reminder-strip--button:hover {
-  border-color: rgba(245, 158, 11, 0.44);
-  background: rgba(245, 158, 11, 0.12);
+  border-color: var(--color-border-strong);
+  border-left-color: var(--color-warning);
+  background: var(--color-warning-subtle);
 }
 
 .alert-reminder-strip-label {
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #fbbf24;
+  color: var(--color-warning);
   white-space: nowrap;
 }
 
@@ -411,12 +423,13 @@
 
 .alert-reminder-strip-time {
   color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
   font-size: var(--text-xs);
   white-space: nowrap;
 }
 
 .alert-reminder-strip-count {
-  color: #fbbf24;
+  color: var(--color-warning);
   font-size: var(--text-xs);
   font-weight: 700;
   white-space: nowrap;
@@ -430,31 +443,30 @@
   min-height: 0;
 }
 
-/* --- Composer Panel (Left) --- */
+/* --- Composer Panel (Left) — dividers, not boxes --- */
 
 .alerts-composer {
   display: flex;
   flex-direction: column;
   overflow-y: overlay;
   overflow-x: hidden;
-  padding: 20px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background-color: var(--color-bg-card);
+  padding: 0 12px 20px 0;
+  border: none;
+  background: transparent;
 }
 
 .alerts-form-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 8px;
   flex: 1;
 }
 
 .alerts-step-section {
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
-  background: var(--color-bg-surface);
-  overflow: hidden;
+  border: none;
+  border-top: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
 }
 
 .alerts-step-header {
@@ -462,21 +474,21 @@
   grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  padding: 14px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface-2);
+  padding: 16px 0 4px;
+  border-bottom: none;
+  background: transparent;
 }
 
 .alerts-step-index {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: 800;
   color: var(--color-accent-text);
   background: var(--color-accent-dim);
   border: 1px solid var(--color-accent-dim);
@@ -497,31 +509,32 @@
   margin: 3px 0 0;
   font-size: var(--text-sm);
   line-height: 1.4;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
 }
 
 .alerts-step-status {
   padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--color-text-tertiary);
 }
 
 .alerts-step-status-done {
-  color: #bbf7d0;
-  border-color: rgba(34, 197, 94, 0.28);
-  background: rgba(34, 197, 94, 0.1);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 35%, transparent);
+  background: var(--color-accent-green-subtle);
 }
 
 .alerts-step-content {
   display: flex;
   flex-direction: column;
   gap: 18px;
-  padding: 14px;
+  padding: 14px 0 18px;
 }
 
 .alerts-delivery-grid {
@@ -539,14 +552,14 @@
 
 .alerts-delivery-group + .alerts-delivery-group {
   padding-top: 14px;
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border);
 }
 
 .alerts-delivery-group-title {
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   color: var(--color-text-quaternary);
   text-transform: uppercase;
 }
@@ -579,9 +592,9 @@
   content: '+';
   width: 30px;
   height: 30px;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid var(--color-border-strong);
   border-radius: 6px;
-  background: var(--color-bg-surface);
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -613,8 +626,8 @@
 
 .alerts-field-label {
   font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   color: var(--color-text-tertiary);
   text-transform: uppercase;
   display: flex;
@@ -626,31 +639,36 @@
   font-size: var(--text-xs);
   color: var(--color-text-quaternary);
   font-weight: 400;
-  transition: color 0.2s;
+  transition: color var(--transition-fast);
 }
 
 .alerts-char-count.warn {
-  color: #ef4444;
+  color: var(--alarm-bright);
 }
 
 .alerts-input {
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   color: var(--color-text-primary);
-  background: var(--color-bg-app);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   padding: 10px 14px;
   outline: none !important;
   outline-width: 0 !important;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
   resize: none;
+}
+
+.alerts-input:hover {
+  border-color: var(--color-text-tertiary);
 }
 
 .alerts-input:focus,
 .alerts-input:focus-visible {
-  border-color: var(--color-accent);
+  border-color: var(--accent);
   background-color: var(--color-bg-surface);
+  box-shadow: 0 0 0 2px var(--color-accent-dim);
   outline: none !important;
   outline-width: 0 !important;
 }
@@ -660,15 +678,15 @@
 .alerts-body-editor {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast);
   flex: 1;
 }
 
 .alerts-body-editor:focus-within {
-  border-color: var(--color-accent);
+  border-color: var(--accent);
 }
 
 .alerts-body-editor:focus-within .alerts-editable-body,
@@ -683,8 +701,8 @@
   gap: 5px;
   padding: 7px 9px;
   flex-wrap: wrap;
-  background: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
+  background: transparent;
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -695,35 +713,36 @@
   min-width: 34px;
   height: 32px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: 2px;
   background: transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   font-family: var(--font-family-base);
   cursor: pointer;
   transition:
-    background 0.1s,
-    color 0.1s;
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .alerts-fmt-btn:hover {
-  background: var(--color-bg-surface-elevated);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
-  border-color: var(--color-border-subtle);
+  border-color: var(--color-border);
 }
 
 .alerts-fmt-btn:active {
-  background: var(--color-bg-card-hover);
+  background: var(--color-active-overlay);
 }
 
 .alerts-fmt-btn.active {
-  background: var(--color-bg-surface-elevated);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
   border-color: var(--color-border-strong);
 }
 
 .alerts-fmt-btn:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -735,7 +754,7 @@
   font-family: var(--font-family-base);
   font-size: var(--text-sm);
   color: var(--color-text-primary);
-  background: var(--color-bg-app);
+  background: transparent;
   padding: 10px 14px;
   outline: none;
   min-height: 224px;
@@ -746,10 +765,6 @@
   flex: 0 0 auto;
 }
 
-.alerts-body-editor:focus-within .alerts-editable-body {
-  background: var(--color-bg-surface);
-}
-
 .alerts-font-size-control {
   display: grid;
   grid-template-columns: repeat(2, minmax(112px, 140px));
@@ -757,15 +772,15 @@
   max-width: 100%;
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 7px;
-  background: var(--color-bg-app);
+  border: 1px solid var(--color-border);
+  border-radius: 2px;
+  background: transparent;
 }
 
 .alerts-font-size-btn {
   min-height: 32px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: 2px;
   background: transparent;
   color: var(--color-text-secondary);
   font-family: var(--font-family-base);
@@ -773,25 +788,25 @@
   font-weight: 700;
   cursor: pointer;
   transition:
-    background 0.1s,
-    border-color 0.1s,
-    color 0.1s;
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .alerts-font-size-btn:hover {
-  border-color: var(--color-border-subtle);
-  background: var(--color-bg-surface-elevated);
+  border-color: var(--color-border);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
 }
 
 .alerts-font-size-btn.active {
   border-color: var(--color-border-strong);
-  background: var(--color-bg-surface-elevated);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
 }
 
 .alerts-font-size-btn:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -801,7 +816,8 @@
   pointer-events: none;
 }
 
-/* Severity Grid */
+/* Severity Grid — square chips in FIXED severity tokens (never themed):
+   ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok, INFO = solid white. */
 
 .alerts-severity-grid {
   display: grid;
@@ -815,57 +831,66 @@
 .alerts-sev-btn {
   font-family: var(--font-family-base);
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
   padding: 8px 2px;
-  border-radius: 6px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-app);
-  color: var(--color-text-tertiary);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
   text-align: center;
   white-space: nowrap;
 }
 
 .alerts-sev-btn:hover {
-  border-color: var(--color-border-strong);
+  border-color: var(--color-text-tertiary);
   color: var(--color-text-primary);
 }
 
 .alerts-sev-btn.active[data-sev='ISSUE'] {
-  background: #3b1419;
-  border-color: #ef4444;
-  color: #fecaca;
+  background: var(--alarm);
+  border-color: var(--alarm);
+  color: #000;
+  font-weight: 800;
 }
 
 .alerts-sev-btn.active[data-sev='MAINTENANCE'] {
-  background: #3b2010;
-  border-color: #fb923c;
-  color: #fed7aa;
+  background: var(--color-warning);
+  border-color: var(--color-warning);
+  color: #000;
+  font-weight: 800;
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: #0c2a3d;
-  border-color: #38bdf8;
-  color: #bae6fd;
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #000;
+  font-weight: 800;
 }
 
 .alerts-sev-btn.active[data-sev='RESOLVED'] {
-  background: #0a2e22;
-  border-color: #10b981;
-  color: #a7f3d0;
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #000;
+  font-weight: 800;
 }
 
-/* --- Preview Panel (Right) --- */
+/* --- Preview Panel (Right) — plain document frame on the black canvas.
+   This is the EXTERIOR only; the white card inside is email content. --- */
 
 .alerts-preview {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background-color: transparent;
   overflow: hidden;
 }
 
@@ -877,6 +902,13 @@
   justify-content: flex-start;
   align-items: flex-start;
 }
+
+/* ==========================================================================
+   EMAIL CONTENT — DO NOT RESTYLE. Everything from here to the end of the
+   highlight-pill rules is rendered inside the white email card, which is
+   cloned and exported (html2canvas PNG / email HTML). Hardcoded colors are
+   CORRECT here; they must not be swapped for app theme tokens.
+   ========================================================================== */
 
 /* --- Email Card (white canvas for PNG capture) --- */
 
@@ -1131,6 +1163,11 @@
   background: #fafafa;
 }
 
+/* ==========================================================================
+   END EMAIL CONTENT (the .alerts-email-event-time* banner rules further
+   down are also email content — see the marker there). App UI resumes.
+   ========================================================================== */
+
 /* --- Logo Controls (Composer Panel) --- */
 
 .alerts-logo-controls {
@@ -1144,8 +1181,8 @@
   width: auto;
   max-width: 100px;
   object-fit: contain;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-subtle);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
 }
 
 .alerts-logo-action {
@@ -1154,17 +1191,19 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .alerts-logo-action:hover {
   color: var(--color-text-primary);
-  border-color: var(--color-border-default);
+  border-color: var(--color-text-tertiary);
 }
 
 /* --- Toolbar Separator --- */
@@ -1172,7 +1211,7 @@
 .alerts-fmt-separator {
   width: 1px;
   height: 20px;
-  background: var(--color-border-subtle);
+  background: var(--color-border);
   margin: 0 3px;
   align-self: center;
 }
@@ -1191,18 +1230,22 @@
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .alerts-update-toggle.active {
-  background: var(--color-accent);
-  color: #fff;
-  border-color: var(--color-accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  font-weight: 800;
 }
 
 .alerts-update-stepper {
@@ -1214,20 +1257,20 @@
 .alerts-stepper-btn {
   width: 26px;
   height: 26px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
   color: var(--color-text-secondary);
   font-size: var(--text-sm);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.1s;
+  transition: background var(--transition-fast);
 }
 
 .alerts-stepper-btn:hover {
-  background: var(--color-bg-surface-elevated);
+  background: var(--color-bg-card-hover);
 }
 
 .alerts-stepper-value {
@@ -1252,7 +1295,7 @@
 }
 
 .alerts-input-datetime.is-empty {
-  color: rgb(117, 117, 117);
+  color: var(--color-text-quaternary);
 }
 
 .alerts-input-datetime.is-empty:focus {
@@ -1264,17 +1307,19 @@
   font-size: var(--text-2xs);
   font-weight: 600;
   padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-bg-surface);
+  border-radius: 2px;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
   white-space: nowrap;
 }
 
 .alerts-timestamp-reset:hover {
-  background: var(--color-bg-surface-elevated);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-secondary);
 }
 
@@ -1304,10 +1349,11 @@
 
 .alert-reminder-error {
   padding: 8px 10px;
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  border-radius: 6px;
-  background: rgba(248, 113, 113, 0.08);
-  color: #fecaca;
+  border: 1px solid var(--alarm);
+  border-left-width: 4px;
+  border-radius: 0;
+  background: var(--alarm-dim);
+  color: var(--alarm-bright);
   font-size: var(--text-sm);
 }
 
@@ -1345,10 +1391,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 0;
   padding: 10px 12px;
-  background: var(--color-surface-subtle);
+  background: transparent;
 }
 
 .alert-reminder-manager-sound-label {
@@ -1378,8 +1424,9 @@
   align-items: center;
   padding: 12px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-bg-surface-elevated);
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: 0;
+  background: transparent;
 }
 
 .alert-reminder-manager-row-main {
@@ -1399,6 +1446,7 @@
   align-items: center;
   margin-top: 4px;
   color: var(--color-text-tertiary);
+  font-family: var(--font-family-mono);
   font-size: var(--text-xs);
 }
 
@@ -1411,12 +1459,13 @@
 
 .alert-reminder-manager-badge {
   padding: 2px 7px;
-  border: 1px solid rgba(245, 158, 11, 0.28);
-  border-radius: 6px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
+  border: 1px solid color-mix(in srgb, var(--color-warning) 35%, transparent);
+  border-radius: 2px;
+  background: var(--color-warning-subtle);
+  color: var(--color-warning);
   font-size: var(--text-2xs);
-  font-weight: 700;
+  font-weight: 800;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -1441,10 +1490,11 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid rgba(248, 113, 113, 0.3);
-  border-radius: 8px;
-  background: rgba(248, 113, 113, 0.08);
-  color: #fecaca;
+  border: 1px solid var(--alarm);
+  border-left-width: 4px;
+  border-radius: 0;
+  background: var(--alarm-dim);
+  color: var(--alarm-bright);
   font-size: var(--text-sm);
 }
 
@@ -1453,18 +1503,18 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border);
 }
 
 .alert-reminder-manager-section-title {
   color: var(--color-text-tertiary);
   font-size: var(--text-2xs);
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
-/* Highlight Popover */
+/* Highlight Popover (floating surface — keeps its elevated box) */
 .alerts-hl-popover-wrapper {
   position: relative;
 }
@@ -1505,9 +1555,9 @@
   top: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
+  background: var(--color-bg-surface-opaque);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   padding: 6px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 10;
@@ -1519,14 +1569,14 @@
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border-radius: 6px;
+  border-radius: 2px;
   cursor: pointer;
   border: none;
   background: transparent;
   width: 100%;
   font-family: inherit;
   color: var(--color-text-secondary);
-  transition: background 0.1s;
+  transition: background var(--transition-fast);
 }
 
 .alerts-hl-popover-row:hover {
@@ -1536,12 +1586,12 @@
 .alerts-hl-popover-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 4px;
+  border-radius: 2px;
   flex-shrink: 0;
 }
 
 .alerts-hl-popover-clear-swatch {
-  border: 2px dashed var(--color-border-subtle);
+  border: 2px dashed var(--color-border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1566,24 +1616,25 @@
 
 .alerts-hl-popover-divider {
   height: 1px;
-  background: var(--color-border-subtle);
+  background: var(--color-border);
   margin: 4px 0;
 }
 
-/* Compact/Enhance toggle buttons */
+/* Compact/Enhance toggle buttons — non-severity UI: themed accent ink */
 .alerts-toggle-btn {
   padding: 0 8px;
 }
 
-.alerts-toggle-compact.active {
-  background: #111d33;
-  color: #bfdbfe;
+.alerts-toggle-compact.active,
+.alerts-toggle-enhance.active {
+  background: var(--accent-dim);
+  color: var(--accent-bright);
 }
 
-.alerts-toggle-enhance.active {
-  background: #1c1530;
-  color: #c4b5fd;
-}
+/* ==========================================================================
+   EMAIL CONTENT — DO NOT RESTYLE. The event-time banner renders inside the
+   exported white email card; its amber hexes are correct for email HTML.
+   ========================================================================== */
 
 /* Event Time Banner — amber strip below subject */
 .alerts-email-event-time {
@@ -1618,6 +1669,8 @@
   letter-spacing: 0.01em;
 }
 
+/* ===================== END EMAIL CONTENT — app UI resumes ================ */
+
 /* Event Time inputs */
 .alerts-event-time-inputs {
   display: flex;
@@ -1644,8 +1697,8 @@
   font-size: var(--text-xs);
   color: var(--color-text-quaternary);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-weight: 800;
 }
 
 .alerts-event-time-tz {
@@ -1663,18 +1716,20 @@
   font-size: var(--text-xs);
   color: var(--color-text-tertiary);
   background: transparent;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 4px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   padding: 4px 10px;
   cursor: pointer;
   align-self: flex-end;
   margin-bottom: 2px;
-  transition: all 0.15s;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast);
 }
 
 .alerts-event-time-clear:hover {
   color: var(--color-text-primary);
-  border-color: var(--color-border-primary);
+  border-color: var(--color-text-tertiary);
 }
 
 .alerts-event-time-hint {
