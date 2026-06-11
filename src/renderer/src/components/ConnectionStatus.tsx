@@ -23,11 +23,11 @@ export function ConnectionStatus() {
   };
 
   const colors: Record<ConnectionState, string> = {
-    connecting: '#e11d48',
-    online: '#10b981',
-    offline: '#ef4444',
-    reconnecting: '#e11d48',
-    'auth-failed': '#ef4444',
+    connecting: 'var(--color-warning)',
+    online: 'var(--ok)',
+    offline: 'var(--alarm)',
+    reconnecting: 'var(--color-warning)',
+    'auth-failed': 'var(--alarm)',
   };
 
   return (
@@ -38,9 +38,9 @@ export function ConnectionStatus() {
         bottom: 8,
         right: 8,
         padding: '4px 12px',
-        borderRadius: 4,
+        borderRadius: 2,
         backgroundColor: colors[state],
-        color: 'white',
+        color: '#000',
         fontSize: 12,
         fontWeight: 500,
         zIndex: 9999,

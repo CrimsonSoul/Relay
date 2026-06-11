@@ -394,7 +394,10 @@ export function SetupScreen({ onComplete }: SetupScreenProps) {
                       setTestStatus('idle');
                     }}
                   >
-                    {s.name} — {s.host}:{s.port}
+                    <span className="setup-config__discover-name">{s.name}</span>
+                    <span className="setup-config__discover-addr">
+                      {s.host}:{s.port}
+                    </span>
                   </button>
                 ))}
               </div>

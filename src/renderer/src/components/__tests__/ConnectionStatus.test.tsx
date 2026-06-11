@@ -46,11 +46,11 @@ describe('ConnectionStatus', () => {
     expect(screen.getByText('Offline — using cached data')).toBeInTheDocument();
   });
 
-  it('uses red background color for offline state', () => {
+  it('uses alarm background color for offline state', () => {
     mockState = 'offline';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Offline — using cached data');
-    expect(banner.style.backgroundColor).toBe('rgb(239, 68, 68)');
+    expect(banner.style.backgroundColor).toBe('var(--alarm)');
   });
 
   // ── Connecting State ──
@@ -61,11 +61,11 @@ describe('ConnectionStatus', () => {
     expect(screen.getByText('Connecting...')).toBeInTheDocument();
   });
 
-  it('uses signal red background color for connecting state', () => {
+  it('uses warning background color for connecting state', () => {
     mockState = 'connecting';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Connecting...');
-    expect(banner.style.backgroundColor).toBe('rgb(225, 29, 72)');
+    expect(banner.style.backgroundColor).toBe('var(--color-warning)');
   });
 
   // ── Reconnecting State ──
@@ -76,11 +76,11 @@ describe('ConnectionStatus', () => {
     expect(screen.getByText('Reconnecting...')).toBeInTheDocument();
   });
 
-  it('uses signal red background color for reconnecting state', () => {
+  it('uses warning background color for reconnecting state', () => {
     mockState = 'reconnecting';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Reconnecting...');
-    expect(banner.style.backgroundColor).toBe('rgb(225, 29, 72)');
+    expect(banner.style.backgroundColor).toBe('var(--color-warning)');
   });
 
   // ── Auth-Failed State ──
@@ -93,11 +93,11 @@ describe('ConnectionStatus', () => {
     ).toBeInTheDocument();
   });
 
-  it('uses red background color for auth-failed state', () => {
+  it('uses alarm background color for auth-failed state', () => {
     mockState = 'auth-failed';
     render(<ConnectionStatus />);
     const banner = screen.getByText('Sign-in failed — check the passphrase in Settings');
-    expect(banner.style.backgroundColor).toBe('rgb(239, 68, 68)');
+    expect(banner.style.backgroundColor).toBe('var(--alarm)');
   });
 
   // ── State Transitions ──

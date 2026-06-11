@@ -78,16 +78,14 @@
   animation: active-indicator 2s infinite ease-in-out;
 }
 
-/* Card entrance — staggered reveal */
+/* Card entrance — staggered reveal (opacity-only, ink style) */
 @keyframes cardEntrance {
   from {
     opacity: 0;
-    transform: translateY(12px) scale(0.98);
   }
 
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 

@@ -305,7 +305,7 @@
 
 .modal-header-generic {
   padding: 24px 28px;
-  border-bottom: var(--border-subtle);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;

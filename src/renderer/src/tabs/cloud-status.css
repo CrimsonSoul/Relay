@@ -634,11 +634,7 @@
   text-decoration: underline;
 }
 
-@keyframes cloud-status-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* cloud-status-spin keyframes live in styles/components.css (global) */
 
 @media (max-width: 1280px) {
   .cloud-status__posture {

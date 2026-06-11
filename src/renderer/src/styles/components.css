@@ -841,7 +841,7 @@ body.modal-open {
   font-weight: 600;
   color: var(--color-text-primary);
   background: var(--color-bg-card-hover);
-  border: var(--border-subtle);
+  border: 1px solid var(--color-border);
   padding: 5px 10px;
   border-radius: 6px;
   font-family: monospace;
@@ -849,7 +849,7 @@ body.modal-open {
 
 .shortcuts-modal-footer {
   padding: 14px 24px;
-  border-top: 1px solid var(--color-border-subtle);
+  border-top: 1px solid var(--color-border);
   text-align: center;
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
@@ -857,7 +857,7 @@ body.modal-open {
 
 .shortcuts-modal-kbd {
   background: var(--color-bg-card-hover);
-  border: var(--border-subtle);
+  border: 1px solid var(--color-border);
   border-radius: 3px;
   padding: 2px 6px;
   font-family: inherit;
@@ -1020,17 +1020,6 @@ body.modal-open {
 
 .dm-select--format {
   width: 160px;
-}
-
-/* ===========================
-   Contact Card
-   =========================== */
-.contact-card {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  list-style: none;
 }
 
 /* ===========================
