@@ -209,6 +209,14 @@
   --accent-bright: #ff7b85;
 }
 
+/* True orange — kept distinct from --alarm (#ff4539 red-orange)
+   and --color-warning (#ffb000 amber) */
+:root[data-accent='orange'] {
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --accent-bright: #fdba74;
+}
+
 :root[data-accent='blue'] {
   --accent: #3b82f6;
   --accent-hover: #60a5fa;

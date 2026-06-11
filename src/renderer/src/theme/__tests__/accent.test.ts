@@ -14,8 +14,15 @@ describe('accent theme', () => {
     document.documentElement.removeAttribute('data-accent');
   });
 
-  it('exposes the five schemes with red as default', () => {
-    expect(ACCENT_SCHEMES.map((s) => s.id)).toEqual(['red', 'blue', 'green', 'pink', 'purple']);
+  it('exposes the six schemes with red as default', () => {
+    expect(ACCENT_SCHEMES.map((s) => s.id)).toEqual([
+      'red',
+      'orange',
+      'blue',
+      'green',
+      'pink',
+      'purple',
+    ]);
     expect(DEFAULT_ACCENT).toBe('red');
   });
 

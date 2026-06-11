@@ -1,4 +1,4 @@
-export type AccentId = 'red' | 'blue' | 'green' | 'pink' | 'purple';
+export type AccentId = 'red' | 'orange' | 'blue' | 'green' | 'pink' | 'purple';
 
 export interface AccentScheme {
   id: AccentId;
@@ -12,6 +12,7 @@ export const DEFAULT_ACCENT: AccentId = 'red';
 
 export const ACCENT_SCHEMES: AccentScheme[] = [
   { id: 'red', label: 'Signal Red', swatch: '#e63946' },
+  { id: 'orange', label: 'Orange', swatch: '#f97316' },
   { id: 'blue', label: 'Blue', swatch: '#3b82f6' },
   { id: 'green', label: 'Green', swatch: '#22c55e' },
   { id: 'pink', label: 'Pink', swatch: '#ec4899' },

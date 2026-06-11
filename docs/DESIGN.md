@@ -116,16 +116,20 @@ The relevant token is `--color-bg-surface-elevated: #161616` combined with
 
 ### Schemes
 
-Five schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
+Six schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 `:root[data-accent="…"]` overrides in `theme.css`:
 
 | ID       | Label                | `--accent` swatch |
 | -------- | -------------------- | ----------------- |
 | `red`    | Signal Red (default) | `#e63946`         |
+| `orange` | Orange               | `#f97316`         |
 | `blue`   | Blue                 | `#3b82f6`         |
 | `green`  | Green                | `#22c55e`         |
 | `pink`   | Pink                 | `#ec4899`         |
 | `purple` | Purple               | `#a855f7`         |
+
+The orange scheme is deliberately a true orange so it stays distinguishable from
+the fixed `--alarm` red-orange (`#ff4539`) and `--color-warning` amber (`#ffb000`).
 
 ### How It Works
 

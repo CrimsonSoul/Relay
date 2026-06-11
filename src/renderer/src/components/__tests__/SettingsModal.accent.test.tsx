@@ -68,10 +68,10 @@ describe('SettingsModal — accent color picker', () => {
     document.documentElement.removeAttribute('data-accent');
   });
 
-  it('renders five radio buttons for the accent picker', () => {
+  it('renders six radio buttons for the accent picker', () => {
     render(<SettingsModal {...defaultProps} />);
     const radios = screen.getAllByRole('radio');
-    expect(radios).toHaveLength(5);
+    expect(radios).toHaveLength(6);
   });
 
   it('clicking "Purple" sets data-accent="purple" on documentElement', () => {
