@@ -15,18 +15,6 @@
   --color-bg-chrome: #000000;
   color-scheme: dark;
 
-  /* App-specific tokens for parity */
-  --app-bg: #000000;
-  --app-surface: #0a0a0a;
-  --app-surface-2: #111111;
-  --app-surface-3: #161616;
-  --app-border: #1d1d1d;
-  --app-text: #ffffff;
-  --app-muted: #8a8a8a;
-  --app-accent: var(--accent);
-  --app-accent-strong: var(--accent-bright);
-  --app-accent-soft: var(--accent-dim);
-
   /* Text — dimming tiers; quaternary is the legibility floor */
   --color-text-primary: #ffffff;
   --color-text-secondary: #bdbdbd;
@@ -47,10 +35,6 @@
   --color-accent-text: var(--accent-bright);
   --color-accent-dim: var(--accent-dim);
   --color-accent-subtle: var(--accent-subtle);
-
-  /* Secondary accent retired — informational cyan stays fixed */
-  --color-accent-secondary: #22d3ee;
-  --color-accent-secondary-subtle: rgba(34, 211, 238, 0.1);
 
   --color-accent-primary: var(--color-accent);
 
@@ -92,7 +76,6 @@
   --color-border-medium: #1d1d1d;
   --color-border-strong: #2a2a2a;
   --color-border-accent: color-mix(in srgb, var(--accent) 30%, transparent);
-  --border-default: #1d1d1d;
   --border-subtle: #161616;
   --border-medium: 1px solid #1d1d1d;
   --border-strong: 1px solid #2a2a2a;

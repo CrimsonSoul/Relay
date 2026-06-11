@@ -138,7 +138,7 @@ describe('AlertForm', () => {
     expect(timezoneSelect).toContain('padding-right: 46px');
     expect(timezoneSelect).toContain('appearance: none');
     expect(timezoneSelect).toContain('background-position: right 18px center');
-    expect(brandingToggle).toContain('border-radius: 6px');
+    expect(brandingToggle).toContain('border-radius: 2px');
   });
 
   it('renders the severity selector', () => {

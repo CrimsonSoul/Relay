@@ -50,7 +50,7 @@
 
 .cloud-status__updated {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   white-space: nowrap;
 }
@@ -590,7 +590,7 @@
 
 .cloud-status-item__time {
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-size: var(--text-xs);
   white-space: nowrap;
 }

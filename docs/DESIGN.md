@@ -170,14 +170,16 @@ Call it once at renderer startup.
 
 These colors are **never** changed by accent scheme selection:
 
-| Token                    | Value                               | Use                           |
-| ------------------------ | ----------------------------------- | ----------------------------- |
-| `--alarm`                | `#ff4539`                           | Genuine system problems only  |
-| `--alarm-bright`         | `#ff6b61`                           | Alarm hover / text on dark    |
-| `--alarm-dim`            | `color-mix(alarm 12%, transparent)` | Alarm fill tint               |
-| `--ok`                   | `#2bb24c`                           | Positive / resolved / healthy |
-| `--color-warning`        | `#ffb000`                           | Non-critical caution          |
-| `--color-warning-subtle` | `rgba(255,176,0,0.12)`              | Warning tint background       |
+| Token                    | Value                               | Use                                                       |
+| ------------------------ | ----------------------------------- | --------------------------------------------------------- |
+| `--alarm`                | `#ff4539`                           | Genuine system problems only                              |
+| `--alarm-bright`         | `#ff6b61`                           | Alarm hover / text on dark                                |
+| `--alarm-dim`            | `color-mix(alarm 12%, transparent)` | Alarm fill tint                                           |
+| `--ok`                   | `#2bb24c`                           | Positive / resolved / healthy                             |
+| `--color-warning`        | `#ffb000`                           | Non-critical caution                                      |
+| `--color-warning-subtle` | `rgba(255,176,0,0.12)`              | Warning tint background                                   |
+| `--info`                 | `#1565c0`                           | Informational blue (matches the email card's INFO banner) |
+| `--info-bright`          | `#42a5f5`                           | Info lifted for black-ink fills / text on dark            |
 
 **Rule:** use `--alarm` only when the user has a real problem to act on. Never use it
 for decorative highlights. Never use `--accent` for severity or urgency signals.
@@ -190,16 +192,17 @@ accent or alarm logic.
 
 ## 7. Chips
 
-Chips are square (2 px border-radius), compact label badges with three modes:
+Chips are square (2 px border-radius), compact label badges with four modes:
 
-| Mode                        | Style                                                                     | Example use                                                                  |
-| --------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| **Informational** (outline) | `border: 1px solid --color-border-strong`, transparent bg, secondary text | `.contact-entry-chip` unselected state                                       |
-| **Featured** (accent)       | `background: --accent-dim`, `color: --accent-bright`, no border           | `.contact-entry-chip` selected; `.popout-alert-chip--info`; `.toolbar-badge` |
-| **Alarm** (solid)           | `background: --alarm`, `color: #000`, `font-weight: 800`                  | `.popout-alert-chip--danger`; alarm action chips                             |
+| Mode                        | Style                                                                                                                                         | Example use                                                                  |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Informational** (outline) | `border: 1px solid --color-border-strong`, transparent bg, secondary text                                                                     | `.contact-entry-chip` unselected state                                       |
+| **Featured** (accent)       | `background: --accent-dim`, `color: --accent-bright`, no border                                                                               | `.contact-entry-chip` selected; `.popout-alert-chip--info`; `.toolbar-badge` |
+| **Alarm** (solid)           | `background: --alarm`, `color: #000`, `font-weight: 800`                                                                                      | `.popout-alert-chip--danger`; alarm action chips                             |
+| **Severity** (solid fills)  | Fixed severity token as solid fill with `#000` ink, `font-weight: 800` — includes the INFO solid (`background: --info-bright`, `color: #000`) | Severity chips in alert history and the alerts form                          |
 
-Chips should not use custom fills outside these three modes. Alarm chips always use
-`#000` for their label text (not `--on-accent`).
+Chips should not use custom fills outside these four modes. Solid chips (alarm and
+severity fills) always use `#000` for their label text (not `--on-accent`).
 
 ---
 
@@ -209,12 +212,12 @@ Chips should not use custom fills outside these three modes. Alarm chips always 
 
 All four variants use 2 px border-radius and `font-weight: 700`:
 
-| Variant   | Background  | Border                  | Text color                                  |
-| --------- | ----------- | ----------------------- | ------------------------------------------- |
-| `default` | transparent | `--color-border-strong` | `--color-text-secondary` → primary on hover |
-| `primary` | `--accent`  | `--accent`              | `--on-accent` (`#000`), weight 800          |
-| `ghost`   | transparent | transparent             | `--color-text-tertiary` → primary on hover  |
-| `danger`  | `--alarm`   | `--alarm`               | `#000000`, weight 800; fixed — not themed   |
+| Variant               | Background  | Border                  | Text color                                  |
+| --------------------- | ----------- | ----------------------- | ------------------------------------------- |
+| `secondary` (default) | transparent | `--color-border-strong` | `--color-text-secondary` → primary on hover |
+| `primary`             | `--accent`  | `--accent`              | `--on-accent` (`#000`), weight 800          |
+| `ghost`               | transparent | transparent             | `--color-text-tertiary` → primary on hover  |
+| `danger`              | `--alarm`   | `--alarm`               | `#000000`, weight 800; fixed — not themed   |
 
 Sizes:
 
@@ -247,10 +250,13 @@ On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 ### Fonts
 
 - **UI font:** `Outfit Variable` — loaded as variable font; fallback `Outfit, sans-serif`
-- **Mono font:** `JetBrains Mono` — reserved for technical values: clocks/timestamps,
-  URLs, ports, data paths, and IDs
-- **Person-data numerics** (phone numbers, shift time windows) use the UI font with
-  `font-variant-numeric: tabular-nums` — aligned digits without the code texture
+- **Mono font:** `JetBrains Mono` — reserved for genuinely technical surfaces only:
+  the kiosk clock (`.popout-kiosk-timestamp`), `kbd`/`code`/`pre` and keycap chips
+  (`.shortcuts-modal-key`), host:port addresses (`.setup-config__discover-addr`),
+  data paths, and the fenced email-preview content in `alerts.css`
+- **Everything else uses the UI font** — including timestamps, dates, counts, phone
+  numbers, and shift time windows. Numeric values get
+  `font-variant-numeric: tabular-nums` for aligned digits without the code texture
 
 ### Fluid Scale
 
@@ -296,6 +302,10 @@ Everything within those fences is **exported content** — the white-canvas emai
 preview card that matches the actual sent alert email. Its hardcoded colors (white
 background, dark text, literal severity colors) are correct and intentional. Never
 apply ink tokens, accent variables, or theme changes inside these fences.
+
+The card's base font rides `--font-family-base` and so moved to Outfit with the
+redesign; this is intentional. The fenced rules themselves are unchanged from the
+pre-redesign baseline.
 
 ---
 

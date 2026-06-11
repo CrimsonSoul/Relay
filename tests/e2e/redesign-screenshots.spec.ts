@@ -378,10 +378,9 @@ test.describe('Redesign screenshot harness', () => {
       const settingsBtnFont = await window.evaluate(() => {
         const btn = globalThis.document.querySelector(
           '[data-testid="sidebar-settings"] ~ * button, .settings-modal button',
-        ) as any;
+        );
         if (!btn) return null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return (globalThis.getComputedStyle(btn) as any).fontFamily as string;
+        return globalThis.getComputedStyle(btn).fontFamily;
       });
       if (settingsBtnFont !== null) {
         expect(settingsBtnFont).toMatch(/Outfit/i);

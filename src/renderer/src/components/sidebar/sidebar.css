@@ -53,7 +53,10 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
   user-select: none;
   border: none;
   width: 100%;
@@ -86,7 +89,10 @@
   position: relative;
   overflow: hidden;
   border: 1px solid transparent;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
   color: var(--item-text);
   background: var(--item-bg);
   border-color: var(--item-border);
@@ -149,7 +155,7 @@
   font-weight: 700;
   padding-left: 6px;
   flex-shrink: 0;
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--item-text);
 }
 
