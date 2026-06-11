@@ -285,9 +285,7 @@ export function MainApp({
 
           <div className="content-view">
             {mountedTabs.has('Compose') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Compose' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <AssemblerTab
                     groups={data.groups}
@@ -308,9 +306,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('Personnel') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Personnel' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <PersonnelTab
@@ -324,9 +320,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('People') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'People' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'People' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <DirectoryTab
@@ -340,9 +334,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('Servers') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Servers' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <ServersTab servers={data.servers} contacts={data.contacts} />
@@ -351,9 +343,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('Notes') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Notes' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <NotesTab />
@@ -362,9 +352,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('Status') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Status' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Status' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <CloudStatusTab
@@ -377,9 +365,7 @@ export function MainApp({
               </div>
             )}
             {mountedTabs.has('Alerts') && (
-              <div
-                className={`tab-panel animate-fade-in${activeTab === 'Alerts' ? ' tab-panel--active' : ''}`}
-              >
+              <div className={`tab-panel${activeTab === 'Alerts' ? ' tab-panel--active' : ''}`}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <AlertsTab

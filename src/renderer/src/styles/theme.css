@@ -2,47 +2,39 @@
   /* === Relay Theme === */
   /* Signal Sans — Signal Red Accent */
 
-  /* Background System */
-  --color-bg-app: #070810;
-  --color-bg-surface: #0c0e15;
-  --color-bg-surface-2: #10131b;
-  --color-bg-surface-3: #151821;
-  --color-bg-surface-opaque: #0c0e15;
-  --color-bg-surface-elevated: #151821;
-  --color-bg-card: #0c0e15;
-  --color-bg-card-hover: #10131b;
-  --color-bg-sidebar: #0c0e15;
-  --color-bg-chrome: #0c0e15;
+  /* Background System — pure black canvas */
+  --color-bg-app: #000000;
+  --color-bg-surface: #0a0a0a;
+  --color-bg-surface-2: #111111;
+  --color-bg-surface-3: #161616;
+  --color-bg-surface-opaque: #0a0a0a;
+  --color-bg-surface-elevated: #161616;
+  --color-bg-card: transparent;
+  --color-bg-card-hover: #111111;
+  --color-bg-sidebar: #000000;
+  --color-bg-chrome: #000000;
   color-scheme: dark;
 
-  /* App-specific tokens for parity */
-  --app-bg: #070810;
-  --app-surface: #0c0e15;
-  --app-surface-2: #10131b;
-  --app-surface-3: #151821;
-  --app-border: rgba(255, 255, 255, 0.08);
-  --app-text: #eef0f6;
-  --app-muted: #8892a6;
-  --app-accent: #e11d48;
-  --app-accent-strong: #fb7185;
-  --app-accent-soft: rgba(225, 29, 72, 0.1);
+  /* Text — dimming tiers; quaternary is the legibility floor */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #bdbdbd;
+  --color-text-tertiary: #8a8a8a;
+  --color-text-quaternary: #767676;
 
-  /* Text */
-  --color-text-primary: #eef0f6;
-  --color-text-secondary: #8892a6;
-  --color-text-tertiary: #6b7a90;
-  --color-text-quaternary: #8892a6;
+  /* Accent — swappable via data-accent on <html>; red is the default */
+  --accent: #e63946;
+  --accent-hover: #f25c67;
+  --accent-bright: #ff7b85;
+  --accent-dim: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-subtle: color-mix(in srgb, var(--accent) 6%, transparent);
+  --on-accent: #000000;
 
-  /* Accent - Signal Red */
-  --color-accent: #e11d48;
-  --color-accent-hover: #be123c;
-  --color-accent-text: #fb7185;
-  --color-accent-dim: rgba(225, 29, 72, 0.1);
-  --color-accent-subtle: rgba(225, 29, 72, 0.05);
-
-  /* Secondary Accent - Cyan (informational/navigational) */
-  --color-accent-secondary: #06b6d4;
-  --color-accent-secondary-subtle: rgba(6, 182, 212, 0.1);
+  /* Legacy aliases — keep every existing var name working */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-text: var(--accent-bright);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-subtle: var(--accent-subtle);
 
   --color-accent-primary: var(--color-accent);
 
@@ -61,31 +53,38 @@
   --color-group-warn-text: #fde047;
   --color-group-warn-dim: rgba(234, 179, 8, 0.1);
 
-  /* Semantic Colors */
-  --color-accent-green: #22c55e;
-  --color-accent-green-subtle: rgba(34, 197, 94, 0.12);
-  --color-danger: #ef4444;
-  --color-danger-hover: #f87171;
-  --color-danger-subtle: rgba(239, 68, 68, 0.12);
-  --color-warning: #e11d48;
-  --color-warning-subtle: rgba(225, 29, 72, 0.15);
+  /* Semantic Colors — FIXED, never themed by accent scheme */
+  --alarm: #ff4539;
+  --alarm-bright: #ff6b61;
+  --alarm-dim: color-mix(in srgb, var(--alarm) 12%, transparent);
+  --ok: #2bb24c;
+  --color-accent-green: var(--ok);
+  --color-accent-green-subtle: color-mix(in srgb, var(--ok) 12%, transparent);
+  --color-danger: var(--alarm);
+  --color-danger-hover: var(--alarm-bright);
+  --color-danger-subtle: var(--alarm-dim);
+  --color-warning: #ffb000;
+  --color-warning-subtle: rgba(255, 176, 0, 0.12);
+  /* Info blue — matches the alert email card's INFO banner (#1565c0).
+     --info-bright is the same hue lifted for black-ink fills (≥7:1 on #000 text). */
+  --info: #1565c0;
+  --info-bright: #42a5f5;
 
-  /* Borders */
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-border-subtle: rgba(255, 255, 255, 0.05);
-  --color-border-medium: rgba(255, 255, 255, 0.08);
-  --color-border-strong: rgba(255, 255, 255, 0.16);
-  --color-border-accent: rgba(225, 29, 72, 0.3);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-medium: 1px solid rgba(255, 255, 255, 0.08);
-  --border-strong: 1px solid rgba(255, 255, 255, 0.16);
+  /* Borders — opaque grays on black */
+  --color-border: #1d1d1d;
+  --color-border-subtle: #161616;
+  --color-border-medium: #1d1d1d;
+  --color-border-strong: #2a2a2a;
+  --color-border-accent: color-mix(in srgb, var(--accent) 30%, transparent);
+  --border-subtle: #161616;
+  --border-medium: 1px solid #1d1d1d;
+  --border-strong: 1px solid #2a2a2a;
 
   /* Overlay / Interaction */
-  --color-hover-overlay: rgba(255, 255, 255, 0.02);
-  --color-hover-overlay-strong: rgba(255, 255, 255, 0.04);
-  --color-active-overlay: rgba(255, 255, 255, 0.06);
-  --color-backdrop: rgba(0, 0, 0, 0.42);
+  --color-hover-overlay: rgba(255, 255, 255, 0.04);
+  --color-hover-overlay-strong: rgba(255, 255, 255, 0.07);
+  --color-active-overlay: rgba(255, 255, 255, 0.1);
+  --color-backdrop: rgba(0, 0, 0, 0.8);
   --color-divider: rgba(255, 255, 255, 0.025);
   --color-focus-ring: rgba(255, 255, 255, 0.22);
   --color-scrollbar: rgba(255, 255, 255, 0.22);
@@ -100,14 +99,14 @@
   --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.5);
 
   /* Typography */
-  --font-family-base: 'Instrument Sans Variable', 'Instrument Sans', sans-serif;
+  --font-family-base: 'Outfit Variable', 'Outfit', sans-serif;
   --font-family-mono: 'JetBrains Mono', monospace;
 
   /* Font Size Scale — balanced for 10ft/55" and 1ft/24" at 1080p
      At 1920px: 2xs≈14px, xs≈15px, sm≈17px, base≈20px, lg≈27px */
-  --text-2xs: clamp(12px, 0.72vw, 14px);
-  --text-xs: clamp(13px, 0.8vw, 16px);
-  --text-sm: clamp(14px, 0.9vw, 18px);
+  --text-2xs: clamp(13px, 0.72vw, 14px);
+  --text-xs: clamp(14px, 0.8vw, 16px);
+  --text-sm: clamp(15px, 0.9vw, 18px);
   --text-base: clamp(16px, 1.05vw, 20px);
   --text-md: clamp(18px, 1.2vw, 23px);
   --text-lg: clamp(20px, 1.4vw, 27px);
@@ -115,6 +114,7 @@
   --text-2xl: clamp(28px, 2vw, 40px);
   --text-3xl: clamp(34px, 2.6vw, 50px);
   --text-4xl: clamp(42px, 3.2vw, 62px);
+  --text-display: clamp(34px, 3vw, 56px);
 
   /* Line Heights */
   --leading-tight: 1.15;
@@ -177,10 +177,51 @@
   --transition-micro: 0.1s ease-out;
 
   /* Layout */
-  --sidebar-width-collapsed: 110px;
+  --sidebar-width-collapsed: 136px;
   --header-height: 56px;
 
   --chrome-bg: var(--color-bg-chrome);
+}
+
+/* === Accent Schemes (set via data-accent on <html>) ===
+   Only the three base colors vary; dims derive via color-mix in :root.
+   Tuned for ≥4.5:1 of --accent-bright text on #000. */
+:root[data-accent='red'] {
+  --accent: #e63946;
+  --accent-hover: #f25c67;
+  --accent-bright: #ff7b85;
+}
+
+/* True orange — kept distinct from --alarm (#ff4539 red-orange)
+   and --color-warning (#ffb000 amber) */
+:root[data-accent='orange'] {
+  --accent: #f97316;
+  --accent-hover: #fb923c;
+  --accent-bright: #fdba74;
+}
+
+:root[data-accent='blue'] {
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-bright: #7ab8ff;
+}
+
+:root[data-accent='green'] {
+  --accent: #22c55e;
+  --accent-hover: #4ade80;
+  --accent-bright: #5ef098;
+}
+
+:root[data-accent='pink'] {
+  --accent: #ec4899;
+  --accent-hover: #f472b6;
+  --accent-bright: #ff8cc6;
+}
+
+:root[data-accent='purple'] {
+  --accent: #a855f7;
+  --accent-hover: #c084fc;
+  --accent-bright: #cf9bff;
 }
 
 * {
@@ -229,6 +270,21 @@ body {
   height: 100vh;
 }
 
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+  letter-spacing: inherit;
+}
+
+kbd,
+code,
+pre {
+  font-family: var(--font-family-mono);
+}
+
 .app-container {
   display: flex;
   height: 100dvh;
@@ -267,7 +323,7 @@ body {
   background-color: var(--chrome-bg);
   -webkit-app-region: drag;
   flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* Reserve space for window controls on Windows/Linux */
@@ -284,9 +340,9 @@ body {
 .header-breadcrumb {
   font-size: var(--text-base);
   font-weight: 800;
-  color: var(--color-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  color: var(--accent);
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
 }
 
 .header-search-container {

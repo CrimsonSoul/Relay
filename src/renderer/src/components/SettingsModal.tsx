@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import type { PublicRelayConfig } from '@shared/ipc';
+import { ACCENT_SCHEMES, getStoredAccent, setAccent, type AccentId } from '../theme/accent';
 
 type Props = {
   isOpen: boolean;
@@ -20,6 +21,12 @@ export const SettingsModal: React.FC<Props> = ({
 }) => {
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
+  const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
+
+  const handleAccentSelect = (id: AccentId) => {
+    setAccent(id);
+    setAccentState(id);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -62,6 +69,28 @@ export const SettingsModal: React.FC<Props> = ({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
       <div className="settings-body">
+        <div className="settings-section">
+          <div className="settings-section-heading">Accent Color</div>
+          <div className="accent-picker" role="radiogroup" aria-label="Accent color">
+            {ACCENT_SCHEMES.map((scheme) => (
+              <button
+                key={scheme.id}
+                type="button"
+                role="radio"
+                aria-checked={accent === scheme.id}
+                title={scheme.label}
+                className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
+                style={{ ['--swatch' as string]: scheme.swatch }}
+                onClick={() => handleAccentSelect(scheme.id)}
+              >
+                <span className="accent-picker-swatch-label">{scheme.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-divider" />
+
         {onOpenDataManager && (
           <>
             <div className="settings-section">

@@ -10,7 +10,6 @@ import {
   NotesIcon,
   StatusIcon,
   SettingsIcon,
-  AppIcon,
 } from './sidebar/SidebarIcons';
 
 interface SidebarProps {
@@ -41,9 +40,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
         className="sidebar-app-icon interactive"
         aria-label="Go to Compose tab"
       >
-        <span id="app-icon-inner" className="sidebar-app-icon-inner">
-          <AppIcon />
-        </span>
         <span className="sidebar-app-icon-label">Relay</span>
       </button>
 

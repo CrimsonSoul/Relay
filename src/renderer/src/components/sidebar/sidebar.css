@@ -1,24 +1,26 @@
-/* Sidebar App Icon */
+/* Sidebar App Icon — brand block: white wordmark + accent period, dimmed glyph.
+   Left-aligned flush with the nav labels (8px button margin + 4px rail + 10px pad). */
 .sidebar-app-icon {
   width: 100%;
-  padding: 46px 0 12px;
+  padding: 46px 0 14px 22px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--color-border);
   -webkit-app-region: no-drag;
-  transition: background 0.15s;
-  color: var(--color-accent);
+  color: var(--color-text-tertiary);
   cursor: pointer;
   position: relative;
   border-radius: 0;
+  transition: color 0.15s;
 }
 
 .sidebar-app-icon:hover {
-  background: var(--color-bg-card-hover);
+  background: transparent;
+  color: var(--color-text-secondary);
 }
 
 .platform-win32 .sidebar-app-icon {
@@ -26,20 +28,18 @@
 }
 
 .sidebar-app-icon-label {
-  font-size: var(--text-2xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-accent);
-  opacity: 0.9;
+  font-size: var(--text-lg);
+  font-weight: 800;
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
   line-height: 1;
 }
 
-.sidebar-app-icon-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.3s ease;
+.sidebar-app-icon-label::after {
+  content: '.';
+  color: var(--accent);
+  font-weight: 800;
 }
 
 /* ===========================
@@ -53,7 +53,10 @@
   align-items: center;
   justify-content: center;
   background: transparent;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
   user-select: none;
   border: none;
   width: 100%;
@@ -62,18 +65,6 @@
   outline: none;
   overflow: hidden;
   min-height: 30px;
-}
-
-.sidebar-item:hover {
-  transform: translateX(2px);
-}
-
-.sidebar-item--active {
-  transform: translateX(2px);
-}
-
-.sidebar-item--active:hover {
-  transform: translateX(2px);
 }
 
 .sidebar-item-inner {
@@ -90,7 +81,7 @@
   gap: 10px;
   font-size: var(--text-sm);
   padding: 8px 12px 8px 16px;
-  border-radius: 10px;
+  border-radius: 0;
   font-weight: 600;
   max-width: 100%;
   width: 100%;
@@ -98,14 +89,13 @@
   position: relative;
   overflow: hidden;
   border: 1px solid transparent;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    color 0.2s,
+    background-color 0.2s,
+    border-color 0.2s;
   color: var(--item-text);
   background: var(--item-bg);
   border-color: var(--item-border);
-}
-
-.sidebar-item:hover .sidebar-item-label {
-  filter: brightness(1.05);
 }
 
 /* Active: colored wash + size bump for clarity */
@@ -120,7 +110,7 @@
   position: absolute;
   inset: 0;
   background: currentColor;
-  opacity: 0.12;
+  opacity: 0.08;
   border-radius: inherit;
   pointer-events: none;
 }
@@ -141,7 +131,7 @@
   transition:
     opacity 0.25s ease,
     width 0.25s ease,
-    filter 0.25s ease;
+    background-color 0.2s ease;
   background: var(--item-fill);
 }
 
@@ -154,8 +144,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  letter-spacing: 0;
   font-size: var(--text-xs);
 }
 
@@ -165,7 +155,7 @@
   font-weight: 700;
   padding-left: 6px;
   flex-shrink: 0;
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--item-text);
 }
 
@@ -174,7 +164,7 @@
    =========================== */
 .sidebar {
   width: var(--sidebar-width-collapsed);
-  background-color: var(--color-bg-surface);
+  background-color: var(--color-bg-sidebar);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -215,96 +205,84 @@
    ============================================================================ */
 
 .sidebar-button {
-  --sidebar-button-width: 80px;
-  --sidebar-button-height: 64px;
+  --sidebar-button-width: 120px;
+  --sidebar-button-height: 56px;
 
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  flex: 0 0 var(--sidebar-button-height);
+  flex: none;
   width: var(--sidebar-button-width);
   height: var(--sidebar-button-height);
   box-sizing: border-box;
   margin: 0 auto;
-  padding: 8px 4px;
-  gap: 4px;
+  padding: 8px 10px;
+  gap: 2px;
   background: transparent;
   border: none;
+  border-left: 4px solid transparent;
   cursor: pointer;
   position: relative;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-quaternary);
   transition:
-    background 0.15s,
     color 0.15s,
-    box-shadow 0.15s;
-  border-radius: 8px;
+    border-color 0.15s;
+  border-radius: 0;
   outline: none;
-  box-shadow: none;
   overflow: hidden;
 }
 
 .sidebar-button:hover {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  background: transparent;
 }
 
 .sidebar-button--active {
-  background: var(--color-accent-dim);
-  color: var(--color-accent-text);
+  background: transparent;
+  color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 .sidebar-button-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  opacity: 0.6;
   transition: color 0.15s;
 }
 
 .sidebar-button-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   stroke-width: 1.8;
 }
 
-.sidebar-button:hover .sidebar-button-icon {
-  color: var(--color-text-secondary);
-}
-
 .sidebar-button--active .sidebar-button-icon {
-  color: var(--color-accent-text);
+  color: var(--accent);
+  opacity: 1;
 }
 
 .sidebar-button-label {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: lowercase;
   color: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: calc(var(--sidebar-button-width) - 4px);
+  max-width: calc(var(--sidebar-button-width) - 24px);
   transition: color 0.15s;
-  line-height: 1;
-}
-
-.sidebar-button:hover .sidebar-button-label {
-  color: var(--color-text-secondary);
+  line-height: 1.1;
 }
 
 .sidebar-button--active .sidebar-button-label {
-  color: var(--color-accent-text);
+  font-weight: 800;
 }
 
 .sidebar-button-indicator {
-  position: absolute;
-  left: -8px;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  background: var(--color-accent);
-  border-radius: 2px;
+  display: none;
 }

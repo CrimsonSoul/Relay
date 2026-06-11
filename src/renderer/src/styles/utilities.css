@@ -3,15 +3,56 @@
    =========================== */
 
 /* ===========================
+   Ink display headings — giant lowercase with accent period
+   =========================== */
+.display-heading,
+.collapsible-header-title {
+  font-size: var(--text-display);
+  font-weight: 200;
+  text-transform: lowercase;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+
+.display-heading::after,
+.collapsible-header-title::after {
+  content: '.';
+  color: var(--accent);
+  font-weight: 800;
+  transition: color 0.2s ease;
+}
+
+/* === Ink edge-rails — the signature row/card treatment === */
+.ink-rail {
+  background: transparent;
+  border: none;
+  border-left: 4px solid var(--color-border-strong);
+  border-radius: 0;
+  padding-left: 14px;
+  transition: border-color 0.2s ease;
+}
+
+.ink-rail--accent {
+  border-left-color: var(--accent);
+}
+
+.ink-rail--alarm {
+  border-left-color: var(--alarm);
+}
+
+/* ===========================
    Unified Card System
    =========================== */
 .card-surface {
   background-color: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 2px;
   position: relative;
   overflow: hidden;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
 .card-surface:hover {
@@ -19,22 +60,15 @@
   border-color: var(--color-border-strong);
 }
 
-/* Accent strip for left border */
+/* Accent strip for left border — superseded by .ink-rail; kept for compat */
 .accent-strip {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
-  opacity: 0.8;
-  border-radius: 10px 0 0 10px;
-  transition:
-    opacity 0.25s ease,
-    filter 0.25s ease;
-}
-
-.card-surface:hover .accent-strip {
+  width: 4px;
   opacity: 1;
+  border-radius: 0;
 }
 
 /* Text truncation */

@@ -3,13 +3,11 @@
   position: fixed;
   inset: 0;
   background: var(--color-backdrop);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: var(--z-critical);
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.15s ease-out;
 }
 
 .overlay-hitbox {
@@ -24,15 +22,16 @@
 .modal-container {
   width: 100%;
   max-width: 520px;
-  background-color: var(--color-bg-surface);
+  background-color: var(--color-bg-surface-elevated);
   border-radius: 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   padding: 0;
   margin: 0;
   box-shadow: var(--shadow-modal);
   overflow: hidden;
   position: relative;
   z-index: 1;
+  animation: scaleIn 0.2s ease-out;
 }
 
 /* Modal Header */
@@ -50,7 +49,7 @@
 .modal-icon-wrapper {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 2px;
   background: var(--color-accent-dim);
   color: var(--color-accent);
   display: flex;
@@ -60,7 +59,7 @@
 
 .modal-title-main {
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
@@ -76,11 +75,14 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 6px;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s ease;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .modal-close-btn:hover {
@@ -97,11 +99,11 @@
 .modal-label {
   display: block;
   font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-text-secondary);
+  font-weight: 800;
+  color: var(--color-text-tertiary);
   margin-bottom: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.12em;
 }
 
 .modal-textarea {
@@ -109,9 +111,9 @@
   min-height: 100px;
   padding: 12px;
   font-size: var(--text-base);
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-medium);
-  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   color: var(--color-text-primary);
   resize: vertical;
   font-family: inherit;
@@ -136,9 +138,9 @@
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: var(--color-accent-dim);
-  color: var(--color-accent-hover);
-  border-radius: 6px;
+  background: var(--accent-dim);
+  color: var(--accent-bright);
+  border-radius: 2px;
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -166,9 +168,9 @@
   flex: 1;
   padding: 10px 14px;
   font-size: var(--text-base);
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-medium);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   color: var(--color-text-primary);
   font-family: inherit;
   outline: none;
@@ -184,9 +186,11 @@
   font-size: var(--text-base);
   font-weight: 600;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .tag-add-btn:disabled {
@@ -196,12 +200,12 @@
 }
 
 .tag-add-btn:not(:disabled) {
-  background: var(--color-accent-dim);
-  color: var(--color-accent-hover);
+  background: var(--accent-dim);
+  color: var(--accent-bright);
 }
 
 .tag-add-btn:not(:disabled):hover {
-  background: rgba(225, 29, 72, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 /* Modal Footer */
@@ -217,38 +221,42 @@
   padding: 0 18px;
   height: 38px;
   font-size: var(--text-base);
-  font-weight: 600;
-  background: var(--app-surface-3);
+  font-weight: 700;
+  background: transparent;
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-focus-ring);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .btn-cancel:hover {
-  background: var(--app-surface-3);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
-  border-color: var(--color-scrollbar-hover);
+  border-color: var(--color-text-tertiary);
 }
 
 .btn-save {
   padding: 0 20px;
   height: 38px;
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: 800;
   background: var(--color-accent);
-  color: #000000;
+  color: var(--on-accent);
   border: 1px solid var(--color-accent);
-  border-radius: 10px;
+  border-radius: 2px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .btn-save:hover:not(:disabled) {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
-  transform: translateY(-1px);
 }
 
 .btn-save:disabled {
@@ -264,20 +272,17 @@
   right: 0;
   bottom: 0;
   background: var(--color-backdrop);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: var(--z-critical);
-  transition: all var(--transition-premium);
 }
 
 .modal-dialog-generic {
   margin: 0;
   padding: 0;
-  background-color: var(--color-bg-surface-opaque);
-  border: var(--border-medium);
+  background-color: var(--color-bg-surface-elevated);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-xl);
   max-width: 90vw;
   max-height: 85vh;
@@ -300,7 +305,7 @@
 
 .modal-header-generic {
   padding: 24px 28px;
-  border-bottom: var(--border-subtle);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -311,7 +316,7 @@
 .modal-title-generic {
   margin: 0;
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
 }
@@ -322,11 +327,14 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: var(--space-2);
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast),
+    background var(--transition-fast);
   outline: none;
 }
 
@@ -353,6 +361,8 @@
   max-height: 420px;
   display: flex;
   flex-direction: column;
+  transform-origin: top center;
+  animation: scaleIn 0.15s ease-out;
 }
 
 .search-dropdown-context {
@@ -360,8 +370,8 @@
   font-size: var(--text-xs);
   color: var(--color-accent);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-weight: 800;
   border-bottom: 1px solid var(--color-border-subtle);
 }
 
@@ -380,7 +390,7 @@
 .search-dropdown-hitbox {
   width: 100%;
   padding: 10px 14px;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   min-height: 48px;
   cursor: pointer;
   display: flex;
@@ -403,7 +413,7 @@
 
 .search-dropdown-item.is-selected .search-dropdown-hitbox {
   background: var(--color-accent-subtle);
-  border-color: rgba(225, 29, 72, 0.2);
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .search-dropdown-result-icon {
@@ -451,7 +461,7 @@
 .kbd-key {
   background: var(--color-bg-surface-elevated);
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   padding: 3px 8px;
   font-family: inherit;
   font-size: var(--text-sm);

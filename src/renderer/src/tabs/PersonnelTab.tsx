@@ -134,7 +134,7 @@ export const PersonnelTab: React.FC<{
     if (!node) return;
     const width = node.clientWidth;
     if (width < 1) return;
-    const minCol = 340;
+    const minCol = 320;
     const gap = 24;
     const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
     setColumnCount((prev) => (prev === next ? prev : next));
@@ -231,7 +231,7 @@ export const PersonnelTab: React.FC<{
               className={`card-surface personnel-alert-btn ${isDanger ? 'personnel-alert-btn--danger' : 'personnel-alert-btn--info'}`}
             >
               <span
-                className={`animate-active-indicator personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
+                className={`personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
               />
               {config.label}
             </button>

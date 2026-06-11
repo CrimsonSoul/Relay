@@ -55,7 +55,7 @@ export const TeamRow: React.FC<TeamRowProps> = React.memo(
       <div className={rowClassName}>
         <div className="team-row-top">
           <div className="team-row-name-wrapper">
-            {isActive && <span className="team-row-active-indicator animate-active-indicator" />}
+            {isActive && <span className="team-row-active-indicator" />}
             <Tooltip content={row.name || ''}>
               <span className={`team-row-name${row.name ? '' : ' team-row-name--empty'}`}>
                 {displayName}
