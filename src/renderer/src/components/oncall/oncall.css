@@ -17,7 +17,7 @@
 }
 
 .sortable-edit-row-grid:hover {
-  background: #111;
+  background: var(--color-bg-card-hover);
 }
 
 .sortable-edit-row-handle {
@@ -538,7 +538,7 @@
 }
 
 .card-surface.team-card-body:hover {
-  background: #111;
+  background: var(--color-bg-card-hover);
   border-left-color: var(--color-border-strong);
   box-shadow: none;
 }
@@ -673,7 +673,7 @@
 }
 
 .oncall-masonry-item > [aria-roledescription='sortable'][aria-pressed='true'] {
-  background: #111 !important;
+  background: var(--color-bg-card-hover) !important;
   box-shadow: inset 4px 0 0 var(--accent) !important;
 }
 

@@ -116,7 +116,7 @@
 
 .assembler-sidebar-add-btn:hover {
   color: var(--accent-bright);
-  background: #111;
+  background: var(--color-bg-card-hover);
 }
 
 .assembler-sidebar-group-list {
@@ -200,7 +200,7 @@
 }
 
 .bridge-history-entry:hover {
-  background: #111;
+  background: var(--color-bg-card-hover);
   border-left-color: var(--accent);
 }
 
@@ -441,7 +441,7 @@
 .composition-list-empty-action:hover {
   color: var(--color-text-primary);
   border-color: var(--accent);
-  background: #111;
+  background: var(--color-bg-card-hover);
 }
 
 .composition-list-container {
@@ -491,14 +491,14 @@
   width: 100%;
 }
 .sig-grp:hover {
-  background: #111;
+  background: var(--color-bg-card-hover);
 }
 .sig-grp--on {
   background: transparent;
   border-left-color: var(--accent);
 }
 .sig-grp--on:hover {
-  background: #111;
+  background: var(--color-bg-card-hover);
 }
 .sig-grp-check {
   width: 20px;

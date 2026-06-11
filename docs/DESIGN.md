@@ -52,10 +52,10 @@ Large section titles follow the ink heading pattern:
 - `letter-spacing: -0.02em`
 - Accent period appended via `::after { content: '.'; color: var(--accent); font-weight: 800 }`
 
-Two shared classes apply the full pattern:
+**Reference utilities** defining the canonical pattern:
 
-- **`.display-heading`** — standalone section headings (`utilities.css`)
-- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (defined in both `utilities.css` and `components.css`)
+- **`.display-heading`** — standalone section headings (`utilities.css`); existing components implement the same declarations locally — use the utility class for new work
+- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (reference utility in `utilities.css`); existing components implement the same declarations locally — use the utility class for new work
 
 **Moderated variant — `.toolbar-title`** (`components.css`): same weight-200 lowercase
 style but at `var(--text-xl)` (`clamp(24px, 1.6vw, 32px)`), used in list toolbar
@@ -65,8 +65,8 @@ contexts where a full display-size heading would be too large.
 
 ## 3. Edge-Rail Pattern
 
-`.ink-rail` is the primary row/card treatment — a 4 px left border with no box
-background:
+**Reference utility** — `.ink-rail` defines the canonical row/card treatment — a 4 px left border with no box
+background; existing components implement the same declarations locally — use the utility class for new work:
 
 ```css
 .ink-rail                /* neutral: border-left: 4px solid var(--color-border-strong) */

@@ -1108,20 +1108,8 @@ body.modal-open {
 }
 
 .collapsible-header-title {
-  font-size: var(--text-display);
-  font-weight: 200;
-  text-transform: lowercase;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: var(--color-text-primary);
   margin: 0;
   white-space: nowrap;
-}
-
-.collapsible-header-title::after {
-  content: '.';
-  color: var(--accent);
-  font-weight: 800;
 }
 
 .collapsible-header-subtitle {
