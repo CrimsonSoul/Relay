@@ -231,7 +231,7 @@ export const PersonnelTab: React.FC<{
               className={`card-surface personnel-alert-btn ${isDanger ? 'personnel-alert-btn--danger' : 'personnel-alert-btn--info'}`}
             >
               <span
-                className={`animate-active-indicator personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
+                className={`personnel-alert-indicator ${isDanger ? 'personnel-alert-indicator--danger' : 'personnel-alert-indicator--info'}`}
               />
               {config.label}
             </button>

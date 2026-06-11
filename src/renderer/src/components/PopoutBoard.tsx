@@ -126,7 +126,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
               className={`card-surface popout-alert-chip ${isDanger ? 'popout-alert-chip--danger' : 'popout-alert-chip--info'}`}
             >
               <span
-                className={`animate-active-indicator popout-alert-indicator ${isDanger ? 'popout-alert-indicator--danger' : 'popout-alert-indicator--info'}`}
+                className={`popout-alert-indicator ${isDanger ? 'popout-alert-indicator--danger' : 'popout-alert-indicator--info'}`}
               />
               {c.label}
             </div>

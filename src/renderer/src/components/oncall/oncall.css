@@ -213,7 +213,7 @@
   background: var(--accent-subtle);
   box-shadow: inset 3px 0 0 var(--accent);
   /* the wash eases in when the rotation flips (rail snaps — by design) */
-  transition: background-color 0.3s ease;
+  transition: background-color 0.2s ease;
 }
 
 .team-row-top {
