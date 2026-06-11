@@ -18,7 +18,7 @@
 }
 
 .sidebar-app-icon:hover {
-  background: var(--color-bg-card-hover);
+  background: transparent;
 }
 
 .platform-win32 .sidebar-app-icon {
@@ -28,8 +28,8 @@
 .sidebar-app-icon-label {
   font-size: var(--text-2xs);
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  letter-spacing: 0;
   color: var(--color-accent);
   opacity: 0.9;
   line-height: 1;
@@ -65,15 +65,12 @@
 }
 
 .sidebar-item:hover {
-  transform: translateX(2px);
 }
 
 .sidebar-item--active {
-  transform: translateX(2px);
 }
 
 .sidebar-item--active:hover {
-  transform: translateX(2px);
 }
 
 .sidebar-item-inner {
@@ -90,7 +87,7 @@
   gap: 10px;
   font-size: var(--text-sm);
   padding: 8px 12px 8px 16px;
-  border-radius: 10px;
+  border-radius: 0;
   font-weight: 600;
   max-width: 100%;
   width: 100%;
@@ -105,7 +102,6 @@
 }
 
 .sidebar-item:hover .sidebar-item-label {
-  filter: brightness(1.05);
 }
 
 /* Active: colored wash + size bump for clarity */
@@ -120,7 +116,7 @@
   position: absolute;
   inset: 0;
   background: currentColor;
-  opacity: 0.12;
+  opacity: 0.08;
   border-radius: inherit;
   pointer-events: none;
 }
@@ -154,8 +150,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  letter-spacing: 0;
   font-size: var(--text-xs);
 }
 
@@ -174,7 +170,7 @@
    =========================== */
 .sidebar {
   width: var(--sidebar-width-collapsed);
-  background-color: var(--color-bg-surface);
+  background-color: var(--color-bg-sidebar);
   border-right: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -215,96 +211,84 @@
    ============================================================================ */
 
 .sidebar-button {
-  --sidebar-button-width: 80px;
-  --sidebar-button-height: 64px;
+  --sidebar-button-width: 96px;
+  --sidebar-button-height: 56px;
 
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   flex: 0 0 var(--sidebar-button-height);
   width: var(--sidebar-button-width);
   height: var(--sidebar-button-height);
   box-sizing: border-box;
   margin: 0 auto;
-  padding: 8px 4px;
-  gap: 4px;
+  padding: 8px 10px;
+  gap: 2px;
   background: transparent;
   border: none;
+  border-left: 4px solid transparent;
   cursor: pointer;
   position: relative;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-quaternary);
   transition:
-    background 0.15s,
     color 0.15s,
-    box-shadow 0.15s;
-  border-radius: 8px;
+    border-color 0.15s;
+  border-radius: 0;
   outline: none;
-  box-shadow: none;
   overflow: hidden;
 }
 
 .sidebar-button:hover {
-  background: var(--color-bg-card-hover);
-  color: var(--color-text-secondary);
+  color: var(--color-text-primary);
+  background: transparent;
 }
 
 .sidebar-button--active {
-  background: var(--color-accent-dim);
-  color: var(--color-accent-text);
+  background: transparent;
+  color: var(--accent);
+  border-left-color: var(--accent);
 }
 
 .sidebar-button-icon {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
+  opacity: 0.6;
   transition: color 0.15s;
 }
 
 .sidebar-button-icon svg {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   stroke-width: 1.8;
 }
 
-.sidebar-button:hover .sidebar-button-icon {
-  color: var(--color-text-secondary);
-}
-
 .sidebar-button--active .sidebar-button-icon {
-  color: var(--color-accent-text);
+  color: var(--accent);
+  opacity: 1;
 }
 
 .sidebar-button-label {
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: lowercase;
   color: inherit;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: calc(var(--sidebar-button-width) - 4px);
+  max-width: calc(var(--sidebar-button-width) - 14px);
   transition: color 0.15s;
-  line-height: 1;
-}
-
-.sidebar-button:hover .sidebar-button-label {
-  color: var(--color-text-secondary);
+  line-height: 1.1;
 }
 
 .sidebar-button--active .sidebar-button-label {
-  color: var(--color-accent-text);
+  font-weight: 800;
 }
 
 .sidebar-button-indicator {
-  position: absolute;
-  left: -8px;
-  top: 4px;
-  bottom: 4px;
-  width: 3px;
-  background: var(--color-accent);
-  border-radius: 2px;
+  display: none;
 }

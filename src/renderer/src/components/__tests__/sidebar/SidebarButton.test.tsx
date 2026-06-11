@@ -112,8 +112,8 @@ describe('SidebarButton', () => {
 
   it('keeps the sidebar hover and active overlay at one fixed size', () => {
     const buttonStyles = cssBlockFor('.sidebar-button');
-    expect(buttonStyles).toContain('--sidebar-button-width: 80px');
-    expect(buttonStyles).toContain('--sidebar-button-height: 64px');
+    expect(buttonStyles).toContain('--sidebar-button-width: 96px');
+    expect(buttonStyles).toContain('--sidebar-button-height: 56px');
     expect(buttonStyles).toContain('width: var(--sidebar-button-width)');
     expect(buttonStyles).toContain('height: var(--sidebar-button-height)');
   });
