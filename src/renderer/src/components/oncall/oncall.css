@@ -528,13 +528,15 @@
 }
 
 /* ============================================================================
-   Team Card — edge-rail treatment, rail color encodes coverage state
+   Team Card — edge-rail treatment. The rail + eyebrow carry the team's own
+   color (hash-assigned via --team-color/--team-color-fill from TeamCard.tsx)
+   so teams are distinguishable at a glance; alarm states override to red.
    ============================================================================ */
 
 .card-surface.team-card-body {
   background: transparent;
   border: none;
-  border-left: 4px solid var(--color-border-strong);
+  border-left: 4px solid var(--team-color-fill, var(--color-border-strong));
   border-radius: 0;
   padding-left: 14px;
   overflow: hidden;
@@ -545,16 +547,11 @@
 
 .card-surface.team-card-body:hover {
   background: var(--color-bg-card-hover);
-  border-left-color: var(--color-border-strong);
+  border-left-color: var(--team-color-fill, var(--color-border-strong));
   box-shadow: none;
 }
 
-/* Coverage state → rail color (derived from the health badge tone) */
-.card-surface.team-card-body:has(.team-health-badge--ok),
-.card-surface.team-card-body:has(.team-health-badge--ok):hover {
-  border-left-color: var(--accent);
-}
-
+/* No coverage / no backup → the rail screams regardless of team color */
 .card-surface.team-card-body:has(.team-health-badge--danger),
 .card-surface.team-card-body:has(.team-health-badge--danger):hover,
 .card-surface.team-card-body:has(.team-health-badge--muted),
@@ -565,11 +562,6 @@
 /* Vacant team → alarm-colored team name */
 .team-card-body:has(.team-health-badge--muted) .team-card-name {
   color: var(--alarm);
-}
-
-/* Covered team → accent eyebrow */
-.team-card-body:has(.team-health-badge--ok) .team-card-name {
-  color: var(--accent);
 }
 
 .team-card-body--readonly {
@@ -585,13 +577,13 @@
   border-bottom: 1px solid var(--color-border);
 }
 
-/* Team label = eyebrow */
+/* Team label = eyebrow, in the team's own color */
 .team-card-name {
   font-size: var(--text-xs);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--color-text-tertiary);
+  color: var(--team-color, var(--color-text-tertiary));
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
