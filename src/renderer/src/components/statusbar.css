@@ -1,13 +1,13 @@
 .status-bar {
   margin-top: 8px;
   padding: 12px 24px;
-  border-top: 1px solid var(--border-default);
-  background: var(--color-bg-app);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-chrome);
   display: flex;
   align-items: center;
   gap: 24px;
   font-size: 13px;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-quaternary);
   flex-shrink: 0;
 }
 
@@ -37,6 +37,12 @@
   gap: 24px;
 }
 
+/* Timestamps and numeric readouts use mono */
+.status-bar-time,
+.status-bar-count {
+  font-family: var(--font-family-mono);
+}
+
 .status-bar-live {
   display: flex;
   align-items: center;
@@ -44,13 +50,28 @@
   color: var(--color-text-secondary);
 }
 
+/* Live / online dot */
 .status-bar-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--color-accent-green);
+  background: var(--ok);
   animation: status-bar-pulse 2s infinite;
   flex-shrink: 0;
+}
+
+/* Offline / error dot */
+.status-bar-live-dot--offline,
+.status-bar-live-dot--error {
+  background: var(--alarm);
+  animation: none;
+}
+
+/* Reconnecting / syncing dot */
+.status-bar-live-dot--reconnecting,
+.status-bar-live-dot--syncing {
+  background: var(--color-warning);
+  animation: status-bar-pulse 1s infinite;
 }
 
 @keyframes status-bar-pulse {
