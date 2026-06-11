@@ -306,19 +306,16 @@ input.tactile-input.tactile-input:focus {
   flex-shrink: 0;
 }
 
+/* Pane header eyebrow — matches the compose sidebar's GROUPS treatment.
+   The display-heading device (lowercase + accent period) is reserved for
+   the relay. wordmark. */
 .toolbar-title {
-  font-size: var(--text-xl);
-  font-weight: 200;
-  color: var(--color-text-primary);
-  letter-spacing: -0.02em;
-  text-transform: lowercase;
-  line-height: 1;
-}
-
-.toolbar-title::after {
-  content: '.';
-  color: var(--accent);
+  font-size: var(--text-xs);
   font-weight: 800;
+  color: var(--accent);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
 }
 
 .toolbar-badge {

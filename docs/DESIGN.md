@@ -57,9 +57,11 @@ Large section titles follow the ink heading pattern:
 - **`.display-heading`** — standalone section headings (`utilities.css`); existing components implement the same declarations locally — use the utility class for new work
 - **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (reference utility in `utilities.css`); existing components implement the same declarations locally — use the utility class for new work
 
-**Moderated variant — `.toolbar-title`** (`components.css`): same weight-200 lowercase
-style but at `var(--text-xl)` (`clamp(24px, 1.6vw, 32px)`), used in list toolbar
-contexts where a full display-size heading would be too large.
+**Where the device lives:** the display treatment (lowercase + accent period) is
+reserved for the `relay.` wordmark in the sidebar — tab identity comes from the
+header breadcrumb. `.toolbar-title` (`components.css`) is a pane-header eyebrow
+(uppercase, 0.12em, weight 800, accent), matching section eyebrows like the
+compose sidebar's GROUPS heading.
 
 ---
 
