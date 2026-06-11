@@ -81,9 +81,10 @@
   --color-danger-subtle: var(--alarm-dim);
   --color-warning: #ffb000;
   --color-warning-subtle: rgba(255, 176, 0, 0.12);
-  /* Info blue — matches the alert email card's INFO banner (#1565c0) */
+  /* Info blue — matches the alert email card's INFO banner (#1565c0).
+     --info-bright is the same hue lifted for black-ink fills (≥7:1 on #000 text). */
   --info: #1565c0;
-  --info-bright: #5b9bd9;
+  --info-bright: #42a5f5;
 
   /* Borders — opaque grays on black */
   --color-border: #1d1d1d;

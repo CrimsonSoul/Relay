@@ -906,9 +906,9 @@
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: var(--info);
-  border-color: var(--info);
-  color: #ffffff;
+  background: var(--info-bright);
+  border-color: var(--info-bright);
+  color: #000;
   font-weight: 800;
 }
 
