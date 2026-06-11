@@ -380,6 +380,15 @@ test.describe('Redesign screenshot harness', () => {
       }
 
       await shoot(window, 'settings-modal.png');
+
+      // --- Data Manager modal (opened from Settings) ---
+      await window.getByRole('button', { name: 'Open Data Manager...' }).click();
+      await expect(window.getByRole('tablist', { name: 'Data Manager sections' })).toBeVisible();
+      await shoot(window, 'data-manager.png');
+      await window.keyboard.press('Escape');
+      await expect(
+        window.getByRole('tablist', { name: 'Data Manager sections' }),
+      ).not.toBeVisible();
       await window.keyboard.press('Escape');
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).not.toBeVisible();
 

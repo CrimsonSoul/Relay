@@ -97,7 +97,7 @@
 .toast-close {
   width: 44px;
   height: 44px;
-  border-radius: 10px;
+  border-radius: 2px;
   display: grid;
   place-items: center;
   background: var(--color-bg-chrome);

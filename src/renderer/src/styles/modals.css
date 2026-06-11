@@ -48,7 +48,7 @@
 .modal-icon-wrapper {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: 2px;
   background: var(--color-accent-dim);
   color: var(--color-accent);
   display: flex;
@@ -74,7 +74,7 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: 6px;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -110,9 +110,9 @@
   min-height: 100px;
   padding: 12px;
   font-size: var(--text-base);
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-medium);
-  border-radius: 10px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   color: var(--color-text-primary);
   resize: vertical;
   font-family: inherit;
@@ -167,9 +167,9 @@
   flex: 1;
   padding: 10px 14px;
   font-size: var(--text-base);
-  background: var(--color-bg-surface-elevated);
-  border: var(--border-medium);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   color: var(--color-text-primary);
   font-family: inherit;
   outline: none;
@@ -185,7 +185,7 @@
   font-size: var(--text-base);
   font-weight: 600;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   cursor: pointer;
   transition:
     background 0.15s ease,
@@ -220,11 +220,11 @@
   padding: 0 18px;
   height: 38px;
   font-size: var(--text-base);
-  font-weight: 600;
-  background: var(--app-surface-3);
+  font-weight: 700;
+  background: transparent;
   color: var(--color-text-secondary);
-  border: 1px solid var(--color-focus-ring);
-  border-radius: 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
   cursor: pointer;
   transition:
     background 0.2s ease,
@@ -233,20 +233,20 @@
 }
 
 .btn-cancel:hover {
-  background: var(--app-surface-3);
+  background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
-  border-color: var(--color-scrollbar-hover);
+  border-color: var(--color-text-tertiary);
 }
 
 .btn-save {
   padding: 0 20px;
   height: 38px;
   font-size: var(--text-base);
-  font-weight: 600;
+  font-weight: 800;
   background: var(--color-accent);
-  color: #000000;
+  color: var(--on-accent);
   border: 1px solid var(--color-accent);
-  border-radius: 10px;
+  border-radius: 2px;
   cursor: pointer;
   transition:
     background 0.2s ease,
@@ -327,7 +327,7 @@
   color: var(--color-text-tertiary);
   cursor: pointer;
   padding: var(--space-2);
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -388,7 +388,7 @@
 .search-dropdown-hitbox {
   width: 100%;
   padding: 10px 14px;
-  border-radius: var(--radius-md);
+  border-radius: 2px;
   min-height: 48px;
   cursor: pointer;
   display: flex;
@@ -459,7 +459,7 @@
 .kbd-key {
   background: var(--color-bg-surface-elevated);
   border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: 2px;
   padding: 3px 8px;
   font-family: inherit;
   font-size: var(--text-sm);

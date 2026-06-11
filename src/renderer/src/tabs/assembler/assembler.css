@@ -152,8 +152,8 @@
 
 .bridge-history-title {
   margin: 0;
-  font-size: var(--text-md);
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
@@ -216,7 +216,7 @@
 .bridge-history-entry-date {
   flex: 1 1 auto;
   min-width: 0;
-  font-size: 15px;
+  font-size: var(--text-sm);
   font-weight: 700;
   color: var(--color-text-primary);
 }
@@ -224,7 +224,7 @@
 .bridge-history-entry-count {
   flex-shrink: 0;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--text-2xs);
   font-weight: 800;
   color: var(--accent-bright);
   background: var(--accent-dim);
@@ -277,7 +277,7 @@
 .save-group-title {
   margin: 0 0 10px 0;
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-text-primary);
 }
 
