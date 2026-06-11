@@ -6,8 +6,7 @@
    Ink display headings — giant lowercase with accent period
    =========================== */
 .display-heading,
-.collapsible-header-title,
-.toolbar-title {
+.collapsible-header-title {
   font-size: var(--text-display);
   font-weight: 200;
   text-transform: lowercase;
@@ -17,8 +16,7 @@
 }
 
 .display-heading::after,
-.collapsible-header-title::after,
-.toolbar-title::after {
+.collapsible-header-title::after {
   content: '.';
   color: var(--accent);
   font-weight: 800;
