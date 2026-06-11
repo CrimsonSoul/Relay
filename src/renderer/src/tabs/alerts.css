@@ -116,7 +116,7 @@
 
 /* Ink rows: no boxed sub-card — a 4px left edge-rail carries the FIXED
    severity color (ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok,
-   INFO = white, matching the severity grid). */
+   INFO = info blue, matching the email card's banner). */
 .alert-history-entry {
   display: block;
   width: 100%;
@@ -145,7 +145,7 @@
 }
 
 .alert-history-entry:has([data-sev='INFO']) {
-  border-left-color: #ffffff;
+  border-left-color: var(--info);
 }
 
 .alert-history-entry:has([data-sev='RESOLVED']) {
@@ -276,6 +276,11 @@
 .alert-history-entry-severity[data-sev='RESOLVED'] {
   border-color: color-mix(in srgb, var(--ok) 55%, transparent);
   color: var(--ok);
+}
+
+.alert-history-entry-severity[data-sev='INFO'] {
+  border-color: color-mix(in srgb, var(--info) 55%, transparent);
+  color: var(--info-bright);
 }
 
 .alert-history-entry-subject {
@@ -901,9 +906,9 @@
 }
 
 .alerts-sev-btn.active[data-sev='INFO'] {
-  background: #ffffff;
-  border-color: #ffffff;
-  color: #000;
+  background: var(--info);
+  border-color: var(--info);
+  color: #ffffff;
   font-weight: 800;
 }
 
