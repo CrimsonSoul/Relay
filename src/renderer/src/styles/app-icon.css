@@ -1,5 +1,0 @@
-/* App Icon Hover State */
-#app-icon-container #app-icon-inner {
-  opacity: 1;
-  transition: all var(--transition-smooth);
-}
