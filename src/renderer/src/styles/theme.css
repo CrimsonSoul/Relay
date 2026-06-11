@@ -72,10 +72,10 @@
   /* Semantic Colors — FIXED, never themed by accent scheme */
   --alarm: #ff4539;
   --alarm-bright: #ff6b61;
-  --alarm-dim: rgba(255, 69, 57, 0.12);
+  --alarm-dim: color-mix(in srgb, var(--alarm) 12%, transparent);
   --ok: #2bb24c;
   --color-accent-green: var(--ok);
-  --color-accent-green-subtle: rgba(43, 178, 76, 0.12);
+  --color-accent-green-subtle: color-mix(in srgb, var(--ok) 12%, transparent);
   --color-danger: var(--alarm);
   --color-danger-hover: var(--alarm-bright);
   --color-danger-subtle: var(--alarm-dim);
