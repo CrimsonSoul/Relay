@@ -9,6 +9,7 @@
   font-size: 13px;
   color: var(--color-text-quaternary);
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .status-bar-left {
@@ -37,12 +38,6 @@
   gap: 24px;
 }
 
-/* Timestamps and numeric readouts use mono */
-.status-bar-time,
-.status-bar-count {
-  font-family: var(--font-family-mono);
-}
-
 .status-bar-live {
   display: flex;
   align-items: center;
@@ -58,20 +53,6 @@
   background: var(--ok);
   animation: status-bar-pulse 2s infinite;
   flex-shrink: 0;
-}
-
-/* Offline / error dot */
-.status-bar-live-dot--offline,
-.status-bar-live-dot--error {
-  background: var(--alarm);
-  animation: none;
-}
-
-/* Reconnecting / syncing dot */
-.status-bar-live-dot--reconnecting,
-.status-bar-live-dot--syncing {
-  background: var(--color-warning);
-  animation: status-bar-pulse 1s infinite;
 }
 
 @keyframes status-bar-pulse {
