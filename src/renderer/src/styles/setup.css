@@ -504,6 +504,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
+  animation: fadeIn 0.2s ease-out backwards;
 }
 
 .setup-config__discover-result:hover:not(:disabled) {

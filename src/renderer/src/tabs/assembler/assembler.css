@@ -396,6 +396,7 @@
   margin: 0 auto;
   padding: 32px;
   color: var(--color-text-tertiary);
+  animation: fadeIn 0.2s ease-out;
 }
 
 .composition-list-empty-icon {

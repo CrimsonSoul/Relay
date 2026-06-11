@@ -7,7 +7,7 @@
   align-items: center;
   justify-content: center;
   z-index: var(--z-critical);
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.15s ease-out;
 }
 
 .overlay-hitbox {
@@ -31,6 +31,7 @@
   overflow: hidden;
   position: relative;
   z-index: 1;
+  animation: scaleIn 0.2s ease-out;
 }
 
 /* Modal Header */
@@ -275,7 +276,6 @@
   align-items: center;
   justify-content: center;
   z-index: var(--z-critical);
-  transition: opacity var(--transition-premium);
 }
 
 .modal-dialog-generic {
@@ -361,6 +361,8 @@
   max-height: 420px;
   display: flex;
   flex-direction: column;
+  transform-origin: top center;
+  animation: scaleIn 0.15s ease-out;
 }
 
 .search-dropdown-context {

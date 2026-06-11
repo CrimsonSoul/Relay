@@ -184,6 +184,7 @@
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
+  animation: breathe 2.4s ease-in-out infinite;
 }
 
 /* ============================================================================
@@ -211,6 +212,8 @@
 .team-row--active:hover {
   background: var(--accent-subtle);
   box-shadow: inset 3px 0 0 var(--accent);
+  /* the wash eases in when the rotation flips (rail snaps — by design) */
+  transition: background-color 0.3s ease;
 }
 
 .team-row-top {
@@ -258,6 +261,7 @@
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+  animation: breathe 2.4s ease-in-out infinite;
 }
 
 .team-row-name {

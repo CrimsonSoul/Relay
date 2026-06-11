@@ -20,6 +20,7 @@
   content: '.';
   color: var(--accent);
   font-weight: 800;
+  transition: color 0.2s ease;
 }
 
 /* === Ink edge-rails — the signature row/card treatment === */
@@ -29,6 +30,7 @@
   border-left: 4px solid var(--color-border-strong);
   border-radius: 0;
   padding-left: 14px;
+  transition: border-color 0.2s ease;
 }
 
 .ink-rail--accent {

@@ -236,6 +236,7 @@ input.tactile-input.tactile-input:focus {
   font-style: italic;
   flex-direction: column;
   gap: 8px;
+  animation: fadeIn 0.2s ease-out;
 }
 
 .tab-empty-state-icon {
@@ -433,6 +434,8 @@ input.tactile-input.tactile-input:focus {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  transform-origin: top left;
+  animation: scaleIn 0.15s ease-out;
 }
 
 .context-menu-accent {
@@ -556,10 +559,26 @@ input.tactile-input.tactile-input:focus {
   -webkit-app-region: no-drag;
 }
 
+/* Dedicated keyframe: the popover is centered via translateX(-50%), so the
+   generic scaleIn keyframe would stomp that transform mid-animation */
+@keyframes world-clock-pop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
 .world-clock-popover {
   position: fixed;
   z-index: 9999;
   transform: translateX(-50%);
+  transform-origin: top center;
+  animation: world-clock-pop-in 0.15s ease-out;
   background-color: var(--color-bg-surface-elevated);
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border-strong);
@@ -652,6 +671,9 @@ input.tactile-input.tactile-input:focus {
 
 .tab-panel--active {
   display: flex;
+  /* display:none -> flex restarts the animation, so every tab switch
+     replays the fade + rise */
+  animation: panel-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* ===========================
@@ -678,6 +700,8 @@ body.modal-open {
   z-index: 99999;
   box-shadow: var(--shadow-modal);
   padding: 4px;
+  transform-origin: top center;
+  animation: scaleIn 0.15s ease-out;
 }
 
 .combobox-option {
@@ -724,11 +748,13 @@ body.modal-open {
   align-items: center;
   justify-content: center;
   z-index: var(--z-critical);
+  animation: fadeIn 0.15s ease-out;
 }
 
 .shortcuts-modal {
   width: 100%;
   max-width: 520px;
+  animation: scaleIn 0.15s ease-out;
   background-color: var(--color-bg-surface-elevated);
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border-strong);

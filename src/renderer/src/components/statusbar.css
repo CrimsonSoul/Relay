@@ -45,22 +45,12 @@
   color: var(--color-text-secondary);
 }
 
-/* Live / online dot */
+/* Live / online dot — shared breathing pulse (styles/animations.css) */
 .status-bar-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--ok);
-  animation: status-bar-pulse 2s infinite;
+  animation: breathe 2.4s ease-in-out infinite;
   flex-shrink: 0;
-}
-
-@keyframes status-bar-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
 }
