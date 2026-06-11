@@ -275,6 +275,21 @@ body {
   height: 100vh;
 }
 
+button,
+input,
+optgroup,
+select,
+textarea {
+  font-family: inherit;
+  letter-spacing: inherit;
+}
+
+kbd,
+code,
+pre {
+  font-family: var(--font-family-mono);
+}
+
 .app-container {
   display: flex;
   height: 100dvh;

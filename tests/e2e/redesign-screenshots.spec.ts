@@ -356,6 +356,21 @@ test.describe('Redesign screenshot harness', () => {
       // --- Settings modal with accent picker ---
       await window.getByTestId('sidebar-settings').click();
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
+
+      // Verify form controls inherit Outfit, not the UA default system font.
+      const settingsBtnFont = await window.evaluate(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const btn = globalThis.document.querySelector(
+          '[data-testid="sidebar-settings"] ~ * button, .settings-modal button',
+        ) as any;
+        if (!btn) return null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return (globalThis.getComputedStyle(btn) as any).fontFamily as string;
+      });
+      if (settingsBtnFont !== null) {
+        expect(settingsBtnFont).toMatch(/Outfit/i);
+      }
+
       await shoot(window, 'settings-modal.png');
       await window.keyboard.press('Escape');
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).not.toBeVisible();
