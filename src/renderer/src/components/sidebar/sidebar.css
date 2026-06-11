@@ -1,23 +1,26 @@
-/* Sidebar App Icon */
+/* Sidebar App Icon — brand block: white wordmark + accent period, dimmed glyph.
+   Left-aligned flush with the nav labels (8px button margin + 4px rail + 10px pad). */
 .sidebar-app-icon {
   width: 100%;
-  padding: 46px 0 12px;
+  padding: 46px 0 14px 22px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--color-border);
   -webkit-app-region: no-drag;
-  color: var(--color-accent);
+  color: var(--color-text-tertiary);
   cursor: pointer;
   position: relative;
   border-radius: 0;
+  transition: color 0.15s;
 }
 
 .sidebar-app-icon:hover {
   background: transparent;
+  color: var(--color-text-secondary);
 }
 
 .platform-win32 .sidebar-app-icon {
@@ -25,13 +28,18 @@
 }
 
 .sidebar-app-icon-label {
-  font-size: var(--text-2xs);
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: 800;
   text-transform: lowercase;
   letter-spacing: 0;
-  color: var(--color-accent);
-  opacity: 0.9;
+  color: var(--color-text-primary);
   line-height: 1;
+}
+
+.sidebar-app-icon-label::after {
+  content: '.';
+  color: var(--accent);
+  font-weight: 800;
 }
 
 .sidebar-app-icon-inner {
