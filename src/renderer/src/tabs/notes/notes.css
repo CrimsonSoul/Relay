@@ -350,7 +350,7 @@
 
 /* Color category variants — rail color carries the category */
 .note-card--amber {
-  border-left-color: var(--accent);
+  border-left-color: #e11d48;
 }
 
 .note-card--blue {
@@ -358,11 +358,11 @@
 }
 
 .note-card--green {
-  border-left-color: var(--ok);
+  border-left-color: #22c55e;
 }
 
 .note-card--red {
-  border-left-color: var(--alarm);
+  border-left-color: #ef4444;
 }
 
 .note-card--purple {
