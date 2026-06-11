@@ -36,7 +36,6 @@
 .sortable-edit-row-role {
   font-weight: 600;
   font-size: var(--text-xs);
-  font-family: var(--font-family-mono);
 }
 
 .sortable-edit-row-name {
@@ -45,7 +44,7 @@
 
 .sortable-edit-row-phone {
   font-size: var(--text-sm);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .sortable-edit-row-time {
@@ -283,7 +282,7 @@
 /* Phone is reference data — clearly subordinate to the name */
 .team-row-phone {
   font-size: var(--text-xs);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   color: var(--color-text-tertiary);
   background: transparent;
@@ -311,7 +310,7 @@
 
 .team-row-time-window {
   font-size: var(--text-xs);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
   white-space: nowrap;
 }

@@ -241,8 +241,10 @@ On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
 ### Fonts
 
 - **UI font:** `Outfit Variable` — loaded as variable font; fallback `Outfit, sans-serif`
-- **Mono font:** `JetBrains Mono` — used for timestamps, phone numbers, IDs, and any
-  tabular numeric (`font-variant-numeric: tabular-nums`)
+- **Mono font:** `JetBrains Mono` — reserved for technical values: clocks/timestamps,
+  URLs, ports, data paths, and IDs
+- **Person-data numerics** (phone numbers, shift time windows) use the UI font with
+  `font-variant-numeric: tabular-nums` — aligned digits without the code texture
 
 ### Fluid Scale
 

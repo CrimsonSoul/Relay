@@ -447,7 +447,7 @@
 .contact-card-phone {
   font-size: var(--text-base);
   color: var(--color-text-tertiary);
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   letter-spacing: 0.02em;
   min-width: 160px;
@@ -579,7 +579,7 @@
   font-size: 10px;
 }
 .contact-entry-phone {
-  font-family: var(--font-family-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .contact-entry-chip {
