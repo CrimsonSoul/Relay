@@ -1499,6 +1499,54 @@ body.modal-open {
   gap: 8px;
 }
 
+.accent-picker {
+  display: flex;
+  gap: 10px;
+}
+
+.accent-picker-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.accent-picker-swatch::before {
+  content: '';
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--swatch);
+  border: 2px solid transparent;
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast);
+}
+
+.accent-picker-swatch:hover::before,
+.accent-picker-swatch:focus-visible::before {
+  border-color: var(--color-text-secondary);
+}
+
+.accent-picker-swatch--active::before {
+  border-color: #ffffff;
+}
+
+.accent-picker-swatch-label {
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: lowercase;
+  color: var(--color-text-tertiary);
+}
+
+.accent-picker-swatch--active .accent-picker-swatch-label {
+  color: var(--color-text-primary);
+}
+
 .settings-description {
   font-size: var(--text-sm);
   color: var(--color-text-tertiary);
