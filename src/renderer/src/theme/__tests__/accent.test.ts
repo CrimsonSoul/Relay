@@ -44,4 +44,20 @@ describe('accent theme', () => {
     );
     expect(document.documentElement.getAttribute('data-accent')).toBe('blue');
   });
+
+  it('reverts to default when another window clears the stored accent', () => {
+    initAccent();
+    setAccent('purple');
+    window.dispatchEvent(new StorageEvent('storage', { key: ACCENT_STORAGE_KEY, newValue: null }));
+    expect(document.documentElement.getAttribute('data-accent')).toBe('red');
+  });
+
+  it('initAccent is idempotent (no duplicate listeners)', () => {
+    initAccent();
+    initAccent();
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: ACCENT_STORAGE_KEY, newValue: 'green' }),
+    );
+    expect(document.documentElement.getAttribute('data-accent')).toBe('green');
+  });
 });

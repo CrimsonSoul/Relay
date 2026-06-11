@@ -48,11 +48,15 @@ export function setAccent(id: AccentId): void {
  * Apply the stored scheme and follow changes made in other windows
  * (the kiosk pop-out shares localStorage with the main window).
  */
+let initialized = false;
+
 export function initAccent(): void {
   apply(getStoredAccent());
+  if (initialized) return;
+  initialized = true;
   window.addEventListener('storage', (e) => {
-    if (e.key === ACCENT_STORAGE_KEY && isAccentId(e.newValue)) {
-      apply(e.newValue);
+    if (e.key === ACCENT_STORAGE_KEY) {
+      apply(isAccentId(e.newValue) ? e.newValue : DEFAULT_ACCENT);
     }
   });
 }
