@@ -288,6 +288,14 @@ test.describe('Redesign screenshot harness', () => {
       await window.waitForLoadState('domcontentloaded');
       await expect(window.getByTestId('sidebar-compose')).toBeVisible({ timeout: 30_000 });
 
+      // Verify no sidebar nav label is ellipsized at 1920×1080.
+      const truncated = await window.evaluate(() => {
+        return [...globalThis.document.querySelectorAll('.sidebar-button-label')]
+          .filter((el) => el.scrollWidth > el.clientWidth)
+          .map((el) => el.textContent);
+      });
+      expect(truncated).toEqual([]);
+
       // Default accent (red) for the tab tour.
       await setAccentViaStorage(window, 'red');
 

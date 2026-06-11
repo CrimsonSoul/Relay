@@ -190,7 +190,7 @@
   --transition-micro: 0.1s ease-out;
 
   /* Layout */
-  --sidebar-width-collapsed: 110px;
+  --sidebar-width-collapsed: 136px;
   --header-height: 56px;
 
   --chrome-bg: var(--color-bg-chrome);

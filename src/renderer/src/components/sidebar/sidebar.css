@@ -198,7 +198,7 @@
    ============================================================================ */
 
 .sidebar-button {
-  --sidebar-button-width: 96px;
+  --sidebar-button-width: 120px;
   --sidebar-button-height: 56px;
 
   display: flex;
@@ -267,7 +267,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: calc(var(--sidebar-button-width) - 14px);
+  max-width: calc(var(--sidebar-button-width) - 24px);
   transition: color 0.15s;
   line-height: 1.1;
 }
