@@ -326,6 +326,15 @@ test.describe('Redesign screenshot harness', () => {
       await expect(
         window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
       ).toBeVisible();
+      // Layout contract: member names never wrap to a second line (ellipsize instead).
+      const wrappedNameCount = await window.evaluate(() => {
+        const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
+        return names.filter((el) => {
+          const lineHeight = parseFloat(globalThis.getComputedStyle(el).lineHeight) || 0;
+          return lineHeight > 0 && el.scrollHeight > lineHeight * 1.5;
+        }).length;
+      });
+      expect(wrappedNameCount).toBe(0);
       await shoot(window, 'oncall.png');
 
       // --- People ---
@@ -359,7 +368,6 @@ test.describe('Redesign screenshot harness', () => {
 
       // Verify form controls inherit Outfit, not the UA default system font.
       const settingsBtnFont = await window.evaluate(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const btn = globalThis.document.querySelector(
           '[data-testid="sidebar-settings"] ~ * button, .settings-modal button',
         ) as any;
