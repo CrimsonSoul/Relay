@@ -4,185 +4,351 @@ Current visual and interaction conventions for the Relay renderer.
 
 ## Overview
 
-Relay uses a token-driven design system defined in `src/renderer/src/styles/theme.css`.
-The current UI is built around:
-
-- A single dark visual system
-- A red primary accent (`--color-accent`) with cyan reserved for secondary or informational use
-- Shared surface, border, spacing, and typography tokens consumed by plain CSS
-- Reusable interaction primitives such as `TactileButton`, `.tactile-input`, and `.card-surface`
+Relay uses the **Accent Ink** design language: a pure-black canvas, typography-first
+hierarchy through Outfit weight contrast, and a single swappable accent color as the
+only active-state signal. All tokens live in `src/renderer/src/styles/theme.css`.
 
 ## Source Of Truth
-
-Use these files as the implementation references:
 
 | File                                     | Purpose                                                               |
 | ---------------------------------------- | --------------------------------------------------------------------- |
 | `src/renderer/src/styles/theme.css`      | Global color, spacing, typography, radius, z-index, and motion tokens |
 | `src/renderer/src/styles/components.css` | Shared button, input, shell, and layout styles                        |
-| `src/renderer/src/styles/utilities.css`  | Shared utility classes such as `.card-surface` and `.accent-strip`    |
+| `src/renderer/src/styles/utilities.css`  | `.display-heading`, `.ink-rail`, `.card-surface`, and text helpers    |
 | `src/renderer/src/styles/modals.css`     | Modal layout and overlay styling                                      |
 | `src/renderer/src/styles/responsive.css` | Breakpoints and responsive behavior                                   |
 | `src/renderer/src/styles/animations.css` | Reusable animation helpers                                            |
-| `src/renderer/src/tabs/alerts.css`       | Alert composer and preview styles                                     |
+| `src/renderer/src/theme/accent.ts`       | Accent scheme definitions and runtime API                             |
+| `src/renderer/src/tabs/alerts.css`       | Alert composer and preview styles (email preview fenced — see below)  |
 | `src/renderer/src/tabs/notes/notes.css`  | Notes masonry, cards, and editor styles                               |
 | `src/renderer/src/tabs/cloud-status.css` | Provider summary cards and incident feed styles                       |
 
-## Theme Tokens
+---
 
-### Color System
+## 1. The Accent Ink Language
 
-Primary UI colors come from `theme.css`:
+The design rests on four principles:
 
-- Backgrounds: `--color-bg-app`, `--color-bg-surface`, `--color-bg-surface-elevated`, `--color-bg-card`
-- Text: `--color-text-primary`, `--color-text-secondary`, `--color-text-tertiary`
-- Accent: `--color-accent`, `--color-accent-hover`, `--color-accent-subtle`, `--color-accent-dim`
-- Semantic: `--color-danger`, `--color-accent-green`, `--color-warning`
-- Borders: `--color-border`, `--color-border-strong`, `--color-border-accent`
+1. **Pure-black canvas.** App background is `#000000`. Surfaces step up only slightly
+   (`#0a0a0a`, `#111111`). Elevated floating surfaces sit at `#161616`.
+2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Display
+   headings use weight 200; body text uses 500; emphasis uses 700–800. No heading
+   background fills.
+3. **Four text-dimming tiers.** Primary `#fff` → secondary `#bdbdbd` → tertiary
+   `#8a8a8a` → quaternary `#767676`. Quaternary is the legibility floor (≥ 4.5 : 1
+   on black); do not use a lighter shade for readable text.
+4. **1 px `#1d1d1d` dividers, edge-rails over boxes.** Horizontal rules and the
+   `.ink-rail` left-border replace boxy card outlines wherever content allows.
 
-Relay does not provide runtime theme switching. The renderer should use the shared dark tokens directly.
+---
 
-### Typography
+## 2. Display Headings
 
-- Base UI font: `--font-family-base` (`Instrument Sans Variable`)
-- Monospace font: `--font-family-mono` (`JetBrains Mono`)
-- Responsive font sizes: `--text-2xs` through `--text-4xl`
-- Shared weights: `--weight-regular` through `--weight-black`
+Large section titles follow the ink heading pattern:
 
-Prefer the tokens instead of raw font sizes or weights.
+- `font-size: var(--text-display)` — fluid `clamp(34px, 3vw, 56px)`
+- `font-weight: 200`
+- `text-transform: lowercase`
+- `letter-spacing: -0.02em`
+- Accent period appended via `::after { content: '.'; color: var(--accent); font-weight: 800 }`
 
-### Layout Tokens
+Two shared classes apply the full pattern:
 
-Relay standardizes spacing and shell sizing through tokens such as:
+- **`.display-heading`** — standalone section headings (`utilities.css`)
+- **`.collapsible-header-title`** — heading inside `CollapsibleHeader` (`components.css`)
 
-- `--space-1` through `--space-12`
-- `--radius-sm` through `--radius-2xl`
-- `--sidebar-width-collapsed`
-- `--header-height`
-- `--z-*` layers for overlays, modals, window controls, and command surfaces
+**Moderated variant — `.toolbar-title`** (`components.css`): same weight-200 lowercase
+style but at `var(--text-xl)` (`clamp(24px, 1.6vw, 32px)`), used in list toolbar
+contexts where a full display-size heading would be too large.
 
-## Core UI Patterns
+---
 
-### Buttons
+## 3. Edge-Rail Pattern
 
-Use `src/renderer/src/components/TactileButton.tsx` for button interactions.
+`.ink-rail` is the primary row/card treatment — a 4 px left border with no box
+background:
 
-Supported variants:
+```css
+.ink-rail                /* neutral: border-left: 4px solid var(--color-border-strong) */
+.ink-rail--accent        /* active / featured: border-left-color: var(--accent) */
+.ink-rail--alarm         /* problem: border-left-color: var(--alarm) */
+```
 
-- `primary`
-- `secondary`
-- `ghost`
-- `danger`
+**Semantics:**
 
-Supported sizes:
+| Modifier   | Token                             | Meaning                           |
+| ---------- | --------------------------------- | --------------------------------- |
+| (default)  | `--color-border-strong` `#2a2a2a` | neutral, not active               |
+| `--accent` | swappable accent color            | active, selected, featured        |
+| `--alarm`  | `#ff4539` fixed                   | genuine problem or critical state |
 
-- `sm`
-- `md`
+Rails encode state at a glance from 10 ft. Never swap the alarm rail for decorative
+use or use accent rails for severity.
 
-The component also supports `active`, `loading`, `icon`, and `block` states.
+The older `.accent-strip` absolute-positioned div is kept for backward compatibility
+but is superseded by `.ink-rail`.
 
-### Inputs
+---
 
-Text inputs should use the shared `.tactile-input` styling from `components.css`.
+## 4. Elevated-Surface Rule
 
-Expected behavior:
+Boxes with a background fill (`#161616` + `1px #2a2a2a` border + shadow) are
+reserved exclusively for **floating surfaces** that sit above the canvas:
 
-- Full-width layout by default
-- Elevated surface on hover/focus
-- Accent border and glow on focus
+- Modals and confirm dialogs
+- Popovers and tooltips
+- Context menus and combobox dropdowns
+- Toast/reminder overlays
+- Drag ghost elements
 
-### Cards And Surfaces
+Inline content areas (list rows, tab panels, cards in masonry, split-panel columns)
+use a transparent background against the `#000` canvas, differentiated only by
+typography weight and edge rails. Do not give inline surfaces an elevated background.
 
-Use `.card-surface` from `utilities.css` for reusable card styling.
+The relevant token is `--color-bg-surface-elevated: #161616` combined with
+`--border-strong: 1px solid #2a2a2a` and an appropriate `--shadow-*` value.
 
-It provides:
+---
 
-- Shared surface background
-- Standard border and radius
-- Hover border/background transitions
+## 5. Accent System
 
-Use `.accent-strip` when a card needs a thin colored indicator on the left edge.
+### Schemes
 
-### Shell Layout
+Five schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
+`:root[data-accent="…"]` overrides in `theme.css`:
 
-The app shell is composed of:
+| ID       | Label                | `--accent` swatch |
+| -------- | -------------------- | ----------------- |
+| `red`    | Signal Red (default) | `#e63946`         |
+| `blue`   | Blue                 | `#3b82f6`         |
+| `green`  | Green                | `#22c55e`         |
+| `pink`   | Pink                 | `#ec4899`         |
+| `purple` | Purple               | `#a855f7`         |
 
-- Left sidebar navigation
-- Top header with breadcrumb, search, and utility actions
-- Tab content area
+### How It Works
 
-Most tabs follow one of these patterns:
+`data-accent` on `<html>` switches the three base variables. All derived values
+recompute automatically:
 
-- A single-column content layout
-- A split layout with a main list and a detail panel
-- A specialized layout such as the Notes masonry grid or the Alerts two-panel composer
+| Token             | Source                                                    |
+| ----------------- | --------------------------------------------------------- |
+| `--accent`        | scheme base color                                         |
+| `--accent-hover`  | lighter midtone                                           |
+| `--accent-bright` | brightest; used for text on dark (≥ 4.5 : 1 on `#000`)    |
+| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`      |
+| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`       |
+| `--on-accent`     | `#000000` — text/icon color on a filled accent background |
 
-## Feature-Specific Notes
+Legacy aliases (`--color-accent`, `--color-accent-hover`, etc.) forward to the live
+tokens and remain functional.
 
-### Alerts
+### TypeScript API (`src/renderer/src/theme/accent.ts`)
 
-`src/renderer/src/tabs/alerts.css` mixes app surfaces for authoring with a white email preview card for screenshot/export fidelity.
+```ts
+ACCENT_SCHEMES; // AccentScheme[] — id, label, swatch
+ACCENT_STORAGE_KEY; // 'relay-accent'
+DEFAULT_ACCENT; // 'red'
 
-Key conventions:
+getStoredAccent(); // → AccentId — reads localStorage, falls back to 'red'
+setAccent(id); // persist + apply immediately
+initAccent(); // apply stored scheme; also wires window 'storage' listener
+```
 
-- Severity buttons use per-severity color states
-- The preview card uses a white email-style canvas
-- Highlighting and event-time affordances are styled as alert-specific primitives rather than global tokens
+`initAccent()` wires a `window.addEventListener('storage', …)` handler so the kiosk
+pop-out window stays in sync with the main window via the shared `localStorage` key.
+Call it once at renderer startup.
 
-### Notes
+---
 
-`src/renderer/src/tabs/notes/notes.css` uses a masonry layout and color-tinted note cards.
+## 6. Fixed Semantic Palette
 
-Key conventions:
+These colors are **never** changed by accent scheme selection:
 
-- Font size is controlled via `data-font-size` on the notes grid
-- Note colors are lightweight surface tints, not alternate app appearances
-- Drag-and-drop state is communicated through border, opacity, and lift changes
+| Token                    | Value                               | Use                           |
+| ------------------------ | ----------------------------------- | ----------------------------- |
+| `--alarm`                | `#ff4539`                           | Genuine system problems only  |
+| `--alarm-bright`         | `#ff6b61`                           | Alarm hover / text on dark    |
+| `--alarm-dim`            | `color-mix(alarm 12%, transparent)` | Alarm fill tint               |
+| `--ok`                   | `#2bb24c`                           | Positive / resolved / healthy |
+| `--color-warning`        | `#ffb000`                           | Non-critical caution          |
+| `--color-warning-subtle` | `rgba(255,176,0,0.12)`              | Warning tint background       |
 
-### Cloud Status
+**Rule:** use `--alarm` only when the user has a real problem to act on. Never use it
+for decorative highlights. Never use `--accent` for severity or urgency signals.
 
-`src/renderer/src/tabs/cloud-status.css` uses plain surfaces instead of heavier card treatments.
+Group and note category colors (`--color-group-blue`, `--color-group-purple`, etc.)
+are user-data color assignments. They stay as literal values and are not re-mapped by
+accent or alarm logic.
 
-Key conventions:
+---
 
-- Provider cards summarize health at a glance
-- Severity is communicated with status dots, text color, and badges
-- Filters are compact pill buttons styled with the shared token palette
+## 7. Chips
 
-## Styling Rules
+Chips are square (2 px border-radius), compact label badges with three modes:
+
+| Mode                        | Style                                                                     | Example use                                                                  |
+| --------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Informational** (outline) | `border: 1px solid --color-border-strong`, transparent bg, secondary text | `.contact-entry-chip` unselected state                                       |
+| **Featured** (accent)       | `background: --accent-dim`, `color: --accent-bright`, no border           | `.contact-entry-chip` selected; `.popout-alert-chip--info`; `.toolbar-badge` |
+| **Alarm** (solid)           | `background: --alarm`, `color: #000`, `font-weight: 800`                  | `.popout-alert-chip--danger`; alarm action chips                             |
+
+Chips should not use custom fills outside these three modes. Alarm chips always use
+`#000` for their label text (not `--on-accent`).
+
+---
+
+## 8. Buttons and Inputs
+
+### TactileButton (`src/renderer/src/components/TactileButton.tsx`)
+
+All four variants use 2 px border-radius and `font-weight: 700`:
+
+| Variant   | Background  | Border                  | Text color                                  |
+| --------- | ----------- | ----------------------- | ------------------------------------------- |
+| `default` | transparent | `--color-border-strong` | `--color-text-secondary` → primary on hover |
+| `primary` | `--accent`  | `--accent`              | `--on-accent` (`#000`), weight 800          |
+| `ghost`   | transparent | transparent             | `--color-text-tertiary` → primary on hover  |
+| `danger`  | `--alarm`   | `--alarm`               | `#000000`, weight 800; fixed — not themed   |
+
+Sizes:
+
+| Size prop      | Height | Padding                   | Font size   |
+| -------------- | ------ | ------------------------- | ----------- |
+| `sm` (default) | —      | `7px 16px`                | 13 px       |
+| (base)         | —      | `9px 20px`                | `--text-sm` |
+| `md`           | 48 px  | `0 24px`                  | `--text-md` |
+| icon-only      | —      | 0, width 40 px (34 px sm) | —           |
+
+Focus ring: `box-shadow: 0 0 0 2px var(--color-accent-dim)` + `border-color: --accent`.
+
+Active/toggled-on state: `.is-active` applies `background: --accent-dim`,
+`color: --accent-bright`, transparent border.
+
+### `.tactile-input`
+
+Height 44 px, transparent background, `1px solid --color-border-strong`, 2 px radius.
+Focus: `border-color: --accent` + `box-shadow: 0 0 0 2px --color-accent-dim`.
+
+### Header Search Bar (`.header-search-bar`)
+
+Underline-only input: `border-bottom: 2px solid --color-border-strong`, no box.
+On focus-within: `border-bottom-color: --accent`. Max-width 400 px.
+
+---
+
+## 9. Typography
+
+### Fonts
+
+- **UI font:** `Outfit Variable` — loaded as variable font; fallback `Outfit, sans-serif`
+- **Mono font:** `JetBrains Mono` — used for timestamps, phone numbers, IDs, and any
+  tabular numeric (`font-variant-numeric: tabular-nums`)
+
+### Fluid Scale
+
+All sizes use `clamp()` tuned for dual-distance viewing: 24" desktop at arm's length
+and 55" TV at approximately 10 ft (both at 1080p).
+
+| Token            | Value                       | ~px at 1920 px wide |
+| ---------------- | --------------------------- | ------------------- |
+| `--text-2xs`     | `clamp(13px, 0.72vw, 14px)` | 14 px               |
+| `--text-xs`      | `clamp(14px, 0.8vw, 16px)`  | 15 px               |
+| `--text-sm`      | `clamp(15px, 0.9vw, 18px)`  | 17 px               |
+| `--text-base`    | `clamp(16px, 1.05vw, 20px)` | 20 px               |
+| `--text-md`      | `clamp(18px, 1.2vw, 23px)`  | 23 px               |
+| `--text-lg`      | `clamp(20px, 1.4vw, 27px)`  | 27 px               |
+| `--text-xl`      | `clamp(24px, 1.6vw, 32px)`  | 32 px               |
+| `--text-2xl`     | `clamp(28px, 2vw, 40px)`    | 38 px               |
+| `--text-3xl`     | `clamp(34px, 2.6vw, 50px)`  | 50 px               |
+| `--text-4xl`     | `clamp(42px, 3.2vw, 62px)`  | 62 px               |
+| `--text-display` | `clamp(34px, 3vw, 56px)`    | 56 px               |
+
+### Weight Tokens
+
+`--weight-regular: 400` / `--weight-medium: 500` / `--weight-semibold: 600` /
+`--weight-bold: 700` / `--weight-extrabold: 800` / `--weight-black: 900`
+
+---
+
+## 10. Alerts Email-Preview Exemption
+
+`src/renderer/src/tabs/alerts.css` contains two fenced regions marked with:
+
+```
+/* === EMAIL CONTENT — DO NOT RESTYLE … */
+…
+/* === END EMAIL CONTENT … */
+```
+
+Everything within those fences is **exported content** — the white-canvas email
+preview card that matches the actual sent alert email. Its hardcoded colors (white
+background, dark text, literal severity colors) are correct and intentional. Never
+apply ink tokens, accent variables, or theme changes inside these fences.
+
+---
+
+## 11. Styling Rules
 
 ### Do
 
 - Use tokens from `theme.css` instead of hardcoded shared values
 - Prefer shared classes and components before adding one-off patterns
-- Keep styles in the existing CSS files unless a feature already owns its own stylesheet
+- Keep styles in the existing CSS files unless a feature already owns its own
+  stylesheet
 - Use `:focus-visible` for keyboard focus states
 - Keep dynamic runtime styling limited to cases that truly need inline values
+- Use `.ink-rail` modifiers to communicate state via the left-rail color
+- Use `--alarm` only for genuine problems the user must act on
 
-### Don't
+### Do Not
 
-- Don't document or reintroduce runtime theme switching
-- Don't add Tailwind, CSS modules, or CSS-in-JS to new renderer code
-- Don't hardcode common spacing, radii, or colors that already exist as tokens
-- Don't add custom button patterns when `TactileButton` already fits the use case
+- Do not add Tailwind, CSS modules, or CSS-in-JS to new renderer code
+- Do not hardcode common spacing, radii, or colors that already exist as tokens
+- Do not add custom button patterns when `TactileButton` already covers the case
+- Do not use `--accent` for severity or urgency semantics
+- Do not use `--alarm` decoratively (borders, section tints, unrelated highlights)
+- Do not give inline content surfaces an elevated (`#161616`) background fill
 
-## Inline Style Exceptions
+### Inline Style Exceptions
 
-Inline styles are acceptable when the value is produced at runtime, for example:
+Inline styles are acceptable when the value is produced at runtime:
 
 - `react-window` row positioning
 - `@dnd-kit` transform values
-- Dynamic CSS custom properties
-- Per-entity accent colors derived in TypeScript
+- Dynamic CSS custom properties (e.g., per-entity accent color passed as `--swatch`)
+- Runtime-computed dimensions
 
-Static design values should stay in CSS.
+Static design values must stay in CSS.
 
-## Accessibility
+---
 
-Renderer styles should preserve the existing accessibility baseline:
+## 12. Accessibility Baseline
 
-- Keyboard focus must remain visible
-- Clickable non-button elements need semantic roles and keyboard handlers
-- Color should reinforce state, not be the only indicator
+- **Focus ring:** `box-shadow: 0 0 0 2px var(--color-accent-dim)` + accent border on
+  all interactive elements via `:focus-visible`
+- **Color + shape:** State must be communicated by at least two signals — color alone
+  is insufficient. Rail color is supplemented by label text or icon change.
+- **Contrast floors:** Text quaternary (`#767676`) is the minimum for any readable
+  text on `#000`. Accent-bright colors in each scheme are verified ≥ 4.5 : 1 on
+  black. `--on-accent` (`#000`) on accent-fill buttons meets contrast requirements.
+- **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
+  include a `@media (prefers-reduced-motion: reduce)` override.
+- Clickable non-button elements need semantic ARIA roles and keyboard handlers.
 
-Use the current renderer components as the pattern reference when adding new UI.
+---
+
+## Layout Tokens
+
+| Token                           | Value          |
+| ------------------------------- | -------------- |
+| `--sidebar-width-collapsed`     | 110 px         |
+| `--header-height`               | 56 px          |
+| `--space-1` … `--space-12`      | 4 px … 64 px   |
+| `--radius-sm` … `--radius-pill` | 6 px … 9999 px |
+| `--z-dropdown`                  | 100            |
+| `--z-overlay`                   | 1000           |
+| `--z-popover`                   | 5000           |
+| `--z-modal`                     | 9999           |
+| `--z-window-controls`           | 10001          |
+| `--z-command-palette`           | 10002          |
+| `--z-critical`                  | 20000          |
