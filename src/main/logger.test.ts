@@ -420,4 +420,51 @@ describe('Logger detailed coverage', () => {
     expect(stats.logPath).toBeDefined();
     expect(typeof stats.logPath).toBe('string');
   });
+
+  it('caps queue growth when file writes persistently fail', async () => {
+    // Make appendFile always reject after the initial session marker writes
+    vi.mocked(fsPromises.appendFile).mockRejectedValue(new Error('disk full'));
+    vi.mocked(fsPromises.stat).mockRejectedValue(new Error('ENOENT'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const { logger } = await import('./logger');
+    // Log enough lines to exceed MAX_LOG_QUEUE_LINES (5000)
+    for (let i = 0; i < 6000; i++) {
+      logger.info('Test', `line ${i}`);
+    }
+
+    // Wait for async write attempts to settle
+    await new Promise((r) => setTimeout(r, 100));
+
+    const stats = logger.getQueueStatsForTests();
+    expect(stats.main).toBeLessThanOrEqual(5000);
+    expect(stats.dropped).toBeGreaterThan(0);
+
+    consoleSpy.mockRestore();
+  });
+
+  it('writes ERROR lines to both relay.log and errors.log', async () => {
+    vi.mocked(fsPromises.appendFile).mockResolvedValue(undefined);
+    vi.mocked(fsPromises.stat).mockRejectedValue(new Error('ENOENT'));
+
+    const { logger } = await import('./logger');
+
+    logger.error('Test', 'dual-write-sentinel-message');
+
+    // Wait for async writes to flush
+    await vi.waitFor(() => {
+      const calls = vi.mocked(fsPromises.appendFile).mock.calls;
+      // Find calls that contain our sentinel message
+      const matchingCalls = calls.filter((call) =>
+        String(call[1]).includes('dual-write-sentinel-message'),
+      );
+      // Expect writes to both relay.log and errors.log
+      const paths = matchingCalls.map((call) => String(call[0]));
+      const hasMainLog = paths.some((p) => p.endsWith('relay.log'));
+      const hasErrorLog = paths.some((p) => p.endsWith('errors.log'));
+      expect(hasMainLog).toBe(true);
+      expect(hasErrorLog).toBe(true);
+      return true;
+    });
+  });
 });

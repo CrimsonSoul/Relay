@@ -15,6 +15,7 @@ import { redactLogString, redactSensitiveData } from '@shared/logRedaction';
 
 // Constants
 const LOG_BATCH_SIZE = 100;
+const MAX_LOG_QUEUE_LINES = 5_000;
 const SESSION_START_BORDER_LENGTH = 80;
 const MEMORY_SAMPLE_INTERVAL_MS = 5000; // Sample memory every 5 seconds
 const MB_DIVISOR = 1024 * 1024;
@@ -52,6 +53,7 @@ class Logger implements ILogger {
   private warnCount = 0;
   private lastMemorySample = 0;
   private initialized = false;
+  private droppedLogLines = 0;
 
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -282,6 +284,12 @@ class Logger implements ILogger {
 
     const queue = isError ? this.errorQueue : this.writeQueue;
     queue.push(line);
+    if (queue.length > MAX_LOG_QUEUE_LINES) {
+      // Persistent write failure — drop oldest lines rather than grow unbounded.
+      const dropped = queue.length - MAX_LOG_QUEUE_LINES;
+      queue.splice(0, dropped);
+      this.droppedLogLines += dropped;
+    }
 
     if (this.isWriting) return;
     this.isWriting = true;
@@ -364,7 +372,8 @@ class Logger implements ILogger {
 
     // Write to appropriate log file(s)
     const isError = level >= LogLevel.ERROR;
-    void this.writeToFile(formatted, isError);
+    void this.writeToFile(formatted, false);
+    if (isError) void this.writeToFile(formatted, true);
   }
 
   /**
@@ -414,6 +423,15 @@ class Logger implements ILogger {
       errorCount: this.errorCount,
       warnCount: this.warnCount,
       logPath: this.logPath,
+    };
+  }
+
+  /** Test-only introspection of write-queue state. */
+  getQueueStatsForTests(): { main: number; error: number; dropped: number } {
+    return {
+      main: this.writeQueue.length,
+      error: this.errorQueue.length,
+      dropped: this.droppedLogLines,
     };
   }
 
