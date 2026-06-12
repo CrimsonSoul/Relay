@@ -35,16 +35,6 @@ directories:
   buildResources: resources
 npmRebuild: true
 removePackageScripts: true
-extraResources:
-  - from: resources
-    to: data
-    filter:
-      - '**/*'
-      - '!pocketbase/**'
-  - from: 'resources/pocketbase/'
-    to: 'pocketbase/'
-    filter:
-      - '**/*'
 win:
   target:
     - target: portable
@@ -53,6 +43,14 @@ win:
   artifactName: 'Relay.exe'
   icon: build/icon.ico
   requestedExecutionLevel: 'asInvoker'
+  extraResources:
+    - from: resources
+      to: data
+      filter:
+        - '**/*'
+        - '!pocketbase/**'
+    - from: 'resources/pocketbase/win32-x64/'
+      to: 'pocketbase/win32-x64/'
 compression: 'maximum'
 electronDownload:
   cache: '.electron'
@@ -71,3 +69,13 @@ mac:
   notarize: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  extraResources:
+    - from: resources
+      to: data
+      filter:
+        - '**/*'
+        - '!pocketbase/**'
+    - from: 'resources/pocketbase/darwin-arm64/'
+      to: 'pocketbase/darwin-arm64/'
+    - from: 'resources/pocketbase/darwin-x64/'
+      to: 'pocketbase/darwin-x64/'
