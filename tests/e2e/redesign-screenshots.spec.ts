@@ -337,6 +337,12 @@ test.describe('Redesign screenshot harness', () => {
       expect(wrappedNameCount).toBe(0);
       await shoot(window, 'oncall.png');
 
+      // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
+      await window.getByRole('button', { name: 'COPY ALL' }).click();
+      await expect(window.locator('.toast')).toBeVisible();
+      await window.waitForTimeout(400);
+      await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
+
       // --- People ---
       await goToTab(window, 'sidebar-people', 'People');
       await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
