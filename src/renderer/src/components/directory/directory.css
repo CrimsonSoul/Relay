@@ -277,20 +277,23 @@
   color: var(--color-accent-text);
 }
 
+/* Two-line interior matching .contact-entry: line 1 = name row,
+   line 2 = meta + relationships sharing one row (fits the 72px row). */
 .server-card-info {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
   flex: 1;
   min-width: 0;
-  gap: 4px;
-  justify-content: center;
+  column-gap: 10px;
+  row-gap: 4px;
 }
 
 .server-card-name-row {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   overflow: hidden;
   min-width: 0;
 }
@@ -302,15 +305,18 @@
   letter-spacing: -0.01em;
   display: block;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .server-card-meta {
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   color: var(--color-text-secondary);
   font-weight: 400;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -321,7 +327,7 @@
 
 .server-card-meta-separator {
   opacity: 0.3;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   flex-shrink: 0;
 }
 
@@ -338,157 +344,17 @@
   font-size: var(--text-xs);
 }
 
+.server-card-relationships::before {
+  content: '·';
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
 .server-card-relationships span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* Server Card - Wide layout */
-@container (min-width: 900px) {
-  .server-card-name {
-    font-size: var(--text-xl);
-  }
-}
-
-.contact-card-body {
-  width: 100%;
-  height: calc(100% - 8px);
-  display: flex;
-  align-items: center;
-  padding-left: 20px;
-  padding-right: 20px;
-  gap: 16px;
-  cursor: default;
-}
-
-.contact-card-body .accent-strip {
-  opacity: 0;
-}
-
-.contact-card-body--selected .accent-strip {
-  opacity: 1;
-}
-
-.contact-card-body:hover .accent-strip {
-  opacity: 0;
-}
-
-.contact-card-info {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-width: 0;
-  gap: 4px;
-  justify-content: center;
-}
-
-.contact-card-name-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  overflow: hidden;
-  min-width: 0;
-}
-
-.contact-card-name {
-  font-size: var(--text-lg);
-  font-weight: 700;
-  color: var(--color-text-primary);
-  letter-spacing: -0.01em;
-  display: block;
-  line-height: 1.2;
-}
-
-.contact-card-source-label {
-  font-size: var(--text-xs);
-  background: transparent;
-  border: 1px solid var(--color-border-strong);
-  color: var(--color-text-secondary);
-  padding: 3px 8px;
-  border-radius: 2px;
-  font-weight: 800;
-  text-transform: uppercase;
-  flex-shrink: 0;
-  letter-spacing: 0.12em;
-}
-
-.contact-card-meta {
-  font-size: var(--text-base);
-  color: var(--color-text-secondary);
-  font-weight: 400;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.contact-card-meta-separator {
-  opacity: 0.3;
-  font-size: var(--text-base);
-  flex-shrink: 0;
-}
-
-.contact-card-right {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 12px;
-  justify-content: flex-end;
-}
-
-.contact-card-phone {
-  font-size: var(--text-base);
-  color: var(--color-text-tertiary);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  min-width: 160px;
-  flex-shrink: 0;
-  display: block;
-  text-align: right;
-  transition: color 0.15s ease;
-}
-
-.contact-card-phone:hover {
-  color: var(--color-text-primary);
-}
-
-.contact-card-actions {
-  position: absolute;
-  right: 32px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: var(--color-bg-surface-elevated);
-  padding: 4px 8px;
-  border-radius: 4px;
-  display: flex;
-  gap: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-  border: 1px solid var(--color-border-strong);
-  z-index: 10;
-}
-
-.contact-card-notes-btn {
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-hover-overlay-strong);
-  color: var(--color-text-secondary);
-  border-radius: 2px;
-  font-size: var(--text-sm);
-  font-weight: 500;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition:
-    color 0.15s ease,
-    background-color 0.15s ease,
-    border-color 0.15s ease;
-}
-
-.contact-card-notes-btn:hover {
-  color: var(--color-text-primary);
-  border-color: var(--color-scrollbar-hover);
-  background: var(--color-focus-ring);
 }
 
 /* ============================================================================

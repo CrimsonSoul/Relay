@@ -33,7 +33,8 @@ interface ServerVirtualRowData {
   onRowClick: (index: number) => void;
 }
 
-const ROW_HEIGHT = 104;
+// Matches DirectoryTab's ROW_HEIGHT so People and Servers rows are identical.
+const ROW_HEIGHT = 72;
 
 const normalizeServerField = (value: string | undefined) => {
   const trimmed = value?.trim();
