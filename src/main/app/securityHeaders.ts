@@ -35,6 +35,7 @@ export function setupSecurityHeaders(isDev: boolean): void {
         ...details.responseHeaders,
         'Content-Security-Policy': [
           "default-src 'self'; " +
+            // NOTE: this hash is duplicated in electron.vite.config.ts (PROD_CSP meta fallback) — change both together.
             `script-src 'self' ${isDev ? "'unsafe-eval' 'unsafe-inline'" : "'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='"}; ` +
             "style-src 'self' 'unsafe-inline'; " +
             "img-src 'self' data: blob:; " +

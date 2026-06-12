@@ -5,6 +5,35 @@ import react from '@vitejs/plugin-react';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// Mirrors the production header CSP in src/main/app/securityHeaders.ts as a
+// defense-in-depth <meta> fallback for the packaged file:// load. connect-src
+// stays scheme-wide here because the PocketBase origin is configured at
+// runtime; the dynamic header narrows it to a single origin.
+const PROD_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'sha256-Z2/iFzh9VMlVkEOar1f/oSHWwQk3ve1qk/C2WdsC4Xk='",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "connect-src 'self' http: https: ws: wss:",
+  "font-src 'self' data:",
+  "frame-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+].join('; ');
+
+function injectCspMeta(): import('vite').Plugin {
+  return {
+    name: 'relay-inject-csp-meta',
+    apply: 'build' as const,
+    transformIndexHtml(html: string) {
+      return html.replace(
+        '<meta charset="UTF-8" />',
+        `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${PROD_CSP}" />`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -59,7 +88,7 @@ export default defineConfig({
         '@shared': resolve(__dirname, 'src/shared'),
       },
     },
-    plugins: [react()],
+    plugins: [react(), injectCspMeta()],
     server: {
       hmr: {
         overlay: false,
