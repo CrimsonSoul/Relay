@@ -233,17 +233,25 @@ const doStartPocketBase = async (
       startAdvertising(serverConfig.port);
     }
 
-    // Fire-and-forget: backup and retention run in the background
-    // so the UI can proceed as soon as PB is up and collections are ready.
+    // Fire-and-forget: backup and retention run in the background on a shared
+    // daily schedule, ordered backup-then-retention so retention can never
+    // delete data that isn't captured in a backup. The superuser token expires
+    // (~2 weeks), so each run re-authenticates first.
     void (async () => {
-      const backupMgr = new BackupManager(configDataDir);
-      setBackupManager(backupMgr);
       try {
+        const backupMgr = new BackupManager(configDataDir);
+        setBackupManager(backupMgr);
         backupMgr.setPocketBase(pb);
-        await backupMgr.backup();
         const retentionMgr = new RetentionManager(pb);
         setRetentionManager(retentionMgr);
-        retentionMgr.startSchedule();
+        retentionMgr.startSchedule(24 * 60 * 60 * 1000, async () => {
+          if (!pb.authStore.isValid) {
+            await pb
+              .collection('_superusers')
+              .authWithPassword('admin@relay.app', serverConfig.secret);
+          }
+          await backupMgr.backup();
+        });
         loggers.pocketbase.info('Backup and retention managers started');
       } catch (retErr) {
         loggers.pocketbase.error('Failed to start backup/retention managers', {

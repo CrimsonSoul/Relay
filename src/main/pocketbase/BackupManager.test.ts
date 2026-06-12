@@ -131,6 +131,42 @@ describe('BackupManager', () => {
       // rmSync should be called for the 2 oldest files (indices 10 and 11)
       expect(mockRmSync).toHaveBeenCalledTimes(2);
     });
+
+    it('prunes regular and pre_restore backups on separate budgets', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+
+      // 12 regular backups (budget 10 → 2 pruned) and 5 pre-restore safety
+      // backups (budget 3 → 2 pruned). On a single shared budget of 10, the
+      // 17 files would lose 7 — the split budgets keep them independent.
+      const regularFiles = Array.from(
+        { length: 12 },
+        (_, i) => `backup_${String(i).padStart(2, '0')}.zip`,
+      );
+      const preRestoreFiles = Array.from(
+        { length: 5 },
+        (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
+      );
+      const files = [...regularFiles, ...preRestoreFiles];
+      mockReaddirSync.mockReturnValue(files as unknown as string[]);
+      // Lower index = newer (descending mtime within each group)
+      mockStatSync.mockImplementation((filePath) => {
+        const name = String(filePath).split('/').pop()!;
+        const idx = files.indexOf(name);
+        return makeStatResult(new Date(2025 - idx, 0, 1));
+      });
+
+      await manager.backup();
+
+      const removed = mockRmSync.mock.calls.map((call) => String(call[0]).split('/').pop());
+      expect(removed.toSorted((a, b) => String(a).localeCompare(String(b)))).toEqual([
+        'backup_10.zip',
+        'backup_11.zip',
+        'pre_restore_03.zip',
+        'pre_restore_04.zip',
+      ]);
+    });
   });
 
   describe('listBackups()', () => {
@@ -220,6 +256,7 @@ describe('BackupManager', () => {
       const pb = makePbClient();
       manager.setPocketBase(pb);
 
+      // 12 pre-restore safety backups on a budget of 3 → 9 pruned
       const files = Array.from(
         { length: 12 },
         (_, i) => `pre_restore-${String(i).padStart(2, '0')}.zip`,
@@ -233,7 +270,7 @@ describe('BackupManager', () => {
 
       await manager.restore('my-backup.zip');
 
-      expect(mockRmSync).toHaveBeenCalledTimes(2);
+      expect(mockRmSync).toHaveBeenCalledTimes(9);
     });
 
     it('throws when safety backup creation fails', async () => {

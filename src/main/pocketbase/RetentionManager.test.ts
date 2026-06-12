@@ -102,6 +102,35 @@ describe('RetentionManager', () => {
       manager.stop();
     });
 
+    it('runs beforeCleanup before each cleanup, including the initial run', async () => {
+      // Real timers: the initial run fires immediately, no timer advance needed.
+      vi.useRealTimers();
+      const order: string[] = [];
+      const beforeCleanup = vi.fn(async () => {
+        order.push('before');
+      });
+      const manager = new RetentionManager(makePb());
+      vi.spyOn(manager, 'runCleanup').mockImplementation(async () => {
+        order.push('cleanup');
+      });
+
+      manager.startSchedule(60_000, beforeCleanup);
+      await vi.waitFor(() => expect(order).toEqual(['before', 'cleanup']));
+      manager.stop();
+    });
+
+    it('a failing beforeCleanup does not prevent cleanup', async () => {
+      vi.useRealTimers();
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      manager.startSchedule(60_000, async () => {
+        throw new Error('backup failed');
+      });
+      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalled());
+      manager.stop();
+    });
+
     it('replaces the existing interval when the schedule is restarted', async () => {
       const getFullList = vi.fn().mockResolvedValue([]);
       const pb = makePb({ getFullList });

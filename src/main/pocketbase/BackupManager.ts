@@ -13,6 +13,7 @@ function makeBackupName(prefix: string, date = new Date()): string {
 export class BackupManager {
   private readonly backupsDir: string;
   private readonly maxBackups = 10;
+  private readonly maxPreRestoreBackups = 3;
   private pb: PocketBase | null = null;
 
   constructor(dataDir: string) {
@@ -69,15 +70,23 @@ export class BackupManager {
   }
 
   private pruneOldBackups(): void {
+    // Manual/scheduled backups and pre-restore safety backups are pruned on
+    // separate budgets so a run of restores can't evict regular backups
+    // (and vice versa).
+    this.pruneMatching((name) => !name.startsWith('pre_restore'), this.maxBackups);
+    this.pruneMatching((name) => name.startsWith('pre_restore'), this.maxPreRestoreBackups);
+  }
+
+  private pruneMatching(matches: (name: string) => boolean, keep: number): void {
     const files = readdirSync(this.backupsDir)
-      .filter((f) => f.endsWith('.db') || f.endsWith('.zip'))
+      .filter((f) => (f.endsWith('.db') || f.endsWith('.zip')) && matches(f))
       .map((f) => ({
         name: f,
         path: join(this.backupsDir, f),
         mtime: statSync(join(this.backupsDir, f)).mtime.getTime(),
       }))
       .sort((a, b) => b.mtime - a.mtime);
-    for (const file of files.slice(this.maxBackups)) {
+    for (const file of files.slice(keep)) {
       try {
         rmSync(file.path);
         logger.info('Pruned old backup', { path: file.path });
