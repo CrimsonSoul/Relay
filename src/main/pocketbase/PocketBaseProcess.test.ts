@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PocketBaseProcess } from './PocketBaseProcess';
 
 // Hoist mocks so vi.mock factories can reference them
@@ -77,6 +77,10 @@ describe('PocketBaseProcess', () => {
       host: '127.0.0.1',
       port: 8090,
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // ── URL helpers ─────────────────────────────────────────────────────────────
@@ -255,9 +259,8 @@ describe('PocketBaseProcess', () => {
   // ── isRunning() ──────────────────────────────────────────────────────────────
 
   it('isRunning() returns false after process exits', async () => {
-    // Fake timers so the crash-restart backoff scheduled by the unexpected
-    // exit never fires during this test.
-    vi.useFakeTimers();
+    // A clean exit (code 0, no signal) does not trigger crash handling,
+    // so no fake timers are needed here.
     const child = makeMockChild();
     mockSpawn.mockReturnValue(child);
     mockFetch.mockResolvedValue({ ok: true });
@@ -269,7 +272,6 @@ describe('PocketBaseProcess', () => {
     child._emit('exit', 0, null);
 
     expect(pbProcess.isRunning()).toBe(false);
-    vi.useRealTimers();
   });
 
   // ── stop() ───────────────────────────────────────────────────────────────────

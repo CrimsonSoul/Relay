@@ -105,9 +105,9 @@ export class PocketBaseProcess {
         return;
       }
 
-      // A signal kill (code null, signal set) or abnormal code is a crash.
-      // A clean self-initiated exit (code 0) while we did not ask for it is
-      // also unexpected — restart so the server never stays silently down.
+      // A signal kill (code null, signal set) or abnormal exit code is a crash.
+      // A clean self-initiated exit (code 0, no signal) is deliberately NOT
+      // treated as a crash — PocketBase only exits 0 when asked to stop.
       if (!this.stopping && (code !== 0 || signal !== null)) {
         void this.handleCrash(`PocketBase exited with code ${code} signal ${signal}`);
       }
