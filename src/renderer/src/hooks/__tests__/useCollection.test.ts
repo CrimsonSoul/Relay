@@ -741,6 +741,73 @@ describe('useCollection', () => {
     expect(cacheSnapshotMock).toHaveBeenLastCalledWith('test', syncedRecords);
   });
 
+  it('replays realtime events that arrive while the initial fetch is in flight', async () => {
+    let resolveFetch: ((records: RecordModel[]) => void) | undefined;
+    mockGetFullList.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
+    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+      realtimeCallback = cb;
+      return mockUnsubscribe;
+    });
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    // Wait until the realtime handler has been captured
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalled());
+
+    // A newer update arrives while the (older) fetch is still in flight
+    act(() => {
+      realtimeCallback({ action: 'update', record: makeRecord('a', { name: 'NEW' }) });
+    });
+
+    // The stale snapshot lands afterwards
+    await act(async () => {
+      resolveFetch?.([makeRecord('a', { name: 'OLD' })]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toHaveLength(1);
+    expect((result.current.data[0] as Record<string, unknown>).name).toBe('NEW');
+  });
+
+  it('replays delete events that arrive while the initial fetch is in flight', async () => {
+    let resolveFetch: ((records: RecordModel[]) => void) | undefined;
+    mockGetFullList.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    let realtimeCallback: (e: { action: string; record: RecordModel }) => void = () => {};
+    mockSubscribe.mockImplementation(async (_topic: string, cb: typeof realtimeCallback) => {
+      realtimeCallback = cb;
+      return mockUnsubscribe;
+    });
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalled());
+
+    // Record 'a' is deleted while the fetch is still in flight
+    act(() => {
+      realtimeCallback({ action: 'delete', record: makeRecord('a') });
+    });
+
+    // The stale snapshot still contains 'a'
+    await act(async () => {
+      resolveFetch?.([makeRecord('a'), makeRecord('b')]);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.data).toHaveLength(1);
+    expect(result.current.data[0].id).toBe('b');
+  });
+
   it('handles subscribe error gracefully', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSubscribe.mockRejectedValue(new Error('subscribe failed'));

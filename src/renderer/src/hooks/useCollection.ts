@@ -129,6 +129,19 @@ function applyRealtimeEvent<T extends RecordModel>(
   return next;
 }
 
+/** Replay buffered realtime events on top of a fetched snapshot. */
+function replayBufferedEvents<T extends RecordModel>(
+  records: T[],
+  events: { action: string; record: RecordModel }[] | null,
+  comparator: ((a: T, b: T) => number) | null,
+): T[] {
+  let next = records;
+  for (const event of events ?? []) {
+    next = applyRealtimeEvent<T>(next, event.action, event.record, comparator);
+  }
+  return next;
+}
+
 /** Try to load data from the offline cache. Returns records or null. */
 async function tryOfflineCache<T>(collectionName: string): Promise<T[] | null> {
   try {
@@ -176,6 +189,9 @@ export function useCollection<T extends RecordModel>(
   // Ref to latest data so the realtime handler can read it without a closure
   // over stale state (avoids functional updater nesting flagged by sonarjs).
   const dataRef = useRef<T[]>([]);
+  // Realtime events that arrive while a fetch is in flight — replayed on top
+  // of the snapshot so an older fetch result can't clobber newer events.
+  const inFlightEventsRef = useRef<{ action: string; record: RecordModel }[] | null>(null);
   const { sort, filter } = options;
   const comparator = useMemo(() => buildComparator<T>(sort), [sort]);
 
@@ -189,14 +205,16 @@ export function useCollection<T extends RecordModel>(
     const isCurrentFetch = () => mountedRef.current && generation === fetchGenerationRef.current;
 
     try {
+      inFlightEventsRef.current = [];
       if (isOnline()) {
         const records = await fetchRemoteCollection<T>(collectionName, { sort, filter });
         if (!isCurrentFetch()) return;
-        commitRecords(records);
+        const next = replayBufferedEvents<T>(records, inFlightEventsRef.current, comparator);
+        commitRecords(next);
         setError(null);
         // Populate offline cache with the full collection so going offline
         // before any realtime events still has cached data available.
-        getApi()?.cacheSnapshot?.(collectionName, records);
+        getApi()?.cacheSnapshot?.(collectionName, next);
         return;
       }
 
@@ -212,9 +230,14 @@ export function useCollection<T extends RecordModel>(
       if (!isCurrentFetch()) return;
       if (cached) commitRecords(cached);
     } finally {
-      if (isCurrentFetch()) setLoading(false);
+      // Only the current fetch may clear the buffer — a stale fetch's finally
+      // must not null out a buffer a newer in-flight fetch is relying on.
+      if (isCurrentFetch()) {
+        inFlightEventsRef.current = null;
+        setLoading(false);
+      }
     }
-  }, [collectionName, sort, filter, commitRecords]);
+  }, [collectionName, sort, filter, commitRecords, comparator]);
 
   // Track connection state with a ref (avoids cascading effect re-runs)
   // and a counter to trigger re-subscription on reconnect.
@@ -265,6 +288,9 @@ export function useCollection<T extends RecordModel>(
       dataRef.current = next;
       setData(next);
       getApi()?.cacheWrite?.(collection, action, record);
+      if (inFlightEventsRef.current && inFlightEventsRef.current.length < 1000) {
+        inFlightEventsRef.current.push({ action, record });
+      }
     }
 
     async function subscribe(): Promise<void> {
