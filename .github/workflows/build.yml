@@ -159,3 +159,94 @@ jobs:
         with:
           name: relay-windows
           path: release/*.exe
+
+  package-mac:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb' || github.ref == 'refs/heads/test'))
+    runs-on: macos-latest
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: 1
+      # No Apple Developer cert in CI: electron-builder ships the app ad-hoc
+      # signed (resetAdHocDarwinSignature re-signs after fuse flipping).
+      # Download artifacts with `gh run download` — CLI downloads carry no
+      # quarantine attribute, so the app opens directly. Browser downloads
+      # need one `xattr -dr com.apple.quarantine Relay.app` until real
+      # notarization credentials are added.
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Get Electron version
+        id: electron-version
+        run: |
+          ELECTRON_VER=$(node -p "require('./package-lock.json').packages['node_modules/electron'].version")
+          echo "version=$ELECTRON_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Electron binary
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/Library/Caches/electron
+            .electron
+          key: electron-mac-arm64-${{ steps.electron-version.outputs.version }}
+
+      - name: Cache electron-builder tooling
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/Library/Caches/electron-builder
+          key: electron-builder-mac-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-mac-
+
+      - name: Cache Electron headers
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.electron-gyp
+          key: electron-gyp-mac-${{ steps.electron-version.outputs.version }}
+
+      - name: Get PocketBase version
+        id: pocketbase-version
+        run: |
+          PB_VER=$(grep -m1 "const PB_VERSION" scripts/download-pocketbase.mjs | sed "s/.*'\(.*\)'.*/\1/")
+          echo "version=$PB_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PocketBase binaries
+        id: pocketbase-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: |
+            resources/pocketbase/darwin-arm64
+            resources/pocketbase/darwin-x64
+          key: pocketbase-darwin-${{ steps.pocketbase-version.outputs.version }}
+
+      - name: Install dependencies
+        env:
+          RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
+        run: npm ci --prefer-offline
+
+      - name: Download PocketBase binaries
+        if: steps.pocketbase-cache.outputs.cache-hit != 'true'
+        run: |
+          node scripts/download-pocketbase.mjs --platform=darwin --arch=arm64
+          node scripts/download-pocketbase.mjs --platform=darwin --arch=x64
+
+      - name: Build and package (arm64, ad-hoc signed)
+        run: |
+          npm run build
+          npx electron-builder --mac dmg --arm64 -c.mac.notarize=false -c.mac.gatekeeperAssess=false -c.compression=store
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: relay-mac-arm64
+          path: release/*.dmg
