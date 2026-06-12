@@ -255,6 +255,9 @@ describe('PocketBaseProcess', () => {
   // ── isRunning() ──────────────────────────────────────────────────────────────
 
   it('isRunning() returns false after process exits', async () => {
+    // Fake timers so the crash-restart backoff scheduled by the unexpected
+    // exit never fires during this test.
+    vi.useFakeTimers();
     const child = makeMockChild();
     mockSpawn.mockReturnValue(child);
     mockFetch.mockResolvedValue({ ok: true });
@@ -262,11 +265,11 @@ describe('PocketBaseProcess', () => {
     await pbProcess.start();
     expect(pbProcess.isRunning()).toBe(true);
 
-    // Simulate clean exit (code 0 → no restart)
     child.exitCode = 0;
     child._emit('exit', 0, null);
 
     expect(pbProcess.isRunning()).toBe(false);
+    vi.useRealTimers();
   });
 
   // ── stop() ───────────────────────────────────────────────────────────────────
@@ -332,30 +335,34 @@ describe('PocketBaseProcess', () => {
     const crashCallback = vi.fn();
     pbProcess.onCrash(crashCallback);
 
+    vi.useFakeTimers();
+
     // children[0]: initial process
     await pbProcess.start();
 
-    // Crash 1 → restart (children[1] spawned)
+    // Crash 1 → restart after 1s backoff (children[1] spawned)
     children[0].exitCode = 1;
     children[0]._emit('exit', 1, null);
-    await new Promise<void>((res) => setTimeout(res, 0));
+    await vi.advanceTimersByTimeAsync(1000);
 
-    // Crash 2 → restart (children[2] spawned)
+    // Crash 2 → restart after 5s backoff (children[2] spawned)
     children[1].exitCode = 1;
     children[1]._emit('exit', 1, null);
-    await new Promise<void>((res) => setTimeout(res, 0));
+    await vi.advanceTimersByTimeAsync(5000);
 
-    // Crash 3 → restart (children[3] spawned)
+    // Crash 3 → restart after 15s backoff (children[3] spawned)
     children[2].exitCode = 1;
     children[2]._emit('exit', 1, null);
-    await new Promise<void>((res) => setTimeout(res, 0));
+    await vi.advanceTimersByTimeAsync(15000);
 
     // Crash 4 → exceeds maxRestarts → onCrash fires (no new spawn)
     children[3].exitCode = 1;
     children[3]._emit('exit', 1, null);
-    await new Promise<void>((res) => setTimeout(res, 0));
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(crashCallback).toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 
   it('restarts up to maxRestarts times on crash', async () => {
@@ -366,19 +373,25 @@ describe('PocketBaseProcess', () => {
 
     pbProcess.onCrash(vi.fn());
 
+    vi.useFakeTimers();
+
     await pbProcess.start();
     expect(mockSpawn).toHaveBeenCalledTimes(1);
 
-    // Three crashes → three restart attempts (maxRestarts = 3)
+    // Three crashes → three restart attempts (maxRestarts = 3),
+    // each preceded by its backoff delay (1s, 5s, 15s)
+    const backoffs = [1000, 5000, 15000];
     for (let i = 0; i < 3; i++) {
       const current = children[i];
       current.exitCode = 1;
       current._emit('exit', 1, null);
-      await new Promise<void>((res) => setTimeout(res, 0));
+      await vi.advanceTimersByTimeAsync(backoffs[i]);
     }
 
     // Should have spawned 4 times total: 1 initial + 3 restarts
     expect(mockSpawn).toHaveBeenCalledTimes(4);
+
+    vi.useRealTimers();
   });
 
   it('onCrash callback receives the reason string', async () => {
@@ -390,19 +403,26 @@ describe('PocketBaseProcess', () => {
     const crashCallback = vi.fn();
     pbProcess.onCrash(crashCallback);
 
+    vi.useFakeTimers();
+
     await pbProcess.start();
 
-    // Exhaust maxRestarts (3) then trigger the 4th crash which calls onCrash
+    // Exhaust maxRestarts (3) then trigger the 4th crash which calls onCrash.
+    // Each restart waits out its backoff (1s, 5s, 15s); the 4th crash skips
+    // the backoff and calls onCrash directly.
+    const backoffs = [1000, 5000, 15000, 0];
     for (let i = 0; i < 4; i++) {
       children[i].exitCode = 1;
       children[i]._emit('exit', 1, null);
-      await new Promise<void>((res) => setTimeout(res, 0));
+      await vi.advanceTimersByTimeAsync(backoffs[i]);
     }
 
     // The final crash (4th) exceeds maxRestarts=3, so onCrash is called with a reason string
     const calls = crashCallback.mock.calls;
     expect(calls.length).toBeGreaterThan(0);
     expect(typeof calls[calls.length - 1][0]).toBe('string');
+
+    vi.useRealTimers();
   });
 
   it('no restart when stopping flag is set (intentional stop)', async () => {
@@ -425,6 +445,75 @@ describe('PocketBaseProcess', () => {
     // No restart should occur
     expect(mockSpawn).toHaveBeenCalledTimes(1);
     expect(crashCallback).not.toHaveBeenCalled();
+  });
+
+  it('restarts when the process is signal-killed (code null, signal set)', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    // OOM-kill / external SIGKILL: code null, signal set, not stopping
+    children[0]._emit('exit', null, 'SIGKILL');
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('waits for the backoff delay before restarting after a crash', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+
+    children[0].exitCode = 1;
+    children[0]._emit('exit', 1, null);
+
+    // No respawn before the 1000ms backoff has elapsed
+    await vi.advanceTimersByTimeAsync(999);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
+
+  it('killSync() suppresses crash handling for the subsequent exit event', async () => {
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+
+    const crashCallback = vi.fn();
+    pbProcess.onCrash(crashCallback);
+
+    vi.useFakeTimers();
+
+    await pbProcess.start();
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    pbProcess.killSync();
+    processKillSpy.mockRestore();
+
+    // The SIGKILL from killSync produces a (null, 'SIGKILL') exit event
+    child._emit('exit', null, 'SIGKILL');
+    await vi.advanceTimersByTimeAsync(20000);
+
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(crashCallback).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
   });
 
   // ── stdout/stderr listeners ──────────────────────────────────────────────────
@@ -455,23 +544,26 @@ describe('PocketBaseProcess', () => {
     expect(() => stderrCb![1](Buffer.from('Warning message'))).not.toThrow();
   });
 
-  // ── exit with code 0 or null does not trigger restart ──────────────────────
+  // ── unexpected exits trigger restart ────────────────────────────────────────
 
-  it('does not restart on exit with code null (signal-based)', async () => {
-    const child = makeMockChild();
-    mockSpawn.mockReturnValue(child);
+  // This test previously asserted that a (null, signal) exit did NOT restart —
+  // that encoded the bug where signal kills left the server silently dead.
+  it('restarts on exit with code null (signal-based) when not stopping', async () => {
+    const children = [makeMockChild(), makeMockChild()];
+    let spawnCall = 0;
+    mockSpawn.mockImplementation(() => children[spawnCall++]);
     mockFetch.mockResolvedValue({ ok: true });
 
-    const crashCallback = vi.fn();
-    pbProcess.onCrash(crashCallback);
+    vi.useFakeTimers();
 
     await pbProcess.start();
 
-    child._emit('exit', null, 'SIGTERM');
-    await new Promise<void>((res) => setTimeout(res, 0));
+    children[0]._emit('exit', null, 'SIGTERM');
+    await vi.advanceTimersByTimeAsync(1000);
 
-    expect(crashCallback).not.toHaveBeenCalled();
-    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
   });
 
   // ── handleCrash when restart itself fails ──────────────────────────────────

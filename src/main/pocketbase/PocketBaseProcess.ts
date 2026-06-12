@@ -3,6 +3,10 @@ import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface PocketBaseConfig {
   binaryPath: string;
   dataDir: string;
@@ -18,6 +22,7 @@ export class PocketBaseProcess {
   private firstCrashAt: number | null = null;
   private readonly maxRestarts = 3;
   private readonly restartWindowMs = 60_000;
+  private readonly restartDelaysMs = [1_000, 5_000, 15_000];
   private stopping = false;
   private onCrashCallback?: (error: string) => void;
 
@@ -100,8 +105,11 @@ export class PocketBaseProcess {
         return;
       }
 
-      if (!this.stopping && code !== 0 && code !== null) {
-        void this.handleCrash(`PocketBase exited with code ${code}`);
+      // A signal kill (code null, signal set) or abnormal code is a crash.
+      // A clean self-initiated exit (code 0) while we did not ask for it is
+      // also unexpected — restart so the server never stays silently down.
+      if (!this.stopping && (code !== 0 || signal !== null)) {
+        void this.handleCrash(`PocketBase exited with code ${code} signal ${signal}`);
       }
     });
 
@@ -173,6 +181,7 @@ export class PocketBaseProcess {
   /** Synchronous force-kill for use during app quit. SQLite WAL is crash-safe. */
   killSync(): void {
     if (!this.child?.pid) return;
+    this.stopping = true;
     const pid = this.child.pid;
     logger.info('Force-killing PocketBase (sync)', { pid });
 
@@ -263,7 +272,13 @@ export class PocketBaseProcess {
 
     this.restartCount++;
     if (this.restartCount <= this.maxRestarts) {
-      logger.warn(`Restarting PocketBase (attempt ${this.restartCount}/${this.maxRestarts})`);
+      const backoffMs =
+        this.restartDelaysMs[Math.min(this.restartCount - 1, this.restartDelaysMs.length - 1)];
+      logger.warn(
+        `Restarting PocketBase in ${backoffMs}ms (attempt ${this.restartCount}/${this.maxRestarts})`,
+      );
+      await delay(backoffMs);
+      if (this.stopping) return; // app began shutting down during the backoff
       try {
         await this.start();
       } catch (err) {
