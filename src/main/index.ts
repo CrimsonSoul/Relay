@@ -230,7 +230,7 @@ if (gotLock) {
           loggers.pocketbase.info('Client-mode offline infrastructure initialized');
         } catch (syncErr) {
           loggers.pocketbase.warn(
-            'Could not initialize offline infrastructure — will retry on reconnect',
+            'Could not initialize offline infrastructure — local cache unavailable',
             {
               error: syncErr,
             },
