@@ -4,6 +4,7 @@ import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
+import { describeUrlForLog } from '@shared/urlSecurity';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
@@ -114,10 +115,10 @@ export function setupWindowHandlers(
       if (typeof url === 'string' && isAllowedExternalUrl(url)) {
         await shell.openExternal(url);
       } else {
-        loggers.security.error(`Blocked opening external URL: ${url}`);
+        loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);
       }
     } catch {
-      loggers.security.error(`Invalid URL provided to openExternal: ${url}`);
+      loggers.security.error(`Invalid URL provided to openExternal: ${describeUrlForLog(url)}`);
     }
   });
 

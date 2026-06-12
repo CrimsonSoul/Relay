@@ -100,6 +100,16 @@ export function getRelayServerConnectOrigins(value: string): { http: string; ws:
   return { http, ws: `${wsProtocol}//${parsed.host}` };
 }
 
+/** Origin-only rendering of an untrusted URL for log messages — query strings
+ *  and paths can carry tokens that would bypass key-based log redaction. */
+export function describeUrlForLog(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return '<unparseable-url>';
+  }
+}
+
 function isRelayServerOriginUrl(parsed: URL): boolean {
   return (
     parsed.username === '' &&

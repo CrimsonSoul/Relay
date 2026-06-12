@@ -7,6 +7,7 @@ import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHand
 import { setupSecurityHeaders } from './securityHeaders';
 import { setupContextMenu } from './contextMenu';
 import { attachWindowLifecycleListeners } from './processLifecycle';
+import { describeUrlForLog } from '@shared/urlSecurity';
 
 // Resolve to `dist/main/` so that sibling-relative paths
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
@@ -112,13 +113,13 @@ export async function createWindow(): Promise<void> {
     // Allow dev server and local file reloads
     if (isDev && isAllowedDevRendererUrl(url, process.env.ELECTRON_RENDERER_URL!)) return;
     if (isAllowedRendererFileUrl(url, allowedFilePath)) return;
-    loggers.security.warn(`Blocked main window navigation to: ${url}`);
+    loggers.security.warn(`Blocked main window navigation to: ${describeUrlForLog(url)}`);
     event.preventDefault();
   });
 
   // Block window.open() from the renderer (H-1)
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    loggers.security.warn(`Blocked window.open() attempt: ${url}`);
+    loggers.security.warn(`Blocked window.open() attempt: ${describeUrlForLog(url)}`);
     return { action: 'deny' };
   });
 
@@ -191,11 +192,11 @@ export async function createAuxWindow(route: string): Promise<void> {
     )
       return;
     if (isAllowedRendererFileUrl(url, auxAllowedFilePath)) return;
-    loggers.security.warn(`Blocked aux window navigation to: ${url}`);
+    loggers.security.warn(`Blocked aux window navigation to: ${describeUrlForLog(url)}`);
     event.preventDefault();
   });
   auxWindow.webContents.setWindowOpenHandler(({ url }) => {
-    loggers.security.warn(`Blocked aux window.open() attempt: ${url}`);
+    loggers.security.warn(`Blocked aux window.open() attempt: ${describeUrlForLog(url)}`);
     return { action: 'deny' };
   });
 

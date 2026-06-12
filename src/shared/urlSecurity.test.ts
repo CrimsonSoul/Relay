@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
+  describeUrlForLog,
   getRelayServerConnectOrigins,
   isAllowedRelayServerUrl,
   normalizeRelayServerUrl,
 } from './urlSecurity';
+
+describe('describeUrlForLog', () => {
+  it('returns only the origin', () => {
+    expect(describeUrlForLog('https://example.com/path?token=secret123')).toBe(
+      'https://example.com',
+    );
+  });
+  it('handles unparseable input', () => {
+    expect(describeUrlForLog('not a url')).toBe('<unparseable-url>');
+  });
+});
 
 describe('urlSecurity', () => {
   const httpProtocol = 'http';
