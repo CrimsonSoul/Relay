@@ -201,6 +201,93 @@ describe('PocketBaseProcess', () => {
     );
   });
 
+  it('kills a stale pocketbase listener on the port (darwin)', async () => {
+    pbProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'darwin',
+    });
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'lsof' && args.includes('tcp:8090')) {
+        return '1234\n';
+      }
+      if (command === 'ps' && args.includes('1234')) {
+        return '/Applications/Relay.app/Contents/Resources/pocketbase/darwin-arm64/pocketbase\n';
+      }
+      return '';
+    });
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    try {
+      await pbProcess.start();
+      expect(processKillSpy).toHaveBeenCalledWith(1234, 'SIGKILL');
+    } finally {
+      processKillSpy.mockRestore();
+    }
+  });
+
+  it('does not kill a non-pocketbase listener (darwin)', async () => {
+    pbProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'darwin',
+    });
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'lsof' && args.includes('tcp:8090')) {
+        return '1234\n';
+      }
+      if (command === 'ps' && args.includes('1234')) {
+        return 'node\n';
+      }
+      return '';
+    });
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    try {
+      await pbProcess.start();
+      expect(processKillSpy).not.toHaveBeenCalled();
+    } finally {
+      processKillSpy.mockRestore();
+    }
+  });
+
+  it('treats lsof failure as nothing to clean (darwin)', async () => {
+    pbProcess = new PocketBaseProcess({
+      binaryPath: '/fake/pocketbase',
+      dataDir: '/fake/data/pb_data',
+      host: '127.0.0.1',
+      port: 8090,
+      platform: 'darwin',
+    });
+    const child = makeMockChild();
+    mockSpawn.mockReturnValue(child);
+    mockFetch.mockResolvedValue({ ok: true });
+    mockExecFileSync.mockImplementation((command: string) => {
+      if (command === 'lsof') {
+        throw new Error('lsof exited with code 1');
+      }
+      return '';
+    });
+
+    const processKillSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    try {
+      await expect(pbProcess.start()).resolves.toBeUndefined();
+      expect(processKillSpy).not.toHaveBeenCalled();
+    } finally {
+      processKillSpy.mockRestore();
+    }
+  });
+
   it('start() sets isRunning() to true when healthy', async () => {
     const child = makeMockChild();
     mockSpawn.mockReturnValue(child);

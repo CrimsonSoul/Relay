@@ -202,8 +202,14 @@ export class PocketBaseProcess {
   }
 
   private cleanupStalePocketBaseProcesses(): void {
-    if (this.getPlatform() !== 'win32') return;
+    if (this.getPlatform() === 'win32') {
+      this.cleanupStaleWindowsProcesses();
+      return;
+    }
+    this.cleanupStaleUnixProcesses();
+  }
 
+  private cleanupStaleWindowsProcesses(): void {
     for (const pid of this.getListeningPidsOnPort()) {
       if (!this.isPocketBasePid(pid)) continue;
       logger.warn('Killing stale PocketBase process before startup', {
@@ -212,6 +218,39 @@ export class PocketBaseProcess {
       });
       try {
         execFileSync('taskkill', ['/F', '/T', '/PID', pid], { timeout: 5000 }); // eslint-disable-line sonarjs/no-os-command-from-path
+      } catch (error) {
+        logger.warn('Failed to kill stale PocketBase process', { pid, error });
+      }
+    }
+  }
+
+  private cleanupStaleUnixProcesses(): void {
+    let pids: string[] = [];
+    try {
+      // eslint-disable-next-line sonarjs/no-os-command-from-path
+      const output = execFileSync('lsof', ['-ti', `tcp:${this.config.port}`, '-sTCP:LISTEN'], {
+        encoding: 'utf8',
+        timeout: 5000,
+      });
+      pids = output.split(/\s+/).filter((p) => /^\d+$/.test(p));
+    } catch {
+      // lsof exits non-zero when no process matches — nothing to clean up
+      return;
+    }
+
+    for (const pid of pids) {
+      try {
+        // eslint-disable-next-line sonarjs/no-os-command-from-path
+        const command = execFileSync('ps', ['-p', pid, '-o', 'comm='], {
+          encoding: 'utf8',
+          timeout: 5000,
+        }).trim();
+        if (!/(^|\/)pocketbase$/.test(command)) continue;
+        logger.warn('Killing stale PocketBase process before startup', {
+          pid,
+          port: this.config.port,
+        });
+        process.kill(Number(pid), 'SIGKILL');
       } catch (error) {
         logger.warn('Failed to kill stale PocketBase process', { pid, error });
       }
