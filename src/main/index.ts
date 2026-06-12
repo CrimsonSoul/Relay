@@ -129,11 +129,19 @@ if (gotLock) {
         setPbProcess(null);
       }
       if (getOfflineCache()) {
-        getOfflineCache()!.close();
+        try {
+          getOfflineCache()!.close();
+        } catch (error) {
+          loggers.main.warn('Failed to close offline cache during quit', { error });
+        }
         setOfflineCache(null);
       }
       if (getPendingChanges()) {
-        getPendingChanges()!.close();
+        try {
+          getPendingChanges()!.close();
+        } catch (error) {
+          loggers.main.warn('Failed to close pending changes during quit', { error });
+        }
         setPendingChanges(null);
       }
     };

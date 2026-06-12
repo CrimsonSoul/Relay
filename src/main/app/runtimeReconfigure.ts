@@ -18,6 +18,15 @@ import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastruc
 import { startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
 
+function tryClose(db: { close(): void } | null, label: string): void {
+  if (!db) return;
+  try {
+    db.close();
+  } catch (error) {
+    loggers.main.warn(`Failed to close ${label} during reconfigure`, { error });
+  }
+}
+
 export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   const config = getAppConfig()?.load();
 
@@ -32,17 +41,11 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   setBackupManager(null);
   setPbClient(null);
 
-  const offlineCache = getOfflineCache();
-  if (offlineCache) {
-    offlineCache.close();
-    setOfflineCache(null);
-  }
+  tryClose(getOfflineCache(), 'offline cache');
+  setOfflineCache(null);
 
-  const pendingChanges = getPendingChanges();
-  if (pendingChanges) {
-    pendingChanges.close();
-    setPendingChanges(null);
-  }
+  tryClose(getPendingChanges(), 'pending changes');
+  setPendingChanges(null);
   setSyncManager(null);
 
   const pbProcess = getPbProcess();
