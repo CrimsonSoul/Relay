@@ -2,6 +2,7 @@ import { app, dialog } from 'electron';
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 const REJECTION_WINDOW_MS = 60_000;
 const REJECTION_THRESHOLD = 3;
@@ -30,7 +31,7 @@ export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
     if (shouldAutoRelaunchFatalError(options)) {
       if (fatalRecoveryStarted) return;
       fatalRecoveryStarted = true;
-      broadcastToAllWindows('app:error-notification', {
+      broadcastToAllWindows(IPC_CHANNELS.APP_ERROR_NOTIFICATION, {
         title: 'Relay is restarting',
         message: 'Relay hit a critical background error and will restart automatically.',
       });
@@ -74,7 +75,7 @@ export function setupErrorHandlers(options: ErrorHandlerOptions = {}): void {
       // Reset counter to avoid spamming notifications
       rejectionTimestamps.length = 0;
 
-      broadcastToAllWindows('app:error-notification', {
+      broadcastToAllWindows(IPC_CHANNELS.APP_ERROR_NOTIFICATION, {
         title: 'Stability Warning',
         message:
           'Multiple background errors detected. The app may be unstable. Consider restarting.',

@@ -103,6 +103,19 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.WINDOW_MAXIMIZE_CHANGE, handler);
   },
+  onErrorNotification: (callback) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      notification: { title: string; message: string },
+    ) => callback(notification);
+    ipcRenderer.on(IPC_CHANNELS.APP_ERROR_NOTIFICATION, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.APP_ERROR_NOTIFICATION, handler);
+  },
+  onPbCrashed: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, info: { error: string }) => callback(info);
+    ipcRenderer.on(IPC_CHANNELS.PB_CRASHED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PB_CRASHED, handler);
+  },
   openAuxWindow: (route) => ipcRenderer.send(IPC_CHANNELS.WINDOW_OPEN_AUX, route),
   platform: process.platform,
 };

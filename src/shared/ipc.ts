@@ -260,6 +260,10 @@ export type BridgeAPI = {
   windowClose: () => void;
   isMaximized: () => Promise<boolean>;
   onMaximizeChange: (callback: (maximized: boolean) => void) => () => void;
+  onErrorNotification: (
+    callback: (notification: { title: string; message: string }) => void,
+  ) => () => void;
+  onPbCrashed: (callback: (info: { error: string }) => void) => () => void;
   openAuxWindow: (route: string) => void;
   logToMain: (entry: LogEntry) => void;
   // Drag and Drop Sync
@@ -375,6 +379,8 @@ export const IPC_CHANNELS = {
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',
   PB_START: 'pb:start',
+  PB_CRASHED: 'pb:crashed',
+  APP_ERROR_NOTIFICATION: 'app:error-notification',
   APP_RELAUNCH: 'app:relaunch',
   // Backups
   BACKUP_LIST: 'backup:list',

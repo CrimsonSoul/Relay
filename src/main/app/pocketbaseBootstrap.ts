@@ -19,7 +19,7 @@ import {
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
 import { startAdvertising, stopAdvertising } from '../discovery/RelayDiscovery';
-import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
 
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
@@ -209,7 +209,7 @@ const doStartPocketBase = async (
       loggers.pocketbase.error('PocketBase crashed', { error });
       // Notify all renderer windows immediately so they can show an error
       // state without waiting for the next health check poll.
-      broadcastToAllWindows('pb:crashed', { error });
+      broadcastToAllWindows(IPC_CHANNELS.PB_CRASHED, { error });
       requestAppRelaunch('pocketbase-crash-loop', { exitCode: 1 });
     });
 

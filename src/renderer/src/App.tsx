@@ -20,6 +20,7 @@ import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
 import { useAppAssembler } from './hooks/useAppAssembler';
 import { useAppCloudStatus } from './hooks/useAppCloudStatus';
+import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
 import {
@@ -93,6 +94,7 @@ export function MainApp({
   readonly relayConfig?: PublicRelayConfig | null;
 } = {}) {
   const { showToast } = useToast();
+  useErrorNotifications(showToast);
 
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');

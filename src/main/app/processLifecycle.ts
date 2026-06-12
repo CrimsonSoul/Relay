@@ -8,6 +8,7 @@ import {
 import { loggers } from '../logger';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 const MB = 1024 * 1024;
 const UNRESPONSIVE_WARN_AFTER_MS = 5_000;
@@ -61,7 +62,7 @@ function notifyCrashLoopSuppressed(label: string): void {
   loggers.main.error(
     `Auto-reload suppressed for ${label}: ${MAX_RELOADS_IN_WINDOW} recoveries within ${RELOAD_WINDOW_MS / 60_000}m`,
   );
-  broadcastToAllWindows('app:error-notification', {
+  broadcastToAllWindows(IPC_CHANNELS.APP_ERROR_NOTIFICATION, {
     title: 'Relay is unstable',
     message: 'A window failed repeatedly. Relay will restart automatically.',
   });
@@ -102,7 +103,7 @@ function reloadWebContents(
     ignoringCache: options.ignoringCache === true,
     snapshot: getWebContentsSnapshot(contents),
   });
-  broadcastToAllWindows('app:error-notification', {
+  broadcastToAllWindows(IPC_CHANNELS.APP_ERROR_NOTIFICATION, {
     title: 'Relay recovered a window',
     message: 'The affected view reloaded automatically. Unsaved changes may be lost.',
   });
