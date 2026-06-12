@@ -1,6 +1,17 @@
 appId: com.operators.relay
 productName: 'Relay'
 asar: true
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  # enableEmbeddedAsarIntegrityValidation intentionally OFF: electron-builder signs
+  # the unpacked native modules (better-sqlite3) after computing asar integrity
+  # hashes, so the fuse trips at startup ("ASAR Integrity Violation") on every
+  # signed build. Re-enable once builder computes integrity post-signing.
+  enableEmbeddedAsarIntegrityValidation: false
+  onlyLoadAppFromAsar: true
+  resetAdHocDarwinSignature: true
 electronLanguages:
   - en-US
 files:
