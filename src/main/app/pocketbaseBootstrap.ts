@@ -20,6 +20,7 @@ import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { requestAppRelaunch } from './relaunch';
 import { startAdvertising, stopAdvertising } from '../discovery/RelayDiscovery';
 import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import { isCredentialRejection } from './pbErrors';
 
 const APP_USER_AUTH_FIELD = ['pass', 'word'].join('');
 const APP_USER_AUTH_CONFIRM_FIELD = `${APP_USER_AUTH_FIELD}Confirm`;
@@ -73,8 +74,10 @@ async function ensureAppUserOnce(localUrl: string, secret: string): Promise<void
     await pb.collection('_pb_users_auth_').authWithPassword(RELAY_APP_USER_EMAIL, secret);
     loggers.pocketbase.info('App user auth OK');
     return;
-  } catch {
-    // Need to create or recreate
+  } catch (authErr) {
+    // Recreate only on a definitive credential rejection; transient errors
+    // bubble up to the retry wrapper instead of destroying the user.
+    if (!isCredentialRejection(authErr)) throw authErr;
   }
 
   // Auth as superuser to manage users
