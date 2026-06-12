@@ -37,6 +37,7 @@ function swapInList(list: StandaloneNote[], fromId: string, toId: string): Stand
 async function persistAddNote(
   note: Omit<StandaloneNote, 'id' | 'createdAt' | 'updatedAt'>,
   tempId: string,
+  tempIds: Set<string>,
   setNotes: React.Dispatch<React.SetStateAction<StandaloneNote[]>>,
   refetch: () => Promise<unknown>,
 ): Promise<void> {
@@ -48,6 +49,7 @@ async function persistAddNote(
       tags: note.tags,
       sortOrder: 0,
     });
+    tempIds.delete(tempId);
     setNotes((prev) => prev.map((n) => (n.id === tempId ? toStandaloneNote(created) : n)));
     const currentNotes = await refetch();
     if (currentNotes) {
@@ -55,6 +57,7 @@ async function persistAddNote(
     }
   } catch (err) {
     loggers.app.error('Failed to add note', { error: err });
+    tempIds.delete(tempId);
     setNotes((prev) => prev.filter((n) => n.id !== tempId));
   }
 }
@@ -92,6 +95,7 @@ async function persistDeleteNote(id: string, refetch: () => Promise<unknown>): P
 async function persistDuplicateNote(
   copy: StandaloneNote,
   tempId: string,
+  tempIds: Set<string>,
   sortOrder: number,
   setNotes: React.Dispatch<React.SetStateAction<StandaloneNote[]>>,
 ): Promise<void> {
@@ -103,9 +107,11 @@ async function persistDuplicateNote(
       tags: copy.tags,
       sortOrder,
     });
+    tempIds.delete(tempId);
     setNotes((curr) => curr.map((n) => (n.id === tempId ? toStandaloneNote(created) : n)));
   } catch (err) {
     loggers.app.error('Failed to duplicate note', { error: err });
+    tempIds.delete(tempId);
     setNotes((curr) => curr.filter((n) => n.id !== tempId));
   }
 }
@@ -126,7 +132,9 @@ export function useNoteStorage() {
 
   // Local state for optimistic updates — synced from PB on load/refetch
   const [notes, setNotes] = useState<StandaloneNote[]>([]);
-  const initializedRef = useRef(false);
+  // Ids of optimistic notes whose PB persist hasn't resolved yet — these must
+  // survive server-state syncs so a realtime refresh can't eat a just-typed note.
+  const tempIdsRef = useRef(new Set<string>());
 
   // Sequential queue to prevent persistence race conditions
   const queueRef = useRef<Promise<void>>(Promise.resolve());
@@ -136,19 +144,19 @@ export function useNoteStorage() {
   }
 
   useEffect(() => {
-    if (!loading && pbNotes.length > 0) {
-      setNotes(pbNotes);
-      initializedRef.current = true;
-    } else if (!loading && pbNotes.length === 0 && !initializedRef.current) {
-      setNotes([]);
-      initializedRef.current = true;
-    }
+    if (loading) return;
+    setNotes((prev) => {
+      const pending = prev.filter((n) => tempIdsRef.current.has(n.id));
+      const pendingIds = new Set(pending.map((n) => n.id));
+      return [...pending, ...pbNotes.filter((n) => !pendingIds.has(n.id))];
+    });
   }, [loading, records]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addNote = useCallback(
     (note: Omit<StandaloneNote, 'id' | 'createdAt' | 'updatedAt'>) => {
       // Optimistic: add to front of list immediately
       const tempId = crypto.randomUUID();
+      tempIdsRef.current.add(tempId);
       const now = Date.now();
       const optimistic: StandaloneNote = {
         ...note,
@@ -157,7 +165,7 @@ export function useNoteStorage() {
         updatedAt: now,
       };
       setNotes((prev) => [optimistic, ...prev]);
-      enqueue(() => persistAddNote(note, tempId, setNotes, refetch));
+      enqueue(() => persistAddNote(note, tempId, tempIdsRef.current, setNotes, refetch));
 
       return optimistic;
     },
@@ -187,6 +195,7 @@ export function useNoteStorage() {
       const source = prev.find((n) => n.id === id);
       if (!source) return prev;
       const tempId = crypto.randomUUID();
+      tempIdsRef.current.add(tempId);
       const now = Date.now();
       const copy: StandaloneNote = {
         ...source,
@@ -199,7 +208,9 @@ export function useNoteStorage() {
       const updated = [...prev];
       updated.splice(idx + 1, 0, copy);
       const sourceIdx = updated.findIndex((n) => n.id === id);
-      enqueue(() => persistDuplicateNote(copy, tempId, sourceIdx + 1, setNotes));
+      enqueue(() =>
+        persistDuplicateNote(copy, tempId, tempIdsRef.current, sourceIdx + 1, setNotes),
+      );
       return updated;
     });
   }, []);
