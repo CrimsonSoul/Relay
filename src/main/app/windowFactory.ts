@@ -1,7 +1,8 @@
 import { app, BrowserWindow } from 'electron';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loggers } from '../logger';
+import { isAllowedRendererFileUrl } from '../utils/trustedSender';
 import { getMainWindow, setMainWindow } from './appState';
 import { setupWindowListeners, ALLOWED_AUX_ROUTES } from '../handlers/windowHandlers';
 import { setupSecurityHeaders } from './securityHeaders';
@@ -13,20 +14,8 @@ import { describeUrlForLog } from '@shared/urlSecurity';
 // (../preload, ../renderer) work identically to the original index.ts __dirname.
 const mainDir = dirname(fileURLToPath(import.meta.url));
 
-export function isAllowedRendererFileUrl(url: string, rendererDir: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'file:') return false;
-
-    const rendererRoot = resolve(rendererDir);
-    const targetPath = resolve(fileURLToPath(parsed));
-    const relativePath = relative(rendererRoot, targetPath);
-
-    return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
-  } catch {
-    return false;
-  }
-}
+// Re-exported so existing call sites and tests keep working after the move.
+export { isAllowedRendererFileUrl };
 
 export function buildRendererPopoutFileUrl(indexPath: string, route: string): string {
   const url = pathToFileURL(indexPath);

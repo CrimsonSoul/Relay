@@ -5,6 +5,7 @@ import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const PB_BOOTSTRAP_AUTH_TIMEOUT_MS = 15_000;
 const PB_BOOTSTRAP_AUTH_ATTEMPTS = 4;
@@ -226,7 +227,10 @@ export function setupPocketbaseConnectionHandlers(
   getAppConfig: () => AppConfig | null,
   getPbProcess: () => PocketBaseProcess | null,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.PB_GET_CONNECTION, async (): Promise<PbConnectionResult> => {
+  ipcMain.handle(IPC_CHANNELS.PB_GET_CONNECTION, async (event): Promise<PbConnectionResult> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_GET_CONNECTION)) {
+      return { ok: false, error: 'auth-failed' };
+    }
     const context = getPbConnectionContext(getAppConfig, getPbProcess);
     if (!context.ok) {
       return context.result;
@@ -240,7 +244,10 @@ export function setupPocketbaseConnectionHandlers(
     );
   });
 
-  ipcMain.handle(IPC_CHANNELS.PB_REFRESH_CONNECTION, async (): Promise<PbConnectionResult> => {
+  ipcMain.handle(IPC_CHANNELS.PB_REFRESH_CONNECTION, async (event): Promise<PbConnectionResult> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_REFRESH_CONNECTION)) {
+      return { ok: false, error: 'auth-failed' };
+    }
     const context = getPbConnectionContext(getAppConfig, getPbProcess);
     if (!context.ok) {
       return context.result;

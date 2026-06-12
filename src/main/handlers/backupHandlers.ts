@@ -4,6 +4,7 @@ import type { BackupEntry, IpcResult } from '@shared/ipc';
 import type { BackupManager } from '../pocketbase/BackupManager';
 import type { OfflineCache } from '../cache/OfflineCache';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const logger = loggers.backup;
 
@@ -14,7 +15,8 @@ export function setupBackupHandlers(
 ): void {
   let restoreInProgress = false;
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (): Promise<BackupEntry[]> => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_LIST, async (event): Promise<BackupEntry[]> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_LIST)) return [];
     const mgr = getBackupManager();
     if (!mgr) return [];
 
@@ -25,7 +27,10 @@ export function setupBackupHandlers(
     }));
   });
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (): Promise<IpcResult<string>> => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (event): Promise<IpcResult<string>> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_CREATE)) {
+      return { success: false, error: 'Untrusted sender' };
+    }
     const mgr = getBackupManager();
     if (!mgr) return { success: false, error: 'Backup manager not available' };
 
@@ -38,7 +43,10 @@ export function setupBackupHandlers(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (_event, name: string): Promise<IpcResult> => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RESTORE, async (event, name: string): Promise<IpcResult> => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.BACKUP_RESTORE)) {
+      return { success: false, error: 'Untrusted sender' };
+    }
     if (typeof name !== 'string' || !/^[\w.-]+\.zip$/.test(name) || name.includes('..')) {
       return { success: false, error: 'Invalid backup name' };
     }

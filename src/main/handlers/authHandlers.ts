@@ -9,6 +9,7 @@ import {
   getCachedCredentials,
 } from '../credentialManager';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 function isValidNonce(nonce: unknown): nonce is string {
   return typeof nonce === 'string' && /^[a-f0-9]{64}$/i.test(nonce);
@@ -20,7 +21,8 @@ function getPayloadValue(payload: unknown, key: string): unknown {
 }
 
 export function setupAuthHandlers() {
-  ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AUTH_SUBMIT, async (event, payload: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.AUTH_SUBMIT)) return false;
     const nonce = getPayloadValue(payload, 'nonce');
     const username = getPayloadValue(payload, 'username');
     const password = getPayloadValue(payload, 'password');
@@ -50,7 +52,8 @@ export function setupAuthHandlers() {
     return true;
   });
 
-  ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (_event, payload: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.AUTH_USE_CACHED, async (event, payload: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.AUTH_USE_CACHED)) return false;
     const nonce = getPayloadValue(payload, 'nonce');
 
     if (!isValidNonce(nonce)) {
@@ -71,7 +74,8 @@ export function setupAuthHandlers() {
     return true;
   });
 
-  ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (_event, payload: unknown) => {
+  ipcMain.on(IPC_CHANNELS.AUTH_CANCEL, (event, payload: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.AUTH_CANCEL)) return;
     const nonce = getPayloadValue(payload, 'nonce');
 
     if (!isValidNonce(nonce)) {

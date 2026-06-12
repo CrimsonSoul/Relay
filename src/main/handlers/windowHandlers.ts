@@ -7,6 +7,7 @@ import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { rateLimiters } from '../rateLimiter';
 
@@ -87,7 +88,8 @@ export function setupWindowHandlers(
   getDataRoot?: () => Promise<string>,
 ) {
   // Shell / File Operations
-  ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (_event, path: string) => {
+  ipcMain.handle(IPC_CHANNELS.OPEN_PATH, async (event, path: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_PATH)) return;
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     if (!getDataRoot) return;
     if (typeof path !== 'string' || path.trim().length === 0) {
@@ -109,7 +111,8 @@ export function setupWindowHandlers(
     await shell.openPath(resolvedPath);
   });
 
-  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (_event, url: string) => {
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (event, url: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_EXTERNAL)) return;
     if (!rateLimiters.fsOperations.tryConsume().allowed) return;
     try {
       if (typeof url === 'string' && isAllowedExternalUrl(url)) {
@@ -122,7 +125,8 @@ export function setupWindowHandlers(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.ALERT_PLAY_SOUND, () => {
+  ipcMain.handle(IPC_CHANNELS.ALERT_PLAY_SOUND, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.ALERT_PLAY_SOUND)) return false;
     try {
       shell.beep();
       return true;
@@ -134,7 +138,10 @@ export function setupWindowHandlers(
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND, async () => {
+  ipcMain.handle(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND)) {
+      return { success: false, error: 'Untrusted sender' };
+    }
     try {
       const { canceled, filePaths } = await dialog.showOpenDialog({
         title: 'Select Reminder Alarm MP3',
@@ -159,11 +166,13 @@ export function setupWindowHandlers(
 
   // Window Controls
   ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_MINIMIZE)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     win?.minimize();
   });
 
-  ipcMain.on(IPC_CHANNELS.WINDOW_OPEN_AUX, (_, route: string) => {
+  ipcMain.on(IPC_CHANNELS.WINDOW_OPEN_AUX, (event, route: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_OPEN_AUX)) return;
     if (typeof route !== 'string' || !ALLOWED_AUX_ROUTES.has(route)) {
       return;
     }
@@ -171,21 +180,25 @@ export function setupWindowHandlers(
   });
 
   // Drag Sync - broadcast to all windows
-  ipcMain.on(IPC_CHANNELS.DRAG_STARTED, () => {
+  ipcMain.on(IPC_CHANNELS.DRAG_STARTED, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.DRAG_STARTED)) return;
     broadcastToAllWindows(IPC_CHANNELS.DRAG_STARTED);
   });
 
-  ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, () => {
+  ipcMain.on(IPC_CHANNELS.DRAG_STOPPED, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.DRAG_STOPPED)) return;
     broadcastToAllWindows(IPC_CHANNELS.DRAG_STOPPED);
   });
 
   // On-Call Alert Dismissal Sync - broadcast to all windows
-  ipcMain.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, (_event, type: string) => {
+  ipcMain.on(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, (event, type: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.ONCALL_ALERT_DISMISSED)) return;
     broadcastToAllWindows(IPC_CHANNELS.ONCALL_ALERT_DISMISSED, type);
   });
 
   // Clipboard - use Electron's native clipboard API
-  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (_, text: string) => {
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE, async (event, text: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIPBOARD_WRITE)) return false;
     try {
       if (typeof text !== 'string' || text.length > MAX_CLIPBOARD_LENGTH) {
         return false;
@@ -201,7 +214,8 @@ export function setupWindowHandlers(
   });
 
   // Clipboard Image - write PNG data URL to clipboard as native image
-  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, async (_, dataUrl: string) => {
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, async (event, dataUrl: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE)) return false;
     try {
       if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
         return false;
@@ -225,7 +239,10 @@ export function setupWindowHandlers(
   // Save Alert Image - native save dialog + write PNG to disk
   ipcMain.handle(
     IPC_CHANNELS.SAVE_ALERT_IMAGE,
-    async (_, dataUrl: string, suggestedName: string) => {
+    async (event, dataUrl: string, suggestedName: string) => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.SAVE_ALERT_IMAGE)) {
+        return { success: false, error: 'Untrusted sender' };
+      }
       try {
         if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
           return { success: false, error: 'Invalid image data' };
@@ -261,7 +278,10 @@ export function setupWindowHandlers(
     dialogTitle: string,
     channels: { save: string; get: string; remove: string },
   ): void {
-    ipcMain.handle(channels.save, async () => {
+    ipcMain.handle(channels.save, async (event) => {
+      if (!assertTrustedIpcSender(event, channels.save)) {
+        return { success: false, error: 'Untrusted sender' };
+      }
       if (!getDataRoot) return { success: false, error: 'Data root not available' };
       try {
         const { canceled, filePaths } = await dialog.showOpenDialog({
@@ -302,7 +322,8 @@ export function setupWindowHandlers(
       }
     });
 
-    ipcMain.handle(channels.get, async () => {
+    ipcMain.handle(channels.get, async (event) => {
+      if (!assertTrustedIpcSender(event, channels.get)) return null;
       if (!getDataRoot) return null;
       try {
         const logoPath = join(await getDataRoot(), 'assets', fileName);
@@ -313,7 +334,10 @@ export function setupWindowHandlers(
       }
     });
 
-    ipcMain.handle(channels.remove, async () => {
+    ipcMain.handle(channels.remove, async (event) => {
+      if (!assertTrustedIpcSender(event, channels.remove)) {
+        return { success: false, error: 'Untrusted sender' };
+      }
       if (!getDataRoot) return { success: false, error: 'Data root not available' };
       try {
         const logoPath = join(await getDataRoot(), 'assets', fileName);
@@ -344,6 +368,7 @@ export function setupWindowHandlers(
   });
 
   ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_MAXIMIZE)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win?.isMaximized()) {
       win.unmaximize();
@@ -353,6 +378,7 @@ export function setupWindowHandlers(
   });
 
   ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_CLOSE)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     loggers.main.info('Window close requested by renderer', {
       webContentsId: event.sender.id,
@@ -362,6 +388,7 @@ export function setupWindowHandlers(
 
   // Maximize state query
   ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.WINDOW_IS_MAXIMIZED)) return false;
     const win = BrowserWindow.fromWebContents(event.sender);
     return win?.isMaximized() ?? false;
   });

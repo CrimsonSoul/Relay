@@ -36,6 +36,7 @@ import { stopAdvertising } from './discovery/RelayDiscovery';
 import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
+import { assertTrustedIpcSender } from './utils/trustedSender';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -182,7 +183,8 @@ if (gotLock) {
       setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess);
 
       // Start PocketBase on demand (called after first-time setup)
-      ipcMain.handle(IPC_CHANNELS.PB_START, async () => {
+      ipcMain.handle(IPC_CHANNELS.PB_START, async (event) => {
+        if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         return startPocketBase(config, configDataDir);
@@ -193,7 +195,8 @@ if (gotLock) {
       // This now reconfigures in-process and reloads the visible window. Closing
       // the app here made client-mode setup depend on app.relaunch(), so a failed
       // successor launch left users with a closed app.
-      ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, () => {
+      ipcMain.handle(IPC_CHANNELS.APP_RELAUNCH, (event) => {
+        if (!assertTrustedIpcSender(event, IPC_CHANNELS.APP_RELAUNCH)) return;
         loggers.main.info('Reconfiguring app runtime');
         if (process.env.NODE_ENV === 'test') {
           app.quit();

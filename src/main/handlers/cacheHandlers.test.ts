@@ -14,6 +14,14 @@ vi.mock('../logger', () => ({
   },
 }));
 
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
+// exercised for real (positive + negative) in authHandlers.test.ts.
+// Here it is mocked to pass so each handler's own behavior is what's tested.
+vi.mock('../utils/trustedSender', () => ({
+  assertTrustedIpcSender: () => true,
+  isTrustedIpcSender: () => true,
+}));
+
 describe('cacheHandlers', () => {
   const SECRET_FIELD = 'secret';
   const createFixturePassphrase = () => ['fixture', 'passphrase', '123'].join('-');

@@ -10,6 +10,7 @@ import {
 import { loggers } from '../../logger';
 import { ErrorCategory } from '@shared/logging';
 import { checkNetworkRateLimit } from '../../rateLimiter';
+import { assertTrustedIpcSender } from '../../utils/trustedSender';
 import { truncateError } from '../ipcHelpers';
 import { RSS_FEEDS, fetchRssProvider } from './rssProvider';
 import { STATUSPAGE_FEEDS, fetchStatuspageProvider } from './statuspageProvider';
@@ -54,7 +55,8 @@ function cachedOrEmpty(): CloudStatusData {
 // --- IPC handler ---
 
 export function setupCloudStatusHandlers() {
-  ipcMain.handle(IPC_CHANNELS.GET_CLOUD_STATUS, async () => {
+  ipcMain.handle(IPC_CHANNELS.GET_CLOUD_STATUS, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.GET_CLOUD_STATUS)) return cachedOrEmpty();
     if (!checkNetworkRateLimit()) return cachedOrEmpty();
 
     // Return cached if fresh

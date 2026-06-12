@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { LogEntrySchema } from '@shared/ipcValidation';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const MAX_LOG_DATA_DEPTH = 3;
 const MAX_LOG_DATA_STRING = 1024;
@@ -44,7 +45,8 @@ function boundRendererLogData(data: unknown, depth = 0): unknown {
  */
 export function setupLoggerHandlers(): void {
   // Bridge group metrics — log which groups are being composed
-  ipcMain.on(IPC_CHANNELS.LOG_BRIDGE, (_event, groups: unknown) => {
+  ipcMain.on(IPC_CHANNELS.LOG_BRIDGE, (event, groups: unknown) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.LOG_BRIDGE)) return;
     try {
       const rl = rateLimiters.rendererLogging.tryConsume();
       if (!rl.allowed) return;
@@ -75,7 +77,8 @@ export function setupLoggerHandlers(): void {
   // Renderer-to-main log bridge: all renderer logs are routed through loggers.bridge
   // to distinguish them from main-process logs. The renderer module name is included
   // in the message prefix (e.g., "[sync] replay failed") for filtering.
-  ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (_event, entry) => {
+  ipcMain.on(IPC_CHANNELS.LOG_TO_MAIN, (event, entry) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.LOG_TO_MAIN)) return;
     try {
       // Rate-limit renderer logging to prevent log flooding
       const rl = rateLimiters.rendererLogging.tryConsume();

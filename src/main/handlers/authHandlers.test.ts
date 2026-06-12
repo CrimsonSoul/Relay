@@ -3,6 +3,12 @@ import { setupAuthHandlers, setupAuthInterception } from './authHandlers';
 import { ipcMain, app } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import * as CredentialManager from '../credentialManager';
+import { trustedEvent } from '../__tests__/testEvents';
+
+// The trusted-sender guard runs for real in this file: trustedEvent() passes
+// it (dev-server origin), anything else is rejected. See the
+// 'trusted sender guard' describe block below.
+process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
 // Mock electron
 vi.mock('electron', () => ({
@@ -12,6 +18,7 @@ vi.mock('electron', () => ({
   },
   app: {
     on: vi.fn(),
+    isPackaged: false,
   },
 }));
 
@@ -29,6 +36,10 @@ vi.mock('../credentialManager', () => ({
 vi.mock('../logger', () => ({
   loggers: {
     auth: {
+      warn: vi.fn(),
+      error: vi.fn(),
+    },
+    security: {
       warn: vi.fn(),
       error: vi.fn(),
     },
@@ -71,7 +82,7 @@ describe('authHandlers', () => {
         password: testPassword,
         remember: true,
       };
-      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
 
       expect(result).toBe(true);
       expect(CredentialManager.consumeAuthRequest).toHaveBeenCalledWith(validNonce);
@@ -87,7 +98,7 @@ describe('authHandlers', () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
 
       const params = { nonce: 'short', username: 'u', password: shortSecret, remember: false };
-      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
 
       expect(result).toBe(false);
       expect(CredentialManager.cacheCredentials).not.toHaveBeenCalled();
@@ -107,7 +118,9 @@ describe('authHandlers', () => {
       });
 
       const validNonce = 'b'.repeat(64);
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: validNonce });
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.(trustedEvent(), {
+        nonce: validNonce,
+      });
 
       expect(result).toBe(true);
       expect(callback).toHaveBeenCalledWith('cached-user', cachedSecret);
@@ -121,7 +134,9 @@ describe('authHandlers', () => {
       vi.mocked(CredentialManager.getCachedCredentials).mockReturnValue(null);
 
       const validNonce = 'b'.repeat(64);
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: validNonce });
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.(trustedEvent(), {
+        nonce: validNonce,
+      });
 
       expect(result).toBe(false);
     });
@@ -130,25 +145,27 @@ describe('authHandlers', () => {
   describe('AUTH_CANCEL', () => {
     it('should call cancelAuthRequest', () => {
       const validNonce = 'c'.repeat(64);
-      handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, { nonce: validNonce });
+      handlers[IPC_CHANNELS.AUTH_CANCEL]?.(trustedEvent(), { nonce: validNonce });
       expect(CredentialManager.cancelAuthRequest).toHaveBeenCalledWith(validNonce);
     });
 
     it('should reject invalid nonce and not call cancel', () => {
-      handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, { nonce: 'tooshort' });
+      handlers[IPC_CHANNELS.AUTH_CANCEL]?.(trustedEvent(), { nonce: 'tooshort' });
       expect(CredentialManager.cancelAuthRequest).not.toHaveBeenCalled();
     });
 
     it('ignores malformed payloads without throwing', () => {
-      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, undefined)).not.toThrow();
-      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.({}, 'bad')).not.toThrow();
+      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.(trustedEvent(), undefined)).not.toThrow();
+      expect(() => handlers[IPC_CHANNELS.AUTH_CANCEL]?.(trustedEvent(), 'bad')).not.toThrow();
       expect(CredentialManager.cancelAuthRequest).not.toHaveBeenCalled();
     });
   });
 
   describe('AUTH_USE_CACHED invalid nonce', () => {
     it('should return false for invalid nonce', async () => {
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: 'bad' });
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.(trustedEvent(), {
+        nonce: 'bad',
+      });
       expect(result).toBe(false);
       expect(CredentialManager.consumeAuthRequest).not.toHaveBeenCalled();
     });
@@ -156,7 +173,9 @@ describe('authHandlers', () => {
     it('should return false when consumeAuthRequest returns null', async () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
       const validNonce = 'd'.repeat(64);
-      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.({}, { nonce: validNonce });
+      const result = await handlers[IPC_CHANNELS.AUTH_USE_CACHED]?.(trustedEvent(), {
+        nonce: validNonce,
+      });
       expect(result).toBe(false);
     });
   });
@@ -170,7 +189,7 @@ describe('authHandlers', () => {
         password: testPassword,
         remember: false,
       };
-      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
       expect(result).toBe(false);
     });
 
@@ -182,7 +201,7 @@ describe('authHandlers', () => {
         password: shortSecret.repeat(1025),
         remember: false,
       };
-      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
       expect(result).toBe(false);
     });
 
@@ -190,7 +209,7 @@ describe('authHandlers', () => {
       vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue(null);
       const validNonce = 'f'.repeat(64);
       const params = { nonce: validNonce, username: 'u', password: shortSecret, remember: false };
-      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
       expect(result).toBe(false);
     });
 
@@ -207,9 +226,65 @@ describe('authHandlers', () => {
         password: testPassword,
         remember: false,
       };
-      await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.({}, params);
+      await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
       expect(CredentialManager.cacheCredentials).not.toHaveBeenCalled();
       expect(callback).toHaveBeenCalledWith('user', testPassword);
+    });
+  });
+
+  describe('trusted sender guard (real, un-mocked)', () => {
+    it('rejects AUTH_SUBMIT from an untrusted sender with the neutral value', async () => {
+      const callback = vi.fn();
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
+        host: 'test.com',
+        callback,
+      });
+
+      const evilFrame = { url: 'https://evil.example/' };
+      const untrustedEvent = { senderFrame: evilFrame, sender: { mainFrame: evilFrame } };
+      const params = {
+        nonce: 'a'.repeat(64),
+        username: 'user',
+        password: testPassword,
+        remember: true,
+      };
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(untrustedEvent, params);
+
+      expect(result).toBe(false);
+      expect(CredentialManager.consumeAuthRequest).not.toHaveBeenCalled();
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('rejects AUTH_SUBMIT from a subframe even on the dev origin', async () => {
+      const frame = { url: 'http://localhost:5173/' };
+      const subframeEvent = { senderFrame: frame, sender: { mainFrame: { url: frame.url } } };
+      const params = {
+        nonce: 'a'.repeat(64),
+        username: 'user',
+        password: testPassword,
+        remember: false,
+      };
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(subframeEvent, params);
+
+      expect(result).toBe(false);
+      expect(CredentialManager.consumeAuthRequest).not.toHaveBeenCalled();
+    });
+
+    it('accepts AUTH_SUBMIT from a trusted sender (positive path)', async () => {
+      const callback = vi.fn();
+      vi.mocked(CredentialManager.consumeAuthRequest).mockReturnValue({
+        host: 'test.com',
+        callback,
+      });
+      const params = {
+        nonce: 'a'.repeat(64),
+        username: 'user',
+        password: testPassword,
+        remember: false,
+      };
+      const result = await handlers[IPC_CHANNELS.AUTH_SUBMIT]?.(trustedEvent(), params);
+      expect(result).toBe(true);
+      expect(callback).toHaveBeenCalled();
     });
   });
 

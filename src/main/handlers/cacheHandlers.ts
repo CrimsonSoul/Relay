@@ -5,6 +5,7 @@ import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
 import type { AppConfig } from '../config/AppConfig';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const VALID_COLLECTIONS = new Set([
   'contacts',
@@ -66,7 +67,8 @@ export function setupCacheHandlers(
   getSyncManager?: () => SyncManager | null,
   getAppConfig?: () => AppConfig | null,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.CACHE_READ, (_event, collection: string) => {
+  ipcMain.handle(IPC_CHANNELS.CACHE_READ, (event, collection: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_READ)) return [];
     if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
       loggers.cache.error('CACHE_READ: invalid collection', { collection });
       return [];
@@ -78,7 +80,8 @@ export function setupCacheHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_WRITE,
-    (_event, collection: string, action: string, record: Record<string, unknown>) => {
+    (event, collection: string, action: string, record: Record<string, unknown>) => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return;
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_WRITE: invalid collection', { collection });
         return;
@@ -109,7 +112,8 @@ export function setupCacheHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.CACHE_SNAPSHOT,
-    (_event, collection: string, records: Record<string, unknown>[]) => {
+    (event, collection: string, records: Record<string, unknown>[]) => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_SNAPSHOT)) return;
       if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_SNAPSHOT: invalid collection', { collection });
         return;
@@ -135,7 +139,10 @@ export function setupCacheHandlers(
     },
   );
 
-  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, async () => {
+  ipcMain.handle(IPC_CHANNELS.SYNC_PENDING, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SYNC_PENDING)) {
+      return { total: 0, conflicts: 0, errors: [] };
+    }
     const pending = getPendingChanges?.();
     const sync = getSyncManager?.();
     if (!pending || !sync) return { total: 0, conflicts: 0, errors: [] };

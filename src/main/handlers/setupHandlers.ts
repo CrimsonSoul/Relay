@@ -13,6 +13,7 @@ import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import { discoverServers } from '../discovery/RelayDiscovery';
 import { loggers } from '../logger';
+import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const MAX_RELAY_SECRET_LENGTH = 256;
 const MAX_SERVER_URL_LENGTH = 2048;
@@ -86,12 +87,14 @@ export function setupSetupHandlers(
   getOfflineCache?: () => OfflineCache | null,
   getPendingChanges?: () => PendingChanges | null,
 ): void {
-  ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONFIG, () => {
+  ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONFIG, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_GET_CONFIG)) return null;
     const config = getAppConfig();
     const loaded = config ? config.load() : null;
     return loaded ? toPublicConfig(loaded) : null;
   });
-  ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (_event, configData) => {
+  ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (event, configData) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_SAVE_CONFIG)) return false;
     const config = getAppConfig();
     if (!config) return false;
     const result = relayConfigSchema.safeParse(configData);
@@ -135,7 +138,10 @@ export function setupSetupHandlers(
   });
   ipcMain.handle(
     IPC_CHANNELS.SETUP_TEST_CONNECTION,
-    async (_event, payload): Promise<SetupTestConnectionResult> => {
+    async (event, payload): Promise<SetupTestConnectionResult> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_TEST_CONNECTION)) {
+        return { ok: false, error: 'invalid-url' };
+      }
       const parsed = testConnectionSchema.safeParse(payload);
       if (!parsed.success) return { ok: false, error: 'invalid-url' };
 
@@ -176,12 +182,17 @@ export function setupSetupHandlers(
       return { ok: true };
     },
   );
-  ipcMain.handle(IPC_CHANNELS.SETUP_DISCOVER_SERVERS, () => discoverServers());
-  ipcMain.handle(IPC_CHANNELS.SETUP_IS_CONFIGURED, () => {
+  ipcMain.handle(IPC_CHANNELS.SETUP_DISCOVER_SERVERS, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_DISCOVER_SERVERS)) return [];
+    return discoverServers();
+  });
+  ipcMain.handle(IPC_CHANNELS.SETUP_IS_CONFIGURED, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_IS_CONFIGURED)) return false;
     const config = getAppConfig();
     return config ? config.isConfigured() : false;
   });
-  ipcMain.handle(IPC_CHANNELS.SETUP_CLEAR_CONFIG, () => {
+  ipcMain.handle(IPC_CHANNELS.SETUP_CLEAR_CONFIG, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_CLEAR_CONFIG)) return false;
     const config = getAppConfig();
     if (!config) return false;
     return config.clear();

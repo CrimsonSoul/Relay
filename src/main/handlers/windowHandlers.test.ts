@@ -102,6 +102,14 @@ import { rateLimiters } from '../rateLimiter';
 import { readFile, stat, unlink } from 'node:fs/promises';
 import { loggers } from '../logger';
 
+// Trusted-sender guard: unit-tested in ../utils/trustedSender.test.ts and
+// exercised for real (positive + negative) in authHandlers.test.ts.
+// Here it is mocked to pass so each handler's own behavior is what's tested.
+vi.mock('../utils/trustedSender', () => ({
+  assertTrustedIpcSender: () => true,
+  isTrustedIpcSender: () => true,
+}));
+
 describe('windowHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const onHandlers: Record<string, (...args: unknown[]) => unknown> = {};
