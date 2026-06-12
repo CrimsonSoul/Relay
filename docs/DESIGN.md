@@ -110,6 +110,11 @@ typography weight and edge rails. Do not give inline surfaces an elevated backgr
 The relevant token is `--color-bg-surface-elevated: #161616` combined with
 `--border-strong: 1px solid #2a2a2a` and an appropriate `--shadow-*` value.
 
+**Corner radius scales with surface size:** window-scale surfaces (modals,
+dialogs) keep their soft radius; control-scale floating surfaces (toasts,
+context menus, dropdowns at chip/button size) use the same 2px corners as
+controls. A small rounded box next to square chips reads as foreign.
+
 ---
 
 ## 5. Accent System
