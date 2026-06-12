@@ -80,7 +80,9 @@ Current behavior:
 - Start the embedded PocketBase process when Relay is acting as the server
 - Ensure the superuser and app user exist
 - Bootstrap required collections on startup
-- Start backup and retention jobs after PocketBase is healthy
+- Start backup and retention on a shared 24-hour schedule after PocketBase is healthy
+
+The backup/retention schedule runs once at startup and then every 24 hours. Each cycle re-authenticates the superuser, creates a backup, then runs retention cleanup — backup always precedes pruning so retention can never delete data that has not been captured in a backup. An overlap guard skips a cycle if the previous one is still running. Regular backups (keep 10) and pre-restore safety backups (keep 3) are pruned on separate budgets so a burst of restores cannot evict scheduled backups.
 
 Relay currently bootstraps required collections in code. It does not rely on checked-in migration files.
 

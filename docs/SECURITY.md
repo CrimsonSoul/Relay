@@ -47,6 +47,28 @@ The renderer does not import Node.js or Electron APIs directly. System-level ope
 
 ## Runtime Hardening
 
+### IPC Sender Validation
+
+`src/main/utils/trustedSender.ts` provides `assertTrustedIpcSender`, which every IPC handler calls at entry. It confirms the sender frame is the main frame of a Relay window (matching the dev-server origin in development or the `dist/renderer` file URL in production) and rejects anything else with a security log line. This is defense-in-depth: navigation lockdown makes untrusted senders unreachable today, but the check keeps that true if a navigation guard ever regresses.
+
+### Electron Fuses
+
+`electron-builder.yml` configures Electron fuses at build time:
+
+| Fuse                                    | State    |
+| --------------------------------------- | -------- |
+| `RunAsNode`                             | disabled |
+| `EnableNodeOptionsEnvironmentVariable`  | disabled |
+| `EnableNodeCliInspectArguments`         | disabled |
+| `OnlyLoadAppFromAsar`                   | enabled  |
+| `EnableEmbeddedAsarIntegrityValidation` | disabled |
+
+`EnableEmbeddedAsarIntegrityValidation` is intentionally left off: electron-builder signs the unpacked native module (`better-sqlite3`) after computing the asar integrity hashes, which causes a startup integrity violation on every signed build. Re-enable once the builder computes integrity post-signing.
+
+### CSP Meta Fallback
+
+`electron.vite.config.ts` injects a `<meta http-equiv="Content-Security-Policy">` tag into `dist/renderer/index.html` at build time. This mirrors the production response-header CSP (`securityHeaders.ts`) and provides a defense-in-depth layer for the packaged `file://` load path where session-level headers take effect but the meta tag adds a second enforcement point.
+
 ### Navigation And Window Controls
 
 Relay blocks unexpected navigation and secondary window creation paths in `src/main/app/windowFactory.ts`.
@@ -196,6 +218,10 @@ Key file:
 - `src/shared/logRedaction.ts`
 
 The redaction layer strips common sensitive fields and scans strings for PII such as emails and phone numbers.
+
+### URL Logging
+
+Blocked-navigation and blocked-window-open log lines record the origin of the attempted URL only (via `describeUrlForLog` in `src/shared/urlSecurity.ts`), not the full URL. This avoids inadvertently logging tokens, session IDs, or other data carried in paths or query strings.
 
 ## Developer Rules
 
