@@ -15,6 +15,7 @@ import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
 import type { AlertBodyFontSize, Severity } from './alertUtils';
+import { localToIso } from './alertTimeUtils';
 import { compactText } from './alerts/compactEngine';
 import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
@@ -92,15 +93,6 @@ function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormS
     default:
       return state;
   }
-}
-
-function localToIso(datetimeLocal: string, sourceTz: string): string {
-  if (!datetimeLocal) return '';
-  const systemLocal = new Date(datetimeLocal);
-  if (Number.isNaN(systemLocal.getTime())) return '';
-  const inSourceTz = new Date(systemLocal.toLocaleString('en-US', { timeZone: sourceTz }));
-  const offsetMs = systemLocal.getTime() - inSourceTz.getTime();
-  return new Date(systemLocal.getTime() + offsetMs).toISOString();
 }
 
 function compactHtml(html: string): string {
