@@ -1,27 +1,50 @@
 import Database from 'better-sqlite3';
+import { rmSync } from 'node:fs';
 import { loggers } from '../logger';
 
 const logger = loggers.sync;
+
+function isCorruptionError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code;
+  return code === 'SQLITE_CORRUPT' || code === 'SQLITE_NOTADB';
+}
 
 export class OfflineCache {
   private readonly db: Database.Database;
 
   constructor(dbPath: string) {
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('busy_timeout = 5000');
-    this.init();
+    try {
+      this.db = OfflineCache.open(dbPath);
+    } catch (err) {
+      if (!isCorruptionError(err)) throw err;
+      // The cache is a disposable replica of server data — rebuild it rather
+      // than leaving the app permanently without offline data.
+      logger.error('Offline cache corrupt — deleting and rebuilding', { dbPath, error: err });
+      for (const suffix of ['', '-wal', '-shm']) {
+        rmSync(dbPath + suffix, { force: true });
+      }
+      this.db = OfflineCache.open(dbPath);
+    }
   }
 
-  private init(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS cache (
-        collection TEXT NOT NULL,
-        record_id TEXT NOT NULL,
-        data TEXT NOT NULL,
-        PRIMARY KEY (collection, record_id)
-      )
-    `);
+  private static open(dbPath: string): Database.Database {
+    const db = new Database(dbPath);
+    try {
+      db.pragma('journal_mode = WAL');
+      db.pragma('busy_timeout = 5000');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS cache (
+          collection TEXT NOT NULL,
+          record_id TEXT NOT NULL,
+          data TEXT NOT NULL,
+          PRIMARY KEY (collection, record_id)
+        )
+      `);
+    } catch (err) {
+      db.close();
+      throw err;
+    }
+    return db;
   }
 
   private getRecordId(record: Record<string, unknown>): string | null {

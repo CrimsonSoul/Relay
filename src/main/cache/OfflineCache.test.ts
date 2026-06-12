@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { OfflineCache } from './OfflineCache';
@@ -166,5 +166,21 @@ describe('OfflineCache', () => {
     ]);
 
     expect(cache.readCollection('contacts')).toEqual([{ id: 'valid', name: 'Valid' }]);
+  });
+
+  it('rebuilds the database when the file is corrupt', () => {
+    const dbPath = join(tempDir, 'corrupt.db');
+    writeFileSync(dbPath, 'this is not a sqlite database, not even close');
+    const corruptCache = new OfflineCache(dbPath); // must not throw
+    corruptCache.writeCollection('contacts', [{ id: 'a1', name: 'Test' }]);
+    expect(corruptCache.readCollection('contacts')).toEqual([{ id: 'a1', name: 'Test' }]);
+    corruptCache.close();
+  });
+
+  it('rethrows non-corruption constructor errors', () => {
+    // Pointing dbPath at a directory that exists throws SQLITE_CANTOPEN, not a corruption error
+    const dirPath = join(tempDir, 'not-a-file');
+    mkdirSync(dirPath);
+    expect(() => new OfflineCache(dirPath)).toThrow();
   });
 });
