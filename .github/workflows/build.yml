@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# Rapid pushes to the same branch cancel superseded runs instead of queueing.
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -48,20 +53,16 @@ jobs:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
-      - name: Type check
-        run: npm run typecheck
-
-      - name: Check formatting
-        run: npm run format:check
-
-      - name: Lint
-        run: npm run lint
+      - name: Static checks (typecheck + lint + format, parallel)
+        run: |
+          npm run typecheck & TYPECHECK=$!
+          npm run lint & LINT=$!
+          npm run format:check & FORMAT=$!
+          npm audit --audit-level=high --omit=dev & AUDIT=$!
+          wait $TYPECHECK && wait $LINT && wait $FORMAT && wait $AUDIT
 
       - name: Run tests
         run: npm test
-
-      - name: Audit dependencies
-        run: npm audit --audit-level=high --omit=dev
 
   package-windows:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/pb' || github.ref == 'refs/heads/test'))
@@ -95,12 +96,45 @@ jobs:
             .electron
           key: electron-win-x64-${{ steps.electron-version.outputs.version }}
 
+      # electron-builder re-downloads NSIS/winCodeSign tooling every run otherwise.
+      - name: Cache electron-builder tooling
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/AppData/Local/electron-builder/Cache
+          key: electron-builder-win-${{ hashFiles('package-lock.json') }}
+          restore-keys: electron-builder-win-
+
+      # Native-module rebuild (better-sqlite3) compiles against Electron headers.
+      - name: Cache Electron headers
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.electron-gyp
+          key: electron-gyp-win-${{ steps.electron-version.outputs.version }}
+
+      - name: Get PocketBase version
+        id: pocketbase-version
+        shell: bash
+        run: |
+          PB_VER=$(grep -m1 "const PB_VERSION" scripts/download-pocketbase.mjs | sed "s/.*'\(.*\)'.*/\1/")
+          echo "version=$PB_VER" >> "$GITHUB_OUTPUT"
+
+      - name: Cache PocketBase binary
+        id: pocketbase-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: resources/pocketbase/win32-x64
+          key: pocketbase-win32-x64-${{ steps.pocketbase-version.outputs.version }}
+
       - name: Install dependencies
         env:
           RELAY_SKIP_POCKETBASE_DOWNLOAD: '1'
         run: npm ci --prefer-offline
 
       - name: Download PocketBase binary
+        if: steps.pocketbase-cache.outputs.cache-hit != 'true'
         run: node scripts/download-pocketbase.mjs --platform=win32 --arch=x64
 
       - name: Verify PocketBase binary exists
@@ -115,8 +149,10 @@ jobs:
             exit 1
           fi
 
+      # Branch artifacts skip 'maximum' compression (release.yml keeps it) —
+      # saves minutes of NSIS/7z time; the artifact is just bigger.
       - name: Build and package
-        run: npm run package:win
+        run: npm run package:win -- --config.compression=store
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
