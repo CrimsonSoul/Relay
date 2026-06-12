@@ -160,17 +160,10 @@ export function setupCacheHandlers(
 
     loggers.sync.info('Syncing pending changes on reconnect', { count: changes.length });
     const result = await sync.syncAll(changes);
-    // Only clear successfully synced changes — failed ones stay queued for next attempt
-    if (result.failed.length === 0) {
-      pending.clear();
-    } else {
-      // Remove only the changes that synced successfully
-      const failedIds = new Set(result.failed.map((f) => f.changeId));
-      for (const change of changes) {
-        if (!failedIds.has(change.id)) {
-          pending.remove(change.id);
-        }
-      }
+    // Remove exactly what synced — never bulk-clear, which would also delete
+    // changes enqueued while syncAll was awaiting the network.
+    for (const id of result.synced) {
+      pending.remove(id);
     }
     loggers.sync.info('Pending changes synced', result);
     return result;

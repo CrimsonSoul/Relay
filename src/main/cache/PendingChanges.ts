@@ -52,6 +52,7 @@ export class PendingChanges {
         .run(collection, action, JSON.stringify(data), Date.now());
     } catch (err) {
       logger.error('Failed to enqueue pending change', { collection, action, error: err });
+      throw err; // a durability queue must fail loudly, not drop the user's edit
     }
   }
 

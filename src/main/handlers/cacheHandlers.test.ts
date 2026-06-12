@@ -289,41 +289,64 @@ describe('cacheHandlers', () => {
       expect(result).toEqual({ total: 0, conflicts: 0, errors: [] });
     });
 
-    it('syncs all changes and clears pending on full success', async () => {
-      const changes = [{ id: '1' }, { id: '2' }];
+    it('syncs all changes and removes each by id on full success — never bulk-clears', async () => {
+      const changes = [{ id: 1 }, { id: 2 }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(true);
       mockSync.syncAll.mockResolvedValue({
         total: 2,
         conflicts: 0,
         errors: [],
+        synced: [1, 2],
         failed: [],
       });
 
       const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
       expect(mockSync.syncAll).toHaveBeenCalledWith(changes);
-      expect(mockPending.clear).toHaveBeenCalled();
-      expect(result).toEqual({ total: 2, conflicts: 0, errors: [], failed: [] });
+      expect(mockPending.clear).not.toHaveBeenCalled();
+      expect(mockPending.remove).toHaveBeenCalledWith(1);
+      expect(mockPending.remove).toHaveBeenCalledWith(2);
+      expect(result).toEqual({ total: 2, conflicts: 0, errors: [], synced: [1, 2], failed: [] });
     });
 
     it('removes only successful changes on partial failure', async () => {
-      const changes = [{ id: '1' }, { id: '2' }, { id: '3' }];
+      const changes = [{ id: 1 }, { id: 2 }, { id: 3 }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(true);
       mockSync.syncAll.mockResolvedValue({
         total: 3,
         conflicts: 0,
         errors: ['one error'],
-        failed: [{ changeId: '2' }],
+        synced: [1, 3],
+        failed: [{ changeId: 2, error: 'one error' }],
       });
 
       await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
       expect(mockPending.clear).not.toHaveBeenCalled();
-      expect(mockPending.remove).toHaveBeenCalledWith('1');
-      expect(mockPending.remove).not.toHaveBeenCalledWith('2');
-      expect(mockPending.remove).toHaveBeenCalledWith('3');
+      expect(mockPending.remove).toHaveBeenCalledWith(1);
+      expect(mockPending.remove).not.toHaveBeenCalledWith(2);
+      expect(mockPending.remove).toHaveBeenCalledWith(3);
+    });
+
+    it('removes only the synced change ids, never bulk-clears', async () => {
+      const changes = [{ id: 1 }, { id: 2 }];
+      mockPending.getAll.mockReturnValue(changes);
+      mockSync.isAuthenticated.mockReturnValue(true);
+      mockSync.syncAll.mockResolvedValue({
+        total: 2,
+        conflicts: 0,
+        errors: [],
+        synced: [1, 2],
+        failed: [],
+      });
+
+      await handlers[IPC_CHANNELS.SYNC_PENDING]();
+
+      expect(mockPending.remove).toHaveBeenCalledWith(1);
+      expect(mockPending.remove).toHaveBeenCalledWith(2);
+      expect(mockPending.clear).not.toHaveBeenCalled();
     });
 
     it('re-authenticates when token has expired and succeeds', async () => {
@@ -333,7 +356,13 @@ describe('cacheHandlers', () => {
       mockSync.isAuthenticated.mockReturnValue(false);
       mockAppConfig.load.mockReturnValue({ [SECRET_FIELD]: reauthPassphrase });
       mockSync.reauthenticate.mockResolvedValue(undefined);
-      mockSync.syncAll.mockResolvedValue({ total: 1, conflicts: 0, errors: [], failed: [] });
+      mockSync.syncAll.mockResolvedValue({
+        total: 1,
+        conflicts: 0,
+        errors: [],
+        synced: [],
+        failed: [],
+      });
 
       await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
@@ -360,7 +389,13 @@ describe('cacheHandlers', () => {
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
       mockAppConfig.load.mockReturnValue({});
-      mockSync.syncAll.mockResolvedValue({ total: 1, conflicts: 0, errors: [], failed: [] });
+      mockSync.syncAll.mockResolvedValue({
+        total: 1,
+        conflicts: 0,
+        errors: [],
+        synced: [],
+        failed: [],
+      });
 
       await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
@@ -373,7 +408,13 @@ describe('cacheHandlers', () => {
       const changes = [{ id: '1' }];
       mockPending.getAll.mockReturnValue(changes);
       mockSync.isAuthenticated.mockReturnValue(false);
-      mockSync.syncAll.mockResolvedValue({ total: 1, conflicts: 0, errors: [], failed: [] });
+      mockSync.syncAll.mockResolvedValue({
+        total: 1,
+        conflicts: 0,
+        errors: [],
+        synced: [],
+        failed: [],
+      });
 
       await handlers[IPC_CHANNELS.SYNC_PENDING]();
 

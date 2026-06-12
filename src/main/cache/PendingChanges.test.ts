@@ -162,4 +162,10 @@ describe('PendingChanges', () => {
     const all = pending.getAll();
     expect(all[0].timestamp).toBe(1234567890000);
   });
+
+  it('enqueue throws when the insert fails', () => {
+    const failingPending = new PendingChanges(join(tempDir, 'failing.db'));
+    failingPending.close(); // closed db -> insert throws
+    expect(() => failingPending.enqueue('contacts', 'create', { id: 'x' })).toThrow();
+  });
 });
