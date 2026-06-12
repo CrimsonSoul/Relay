@@ -15,14 +15,14 @@ function createMockApp(isPackaged: boolean) {
 }
 
 describe('hardwareAcceleration', () => {
-  it('disables hardware acceleration for packaged Windows builds', () => {
+  it('keeps hardware acceleration enabled for packaged Windows builds by default', () => {
     expect(
       shouldDisableHardwareAcceleration({
         platform: 'win32',
         isPackaged: true,
         disableEnv: undefined,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('does not disable hardware acceleration for unpackaged Windows development builds by default', () => {
@@ -55,15 +55,21 @@ describe('hardwareAcceleration', () => {
     ).toBe(true);
   });
 
-  it('applies Electron GPU switches when hardware acceleration is disabled', () => {
+  it('applies Electron GPU switches only when explicitly disabled via the environment', () => {
     const app = createMockApp(true);
 
-    const disabled = configureHardwareAcceleration(app, {
+    const enabledByDefault = configureHardwareAcceleration(app, {
       platform: 'win32',
       env: {},
     });
+    expect(enabledByDefault).toBe(false);
+    expect(app.disableHardwareAcceleration).not.toHaveBeenCalled();
 
-    expect(disabled).toBe(true);
+    const disabledByEnv = configureHardwareAcceleration(app, {
+      platform: 'win32',
+      env: { RELAY_DISABLE_HARDWARE_ACCELERATION: '1' },
+    });
+    expect(disabledByEnv).toBe(true);
     expect(app.disableHardwareAcceleration).toHaveBeenCalledOnce();
     expect(app.commandLine.appendSwitch).toHaveBeenCalledWith('disable-gpu-compositing');
   });

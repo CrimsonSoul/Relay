@@ -15,12 +15,13 @@ type HardwareAccelerationApp = Pick<App, 'disableHardwareAcceleration' | 'comman
   isPackaged: boolean;
 };
 
+/* Hardware acceleration is ON by default everywhere. The env var remains as
+   an opt-out for machines with broken GPU drivers (the original reason this
+   module exists): set RELAY_DISABLE_HARDWARE_ACCELERATION=1 on that machine. */
 export function shouldDisableHardwareAcceleration({
-  platform,
-  isPackaged,
   disableEnv,
 }: HardwareAccelerationDecisionOptions): boolean {
-  return disableEnv === '1' || (platform === 'win32' && isPackaged);
+  return disableEnv === '1';
 }
 
 export function configureHardwareAcceleration(
