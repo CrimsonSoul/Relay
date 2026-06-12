@@ -61,6 +61,7 @@ export default [
       'dist',
       'build',
       'node_modules',
+      'tmp',
       'vitest.config.ts',
       'vitest.renderer.config.ts',
       'electron.vite.config.ts',
