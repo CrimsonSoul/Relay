@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { AppConfig, __setElectronModuleForTests, type RelayConfig } from './AppConfig';
@@ -337,5 +337,22 @@ describe('AppConfig', () => {
     });
     stored = JSON.parse(readFileSync(join(tempDir, 'config.json'), 'utf-8'));
     expect(stored.allowInsecureHttp).toBe(true);
+  });
+
+  it('save() leaves no temp file behind and the config is loadable', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'testsecret' });
+
+    const leftovers = readdirSync(tempDir).filter((f) => f.endsWith('.tmp'));
+    expect(leftovers).toEqual([]);
+    expect(config.load()).toMatchObject({ mode: 'server', port: 8090 });
+  });
+
+  it('save() replaces the file atomically (rename, not in-place write)', () => {
+    const config = new AppConfig(tempDir);
+    config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'first' });
+    config.save({ mode: 'server', port: 9001, bindHost: '127.0.0.1', secret: 'second' });
+    const loaded = config.load();
+    expect(loaded).toMatchObject({ mode: 'server', port: 9001 });
   });
 });

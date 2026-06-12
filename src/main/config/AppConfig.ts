@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+  unlinkSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { loggers } from '../logger';
 
@@ -143,7 +150,10 @@ export class AppConfig {
       stored.secret = config.secret;
     }
 
-    writeFileSync(this.configPath, JSON.stringify(stored, null, 2), 'utf-8');
+    // Write-then-rename so a crash mid-write can never truncate the live config.
+    const tmpPath = `${this.configPath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(stored, null, 2), 'utf-8');
+    renameSync(tmpPath, this.configPath);
   }
 
   isConfigured(): boolean {
