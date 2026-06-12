@@ -243,7 +243,7 @@ jobs:
       - name: Build and package (arm64, ad-hoc signed)
         run: |
           npm run build
-          npx electron-builder --mac dmg --arm64 -c.mac.notarize=false -c.mac.gatekeeperAssess=false -c.compression=store
+          npx electron-builder --mac dmg --arm64 --publish never -c.mac.notarize=false -c.mac.gatekeeperAssess=false -c.compression=store
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
