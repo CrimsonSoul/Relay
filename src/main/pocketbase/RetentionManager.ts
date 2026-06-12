@@ -18,13 +18,23 @@ export class RetentionManager {
 
   startSchedule(intervalMs = 24 * 60 * 60 * 1000, beforeCleanup?: () => Promise<void>): void {
     this.stop();
+    let running = false;
     const run = async (): Promise<void> => {
-      try {
-        await beforeCleanup?.();
-      } catch (err) {
-        logger.error('Pre-cleanup maintenance failed; continuing with cleanup', { error: err });
+      if (running) {
+        logger.warn('Previous retention run still in progress; skipping this cycle');
+        return;
       }
-      await this.runCleanup();
+      running = true;
+      try {
+        try {
+          await beforeCleanup?.();
+        } catch (err) {
+          logger.error('Pre-cleanup maintenance failed; continuing with cleanup', { error: err });
+        }
+        await this.runCleanup();
+      } finally {
+        running = false;
+      }
     };
     void run();
     this.interval = setInterval(() => {

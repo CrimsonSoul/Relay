@@ -147,6 +147,40 @@ describe('RetentionManager', () => {
 
       expect(getFullList.mock.calls.length).toBe(callsAfterStop);
     });
+
+    it('skips overlapping runs and logs a warning', async () => {
+      vi.useRealTimers();
+      const { loggers } = await import('../logger');
+
+      // Deferred that controls when beforeCleanup resolves
+      let resolveDeferred!: () => void;
+      const deferred = new Promise<void>((resolve) => {
+        resolveDeferred = resolve;
+      });
+
+      const manager = new RetentionManager(makePb());
+      const cleanupSpy = vi.spyOn(manager, 'runCleanup').mockResolvedValue();
+
+      // Start with a very short interval so several ticks fire while first run blocks
+      manager.startSchedule(10, () => deferred);
+
+      // Wait long enough for multiple interval ticks to fire
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Stop before unblocking so no further interval callbacks fire
+      manager.stop();
+
+      // First run is blocked in beforeCleanup; cleanup should not have been called yet
+      expect(cleanupSpy).toHaveBeenCalledTimes(0);
+      // At least one skip warning should have been logged
+      expect(vi.mocked(loggers.retention.warn)).toHaveBeenCalledWith(
+        'Previous retention run still in progress; skipping this cycle',
+      );
+
+      // Unblock the first (and only) run and wait for it to complete
+      resolveDeferred();
+      await vi.waitFor(() => expect(cleanupSpy).toHaveBeenCalledTimes(1));
+    });
   });
 
   describe('stop()', () => {

@@ -259,7 +259,7 @@ describe('BackupManager', () => {
       // 12 pre-restore safety backups on a budget of 3 → 9 pruned
       const files = Array.from(
         { length: 12 },
-        (_, i) => `pre_restore-${String(i).padStart(2, '0')}.zip`,
+        (_, i) => `pre_restore_${String(i).padStart(2, '0')}.zip`,
       );
       mockReaddirSync.mockReturnValue(files as unknown as string[]);
       mockStatSync.mockImplementation((filePath) => {
