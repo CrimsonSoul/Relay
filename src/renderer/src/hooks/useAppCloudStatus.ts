@@ -50,12 +50,14 @@ export function useAppCloudStatus(
   const [loading, setLoading] = useState(false);
   const seenIdsRef = useRef<Set<string>>(new Set());
   const missingApiLoggedRef = useRef(false);
+  const restoredFromCacheRef = useRef(false);
 
   // Restore from cache on mount (stale-while-revalidate) and seed seen IDs
   useEffect(() => {
     const cached = secureStorage.getItemSync<CacheEntry>(CACHE_KEY);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS && cached.data?.providers) {
       if (mounted.current) setStatusData(cached.data);
+      restoredFromCacheRef.current = true;
       // Seed seen IDs so we don't toast stale events on first fresh fetch
       for (const item of getAllItems(cached.data)) {
         seenIdsRef.current.add(item.id);
@@ -128,9 +130,9 @@ export function useAppCloudStatus(
     [mounted, processNewEvents],
   );
 
-  // Initial fetch on mount
+  // Initial fetch on mount — silent when cached data is already on screen.
   useEffect(() => {
-    void fetchStatus(!!statusData);
+    void fetchStatus(restoredFromCacheRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only on mount
   }, []);
 

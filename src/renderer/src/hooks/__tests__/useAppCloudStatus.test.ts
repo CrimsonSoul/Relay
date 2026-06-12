@@ -362,6 +362,30 @@ describe('useAppCloudStatus', () => {
     expect(showToast).not.toHaveBeenCalled();
   });
 
+  // ------- silent first fetch when cache is restored -------
+
+  it('does not show loading state on first fetch when cache was restored', async () => {
+    // Pre-seed valid cache so the restore effect sets restoredFromCacheRef
+    const cachedData = makeStatusData([makeItem({ id: 'c1', severity: 'info', title: 'Info' })]);
+    secureStorageMock.setItemSync('cached_cloud_status', {
+      fetchedAt: Date.now(),
+      data: cachedData,
+    });
+
+    // Make the API hang so we can observe loading state while fetch is in-flight
+    mockApi.getCloudStatus.mockReturnValue(new Promise(() => {}));
+
+    const useAppCloudStatus = await importHook();
+    const { result } = renderHook(() => useAppCloudStatus(showToast));
+
+    // Cache was restored, so the mount fetch is silent — loading should stay false
+    expect(result.current.loading).toBe(false);
+    // But cached data should be visible immediately
+    await waitFor(() => {
+      expect(result.current.statusData).toEqual(cachedData);
+    });
+  });
+
   // ------- API errors -------
 
   it('handles API errors gracefully without crashing', async () => {
