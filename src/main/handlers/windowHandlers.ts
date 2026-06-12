@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
+import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
 import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -22,6 +22,7 @@ export const ALLOWED_AUX_ROUTES = new Set([
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
 
+const MAX_ICS_LENGTH = 1_048_576; // 1MB
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
 
@@ -75,6 +76,10 @@ function isAllowedExternalUrl(url: string): boolean {
         address.indexOf('@', at + 1) === -1
       );
     }
+    if (parsed.protocol === 'msteams:') {
+      // Teams desktop client deep links only
+      return parsed.hostname.toLowerCase() === 'teams.microsoft.com';
+    }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
     return ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase());
   } catch {
@@ -122,6 +127,28 @@ export function setupWindowHandlers(
       }
     } catch {
       loggers.security.error(`Invalid URL provided to openExternal: ${describeUrlForLog(url)}`);
+    }
+  });
+
+  // Schedule Bridge (.ics) — write the invite to a temp file and open it with
+  // the default calendar handler so the user can review and send it.
+  ipcMain.handle(IPC_CHANNELS.ICS_SAVE_AND_OPEN, async (event, content: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.ICS_SAVE_AND_OPEN)) return false;
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+    if (typeof content !== 'string' || content.length === 0 || content.length >= MAX_ICS_LENGTH) {
+      loggers.security.error('Blocked saving invalid ICS content');
+      return false;
+    }
+    try {
+      const filePath = join(app.getPath('temp'), `relay-bridge-${Date.now()}.ics`);
+      await writeFile(filePath, content, 'utf8');
+      await shell.openPath(filePath);
+      return true;
+    } catch (err) {
+      loggers.ipc.warn('ICS save and open failed', {
+        error: getErrorMessage(err),
+      });
+      return false;
     }
   });
 

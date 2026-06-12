@@ -50,6 +50,9 @@ vi.mock('electron', () => {
       openExternal: vi.fn(),
       beep: vi.fn(),
     },
+    app: {
+      getPath: vi.fn(() => '/mock-temp'),
+    },
     dialog: {
       showSaveDialog: vi.fn(),
       showOpenDialog: vi.fn(),
@@ -305,6 +308,23 @@ describe('windowHandlers', () => {
       );
     });
 
+    it('opens Teams client deep link (msteams: protocol)', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+      );
+
+      expect(shell.openExternal).toHaveBeenCalledWith(
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+      );
+    });
+
+    it('blocks msteams: deep links to other hosts', async () => {
+      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'msteams://evil.example/l/meeting/new');
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
     it('blocks unknown https URL', async () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
 
@@ -356,6 +376,73 @@ describe('windowHandlers', () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('ICS_SAVE_AND_OPEN', () => {
+    it('writes the ICS to a temp file, opens it, and returns true', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN](
+        {},
+        'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+      );
+
+      expect(result).toBe(true);
+      const [filePath, content] = vi.mocked(writeFile).mock.calls[0] as [string, string];
+      expect(filePath).toMatch(/^\/mock-temp\/relay-bridge-\d+\.ics$/);
+      expect(content).toBe('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
+      expect(shell.openPath).toHaveBeenCalledWith(filePath);
+    });
+
+    it('returns false for non-string content', async () => {
+      const { writeFile } = await import('node:fs/promises');
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 42);
+
+      expect(result).toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(shell.openPath).not.toHaveBeenCalled();
+    });
+
+    it('returns false for empty content', async () => {
+      const { writeFile } = await import('node:fs/promises');
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, '');
+
+      expect(result).toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('returns false for content exceeding 1MB', async () => {
+      const { writeFile } = await import('node:fs/promises');
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'x'.repeat(1_048_576));
+
+      expect(result).toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
+    it('returns false when the write fails', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockRejectedValue(new Error('disk full'));
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(result).toBe(false);
+      expect(shell.openPath).not.toHaveBeenCalled();
+    });
+
+    it('returns false when opening the file fails', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockRejectedValue(new Error('no handler'));
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(result).toBe(false);
     });
   });
 

@@ -106,6 +106,21 @@ vi.mock('../assembler', () => ({
       <button onClick={() => onScroll(100)}>scroll-list</button>
     </div>
   ),
+  ScheduleBridgeModal: ({
+    isOpen,
+    onClose,
+    attendees,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    attendees: { name?: string; email: string }[];
+  }) =>
+    isOpen ? (
+      <div data-testid="schedule-bridge-modal">
+        <span>{attendees.map((a) => `${a.name ?? ''}<${a.email}>`).join(';')}</span>
+        <button onClick={onClose}>close-schedule</button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('../../components/CollapsibleHeader', () => ({
@@ -252,6 +267,7 @@ const baseAsm = {
   setSearch: mockSetSearch,
   allRecipients: [],
   log: [],
+  contactMap: new Map(),
   itemData: {},
   handleCopy: mockHandleCopy,
   executeDraftBridge: mockExecuteDraftBridge,
@@ -337,6 +353,7 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Draft Bridge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).toBeDisabled();
     expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
     expect(screen.getByText('sort-by-email')).toBeDisabled();
   });
@@ -352,6 +369,27 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Draft Bridge/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Schedule Bridge/i })).not.toBeDisabled();
+  });
+
+  it('opens ScheduleBridgeModal with current recipients when Schedule Bridge is clicked', () => {
+    asmState = {
+      ...baseAsm,
+      allRecipients: [{ email: 'a@example.com', source: 'group' }],
+      log: [{ email: 'a@example.com', source: 'group' }],
+      contactMap: new Map([
+        ['a@example.com', { name: 'Alice', email: 'a@example.com', phone: '', title: '' }],
+      ]),
+    };
+    render(<AssemblerTab {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('Schedule Bridge'));
+
+    expect(screen.getByTestId('schedule-bridge-modal')).toBeInTheDocument();
+    expect(screen.getByText('Alice<a@example.com>')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('close-schedule'));
+    expect(screen.queryByTestId('schedule-bridge-modal')).not.toBeInTheDocument();
   });
 
   it('opens history modal when HISTORY is clicked', () => {

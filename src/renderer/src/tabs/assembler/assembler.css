@@ -382,6 +382,61 @@
 }
 
 /* ============================================================================
+   Schedule Bridge Modal
+   ============================================================================ */
+
+.schedule-bridge-field {
+  margin-bottom: 20px;
+}
+
+/* Eyebrow label — matches the pane-header eyebrow treatment */
+.schedule-bridge-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 800;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+/* Select mirrors the tactile-input ink recipe */
+.schedule-bridge-select {
+  width: 100%;
+  box-sizing: border-box;
+  height: 44px;
+  background: transparent;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  padding: 0 12px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.schedule-bridge-select:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.schedule-bridge-select:focus {
+  border-color: var(--accent);
+}
+
+.schedule-bridge-error {
+  color: var(--alarm-bright);
+  font-size: var(--text-sm);
+  margin-top: 6px;
+}
+
+.schedule-bridge-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* ============================================================================
    Composition List (Assembler)
    ============================================================================ */
 

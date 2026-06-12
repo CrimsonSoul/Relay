@@ -281,6 +281,8 @@ export type BridgeAPI = {
   playAlertSound: () => Promise<boolean>;
   selectReminderSound: () => Promise<IpcResult<string>>;
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
+  // Schedule Bridge (.ics)
+  saveAndOpenIcs: (content: string) => Promise<boolean>;
   saveCompanyLogo: () => Promise<IpcResult<string>>;
   getCompanyLogo: () => Promise<string | null>;
   removeCompanyLogo: () => Promise<IpcResult>;
@@ -353,6 +355,8 @@ export const IPC_CHANNELS = {
   ALERT_PLAY_SOUND: 'alert:playSound',
   ALERT_SELECT_REMINDER_SOUND: 'alert:selectReminderSound',
   SAVE_ALERT_IMAGE: 'alert:saveImage',
+  // Schedule Bridge (.ics)
+  ICS_SAVE_AND_OPEN: 'ics:saveAndOpen',
   SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
   GET_COMPANY_LOGO: 'alert:getCompanyLogo',
   REMOVE_COMPANY_LOGO: 'alert:removeCompanyLogo',

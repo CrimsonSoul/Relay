@@ -125,8 +125,13 @@ export function useAssembler({
       subject: `${date.getMonth() + 1}/${date.getDate()} -`,
       attendees: log.map((m) => m.email).join(','),
     });
+    const query = params.toString();
+    // Try the desktop client deep link first; fall back to the web URL if it is rejected
     globalThis.api
-      ?.openExternal(`https://teams.microsoft.com/l/meeting/new?${params.toString()}`)
+      ?.openExternal(`msteams://teams.microsoft.com/l/meeting/new?${query}`)
+      ?.catch(() =>
+        globalThis.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${query}`),
+      )
       ?.then(() => {
         showToast('Bridge drafted', 'success');
       })

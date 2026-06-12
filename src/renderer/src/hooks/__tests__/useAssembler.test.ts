@@ -22,6 +22,13 @@ vi.mock('../../contexts/SearchContext', () => ({
   useSearchContext: () => ({ debouncedQuery: '' }),
 }));
 
+// Mock useToast so toast calls can be asserted; keep NoopToastProvider real for the wrapper
+const mockShowToast = vi.fn();
+vi.mock('../../components/Toast', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/Toast')>();
+  return { ...actual, useToast: () => ({ showToast: mockShowToast }) };
+});
+
 // Mock secureStorage
 vi.mock('../../utils/secureStorage', () => ({
   secureStorage: {
@@ -314,8 +321,8 @@ describe('useAssembler', () => {
     expect(mockWriteClipboard).toHaveBeenCalled();
   });
 
-  it('executeDraftBridge opens Teams URL with correct parameters', () => {
-    const mockOpenExternal = vi.fn();
+  it('executeDraftBridge opens the Teams client deep link with correct parameters', async () => {
+    const mockOpenExternal = vi.fn().mockResolvedValue(undefined);
     const mockApi = { openExternal: mockOpenExternal };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
@@ -323,17 +330,65 @@ describe('useAssembler', () => {
       wrapper,
     });
 
-    act(() => {
+    await act(async () => {
       result.current.executeDraftBridge();
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(1);
     const url = mockOpenExternal.mock.calls[0][0] as string;
-    expect(url).toContain('https://teams.microsoft.com/l/meeting/new');
+    expect(url).toContain('msteams://teams.microsoft.com/l/meeting/new');
     expect(url).toContain('attendees=');
     expect(url).toContain('subject=');
     expect(url).toContain('alice%40test.com');
     expect(url).toContain('bob%40test.com');
+    expect(mockShowToast).toHaveBeenCalledWith('Bridge drafted', 'success');
+  });
+
+  it('executeDraftBridge falls back to the https Teams URL when the deep link rejects', async () => {
+    const mockOpenExternal = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('no msteams handler'))
+      .mockResolvedValueOnce(undefined);
+    const mockApi = { openExternal: mockOpenExternal };
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+
+    const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.executeDraftBridge();
+    });
+
+    expect(mockOpenExternal).toHaveBeenCalledTimes(2);
+    const deepLink = mockOpenExternal.mock.calls[0][0] as string;
+    const fallback = mockOpenExternal.mock.calls[1][0] as string;
+    expect(deepLink).toContain('msteams://teams.microsoft.com/l/meeting/new');
+    expect(fallback).toContain('https://teams.microsoft.com/l/meeting/new');
+    expect(fallback.split('?')[1]).toBe(deepLink.split('?')[1]);
+    expect(mockShowToast).toHaveBeenCalledWith('Bridge drafted', 'success');
+    expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
+  });
+
+  it('executeDraftBridge shows an error toast only when both attempts reject', async () => {
+    const mockOpenExternal = vi.fn().mockRejectedValue(new Error('blocked'));
+    const mockApi = { openExternal: mockOpenExternal };
+    (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
+
+    const { result } = renderHook(() => useAssembler({ ...baseProps, selectedGroupIds: ['g1'] }), {
+      wrapper,
+    });
+
+    await act(async () => {
+      result.current.executeDraftBridge();
+    });
+
+    expect(mockOpenExternal).toHaveBeenCalledTimes(2);
+    expect(mockShowToast).not.toHaveBeenCalledWith('Bridge drafted', 'success');
+    expect(mockShowToast).toHaveBeenCalledWith(
+      expect.stringContaining('Failed to open Teams draft'),
+      'error',
+    );
   });
 
   it('handleContactSaved creates contact via PocketBase and adds email to manual list', async () => {
