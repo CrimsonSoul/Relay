@@ -100,6 +100,89 @@ describe('buildBridgeIcs', () => {
     );
   });
 
+  it('quotes CN param values containing commas (RFC 5545 param quoting)', () => {
+    const lines = unfold(
+      buildBridgeIcs({
+        ...baseOptions,
+        attendees: [{ name: 'Adams, Alice', email: 'alice@test.com' }],
+      }),
+    );
+    expect(lines).toContain(
+      'ATTENDEE;CN="Adams, Alice";ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:alice@test.com',
+    );
+  });
+
+  it('neutralizes CN values that attempt parameter injection via semicolons', () => {
+    const lines = unfold(
+      buildBridgeIcs({
+        ...baseOptions,
+        attendees: [{ name: 'X;PARTSTAT=ACCEPTED', email: 'mallory@test.com' }],
+      }),
+    );
+    const attendee = lines.find((l) => l.startsWith('ATTENDEE'));
+    // The malicious value must be quoted so it cannot introduce a second parameter
+    expect(attendee).toBe(
+      'ATTENDEE;CN="X;PARTSTAT=ACCEPTED";ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:mallory@test.com',
+    );
+    expect(attendee).not.toMatch(/;PARTSTAT=ACCEPTED;/);
+  });
+
+  it('strips CR/LF from CN values so they cannot inject content lines', () => {
+    const ics = buildBridgeIcs({
+      ...baseOptions,
+      attendees: [{ name: 'Evil\r\nATTENDEE;ROLE=CHAIR:mailto:x@y.z', email: 'eve@test.com' }],
+    });
+    const lines = unfold(ics);
+    expect(lines.filter((l) => l.startsWith('ATTENDEE'))).toHaveLength(1);
+    expect(lines.some((l) => l.startsWith('ROLE='))).toBe(false);
+    expect(lines).toContain(
+      'ATTENDEE;CN="EvilATTENDEE;ROLE=CHAIR:mailto:x@y.z";ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:eve@test.com',
+    );
+  });
+
+  it('encodes double quotes in CN values per RFC 6868', () => {
+    const lines = unfold(
+      buildBridgeIcs({
+        ...baseOptions,
+        attendees: [{ name: 'Bob "The Bridge" Baker', email: 'bob@test.com' }],
+      }),
+    );
+    const attendee = lines.find((l) => l.startsWith('ATTENDEE'));
+    expect(attendee).toBe(
+      "ATTENDEE;CN=Bob ^'The Bridge^' Baker;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:bob@test.com",
+    );
+    expect(attendee).not.toContain('"');
+  });
+
+  it('escapes caret characters in CN values per RFC 6868', () => {
+    const lines = unfold(
+      buildBridgeIcs({
+        ...baseOptions,
+        attendees: [{ name: 'Care^t', email: 'caret@test.com' }],
+      }),
+    );
+    expect(lines).toContain(
+      'ATTENDEE;CN=Care^^t;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:caret@test.com',
+    );
+  });
+
+  it('applies CN param escaping to the ORGANIZER as well', () => {
+    const lines = unfold(buildBridgeIcs({ ...baseOptions, organizerEmail: 'a;b@test.com' }));
+    expect(lines).toContain('ORGANIZER;CN="a;b@test.com":mailto:a;b@test.com');
+  });
+
+  it('folds non-ASCII content at 75 octets without breaking characters', () => {
+    const subject = 'é'.repeat(80) + '🚀'.repeat(10);
+    const ics = buildBridgeIcs({ ...baseOptions, subject });
+    const encoder = new TextEncoder();
+    for (const line of ics.split('\r\n')) {
+      expect(encoder.encode(line).length).toBeLessThanOrEqual(75);
+    }
+    // Unfolding restores the original subject intact (round-trip)
+    const summary = unfold(ics).find((l) => l.startsWith('SUMMARY:'));
+    expect(summary).toBe(`SUMMARY:${subject}`);
+  });
+
   it('skips attendees with an empty email', () => {
     const lines = unfold(
       buildBridgeIcs({

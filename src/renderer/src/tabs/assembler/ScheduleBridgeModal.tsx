@@ -43,6 +43,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
   const [subject, setSubject] = useState('');
   const [organizerEmail, setOrganizerEmailValue] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [subjectError, setSubjectError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset form to defaults each time the modal opens
@@ -54,6 +55,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       setSubject(`${now.getMonth() + 1}/${now.getDate()} – Bridge`);
       setOrganizerEmailValue(getOrganizerEmail());
       setEmailError('');
+      setSubjectError('');
       setIsSubmitting(false);
     }
   }, [isOpen]);
@@ -65,6 +67,11 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
       return;
     }
     setEmailError('');
+    if (subject.trim().length === 0) {
+      setSubjectError('Enter a subject');
+      return;
+    }
+    setSubjectError('');
     setIsSubmitting(true);
     try {
       setOrganizerEmail(organizerEmail);
@@ -133,6 +140,7 @@ export const ScheduleBridgeModal: React.FC<ScheduleBridgeModalProps> = ({
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
           />
+          {subjectError && <div className="schedule-bridge-error">{subjectError}</div>}
         </div>
 
         <div className="schedule-bridge-field">

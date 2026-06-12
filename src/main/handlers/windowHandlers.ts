@@ -117,16 +117,18 @@ export function setupWindowHandlers(
   });
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, async (event, url: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_EXTERNAL)) return;
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return;
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPEN_EXTERNAL)) return false;
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
     try {
       if (typeof url === 'string' && isAllowedExternalUrl(url)) {
         await shell.openExternal(url);
-      } else {
-        loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);
+        return true;
       }
+      loggers.security.error(`Blocked opening external URL: ${describeUrlForLog(url)}`);
+      return false;
     } catch {
       loggers.security.error(`Invalid URL provided to openExternal: ${describeUrlForLog(url)}`);
+      return false;
     }
   });
 
@@ -142,7 +144,12 @@ export function setupWindowHandlers(
     try {
       const filePath = join(app.getPath('temp'), `relay-bridge-${Date.now()}.ics`);
       await writeFile(filePath, content, 'utf8');
-      await shell.openPath(filePath);
+      // shell.openPath never rejects; it resolves with a non-empty error string on failure
+      const openError = await shell.openPath(filePath);
+      if (openError) {
+        loggers.ipc.warn('ICS open failed', { error: openError });
+        return false;
+      }
       return true;
     } catch (err) {
       loggers.ipc.warn('ICS save and open failed', {

@@ -279,16 +279,32 @@ describe('windowHandlers', () => {
   });
 
   describe('OPEN_EXTERNAL', () => {
-    it('blocks unknown http URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'http://example.com');
+    it('blocks unknown http URL and returns false', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'http://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
     });
 
-    it('opens known cloud status URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://status.openai.com/incidents/1');
+    it('opens known cloud status URL and returns true', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'https://status.openai.com/incidents/1',
+      );
 
       expect(shell.openExternal).toHaveBeenCalledWith('https://status.openai.com/incidents/1');
+      expect(result).toBe(true);
+    });
+
+    it('returns false when shell.openExternal throws (no protocol handler)', async () => {
+      vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error('no handler for msteams:'));
+
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'msteams://teams.microsoft.com/l/meeting/new?subject=test',
+      );
+
+      expect(result).toBe(false);
     });
 
     it('allows downdetector.com URLs', async () => {
@@ -308,8 +324,8 @@ describe('windowHandlers', () => {
       );
     });
 
-    it('opens Teams client deep link (msteams: protocol)', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+    it('opens Teams client deep link (msteams: protocol) and returns true', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
         {},
         'msteams://teams.microsoft.com/l/meeting/new?subject=test',
       );
@@ -317,18 +333,24 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).toHaveBeenCalledWith(
         'msteams://teams.microsoft.com/l/meeting/new?subject=test',
       );
+      expect(result).toBe(true);
     });
 
-    it('blocks msteams: deep links to other hosts', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'msteams://evil.example/l/meeting/new');
+    it('blocks msteams: deep links to other hosts and returns false', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL](
+        {},
+        'msteams://evil.example/l/meeting/new',
+      );
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
     });
 
-    it('blocks unknown https URL', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
+    it('blocks unknown https URL and returns false', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://evil.example');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
     });
 
     it('opens valid mailto URL', async () => {
@@ -364,18 +386,20 @@ describe('windowHandlers', () => {
       expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
-    it('handles invalid URL gracefully', async () => {
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'not a url at all');
+    it('handles invalid URL gracefully and returns false', async () => {
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'not a url at all');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
     });
 
-    it('returns early when rate limited', async () => {
+    it('returns false when rate limited', async () => {
       vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: false });
 
-      await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
+      const result = await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://example.com');
 
       expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(result).toBe(false);
     });
   });
 
@@ -435,14 +459,25 @@ describe('windowHandlers', () => {
       expect(shell.openPath).not.toHaveBeenCalled();
     });
 
-    it('returns false when opening the file fails', async () => {
+    it('returns false when shell.openPath reports an error string', async () => {
       const { writeFile } = await import('node:fs/promises');
       vi.mocked(writeFile).mockResolvedValue(undefined);
-      vi.mocked(shell.openPath).mockRejectedValue(new Error('no handler'));
+      // shell.openPath never rejects; it resolves with a non-empty error string on failure
+      vi.mocked(shell.openPath).mockResolvedValue('no handler registered for .ics files');
 
       const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
 
       expect(result).toBe(false);
+    });
+
+    it('returns true when shell.openPath resolves with an empty string', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
+
+      expect(result).toBe(true);
     });
   });
 

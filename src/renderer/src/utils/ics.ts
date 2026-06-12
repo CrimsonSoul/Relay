@@ -25,6 +25,20 @@ function escapeText(value: string): string {
     .replaceAll(/\r?\n/g, '\\n');
 }
 
+/**
+ * Escapes a property parameter value (e.g. CN) per RFC 5545 §3.2 / RFC 6868.
+ * CR/LF are stripped entirely (they cannot appear in param values at all);
+ * `^` and `"` are caret-encoded per RFC 6868; values containing `;`, `,` or
+ * `:` are wrapped in DQUOTEs so they cannot terminate the parameter.
+ */
+function escapeParamValue(value: string): string {
+  const encoded = value
+    .replaceAll(/[\r\n]/g, '')
+    .replaceAll('^', '^^')
+    .replaceAll('"', "^'");
+  return /[;,:]/.test(encoded) ? `"${encoded}"` : encoded;
+}
+
 /** Formats a date in UTC basic format: YYYYMMDDTHHMMSSZ. */
 function formatUtc(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -87,9 +101,10 @@ export function buildBridgeIcs(options: BridgeIcsOptions): string {
     `DTSTART:${formatUtc(start)}`,
     `DTEND:${formatUtc(end)}`,
     `SUMMARY:${escapeText(subject)}`,
-    `ORGANIZER;CN=${organizerEmail}:mailto:${organizerEmail}`,
+    `ORGANIZER;CN=${escapeParamValue(organizerEmail)}:mailto:${organizerEmail}`,
     ...invited.map(
-      (a) => `ATTENDEE;CN=${a.name || a.email};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${a.email}`,
+      (a) =>
+        `ATTENDEE;CN=${escapeParamValue(a.name || a.email)};ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${a.email}`,
     ),
     'STATUS:CONFIRMED',
     'END:VEVENT',

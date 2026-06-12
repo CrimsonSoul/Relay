@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { BridgeGroup, Contact } from '@shared/ipc';
-import { getErrorMessage } from '@shared/types';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
 import type { SortConfig } from '../tabs/assembler/types';
@@ -119,25 +118,29 @@ export function useAssembler({
     }
   }, [log, showToast]);
 
-  const executeDraftBridge = useCallback(() => {
+  const executeDraftBridge = useCallback(async () => {
+    const api = globalThis.api;
+    if (!api) return;
     const date = new Date();
     const params = new URLSearchParams({
       subject: `${date.getMonth() + 1}/${date.getDate()} -`,
       attendees: log.map((m) => m.email).join(','),
     });
     const query = params.toString();
-    // Try the desktop client deep link first; fall back to the web URL if it is rejected
-    globalThis.api
-      ?.openExternal(`msteams://teams.microsoft.com/l/meeting/new?${query}`)
-      ?.catch(() =>
-        globalThis.api?.openExternal(`https://teams.microsoft.com/l/meeting/new?${query}`),
-      )
-      ?.then(() => {
-        showToast('Bridge drafted', 'success');
-      })
-      ?.catch((error_) => {
-        showToast(`Failed to open Teams draft: ${getErrorMessage(error_)}`, 'error');
-      });
+    // Try the desktop client deep link first; fall back to the web URL if it is refused
+    const openedDeepLink = await api.openExternal(
+      `msteams://teams.microsoft.com/l/meeting/new?${query}`,
+    );
+    if (!openedDeepLink) {
+      const openedWeb = await api.openExternal(
+        `https://teams.microsoft.com/l/meeting/new?${query}`,
+      );
+      if (!openedWeb) {
+        showToast('Failed to open Teams draft', 'error');
+        return;
+      }
+    }
+    showToast('Bridge drafted', 'success');
   }, [log, showToast]);
   const handleQuickAdd = useCallback(
     (email: string) => {

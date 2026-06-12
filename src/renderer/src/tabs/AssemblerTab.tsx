@@ -114,7 +114,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
 
   // Handle draft bridge with auto-save to history
   const handleDraftBridgeWithHistory = useCallback(() => {
-    asm.executeDraftBridge();
+    void asm.executeDraftBridge();
     saveToHistory(
       asm.allRecipients.map((l) => l.email),
       selectedGroupNames,

@@ -243,7 +243,8 @@ export type PublicRelayConfig =
 export type BridgeAPI = {
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
   openPath: (path: string) => Promise<void>;
-  openExternal: (url: string) => Promise<void>;
+  /** Resolves true when the URL was opened; false when blocked, invalid, or no handler exists. */
+  openExternal: (url: string) => Promise<boolean>;
   onAuthRequested: (callback: (request: AuthRequest) => void) => () => void;
   submitAuth: (
     nonce: string,

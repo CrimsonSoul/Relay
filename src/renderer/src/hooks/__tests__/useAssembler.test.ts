@@ -322,7 +322,7 @@ describe('useAssembler', () => {
   });
 
   it('executeDraftBridge opens the Teams client deep link with correct parameters', async () => {
-    const mockOpenExternal = vi.fn().mockResolvedValue(undefined);
+    const mockOpenExternal = vi.fn().mockResolvedValue(true);
     const mockApi = { openExternal: mockOpenExternal };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
@@ -331,7 +331,7 @@ describe('useAssembler', () => {
     });
 
     await act(async () => {
-      result.current.executeDraftBridge();
+      await result.current.executeDraftBridge();
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(1);
@@ -344,11 +344,8 @@ describe('useAssembler', () => {
     expect(mockShowToast).toHaveBeenCalledWith('Bridge drafted', 'success');
   });
 
-  it('executeDraftBridge falls back to the https Teams URL when the deep link rejects', async () => {
-    const mockOpenExternal = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('no msteams handler'))
-      .mockResolvedValueOnce(undefined);
+  it('executeDraftBridge falls back to the https Teams URL when the deep link is refused', async () => {
+    const mockOpenExternal = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const mockApi = { openExternal: mockOpenExternal };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
@@ -357,7 +354,7 @@ describe('useAssembler', () => {
     });
 
     await act(async () => {
-      result.current.executeDraftBridge();
+      await result.current.executeDraftBridge();
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(2);
@@ -370,8 +367,8 @@ describe('useAssembler', () => {
     expect(mockShowToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed'), 'error');
   });
 
-  it('executeDraftBridge shows an error toast only when both attempts reject', async () => {
-    const mockOpenExternal = vi.fn().mockRejectedValue(new Error('blocked'));
+  it('executeDraftBridge shows an error toast only when both attempts are refused', async () => {
+    const mockOpenExternal = vi.fn().mockResolvedValue(false);
     const mockApi = { openExternal: mockOpenExternal };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi as typeof globalThis.api;
 
@@ -380,7 +377,7 @@ describe('useAssembler', () => {
     });
 
     await act(async () => {
-      result.current.executeDraftBridge();
+      await result.current.executeDraftBridge();
     });
 
     expect(mockOpenExternal).toHaveBeenCalledTimes(2);
@@ -469,7 +466,7 @@ describe('useAssembler', () => {
 
     expect(() => {
       act(() => {
-        result.current.executeDraftBridge();
+        void result.current.executeDraftBridge();
       });
     }).not.toThrow();
   });

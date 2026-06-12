@@ -78,6 +78,17 @@ describe('ScheduleBridgeModal', () => {
     expect(mockSaveAndOpenIcs).not.toHaveBeenCalled();
   });
 
+  it('shows an inline error for an empty/whitespace subject and does not create an invite', () => {
+    render(<ScheduleBridgeModal {...defaultProps} />);
+
+    fireEvent.change(screen.getByLabelText(/your email/i), { target: { value: 'me@test.com' } });
+    fireEvent.change(screen.getByLabelText(/subject/i), { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('Create Invite'));
+
+    expect(screen.getByText('Enter a subject')).toBeInTheDocument();
+    expect(mockSaveAndOpenIcs).not.toHaveBeenCalled();
+  });
+
   it('creates the invite with all attendees, persists the organizer email, and closes', async () => {
     mockSaveAndOpenIcs.mockResolvedValue(true);
     const onClose = vi.fn();
