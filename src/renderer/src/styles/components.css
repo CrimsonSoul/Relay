@@ -2060,34 +2060,19 @@ body.modal-open {
   overflow: hidden;
 }
 
-.alert-reminder-due-overlay--critical::before,
-.alert-reminder-due-overlay--critical::after {
+/* Critical mode: a slow alarm vignette breathing behind the card —
+   urgent without the legacy hazard-stripe strobe. */
+.alert-reminder-due-overlay--critical::before {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.alert-reminder-due-overlay--critical::before {
-  background:
-    radial-gradient(
-      circle at 50% 45%,
-      color-mix(in srgb, var(--alarm) 46%, transparent),
-      transparent 52%
-    ),
-    color-mix(in srgb, var(--alarm) 18%, transparent);
-  animation: critical-reminder-flash 0.8s steps(2, end) infinite;
-}
-
-.alert-reminder-due-overlay--critical::after {
-  background: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--alarm) 22%, transparent) 0,
-    color-mix(in srgb, var(--alarm) 22%, transparent) 12px,
-    transparent 12px,
-    transparent 28px
+  background: radial-gradient(
+    ellipse 70% 60% at 50% 50%,
+    color-mix(in srgb, var(--alarm) 32%, transparent),
+    transparent 70%
   );
-  opacity: 0.62;
+  animation: critical-reminder-pulse 2s ease-in-out infinite;
 }
 
 .alert-reminder-due {
@@ -2147,6 +2132,7 @@ body.modal-open {
   margin: 0;
   color: var(--color-text-primary);
   font-size: var(--text-lg);
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -2172,13 +2158,14 @@ body.modal-open {
   padding: 8px 18px 18px;
 }
 
-@keyframes critical-reminder-flash {
-  0% {
-    opacity: 0.28;
+@keyframes critical-reminder-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
   }
 
-  100% {
-    opacity: 0.82;
+  50% {
+    opacity: 0.7;
   }
 }
 
