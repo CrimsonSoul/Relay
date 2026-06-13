@@ -30,6 +30,7 @@ vi.mock('../TactileButton', () => ({
     children,
     onClick,
     disabled,
+    type,
     block: _b,
     className: _c,
     variant: _v,
@@ -37,10 +38,11 @@ vi.mock('../TactileButton', () => ({
     children: React.ReactNode;
     onClick?: () => void;
     disabled?: boolean;
+    type?: 'button' | 'submit' | 'reset';
     block?: boolean;
     className?: string;
     variant?: string;
-  }) => React.createElement('button', { onClick, disabled }, children),
+  }) => React.createElement('button', { onClick, disabled, type }, children),
 }));
 
 const defaultProps = {
@@ -150,6 +152,165 @@ describe('SettingsModal', () => {
       expect(globalThis.api.clearConfig).toHaveBeenCalled();
       expect(onClose).toHaveBeenCalled();
       expect(onReconfigure).toHaveBeenCalled();
+    });
+  });
+
+  it('shows Dynatrace dashboard settings and opens a saved dashboard', async () => {
+    const openDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [
+            {
+              id: 'dt_1',
+              name: 'NOC',
+              url: 'https://abc.live.dynatrace.com/dashboard',
+              state: 'closed',
+            },
+          ],
+          addDashboard: vi.fn(),
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard,
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Dynatrace Dashboards')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open NOC' }));
+
+    await waitFor(() => {
+      expect(openDashboard).toHaveBeenCalledWith('dt_1');
+    });
+  });
+
+  it('adds a Dynatrace dashboard from Settings', async () => {
+    const addDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC' } });
+    fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+      target: { value: 'https://abc.live.dynatrace.com/dashboard' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+
+    await waitFor(() =>
+      expect(addDashboard).toHaveBeenCalledWith({
+        name: 'NOC',
+        url: 'https://abc.live.dynatrace.com/dashboard',
+      }),
+    );
+  });
+
+  it('shows inline validation for invalid Dynatrace dashboard URLs', () => {
+    const addDashboard = vi.fn().mockResolvedValue(true);
+    const insecureDynatraceUrl = ['http', '://abc.live.dynatrace.com/dashboard'].join('');
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC' } });
+    fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+      target: { value: insecureDynatraceUrl },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+
+    expect(screen.getByText('Dynatrace dashboard URLs must use HTTPS.')).toBeInTheDocument();
+    expect(addDashboard).not.toHaveBeenCalled();
+  });
+
+  it('updates a Dynatrace dashboard from Settings', async () => {
+    const updateDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [
+            {
+              id: 'dt_1',
+              name: 'NOC',
+              url: 'https://abc.live.dynatrace.com/dashboard',
+              state: 'live',
+            },
+          ],
+          addDashboard: vi.fn(),
+          updateDashboard,
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit NOC' }));
+    expect(screen.getByLabelText('Dashboard name')).toHaveValue('NOC');
+    expect(screen.getByLabelText('Dashboard URL')).toHaveValue(
+      'https://abc.live.dynatrace.com/dashboard',
+    );
+
+    fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC Main' } });
+    fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+      target: { value: 'https://apps.dynatrace.com/dashboard/noc-main' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save dashboard' }));
+
+    await waitFor(() =>
+      expect(updateDashboard).toHaveBeenCalledWith('dt_1', {
+        name: 'NOC Main',
+        url: 'https://apps.dynatrace.com/dashboard/noc-main',
+      }),
+    );
+  });
+
+  it('clears the Dynatrace session from Settings', async () => {
+    const clearSession = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard: vi.fn(),
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear Dynatrace session' }));
+
+    await waitFor(() => {
+      expect(clearSession).toHaveBeenCalled();
     });
   });
 });
