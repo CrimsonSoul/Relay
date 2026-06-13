@@ -12,6 +12,10 @@ import { loggers } from '../logger';
 const DASHBOARD_STORE_FILE = 'dynatrace-dashboards.json';
 const SCHEMA_VERSION = 1;
 const DEFAULT_DASHBOARD_NAME = 'Dynatrace Dashboard';
+const MIN_WINDOW_SIZE = 320;
+const MAX_WINDOW_SIZE = 10000;
+const MIN_WINDOW_POSITION = -10000;
+const MAX_WINDOW_POSITION = 10000;
 
 type StoredDynatraceDashboards = {
   schemaVersion: 1;
@@ -117,6 +121,9 @@ export class DynatraceDashboardStore {
   }
 
   private validateInput(input: DynatraceDashboardInput): DynatraceDashboardInput {
+    if (typeof input.name !== 'string') throw new Error('Enter a valid dashboard name.');
+    if (typeof input.url !== 'string') throw new Error('Enter a valid URL.');
+
     const url = input.url.trim();
     const error = getDynatraceStartUrlError(url);
     if (error) throw new Error(error);
@@ -192,10 +199,20 @@ export class DynatraceDashboardStore {
 
   private parseBounds(bounds: unknown): DynatraceDashboardBounds | null {
     if (!isRecord(bounds)) return null;
-    if (!this.isPositiveFiniteNumber(bounds.width)) return null;
-    if (!this.isPositiveFiniteNumber(bounds.height)) return null;
-    if (bounds.x !== undefined && !this.isFiniteNumber(bounds.x)) return null;
-    if (bounds.y !== undefined && !this.isFiniteNumber(bounds.y)) return null;
+    if (!this.isIntegerInRange(bounds.width, MIN_WINDOW_SIZE, MAX_WINDOW_SIZE)) return null;
+    if (!this.isIntegerInRange(bounds.height, MIN_WINDOW_SIZE, MAX_WINDOW_SIZE)) return null;
+    if (
+      bounds.x !== undefined &&
+      !this.isIntegerInRange(bounds.x, MIN_WINDOW_POSITION, MAX_WINDOW_POSITION)
+    ) {
+      return null;
+    }
+    if (
+      bounds.y !== undefined &&
+      !this.isIntegerInRange(bounds.y, MIN_WINDOW_POSITION, MAX_WINDOW_POSITION)
+    ) {
+      return null;
+    }
 
     const validBounds: DynatraceDashboardBounds = {
       width: bounds.width,
@@ -207,11 +224,7 @@ export class DynatraceDashboardStore {
     return validBounds;
   }
 
-  private isPositiveFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value) && value > 0;
-  }
-
-  private isFiniteNumber(value: unknown): value is number {
-    return typeof value === 'number' && Number.isFinite(value);
+  private isIntegerInRange(value: unknown, min: number, max: number): value is number {
+    return Number.isInteger(value) && value >= min && value <= max;
   }
 }

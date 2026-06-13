@@ -84,25 +84,49 @@ describe('DynatraceDashboardStore', () => {
 
   it('persists valid dashboard bounds', () => {
     const saved = store.add({ name: 'Bounds', url: 'https://abc.live.dynatrace.com/dashboard' });
-    const updated = store.setBounds(saved.id, { x: 10, y: 20, width: 1024, height: 768 });
+    const updated = store.setBounds(saved.id, { x: -10000, y: 10000, width: 1024, height: 768 });
 
-    expect(updated?.bounds).toEqual({ x: 10, y: 20, width: 1024, height: 768 });
-    expect(store.list()[0]?.bounds).toEqual({ x: 10, y: 20, width: 1024, height: 768 });
+    expect(updated?.bounds).toEqual({ x: -10000, y: 10000, width: 1024, height: 768 });
+    expect(store.list()[0]?.bounds).toEqual({ x: -10000, y: 10000, width: 1024, height: 768 });
 
     const raw = JSON.parse(readFileSync(storePath(), 'utf8'));
-    expect(raw.dashboards[0].bounds).toEqual({ x: 10, y: 20, width: 1024, height: 768 });
+    expect(raw.dashboards[0].bounds).toEqual({ x: -10000, y: 10000, width: 1024, height: 768 });
   });
 
   it('throws for invalid bounds without persisting them', () => {
     const saved = store.add({ name: 'Bounds', url: 'https://abc.live.dynatrace.com/dashboard' });
 
-    expect(() => store.setBounds(saved.id, { width: 0, height: 600 })).toThrow(
+    expect(() => store.setBounds(saved.id, { width: 319, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { width: 800.5, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { width: 10001, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { width: 800, height: 319 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { width: 800, height: 10001 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { width: 800, height: 600.5 })).toThrow(
       'Invalid Dynatrace dashboard bounds.',
     );
     expect(() =>
       store.setBounds(saved.id, { width: 800, height: Number.POSITIVE_INFINITY }),
     ).toThrow('Invalid Dynatrace dashboard bounds.');
     expect(() => store.setBounds(saved.id, { x: Number.NaN, width: 800, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { x: -10001, width: 800, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { y: 10001, width: 800, height: 600 })).toThrow(
+      'Invalid Dynatrace dashboard bounds.',
+    );
+    expect(() => store.setBounds(saved.id, { x: 1.5, width: 800, height: 600 })).toThrow(
       'Invalid Dynatrace dashboard bounds.',
     );
     expect(store.list()[0]?.bounds).toBeUndefined();
@@ -112,6 +136,21 @@ describe('DynatraceDashboardStore', () => {
     expect(() => store.add({ name: 'Bad', url: 'https://example.com' })).toThrow(
       'Enter a Dynatrace URL under dynatrace.com.',
     );
+  });
+
+  it('throws controlled errors for non-string dashboard input fields', () => {
+    expect(() =>
+      store.add({
+        name: 123,
+        url: 'https://abc.live.dynatrace.com/dashboard',
+      } as never),
+    ).toThrow('Enter a valid dashboard name.');
+    expect(() =>
+      store.add({
+        name: 'Bad',
+        url: 123,
+      } as never),
+    ).toThrow('Enter a valid URL.');
   });
 
   it('returns an empty list for corrupted JSON without overwriting it during read', () => {
@@ -179,6 +218,41 @@ describe('DynatraceDashboardStore', () => {
         name: 'Valid',
         url: 'https://abc.live.dynatrace.com/dashboard',
         bounds: { x: 1, y: 2, width: 800, height: 600 },
+      },
+    ]);
+  });
+
+  it('does not re-persist invalid stored dashboards when adding a new dashboard', () => {
+    writeStoredDashboards([
+      {
+        id: 'dt_valid',
+        name: 'Valid',
+        url: 'https://abc.live.dynatrace.com/dashboard',
+      },
+      null,
+      {
+        id: 'dt_invalid',
+        name: 'Invalid',
+        url: 'https://example.com/dashboard',
+      },
+    ]);
+
+    const saved = store.add({
+      name: 'New',
+      url: 'https://apps.dynatrace.com/dashboard/new',
+    });
+    const raw = JSON.parse(readFileSync(storePath(), 'utf8'));
+
+    expect(raw.dashboards).toEqual([
+      {
+        id: 'dt_valid',
+        name: 'Valid',
+        url: 'https://abc.live.dynatrace.com/dashboard',
+      },
+      {
+        id: saved.id,
+        name: 'New',
+        url: 'https://apps.dynatrace.com/dashboard/new',
       },
     ]);
   });
