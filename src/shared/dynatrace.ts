@@ -38,12 +38,11 @@ const MICROSOFT_AUTH_HOSTS = new Set([
   'login.windows.net',
   'sts.windows.net',
 ]);
+const DYNATRACE_AUTH_ROUTE_SEGMENTS = new Set(['signin', 'sign-in', 'login', 'sso']);
 
-function parseHttpUrl(value: string): URL | null {
+function parseUrl(value: string): URL | null {
   try {
-    const parsed = new URL(value.trim());
-    if (parsed.protocol !== 'https:') return parsed;
-    return parsed;
+    return new URL(value.trim());
   } catch {
     return null;
   }
@@ -59,7 +58,7 @@ export function isMicrosoftAuthHost(hostname: string): boolean {
 }
 
 export function getDynatraceStartUrlError(value: string): string | null {
-  const parsed = parseHttpUrl(value);
+  const parsed = parseUrl(value);
   if (!parsed) return 'Enter a valid URL.';
   if (parsed.protocol !== 'https:') return 'Dynatrace dashboard URLs must use HTTPS.';
   if (!isDynatraceHost(parsed.hostname)) return 'Enter a Dynatrace URL under dynatrace.com.';
@@ -67,7 +66,7 @@ export function getDynatraceStartUrlError(value: string): string | null {
 }
 
 export function classifyDynatraceNavigation(value: string): DynatraceNavigationKind {
-  const parsed = parseHttpUrl(value);
+  const parsed = parseUrl(value);
   if (!parsed || parsed.protocol !== 'https:') return 'blocked';
   if (isDynatraceHost(parsed.hostname)) return 'dynatrace';
   if (isMicrosoftAuthHost(parsed.hostname)) return 'microsoft-auth';
@@ -75,14 +74,13 @@ export function classifyDynatraceNavigation(value: string): DynatraceNavigationK
 }
 
 export function isDynatraceAuthUrl(value: string): boolean {
-  const parsed = parseHttpUrl(value);
+  const parsed = parseUrl(value);
   if (!parsed || !isDynatraceHost(parsed.hostname)) return false;
-  const authText = `${parsed.pathname} ${parsed.search}`.toLowerCase();
-  return (
-    authText.includes('signin') ||
-    authText.includes('sign-in') ||
-    authText.includes('login') ||
-    authText.includes('/sso') ||
-    authText.includes('oauth')
+  const pathSegments = parsed.pathname
+    .split('/')
+    .map((segment) => segment.trim().toLowerCase())
+    .filter(Boolean);
+  return pathSegments.some(
+    (segment) => DYNATRACE_AUTH_ROUTE_SEGMENTS.has(segment) || segment.startsWith('oauth'),
   );
 }

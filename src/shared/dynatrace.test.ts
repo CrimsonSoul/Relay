@@ -15,6 +15,26 @@ describe('Dynatrace URL policy', () => {
     expect(getDynatraceStartUrlError('https://apps.dynatrace.com/dashboard/abc')).toBeNull();
   });
 
+  it.each([['https://dynatrace.com.evil'], ['https://evil.dynatrace.com@evil.example']])(
+    'rejects lookalike Dynatrace start URL %s',
+    (url) => {
+      expect(getDynatraceStartUrlError(url)).toBe('Enter a Dynatrace URL under dynatrace.com.');
+    },
+  );
+
+  it('accepts uppercase protocol and host for valid Dynatrace URLs', () => {
+    expect(
+      getDynatraceStartUrlError(
+        'HTTPS://ABC12345.LIVE.DYNATRACE.COM/ui/apps/dynatrace.dashboards/dashboard',
+      ),
+    ).toBeNull();
+    expect(
+      classifyDynatraceNavigation(
+        'HTTPS://ABC12345.LIVE.DYNATRACE.COM/ui/apps/dynatrace.dashboards/dashboard',
+      ),
+    ).toBe('dynatrace');
+  });
+
   it('rejects non-Dynatrace or non-HTTPS start URLs', () => {
     // eslint-disable-next-line sonarjs/no-clear-text-protocols
     expect(getDynatraceStartUrlError('http://abc12345.live.dynatrace.com/dashboard')).toBe(
@@ -35,6 +55,14 @@ describe('Dynatrace URL policy', () => {
     ).toBe('microsoft-auth');
   });
 
+  it('blocks Microsoft auth subdomains', () => {
+    expect(
+      classifyDynatraceNavigation(
+        'https://evil.login.microsoftonline.com/common/oauth2/v2.0/authorize',
+      ),
+    ).toBe('blocked');
+  });
+
   it('blocks unknown navigation targets and unsafe protocols', () => {
     expect(classifyDynatraceNavigation('https://evil.example/phish')).toBe('blocked');
     expect(classifyDynatraceNavigation('javascript:alert(1)')).toBe('blocked');
@@ -49,5 +77,14 @@ describe('Dynatrace URL policy', () => {
         'https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard',
       ),
     ).toBe(false);
+  });
+
+  it.each([
+    [
+      'https://abc.live.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard?dashboardId=login-rate',
+    ],
+    ['https://abc.live.dynatrace.com/ui/apps/dynatrace.dashboards/login-rate/dashboard'],
+  ])('does not classify dashboard content identifiers as auth URL %s', (url) => {
+    expect(isDynatraceAuthUrl(url)).toBe(false);
   });
 });
