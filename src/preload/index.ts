@@ -72,6 +72,8 @@ const api: BridgeAPI = {
   removeFooterLogo: () => ipcRenderer.invoke(IPC_CHANNELS.REMOVE_FOOTER_LOGO),
   // Setup
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_CONFIG),
+  getConnectionSecret: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_GET_CONNECTION_SECRET),
+  getClientHostname: () => ipcRenderer.invoke(IPC_CHANNELS.CLIENT_GET_HOSTNAME),
   saveConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_SAVE_CONFIG, config),
   clearConfig: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_CLEAR_CONFIG),
   isConfigured: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_CONFIGURED),

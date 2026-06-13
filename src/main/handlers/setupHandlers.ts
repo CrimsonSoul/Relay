@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import { networkInterfaces } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import { z } from 'zod';
 import {
   IPC_CHANNELS,
@@ -92,6 +92,16 @@ export function setupSetupHandlers(
     const config = getAppConfig();
     const loaded = config ? config.load() : null;
     return loaded ? toPublicConfig(loaded) : null;
+  });
+  ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONNECTION_SECRET, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_GET_CONNECTION_SECRET)) return null;
+    const config = getAppConfig();
+    const loaded = config ? config.load() : null;
+    return loaded?.secret ?? null;
+  });
+  ipcMain.handle(IPC_CHANNELS.CLIENT_GET_HOSTNAME, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIENT_GET_HOSTNAME)) return null;
+    return hostname().trim() || null;
   });
   ipcMain.handle(IPC_CHANNELS.SETUP_SAVE_CONFIG, (event, configData) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_SAVE_CONFIG)) return false;

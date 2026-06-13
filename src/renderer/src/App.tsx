@@ -23,6 +23,7 @@ import { useAppCloudStatus } from './hooks/useAppCloudStatus';
 import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
+import { useClientPresence } from './hooks/useClientPresence';
 import {
   REMINDER_ALERT_LOAD_EVENT,
   type ReminderAlertLoadDetail,
@@ -69,23 +70,6 @@ function withStartupTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<
   });
 }
 
-function getServerRuntimeLabel(config: Extract<PublicRelayConfig, { mode: 'server' }>): string {
-  if (config.bindHost !== '0.0.0.0') {
-    return `Local 127.0.0.1:${config.port}`;
-  }
-  return `LAN ${config.lanIp ?? 'IP unavailable'}:${config.port}`;
-}
-
-function ServerRuntimeLine({ config }: { readonly config?: PublicRelayConfig | null }) {
-  if (config?.mode !== 'server') return null;
-
-  return (
-    <div className="server-runtime-line" aria-label="Relay server connection details">
-      {getServerRuntimeLabel(config)}
-    </div>
-  );
-}
-
 export function MainApp({
   onReconfigure,
   relayConfig = null,
@@ -99,6 +83,13 @@ export function MainApp({
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
+  const handleClientConnected = useCallback(
+    (hostname: string) => showToast(`${hostname} connected`, 'info'),
+    [showToast],
+  );
+  const clientPresence = useClientPresence(relayConfig, handleClientConnected, {
+    enabled: !isPopout,
+  });
 
   const { data, boardSettings, setBoardSettings } = useAppData(showToast);
 
@@ -241,6 +232,8 @@ export function MainApp({
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onOpenSettings={() => setSettingsOpen(true)}
+          clientPresence={clientPresence}
+          relayMode={relayConfig?.mode}
         />
 
         <main className="main-content" aria-label="Application content">
@@ -280,7 +273,6 @@ export function MainApp({
               />
             </div>
             <div className="header-actions">
-              <ServerRuntimeLine config={relayConfig} />
               <WorldClock />
             </div>
           </header>

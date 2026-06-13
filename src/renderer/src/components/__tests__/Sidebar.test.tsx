@@ -27,6 +27,7 @@ vi.mock('../sidebar/SidebarButton', () => ({
 // Mock sidebar icons to simple spans
 vi.mock('../sidebar/SidebarIcons', () => ({
   ComposeIcon: () => <span>ComposeIcon</span>,
+  ClientsIcon: () => <span>ClientsIcon</span>,
   AlertsIcon: () => <span>AlertsIcon</span>,
   PersonnelIcon: () => <span>PersonnelIcon</span>,
   PeopleIcon: () => <span>PeopleIcon</span>,
@@ -42,6 +43,7 @@ describe('Sidebar', () => {
     activeTab: 'Compose' as const,
     onTabChange: vi.fn(),
     onOpenSettings: vi.fn(),
+    clientPresence: { count: 0, hostnames: [] },
   };
 
   it('renders all navigation items', () => {
@@ -59,6 +61,39 @@ describe('Sidebar', () => {
   it('renders Settings button', () => {
     render(<Sidebar {...defaultProps} />);
 
+    expect(screen.getByTestId('sidebar-btn-settings')).toBeInTheDocument();
+  });
+
+  it('renders client presence above Settings in the sidebar footer', () => {
+    const { container } = render(
+      <Sidebar
+        {...defaultProps}
+        relayMode="server"
+        clientPresence={{ count: 2, hostnames: ['ops-laptop', 'war-room-mac'] }}
+      />,
+    );
+
+    expect(screen.getByTestId('sidebar-clients')).toHaveTextContent('2 clients');
+    const footer = container.querySelector('.sidebar-footer');
+    const clientBlock = screen.getByTestId('sidebar-clients');
+    const settingsButton = screen.getByTestId('sidebar-btn-settings');
+    expect(footer).toContainElement(clientBlock);
+    expect(footer).toContainElement(settingsButton);
+    expect(
+      clientBlock.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('hides client presence when Relay is running in client mode', () => {
+    render(
+      <Sidebar
+        {...defaultProps}
+        relayMode="client"
+        clientPresence={{ count: 2, hostnames: ['ops-laptop', 'war-room-mac'] }}
+      />,
+    );
+
+    expect(screen.queryByTestId('sidebar-clients')).not.toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-settings')).toBeInTheDocument();
   });
 

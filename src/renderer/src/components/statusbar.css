@@ -45,6 +45,16 @@
   color: var(--color-text-secondary);
 }
 
+.status-bar-live--connecting,
+.status-bar-live--reconnecting {
+  color: var(--color-warning);
+}
+
+.status-bar-live--offline,
+.status-bar-live--auth-failed {
+  color: var(--alarm);
+}
+
 /* Live / online dot — shared breathing pulse (styles/animations.css) */
 .status-bar-live-dot {
   width: 7px;
@@ -53,4 +63,14 @@
   background: var(--ok);
   animation: breathe 2.4s ease-in-out infinite;
   flex-shrink: 0;
+}
+
+.status-bar-live--connecting .status-bar-live-dot,
+.status-bar-live--reconnecting .status-bar-live-dot {
+  background: var(--color-warning);
+}
+
+.status-bar-live--offline .status-bar-live-dot,
+.status-bar-live--auth-failed .status-bar-live-dot {
+  background: var(--alarm);
 }

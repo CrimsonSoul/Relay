@@ -197,7 +197,10 @@
   padding: 12px;
   border-top: 1px solid var(--color-border);
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  gap: 2px;
 }
 
 /* ============================================================================
@@ -285,4 +288,51 @@
 
 .sidebar-button-indicator {
   display: none;
+}
+
+.sidebar-client-status[data-client-count='0'] {
+  color: var(--color-text-quaternary);
+}
+
+.sidebar-client-status:hover {
+  color: var(--color-text-primary);
+}
+
+.sidebar-client-status[data-client-count='0']:hover {
+  color: var(--color-text-primary);
+}
+
+.sidebar-client-status:focus-visible {
+  color: var(--color-text-primary);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.sidebar-client-status[data-client-count='0']:focus-visible {
+  color: var(--color-text-primary);
+}
+
+.sidebar-client-tooltip,
+.sidebar-client-tooltip-empty {
+  min-width: 132px;
+  max-width: 220px;
+}
+
+.sidebar-client-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-client-tooltip-row {
+  color: var(--color-text-primary);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-client-tooltip-empty {
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.35;
 }

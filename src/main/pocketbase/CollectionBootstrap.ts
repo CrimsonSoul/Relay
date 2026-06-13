@@ -61,6 +61,9 @@ const BOARD_SETTINGS_COLLECTION = 'oncall_board_settings';
 const PRIMARY_BOARD_SETTINGS_KEY = 'primary';
 const BOARD_SETTINGS_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)';
+const CLIENT_PRESENCE_COLLECTION = 'client_presence';
+const CLIENT_PRESENCE_SESSION_INDEX =
+  'CREATE UNIQUE INDEX idx_client_presence_session_id ON client_presence (sessionId)';
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -218,6 +221,23 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'bool', name: 'locked' },
     ],
     indexes: [BOARD_SETTINGS_KEY_INDEX],
+  },
+  {
+    name: CLIENT_PRESENCE_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'sessionId', required: true },
+      { type: 'text', name: 'hostname', required: true },
+      {
+        type: 'select',
+        name: 'mode',
+        required: true,
+        values: ['client'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'lastSeen', required: true },
+    ],
+    indexes: [CLIENT_PRESENCE_SESSION_INDEX],
   },
 ];
 

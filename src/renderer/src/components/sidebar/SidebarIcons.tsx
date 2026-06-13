@@ -51,6 +51,25 @@ export const PeopleIcon = () => (
   </svg>
 );
 
+export const ClientsIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="4" width="7" height="6" rx="1.5" />
+    <rect x="14" y="4" width="7" height="6" rx="1.5" />
+    <rect x="8.5" y="14" width="7" height="6" rx="1.5" />
+    <path d="M6.5 10v2.5h11V10" />
+    <path d="M12 12.5V14" />
+  </svg>
+);
+
 export const ServersIcon = () => (
   <svg
     width="20"

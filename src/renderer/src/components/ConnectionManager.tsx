@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import type { PbAuthSession } from '@shared/ipc';
 import { usePocketBase } from '../hooks/usePocketBase';
-import { ConnectionStatus } from './ConnectionStatus';
 import { TactileButton } from './TactileButton';
 
 interface ConnectionManagerProps {
@@ -38,10 +37,5 @@ export function ConnectionManager({
     );
   }
 
-  return (
-    <>
-      {children}
-      <ConnectionStatus />
-    </>
-  );
+  return <>{children}</>;
 }

@@ -241,9 +241,11 @@
 
 .server-card-body {
   width: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   align-items: center;
-  padding: 14px 28px;
+  padding: 10px 28px;
   gap: 16px;
   cursor: default;
   border-bottom: 1px solid var(--color-border-subtle);
@@ -286,7 +288,7 @@
   flex: 1;
   min-width: 0;
   column-gap: 10px;
-  row-gap: 4px;
+  row-gap: 3px;
 }
 
 .server-card-name-row {
@@ -304,7 +306,7 @@
   color: var(--color-text-primary);
   letter-spacing: -0.01em;
   display: block;
-  line-height: 1.2;
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -318,6 +320,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+  line-height: 1.15;
 }
 
 .server-card-meta-area {
@@ -342,6 +345,7 @@
   min-width: 0;
   color: var(--color-text-tertiary);
   font-size: var(--text-xs);
+  line-height: 1.15;
 }
 
 .server-card-relationships::before {
@@ -363,7 +367,9 @@
 .contact-entry {
   display: grid;
   grid-template-columns: 48px 1fr auto;
-  padding: 14px 28px;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 28px;
   gap: 16px;
   align-items: center;
   border-bottom: 1px solid var(--color-border-subtle);
@@ -398,14 +404,14 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 .contact-entry-tooltip-anchor {
   display: inline-flex;
   max-width: 100%;
   width: fit-content;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 .contact-entry-line1 {
   display: flex;
@@ -417,6 +423,7 @@
   font-size: var(--text-lg);
   font-weight: 700;
   color: var(--color-text-primary);
+  line-height: 1.1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,6 +434,7 @@
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
   align-items: center;
+  line-height: 1.15;
 }
 .contact-entry-line2 span {
   white-space: nowrap;

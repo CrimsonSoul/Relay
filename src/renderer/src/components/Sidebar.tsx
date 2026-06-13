@@ -1,6 +1,7 @@
 import React from 'react';
-import { TabName } from '@shared/ipc';
+import { TabName, type PublicRelayConfig } from '@shared/ipc';
 import { SidebarButton } from './sidebar/SidebarButton';
+import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import {
   ComposeIcon,
   AlertsIcon,
@@ -16,6 +17,11 @@ interface SidebarProps {
   activeTab: TabName;
   onTabChange: (tab: TabName) => void;
   onOpenSettings: () => void;
+  clientPresence?: {
+    count: number;
+    hostnames: string[];
+  };
+  relayMode?: PublicRelayConfig['mode'];
 }
 
 // Moved outside component to avoid recreation every render
@@ -29,7 +35,15 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
 ];
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpenSettings }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  activeTab,
+  onTabChange,
+  onOpenSettings,
+  clientPresence = { count: 0, hostnames: [] },
+  relayMode,
+}) => {
+  const showClientPresence = relayMode !== 'client';
+
   return (
     <div className="sidebar">
       {/* App Icon / Branding Block */}
@@ -58,6 +72,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onOpen
       </nav>
 
       <div className="sidebar-footer">
+        {showClientPresence && (
+          <SidebarClientStatus count={clientPresence.count} hostnames={clientPresence.hostnames} />
+        )}
         <SidebarButton
           label="Settings"
           isActive={false}

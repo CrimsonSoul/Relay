@@ -29,6 +29,7 @@ let lastConnectionManagerProps: {
   pbAuth: { token: string; record: Record<string, unknown> | null };
   onReconfigure: () => void;
 } | null = null;
+let lastSidebarProps: { relayMode?: 'server' | 'client' } | null = null;
 
 // ── mock contexts ────────────────────────────────────────────────────────────
 vi.mock('../contexts', () => ({
@@ -50,19 +51,25 @@ vi.mock('../components/Sidebar', () => ({
     activeTab,
     onTabChange,
     onOpenSettings,
+    relayMode,
   }: {
     activeTab: string;
     onTabChange: (tab: string) => void;
     onOpenSettings: () => void;
-  }) => (
-    <div data-testid="sidebar">
-      <span data-testid="active-tab">{activeTab}</span>
-      <button onClick={() => onTabChange('Personnel')}>nav-personnel</button>
-      <button onClick={() => onTabChange('People')}>nav-people</button>
-      <button onClick={() => onTabChange('Servers')}>nav-servers</button>
-      <button onClick={onOpenSettings}>open-settings</button>
-    </div>
-  ),
+    relayMode?: 'server' | 'client';
+  }) =>
+    (() => {
+      lastSidebarProps = { relayMode };
+      return (
+        <div data-testid="sidebar">
+          <span data-testid="active-tab">{activeTab}</span>
+          <button onClick={() => onTabChange('Personnel')}>nav-personnel</button>
+          <button onClick={() => onTabChange('People')}>nav-people</button>
+          <button onClick={() => onTabChange('Servers')}>nav-servers</button>
+          <button onClick={onOpenSettings}>open-settings</button>
+        </div>
+      );
+    })(),
 }));
 
 vi.mock('../components/WorldClock', () => ({
@@ -308,6 +315,7 @@ describe('MainApp', () => {
     vi.clearAllMocks();
     mockActiveTab = 'Compose';
     mockSettingsOpen = false;
+    lastSidebarProps = null;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -317,6 +325,7 @@ describe('MainApp', () => {
   afterEach(() => {
     mockSettingsOpen = false;
     mockActiveTab = 'Compose';
+    lastSidebarProps = null;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -382,7 +391,7 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
   });
 
-  it('shows LAN server connection details when running in server mode', () => {
+  it('does not show server connection details in the main header', () => {
     renderApp('', {
       relayConfig: {
         mode: 'server',
@@ -392,7 +401,8 @@ describe('MainApp', () => {
       },
     });
 
-    expect(screen.getByText(LAN_SERVER_LABEL)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Relay server connection details')).not.toBeInTheDocument();
+    expect(screen.queryByText(LAN_SERVER_LABEL)).not.toBeInTheDocument();
     expect(screen.queryByText('Server')).not.toBeInTheDocument();
     expect(screen.queryByText('LAN access')).not.toBeInTheDocument();
     expect(screen.queryByText(LAN_SERVER_URL)).not.toBeInTheDocument();
@@ -407,6 +417,17 @@ describe('MainApp', () => {
     });
 
     expect(screen.queryByText(LAN_SERVER_LABEL)).not.toBeInTheDocument();
+  });
+
+  it('passes the relay mode to Sidebar', () => {
+    renderApp('', {
+      relayConfig: {
+        mode: 'client',
+        serverUrl: LAN_SERVER_URL,
+      },
+    });
+
+    expect(lastSidebarProps).toMatchObject({ relayMode: 'client' });
   });
 
   it('opens settings on Cmd+, keydown', () => {

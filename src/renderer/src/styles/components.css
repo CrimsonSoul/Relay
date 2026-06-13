@@ -1525,6 +1525,40 @@ body.modal-open {
   line-height: 1.5;
 }
 
+.settings-copy-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings-inline-action {
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-inline-action:hover,
+.settings-inline-action:focus-visible {
+  color: var(--color-text-primary);
+  border-color: var(--accent);
+  outline: none;
+}
+
 .settings-button-row {
   display: flex;
   gap: 8px;

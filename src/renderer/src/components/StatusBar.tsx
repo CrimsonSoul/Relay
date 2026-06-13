@@ -1,5 +1,10 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import {
+  getConnectionState,
+  onConnectionStateChange,
+  type ConnectionState,
+} from '../services/pocketbase';
 import './statusbar.css';
 
 interface StatusBarProps {
@@ -23,11 +28,26 @@ export const StatusBar = memo(function StatusBar({ left, center, right }: Status
   );
 });
 
-export function StatusBarLive({ label = 'Connected' }: { readonly label?: string }) {
+const connectionLabels: Record<ConnectionState, string> = {
+  connecting: 'Connecting...',
+  online: 'Connected',
+  offline: 'Offline — using cached data',
+  reconnecting: 'Reconnecting...',
+  'auth-failed': 'Sign-in failed — check the passphrase in Settings',
+};
+
+export function StatusBarLive({ label }: { readonly label?: string }) {
+  const [state, setState] = useState<ConnectionState>(getConnectionState());
+  const resolvedLabel = label ?? connectionLabels[state];
+
+  useEffect(() => {
+    return onConnectionStateChange(setState);
+  }, []);
+
   return (
-    <span className="status-bar-live">
+    <span className={`status-bar-live status-bar-live--${state}`} data-connection-state={state}>
       <span className="status-bar-live-dot" />
-      {label}
+      {resolvedLabel}
     </span>
   );
 }

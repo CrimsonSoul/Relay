@@ -292,6 +292,8 @@ export type BridgeAPI = {
   removeFooterLogo: () => Promise<IpcResult>;
   // Setup
   getConfig: () => Promise<PublicRelayConfig | null>;
+  getConnectionSecret: () => Promise<string | null>;
+  getClientHostname: () => Promise<string | null>;
   saveConfig: (config: unknown) => Promise<boolean>;
   clearConfig: () => Promise<boolean>;
   isConfigured: () => Promise<boolean>;
@@ -371,6 +373,8 @@ export const IPC_CHANNELS = {
   ONCALL_ALERT_DISMISSED: 'oncall:alertDismissed',
   // Setup
   SETUP_GET_CONFIG: 'setup:getConfig',
+  SETUP_GET_CONNECTION_SECRET: 'setup:getConnectionSecret',
+  CLIENT_GET_HOSTNAME: 'client:getHostname',
   SETUP_SAVE_CONFIG: 'setup:saveConfig',
   SETUP_CLEAR_CONFIG: 'setup:clearConfig',
   SETUP_IS_CONFIGURED: 'setup:isConfigured',

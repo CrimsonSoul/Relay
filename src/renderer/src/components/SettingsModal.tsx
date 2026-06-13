@@ -13,6 +13,31 @@ type Props = {
 
 type PbConfig = PublicRelayConfig | null;
 
+function getPocketBaseIp(config: PublicRelayConfig): string | null {
+  if (config.mode === 'server') {
+    if (config.bindHost === '127.0.0.1') return '127.0.0.1';
+    return config.lanIp ?? null;
+  }
+
+  try {
+    return new URL(config.serverUrl).hostname;
+  } catch {
+    return config.serverUrl || null;
+  }
+}
+
+function getPocketBaseUrl(config: PublicRelayConfig): string | null {
+  if (config.mode === 'client') return config.serverUrl;
+
+  const ip = getPocketBaseIp(config);
+  if (!ip) return null;
+  return `http://${ip}:${config.port ?? 8090}`;
+}
+
+function getMaskedSecret(secret: string): string {
+  return '•'.repeat(secret.length);
+}
+
 export const SettingsModal: React.FC<Props> = ({
   isOpen,
   onClose,
@@ -20,7 +45,9 @@ export const SettingsModal: React.FC<Props> = ({
   onReconfigure,
 }) => {
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
+  const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
+  const [showConnectionSecret, setShowConnectionSecret] = useState(false);
   const [accent, setAccentState] = useState<AccentId>(() => getStoredAccent());
 
   const handleAccentSelect = (id: AccentId) => {
@@ -33,6 +60,8 @@ export const SettingsModal: React.FC<Props> = ({
 
     let cancelled = false;
     setPbConfigLoading(true);
+    setConnectionSecret(null);
+    setShowConnectionSecret(false);
     globalThis.api
       ?.getConfig()
       .then((config) => {
@@ -43,6 +72,14 @@ export const SettingsModal: React.FC<Props> = ({
       })
       .finally(() => {
         if (!cancelled) setPbConfigLoading(false);
+      });
+    globalThis.api
+      ?.getConnectionSecret?.()
+      .then((secret) => {
+        if (!cancelled) setConnectionSecret(secret);
+      })
+      .catch(() => {
+        if (!cancelled) setConnectionSecret(null);
       });
 
     return () => {
@@ -61,10 +98,17 @@ export const SettingsModal: React.FC<Props> = ({
     onReconfigure?.();
   };
 
-  const pbUrl =
-    pbConfig?.mode === 'server'
-      ? `http://localhost:${pbConfig.port ?? 8090}`
-      : (pbConfig?.serverUrl ?? null);
+  const pbUrl = pbConfig ? getPocketBaseUrl(pbConfig) : null;
+  let displayedConnectionSecret: string | null = null;
+  if (connectionSecret) {
+    displayedConnectionSecret = showConnectionSecret
+      ? connectionSecret
+      : getMaskedSecret(connectionSecret);
+  }
+
+  const copyText = async (text: string) => {
+    await globalThis.api?.writeClipboard(text);
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
@@ -122,7 +166,40 @@ export const SettingsModal: React.FC<Props> = ({
               <div className="settings-data-path">
                 Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
               </div>
-              {pbUrl && <div className="settings-data-path">URL: {pbUrl}</div>}
+              {pbUrl && (
+                <div className="settings-data-path settings-copy-row">
+                  <span>URL: {pbUrl}</span>
+                  <button
+                    type="button"
+                    className="settings-inline-action"
+                    onClick={() => void copyText(pbUrl)}
+                  >
+                    Copy
+                  </button>
+                </div>
+              )}
+              {displayedConnectionSecret && (
+                <div className="settings-data-path settings-copy-row">
+                  <span>Passphrase: {displayedConnectionSecret}</span>
+                  <span className="settings-inline-actions">
+                    <button
+                      type="button"
+                      className="settings-inline-action"
+                      aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
+                      onClick={() => setShowConnectionSecret((current) => !current)}
+                    >
+                      {showConnectionSecret ? 'Hide' : 'Show'}
+                    </button>
+                    <button
+                      type="button"
+                      className="settings-inline-action"
+                      onClick={() => void copyText(connectionSecret)}
+                    >
+                      Copy
+                    </button>
+                  </span>
+                </div>
+              )}
               <div className="settings-button-row">
                 <TactileButton onClick={handleReconfigure} className="btn-flex-center">
                   Reconfigure...

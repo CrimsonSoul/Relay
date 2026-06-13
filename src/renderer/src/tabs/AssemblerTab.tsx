@@ -326,7 +326,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               variant="primary"
               className="btn-collapsible"
               disabled={!hasRecipients}
-              tooltip="Draft bridge reminder"
+              tooltip="Start bridge reminder"
               icon={
                 <svg
                   width="20"
@@ -343,7 +343,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
                 </svg>
               }
             >
-              Draft Bridge
+              Start Bridge
             </TactileButton>
             <TactileButton
               onClick={scheduleBridgeModal.open}

@@ -18,11 +18,6 @@ vi.mock('../../hooks/usePocketBase', () => ({
   },
 }));
 
-// Mock ConnectionStatus (it has its own tests)
-vi.mock('../ConnectionStatus', () => ({
-  ConnectionStatus: () => <div data-testid="connection-status">connection-status</div>,
-}));
-
 // Mock TactileButton
 vi.mock('../TactileButton', () => ({
   TactileButton: ({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) => (
@@ -107,14 +102,15 @@ describe('ConnectionManager', () => {
     expect(screen.queryByText('Connecting to server...')).not.toBeInTheDocument();
   });
 
-  it('renders ConnectionStatus alongside children when connected', () => {
+  it('does not render the floating connection banner alongside children', () => {
     mockConnectionState = 'online';
     render(
       <ConnectionManager {...defaultProps}>
         <div>child-content</div>
       </ConnectionManager>,
     );
-    expect(screen.getByTestId('connection-status')).toBeInTheDocument();
+    expect(screen.queryByTestId('connection-status')).not.toBeInTheDocument();
+    expect(document.querySelector('.connection-status')).not.toBeInTheDocument();
   });
 
   it('renders children when in offline state (non-error, non-connecting)', () => {

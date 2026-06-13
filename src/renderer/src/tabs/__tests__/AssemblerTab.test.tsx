@@ -352,7 +352,7 @@ describe('AssemblerTab', () => {
 
     expect(screen.getByRole('button', { name: /Reset/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Draft Bridge/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Start Bridge/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Schedule Bridge/i })).toBeDisabled();
     expect(screen.getByText('toggle-sort-dir')).toBeDisabled();
     expect(screen.getByText('sort-by-email')).toBeDisabled();
@@ -368,7 +368,7 @@ describe('AssemblerTab', () => {
 
     expect(screen.getByRole('button', { name: /Reset/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Copy All/i })).not.toBeDisabled();
-    expect(screen.getByRole('button', { name: /Draft Bridge/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Start Bridge/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /Schedule Bridge/i })).not.toBeDisabled();
   });
 
@@ -405,14 +405,14 @@ describe('AssemblerTab', () => {
     expect(screen.queryByTestId('bridge-history-modal')).not.toBeInTheDocument();
   });
 
-  it('calls setIsBridgeReminderOpen when DRAFT BRIDGE is clicked', () => {
+  it('calls setIsBridgeReminderOpen when Start Bridge is clicked', () => {
     asmState = {
       ...baseAsm,
       allRecipients: [{ email: 'a@example.com', source: 'group' }],
       log: [{ email: 'a@example.com', source: 'group' }],
     };
     render(<AssemblerTab {...defaultProps} />);
-    fireEvent.click(screen.getByText('Draft Bridge'));
+    fireEvent.click(screen.getByText('Start Bridge'));
     expect(mockSetIsBridgeReminderOpen).toHaveBeenCalledWith(true);
   });
 

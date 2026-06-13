@@ -47,12 +47,20 @@ const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
 };
+const LAN_SERVER_ADDRESS = ['192', '168', '1', '25'].join('.');
+const CONNECTION_SECRET = ['fixture', 'passphrase', '123'].join('-');
 
 describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const mockApi = {
-      getConfig: vi.fn().mockResolvedValue({ mode: 'server', port: 8090 }),
+      getConfig: vi.fn().mockResolvedValue({
+        mode: 'server',
+        port: 8090,
+        bindHost: '0.0.0.0',
+        lanIp: LAN_SERVER_ADDRESS,
+      }),
+      getConnectionSecret: vi.fn().mockResolvedValue(CONNECTION_SECRET),
       clearConfig: vi.fn().mockResolvedValue(true),
     };
     (globalThis as Window & { api: typeof mockApi }).api = mockApi;
@@ -94,7 +102,25 @@ describe('SettingsModal', () => {
     render(<SettingsModal {...defaultProps} />);
     await waitFor(() => {
       expect(screen.getByText(/Embedded Server/)).toBeInTheDocument();
+      expect(screen.getByText(`URL: http://${LAN_SERVER_ADDRESS}:8090`)).toBeInTheDocument();
+      expect(screen.queryByText(/IP:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Port:/)).not.toBeInTheDocument();
     });
+  });
+
+  it('shows the connection passphrase masked until revealed', async () => {
+    render(<SettingsModal {...defaultProps} />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Passphrase:/)).toHaveTextContent(
+        'Passphrase: ••••••••••••••••••••••',
+      );
+    });
+    expect(screen.queryByText(CONNECTION_SECRET)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show passphrase' }));
+
+    expect(screen.getByText(`Passphrase: ${CONNECTION_SECRET}`)).toBeInTheDocument();
   });
 
   it('shows Reconfigure button', async () => {

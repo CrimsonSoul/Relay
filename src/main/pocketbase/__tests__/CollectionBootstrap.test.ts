@@ -76,16 +76,21 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
-  it('creates missing collections including alert_reminders', async () => {
+  it('creates missing collections including alert_reminders and client presence', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(12);
+    expect(mockCreate).toHaveBeenCalledTimes(13);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
+      ),
+    ).toBe(true);
+    expect(
+      mockCreate.mock.calls.some(
+        (call: unknown[]) => (call[0] as { name: string }).name === 'client_presence',
       ),
     ).toBe(true);
   });
@@ -174,6 +179,52 @@ describe('ensureCollections', () => {
     expect(lockedField!.type).toBe('bool');
     expect((settingsCall![0] as { indexes: string[] }).indexes).toContain(
       'CREATE UNIQUE INDEX idx_oncall_board_settings_key ON oncall_board_settings (key)',
+    );
+  });
+
+  it('creates client_presence with client-only heartbeat fields', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const presenceCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'client_presence',
+    );
+    expect(presenceCall).toBeDefined();
+    const schema = (
+      presenceCall![0] as {
+        fields: Array<{
+          name: string;
+          type: string;
+          required?: boolean;
+          values?: string[];
+          maxSelect?: number;
+        }>;
+        indexes: string[];
+      }
+    ).fields;
+
+    expect(schema.find((f) => f.name === 'sessionId')).toMatchObject({
+      type: 'text',
+      required: true,
+    });
+    expect(schema.find((f) => f.name === 'hostname')).toMatchObject({
+      type: 'text',
+      required: true,
+    });
+    expect(schema.find((f) => f.name === 'mode')).toMatchObject({
+      type: 'select',
+      required: true,
+      values: ['client'],
+      maxSelect: 1,
+    });
+    expect(schema.find((f) => f.name === 'lastSeen')).toMatchObject({
+      type: 'date',
+      required: true,
+    });
+    expect((presenceCall![0] as { indexes: string[] }).indexes).toContain(
+      'CREATE UNIQUE INDEX idx_client_presence_session_id ON client_presence (sessionId)',
     );
   });
 
