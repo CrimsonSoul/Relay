@@ -1,4 +1,4 @@
-import { BrowserWindow, session } from 'electron';
+import { BrowserWindow, session, type Session } from 'electron';
 import {
   classifyDynatraceNavigation,
   isDynatraceAuthUrl,
@@ -7,6 +7,8 @@ import {
   type DynatraceDashboardState,
   type DynatraceRuntimeState,
 } from '../../shared/dynatrace';
+import { getErrorMessage } from '../../shared/types';
+import { loggers } from '../logger';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 
 const DYNATRACE_SESSION_PARTITION = 'persist:relay-dynatrace';
@@ -21,6 +23,30 @@ type RuntimeDetails = {
   lastUrl?: string;
   error?: string;
 };
+
+function getDynatraceSession(): Session {
+  const dynatraceSession = session.fromPartition(DYNATRACE_SESSION_PARTITION);
+  hardenDynatraceSession(dynatraceSession);
+  return dynatraceSession;
+}
+
+function hardenDynatraceSession(dynatraceSession: Session): void {
+  dynatraceSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    loggers.security.warn('Blocked Dynatrace permission request', {
+      permission,
+      requestingUrl: details.requestingUrl,
+    });
+    callback(false);
+  });
+
+  dynatraceSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    loggers.security.warn('Blocked Dynatrace permission check', {
+      permission,
+      requestingOrigin,
+    });
+    return false;
+  });
+}
 
 export class DynatraceWindowManager {
   private readonly windows = new Map<string, BrowserWindow>();
@@ -74,7 +100,7 @@ export class DynatraceWindowManager {
     }
     this.windows.delete(id);
 
-    const dynatraceSession = session.fromPartition(DYNATRACE_SESSION_PARTITION);
+    const dynatraceSession = getDynatraceSession();
     const window = new BrowserWindow({
       ...(dashboard.bounds ?? DEFAULT_WINDOW_OPTIONS),
       backgroundColor: DEFAULT_WINDOW_OPTIONS.backgroundColor,
@@ -92,12 +118,20 @@ export class DynatraceWindowManager {
     this.windows.set(id, window);
     this.updateRuntime(id, 'authenticating', { lastUrl: dashboard.url });
     this.attachWindowHandlers(id, window);
-    await window.loadURL(dashboard.url);
+    try {
+      await window.loadURL(dashboard.url);
+    } catch (error) {
+      this.updateRuntime(id, 'load-failed', {
+        lastUrl: dashboard.url,
+        error: getErrorMessage(error),
+      });
+      return false;
+    }
     return true;
   }
 
   async clearSession(): Promise<boolean> {
-    const dynatraceSession = session.fromPartition(DYNATRACE_SESSION_PARTITION);
+    const dynatraceSession = getDynatraceSession();
     await dynatraceSession.clearStorageData();
     return true;
   }
@@ -111,10 +145,11 @@ export class DynatraceWindowManager {
 
   private attachWindowHandlers(id: string, window: BrowserWindow): void {
     window.webContents.on('will-navigate', (event, url) => {
-      if (classifyDynatraceNavigation(url) !== 'blocked') return;
+      this.applyNavigationPolicy(id, event, url);
+    });
 
-      event.preventDefault();
-      this.updateRuntime(id, 'blocked', { lastUrl: url });
+    window.webContents.on('will-redirect', (event, url) => {
+      this.applyNavigationPolicy(id, event, url);
     });
 
     window.webContents.on('did-navigate', (_event, url) => {
@@ -146,12 +181,37 @@ export class DynatraceWindowManager {
       return { action: 'deny' };
     });
 
+    window.on('close', () => {
+      this.persistBounds(id, window);
+    });
+
     window.on('closed', () => {
-      const bounds = window.getBounds();
-      this.options.store.setBounds(id, bounds);
       this.windows.delete(id);
       this.updateRuntime(id, 'closed');
     });
+  }
+
+  private applyNavigationPolicy(
+    id: string,
+    event: { preventDefault: () => void },
+    url: string,
+  ): void {
+    if (classifyDynatraceNavigation(url) !== 'blocked') return;
+
+    event.preventDefault();
+    this.updateRuntime(id, 'blocked', { lastUrl: url });
+  }
+
+  private persistBounds(id: string, window: BrowserWindow): void {
+    try {
+      const bounds = window.getBounds();
+      this.options.store.setBounds(id, bounds);
+    } catch (error) {
+      loggers.main.warn('Failed to persist Dynatrace dashboard bounds', {
+        id,
+        error: getErrorMessage(error),
+      });
+    }
   }
 
   private updateStateForNavigatedUrl(id: string, url: string): void {
