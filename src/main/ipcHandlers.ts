@@ -4,11 +4,13 @@ import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
 import { setupCacheHandlers } from './handlers/cacheHandlers';
 import { setupBackupHandlers } from './handlers/backupHandlers';
+import { setupDynatraceHandlers } from './handlers/dynatraceHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
 import type { PendingChanges } from './cache/PendingChanges';
 import type { SyncManager } from './cache/SyncManager';
 import type { BackupManager } from './pocketbase/BackupManager';
+import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 
@@ -26,6 +28,7 @@ export function setupIpcHandlers(opts: {
   getPendingChanges?: () => PendingChanges | null;
   getSyncManager?: () => SyncManager | null;
   getBackupManager?: () => BackupManager | null;
+  getDynatraceWindowManager?: () => DynatraceWindowManager | null;
   restartPb?: () => Promise<boolean>;
 }) {
   const {
@@ -37,6 +40,7 @@ export function setupIpcHandlers(opts: {
     getPendingChanges,
     getSyncManager,
     getBackupManager,
+    getDynatraceWindowManager,
     restartPb,
   } = opts;
   const safeSetup = (name: string, fn: () => void) => {
@@ -50,6 +54,8 @@ export function setupIpcHandlers(opts: {
   };
 
   safeSetup('cloudStatus', () => setupCloudStatusHandlers());
+
+  safeSetup('dynatrace', () => setupDynatraceHandlers(getDynatraceWindowManager?.() ?? null));
 
   // Window Management
   safeSetup('window', () => setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot));

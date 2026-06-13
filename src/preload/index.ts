@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS, type BridgeAPI, type AuthRequest } from '@shared/ipc';
+import type { DynatraceDashboardState } from '@shared/dynatrace';
 
 const api: BridgeAPI = {
   /** Path validation and sandboxing constraints are enforced on the main process side. */
@@ -29,6 +30,21 @@ const api: BridgeAPI = {
   logBridge: (groups) => ipcRenderer.send(IPC_CHANNELS.LOG_BRIDGE, groups),
   getCloudStatus: () => ipcRenderer.invoke(IPC_CHANNELS.GET_CLOUD_STATUS),
   logToMain: (entry) => ipcRenderer.send(IPC_CHANNELS.LOG_TO_MAIN, entry),
+
+  // Dynatrace dashboards
+  listDynatraceDashboards: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_LIST_DASHBOARDS),
+  addDynatraceDashboard: (input) => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_ADD_DASHBOARD, input),
+  updateDynatraceDashboard: (id, input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_UPDATE_DASHBOARD, id, input),
+  removeDynatraceDashboard: (id) => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_REMOVE_DASHBOARD, id),
+  openDynatraceDashboard: (id) => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_OPEN_DASHBOARD, id),
+  clearDynatraceSession: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_CLEAR_SESSION),
+  onDynatraceDashboardsChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, dashboards: DynatraceDashboardState[]) =>
+      callback(dashboards);
+    ipcRenderer.on(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
+  },
 
   // Drag Sync
   notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),

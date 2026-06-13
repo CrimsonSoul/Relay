@@ -14,6 +14,7 @@ import type PocketBase from 'pocketbase';
 import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
+import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -27,6 +28,7 @@ export interface AppState {
   offlineCache: OfflineCache | null;
   pendingChanges: PendingChanges | null;
   syncManager: SyncManager | null;
+  dynatraceWindowManager: DynatraceWindowManager | null;
 }
 
 const state: AppState = {
@@ -40,6 +42,7 @@ const state: AppState = {
   offlineCache: null,
   pendingChanges: null,
   syncManager: null,
+  dynatraceWindowManager: null,
 };
 
 const log = loggers.main;
@@ -74,6 +77,9 @@ export function getPendingChanges() {
 }
 export function getSyncManager() {
   return state.syncManager;
+}
+export function getDynatraceWindowManager() {
+  return state.dynatraceWindowManager;
 }
 
 // --- Setters ---
@@ -116,6 +122,10 @@ export function setPendingChanges(changes: PendingChanges | null) {
 export function setSyncManager(mgr: SyncManager | null) {
   log.debug('appState.syncManager changed');
   state.syncManager = mgr;
+}
+export function setDynatraceWindowManager(mgr: DynatraceWindowManager | null) {
+  log.debug('appState.dynatraceWindowManager changed');
+  state.dynatraceWindowManager = mgr;
 }
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
@@ -192,6 +202,7 @@ export function setupIpc(
     getPendingChanges: () => state.pendingChanges,
     getSyncManager: () => state.syncManager,
     getBackupManager: () => state.backupManager,
+    getDynatraceWindowManager: () => state.dynatraceWindowManager,
     restartPb,
   });
   setupAuthHandlers();

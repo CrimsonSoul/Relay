@@ -1,3 +1,5 @@
+import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
+
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
   id?: string;
@@ -256,6 +258,21 @@ export type BridgeAPI = {
   useCachedAuth: (nonce: string) => Promise<boolean>;
   logBridge: (groups: string[]) => void;
   getCloudStatus: () => Promise<CloudStatusData>;
+  // Dynatrace dashboards
+  listDynatraceDashboards: () => Promise<DynatraceDashboardState[]>;
+  addDynatraceDashboard: (
+    input: DynatraceDashboardInput,
+  ) => Promise<IpcResult<DynatraceDashboardState>>;
+  updateDynatraceDashboard: (
+    id: string,
+    input: DynatraceDashboardInput,
+  ) => Promise<IpcResult<DynatraceDashboardState>>;
+  removeDynatraceDashboard: (id: string) => Promise<IpcResult>;
+  openDynatraceDashboard: (id: string) => Promise<boolean>;
+  clearDynatraceSession: () => Promise<IpcResult>;
+  onDynatraceDashboardsChanged: (
+    callback: (dashboards: DynatraceDashboardState[]) => void,
+  ) => () => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -351,6 +368,14 @@ export const IPC_CHANNELS = {
   LOG_BRIDGE: 'metrics:logBridge',
   GET_CLOUD_STATUS: 'cloudstatus:get',
   LOG_TO_MAIN: 'logger:toMain',
+  // Dynatrace dashboards
+  DYNATRACE_LIST_DASHBOARDS: 'dynatrace:listDashboards',
+  DYNATRACE_ADD_DASHBOARD: 'dynatrace:addDashboard',
+  DYNATRACE_UPDATE_DASHBOARD: 'dynatrace:updateDashboard',
+  DYNATRACE_REMOVE_DASHBOARD: 'dynatrace:removeDashboard',
+  DYNATRACE_OPEN_DASHBOARD: 'dynatrace:openDashboard',
+  DYNATRACE_CLEAR_SESSION: 'dynatrace:clearSession',
+  DYNATRACE_DASHBOARDS_CHANGED: 'dynatrace:dashboardsChanged',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
   CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',

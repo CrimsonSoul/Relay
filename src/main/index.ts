@@ -22,6 +22,7 @@ import {
   setOfflineCache,
   getPendingChanges,
   setPendingChanges,
+  setDynatraceWindowManager,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -37,6 +38,8 @@ import { reconfigureRuntime } from './app/runtimeReconfigure';
 import { startPeriodicCleanup, stopPeriodicCleanup } from './credentialManager';
 import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnectionHandlers';
 import { assertTrustedIpcSender } from './utils/trustedSender';
+import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
+import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -160,6 +163,8 @@ if (gotLock) {
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
+      const dynatraceStore = new DynatraceDashboardStore(configDataDir);
+      setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
 
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
