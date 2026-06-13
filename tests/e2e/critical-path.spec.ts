@@ -219,7 +219,7 @@ test.describe('Vital Critical Path', () => {
     expect(title).toMatch(/Relay/i);
 
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
-    await expect(window.getByRole('button', { name: 'DRAFT BRIDGE' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
   });
 
   test('Vital 2: Navigation to On-Call & Servers', async () => {
@@ -317,7 +317,7 @@ test.describe('Vital Critical Path', () => {
       .first();
     await expect(groupItem).toBeVisible();
 
-    await window.getByRole('button', { name: 'DRAFT BRIDGE' }).click();
+    await window.getByRole('button', { name: 'START BRIDGE' }).click();
     const reminderModal = window.getByRole('dialog', { name: /Meeting Recording/i });
     await expect(reminderModal).toBeVisible();
     await reminderModal.getByRole('button', { name: 'I Understand' }).click();

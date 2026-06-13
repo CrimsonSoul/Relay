@@ -314,7 +314,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // --- Compose ---
       await goToTab(window, 'sidebar-compose', 'Compose');
-      await expect(window.getByRole('button', { name: 'DRAFT BRIDGE' })).toBeVisible();
+      await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
       await shoot(window, 'compose.png');
 
       // --- On-Call ---

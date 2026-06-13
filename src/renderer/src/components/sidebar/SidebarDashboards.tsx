@@ -28,6 +28,7 @@ export function SidebarDashboards({
 }: Readonly<SidebarDashboardsProps>) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({
     left: 0,
@@ -62,7 +63,17 @@ export function SidebarDashboards({
   }, [isOpen, updatePopoverPosition]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    itemRefs.current[0]?.focus();
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen) return undefined;
+
+    const closeAndRestoreFocus = () => {
+      setIsOpen(false);
+      buttonRef.current?.focus();
+    };
 
     const handlePointerDown = (event: PointerEvent) => {
       const target = event.target;
@@ -72,7 +83,7 @@ export function SidebarDashboards({
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
+      if (event.key === 'Escape') closeAndRestoreFocus();
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -105,14 +116,50 @@ export function SidebarDashboards({
     setIsOpen(false);
   };
 
+  const focusPopoverItem = (nextIndex: number) => {
+    const items = itemRefs.current.filter(Boolean);
+    items[nextIndex]?.focus();
+  };
+
+  const handlePopoverKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = itemRefs.current.filter(Boolean);
+    if (!items.length) return;
+
+    const focusedIndex = Math.max(
+      0,
+      items.findIndex((item) => item === document.activeElement),
+    );
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        focusPopoverItem((focusedIndex + 1) % items.length);
+        break;
+      case 'ArrowUp':
+        event.preventDefault();
+        focusPopoverItem((focusedIndex - 1 + items.length) % items.length);
+        break;
+      case 'Home':
+        event.preventDefault();
+        focusPopoverItem(0);
+        break;
+      case 'End':
+        event.preventDefault();
+        focusPopoverItem(items.length - 1);
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <>
-      <Tooltip content="Dashboards" position="right">
+      <Tooltip content={isOpen ? null : 'Dashboards'} position="right">
         <button
           ref={buttonRef}
           type="button"
           aria-label={buttonLabel}
-          aria-haspopup={singleDashboard ? undefined : 'dialog'}
+          aria-haspopup={singleDashboard ? undefined : 'menu'}
           aria-expanded={singleDashboard ? undefined : isOpen}
           data-testid="sidebar-dashboards"
           onClick={handleLauncherClick}
@@ -130,19 +177,25 @@ export function SidebarDashboards({
           <div
             ref={popoverRef}
             className="sidebar-dashboards-popover"
-            role="dialog"
+            role="menu"
             aria-label="Dynatrace dashboards"
+            tabIndex={-1}
+            onKeyDown={handlePopoverKeyDown}
             style={{
               left: popoverPosition.left,
               bottom: popoverPosition.bottom,
             }}
           >
-            {dashboards.map((dashboard) => {
+            {dashboards.map((dashboard, index) => {
               const stateLabel = DYNATRACE_STATE_LABELS[dashboard.state];
               return (
                 <button
                   key={dashboard.id}
+                  ref={(node) => {
+                    itemRefs.current[index] = node;
+                  }}
                   type="button"
+                  role="menuitem"
                   className="sidebar-dashboards-popover-item"
                   aria-label={`Open ${dashboard.name} dashboard, ${stateLabel}`}
                   onClick={() => handleDashboardClick(dashboard.id)}

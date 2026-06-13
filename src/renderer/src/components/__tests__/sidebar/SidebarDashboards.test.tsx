@@ -41,6 +41,47 @@ describe('SidebarDashboards', () => {
     expect(screen.getByText('Signed out')).toBeInTheDocument();
   });
 
+  it('moves focus into the multi-dashboard popover', () => {
+    render(
+      <SidebarDashboards
+        dashboards={[
+          dashboard,
+          { ...dashboard, id: 'dt_2', name: 'Infra', state: 'authenticating' },
+        ]}
+        onOpenDashboard={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Dynatrace dashboards' }));
+    expect(screen.getByRole('menuitem', { name: 'Open NOC dashboard, Live' })).toHaveFocus();
+
+    fireEvent.keyDown(screen.getByRole('menu', { name: 'Dynatrace dashboards' }), {
+      key: 'ArrowDown',
+    });
+    expect(
+      screen.getByRole('menuitem', { name: 'Open Infra dashboard, Signed out' }),
+    ).toHaveFocus();
+  });
+
+  it('hides the launcher tooltip while the popover is open', () => {
+    render(
+      <SidebarDashboards
+        dashboards={[
+          dashboard,
+          { ...dashboard, id: 'dt_2', name: 'Infra', state: 'authenticating' },
+        ]}
+        onOpenDashboard={vi.fn()}
+      />,
+    );
+
+    const launcher = screen.getByRole('button', { name: 'Open Dynatrace dashboards' });
+    fireEvent.focus(launcher);
+    expect(document.querySelector('.tooltip-popup')).toBeInTheDocument();
+
+    fireEvent.click(launcher);
+    expect(document.querySelector('.tooltip-popup')).not.toBeInTheDocument();
+  });
+
   it('opens a dashboard from the popover and closes it', () => {
     const onOpenDashboard = vi.fn();
     render(
@@ -51,7 +92,7 @@ describe('SidebarDashboards', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Dynatrace dashboards' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open Infra dashboard, Blocked' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open Infra dashboard, Blocked' }));
 
     expect(onOpenDashboard).toHaveBeenCalledWith('dt_2');
     expect(screen.queryByText('Infra')).not.toBeInTheDocument();
