@@ -125,6 +125,10 @@ export class DynatraceWindowManager {
         lastUrl: dashboard.url,
         error: getErrorMessage(error),
       });
+      this.windows.delete(id);
+      if (!window.isDestroyed()) {
+        window.close();
+      }
       return false;
     }
     return true;
@@ -173,7 +177,12 @@ export class DynatraceWindowManager {
 
     window.webContents.setWindowOpenHandler(({ url }) => {
       if (classifyDynatraceNavigation(url) !== 'blocked') {
-        void window.loadURL(url);
+        void window.loadURL(url).catch((error) => {
+          this.updateRuntime(id, 'load-failed', {
+            lastUrl: url,
+            error: getErrorMessage(error),
+          });
+        });
       } else {
         this.updateRuntime(id, 'blocked', { lastUrl: url });
       }

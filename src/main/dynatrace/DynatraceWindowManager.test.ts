@@ -4,37 +4,51 @@ import { DynatraceWindowManager } from './DynatraceWindowManager';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 import type { DynatraceDashboard } from '../../shared/dynatrace';
 
-const { mockDynatraceSession, mockWebContentsHandlers, mockWindow, mockWindowHandlers } =
-  vi.hoisted(() => {
-    const mockWebContentsHandlers = new Map<string, (...args: never[]) => void>();
-    const mockWindowHandlers = new Map<string, (...args: never[]) => void>();
-    const mockDynatraceSession = {
-      clearStorageData: vi.fn(async () => undefined),
-      setPermissionCheckHandler: vi.fn(),
-      setPermissionRequestHandler: vi.fn(),
-    };
-    const mockWindow = {
-      close: vi.fn(),
-      loadURL: vi.fn(async () => undefined),
-      focus: vi.fn(),
-      isDestroyed: vi.fn(() => false),
-      getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
+const {
+  mockDynatraceSession,
+  mockWebContentsHandlers,
+  mockWindow,
+  mockWindowHandlers,
+  mockWindowOpenHandlers,
+} = vi.hoisted(() => {
+  const mockWebContentsHandlers = new Map<string, (...args: never[]) => void>();
+  const mockWindowHandlers = new Map<string, (...args: never[]) => void>();
+  const mockWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
+  const mockDynatraceSession = {
+    clearStorageData: vi.fn(async () => undefined),
+    setPermissionCheckHandler: vi.fn(),
+    setPermissionRequestHandler: vi.fn(),
+  };
+  const mockWindow = {
+    close: vi.fn(),
+    loadURL: vi.fn(async () => undefined),
+    focus: vi.fn(),
+    isDestroyed: vi.fn(() => false),
+    getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
+    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      mockWindowHandlers.set(event, handler as (...args: never[]) => void);
+      return mockWindow;
+    }),
+    webContents: {
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        mockWindowHandlers.set(event, handler as (...args: never[]) => void);
-        return mockWindow;
+        mockWebContentsHandlers.set(event, handler as (...args: never[]) => void);
+        return mockWindow.webContents;
       }),
-      webContents: {
-        on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-          mockWebContentsHandlers.set(event, handler as (...args: never[]) => void);
-          return mockWindow.webContents;
-        }),
-        setWindowOpenHandler: vi.fn(),
-        session: {},
-      },
-    };
+      setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: 'deny' }) => {
+        mockWindowOpenHandlers.push(handler);
+      }),
+      session: {},
+    },
+  };
 
-    return { mockDynatraceSession, mockWebContentsHandlers, mockWindow, mockWindowHandlers };
-  });
+  return {
+    mockDynatraceSession,
+    mockWebContentsHandlers,
+    mockWindow,
+    mockWindowHandlers,
+    mockWindowOpenHandlers,
+  };
+});
 
 vi.mock('electron', () => {
   return {
@@ -55,6 +69,7 @@ describe('DynatraceWindowManager', () => {
     vi.clearAllMocks();
     mockWebContentsHandlers.clear();
     mockWindowHandlers.clear();
+    mockWindowOpenHandlers.length = 0;
     dashboards = [{ id: 'dt_1', name: 'NOC', url: 'https://abc.live.dynatrace.com/dashboard' }];
     store = {
       list: vi.fn(() => dashboards),
@@ -242,6 +257,37 @@ describe('DynatraceWindowManager', () => {
         state: 'load-failed',
         lastUrl: 'https://abc.live.dynatrace.com/dashboard',
         error: 'navigation failed',
+      }),
+    );
+  });
+
+  it('retries with a fresh window after an initial dashboard load fails', async () => {
+    vi.mocked(mockWindow.loadURL).mockRejectedValueOnce(new Error('navigation failed'));
+
+    await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
+    await expect(manager.openDashboard('dt_1')).resolves.toBe(true);
+
+    expect(mockWindow.close).toHaveBeenCalledTimes(1);
+    expect(mockWindow.focus).not.toHaveBeenCalled();
+    expect(BrowserWindow).toHaveBeenCalledTimes(2);
+    expect(mockWindow.loadURL).toHaveBeenCalledTimes(2);
+  });
+
+  it('sets load-failed when an allowed popup URL load fails', async () => {
+    await manager.openDashboard('dt_1');
+    vi.mocked(mockWindow.loadURL).mockRejectedValueOnce(new Error('popup failed'));
+
+    const result = mockWindowOpenHandlers.at(-1)?.({
+      url: 'https://login.microsoftonline.com/oauth2/v2.0/authorize',
+    });
+    await Promise.resolve();
+
+    expect(result).toEqual({ action: 'deny' });
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({
+        state: 'load-failed',
+        lastUrl: 'https://login.microsoftonline.com/oauth2/v2.0/authorize',
+        error: 'popup failed',
       }),
     );
   });
