@@ -52,6 +52,16 @@ const defaultProps = {
 const LAN_SERVER_ADDRESS = ['192', '168', '1', '25'].join('.');
 const CONNECTION_SECRET = ['fixture', 'passphrase', '123'].join('-');
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -246,6 +256,35 @@ describe('SettingsModal', () => {
     expect(addDashboard).not.toHaveBeenCalled();
   });
 
+  it('marks the dashboard name field invalid when missing', () => {
+    const addDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [],
+          addDashboard,
+          updateDashboard: vi.fn(),
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+      target: { value: 'https://abc.live.dynatrace.com/dashboard' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+
+    const dashboardName = screen.getByLabelText('Dashboard name');
+    const validation = screen.getByText('Enter a dashboard name.');
+    expect(dashboardName).toHaveAttribute('aria-invalid', 'true');
+    expect(dashboardName).toHaveAttribute('aria-describedby', validation.id);
+    expect(addDashboard).not.toHaveBeenCalled();
+  });
+
   it('updates a Dynatrace dashboard from Settings', async () => {
     const updateDashboard = vi.fn().mockResolvedValue(true);
 
@@ -290,6 +329,39 @@ describe('SettingsModal', () => {
     );
   });
 
+  it('cancels Dynatrace dashboard editing without updating the dashboard', () => {
+    const updateDashboard = vi.fn().mockResolvedValue(true);
+
+    render(
+      <SettingsModal
+        {...defaultProps}
+        dynatrace={{
+          dashboards: [
+            {
+              id: 'dt_1',
+              name: 'NOC',
+              url: 'https://abc.live.dynatrace.com/dashboard',
+              state: 'live',
+            },
+          ],
+          addDashboard: vi.fn(),
+          updateDashboard,
+          removeDashboard: vi.fn(),
+          openDashboard: vi.fn(),
+          clearSession: vi.fn(),
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit NOC' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel edit' }));
+
+    expect(screen.getByLabelText('Dashboard name')).toHaveValue('');
+    expect(screen.getByLabelText('Dashboard URL')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Add dashboard' })).toBeInTheDocument();
+    expect(updateDashboard).not.toHaveBeenCalled();
+  });
+
   it('clears the Dynatrace session from Settings', async () => {
     const clearSession = vi.fn().mockResolvedValue(true);
 
@@ -312,5 +384,119 @@ describe('SettingsModal', () => {
     await waitFor(() => {
       expect(clearSession).toHaveBeenCalled();
     });
+  });
+
+  it('does not call local Dynatrace state setters after unmounting during async actions', async () => {
+    const addDashboard = createDeferred<boolean>();
+    const removeDashboard = createDeferred<boolean>();
+    const clearSession = createDeferred<boolean>();
+    const postUnmountStateUpdate = vi.fn();
+    let isUnmounted = false;
+
+    vi.resetModules();
+    vi.doMock('react', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('react')>();
+
+      return {
+        ...actual,
+        default: actual.default,
+        useState: <S,>(initialState: S | (() => S)) => {
+          const [value, setValue] = actual.useState(initialState);
+          const guardedSetValue: typeof setValue = (nextValue) => {
+            if (isUnmounted) postUnmountStateUpdate();
+            return setValue(nextValue);
+          };
+          return [value, guardedSetValue];
+        },
+      };
+    });
+
+    try {
+      const { SettingsModal: InstrumentedSettingsModal } = await import('../SettingsModal');
+      const addRender = render(
+        <InstrumentedSettingsModal
+          {...defaultProps}
+          dynatrace={{
+            dashboards: [],
+            addDashboard: vi.fn().mockReturnValue(addDashboard.promise),
+            updateDashboard: vi.fn(),
+            removeDashboard: vi.fn(),
+            openDashboard: vi.fn(),
+            clearSession: vi.fn(),
+          }}
+        />,
+      );
+
+      fireEvent.change(screen.getByLabelText('Dashboard name'), { target: { value: 'NOC' } });
+      fireEvent.change(screen.getByLabelText('Dashboard URL'), {
+        target: { value: 'https://abc.live.dynatrace.com/dashboard' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Add dashboard' }));
+
+      addRender.unmount();
+      isUnmounted = true;
+      addDashboard.resolve(true);
+      await addDashboard.promise;
+      await Promise.resolve();
+
+      isUnmounted = false;
+      const removeRender = render(
+        <InstrumentedSettingsModal
+          {...defaultProps}
+          dynatrace={{
+            dashboards: [
+              {
+                id: 'dt_1',
+                name: 'NOC',
+                url: 'https://abc.live.dynatrace.com/dashboard',
+                state: 'live',
+              },
+            ],
+            addDashboard: vi.fn(),
+            updateDashboard: vi.fn(),
+            removeDashboard: vi.fn().mockReturnValue(removeDashboard.promise),
+            openDashboard: vi.fn(),
+            clearSession: vi.fn(),
+          }}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit NOC' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Remove NOC' }));
+
+      removeRender.unmount();
+      isUnmounted = true;
+      removeDashboard.resolve(true);
+      await removeDashboard.promise;
+      await Promise.resolve();
+
+      isUnmounted = false;
+      const clearRender = render(
+        <InstrumentedSettingsModal
+          {...defaultProps}
+          dynatrace={{
+            dashboards: [],
+            addDashboard: vi.fn(),
+            updateDashboard: vi.fn(),
+            removeDashboard: vi.fn(),
+            openDashboard: vi.fn(),
+            clearSession: vi.fn().mockReturnValue(clearSession.promise),
+          }}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Clear Dynatrace session' }));
+
+      clearRender.unmount();
+      isUnmounted = true;
+      clearSession.resolve(true);
+      await clearSession.promise;
+      await Promise.resolve();
+
+      expect(postUnmountStateUpdate).not.toHaveBeenCalled();
+    } finally {
+      vi.doUnmock('react');
+      vi.resetModules();
+    }
   });
 });

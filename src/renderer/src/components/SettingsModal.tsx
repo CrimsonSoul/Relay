@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import type { PublicRelayConfig } from '@shared/ipc';
@@ -68,12 +68,29 @@ function getMaskedSecret(secret: string): string {
 }
 
 function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: DynatraceSettingsProps }>) {
+  const lifecycleRef = useRef({ mounted: false, generation: 0 });
   const [dashboardName, setDashboardName] = useState('');
   const [dashboardUrl, setDashboardUrl] = useState('');
   const [editingDashboardId, setEditingDashboardId] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<DynatraceValidationError | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isClearingSession, setIsClearingSession] = useState(false);
+
+  useEffect(() => {
+    const lifecycle = lifecycleRef.current;
+    lifecycle.mounted = true;
+    lifecycle.generation += 1;
+
+    return () => {
+      lifecycle.mounted = false;
+      lifecycle.generation += 1;
+    };
+  }, []);
+
+  const isActiveGeneration = (generation: number) => {
+    const lifecycle = lifecycleRef.current;
+    return lifecycle.mounted && lifecycle.generation === generation;
+  };
 
   const resetForm = () => {
     setDashboardName('');
@@ -107,15 +124,16 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
 
     setValidationError(null);
     setIsSaving(true);
+    const generation = lifecycleRef.current.generation;
     try {
       const saved = editingDashboardId
         ? await dynatrace.updateDashboard(editingDashboardId, input)
         : await dynatrace.addDashboard(input);
-      if (saved) resetForm();
+      if (saved && isActiveGeneration(generation)) resetForm();
     } catch {
       // The Dynatrace hook owns failure toasts; keep form values for retry.
     } finally {
-      setIsSaving(false);
+      if (isActiveGeneration(generation)) setIsSaving(false);
     }
   };
 
@@ -135,9 +153,10 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
   };
 
   const handleRemoveDashboard = async (id: string) => {
+    const generation = lifecycleRef.current.generation;
     try {
       const removed = await dynatrace.removeDashboard(id);
-      if (removed && editingDashboardId === id) resetForm();
+      if (removed && editingDashboardId === id && isActiveGeneration(generation)) resetForm();
     } catch {
       // Best-effort; the hook reports failures.
     }
@@ -145,12 +164,13 @@ function DynatraceSettingsSection({ dynatrace }: Readonly<{ dynatrace: Dynatrace
 
   const handleClearSession = async () => {
     setIsClearingSession(true);
+    const generation = lifecycleRef.current.generation;
     try {
       await dynatrace.clearSession();
     } catch {
       // Best-effort; the hook reports failures.
     } finally {
-      setIsClearingSession(false);
+      if (isActiveGeneration(generation)) setIsClearingSession(false);
     }
   };
 
