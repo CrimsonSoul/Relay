@@ -84,7 +84,7 @@ export function MainApp({
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
-  const dynatrace = useDynatraceDashboards(showToast);
+  const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
   const handleClientConnected = useCallback(
     (hostname: string) => showToast(`${hostname} connected`, 'info'),
     [showToast],

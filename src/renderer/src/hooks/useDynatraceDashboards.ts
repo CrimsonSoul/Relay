@@ -8,6 +8,9 @@ import type { BridgeAPI, IpcResult } from '@shared/ipc';
 
 type DynatraceToastType = 'success' | 'error' | 'info' | 'warning';
 type ShowDynatraceToast = (message: string, type: DynatraceToastType) => void;
+type UseDynatraceDashboardsOptions = {
+  enabled?: boolean;
+};
 
 type DynatraceBridgeApi = Pick<
   BridgeAPI,
@@ -61,7 +64,10 @@ function isSuccessful(result: IpcResult): boolean {
   return result.success === true;
 }
 
-export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
+export function useDynatraceDashboards(
+  showToast: ShowDynatraceToast,
+  options: UseDynatraceDashboardsOptions = {},
+): {
   dashboards: DynatraceDashboardState[];
   loading: boolean;
   error: string | null;
@@ -72,11 +78,13 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   openDashboard: (id: string) => Promise<boolean>;
   clearSession: () => Promise<boolean>;
 } {
+  const enabled = options.enabled ?? true;
   const [dashboards, setDashboards] = useState<DynatraceDashboardState[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const showToastRef = useRef(showToast);
   const mountedRef = useRef(false);
+  const enabledRef = useRef(enabled);
   const refreshGenerationRef = useRef(0);
   const previousStateByIdRef = useRef(new Map<string, DynatraceRuntimeState>());
   const authenticatingWarningByIdRef = useRef(new Set<string>());
@@ -85,6 +93,10 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   useEffect(() => {
     showToastRef.current = showToast;
   }, [showToast]);
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -136,7 +148,7 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   }, []);
 
   const handleMissingApi = useCallback(() => {
-    if (!mountedRef.current) return;
+    if (!mountedRef.current || !enabledRef.current) return;
 
     setError(BRIDGE_UNAVAILABLE);
     setLoading(false);
@@ -152,6 +164,11 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   }, []);
 
   const refresh = useCallback(async () => {
+    if (!enabledRef.current) {
+      if (mountedRef.current) setLoading(false);
+      return;
+    }
+
     const refreshGeneration = refreshGenerationRef.current + 1;
     refreshGenerationRef.current = refreshGeneration;
     const api = getDynatraceApi();
@@ -184,6 +201,8 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   }, [applyDashboards, handleMissingApi, markBridgeAvailable, toastError]);
 
   const withApi = useCallback((): DynatraceBridgeApi | null => {
+    if (!enabledRef.current) return null;
+
     const api = getDynatraceApi();
     if (!api) {
       handleMissingApi();
@@ -304,6 +323,18 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   }, [markBridgeAvailable, toastError, withApi]);
 
   useEffect(() => {
+    if (!enabled) {
+      refreshGenerationRef.current += 1;
+      previousStateByIdRef.current = new Map();
+      authenticatingWarningByIdRef.current.clear();
+      if (mountedRef.current) {
+        setDashboards([]);
+        setError(null);
+        setLoading(false);
+      }
+      return undefined;
+    }
+
     const api = getDynatraceApi();
     if (!api) {
       handleMissingApi();
@@ -317,7 +348,7 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
       applyDashboards(nextDashboards);
       setError(null);
     });
-  }, [applyDashboards, handleMissingApi, refresh]);
+  }, [applyDashboards, enabled, handleMissingApi, refresh]);
 
   return {
     dashboards,

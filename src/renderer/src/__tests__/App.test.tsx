@@ -495,9 +495,15 @@ describe('MainApp', () => {
   it('passes Dynatrace dashboards and opener to Sidebar', () => {
     renderApp();
 
-    expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast);
+    expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast, { enabled: true });
     expect(lastSidebarProps?.dynatraceDashboards).toBe(mockDynatraceDashboards);
     expect(lastSidebarProps?.onOpenDynatraceDashboard).toBe(mockOpenDynatraceDashboard);
+  });
+
+  it('disables Dynatrace dashboard subscriptions in popout mode', () => {
+    renderApp('?popout=board');
+
+    expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast, { enabled: false });
   });
 
   it('passes the Dynatrace bundle to SettingsModal when settings are open', async () => {

@@ -96,6 +96,26 @@ describe('useDynatraceDashboards', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('does not touch the bridge API when disabled', async () => {
+    const { result } = renderHook(() => useDynatraceDashboards(showToast, { enabled: false }));
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.dashboards).toEqual([]);
+    expect(api.listDynatraceDashboards).not.toHaveBeenCalled();
+    expect(api.onDynatraceDashboardsChanged).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+    await act(async () => {
+      expect(await result.current.openDashboard('dt_1')).toBe(false);
+    });
+
+    expect(api.listDynatraceDashboards).not.toHaveBeenCalled();
+    expect(api.openDynatraceDashboard).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
   it('applies subscription updates and unsubscribes on unmount', async () => {
     const { result, unmount } = renderHook(() => useDynatraceDashboards(showToast));
 
