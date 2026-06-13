@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DynatraceWindowManager } from './DynatraceWindowManager';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
 
-vi.mock('electron', () => {
+const { mockDynatraceSession, mockWindow } = vi.hoisted(() => {
   const handlers: Record<string, (...args: unknown[]) => void> = {};
+  const mockDynatraceSession = { clearStorageData: vi.fn(async () => undefined) };
   const mockWindow = {
     loadURL: vi.fn(async () => undefined),
     focus: vi.fn(),
@@ -21,11 +22,15 @@ vi.mock('electron', () => {
     },
   };
 
+  return { handlers, mockDynatraceSession, mockWindow };
+});
+
+vi.mock('electron', () => {
   return {
     BrowserWindow: vi.fn(function () {
       return mockWindow;
     }),
-    session: { fromPartition: vi.fn(() => ({ clearStorageData: vi.fn(async () => undefined) })) },
+    session: { fromPartition: vi.fn(() => mockDynatraceSession) },
     shell: { openExternal: vi.fn(async () => undefined) },
   };
 });
@@ -65,16 +70,21 @@ describe('DynatraceWindowManager', () => {
         }),
       }),
     );
+    expect(vi.mocked(BrowserWindow).mock.calls[0]?.[0].webPreferences).not.toHaveProperty(
+      'preload',
+    );
   });
 
   it('focuses an existing window for the same dashboard', async () => {
     await manager.openDashboard('dt_1');
     await manager.openDashboard('dt_1');
     expect(BrowserWindow).toHaveBeenCalledTimes(1);
+    expect(mockWindow.focus).toHaveBeenCalledTimes(1);
   });
 
   it('clears the Dynatrace session without removing dashboards', async () => {
-    await manager.clearSession();
+    await expect(manager.clearSession()).resolves.toBe(true);
     expect(session.fromPartition).toHaveBeenCalledWith('persist:relay-dynatrace');
+    expect(mockDynatraceSession.clearStorageData).toHaveBeenCalledTimes(1);
   });
 });
