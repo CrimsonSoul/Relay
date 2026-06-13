@@ -76,18 +76,33 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const showToastRef = useRef(showToast);
+  const mountedRef = useRef(false);
+  const refreshGenerationRef = useRef(0);
   const previousStateByIdRef = useRef(new Map<string, DynatraceRuntimeState>());
   const authenticatingWarningByIdRef = useRef(new Set<string>());
+  const bridgeUnavailableToastShownRef = useRef(false);
 
   useEffect(() => {
     showToastRef.current = showToast;
   }, [showToast]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      refreshGenerationRef.current += 1;
+    };
+  }, []);
+
   const toastError = useCallback((message: string) => {
+    if (!mountedRef.current) return;
     showToastRef.current(message, 'error');
   }, []);
 
   const applyDashboards = useCallback((nextDashboards: DynatraceDashboardState[]) => {
+    if (!mountedRef.current) return;
+
     const previousStateById = previousStateByIdRef.current;
     const warnedIds = authenticatingWarningByIdRef.current;
     const nextStateById = new Map<string, DynatraceRuntimeState>();
@@ -121,31 +136,52 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
   }, []);
 
   const handleMissingApi = useCallback(() => {
+    if (!mountedRef.current) return;
+
     setError(BRIDGE_UNAVAILABLE);
     setLoading(false);
-    toastError(BRIDGE_UNAVAILABLE);
-  }, [toastError]);
+
+    if (!bridgeUnavailableToastShownRef.current) {
+      showToastRef.current(BRIDGE_UNAVAILABLE, 'error');
+      bridgeUnavailableToastShownRef.current = true;
+    }
+  }, []);
+
+  const markBridgeAvailable = useCallback(() => {
+    bridgeUnavailableToastShownRef.current = false;
+  }, []);
 
   const refresh = useCallback(async () => {
+    const refreshGeneration = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = refreshGeneration;
     const api = getDynatraceApi();
     if (!api) {
       handleMissingApi();
       return;
     }
 
+    if (!mountedRef.current) return;
+
     setLoading(true);
     try {
       const nextDashboards = await api.listDynatraceDashboards();
+      if (!mountedRef.current || refreshGenerationRef.current !== refreshGeneration) return;
+
       applyDashboards(nextDashboards);
       setError(null);
+      markBridgeAvailable();
     } catch (err) {
+      if (!mountedRef.current || refreshGenerationRef.current !== refreshGeneration) return;
+
       const message = failureMessage('load Dynatrace dashboards', getErrorMessage(err));
       setError(message);
       toastError(message);
     } finally {
-      setLoading(false);
+      if (mountedRef.current && refreshGenerationRef.current === refreshGeneration) {
+        setLoading(false);
+      }
     }
-  }, [applyDashboards, handleMissingApi, toastError]);
+  }, [applyDashboards, handleMissingApi, markBridgeAvailable, toastError]);
 
   const withApi = useCallback((): DynatraceBridgeApi | null => {
     const api = getDynatraceApi();
@@ -153,6 +189,8 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
       handleMissingApi();
       return null;
     }
+
+    if (!mountedRef.current) return null;
 
     setError(null);
     return api;
@@ -168,6 +206,8 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
 
       try {
         const result = await operation(api);
+        if (!mountedRef.current) return false;
+
         if (!isSuccessful(result)) {
           const message = failureMessage(action, result.error);
           setError(message);
@@ -175,9 +215,12 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
           return false;
         }
 
+        markBridgeAvailable();
         await refresh();
         return true;
       } catch (err) {
+        if (!mountedRef.current) return false;
+
         const message = failureMessage(action, getErrorMessage(err));
         setError(message);
         toastError(message);
@@ -212,21 +255,26 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
 
       try {
         const opened = await api.openDynatraceDashboard(id);
+        if (!mountedRef.current) return false;
+
         if (!opened) {
           const message = failureMessage('open Dynatrace dashboard');
           setError(message);
           toastError(message);
           return false;
         }
+        markBridgeAvailable();
         return true;
       } catch (err) {
+        if (!mountedRef.current) return false;
+
         const message = failureMessage('open Dynatrace dashboard', getErrorMessage(err));
         setError(message);
         toastError(message);
         return false;
       }
     },
-    [toastError, withApi],
+    [markBridgeAvailable, toastError, withApi],
   );
 
   const clearSession = useCallback(async (): Promise<boolean> => {
@@ -235,20 +283,25 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
 
     try {
       const result = await api.clearDynatraceSession();
+      if (!mountedRef.current) return false;
+
       if (!isSuccessful(result)) {
         const message = failureMessage('clear Dynatrace session', result.error);
         setError(message);
         toastError(message);
         return false;
       }
+      markBridgeAvailable();
       return true;
     } catch (err) {
+      if (!mountedRef.current) return false;
+
       const message = failureMessage('clear Dynatrace session', getErrorMessage(err));
       setError(message);
       toastError(message);
       return false;
     }
-  }, [toastError, withApi]);
+  }, [markBridgeAvailable, toastError, withApi]);
 
   useEffect(() => {
     const api = getDynatraceApi();
@@ -259,6 +312,8 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
 
     void refresh();
     return api.onDynatraceDashboardsChanged((nextDashboards) => {
+      if (!mountedRef.current) return;
+
       applyDashboards(nextDashboards);
       setError(null);
     });

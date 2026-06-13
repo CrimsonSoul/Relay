@@ -36,6 +36,14 @@ const input: DynatraceDashboardInput = {
   url: 'https://apps.dynatrace.com/dashboard/apm',
 };
 
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve: (value: T) => void = () => undefined;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 describe('useDynatraceDashboards', () => {
   let listener: ((dashboards: DynatraceDashboardState[]) => void) | null = null;
   let unsubscribe: ReturnType<typeof vi.fn>;
@@ -102,6 +110,31 @@ describe('useDynatraceDashboards', () => {
     unmount();
 
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a mount refresh result that settles after unmount', async () => {
+    const load = createDeferred<DynatraceDashboardState[]>();
+    vi.mocked(api.listDynatraceDashboards).mockReturnValueOnce(load.promise);
+
+    const { unmount } = renderHook(() => useDynatraceDashboards(showToast));
+
+    await waitFor(() => expect(listener).toBeTypeOf('function'));
+
+    act(() => {
+      listener?.([live]);
+    });
+    expect(showToast).not.toHaveBeenCalled();
+
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      load.resolve([auth]);
+      await load.promise;
+      await Promise.resolve();
+    });
+
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   it('opens dashboards through the bridge API', async () => {
@@ -241,7 +274,7 @@ describe('useDynatraceDashboards', () => {
     );
   });
 
-  it('sets an error and returns false when the bridge API is unavailable', async () => {
+  it('sets an error and only toasts once while the bridge API is unavailable', async () => {
     removeApi();
 
     const { result } = renderHook(() => useDynatraceDashboards(showToast));
@@ -255,8 +288,10 @@ describe('useDynatraceDashboards', () => {
       expect(await result.current.addDashboard(input)).toBe(false);
       expect(await result.current.openDashboard('dt_1')).toBe(false);
       expect(await result.current.clearSession()).toBe(false);
+      await result.current.refresh();
     });
 
+    expect(showToast).toHaveBeenCalledTimes(1);
     expect(showToast).toHaveBeenCalledWith('Dynatrace bridge API is unavailable.', 'error');
   });
 });
