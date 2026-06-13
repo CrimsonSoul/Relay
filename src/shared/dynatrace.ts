@@ -38,7 +38,15 @@ const MICROSOFT_AUTH_HOSTS = new Set([
   'login.windows.net',
   'sts.windows.net',
 ]);
-const DYNATRACE_AUTH_ROUTE_SEGMENTS = new Set(['signin', 'sign-in', 'login', 'sso']);
+const DYNATRACE_AUTH_ROUTE_SEGMENTS = new Set([
+  'signin',
+  'sign-in',
+  'login',
+  'sso',
+  'oauth',
+  'oauth2',
+  'oauth2.0',
+]);
 
 function parseUrl(value: string): URL | null {
   try {
@@ -80,7 +88,5 @@ export function isDynatraceAuthUrl(value: string): boolean {
     .split('/')
     .map((segment) => segment.trim().toLowerCase())
     .filter(Boolean);
-  return pathSegments.some(
-    (segment) => DYNATRACE_AUTH_ROUTE_SEGMENTS.has(segment) || segment.startsWith('oauth'),
-  );
+  return pathSegments.some((segment) => DYNATRACE_AUTH_ROUTE_SEGMENTS.has(segment));
 }

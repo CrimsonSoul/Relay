@@ -72,6 +72,7 @@ describe('Dynatrace URL policy', () => {
   it('identifies Dynatrace sign-in routes as auth state', () => {
     expect(isDynatraceAuthUrl('https://abc12345.live.dynatrace.com/signin')).toBe(true);
     expect(isDynatraceAuthUrl('https://abc12345.live.dynatrace.com/ui/login')).toBe(true);
+    expect(isDynatraceAuthUrl('https://abc.live.dynatrace.com/oauth2/authorize')).toBe(true);
     expect(
       isDynatraceAuthUrl(
         'https://abc12345.live.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard',
@@ -84,6 +85,7 @@ describe('Dynatrace URL policy', () => {
       'https://abc.live.dynatrace.com/ui/apps/dynatrace.dashboards/dashboard?dashboardId=login-rate',
     ],
     ['https://abc.live.dynatrace.com/ui/apps/dynatrace.dashboards/login-rate/dashboard'],
+    ['https://abc.live.dynatrace.com/ui/apps/dynatrace.dashboards/oauth-adoption/dashboard'],
   ])('does not classify dashboard content identifiers as auth URL %s', (url) => {
     expect(isDynatraceAuthUrl(url)).toBe(false);
   });
