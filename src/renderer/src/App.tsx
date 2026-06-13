@@ -24,6 +24,7 @@ import { useErrorNotifications } from './hooks/useErrorNotifications';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useModalState } from './hooks/useModalState';
 import { useClientPresence } from './hooks/useClientPresence';
+import { useDynatraceDashboards } from './hooks/useDynatraceDashboards';
 import {
   REMINDER_ALERT_LOAD_EVENT,
   type ReminderAlertLoadDetail,
@@ -83,6 +84,7 @@ export function MainApp({
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
+  const dynatrace = useDynatraceDashboards(showToast);
   const handleClientConnected = useCallback(
     (hostname: string) => showToast(`${hostname} connected`, 'info'),
     [showToast],
@@ -234,6 +236,8 @@ export function MainApp({
           onOpenSettings={() => setSettingsOpen(true)}
           clientPresence={clientPresence}
           relayMode={relayConfig?.mode}
+          dynatraceDashboards={dynatrace.dashboards}
+          onOpenDynatraceDashboard={dynatrace.openDashboard}
         />
 
         <main className="main-content" aria-label="Application content">
@@ -385,6 +389,7 @@ export function MainApp({
                 onClose={() => setSettingsOpen(false)}
                 onOpenDataManager={dataManagerModal.open}
                 onReconfigure={onReconfigure}
+                dynatrace={dynatrace}
               />
             )}
             {dataManagerModal.isOpen && (

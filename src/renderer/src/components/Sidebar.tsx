@@ -1,7 +1,9 @@
 import React from 'react';
 import { TabName, type PublicRelayConfig } from '@shared/ipc';
+import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton } from './sidebar/SidebarButton';
 import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
+import { SidebarDashboards } from './sidebar/SidebarDashboards';
 import {
   ComposeIcon,
   AlertsIcon,
@@ -22,6 +24,8 @@ interface SidebarProps {
     hostnames: string[];
   };
   relayMode?: PublicRelayConfig['mode'];
+  dynatraceDashboards?: DynatraceDashboardState[];
+  onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
 }
 
 // Moved outside component to avoid recreation every render
@@ -41,6 +45,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings,
   clientPresence = { count: 0, hostnames: [] },
   relayMode,
+  dynatraceDashboards = [],
+  onOpenDynatraceDashboard = () => undefined,
 }) => {
   const showClientPresence = relayMode !== 'client';
 
@@ -75,6 +81,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {showClientPresence && (
           <SidebarClientStatus count={clientPresence.count} hostnames={clientPresence.hostnames} />
         )}
+        <SidebarDashboards
+          dashboards={dynatraceDashboards}
+          onOpenDashboard={onOpenDynatraceDashboard}
+        />
         <SidebarButton
           label="Settings"
           isActive={false}

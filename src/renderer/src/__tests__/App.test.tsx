@@ -2,6 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp } from '../App';
+import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -29,7 +30,47 @@ let lastConnectionManagerProps: {
   pbAuth: { token: string; record: Record<string, unknown> | null };
   onReconfigure: () => void;
 } | null = null;
-let lastSidebarProps: { relayMode?: 'server' | 'client' } | null = null;
+let lastSidebarProps: {
+  relayMode?: 'server' | 'client';
+  dynatraceDashboards?: DynatraceDashboardState[];
+  onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
+} | null = null;
+let lastSettingsModalProps: {
+  dynatrace?: {
+    dashboards: DynatraceDashboardState[];
+    addDashboard: (input: DynatraceDashboardInput) => Promise<boolean>;
+    updateDashboard: (id: string, input: DynatraceDashboardInput) => Promise<boolean>;
+    removeDashboard: (id: string) => Promise<boolean>;
+    openDashboard: (id: string) => Promise<boolean>;
+    clearSession: () => Promise<boolean>;
+  };
+} | null = null;
+const mockDynatraceDashboards: DynatraceDashboardState[] = [
+  {
+    id: 'dt_1',
+    name: 'NOC',
+    url: 'https://abc.live.dynatrace.com/dashboard',
+    state: 'live',
+  },
+];
+const mockAddDynatraceDashboard = vi.fn();
+const mockUpdateDynatraceDashboard = vi.fn();
+const mockRemoveDynatraceDashboard = vi.fn();
+const mockOpenDynatraceDashboard = vi.fn();
+const mockClearDynatraceSession = vi.fn();
+const mockRefreshDynatraceDashboards = vi.fn();
+const mockDynatraceHookState = {
+  dashboards: mockDynatraceDashboards,
+  loading: false,
+  error: null,
+  refresh: mockRefreshDynatraceDashboards,
+  addDashboard: mockAddDynatraceDashboard,
+  updateDashboard: mockUpdateDynatraceDashboard,
+  removeDashboard: mockRemoveDynatraceDashboard,
+  openDashboard: mockOpenDynatraceDashboard,
+  clearSession: mockClearDynatraceSession,
+};
+const mockUseDynatraceDashboards = vi.fn(() => mockDynatraceHookState);
 
 // ── mock contexts ────────────────────────────────────────────────────────────
 vi.mock('../contexts', () => ({
@@ -52,14 +93,22 @@ vi.mock('../components/Sidebar', () => ({
     onTabChange,
     onOpenSettings,
     relayMode,
+    dynatraceDashboards,
+    onOpenDynatraceDashboard,
   }: {
     activeTab: string;
     onTabChange: (tab: string) => void;
     onOpenSettings: () => void;
     relayMode?: 'server' | 'client';
+    dynatraceDashboards?: DynatraceDashboardState[];
+    onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
   }) =>
     (() => {
-      lastSidebarProps = { relayMode };
+      lastSidebarProps = {
+        relayMode,
+        dynatraceDashboards,
+        onOpenDynatraceDashboard,
+      };
       return (
         <div data-testid="sidebar">
           <span data-testid="active-tab">{activeTab}</span>
@@ -211,19 +260,24 @@ vi.mock('../components/SettingsModal', () => ({
     isOpen,
     onClose,
     onOpenDataManager,
+    dynatrace,
   }: {
     isOpen: boolean;
     onClose: () => void;
     isSyncing: boolean;
     onSync: () => void;
     onOpenDataManager: () => void;
+    dynatrace?: typeof mockDynatraceHookState;
   }) =>
-    isOpen ? (
-      <div data-testid="settings-modal">
-        <button onClick={onClose}>close-settings</button>
-        <button onClick={onOpenDataManager}>open-data-manager</button>
-      </div>
-    ) : null,
+    (() => {
+      lastSettingsModalProps = { dynatrace };
+      return isOpen ? (
+        <div data-testid="settings-modal">
+          <button onClick={onClose}>close-settings</button>
+          <button onClick={onOpenDataManager}>open-data-manager</button>
+        </div>
+      ) : null;
+    })(),
 }));
 
 vi.mock('../components/DataManagerModal', () => ({
@@ -295,6 +349,11 @@ vi.mock('../hooks/useAppCloudStatus', () => ({
   }),
 }));
 
+vi.mock('../hooks/useDynatraceDashboards', () => ({
+  useDynatraceDashboards: (...args: Parameters<typeof mockUseDynatraceDashboards>) =>
+    mockUseDynatraceDashboards(...args),
+}));
+
 vi.mock('../services/contactService', () => ({
   addContact: vi.fn().mockResolvedValue({}),
 }));
@@ -316,6 +375,8 @@ describe('MainApp', () => {
     mockActiveTab = 'Compose';
     mockSettingsOpen = false;
     lastSidebarProps = null;
+    lastSettingsModalProps = null;
+    mockUseDynatraceDashboards.mockReturnValue(mockDynatraceHookState);
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -326,6 +387,7 @@ describe('MainApp', () => {
     mockSettingsOpen = false;
     mockActiveTab = 'Compose';
     lastSidebarProps = null;
+    lastSettingsModalProps = null;
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -428,6 +490,25 @@ describe('MainApp', () => {
     });
 
     expect(lastSidebarProps).toMatchObject({ relayMode: 'client' });
+  });
+
+  it('passes Dynatrace dashboards and opener to Sidebar', () => {
+    renderApp();
+
+    expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast);
+    expect(lastSidebarProps?.dynatraceDashboards).toBe(mockDynatraceDashboards);
+    expect(lastSidebarProps?.onOpenDynatraceDashboard).toBe(mockOpenDynatraceDashboard);
+  });
+
+  it('passes the Dynatrace bundle to SettingsModal when settings are open', async () => {
+    mockSettingsOpen = true;
+    renderApp();
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+    });
+
+    expect(lastSettingsModalProps?.dynatrace).toBe(mockDynatraceHookState);
   });
 
   it('opens settings on Cmd+, keydown', () => {

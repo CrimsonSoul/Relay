@@ -6,7 +6,7 @@ import { ToastProvider, NoopToastProvider, useToast } from '../Toast';
 // A helper component that triggers toasts
 const ToastTrigger: React.FC<{
   message?: string;
-  type?: 'success' | 'error' | 'info';
+  type?: 'success' | 'error' | 'info' | 'warning';
 }> = ({ message = 'Test toast', type = 'success' }) => {
   const { showToast } = useToast();
   return (
@@ -65,6 +65,19 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByTestId('trigger'));
     expect(screen.getByText('Notice this')).toBeInTheDocument();
     expect(screen.getByText('Notice')).toBeInTheDocument();
+  });
+
+  it('shows a warning toast with Warning title as polite output', () => {
+    render(
+      <ToastProvider>
+        <ToastTrigger message="Watch this" type="warning" />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByTestId('trigger'));
+    expect(screen.getByText('Watch this')).toBeInTheDocument();
+    expect(screen.getByText('Warning')).toBeInTheDocument();
+    expect(screen.getByText('Watch this').closest('output')).toHaveAttribute('aria-live', 'polite');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('shows multiple toasts', () => {

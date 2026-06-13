@@ -312,6 +312,64 @@
   color: var(--color-text-primary);
 }
 
+.sidebar-dashboards-popover {
+  position: fixed;
+  width: 228px;
+  max-width: calc(100vw - var(--sidebar-width-collapsed) - 24px);
+  max-height: min(320px, calc(100vh - 24px));
+  overflow: auto;
+  z-index: var(--z-popover);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  background: var(--color-bg-surface-elevated);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.sidebar-dashboards-popover-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.sidebar-dashboards-popover-item:hover,
+.sidebar-dashboards-popover-item:focus-visible {
+  color: var(--color-text-primary);
+  background: var(--color-hover-overlay);
+  border-color: var(--color-border-medium);
+  outline: none;
+}
+
+.sidebar-dashboards-popover-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.sidebar-dashboards-popover-state {
+  color: var(--color-text-quaternary);
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
 .sidebar-client-tooltip,
 .sidebar-client-tooltip-empty {
   min-width: 132px;

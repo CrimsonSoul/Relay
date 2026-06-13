@@ -50,6 +50,10 @@
   background: var(--accent);
 }
 
+.toast-warning::before {
+  background: var(--color-warning);
+}
+
 /* Shift content to clear the rail */
 .toast .toast-content {
   padding-left: 8px;

@@ -9,7 +9,7 @@ import React, {
   useEffect,
 } from 'react';
 
-type ToastType = 'success' | 'error' | 'info';
+type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 interface ToastMessage {
   id: string;
@@ -33,6 +33,12 @@ const getToastMeta = (type: ToastType) => {
   if (type === 'error') {
     return {
       title: 'Error',
+    };
+  }
+
+  if (type === 'warning') {
+    return {
+      title: 'Warning',
     };
   }
 

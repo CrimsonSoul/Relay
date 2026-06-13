@@ -34,6 +34,7 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   ServersIcon: () => <span>ServersIcon</span>,
   NotesIcon: () => <span>NotesIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
+  DashboardsIcon: () => <span>DashboardsIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
   AppIcon: () => <span>AppIcon</span>,
 }));
@@ -81,6 +82,42 @@ describe('Sidebar', () => {
     expect(footer).toContainElement(settingsButton);
     expect(
       clientBlock.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders dashboard launcher between client presence and Settings when dashboards exist', () => {
+    const { container } = render(
+      <Sidebar
+        {...defaultProps}
+        relayMode="server"
+        clientPresence={{ count: 1, hostnames: ['ops-laptop'] }}
+        dynatraceDashboards={[
+          {
+            id: 'dt_1',
+            name: 'NOC',
+            url: 'https://abc.live.dynatrace.com/dashboard',
+            state: 'live',
+          },
+        ]}
+        onOpenDynatraceDashboard={vi.fn()}
+      />,
+    );
+
+    const footer = container.querySelector('.sidebar-footer');
+    const clientBlock = screen.getByTestId('sidebar-clients');
+    const dashboardButton = screen.getByRole('button', {
+      name: 'Open Dynatrace dashboard NOC',
+    });
+    const settingsButton = screen.getByTestId('sidebar-btn-settings');
+
+    expect(footer).toContainElement(clientBlock);
+    expect(footer).toContainElement(dashboardButton);
+    expect(footer).toContainElement(settingsButton);
+    expect(
+      clientBlock.compareDocumentPosition(dashboardButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      dashboardButton.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
