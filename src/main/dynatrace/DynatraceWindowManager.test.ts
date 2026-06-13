@@ -86,5 +86,13 @@ describe('DynatraceWindowManager', () => {
     await expect(manager.clearSession()).resolves.toBe(true);
     expect(session.fromPartition).toHaveBeenCalledWith('persist:relay-dynatrace');
     expect(mockDynatraceSession.clearStorageData).toHaveBeenCalledTimes(1);
+    expect(store.remove).not.toHaveBeenCalled();
+    expect(manager.listDashboards()).toEqual([
+      expect.objectContaining({
+        id: 'dt_1',
+        name: 'NOC',
+        url: 'https://abc.live.dynatrace.com/dashboard',
+      }),
+    ]);
   });
 });
