@@ -227,7 +227,7 @@ export function useDynatraceDashboards(showToast: ShowDynatraceToast): {
         return false;
       }
     },
-    [refresh, toastError, withApi],
+    [markBridgeAvailable, refresh, toastError, withApi],
   );
 
   const addDashboard = useCallback(
