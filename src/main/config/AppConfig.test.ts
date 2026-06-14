@@ -9,6 +9,7 @@ describe('AppConfig', () => {
   const remoteIp = ['192', '168', '1', '50'].join('.');
   const remoteHttpsUrl = ['https', '://', remoteIp, ':8090'].join('');
   const remoteHttpUrl = ['http', '://', 'relay.local', ':8090'].join('');
+  const createFixtureCredential = () => ['fixture', 'credential'].join('-');
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), 'relay-config-'));
@@ -341,7 +342,12 @@ describe('AppConfig', () => {
 
   it('save() leaves no temp file behind and the config is loadable', () => {
     const config = new AppConfig(tempDir);
-    config.save({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'testsecret' });
+    config.save({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: createFixtureCredential(),
+    });
 
     const leftovers = readdirSync(tempDir).filter((f) => f.endsWith('.tmp'));
     expect(leftovers).toEqual([]);

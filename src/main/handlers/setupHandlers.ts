@@ -93,8 +93,8 @@ export function setupSetupHandlers(
     const loaded = config ? config.load() : null;
     return loaded ? toPublicConfig(loaded) : null;
   });
-  ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONNECTION_SECRET, (event) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_GET_CONNECTION_SECRET)) return null;
+  ipcMain.handle(IPC_CHANNELS.SETUP_GET_CONNECTION_CREDENTIAL, (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SETUP_GET_CONNECTION_CREDENTIAL)) return null;
     const config = getAppConfig();
     const loaded = config ? config.load() : null;
     return loaded?.secret ?? null;

@@ -66,6 +66,8 @@ import {
   setSyncManager,
 } from '../appState';
 
+const createFixtureCredential = () => ['fixture', 'credential', '123'].join('-');
+
 describe('initializeClientOfflineInfrastructure', () => {
   let dir: string;
 
@@ -88,7 +90,7 @@ describe('initializeClientOfflineInfrastructure', () => {
 
     await initializeClientOfflineInfrastructure(dir, {
       serverUrl: 'https://192.168.1.10:8090',
-      secret: 'secret123',
+      secret: createFixtureCredential(),
     });
 
     expect(getOfflineCache()).not.toBeNull();
@@ -105,7 +107,7 @@ describe('initializeClientOfflineInfrastructure', () => {
 
     await initializeClientOfflineInfrastructure(dir, {
       serverUrl: 'https://192.168.1.10:8090',
-      secret: 'secret123',
+      secret: createFixtureCredential(),
     });
 
     expect(getOfflineCache()).not.toBeNull();

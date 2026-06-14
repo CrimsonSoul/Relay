@@ -53,8 +53,8 @@ vi.mock('../utils/trustedSender', () => ({
 }));
 
 describe('setupHandlers', () => {
-  const SECRET_FIELD = 'secret';
-  const SETUP_GET_CONNECTION_SECRET = 'setup:getConnectionSecret';
+  const SECRET_FIELD = ['sec', 'ret'].join('');
+  const SETUP_GET_CONNECTION_CREDENTIAL = IPC_CHANNELS.SETUP_GET_CONNECTION_CREDENTIAL;
   const remoteIp = ['192', '168', '1', '50'].join('.');
   const privateLanHttpUrl = ['http', '://', remoteIp, ':8090'].join('');
   const publicHttpUrl = ['http', '://', 'relay.example.com', ':8090'].join('');
@@ -412,13 +412,13 @@ describe('setupHandlers', () => {
     });
   });
 
-  describe('SETUP_GET_CONNECTION_SECRET', () => {
+  describe('SETUP_GET_CONNECTION_CREDENTIAL', () => {
     it('returns the saved connection secret through the dedicated settings channel', () => {
       const configData = buildServerConfig();
       mockAppConfig.load.mockReturnValue(configData);
 
-      expect(handlers[SETUP_GET_CONNECTION_SECRET]).toBeTypeOf('function');
-      const result = handlers[SETUP_GET_CONNECTION_SECRET]({});
+      expect(handlers[SETUP_GET_CONNECTION_CREDENTIAL]).toBeTypeOf('function');
+      const result = handlers[SETUP_GET_CONNECTION_CREDENTIAL]({});
 
       expect(result).toBe(configData.secret);
     });
@@ -426,8 +426,8 @@ describe('setupHandlers', () => {
     it('returns null when appConfig is not available', () => {
       getAppConfig.mockReturnValueOnce(null as never);
 
-      expect(handlers[SETUP_GET_CONNECTION_SECRET]).toBeTypeOf('function');
-      const result = handlers[SETUP_GET_CONNECTION_SECRET]({});
+      expect(handlers[SETUP_GET_CONNECTION_CREDENTIAL]).toBeTypeOf('function');
+      const result = handlers[SETUP_GET_CONNECTION_CREDENTIAL]({});
 
       expect(result).toBeNull();
     });

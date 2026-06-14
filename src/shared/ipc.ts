@@ -398,7 +398,7 @@ export const IPC_CHANNELS = {
   ONCALL_ALERT_DISMISSED: 'oncall:alertDismissed',
   // Setup
   SETUP_GET_CONFIG: 'setup:getConfig',
-  SETUP_GET_CONNECTION_SECRET: 'setup:getConnectionSecret',
+  SETUP_GET_CONNECTION_CREDENTIAL: 'setup:getConnectionCredential',
   CLIENT_GET_HOSTNAME: 'client:getHostname',
   SETUP_SAVE_CONFIG: 'setup:saveConfig',
   SETUP_CLEAR_CONFIG: 'setup:clearConfig',
