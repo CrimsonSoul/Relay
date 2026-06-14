@@ -4,15 +4,15 @@ High-level structure of the Relay Electron application.
 
 ## Stack
 
-| Layer         | Technology                  |
-| ------------- | --------------------------- |
-| Desktop shell | Electron 41                 |
-| Renderer      | React 19                    |
-| Language      | TypeScript 6                |
-| Build         | Vite 7 + electron-vite 5    |
-| Data store    | PocketBase 0.26 with SQLite |
-| Validation    | Zod 4                       |
-| Testing       | Vitest 4 + Playwright       |
+| Layer         | Technology                                              |
+| ------------- | ------------------------------------------------------- |
+| Desktop shell | Electron 42                                             |
+| Renderer      | React 19                                                |
+| Language      | TypeScript 6                                            |
+| Build         | Vite 7 + electron-vite 5                                |
+| Data store    | PocketBase 0.25.9 with SQLite, PocketBase JS SDK 0.26.8 |
+| Validation    | Zod 4                                                   |
+| Testing       | Vitest 4 + Playwright                                   |
 
 ## Runtime Model
 
@@ -45,6 +45,7 @@ IPC is reserved for operations the renderer should not perform directly, includi
 
 - Window management
 - Setup and connection bootstrap
+- Dynatrace dashboard popout management
 - Cloud status aggregation
 - Clipboard and file-system actions
 - Backup and restore
@@ -78,6 +79,7 @@ PocketBase is managed by:
 Current behavior:
 
 - Start the embedded PocketBase process when Relay is acting as the server
+- Expose connection URL and passphrase details to Settings for client setup
 - Ensure the superuser and app user exist
 - Bootstrap required collections on startup
 - Start backup and retention on a shared 24-hour schedule after PocketBase is healthy
@@ -85,6 +87,25 @@ Current behavior:
 The backup/retention schedule runs once at startup and then every 24 hours. Each cycle re-authenticates the superuser, creates a backup, then runs retention cleanup — backup always precedes pruning so retention can never delete data that has not been captured in a backup. An overlap guard skips a cycle if the previous one is still running. Regular backups (keep 10) and pre-restore safety backups (keep 3) are pruned on separate budgets so a burst of restores cannot evict scheduled backups.
 
 Relay currently bootstraps required collections in code. It does not rely on checked-in migration files.
+
+### Server/Client Presence
+
+Relay supports embedded server mode and client mode against another Relay server.
+
+Server mode responsibilities:
+
+- Start PocketBase locally and optionally bind it to the LAN when direct client access is enabled
+- Advertise LAN-bound servers over mDNS for client setup
+- Show the server URL in `http://host:port` format and expose the local connection passphrase in Settings
+- Subscribe to `client_presence` and show connected client hostnames in the sidebar footer
+
+Client mode responsibilities:
+
+- Connect to an existing Relay server URL
+- Write a `client_presence` heartbeat every 15 seconds with the client hostname
+- Hide the client-count sidebar block because it is server-only operator context
+
+Presence records expire from the UI after 45 seconds without a heartbeat. The collection only stores clients, so the Relay server itself is not counted.
 
 ### Offline Resilience
 
@@ -113,6 +134,7 @@ The shell consists of:
 - Header search and utility actions
 - Mount-once tab content area
 - Modal and toast infrastructure
+- Sidebar footer status for connected clients, configured dashboards, Settings, and connection health
 
 Only the Compose tab is loaded eagerly. Other major tabs are lazy-loaded.
 
@@ -122,11 +144,11 @@ The current primary tabs are:
 
 - Compose
 - Alerts
-- On-Call (`Personnel`)
+- On-Call
+- Notes
+- Service Status
 - People
 - Servers
-- Notes
-- Status
 
 ### Hooks And Services
 
@@ -150,23 +172,30 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 | `bridge_groups`         | Saved compose groups                   |
 | `bridge_history`        | Compose history                        |
 | `alert_history`         | Saved alert cards                      |
+| `alert_reminders`       | Follow-up reminders from alerts        |
 | `notes`                 | Notes attached to contacts and servers |
 | `standalone_notes`      | Freeform notes tab data                |
 | `oncall_dismissals`     | On-call alert dismissals               |
 | `oncall_board_settings` | Board-level settings                   |
+| `client_presence`       | Active client heartbeat records        |
 | `conflict_log`          | Offline sync conflict records          |
+
+Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local operator convenience and contains external URLs rather than shared operational data.
 
 ## Windowing
 
-Relay supports a main window and a small number of auxiliary windows.
+Relay supports a main window, route-limited auxiliary app windows, on-call board popouts, and Dynatrace dashboard popouts.
 
 Important rules:
 
 - Auxiliary windows are route-limited
 - Existing auxiliary windows are focused instead of duplicated when possible
 - Navigation and `window.open()` are blocked for both main and auxiliary windows
+- Dynatrace popouts load a Relay chrome shell in the host window and the external dashboard in a separate `WebContentsView`
+- Dynatrace content uses the `persist:relay-dynatrace` session partition so Microsoft SSO cookies are isolated from the app shell and can be cleared from Settings
+- Dynatrace navigation is limited to `dynatrace.com` hosts plus Microsoft authentication hosts
 
-See `src/main/app/windowFactory.ts` for the implementation.
+See `src/main/app/windowFactory.ts`, `src/main/dynatrace/DynatraceWindowManager.ts`, and `src/main/dynatrace/DynatraceDashboardStore.ts` for the implementation.
 
 ## Security Touchpoints
 
@@ -177,5 +206,6 @@ Architecture decisions that directly support security:
 - Path validation for file operations
 - CSP installation at the session level
 - Centralized IPC validation through shared schemas
+- Dedicated external-dashboard navigation policy and permission denial
 
 For full security guidance, see `docs/SECURITY.md`.

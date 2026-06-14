@@ -80,6 +80,21 @@ Controls in place:
 - Auxiliary windows are limited to an allowlisted route set
 - Auxiliary windows are capped at 5 concurrent instances
 
+### External Dashboard Popouts
+
+Dynatrace dashboard popouts are handled by `src/main/dynatrace/DynatraceWindowManager.ts`.
+
+Security controls in place:
+
+- The Relay chrome shell is loaded from the trusted renderer URL or packaged renderer file only
+- Dashboard content is loaded into a separate `WebContentsView`
+- Dashboard content uses the isolated `persist:relay-dynatrace` session partition
+- Permission requests and permission checks from the dashboard session are denied
+- External navigation is limited to HTTPS `dynatrace.com` hosts and Microsoft authentication hosts required for SSO
+- `window.open()` from dashboard content is denied; allowed Dynatrace or Microsoft auth popups are loaded in the same dashboard view
+- Blocked navigation logs use origin-only URL descriptions to avoid leaking dashboard query strings or auth details
+- Settings can clear the Dynatrace dashboard session when operators need to force reauthentication
+
 ### Content Security Policy
 
 `src/main/app/securityHeaders.ts` installs CSP and related response headers on the default Electron session.
@@ -144,9 +159,11 @@ When a request is blocked, the limiter returns `retryAfterMs` and logs the event
 
 ## Secrets And Local Data
 
-### Config Secret Storage
+### Connection Passphrase Storage
 
-`src/main/config/AppConfig.ts` stores the Relay config secret encrypted with Electron `safeStorage` when available. A plaintext fallback exists for environments where Electron encryption is unavailable, such as headless CI.
+`src/main/config/AppConfig.ts` stores the Relay connection passphrase encrypted with Electron `safeStorage` when available. A plaintext fallback exists for environments where Electron encryption is unavailable, such as headless CI.
+
+Settings displays the local server URL and passphrase so operators can connect Relay clients without hunting through config files. Treat that screen as sensitive local operator context and avoid sharing screenshots that expose real passphrases.
 
 ### Credential Storage
 

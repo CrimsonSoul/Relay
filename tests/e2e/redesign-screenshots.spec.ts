@@ -45,19 +45,22 @@ const makePbClient = async (port: number) => {
 };
 
 const shoot = async (window: Page, name: string) => {
-  // Dismiss any toasts (e.g. live cloud-status notifications) so they don't
-  // overlay the capture. Best-effort — ignore if none are present.
-  try {
-    const closeButtons = window.locator('.toast-close');
-    const count = await closeButtons.count();
-    for (let i = 0; i < count; i += 1) {
-      await closeButtons.first().click({ timeout: 1000 });
-    }
-  } catch {
-    // No toasts, or they vanished mid-click — fine either way.
-  }
   // Let layout/animations settle before capture.
   await window.waitForTimeout(750);
+
+  // Dismiss any toasts (e.g. live cloud-status notifications) so they don't
+  // overlay the capture. Best-effort - ignore if none are present.
+  try {
+    const closeButtons = window.locator('.toast-close');
+    while ((await closeButtons.count()) > 0) {
+      await closeButtons.first().click({ timeout: 1000 });
+      await window.waitForTimeout(100);
+    }
+  } catch {
+    // No toasts, or they vanished mid-click - fine either way.
+  }
+
+  await window.waitForTimeout(250);
   await window.screenshot({ path: path.join(SHOTS_DIR, name), fullPage: false });
 };
 

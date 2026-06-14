@@ -19,17 +19,22 @@ For runtime structure, see `docs/architecture.md`.
 
 These files define the current workflow and should win over stale assumptions:
 
-| File                                          | Purpose                                                     |
-| --------------------------------------------- | ----------------------------------------------------------- |
-| `package.json`                                | Scripts and tool entry points                               |
-| `eslint.config.js`                            | Lint rules and per-layer restrictions                       |
-| `vitest.config.ts`                            | Main/shared test config                                     |
-| `vitest.renderer.config.ts`                   | Renderer test config                                        |
-| `src/shared/ipc.ts`                           | Bridge API and IPC channel definitions                      |
-| `src/shared/ipcValidation.ts`                 | Shared IPC validation helpers                               |
-| `src/renderer/src/services/pocketbase.ts`     | Renderer PocketBase client and connection state             |
-| `src/renderer/src/hooks/useCollection.ts`     | Realtime collection subscription and offline cache fallback |
-| `src/renderer/src/hooks/useOptimisticList.ts` | Optimistic list state over realtime data                    |
+| File                                               | Purpose                                                     |
+| -------------------------------------------------- | ----------------------------------------------------------- |
+| `package.json`                                     | Scripts and tool entry points                               |
+| `eslint.config.js`                                 | Lint rules and per-layer restrictions                       |
+| `vitest.config.ts`                                 | Main/shared test config                                     |
+| `vitest.renderer.config.ts`                        | Renderer test config                                        |
+| `src/shared/ipc.ts`                                | Bridge API and IPC channel definitions                      |
+| `src/shared/ipcValidation.ts`                      | Shared IPC validation helpers                               |
+| `src/shared/dynatrace.ts`                          | Dynatrace URL validation and navigation classification      |
+| `src/renderer/src/services/pocketbase.ts`          | Renderer PocketBase client and connection state             |
+| `src/renderer/src/hooks/useCollection.ts`          | Realtime collection subscription and offline cache fallback |
+| `src/renderer/src/hooks/useOptimisticList.ts`      | Optimistic list state over realtime data                    |
+| `src/renderer/src/hooks/useClientPresence.ts`      | Client heartbeat, client-count state, and connect toasts    |
+| `src/renderer/src/hooks/useDynatraceDashboards.ts` | Renderer state for dashboard settings and launch actions    |
+| `src/main/dynatrace/DynatraceWindowManager.ts`     | Relay-framed Dynatrace popout windows and navigation policy |
+| `src/main/dynatrace/DynatraceDashboardStore.ts`    | Local dashboard URL and popout bounds storage               |
 
 ## Data Access Pattern
 
@@ -78,6 +83,8 @@ Current examples:
 
 - Window management
 - Setup and PocketBase connection bootstrap
+- Client setup metadata such as local hostname and LAN server discovery
+- Dynatrace dashboard storage, session clearing, and popout opening
 - Cloud status aggregation
 - Clipboard and shell/file-system actions
 - Alert image and logo persistence
@@ -126,6 +133,8 @@ Current connection states:
 
 Health checks use an adaptive cadence: an immediate probe on startup and reconnect attempts, then every 5 seconds while degraded and every 30 seconds while `online` or `auth-failed`, with browser `online`/`offline` window events triggering immediate re-evaluation. If the realtime SSE connection drops while subscriptions are active, the client treats it as a disconnect and runs a reconnect cycle plus a refetch so list data cannot silently go stale.
 
+The bottom-left sidebar connection indicator is the canonical user-facing status. It shows connected, reconnecting, offline, auth-failed, and cached-data states. The older bottom-right offline banner was removed so Relay does not show contradictory status in two places.
+
 Use:
 
 - `onConnectionStateChange()` to subscribe
@@ -143,6 +152,35 @@ It handles:
 - Sort preservation for incoming events
 - Offline cache fallback
 - Reconnect-triggered resubscribe and pending-sync flush
+
+### Client Presence
+
+`useClientPresence()` is active in server mode for display and in client mode for heartbeats.
+
+Current behavior:
+
+- Server mode subscribes to `client_presence` and shows the active client count above Settings in the sidebar
+- The sidebar client block uses the same button styling and hover affordance as other sidebar footer items
+- Hovering the block shows active client hostnames
+- New client sessions trigger toast notifications
+- Client mode writes a heartbeat every 15 seconds and hides the server-only client-count block
+- Records older than 45 seconds are treated as inactive
+
+The server is intentionally excluded from the count. Only records with `mode: "client"` are considered active clients.
+
+### Dynatrace Dashboards
+
+Dynatrace dashboards are configured from Settings and launched from the sidebar dashboard button.
+
+Implementation notes:
+
+- Dashboard definitions live in `dynatrace-dashboards.json` under the app data directory, not in PocketBase
+- URLs must be HTTPS and under `dynatrace.com`
+- Popout windows use Relay chrome in the host `BrowserWindow`
+- The dashboard content runs in a separate `WebContentsView` with `backgroundThrottling: false`
+- The content session uses `persist:relay-dynatrace` so Microsoft SSO can persist independently from the app shell
+- Navigation is limited to Dynatrace hosts and Microsoft authentication hosts
+- Settings exposes a session clear action for forced reauthentication
 
 ### Optimistic Lists
 
@@ -207,6 +245,31 @@ npm run test:electron
 ```
 
 Coverage thresholds are currently 80% for lines, functions, branches, and statements in both Vitest configs.
+
+Renderer coverage is run through the renderer test wrapper:
+
+```bash
+npm run test:renderer -- --coverage
+```
+
+Security scanners are not tied to public tokens in the repo. For local checks, pass credentials through the environment or your OS secret store:
+
+```bash
+npm exec --yes snyk -- test --all-projects --dev
+npm exec --yes snyk -- code test
+sonar-scanner
+```
+
+### Screenshot Refresh
+
+The README screenshot set is produced by an explicit Electron Playwright harness:
+
+```bash
+npm run build
+npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
+```
+
+Generated images land in `tmp/redesign-shots/`. Copy the selected captures into `docs/screenshots/` before committing documentation updates.
 
 ### Renderer Test Setup
 
