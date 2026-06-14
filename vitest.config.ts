@@ -8,12 +8,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts'],
-    exclude: [
-      'src/renderer/**',
-      'src/main/cache/OfflineCache.test.ts',
-      'src/main/cache/PendingChanges.test.ts',
-      'src/main/cache/SyncManager.integration.test.ts',
-    ],
+    exclude: ['src/renderer/**', 'src/main/cache/SyncManager.integration.test.ts'],
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
       '@renderer': resolve(__dirname, 'src/renderer/src'),
