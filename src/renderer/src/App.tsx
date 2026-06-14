@@ -84,6 +84,8 @@ export function MainApp({
   const searchParams = new URLSearchParams(globalThis.location.search);
   const isPopout = searchParams.has('popout');
   const popoutRoute = searchParams.get('popout');
+  const isDynatracePopout = popoutRoute === 'dynatrace';
+  const dynatracePopoutName = searchParams.get('name')?.trim() || '';
   const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
   const handleClientConnected = useCallback(
     (hostname: string) => showToast(`${hostname} connected`, 'info'),
@@ -202,14 +204,22 @@ export function MainApp({
 
   if (isPopout) {
     return (
-      <div className="popout-container">
+      <div className={`popout-container${isDynatracePopout ? ' popout-container--dynatrace' : ''}`}>
         <div className="popout-header">
-          <span className="popout-title">RELAY ON-CALL BOARD</span>
+          <div className="popout-title-stack">
+            <span className="popout-title">
+              {isDynatracePopout ? 'RELAY DYNATRACE' : 'RELAY ON-CALL BOARD'}
+            </span>
+            {isDynatracePopout && dynatracePopoutName && (
+              <span className="popout-subtitle">{dynatracePopoutName}</span>
+            )}
+          </div>
         </div>
         <div className="popout-controls">
           <WindowControls />
         </div>
-        <div className="popout-body">
+        <div className={`popout-body${isDynatracePopout ? ' popout-body--dynatrace' : ''}`}>
+          {isDynatracePopout && <div className="dynatrace-shell-body" aria-hidden="true" />}
           {popoutRoute?.includes('board') && (
             <ErrorBoundary fallback={errorFallback}>
               <Suspense fallback={<TabFallback />}>

@@ -1,4 +1,4 @@
-import { BrowserWindow, session } from 'electron';
+import { BrowserWindow, WebContentsView, session } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DynatraceWindowManager } from './DynatraceWindowManager';
 import { DynatraceDashboardStore } from './DynatraceDashboardStore';
@@ -6,33 +6,28 @@ import type { DynatraceDashboard } from '../../shared/dynatrace';
 
 const {
   mockDynatraceSession,
-  mockWebContentsHandlers,
-  mockWindow,
-  mockWindowHandlers,
+  mockDynatraceView,
+  mockDynatraceWebContentsHandlers,
+  mockHostWindow,
+  mockHostWindowHandlers,
   mockWindowOpenHandlers,
 } = vi.hoisted(() => {
-  const mockWebContentsHandlers = new Map<string, (...args: never[]) => void>();
-  const mockWindowHandlers = new Map<string, (...args: never[]) => void>();
+  const mockDynatraceWebContentsHandlers = new Map<string, (...args: never[]) => void>();
+  const mockHostWindowHandlers = new Map<string, (...args: never[]) => void>();
   const mockWindowOpenHandlers: Array<(details: { url: string }) => { action: 'deny' }> = [];
   const mockDynatraceSession = {
     clearStorageData: vi.fn(async () => undefined),
     setPermissionCheckHandler: vi.fn(),
     setPermissionRequestHandler: vi.fn(),
   };
-  const mockWindow = {
-    close: vi.fn(),
-    loadURL: vi.fn(async () => undefined),
-    focus: vi.fn(),
-    isDestroyed: vi.fn(() => false),
-    getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
-    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-      mockWindowHandlers.set(event, handler as (...args: never[]) => void);
-      return mockWindow;
-    }),
+
+  const mockDynatraceView = {
+    setBounds: vi.fn(),
     webContents: {
+      loadURL: vi.fn(async () => undefined),
       on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
-        mockWebContentsHandlers.set(event, handler as (...args: never[]) => void);
-        return mockWindow.webContents;
+        mockDynatraceWebContentsHandlers.set(event, handler as (...args: never[]) => void);
+        return mockDynatraceView.webContents;
       }),
       setWindowOpenHandler: vi.fn((handler: (details: { url: string }) => { action: 'deny' }) => {
         mockWindowOpenHandlers.push(handler);
@@ -41,19 +36,48 @@ const {
     },
   };
 
+  const mockHostWindow = {
+    close: vi.fn(),
+    loadURL: vi.fn(async () => undefined),
+    focus: vi.fn(),
+    isDestroyed: vi.fn(() => false),
+    getBounds: vi.fn(() => ({ x: 10, y: 20, width: 1200, height: 800 })),
+    getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1440, height: 900 })),
+    on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+      mockHostWindowHandlers.set(event, handler as (...args: never[]) => void);
+      return mockHostWindow;
+    }),
+    contentView: {
+      addChildView: vi.fn(),
+      removeChildView: vi.fn(),
+    },
+    webContents: {
+      on: vi.fn((_event: string, _handler: (...args: unknown[]) => void) => {
+        return mockHostWindow.webContents;
+      }),
+      setWindowOpenHandler: vi.fn(),
+      session: {},
+    },
+  };
+
   return {
     mockDynatraceSession,
-    mockWebContentsHandlers,
-    mockWindow,
-    mockWindowHandlers,
+    mockDynatraceView,
+    mockDynatraceWebContentsHandlers,
+    mockHostWindow,
+    mockHostWindowHandlers,
     mockWindowOpenHandlers,
   };
 });
 
 vi.mock('electron', () => {
   return {
+    app: { isPackaged: false },
     BrowserWindow: vi.fn(function () {
-      return mockWindow;
+      return mockHostWindow;
+    }),
+    WebContentsView: vi.fn(function () {
+      return mockDynatraceView;
     }),
     session: { fromPartition: vi.fn(() => mockDynatraceSession) },
     shell: { openExternal: vi.fn(async () => undefined) },
@@ -67,8 +91,9 @@ describe('DynatraceWindowManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockWebContentsHandlers.clear();
-    mockWindowHandlers.clear();
+    vi.stubEnv('ELECTRON_RENDERER_URL', 'http://localhost:5173/');
+    mockDynatraceWebContentsHandlers.clear();
+    mockHostWindowHandlers.clear();
     mockWindowOpenHandlers.length = 0;
     dashboards = [{ id: 'dt_1', name: 'NOC', url: 'https://abc.live.dynatrace.com/dashboard' }];
     store = {
@@ -95,13 +120,25 @@ describe('DynatraceWindowManager', () => {
     manager = new DynatraceWindowManager({ store: store as DynatraceDashboardStore });
   });
 
-  it('creates an isolated, refresh-friendly BrowserWindow', async () => {
+  it('creates a Relay-framed host window with an isolated Dynatrace view', async () => {
     await manager.openDashboard('dt_1');
 
     expect(session.fromPartition).toHaveBeenCalledWith('persist:relay-dynatrace');
     expect(BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'Relay - Dynatrace - NOC',
+        titleBarStyle: 'hidden',
+        trafficLightPosition: { x: 24, y: 16 },
+        webPreferences: expect.objectContaining({
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          webSecurity: true,
+        }),
+      }),
+    );
+    expect(WebContentsView).toHaveBeenCalledWith(
+      expect.objectContaining({
         webPreferences: expect.objectContaining({
           nodeIntegration: false,
           contextIsolation: true,
@@ -112,8 +149,16 @@ describe('DynatraceWindowManager', () => {
         }),
       }),
     );
-    expect(vi.mocked(BrowserWindow).mock.calls[0]?.[0].webPreferences).not.toHaveProperty(
-      'preload',
+    expect(mockHostWindow.contentView.addChildView).toHaveBeenCalledWith(mockDynatraceView);
+    expect(mockHostWindow.loadURL).toHaveBeenCalledWith(
+      expect.stringContaining('popout=dynatrace'),
+    );
+    expect(mockHostWindow.loadURL).toHaveBeenCalledWith(expect.stringContaining('name=NOC'));
+    expect(mockDynatraceView.webContents.loadURL).toHaveBeenCalledWith(
+      'https://abc.live.dynatrace.com/dashboard',
+    );
+    expect(mockHostWindow.loadURL).not.toHaveBeenCalledWith(
+      'https://abc.live.dynatrace.com/dashboard',
     );
   });
 
@@ -127,15 +172,19 @@ describe('DynatraceWindowManager', () => {
     const checkHandler = mockDynatraceSession.setPermissionCheckHandler.mock.calls[0]?.[0];
     const requestCallback = vi.fn();
 
-    requestHandler?.(mockWindow.webContents, 'geolocation', requestCallback, {
+    requestHandler?.(mockDynatraceView.webContents, 'geolocation', requestCallback, {
       requestingUrl: 'https://abc.live.dynatrace.com/dashboard',
     });
     expect(requestCallback).toHaveBeenCalledWith(false);
-    expect(checkHandler?.(mockWindow.webContents, 'media', 'https://abc.live.dynatrace.com')).toBe(
-      false,
-    );
     expect(
-      checkHandler?.(mockWindow.webContents, 'clipboard-read', 'https://abc.live.dynatrace.com'),
+      checkHandler?.(mockDynatraceView.webContents, 'media', 'https://abc.live.dynatrace.com'),
+    ).toBe(false);
+    expect(
+      checkHandler?.(
+        mockDynatraceView.webContents,
+        'clipboard-read',
+        'https://abc.live.dynatrace.com',
+      ),
     ).toBe(false);
   });
 
@@ -143,7 +192,8 @@ describe('DynatraceWindowManager', () => {
     await manager.openDashboard('dt_1');
     await manager.openDashboard('dt_1');
     expect(BrowserWindow).toHaveBeenCalledTimes(1);
-    expect(mockWindow.focus).toHaveBeenCalledTimes(1);
+    expect(WebContentsView).toHaveBeenCalledTimes(1);
+    expect(mockHostWindow.focus).toHaveBeenCalledTimes(1);
   });
 
   it('clears the Dynatrace session without removing dashboards', async () => {
@@ -167,7 +217,7 @@ describe('DynatraceWindowManager', () => {
     listener.mockClear();
 
     const preventDefault = vi.fn();
-    mockWebContentsHandlers.get('will-navigate')?.(
+    mockDynatraceWebContentsHandlers.get('will-navigate')?.(
       { preventDefault },
       'https://evil.example/dashboard',
     );
@@ -196,7 +246,7 @@ describe('DynatraceWindowManager', () => {
     listener.mockClear();
 
     const preventDefault = vi.fn();
-    mockWebContentsHandlers.get('will-redirect')?.(
+    mockDynatraceWebContentsHandlers.get('will-redirect')?.(
       { preventDefault },
       'https://evil.example/redirected',
     );
@@ -223,7 +273,7 @@ describe('DynatraceWindowManager', () => {
     await manager.openDashboard('dt_1');
     listener.mockClear();
 
-    mockWebContentsHandlers.get('did-fail-load')?.(
+    mockDynatraceWebContentsHandlers.get('did-fail-load')?.(
       {},
       -105,
       'NAME_NOT_RESOLVED',
@@ -248,7 +298,9 @@ describe('DynatraceWindowManager', () => {
   });
 
   it('returns false and sets load-failed when initial dashboard load fails', async () => {
-    vi.mocked(mockWindow.loadURL).mockRejectedValueOnce(new Error('navigation failed'));
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error('navigation failed'),
+    );
 
     await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
 
@@ -261,21 +313,41 @@ describe('DynatraceWindowManager', () => {
     );
   });
 
+  it('keeps the dashboard window open when the initial load is aborted by a redirect', async () => {
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error('ERR_ABORTED (-3) loading https://abc.live.dynatrace.com/dashboard'),
+    );
+
+    await expect(manager.openDashboard('dt_1')).resolves.toBe(true);
+
+    expect(mockHostWindow.close).not.toHaveBeenCalled();
+    expect(manager.listDashboards()[0]).toEqual(
+      expect.objectContaining({
+        state: 'authenticating',
+        lastUrl: 'https://abc.live.dynatrace.com/dashboard',
+      }),
+    );
+  });
+
   it('retries with a fresh window after an initial dashboard load fails', async () => {
-    vi.mocked(mockWindow.loadURL).mockRejectedValueOnce(new Error('navigation failed'));
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error('navigation failed'),
+    );
 
     await expect(manager.openDashboard('dt_1')).resolves.toBe(false);
     await expect(manager.openDashboard('dt_1')).resolves.toBe(true);
 
-    expect(mockWindow.close).toHaveBeenCalledTimes(1);
-    expect(mockWindow.focus).not.toHaveBeenCalled();
+    expect(mockHostWindow.close).toHaveBeenCalledTimes(1);
+    expect(mockHostWindow.focus).not.toHaveBeenCalled();
     expect(BrowserWindow).toHaveBeenCalledTimes(2);
-    expect(mockWindow.loadURL).toHaveBeenCalledTimes(2);
+    expect(mockDynatraceView.webContents.loadURL).toHaveBeenCalledTimes(2);
   });
 
   it('sets load-failed when an allowed popup URL load fails', async () => {
     await manager.openDashboard('dt_1');
-    vi.mocked(mockWindow.loadURL).mockRejectedValueOnce(new Error('popup failed'));
+    vi.mocked(mockDynatraceView.webContents.loadURL).mockRejectedValueOnce(
+      new Error('popup failed'),
+    );
 
     const result = mockWindowOpenHandlers.at(-1)?.({
       url: 'https://login.microsoftonline.com/oauth2/v2.0/authorize',
@@ -298,7 +370,7 @@ describe('DynatraceWindowManager', () => {
     await manager.openDashboard('dt_1');
     listener.mockClear();
 
-    mockWindowHandlers.get('close')?.();
+    mockHostWindowHandlers.get('close')?.();
     expect(store.setBounds).toHaveBeenCalledWith('dt_1', {
       x: 10,
       y: 20,
@@ -306,7 +378,7 @@ describe('DynatraceWindowManager', () => {
       height: 800,
     });
 
-    mockWindowHandlers.get('closed')?.();
+    mockHostWindowHandlers.get('closed')?.();
     expect(manager.listDashboards()[0]).toEqual(
       expect.objectContaining({ id: 'dt_1', state: 'closed' }),
     );
@@ -321,11 +393,37 @@ describe('DynatraceWindowManager', () => {
     });
 
     await manager.openDashboard('dt_1');
-    mockWindowHandlers.get('close')?.();
-    mockWindowHandlers.get('closed')?.();
+    mockHostWindowHandlers.get('close')?.();
+    mockHostWindowHandlers.get('closed')?.();
     await manager.openDashboard('dt_1');
 
     expect(BrowserWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the Dynatrace view below the Relay chrome when the host resizes', async () => {
+    await manager.openDashboard('dt_1');
+
+    expect(mockDynatraceView.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 56,
+      width: 1440,
+      height: 844,
+    });
+
+    vi.mocked(mockHostWindow.getContentBounds).mockReturnValueOnce({
+      x: 0,
+      y: 0,
+      width: 1200,
+      height: 720,
+    });
+    mockHostWindowHandlers.get('resize')?.();
+
+    expect(mockDynatraceView.setBounds).toHaveBeenLastCalledWith({
+      x: 0,
+      y: 56,
+      width: 1200,
+      height: 664,
+    });
   });
 
   it('broadcasts dashboard add, update, and remove changes', () => {
