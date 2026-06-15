@@ -222,6 +222,77 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
   });
 
+  test('Compose bridge action buttons do not overlap on compact desktop widths', async () => {
+    if (!electronApp) throw new Error('Electron app not launched');
+
+    for (const width of [1440, 1366, 1280, 1100]) {
+      await electronApp.evaluate(({ BrowserWindow }, viewportWidth) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(viewportWidth, 900);
+      }, width);
+      await window.waitForTimeout(300);
+
+      const geometry = await window.evaluate(() => {
+        const toRect = (element: {
+          getBoundingClientRect: () => {
+            left: number;
+            right: number;
+            top: number;
+            bottom: number;
+          };
+        }) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            left: rect.left,
+            right: rect.right,
+            top: rect.top,
+            bottom: rect.bottom,
+          };
+        };
+        const buttonByText = (text: string) =>
+          [...globalThis.document.querySelectorAll('button')].find(
+            (button) => button.textContent?.trim() === text,
+          );
+
+        const actions = globalThis.document.querySelector('.collapsible-header-actions');
+        const start = buttonByText('Start Bridge');
+        const schedule = buttonByText('Schedule Bridge');
+        if (!actions || !start || !schedule) return null;
+
+        const actionsRect = toRect(actions);
+        const startRect = toRect(start);
+        const scheduleRect = toRect(schedule);
+        const overlapWidth = Math.max(
+          0,
+          Math.min(startRect.right, scheduleRect.right) -
+            Math.max(startRect.left, scheduleRect.left),
+        );
+        const overlapHeight = Math.max(
+          0,
+          Math.min(startRect.bottom, scheduleRect.bottom) -
+            Math.max(startRect.top, scheduleRect.top),
+        );
+
+        return {
+          actionsRect,
+          startRect,
+          scheduleRect,
+          overlapArea: overlapWidth * overlapHeight,
+        };
+      });
+
+      expect(geometry, `geometry at ${width}px`).not.toBeNull();
+      expect(geometry!.overlapArea, `button overlap at ${width}px`).toBe(0);
+      for (const rect of [geometry!.startRect, geometry!.scheduleRect]) {
+        expect(rect.left, `left bound at ${width}px`).toBeGreaterThanOrEqual(
+          geometry!.actionsRect.left - 1,
+        );
+        expect(rect.right, `right bound at ${width}px`).toBeLessThanOrEqual(
+          geometry!.actionsRect.right + 1,
+        );
+      }
+    }
+  });
+
   test('Vital 2: Navigation to On-Call & Servers', async () => {
     await goToTab(window, 'sidebar-on-call', 'On-Call');
     await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();

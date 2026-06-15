@@ -1350,11 +1350,17 @@ body.modal-open {
 .collapsible-header-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .collapsible-header-right:first-child .collapsible-header-actions {
   width: 100%;
-  justify-content: flex-end;
+}
+
+.collapsible-header-actions > .tooltip-trigger,
+.collapsible-header-actions > .tactile-button {
+  flex: 0 0 auto;
 }
 
 .collapsible-header-actions--expanded {
