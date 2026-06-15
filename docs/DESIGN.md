@@ -121,20 +121,25 @@ controls. A small rounded box next to square chips reads as foreign.
 
 ### Schemes
 
-Six schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
+Ten schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 `:root[data-accent="…"]` overrides in `theme.css`:
 
 | ID       | Label                | `--accent` swatch |
 | -------- | -------------------- | ----------------- |
 | `red`    | Signal Red (default) | `#e63946`         |
 | `orange` | Orange               | `#f97316`         |
+| `yellow` | Yellow               | `#facc15`         |
 | `blue`   | Blue                 | `#3b82f6`         |
+| `cyan`   | Cyan                 | `#06b6d4`         |
 | `green`  | Green                | `#22c55e`         |
+| `lime`   | Lime                 | `#84cc16`         |
 | `pink`   | Pink                 | `#ec4899`         |
 | `purple` | Purple               | `#a855f7`         |
+| `violet` | Violet               | `#8b5cf6`         |
 
-The orange scheme is deliberately a true orange so it stays distinguishable from
-the fixed `--alarm` red-orange (`#ff4539`) and `--color-warning` amber (`#ffb000`).
+The orange and yellow schemes are deliberately tuned as non-semantic operator
+preferences so they stay distinguishable from the fixed `--alarm` red-orange
+(`#ff4539`) and `--color-warning` amber (`#ffb000`).
 
 ### How It Works
 

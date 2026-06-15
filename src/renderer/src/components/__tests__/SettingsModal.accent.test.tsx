@@ -68,10 +68,14 @@ describe('SettingsModal — accent color picker', () => {
     document.documentElement.removeAttribute('data-accent');
   });
 
-  it('renders six radio buttons for the accent picker', () => {
+  it('renders radio buttons for every accent picker option', () => {
     render(<SettingsModal {...defaultProps} />);
     const radios = screen.getAllByRole('radio');
-    expect(radios).toHaveLength(6);
+    expect(radios).toHaveLength(10);
+    expect(screen.getByTitle('Yellow')).toBeInTheDocument();
+    expect(screen.getByTitle('Cyan')).toBeInTheDocument();
+    expect(screen.getByTitle('Lime')).toBeInTheDocument();
+    expect(screen.getByTitle('Violet')).toBeInTheDocument();
   });
 
   it('clicking "Purple" sets data-accent="purple" on documentElement', () => {
@@ -86,6 +90,17 @@ describe('SettingsModal — accent color picker', () => {
     const purpleButton = screen.getByTitle('Purple');
     fireEvent.click(purpleButton);
     expect(localStorage.getItem('relay-accent')).toBe('purple');
+  });
+
+  it('clicking "Yellow" applies and persists the yellow accent', () => {
+    render(<SettingsModal {...defaultProps} />);
+    const yellowButton = screen.getByTitle('Yellow');
+
+    fireEvent.click(yellowButton);
+
+    expect(document.documentElement.getAttribute('data-accent')).toBe('yellow');
+    expect(localStorage.getItem('relay-accent')).toBe('yellow');
+    expect(yellowButton).toHaveAttribute('aria-checked', 'true');
   });
 
   it('moves aria-checked to the selected swatch after clicking "Purple"', () => {

@@ -14,14 +14,18 @@ describe('accent theme', () => {
     document.documentElement.removeAttribute('data-accent');
   });
 
-  it('exposes the six schemes with red as default', () => {
+  it('exposes the accent schemes with red as default', () => {
     expect(ACCENT_SCHEMES.map((s) => s.id)).toEqual([
       'red',
       'orange',
+      'yellow',
       'blue',
+      'cyan',
       'green',
+      'lime',
       'pink',
       'purple',
+      'violet',
     ]);
     expect(DEFAULT_ACCENT).toBe('red');
   });
@@ -30,6 +34,12 @@ describe('accent theme', () => {
     setAccent('purple');
     expect(document.documentElement.getAttribute('data-accent')).toBe('purple');
     expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('purple');
+  });
+
+  it('setAccent supports the yellow scheme', () => {
+    setAccent('yellow');
+    expect(document.documentElement.getAttribute('data-accent')).toBe('yellow');
+    expect(localStorage.getItem(ACCENT_STORAGE_KEY)).toBe('yellow');
   });
 
   it('getStoredAccent falls back to default on garbage', () => {
@@ -47,9 +57,9 @@ describe('accent theme', () => {
     initAccent();
     localStorage.setItem(ACCENT_STORAGE_KEY, 'blue');
     window.dispatchEvent(
-      new StorageEvent('storage', { key: ACCENT_STORAGE_KEY, newValue: 'blue' }),
+      new StorageEvent('storage', { key: ACCENT_STORAGE_KEY, newValue: 'cyan' }),
     );
-    expect(document.documentElement.getAttribute('data-accent')).toBe('blue');
+    expect(document.documentElement.getAttribute('data-accent')).toBe('cyan');
   });
 
   it('reverts to default when another window clears the stored accent', () => {

@@ -1708,7 +1708,9 @@ body.modal-open {
 
 .accent-picker {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 10px;
 }
 
 .accent-picker-swatch {
@@ -1716,6 +1718,7 @@ body.modal-open {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  min-width: 46px;
   background: none;
   border: none;
   padding: 4px;

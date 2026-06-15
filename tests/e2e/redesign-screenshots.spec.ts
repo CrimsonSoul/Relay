@@ -3,7 +3,7 @@
  *
  * Launches the real Electron app in embedded-server mode, seeds data via the
  * PocketBase client, and captures 1920x1080 screenshots of every tab plus the
- * Settings accent picker and the five accent schemes into tmp/redesign-shots/.
+ * Settings accent picker and the accent scheme set into tmp/redesign-shots/.
  *
  * Not part of the default suite watchlist intent — run explicitly:
  *   npx playwright test tests/e2e/redesign-screenshots.spec.ts -c playwright.electron.config.ts
@@ -413,7 +413,18 @@ test.describe('Redesign screenshot harness', () => {
       await expect(
         window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
       ).toBeVisible();
-      for (const accent of ['red', 'blue', 'green', 'pink', 'purple'] as const) {
+      for (const accent of [
+        'red',
+        'orange',
+        'yellow',
+        'blue',
+        'cyan',
+        'green',
+        'lime',
+        'pink',
+        'purple',
+        'violet',
+      ] as const) {
         await setAccentViaStorage(window, accent);
         await expect
           .poll(() =>
