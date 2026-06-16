@@ -41,4 +41,24 @@ describe('TeamRow layout CSS', () => {
     expect(primaryNameRule).toContain('font-weight: 800');
     expect(primaryRoleRule).toContain('color: var(--team-color, var(--accent-bright))');
   });
+
+  it('defines larger readable type steps for standard and wall board display sizes', () => {
+    expect(onCallCss).toContain('.personnel-tab-root--display-standard .team-row-name');
+    expect(onCallCss).toContain('.popout-board--display-standard .team-row-name');
+    expect(onCallCss).toContain('font-size: var(--text-md)');
+    expect(onCallCss).toContain('.personnel-tab-root--display-standard .team-row-phone');
+    expect(onCallCss).toContain('.popout-board--display-standard .team-row-phone');
+    expect(onCallCss).toContain('font-size: var(--text-base)');
+    expect(onCallCss).toContain('.personnel-tab-root--display-wall .team-row-name');
+    expect(onCallCss).toContain('.popout-board--display-wall .team-row-name');
+    expect(onCallCss).toContain('font-size: var(--text-lg)');
+    expect(onCallCss).toContain('.personnel-tab-root--display-wall .team-row-phone');
+    expect(onCallCss).toContain('.popout-board--display-wall .team-row-phone');
+  });
+
+  it('keeps the board text size selector compact enough for the header', () => {
+    expect(onCallCss).toContain('.oncall-display-control');
+    expect(onCallCss).toContain('grid-template-columns: repeat(3, 28px)');
+    expect(onCallCss).toContain('height: 32px');
+  });
 });

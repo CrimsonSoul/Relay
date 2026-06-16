@@ -8,12 +8,16 @@ import { TactileButton } from './TactileButton';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import type { BoardSettingsState } from '../hooks/useAppData';
+import { DEFAULT_ON_CALL_DISPLAY_SIZE, type OnCallDisplaySize } from '../theme/onCallDisplay';
+import { OnCallDisplayControl } from './oncall/OnCallDisplayControl';
 
 interface PopoutBoardProps {
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
+  onCallDisplaySize?: OnCallDisplaySize;
+  onOnCallDisplaySizeChange?: (size: OnCallDisplaySize) => void;
 }
 
 export const PopoutBoard: React.FC<PopoutBoardProps> = ({
@@ -21,6 +25,8 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   contacts,
   boardSettings,
   onBoardSettingsChange,
+  onCallDisplaySize = DEFAULT_ON_CALL_DISPLAY_SIZE,
+  onOnCallDisplaySizeChange,
 }) => {
   const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, teamIdToName, tick } =
     usePersonnel(onCall, boardSettings, onBoardSettingsChange);
@@ -137,7 +143,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   return (
     <div
       ref={scrollContainerRef}
-      className={`popout-board${isKiosk ? ' popout-board--kiosk' : ''}`}
+      className={`popout-board popout-board--display-${onCallDisplaySize}${isKiosk ? ' popout-board--kiosk' : ''}`}
     >
       {isRemoteDragging && (
         <div className="popout-drag-overlay">
@@ -157,6 +163,7 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             </span>
             {renderAlerts()}
           </div>
+          <OnCallDisplayControl value={onCallDisplaySize} onChange={onOnCallDisplaySizeChange} />
           <TactileButton
             variant="ghost"
             onClick={() => setIsKiosk(true)}

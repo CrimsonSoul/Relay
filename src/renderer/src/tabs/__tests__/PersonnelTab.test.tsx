@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import type { OnCallRow, Contact } from '@shared/ipc';
@@ -310,6 +310,47 @@ describe('PersonnelTab — Pop Out button', () => {
 describe('PersonnelTab — team rendering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('marks the board root with the selected wall display size', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const { container } = render(
+      <PersonnelTab
+        onCall={defaultRows}
+        contacts={defaultContacts}
+        boardSettings={bs}
+        onCallDisplaySize="wall"
+      />,
+    );
+
+    expect(container.querySelector('.personnel-tab-root')?.className).toContain(
+      'personnel-tab-root--display-wall',
+    );
+  });
+
+  it('renders a compact board text size selector that reports wall selection', () => {
+    const bs = makeReadyBoardSettings(['network', 'database']);
+    const onOnCallDisplaySizeChange = vi.fn();
+    render(
+      <PersonnelTab
+        onCall={defaultRows}
+        contacts={defaultContacts}
+        boardSettings={bs}
+        onCallDisplaySize="standard"
+        onOnCallDisplaySizeChange={onOnCallDisplaySizeChange}
+      />,
+    );
+
+    const group = screen.getByRole('radiogroup', { name: 'On-call board text size' });
+    expect(within(group).getAllByRole('radio')).toHaveLength(3);
+    expect(within(group).getByRole('radio', { name: 'Standard' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'Wall' }));
+
+    expect(onOnCallDisplaySizeChange).toHaveBeenCalledWith('wall');
   });
 
   it('renders team cards for each team in the board settings', () => {

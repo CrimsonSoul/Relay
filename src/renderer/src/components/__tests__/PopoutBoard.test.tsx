@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Stable mock return value — avoids infinite re-render loops caused by
@@ -85,6 +85,35 @@ describe('PopoutBoard', () => {
   it('renders the board container', () => {
     const { container } = render(<PopoutBoard {...defaultProps} />);
     expect(container.querySelector('.popout-board')).toBeInTheDocument();
+  });
+
+  it('marks the popout board with the selected wall display size', () => {
+    const { container } = render(<PopoutBoard {...defaultProps} onCallDisplaySize="wall" />);
+    expect(container.querySelector('.popout-board')?.className).toContain(
+      'popout-board--display-wall',
+    );
+  });
+
+  it('renders a compact board text size selector that reports compact selection', () => {
+    const onOnCallDisplaySizeChange = vi.fn();
+    render(
+      <PopoutBoard
+        {...defaultProps}
+        onCallDisplaySize="wall"
+        onOnCallDisplaySizeChange={onOnCallDisplaySizeChange}
+      />,
+    );
+
+    const group = screen.getByRole('radiogroup', { name: 'On-call board text size' });
+    expect(within(group).getAllByRole('radio')).toHaveLength(3);
+    expect(within(group).getByRole('radio', { name: 'Wall' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+
+    fireEvent.click(within(group).getByRole('radio', { name: 'Compact' }));
+
+    expect(onOnCallDisplaySizeChange).toHaveBeenCalledWith('compact');
   });
 
   it('renders the collapsible header with week range', () => {

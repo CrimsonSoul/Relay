@@ -25,16 +25,27 @@ import {
   rectSortingStrategy,
 } from '@dnd-kit/sortable';
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
+import { OnCallDisplayControl } from '../components/oncall/OnCallDisplayControl';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import type { BoardSettingsState } from '../hooks/useAppData';
+import { DEFAULT_ON_CALL_DISPLAY_SIZE, type OnCallDisplaySize } from '../theme/onCallDisplay';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
-}> = ({ onCall, contacts, boardSettings, onBoardSettingsChange }) => {
+  onCallDisplaySize?: OnCallDisplaySize;
+  onOnCallDisplaySizeChange?: (size: OnCallDisplaySize) => void;
+}> = ({
+  onCall,
+  contacts,
+  boardSettings,
+  onBoardSettingsChange,
+  onCallDisplaySize = DEFAULT_ON_CALL_DISPLAY_SIZE,
+  onOnCallDisplaySizeChange,
+}) => {
   const {
     localOnCall,
     weekRange,
@@ -242,7 +253,10 @@ export const PersonnelTab: React.FC<{
   const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
-    <div ref={scrollContainerRef} className="personnel-tab-root">
+    <div
+      ref={scrollContainerRef}
+      className={`personnel-tab-root personnel-tab-root--display-${onCallDisplaySize}`}
+    >
       <CollapsibleHeader isCollapsed={isCollapsed}>
         <div className="oncall-header-info">
           <div className="oncall-header-stack">
@@ -251,6 +265,7 @@ export const PersonnelTab: React.FC<{
           </div>
           {renderAlerts()}
         </div>
+        <OnCallDisplayControl value={onCallDisplaySize} onChange={onOnCallDisplaySizeChange} />
         <TactileButton
           variant="ghost"
           onClick={handleCopyAllOnCall}

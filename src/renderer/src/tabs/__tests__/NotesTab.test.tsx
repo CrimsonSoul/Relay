@@ -218,9 +218,10 @@ describe('NotesTab', () => {
   it('should render the toolbar with font size toggle and new note button', () => {
     render(<NotesTab />);
     expect(screen.getByText('NEW NOTE')).toBeInTheDocument();
-    expect(screen.getByLabelText('Font size S')).toBeInTheDocument();
-    expect(screen.getByLabelText('Font size M')).toBeInTheDocument();
-    expect(screen.getByLabelText('Font size L')).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Notes text size' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Small' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Medium' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Large' })).toBeInTheDocument();
   });
 
   it('should render tag pills', () => {
@@ -576,13 +577,13 @@ describe('NotesTab', () => {
 
   it('should call setFontSize when font size button is clicked', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByLabelText('Font size S'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Small' }));
     expect(mockSetFontSize).toHaveBeenCalledWith('sm');
   });
 
   it('should call setFontSize for large', () => {
     render(<NotesTab />);
-    fireEvent.click(screen.getByLabelText('Font size L'));
+    fireEvent.click(screen.getByRole('radio', { name: 'Large' }));
     expect(mockSetFontSize).toHaveBeenCalledWith('lg');
   });
 

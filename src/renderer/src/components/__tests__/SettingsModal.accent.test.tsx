@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SettingsModal } from '../SettingsModal';
 
@@ -70,7 +70,9 @@ describe('SettingsModal — accent color picker', () => {
 
   it('renders radio buttons for every accent picker option', () => {
     render(<SettingsModal {...defaultProps} />);
-    const radios = screen.getAllByRole('radio');
+    const radios = within(screen.getByRole('radiogroup', { name: 'Accent color' })).getAllByRole(
+      'radio',
+    );
     expect(radios).toHaveLength(10);
     expect(screen.getByTitle('Yellow')).toBeInTheDocument();
     expect(screen.getByTitle('Cyan')).toBeInTheDocument();

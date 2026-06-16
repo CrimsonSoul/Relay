@@ -88,6 +88,13 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('does not render the on-call board size selector inside settings', () => {
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(screen.queryByRole('radiogroup', { name: 'On-call board size' })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: 'On-call board text size' })).toBeNull();
+  });
+
   it('shows "Open Data Manager..." when onOpenDataManager is provided', () => {
     const onOpenDataManager = vi.fn();
     render(<SettingsModal {...defaultProps} onOpenDataManager={onOpenDataManager} />);

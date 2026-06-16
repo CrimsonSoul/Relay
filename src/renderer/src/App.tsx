@@ -29,6 +29,13 @@ import {
   REMINDER_ALERT_LOAD_EVENT,
   type ReminderAlertLoadDetail,
 } from './services/reminderAlertLoadEvent';
+import {
+  getOnCallDisplaySizeFromStorageValue,
+  getStoredOnCallDisplaySize,
+  ON_CALL_DISPLAY_STORAGE_KEY,
+  setOnCallDisplaySize,
+  type OnCallDisplaySize,
+} from './theme/onCallDisplay';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -87,6 +94,24 @@ export function MainApp({
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
   const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
+  const [onCallDisplaySize, setOnCallDisplaySizeState] = useState<OnCallDisplaySize>(() =>
+    getStoredOnCallDisplaySize(),
+  );
+  const handleOnCallDisplaySizeChange = useCallback((size: OnCallDisplaySize) => {
+    setOnCallDisplaySize(size);
+    setOnCallDisplaySizeState(size);
+  }, []);
+
+  useEffect(() => {
+    const handleDisplaySizeStorage = (event: StorageEvent) => {
+      if (event.key !== ON_CALL_DISPLAY_STORAGE_KEY) return;
+      setOnCallDisplaySizeState(getOnCallDisplaySizeFromStorageValue(event.newValue));
+    };
+
+    globalThis.addEventListener('storage', handleDisplaySizeStorage);
+    return () => globalThis.removeEventListener('storage', handleDisplaySizeStorage);
+  }, []);
+
   const handleClientConnected = useCallback(
     (hostname: string) => showToast(`${hostname} connected`, 'info'),
     [showToast],
@@ -228,6 +253,8 @@ export function MainApp({
                   contacts={data.contacts}
                   boardSettings={boardSettings}
                   onBoardSettingsChange={setBoardSettings}
+                  onCallDisplaySize={onCallDisplaySize}
+                  onOnCallDisplaySizeChange={handleOnCallDisplaySizeChange}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -322,6 +349,8 @@ export function MainApp({
                       contacts={data.contacts}
                       boardSettings={boardSettings}
                       onBoardSettingsChange={setBoardSettings}
+                      onCallDisplaySize={onCallDisplaySize}
+                      onOnCallDisplaySizeChange={handleOnCallDisplaySizeChange}
                     />
                   </Suspense>
                 </ErrorBoundary>

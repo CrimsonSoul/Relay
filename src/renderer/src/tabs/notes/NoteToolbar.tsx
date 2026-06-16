@@ -1,4 +1,5 @@
 import React from 'react';
+import { SizeSegmentedControl } from '../../components/SizeSegmentedControl';
 import { TactileButton } from '../../components/TactileButton';
 import type { FontSize } from './types';
 
@@ -12,11 +13,11 @@ interface NoteToolbarProps {
   noteCount: number;
 }
 
-const FONT_SIZES: { value: FontSize; label: string }[] = [
-  { value: 'sm', label: 'S' },
-  { value: 'md', label: 'M' },
-  { value: 'lg', label: 'L' },
-];
+const FONT_SIZES = [
+  { id: 'sm', label: 'Small', shortLabel: 'S' },
+  { id: 'md', label: 'Medium', shortLabel: 'M' },
+  { id: 'lg', label: 'Large', shortLabel: 'L' },
+] as const;
 
 export const NoteToolbar: React.FC<NoteToolbarProps> = ({
   allTags,
@@ -30,23 +31,14 @@ export const NoteToolbar: React.FC<NoteToolbarProps> = ({
   return (
     <div className="note-toolbar">
       <div className="note-toolbar-row">
-        {/* Font size toggle */}
-        <div className="note-toolbar-fontsize">
-          <span className="note-toolbar-fontsize-label">Aa</span>
-          <div className="note-toolbar-fontsize-toggle">
-            {FONT_SIZES.map((fs) => (
-              <button
-                key={fs.value}
-                className={`note-toolbar-fontsize-btn${fontSize === fs.value ? ' is-active' : ''}`}
-                onClick={() => onFontSizeChange(fs.value)}
-                aria-label={`Font size ${fs.label}`}
-                title={`Font size ${fs.label}`}
-              >
-                {fs.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <SizeSegmentedControl<FontSize>
+          ariaLabel="Notes text size"
+          value={fontSize}
+          onChange={onFontSizeChange}
+          options={FONT_SIZES}
+          titleSuffix="notes text"
+          className="note-toolbar-fontsize"
+        />
 
         {/* New Note */}
         <TactileButton

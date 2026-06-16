@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp } from '../App';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 
+type OnCallDisplaySizeValue = 'compact' | 'standard' | 'wall';
+
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
 const mockGetPbConnection = vi.fn();
@@ -44,6 +46,14 @@ let lastSettingsModalProps: {
     openDashboard: (id: string) => Promise<boolean>;
     clearSession: () => Promise<boolean>;
   };
+} | null = null;
+let lastPersonnelTabProps: {
+  onCallDisplaySize?: string;
+  onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+} | null = null;
+let lastPopoutBoardProps: {
+  onCallDisplaySize?: string;
+  onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
 } | null = null;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
@@ -240,7 +250,16 @@ vi.mock('../tabs/ServersTab', () => ({
 }));
 
 vi.mock('../tabs/PersonnelTab', () => ({
-  PersonnelTab: () => <div data-testid="personnel-tab" />,
+  PersonnelTab: ({
+    onCallDisplaySize,
+    onOnCallDisplaySizeChange,
+  }: {
+    onCallDisplaySize?: string;
+    onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+  }) => {
+    lastPersonnelTabProps = { onCallDisplaySize, onOnCallDisplaySizeChange };
+    return <div data-testid="personnel-tab" />;
+  },
 }));
 
 vi.mock('../tabs/NotesTab', () => ({
@@ -290,7 +309,16 @@ vi.mock('../components/DataManagerModal', () => ({
 }));
 
 vi.mock('../components/PopoutBoard', () => ({
-  PopoutBoard: () => <div data-testid="popout-board" />,
+  PopoutBoard: ({
+    onCallDisplaySize,
+    onOnCallDisplaySizeChange,
+  }: {
+    onCallDisplaySize?: string;
+    onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+  }) => {
+    lastPopoutBoardProps = { onCallDisplaySize, onOnCallDisplaySizeChange };
+    return <div data-testid="popout-board" />;
+  },
 }));
 
 // ── mock app hooks ───────────────────────────────────────────────────────────
@@ -376,6 +404,9 @@ describe('MainApp', () => {
     mockSettingsOpen = false;
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastPersonnelTabProps = null;
+    lastPopoutBoardProps = null;
+    localStorage.removeItem('relay-oncall-display-size');
     mockUseDynatraceDashboards.mockReturnValue(mockDynatraceHookState);
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
@@ -515,6 +546,36 @@ describe('MainApp', () => {
     });
 
     expect(lastSettingsModalProps?.dynatrace).toBe(mockDynatraceHookState);
+  });
+
+  it('does not pass on-call board display controls to SettingsModal', async () => {
+    mockSettingsOpen = true;
+    renderApp();
+
+    await vi.waitFor(() => {
+      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+    });
+
+    expect('onCallDisplaySize' in (lastSettingsModalProps ?? {})).toBe(false);
+    expect('onOnCallDisplaySizeChange' in (lastSettingsModalProps ?? {})).toBe(false);
+  });
+
+  it('passes and persists the selected on-call board display size through the main board', async () => {
+    localStorage.setItem('relay-oncall-display-size', 'wall');
+    mockActiveTab = 'Personnel';
+
+    renderApp();
+
+    await vi.waitFor(() => {
+      expect(lastPersonnelTabProps?.onCallDisplaySize).toBe('wall');
+    });
+
+    act(() => {
+      lastPersonnelTabProps?.onOnCallDisplaySizeChange?.('compact');
+    });
+
+    expect(localStorage.getItem('relay-oncall-display-size')).toBe('compact');
+    expect(lastPersonnelTabProps?.onCallDisplaySize).toBe('compact');
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -725,10 +786,19 @@ describe('MainApp', () => {
   });
 
   it('renders popout board when popout param contains board', async () => {
+    localStorage.setItem('relay-oncall-display-size', 'wall');
     renderApp('?popout=board');
     await vi.waitFor(() => {
       expect(screen.getByTestId('popout-board')).toBeInTheDocument();
     });
+    expect(lastPopoutBoardProps?.onCallDisplaySize).toBe('wall');
+
+    act(() => {
+      lastPopoutBoardProps?.onOnCallDisplaySizeChange?.('standard');
+    });
+
+    expect(localStorage.getItem('relay-oncall-display-size')).toBe('standard');
+    expect(lastPopoutBoardProps?.onCallDisplaySize).toBe('standard');
   });
 });
 
