@@ -30,6 +30,10 @@ describe('accent theme', () => {
     expect(DEFAULT_ACCENT).toBe('red');
   });
 
+  it('uses the sampled bottle pink for the pink swatch', () => {
+    expect(ACCENT_SCHEMES.find((s) => s.id === 'pink')?.swatch).toBe('#d8b2b9');
+  });
+
   it('setAccent applies data-accent and persists', () => {
     setAccent('purple');
     expect(document.documentElement.getAttribute('data-accent')).toBe('purple');

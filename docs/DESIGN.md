@@ -4,9 +4,10 @@ Current visual and interaction conventions for the Relay renderer.
 
 ## Overview
 
-Relay uses the **Accent Ink** design language: a pure-black canvas, typography-first
-hierarchy through Outfit weight contrast, and a single swappable accent color as the
-only active-state signal. All tokens live in `src/renderer/src/styles/theme.css`.
+Relay uses the **Accent Ink** design language: a softened charcoal canvas,
+typography-first hierarchy through Outfit weight contrast, and a single swappable
+accent color as the only active-state signal. All tokens live in
+`src/renderer/src/styles/theme.css`.
 
 ## Source Of Truth
 
@@ -29,15 +30,16 @@ only active-state signal. All tokens live in `src/renderer/src/styles/theme.css`
 
 The design rests on four principles:
 
-1. **Pure-black canvas.** App background is `#000000`. Surfaces step up only slightly
-   (`#0a0a0a`, `#111111`). Elevated floating surfaces sit at `#161616`.
+1. **Softened charcoal canvas.** App background is `#09090b`. Surfaces step up
+   gently (`#111114`, `#19191d`). Elevated floating surfaces sit at `#222227`.
 2. **Typography-first hierarchy.** Weight contrast replaces surface contrast. Display
    headings use weight 200; body text uses 500; emphasis uses 700–800. No heading
    background fills.
-3. **Four text-dimming tiers.** Primary `#fff` → secondary `#bdbdbd` → tertiary
-   `#8a8a8a` → quaternary `#767676`. Quaternary is the legibility floor (≥ 4.5 : 1
-   on black); do not use a lighter shade for readable text.
-4. **1 px `#1d1d1d` dividers, edge-rails over boxes.** Horizontal rules and the
+3. **Four text-dimming tiers.** Primary `#eee9ec` -> secondary `#beb6bb` ->
+   tertiary `#928a90` -> quaternary `#847c82`. Quaternary is the legibility floor
+   (>= 4.5 : 1 on the charcoal canvas); do not use a lighter shade for readable
+   text.
+4. **1 px `#2b292e` dividers, edge-rails over boxes.** Horizontal rules and the
    `.ink-rail` left-border replace boxy card outlines wherever content allows.
 
 ---
@@ -80,7 +82,7 @@ background; existing components implement the same declarations locally — use 
 
 | Modifier   | Token                             | Meaning                           |
 | ---------- | --------------------------------- | --------------------------------- |
-| (default)  | `--color-border-strong` `#2a2a2a` | neutral, not active               |
+| (default)  | `--color-border-strong` `#39363c` | neutral, not active               |
 | `--accent` | swappable accent color            | active, selected, featured        |
 | `--alarm`  | `#ff4539` fixed                   | genuine problem or critical state |
 
@@ -94,7 +96,7 @@ but is superseded by `.ink-rail`.
 
 ## 4. Elevated-Surface Rule
 
-Boxes with a background fill (`#161616` + `1px #2a2a2a` border + shadow) are
+Boxes with a background fill (`#222227` + `1px #39363c` border + shadow) are
 reserved exclusively for **floating surfaces** that sit above the canvas:
 
 - Modals and confirm dialogs
@@ -104,11 +106,11 @@ reserved exclusively for **floating surfaces** that sit above the canvas:
 - Drag ghost elements
 
 Inline content areas (list rows, tab panels, cards in masonry, split-panel columns)
-use a transparent background against the `#000` canvas, differentiated only by
+use a transparent background against the `#09090b` canvas, differentiated only by
 typography weight and edge rails. Do not give inline surfaces an elevated background.
 
-The relevant token is `--color-bg-surface-elevated: #161616` combined with
-`--border-strong: 1px solid #2a2a2a` and an appropriate `--shadow-*` value.
+The relevant token is `--color-bg-surface-elevated: #222227` combined with
+`--border-strong: 1px solid #39363c` and an appropriate `--shadow-*` value.
 
 **Corner radius scales with surface size:** window-scale surfaces (modals,
 dialogs) keep their soft radius; control-scale floating surfaces (toasts,
@@ -133,7 +135,7 @@ Ten schemes are defined in `theme/accent.ts` (`ACCENT_SCHEMES`) and as
 | `cyan`   | Cyan                 | `#06b6d4`         |
 | `green`  | Green                | `#22c55e`         |
 | `lime`   | Lime                 | `#84cc16`         |
-| `pink`   | Pink                 | `#ec4899`         |
+| `pink`   | Pink                 | `#d8b2b9`         |
 | `purple` | Purple               | `#a855f7`         |
 | `violet` | Violet               | `#8b5cf6`         |
 
@@ -146,14 +148,14 @@ preferences so they stay distinguishable from the fixed `--alarm` red-orange
 `data-accent` on `<html>` switches the three base variables. All derived values
 recompute automatically:
 
-| Token             | Source                                                    |
-| ----------------- | --------------------------------------------------------- |
-| `--accent`        | scheme base color                                         |
-| `--accent-hover`  | lighter midtone                                           |
-| `--accent-bright` | brightest; used for text on dark (≥ 4.5 : 1 on `#000`)    |
-| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`      |
-| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`       |
-| `--on-accent`     | `#000000` — text/icon color on a filled accent background |
+| Token             | Source                                                     |
+| ----------------- | ---------------------------------------------------------- |
+| `--accent`        | scheme base color                                          |
+| `--accent-hover`  | lighter midtone                                            |
+| `--accent-bright` | brightest; used for text on dark (>= 4.5 : 1 on `#09090b`) |
+| `--accent-dim`    | `color-mix(in srgb, var(--accent) 12%, transparent)`       |
+| `--accent-subtle` | `color-mix(in srgb, var(--accent) 6%, transparent)`        |
+| `--on-accent`     | `#000000` — text/icon color on a filled accent background  |
 
 Legacy aliases (`--color-accent`, `--color-accent-hover`, etc.) forward to the live
 tokens and remain functional.
@@ -339,7 +341,7 @@ pre-redesign baseline.
 - Do not add custom button patterns when `TactileButton` already covers the case
 - Do not use `--accent` for severity or urgency semantics
 - Do not use `--alarm` decoratively (borders, section tints, unrelated highlights)
-- Do not give inline content surfaces an elevated (`#161616`) background fill
+- Do not give inline content surfaces an elevated (`#222227`) background fill
 
 ### Inline Style Exceptions
 
@@ -360,9 +362,10 @@ Static design values must stay in CSS.
   all interactive elements via `:focus-visible`
 - **Color + shape:** State must be communicated by at least two signals — color alone
   is insufficient. Rail color is supplemented by label text or icon change.
-- **Contrast floors:** Text quaternary (`#767676`) is the minimum for any readable
-  text on `#000`. Accent-bright colors in each scheme are verified ≥ 4.5 : 1 on
-  black. `--on-accent` (`#000`) on accent-fill buttons meets contrast requirements.
+- **Contrast floors:** Text quaternary (`#847c82`) is the minimum for any readable
+  text on `#09090b`. Accent-bright colors in each scheme are verified >= 4.5 : 1
+  on the charcoal canvas. `--on-accent` (`#000`) on accent-fill buttons meets
+  contrast requirements.
 - **Reduced motion:** Animations that flash or pulse (e.g., critical reminder overlay)
   include a `@media (prefers-reduced-motion: reduce)` override.
 - Clickable non-button elements need semantic ARIA roles and keyboard handlers.

@@ -25,4 +25,20 @@ describe('TeamRow layout CSS', () => {
     expect(statusRule).toContain('flex-wrap: wrap');
     expect(statusRule).toContain('justify-content: flex-end');
   });
+
+  it('highlights primary on-call rows with a quiet team-color tint', () => {
+    const primaryRule = ruleFor('.team-row--primary');
+    const primaryHoverRule = ruleFor('.team-row--primary:hover');
+    const primaryNameRule = ruleFor('.team-row--primary .team-row-name');
+    const primaryRoleRule = ruleFor('.team-row--primary .team-row-role');
+
+    expect(primaryRule).toContain(
+      'background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 9%, transparent)',
+    );
+    expect(primaryHoverRule).toContain(
+      'background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 13%, transparent)',
+    );
+    expect(primaryNameRule).toContain('font-weight: 800');
+    expect(primaryRoleRule).toContain('color: var(--team-color, var(--accent-bright))');
+  });
 });

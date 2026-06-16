@@ -2,24 +2,24 @@
   /* === Relay Theme === */
   /* Signal Sans — Signal Red Accent */
 
-  /* Background System — pure black canvas */
-  --color-bg-app: #000000;
-  --color-bg-surface: #0a0a0a;
-  --color-bg-surface-2: #111111;
-  --color-bg-surface-3: #161616;
-  --color-bg-surface-opaque: #0a0a0a;
-  --color-bg-surface-elevated: #161616;
+  /* Background System — softened charcoal canvas */
+  --color-bg-app: #09090b;
+  --color-bg-surface: #111114;
+  --color-bg-surface-2: #19191d;
+  --color-bg-surface-3: #222227;
+  --color-bg-surface-opaque: #111114;
+  --color-bg-surface-elevated: #222227;
   --color-bg-card: transparent;
-  --color-bg-card-hover: #111111;
-  --color-bg-sidebar: #000000;
-  --color-bg-chrome: #000000;
+  --color-bg-card-hover: #18181c;
+  --color-bg-sidebar: #0b0b0d;
+  --color-bg-chrome: #09090b;
   color-scheme: dark;
 
   /* Text — dimming tiers; quaternary is the legibility floor */
-  --color-text-primary: #ffffff;
-  --color-text-secondary: #bdbdbd;
-  --color-text-tertiary: #8a8a8a;
-  --color-text-quaternary: #767676;
+  --color-text-primary: #eee9ec;
+  --color-text-secondary: #beb6bb;
+  --color-text-tertiary: #928a90;
+  --color-text-quaternary: #847c82;
 
   /* Accent — swappable via data-accent on <html>; red is the default */
   --accent: #e63946;
@@ -70,25 +70,25 @@
   --info: #1565c0;
   --info-bright: #42a5f5;
 
-  /* Borders — opaque grays on black */
-  --color-border: #1d1d1d;
-  --color-border-subtle: #161616;
-  --color-border-medium: #1d1d1d;
-  --color-border-strong: #2a2a2a;
+  /* Borders — opaque grays on softened charcoal */
+  --color-border: #2b292e;
+  --color-border-subtle: #232126;
+  --color-border-medium: #2b292e;
+  --color-border-strong: #39363c;
   --color-border-accent: color-mix(in srgb, var(--accent) 30%, transparent);
-  --border-subtle: #161616;
-  --border-medium: 1px solid #1d1d1d;
-  --border-strong: 1px solid #2a2a2a;
+  --border-subtle: #232126;
+  --border-medium: 1px solid #2b292e;
+  --border-strong: 1px solid #39363c;
 
   /* Overlay / Interaction */
-  --color-hover-overlay: rgba(255, 255, 255, 0.04);
-  --color-hover-overlay-strong: rgba(255, 255, 255, 0.07);
-  --color-active-overlay: rgba(255, 255, 255, 0.1);
-  --color-backdrop: rgba(0, 0, 0, 0.8);
-  --color-divider: rgba(255, 255, 255, 0.025);
-  --color-focus-ring: rgba(255, 255, 255, 0.22);
-  --color-scrollbar: rgba(255, 255, 255, 0.22);
-  --color-scrollbar-hover: rgba(255, 255, 255, 0.35);
+  --color-hover-overlay: rgba(238, 233, 236, 0.045);
+  --color-hover-overlay-strong: rgba(238, 233, 236, 0.075);
+  --color-active-overlay: rgba(238, 233, 236, 0.105);
+  --color-backdrop: rgba(9, 9, 11, 0.82);
+  --color-divider: rgba(238, 233, 236, 0.032);
+  --color-focus-ring: rgba(238, 233, 236, 0.24);
+  --color-scrollbar: rgba(238, 233, 236, 0.22);
+  --color-scrollbar-hover: rgba(238, 233, 236, 0.36);
 
   /* Shadows */
   --shadow-xs: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -185,7 +185,7 @@
 
 /* === Accent Schemes (set via data-accent on <html>) ===
    Only the three base colors vary; dims derive via color-mix in :root.
-   Tuned for ≥4.5:1 of --accent-bright text on #000. */
+   Tuned for ≥4.5:1 of --accent-bright text on the charcoal canvas. */
 :root[data-accent='red'] {
   --accent: #e63946;
   --accent-hover: #f25c67;
@@ -231,9 +231,9 @@
 }
 
 :root[data-accent='pink'] {
-  --accent: #ec4899;
-  --accent-hover: #f472b6;
-  --accent-bright: #ff8cc6;
+  --accent: #d8b2b9;
+  --accent-hover: #e4c3ca;
+  --accent-bright: #f0d2d8;
 }
 
 :root[data-accent='purple'] {

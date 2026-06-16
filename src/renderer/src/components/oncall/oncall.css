@@ -216,6 +216,19 @@
   transition: background-color 0.2s ease;
 }
 
+.team-row--primary {
+  background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 9%, transparent);
+}
+
+.team-row--primary:hover {
+  background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 13%, transparent);
+}
+
+.team-row--primary.team-row--active,
+.team-row--primary.team-row--active:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 .team-row-top {
   display: flex;
   align-items: baseline;
@@ -294,6 +307,19 @@
 
 .team-row--active .team-row-name {
   color: var(--color-text-primary);
+}
+
+.team-row--primary .team-row-name {
+  color: var(--color-text-primary);
+  font-weight: 800;
+}
+
+.team-row--primary .team-row-role {
+  color: var(--team-color, var(--accent-bright));
+}
+
+.team-row--primary .team-row-phone {
+  color: var(--color-text-secondary);
 }
 
 /* Phone is reference data — clearly subordinate to the name */
