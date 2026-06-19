@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => {
   const mockWebContentsSetWindowOpenHandler = vi.fn();
   const mockWebContentsSend = vi.fn();
   const mockWebContentsSession = { setSpellCheckerLanguages: vi.fn() };
+  const mockSetZoomFactor = vi.fn();
+  const mockSetVisualZoomLevelLimits = vi.fn().mockResolvedValue(undefined);
   const mockLoadURL = vi.fn().mockResolvedValue(undefined);
   const mockLoadFile = vi.fn().mockResolvedValue(undefined);
   const mockShow = vi.fn();
@@ -23,6 +25,8 @@ const mocks = vi.hoisted(() => {
         setWindowOpenHandler: mockWebContentsSetWindowOpenHandler,
         send: mockWebContentsSend,
         session: mockWebContentsSession,
+        setZoomFactor: mockSetZoomFactor,
+        setVisualZoomLevelLimits: mockSetVisualZoomLevelLimits,
       },
       loadURL: mockLoadURL,
       loadFile: mockLoadFile,
@@ -42,6 +46,8 @@ const mocks = vi.hoisted(() => {
   return {
     mockWebContentsOn,
     mockWebContentsSetWindowOpenHandler,
+    mockSetZoomFactor,
+    mockSetVisualZoomLevelLimits,
     mockLoadURL,
     mockLoadFile,
     mockShow,
@@ -171,6 +177,38 @@ describe('windowFactory', () => {
       const result = handler({ url: 'https://evil.example.com' });
 
       expect(result).toEqual({ action: 'deny' });
+    });
+  });
+
+  describe('createWindow - locked zoom', () => {
+    it('resets the renderer zoom to 100% and disables visual zoom changes', async () => {
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.mockSetZoomFactor).toHaveBeenCalledWith(1);
+      expect(mocks.mockSetVisualZoomLevelLimits).toHaveBeenCalledWith(1, 1);
+    });
+
+    it('blocks keyboard zoom shortcuts while leaving other shortcuts alone', async () => {
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      const beforeInputCall = mocks.mockWebContentsOn.mock.calls.find(
+        (call: unknown[]) => call[0] === 'before-input-event',
+      );
+      expect(beforeInputCall).toBeDefined();
+      const handler = beforeInputCall![1];
+
+      const zoomEvent = { preventDefault: vi.fn() };
+      handler(zoomEvent, { type: 'keyDown', control: true, meta: false, key: '=', code: 'Equal' });
+
+      expect(zoomEvent.preventDefault).toHaveBeenCalledOnce();
+      expect(mocks.mockSetZoomFactor).toHaveBeenLastCalledWith(1);
+
+      const otherEvent = { preventDefault: vi.fn() };
+      handler(otherEvent, { type: 'keyDown', control: true, meta: false, key: 'c', code: 'KeyC' });
+
+      expect(otherEvent.preventDefault).not.toHaveBeenCalled();
     });
   });
 

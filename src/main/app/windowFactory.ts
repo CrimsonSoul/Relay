@@ -31,6 +31,42 @@ export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boole
   }
 }
 
+const LOCKED_ZOOM_FACTOR = 1;
+const ZOOM_SHORTCUT_KEYS = new Set(['+', '=', '-', '_', '0']);
+const ZOOM_SHORTCUT_CODES = new Set([
+  'Equal',
+  'Minus',
+  'Digit0',
+  'NumpadAdd',
+  'NumpadSubtract',
+  'Numpad0',
+]);
+
+function isZoomShortcut(input: Electron.Input): boolean {
+  if (input.type !== 'keyDown') return false;
+  if (!input.control && !input.meta) return false;
+  return ZOOM_SHORTCUT_KEYS.has(input.key) || ZOOM_SHORTCUT_CODES.has(input.code);
+}
+
+function lockWindowZoom(window: BrowserWindow): void {
+  const applyLockedZoom = () => {
+    window.webContents.setZoomFactor(LOCKED_ZOOM_FACTOR);
+    void window.webContents
+      .setVisualZoomLevelLimits(LOCKED_ZOOM_FACTOR, LOCKED_ZOOM_FACTOR)
+      .catch((error) => {
+        loggers.main.warn('Failed to lock visual zoom level', { error });
+      });
+  };
+
+  applyLockedZoom();
+  window.webContents.on('did-finish-load', applyLockedZoom);
+  window.webContents.on('before-input-event', (event, input) => {
+    if (!isZoomShortcut(input)) return;
+    event.preventDefault();
+    applyLockedZoom();
+  });
+}
+
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
 
@@ -59,6 +95,7 @@ export async function createWindow(): Promise<void> {
     },
   });
   setMainWindow(mainWindow);
+  lockWindowZoom(mainWindow);
 
   setupWindowListeners(mainWindow);
   attachWindowLifecycleListeners(mainWindow, { label: 'main', autoReload: true });
@@ -163,6 +200,7 @@ export async function createAuxWindow(route: string): Promise<void> {
   });
 
   setupWindowListeners(auxWindow);
+  lockWindowZoom(auxWindow);
   attachWindowLifecycleListeners(auxWindow, { label: `aux:${route}`, autoReload: true });
 
   // Track aux window and clean up on close

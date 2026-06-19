@@ -535,13 +535,13 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('clicking COPY FOR OUTLOOK sends a preview-sized capture to the clipboard', async () => {
+  it('clicking COPY FOR OUTLOOK sends a high-resolution capture to the clipboard', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
     await waitFor(() => {
       expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,OUTLOOK_SIZED_CAPTURE',
+        'data:image/png;base64,HIGH_RES_CAPTURE',
       );
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
@@ -551,7 +551,7 @@ describe('AlertsTab', () => {
           maxWidth: '640px',
         }),
       }),
-      expect.objectContaining({ scale: 1 }),
+      expect.objectContaining({ scale: 2 }),
     );
   });
 
