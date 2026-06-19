@@ -32,6 +32,7 @@ export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boole
 }
 
 const LOCKED_ZOOM_FACTOR = 1;
+const DEFAULT_MAIN_WINDOW_SIZE = { width: 960, height: 800 };
 const ZOOM_SHORTCUT_KEYS = new Set(['+', '=', '-', '_', '0']);
 const ZOOM_SHORTCUT_CODES = new Set([
   'Equal',
@@ -67,14 +68,33 @@ function lockWindowZoom(window: BrowserWindow): void {
   });
 }
 
+function getDevTestWindowSize(): { width: number; height: number } | null {
+  if (app.isPackaged) return null;
+
+  const value = process.env.RELAY_TEST_WINDOW_SIZE?.trim();
+  if (!value) return null;
+
+  const match = /^(\d{3,5})x(\d{3,5})$/i.exec(value);
+  if (!match) return null;
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isInteger(width) || !Number.isInteger(height)) return null;
+  if (width < 400 || height < 600 || width > 4096 || height > 4096) return null;
+
+  return { width, height };
+}
+
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
+  const devTestWindowSize = getDevTestWindowSize();
 
   const mainWindow = new BrowserWindow({
-    width: 960,
-    height: 800,
+    width: devTestWindowSize?.width ?? DEFAULT_MAIN_WINDOW_SIZE.width,
+    height: devTestWindowSize?.height ?? DEFAULT_MAIN_WINDOW_SIZE.height,
     minWidth: 400,
     minHeight: 600,
+    ...(devTestWindowSize && { useContentSize: true }),
     center: true,
     backgroundColor: '#060608',
     titleBarStyle: 'hidden',

@@ -108,6 +108,7 @@ describe('windowFactory', () => {
     mocks.resetLastOptions();
     mockState.mainWindow = null;
     delete process.env.ELECTRON_RENDERER_URL;
+    delete process.env.RELAY_TEST_WINDOW_SIZE;
   });
 
   describe('createWindow - security webPreferences', () => {
@@ -260,6 +261,35 @@ describe('windowFactory', () => {
       // Since ELECTRON_RENDERER_URL is undefined, isDev is false => loadFile
       expect(mocks.mockLoadFile).toHaveBeenCalled();
       expect(mocks.mockLoadURL).not.toHaveBeenCalled();
+    });
+
+    it('can simulate a dev-only logical test window size', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = false;
+      process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+      process.env.RELAY_TEST_WINDOW_SIZE = '1536x864';
+
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.getLastOptions()).toMatchObject({
+        width: 1536,
+        height: 864,
+        useContentSize: true,
+      });
+    });
+
+    it('ignores the logical test window size for packaged windows', async () => {
+      (app as unknown as Record<string, boolean>).isPackaged = true;
+      process.env.RELAY_TEST_WINDOW_SIZE = '1536x864';
+
+      const { createWindow } = await import('../windowFactory');
+      await createWindow();
+
+      expect(mocks.getLastOptions()).toMatchObject({
+        width: 960,
+        height: 800,
+      });
+      expect(mocks.getLastOptions()).not.toHaveProperty('useContentSize');
     });
   });
 

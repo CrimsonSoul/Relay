@@ -4,8 +4,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp } from '../App';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 
-type OnCallDisplaySizeValue = 'compact' | 'standard' | 'wall';
-
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
 const mockGetPbConnection = vi.fn();
@@ -48,12 +46,12 @@ let lastSettingsModalProps: {
   };
 } | null = null;
 let lastPersonnelTabProps: {
-  onCallDisplaySize?: string;
-  onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
 } | null = null;
 let lastPopoutBoardProps: {
-  onCallDisplaySize?: string;
-  onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
 } | null = null;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
@@ -251,13 +249,13 @@ vi.mock('../tabs/ServersTab', () => ({
 
 vi.mock('../tabs/PersonnelTab', () => ({
   PersonnelTab: ({
-    onCallDisplaySize,
-    onOnCallDisplaySizeChange,
+    onCallFontScale,
+    onOnCallFontScaleChange,
   }: {
-    onCallDisplaySize?: string;
-    onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+    onCallFontScale?: number;
+    onOnCallFontScaleChange?: (scale: number) => void;
   }) => {
-    lastPersonnelTabProps = { onCallDisplaySize, onOnCallDisplaySizeChange };
+    lastPersonnelTabProps = { onCallFontScale, onOnCallFontScaleChange };
     return <div data-testid="personnel-tab" />;
   },
 }));
@@ -310,13 +308,13 @@ vi.mock('../components/DataManagerModal', () => ({
 
 vi.mock('../components/PopoutBoard', () => ({
   PopoutBoard: ({
-    onCallDisplaySize,
-    onOnCallDisplaySizeChange,
+    onCallFontScale,
+    onOnCallFontScaleChange,
   }: {
-    onCallDisplaySize?: string;
-    onOnCallDisplaySizeChange?: (size: OnCallDisplaySizeValue) => void;
+    onCallFontScale?: number;
+    onOnCallFontScaleChange?: (scale: number) => void;
   }) => {
-    lastPopoutBoardProps = { onCallDisplaySize, onOnCallDisplaySizeChange };
+    lastPopoutBoardProps = { onCallFontScale, onOnCallFontScaleChange };
     return <div data-testid="popout-board" />;
   },
 }));
@@ -407,6 +405,7 @@ describe('MainApp', () => {
     lastPersonnelTabProps = null;
     lastPopoutBoardProps = null;
     localStorage.removeItem('relay-oncall-display-size');
+    localStorage.removeItem('relay-oncall-font-scale');
     mockUseDynatraceDashboards.mockReturnValue(mockDynatraceHookState);
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
@@ -556,26 +555,26 @@ describe('MainApp', () => {
       expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
     });
 
-    expect('onCallDisplaySize' in (lastSettingsModalProps ?? {})).toBe(false);
-    expect('onOnCallDisplaySizeChange' in (lastSettingsModalProps ?? {})).toBe(false);
+    expect('onCallFontScale' in (lastSettingsModalProps ?? {})).toBe(false);
+    expect('onOnCallFontScaleChange' in (lastSettingsModalProps ?? {})).toBe(false);
   });
 
-  it('passes and persists the selected on-call board display size through the main board', async () => {
-    localStorage.setItem('relay-oncall-display-size', 'wall');
+  it('passes and persists the selected on-call board font scale through the main board', async () => {
+    localStorage.setItem('relay-oncall-font-scale', '125');
     mockActiveTab = 'Personnel';
 
     renderApp();
 
     await vi.waitFor(() => {
-      expect(lastPersonnelTabProps?.onCallDisplaySize).toBe('wall');
+      expect(lastPersonnelTabProps?.onCallFontScale).toBe(125);
     });
 
     act(() => {
-      lastPersonnelTabProps?.onOnCallDisplaySizeChange?.('compact');
+      lastPersonnelTabProps?.onOnCallFontScaleChange?.(115);
     });
 
-    expect(localStorage.getItem('relay-oncall-display-size')).toBe('compact');
-    expect(lastPersonnelTabProps?.onCallDisplaySize).toBe('compact');
+    expect(localStorage.getItem('relay-oncall-font-scale')).toBe('115');
+    expect(lastPersonnelTabProps?.onCallFontScale).toBe(115);
   });
 
   it('opens settings on Cmd+, keydown', () => {
@@ -786,19 +785,19 @@ describe('MainApp', () => {
   });
 
   it('renders popout board when popout param contains board', async () => {
-    localStorage.setItem('relay-oncall-display-size', 'wall');
+    localStorage.setItem('relay-oncall-font-scale', '130');
     renderApp('?popout=board');
     await vi.waitFor(() => {
       expect(screen.getByTestId('popout-board')).toBeInTheDocument();
     });
-    expect(lastPopoutBoardProps?.onCallDisplaySize).toBe('wall');
+    expect(lastPopoutBoardProps?.onCallFontScale).toBe(130);
 
     act(() => {
-      lastPopoutBoardProps?.onOnCallDisplaySizeChange?.('standard');
+      lastPopoutBoardProps?.onOnCallFontScaleChange?.(100);
     });
 
-    expect(localStorage.getItem('relay-oncall-display-size')).toBe('standard');
-    expect(lastPopoutBoardProps?.onCallDisplaySize).toBe('standard');
+    expect(localStorage.getItem('relay-oncall-font-scale')).toBe('100');
+    expect(lastPopoutBoardProps?.onCallFontScale).toBe(100);
   });
 });
 

@@ -8,7 +8,11 @@ import { TactileButton } from './TactileButton';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import type { BoardSettingsState } from '../hooks/useAppData';
-import { DEFAULT_ON_CALL_DISPLAY_SIZE, type OnCallDisplaySize } from '../theme/onCallDisplay';
+import {
+  clampOnCallFontScale,
+  DEFAULT_ON_CALL_FONT_SCALE,
+  getOnCallBoardColumnMinWidth,
+} from '../theme/onCallDisplay';
 import { OnCallDisplayControl } from './oncall/OnCallDisplayControl';
 
 interface PopoutBoardProps {
@@ -16,8 +20,8 @@ interface PopoutBoardProps {
   contacts: Contact[];
   boardSettings: BoardSettingsState;
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
-  onCallDisplaySize?: OnCallDisplaySize;
-  onOnCallDisplaySizeChange?: (size: OnCallDisplaySize) => void;
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
 }
 
 export const PopoutBoard: React.FC<PopoutBoardProps> = ({
@@ -25,8 +29,8 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   contacts,
   boardSettings,
   onBoardSettingsChange,
-  onCallDisplaySize = DEFAULT_ON_CALL_DISPLAY_SIZE,
-  onOnCallDisplaySizeChange,
+  onCallFontScale = DEFAULT_ON_CALL_FONT_SCALE,
+  onOnCallFontScaleChange,
 }) => {
   const { localOnCall, weekRange, dismissedAlerts, dayOfWeek, teams, teamIdToName, tick } =
     usePersonnel(onCall, boardSettings, onBoardSettingsChange);
@@ -46,6 +50,15 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   useEffect(() => {
     setLastUpdated(new Date());
   }, [localOnCall]);
+
+  const effectiveOnCallFontScale = clampOnCallFontScale(onCallFontScale);
+  const boardStyle = useMemo(
+    () =>
+      ({
+        '--oncall-font-scale': String(effectiveOnCallFontScale / 100),
+      }) as React.CSSProperties,
+    [effectiveOnCallFontScale],
+  );
 
   const getTeamRows = useCallback(
     (teamId: string) => localOnCall.filter((r) => r.teamId === teamId),
@@ -88,11 +101,11 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
     if (!node) return;
     const width = node.clientWidth;
     if (width < 1) return;
-    const minCol = 320;
+    const minCol = getOnCallBoardColumnMinWidth(effectiveOnCallFontScale);
     const gap = 24;
     const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
     setColumnCount((prev) => (prev === next ? prev : next));
-  }, []);
+  }, [effectiveOnCallFontScale]);
 
   useEffect(() => {
     updateColumnCount();
@@ -143,7 +156,8 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
   return (
     <div
       ref={scrollContainerRef}
-      className={`popout-board popout-board--display-${onCallDisplaySize}${isKiosk ? ' popout-board--kiosk' : ''}`}
+      className={`popout-board${isKiosk ? ' popout-board--kiosk' : ''}`}
+      style={boardStyle}
     >
       {isRemoteDragging && (
         <div className="popout-drag-overlay">
@@ -163,7 +177,10 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
             </span>
             {renderAlerts()}
           </div>
-          <OnCallDisplayControl value={onCallDisplaySize} onChange={onOnCallDisplaySizeChange} />
+          <OnCallDisplayControl
+            value={effectiveOnCallFontScale}
+            onChange={onOnCallFontScaleChange}
+          />
           <TactileButton
             variant="ghost"
             onClick={() => setIsKiosk(true)}

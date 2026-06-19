@@ -86,6 +86,16 @@
 /* ===========================
    Popout Board
    =========================== */
+.personnel-tab-root,
+.popout-board {
+  --oncall-font-scale: 1;
+  --oncall-row-padding-y: clamp(6px, calc(7px * var(--oncall-font-scale)), 10px);
+  --oncall-name-font-size: clamp(16px, calc(18px * var(--oncall-font-scale)), 30px);
+  --oncall-phone-font-size: clamp(15px, calc(17px * var(--oncall-font-scale)), 28px);
+  --oncall-role-code-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
+  --oncall-secondary-font-size: clamp(11px, calc(12px * var(--oncall-font-scale)), 16px);
+}
+
 .popout-board {
   height: 100%;
   display: flex;
@@ -192,10 +202,11 @@
    ============================================================================ */
 
 .team-row {
-  padding: 8px 12px;
+  padding: var(--oncall-row-padding-y) 12px;
   border-bottom: 1px solid var(--color-border-subtle);
   transition: background 0.12s;
   position: relative;
+  container-type: inline-size;
 }
 
 .team-row:last-child {
@@ -229,12 +240,20 @@
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
+.team-row--backup {
+  background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 4%, transparent);
+}
+
+.team-row--backup:hover {
+  background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 8%, transparent);
+}
+
 .team-row-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 3px;
+  column-gap: 12px;
+  margin-bottom: 2px;
 }
 
 .team-row-bottom {
@@ -242,8 +261,14 @@
   grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
   align-items: center;
   column-gap: 12px;
-  font-size: 14px;
+  font-size: var(--oncall-secondary-font-size);
   min-width: 0;
+  margin-top: -1px;
+}
+
+.team-row-bottom--time-only {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: end;
 }
 
 .team-row-bottom > .tooltip-trigger {
@@ -256,10 +281,10 @@
 }
 
 .team-row-role {
-  font-size: var(--text-xs);
+  font-size: var(--oncall-secondary-font-size);
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   color: var(--color-text-tertiary);
   background: none;
   padding: 0;
@@ -278,7 +303,8 @@
 
 .team-row-name-wrapper .tooltip-trigger {
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
+  flex: 1 1 auto;
 }
 
 .team-row-active-indicator {
@@ -290,15 +316,47 @@
   animation: breathe 2.4s ease-in-out infinite;
 }
 
+.team-row-role-code {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: calc(var(--oncall-role-code-font-size) * 1.55);
+  padding: 0 5px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--oncall-role-code-font-size);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+.team-row-role-code--primary {
+  background: var(--accent-bright);
+  border-color: var(--accent-bright);
+  color: #000;
+}
+
+.team-row-role-code--backup {
+  background: var(--accent-dim);
+  border-color: transparent;
+  color: var(--accent-bright);
+}
+
 .team-row-name {
-  font-size: var(--text-base);
+  font-size: var(--oncall-name-font-size);
   font-weight: 700;
   color: var(--color-text-primary);
   display: block;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.12;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
 }
 
 .team-row-name--empty {
@@ -318,16 +376,12 @@
   color: var(--team-color, var(--accent-bright));
 }
 
-.team-row--primary .team-row-phone {
-  color: var(--color-text-secondary);
-}
-
-/* Phone is reference data — clearly subordinate to the name */
+/* Phone stays visually protected with the name; both are load-bearing board data. */
 .team-row-phone {
-  font-size: var(--text-sm);
+  font-size: var(--oncall-phone-font-size);
   font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: var(--color-text-tertiary);
+  font-weight: 700;
+  color: var(--color-text-secondary);
   background: transparent;
   border: none;
   padding: 0;
@@ -351,28 +405,44 @@
   color: var(--color-text-primary);
 }
 
-.oncall-display-control {
-  display: inline-grid;
-  grid-template-columns: repeat(3, 28px);
+.team-row--primary .team-row-phone {
+  color: var(--color-text-secondary);
+}
+
+@container (max-width: 320px) {
+  .team-row-top {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 3px;
+  }
+
+  .team-row-top > .tooltip-trigger:last-child {
+    justify-self: start;
+    margin-left: 42px;
+  }
+}
+
+.oncall-font-scale-control {
+  display: inline-flex;
   align-items: center;
+  gap: 6px;
   height: 32px;
-  padding: 2px;
+  padding: 0 6px;
   border: 1px solid var(--color-border-strong);
   border-radius: 2px;
   background: transparent;
   flex: 0 0 auto;
 }
 
-.oncall-display-option {
+.oncall-font-scale-button {
   width: 28px;
-  height: 26px;
+  height: 24px;
   border: 1px solid transparent;
   border-radius: 2px;
   background: transparent;
   color: var(--color-text-tertiary);
   font: inherit;
   font-size: var(--text-xs);
-  font-weight: 800;
+  font-weight: 900;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -381,60 +451,40 @@
     color var(--transition-fast);
 }
 
-.oncall-display-option:hover,
-.oncall-display-option:focus-visible {
+.oncall-font-scale-button:hover,
+.oncall-font-scale-button:focus-visible {
   color: var(--color-text-primary);
   background: var(--color-hover-overlay);
   outline: none;
 }
 
-.oncall-display-option--active,
-.oncall-display-option--active:hover,
-.oncall-display-option--active:focus-visible {
-  color: var(--color-text-primary);
-  background: var(--accent-subtle);
-  border-color: var(--accent);
+.oncall-font-scale-button:disabled {
+  color: var(--color-text-quaternary);
+  cursor: default;
+  background: transparent;
 }
 
-.personnel-tab-root--display-standard .team-row,
-.popout-board--display-standard .team-row {
-  padding: 9px 12px;
+.oncall-font-scale-slider {
+  width: 88px;
+  accent-color: var(--accent);
 }
 
-.personnel-tab-root--display-standard .team-row-name,
-.popout-board--display-standard .team-row-name {
-  font-size: var(--text-md);
-  line-height: 1.2;
+.oncall-font-scale-slider:disabled {
+  opacity: 0.55;
 }
 
-.personnel-tab-root--display-standard .team-row-phone,
-.popout-board--display-standard .team-row-phone {
-  font-size: var(--text-base);
-  font-weight: 600;
-  color: var(--color-text-secondary);
-}
-
-.personnel-tab-root--display-wall .team-row,
-.popout-board--display-wall .team-row {
-  padding: 10px 12px;
-}
-
-.personnel-tab-root--display-wall .team-row-name,
-.popout-board--display-wall .team-row-name {
-  font-size: var(--text-lg);
+.oncall-font-scale-value {
+  min-width: 42px;
+  text-align: right;
+  font-family: var(--font-family-mono);
+  font-size: var(--text-xs);
   font-weight: 800;
-  line-height: 1.18;
-}
-
-.personnel-tab-root--display-wall .team-row-phone,
-.popout-board--display-wall .team-row-phone {
-  font-size: var(--text-md);
-  font-weight: 600;
   color: var(--color-text-secondary);
+  line-height: 1;
 }
 
 .team-row-time-window {
-  font-size: var(--text-sm);
+  font-size: var(--oncall-secondary-font-size);
   font-variant-numeric: tabular-nums;
   color: var(--color-text-tertiary);
   min-width: 0;
@@ -462,14 +512,14 @@
 .team-row-active-pill {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 8px;
+  height: 18px;
+  padding: 0 7px;
   border-radius: 2px;
   background: var(--accent-dim);
   color: var(--accent-bright);
-  font-size: 11px;
+  font-size: var(--oncall-role-code-font-size);
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -669,7 +719,7 @@
   border: none;
   border-left: 4px solid var(--team-color-fill, var(--color-border-strong));
   border-radius: 0;
-  padding-left: 14px;
+  padding-left: 12px;
   overflow: hidden;
   transition:
     background-color 0.2s,
@@ -704,7 +754,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -724,8 +774,8 @@
 .team-health-badge {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 20px;
+  padding: 0 7px;
   border-radius: 2px;
   flex-shrink: 0;
   font-size: 11px;
@@ -847,7 +897,7 @@
 }
 
 .oncall-grid--kiosk .team-row-name {
-  font-size: var(--text-3xl);
+  font-size: max(var(--oncall-name-font-size), var(--text-xl));
 }
 
 .oncall-grid--kiosk .team-card-name {
@@ -882,7 +932,7 @@
 /* Masonry layout for team cards */
 .oncall-masonry {
   display: flex;
-  gap: 24px;
+  gap: 20px;
   padding: 4px 4px 40px;
   list-style: none;
   margin: 0;
@@ -896,7 +946,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 .oncall-masonry-item {

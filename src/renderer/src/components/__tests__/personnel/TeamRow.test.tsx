@@ -27,7 +27,7 @@ describe('TeamRow', () => {
     };
   });
 
-  it('renders the role label', () => {
+  it('renders primary as a compact role code without duplicating the full role label', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'Primary' })}
@@ -35,8 +35,8 @@ describe('TeamRow', () => {
         gridTemplate="auto 1fr auto"
       />,
     );
-    // getRoleLabel('Primary') → 'Primary'
-    expect(screen.getAllByText('Primary').length).toBeGreaterThan(0);
+    expect(screen.getByText('PRI')).toBeInTheDocument();
+    expect(screen.queryByText('Primary')).not.toBeInTheDocument();
   });
 
   it('renders the member name', () => {
@@ -112,7 +112,7 @@ describe('TeamRow', () => {
     ).toHaveBeenCalledWith('5551234567');
   });
 
-  it('shows Member label for unknown role', () => {
+  it('does not duplicate the generic member role label', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'member' })}
@@ -120,10 +120,11 @@ describe('TeamRow', () => {
         gridTemplate="auto 1fr auto"
       />,
     );
-    expect(screen.getAllByText('Member').length).toBeGreaterThan(0);
+    expect(screen.getByText('MEM')).toBeInTheDocument();
+    expect(screen.queryByText('Member')).not.toBeInTheDocument();
   });
 
-  it('shows Secondary label for secondary role', () => {
+  it('renders secondary as a compact backup code without duplicating the full role label', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'Secondary' })}
@@ -131,10 +132,24 @@ describe('TeamRow', () => {
         gridTemplate="auto 1fr auto"
       />,
     );
-    expect(screen.getAllByText('Secondary').length).toBeGreaterThan(0);
+    expect(screen.getByText('BKP')).toBeInTheDocument();
+    expect(screen.queryByText('Secondary')).not.toBeInTheDocument();
   });
 
-  it('keeps custom role labels when no mapping exists', () => {
+  it('uses a backup row treatment for backup/weekend coverage', () => {
+    const { container } = render(
+      <TeamRow
+        row={makeRow({ role: 'Backup/Weekend' })}
+        hasAnyTimeWindow={false}
+        gridTemplate="auto 1fr auto"
+      />,
+    );
+
+    expect(container.querySelector('.team-row')).toHaveClass('team-row--backup');
+    expect(screen.getByText('BKP')).toBeInTheDocument();
+  });
+
+  it('does not render individual title labels for custom roles', () => {
     render(
       <TeamRow
         row={makeRow({ role: 'Incident Commander' })}
@@ -142,6 +157,7 @@ describe('TeamRow', () => {
         gridTemplate="auto 1fr auto"
       />,
     );
-    expect(screen.getAllByText('Incident Commander').length).toBeGreaterThan(0);
+    expect(screen.getByText('MEM')).toBeInTheDocument();
+    expect(screen.queryByText('Incident Commander')).not.toBeInTheDocument();
   });
 });

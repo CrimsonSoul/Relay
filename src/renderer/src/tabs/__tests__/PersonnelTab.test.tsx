@@ -312,45 +312,41 @@ describe('PersonnelTab — team rendering', () => {
     vi.clearAllMocks();
   });
 
-  it('marks the board root with the selected wall display size', () => {
+  it('applies the selected board font scale as a scoped CSS variable', () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
     const { container } = render(
       <PersonnelTab
         onCall={defaultRows}
         contacts={defaultContacts}
         boardSettings={bs}
-        onCallDisplaySize="wall"
+        onCallFontScale={125}
       />,
     );
 
-    expect(container.querySelector('.personnel-tab-root')?.className).toContain(
-      'personnel-tab-root--display-wall',
-    );
+    expect(container.querySelector('.personnel-tab-root')).toHaveStyle({
+      '--oncall-font-scale': '1.25',
+    });
   });
 
-  it('renders a compact board text size selector that reports wall selection', () => {
+  it('renders an adjustable board font scale control that reports stepper changes', () => {
     const bs = makeReadyBoardSettings(['network', 'database']);
-    const onOnCallDisplaySizeChange = vi.fn();
+    const onOnCallFontScaleChange = vi.fn();
     render(
       <PersonnelTab
         onCall={defaultRows}
         contacts={defaultContacts}
         boardSettings={bs}
-        onCallDisplaySize="standard"
-        onOnCallDisplaySizeChange={onOnCallDisplaySizeChange}
+        onCallFontScale={125}
+        onOnCallFontScaleChange={onOnCallFontScaleChange}
       />,
     );
 
-    const group = screen.getByRole('radiogroup', { name: 'On-call board text size' });
-    expect(within(group).getAllByRole('radio')).toHaveLength(3);
-    expect(within(group).getByRole('radio', { name: 'Standard' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    const group = screen.getByRole('group', { name: 'On-call board font scale' });
+    expect(within(group).getByText('125%')).toBeInTheDocument();
 
-    fireEvent.click(within(group).getByRole('radio', { name: 'Wall' }));
+    fireEvent.click(within(group).getByRole('button', { name: 'Increase board font size' }));
 
-    expect(onOnCallDisplaySizeChange).toHaveBeenCalledWith('wall');
+    expect(onOnCallFontScaleChange).toHaveBeenCalledWith(130);
   });
 
   it('renders team cards for each team in the board settings', () => {

@@ -87,33 +87,29 @@ describe('PopoutBoard', () => {
     expect(container.querySelector('.popout-board')).toBeInTheDocument();
   });
 
-  it('marks the popout board with the selected wall display size', () => {
-    const { container } = render(<PopoutBoard {...defaultProps} onCallDisplaySize="wall" />);
-    expect(container.querySelector('.popout-board')?.className).toContain(
-      'popout-board--display-wall',
-    );
+  it('applies the selected board font scale as a scoped CSS variable', () => {
+    const { container } = render(<PopoutBoard {...defaultProps} onCallFontScale={125} />);
+    expect(container.querySelector('.popout-board')).toHaveStyle({ '--oncall-font-scale': '1.25' });
   });
 
-  it('renders a compact board text size selector that reports compact selection', () => {
-    const onOnCallDisplaySizeChange = vi.fn();
+  it('renders an adjustable board font scale control that reports slider changes', () => {
+    const onOnCallFontScaleChange = vi.fn();
     render(
       <PopoutBoard
         {...defaultProps}
-        onCallDisplaySize="wall"
-        onOnCallDisplaySizeChange={onOnCallDisplaySizeChange}
+        onCallFontScale={125}
+        onOnCallFontScaleChange={onOnCallFontScaleChange}
       />,
     );
 
-    const group = screen.getByRole('radiogroup', { name: 'On-call board text size' });
-    expect(within(group).getAllByRole('radio')).toHaveLength(3);
-    expect(within(group).getByRole('radio', { name: 'Wall' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    const group = screen.getByRole('group', { name: 'On-call board font scale' });
+    expect(within(group).getByText('125%')).toBeInTheDocument();
 
-    fireEvent.click(within(group).getByRole('radio', { name: 'Compact' }));
+    fireEvent.change(within(group).getByRole('slider', { name: 'Board font scale' }), {
+      target: { value: '130' },
+    });
 
-    expect(onOnCallDisplaySizeChange).toHaveBeenCalledWith('compact');
+    expect(onOnCallFontScaleChange).toHaveBeenCalledWith(130);
   });
 
   it('renders the collapsible header with week range', () => {

@@ -29,22 +29,26 @@ import { OnCallDisplayControl } from '../components/oncall/OnCallDisplayControl'
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import type { BoardSettingsState } from '../hooks/useAppData';
-import { DEFAULT_ON_CALL_DISPLAY_SIZE, type OnCallDisplaySize } from '../theme/onCallDisplay';
+import {
+  clampOnCallFontScale,
+  DEFAULT_ON_CALL_FONT_SCALE,
+  getOnCallBoardColumnMinWidth,
+} from '../theme/onCallDisplay';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
   contacts: Contact[];
   boardSettings: BoardSettingsState;
   onBoardSettingsChange?: (updater: (prev: BoardSettingsState) => BoardSettingsState) => void;
-  onCallDisplaySize?: OnCallDisplaySize;
-  onOnCallDisplaySizeChange?: (size: OnCallDisplaySize) => void;
+  onCallFontScale?: number;
+  onOnCallFontScaleChange?: (scale: number) => void;
 }> = ({
   onCall,
   contacts,
   boardSettings,
   onBoardSettingsChange,
-  onCallDisplaySize = DEFAULT_ON_CALL_DISPLAY_SIZE,
-  onOnCallDisplaySizeChange,
+  onCallFontScale = DEFAULT_ON_CALL_FONT_SCALE,
+  onOnCallFontScaleChange,
 }) => {
   const {
     localOnCall,
@@ -136,6 +140,15 @@ export const PersonnelTab: React.FC<{
     setLastUpdated(new Date());
   }, [localOnCall]);
 
+  const effectiveOnCallFontScale = clampOnCallFontScale(onCallFontScale);
+  const boardStyle = useMemo(
+    () =>
+      ({
+        '--oncall-font-scale': String(effectiveOnCallFontScale / 100),
+      }) as React.CSSProperties,
+    [effectiveOnCallFontScale],
+  );
+
   // Masonry column distribution
   const gridRef = React.useRef<HTMLUListElement | null>(null);
   const [columnCount, setColumnCount] = useState(3);
@@ -145,11 +158,11 @@ export const PersonnelTab: React.FC<{
     if (!node) return;
     const width = node.clientWidth;
     if (width < 1) return;
-    const minCol = 320;
+    const minCol = getOnCallBoardColumnMinWidth(effectiveOnCallFontScale);
     const gap = 24;
     const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
     setColumnCount((prev) => (prev === next ? prev : next));
-  }, []);
+  }, [effectiveOnCallFontScale]);
 
   React.useEffect(() => {
     updateColumnCount();
@@ -253,10 +266,7 @@ export const PersonnelTab: React.FC<{
   const isAnyModalOpen = !!(addTeamModal.isOpen || renamingTeam || confirmDelete);
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className={`personnel-tab-root personnel-tab-root--display-${onCallDisplaySize}`}
-    >
+    <div ref={scrollContainerRef} className="personnel-tab-root" style={boardStyle}>
       <CollapsibleHeader isCollapsed={isCollapsed}>
         <div className="oncall-header-info">
           <div className="oncall-header-stack">
@@ -265,7 +275,7 @@ export const PersonnelTab: React.FC<{
           </div>
           {renderAlerts()}
         </div>
-        <OnCallDisplayControl value={onCallDisplaySize} onChange={onOnCallDisplaySizeChange} />
+        <OnCallDisplayControl value={effectiveOnCallFontScale} onChange={onOnCallFontScaleChange} />
         <TactileButton
           variant="ghost"
           onClick={handleCopyAllOnCall}

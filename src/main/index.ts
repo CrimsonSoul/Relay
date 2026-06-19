@@ -55,6 +55,13 @@ validateEnv();
 const isCrashWatchdog = runCrashWatchdogIfRequested();
 
 const hardwareAccelerationDisabled = configureHardwareAcceleration(app);
+const devDeviceScaleFactor = process.env.RELAY_TEST_DEVICE_SCALE_FACTOR;
+if (!app.isPackaged && devDeviceScaleFactor) {
+  const parsedScaleFactor = Number(devDeviceScaleFactor);
+  if (Number.isFinite(parsedScaleFactor) && parsedScaleFactor > 0) {
+    app.commandLine.appendSwitch('force-device-scale-factor', String(parsedScaleFactor));
+  }
+}
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 }

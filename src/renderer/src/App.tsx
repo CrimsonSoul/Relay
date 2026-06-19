@@ -30,11 +30,10 @@ import {
   type ReminderAlertLoadDetail,
 } from './services/reminderAlertLoadEvent';
 import {
-  getOnCallDisplaySizeFromStorageValue,
-  getStoredOnCallDisplaySize,
-  ON_CALL_DISPLAY_STORAGE_KEY,
-  setOnCallDisplaySize,
-  type OnCallDisplaySize,
+  getOnCallFontScaleFromStorageValue,
+  getStoredOnCallFontScale,
+  ON_CALL_FONT_SCALE_STORAGE_KEY,
+  setOnCallFontScale,
 } from './theme/onCallDisplay';
 
 // Lazy-load helper for named exports
@@ -94,22 +93,20 @@ export function MainApp({
   const isDynatracePopout = popoutRoute === 'dynatrace';
   const dynatracePopoutName = searchParams.get('name')?.trim() || '';
   const dynatrace = useDynatraceDashboards(showToast, { enabled: !isPopout });
-  const [onCallDisplaySize, setOnCallDisplaySizeState] = useState<OnCallDisplaySize>(() =>
-    getStoredOnCallDisplaySize(),
-  );
-  const handleOnCallDisplaySizeChange = useCallback((size: OnCallDisplaySize) => {
-    setOnCallDisplaySize(size);
-    setOnCallDisplaySizeState(size);
+  const [onCallFontScale, setOnCallFontScaleState] = useState(() => getStoredOnCallFontScale());
+  const handleOnCallFontScaleChange = useCallback((scale: number) => {
+    setOnCallFontScale(scale);
+    setOnCallFontScaleState(getOnCallFontScaleFromStorageValue(scale));
   }, []);
 
   useEffect(() => {
-    const handleDisplaySizeStorage = (event: StorageEvent) => {
-      if (event.key !== ON_CALL_DISPLAY_STORAGE_KEY) return;
-      setOnCallDisplaySizeState(getOnCallDisplaySizeFromStorageValue(event.newValue));
+    const handleFontScaleStorage = (event: StorageEvent) => {
+      if (event.key !== ON_CALL_FONT_SCALE_STORAGE_KEY) return;
+      setOnCallFontScaleState(getOnCallFontScaleFromStorageValue(event.newValue));
     };
 
-    globalThis.addEventListener('storage', handleDisplaySizeStorage);
-    return () => globalThis.removeEventListener('storage', handleDisplaySizeStorage);
+    globalThis.addEventListener('storage', handleFontScaleStorage);
+    return () => globalThis.removeEventListener('storage', handleFontScaleStorage);
   }, []);
 
   const handleClientConnected = useCallback(
@@ -253,8 +250,8 @@ export function MainApp({
                   contacts={data.contacts}
                   boardSettings={boardSettings}
                   onBoardSettingsChange={setBoardSettings}
-                  onCallDisplaySize={onCallDisplaySize}
-                  onOnCallDisplaySizeChange={handleOnCallDisplaySizeChange}
+                  onCallFontScale={onCallFontScale}
+                  onOnCallFontScaleChange={handleOnCallFontScaleChange}
                 />
               </Suspense>
             </ErrorBoundary>
@@ -349,8 +346,8 @@ export function MainApp({
                       contacts={data.contacts}
                       boardSettings={boardSettings}
                       onBoardSettingsChange={setBoardSettings}
-                      onCallDisplaySize={onCallDisplaySize}
-                      onOnCallDisplaySizeChange={handleOnCallDisplaySizeChange}
+                      onCallFontScale={onCallFontScale}
+                      onOnCallFontScaleChange={handleOnCallFontScaleChange}
                     />
                   </Suspense>
                 </ErrorBoundary>

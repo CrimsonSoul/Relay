@@ -76,6 +76,31 @@ const setAccentViaStorage = async (window: Page, accent: string) => {
   }, accent);
 };
 
+const setOnCallFontScaleViaStorage = async (window: Page, scale: number) => {
+  await window.evaluate((nextScale) => {
+    localStorage.setItem('relay-oncall-font-scale', String(nextScale));
+    globalThis.dispatchEvent(
+      new globalThis.StorageEvent('storage', {
+        key: 'relay-oncall-font-scale',
+        newValue: String(nextScale),
+      }),
+    );
+  }, scale);
+};
+
+const expectNoEllipsizedOnCallNames = async (window: Page) => {
+  const ellipsizedNames = await window.evaluate(() => {
+    const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
+    return names
+      .filter((el) => {
+        const styles = globalThis.getComputedStyle(el);
+        return styles.overflow === 'hidden' || styles.textOverflow === 'ellipsis';
+      })
+      .map((el) => el.textContent?.trim());
+  });
+  expect(ellipsizedNames).toEqual([]);
+};
+
 const seedData = async (port: number) => {
   const pb = await makePbClient(port);
 
@@ -329,16 +354,15 @@ test.describe('Redesign screenshot harness', () => {
       await expect(
         window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
       ).toBeVisible();
-      // Layout contract: member names never wrap to a second line (ellipsize instead).
-      const wrappedNameCount = await window.evaluate(() => {
-        const names = Array.from(globalThis.document.querySelectorAll('.team-row-name'));
-        return names.filter((el) => {
-          const lineHeight = parseFloat(globalThis.getComputedStyle(el).lineHeight) || 0;
-          return lineHeight > 0 && el.scrollHeight > lineHeight * 1.5;
-        }).length;
-      });
-      expect(wrappedNameCount).toBe(0);
+      // Layout contract: member names remain fully visible instead of ellipsizing.
+      await expectNoEllipsizedOnCallNames(window);
       await shoot(window, 'oncall.png');
+      await setOnCallFontScaleViaStorage(window, 150);
+      await expect(window.locator('.oncall-font-scale-value')).toContainText('150%');
+      await expectNoEllipsizedOnCallNames(window);
+      await shoot(window, 'oncall-150.png');
+      await setOnCallFontScaleViaStorage(window, 100);
+      await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
 
       // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
       await window.getByRole('button', { name: 'COPY ALL' }).click();
@@ -437,6 +461,7 @@ test.describe('Redesign screenshot harness', () => {
       // --- Kiosk popout window ---
       await setAccentViaStorage(window, 'red');
       try {
+        await setOnCallFontScaleViaStorage(window, 150);
         const popoutPromise = electronApp.waitForEvent('window', { timeout: 20_000 });
         await window.getByRole('button', { name: 'Pop Out Board' }).click();
         const popout = await popoutPromise;
@@ -447,11 +472,15 @@ test.describe('Redesign screenshot harness', () => {
           wins[wins.length - 1]?.setSize(1920, 1080);
         });
         await expect(popout.locator('.popout-title')).toBeVisible({ timeout: 20_000 });
+        await expect(popout.locator('.oncall-font-scale-value')).toContainText('150%');
         await expect(popout.locator('body')).toContainText('Database Reliability');
+        await expectNoEllipsizedOnCallNames(popout);
         await shoot(popout, 'popout.png');
         await popout.close().catch(() => {});
       } catch (error) {
         console.warn('Popout capture skipped:', error);
+      } finally {
+        await setOnCallFontScaleViaStorage(window, 100);
       }
 
       // Reset accent to the default red before shutting down.
