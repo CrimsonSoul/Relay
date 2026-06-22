@@ -231,9 +231,9 @@
 }
 
 :root[data-accent='pink'] {
-  --accent: #e78aad;
-  --accent-hover: #f0a2bf;
-  --accent-bright: #ffc1d6;
+  --accent: #fc8da9;
+  --accent-hover: #ffa4ba;
+  --accent-bright: #ffc6d4;
 }
 
 :root[data-accent='purple'] {

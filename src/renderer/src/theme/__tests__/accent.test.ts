@@ -30,8 +30,8 @@ describe('accent theme', () => {
     expect(DEFAULT_ACCENT).toBe('red');
   });
 
-  it('uses the muted rose pink for the pink swatch', () => {
-    expect(ACCENT_SCHEMES.find((s) => s.id === 'pink')?.swatch).toBe('#e78aad');
+  it('uses the configured rose pink for the pink swatch', () => {
+    expect(ACCENT_SCHEMES.find((s) => s.id === 'pink')?.swatch).toBe('#fc8da9');
   });
 
   it('setAccent applies data-accent and persists', () => {

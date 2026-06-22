@@ -28,7 +28,7 @@ export const ACCENT_SCHEMES: AccentScheme[] = [
   { id: 'cyan', label: 'Cyan', swatch: '#06b6d4' },
   { id: 'green', label: 'Green', swatch: '#22c55e' },
   { id: 'lime', label: 'Lime', swatch: '#84cc16' },
-  { id: 'pink', label: 'Pink', swatch: '#e78aad' },
+  { id: 'pink', label: 'Pink', swatch: '#fc8da9' },
   { id: 'purple', label: 'Purple', swatch: '#a855f7' },
   { id: 'violet', label: 'Violet', swatch: '#8b5cf6' },
 ];
