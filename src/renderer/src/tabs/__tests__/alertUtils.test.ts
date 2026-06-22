@@ -100,6 +100,13 @@ describe('sanitizeHtml', () => {
     it('strips <a> tags but keeps text content', () => {
       expect(sanitizeHtml('<a href="http://evil.com">click</a>')).toBe('click');
     });
+
+    it('preserves the alert body image marker but strips arbitrary image classes', () => {
+      const image = 'data:image/jpeg;base64,abcd';
+      expect(
+        sanitizeHtml(`<img src="${image}" alt="Dashboard" class="alert-body-image evil">`),
+      ).toBe(`<img src="${image}" alt="Dashboard" class="alert-body-image">`);
+    });
   });
 
   describe('attributes stripped from allowed tags', () => {

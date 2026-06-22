@@ -14,7 +14,7 @@ import { z } from 'zod';
 const MAX_NAME = 500;
 const MAX_FIELD = 1000;
 const MAX_NOTE = 10000;
-const MAX_HTML_BODY = 50000;
+const MAX_HTML_BODY = 750000;
 const MAX_SEARCH = 2000;
 const MAX_ID = 200;
 const MAX_ARRAY_ITEMS = 500;

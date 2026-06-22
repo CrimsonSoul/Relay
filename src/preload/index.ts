@@ -78,6 +78,7 @@ const api: BridgeAPI = {
   selectReminderSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_SELECT_REMINDER_SOUND),
   saveAlertImage: (dataUrl, suggestedName) =>
     ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),
+  selectAlertBodyImage: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE),
   // Schedule Bridge (.ics)
   saveAndOpenIcs: (content) => ipcRenderer.invoke(IPC_CHANNELS.ICS_SAVE_AND_OPEN, content),
   saveCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_COMPANY_LOGO),

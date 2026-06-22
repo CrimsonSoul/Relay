@@ -4,6 +4,8 @@ import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
 
+const getBridge = () => window.bridge ?? window.api;
+
 export interface AlertBodyEditorHandle {
   setEditorContent: (html: string) => void;
 }
@@ -167,6 +169,20 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       },
       [updateActiveFormats],
     );
+
+    const insertAlertImage = useCallback(async () => {
+      const bridge = getBridge();
+      const result = await bridge?.selectAlertBodyImage?.();
+      if (!result?.success || !result.data) return;
+
+      editorRef.current?.focus();
+      const cleaned = sanitizeHtml(
+        `<p><img src="${result.data}" alt="Alert image" class="alert-body-image"></p>`,
+      );
+      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
+      document.execCommand('insertHTML', false, cleaned);
+      handleBodyInput();
+    }, [handleBodyInput]);
 
     const applyHighlight = useCallback(
       (type: HighlightType) => {
@@ -374,6 +390,33 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                   <line x1="9" y1="6" x2="21" y2="6" />
                   <line x1="9" y1="12" x2="21" y2="12" />
                   <line x1="9" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            </Tooltip>
+            <Tooltip content="Insert image">
+              <button
+                type="button"
+                className="alerts-fmt-btn"
+                title="Insert Image"
+                aria-label="Insert image"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  void insertAlertImage();
+                }}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <circle cx="8.5" cy="10" r="1.5" />
+                  <path d="M21 16l-5-5L5 19" />
                 </svg>
               </button>
             </Tooltip>

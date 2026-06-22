@@ -8,6 +8,7 @@ const mockNativeImage = {
   getSize: vi.fn(() => ({ width: 100, height: 100 })),
   resize: vi.fn(),
   toPNG: vi.fn(() => Buffer.from('png-data')),
+  toJPEG: vi.fn(() => Buffer.from('jpeg-data')),
 };
 // Make resize return a new image-like object
 mockNativeImage.resize.mockReturnValue(mockNativeImage);
@@ -1084,6 +1085,46 @@ describe('windowHandlers', () => {
     it('returns error for non-string dataUrl', async () => {
       const result = await handlers[IPC_CHANNELS.SAVE_ALERT_IMAGE]({}, 42, 'test.png');
       expect(result).toEqual({ success: false, error: 'Invalid image data' });
+    });
+  });
+
+  describe('SELECT_ALERT_BODY_IMAGE', () => {
+    it('returns a resized JPEG data URL for a selected image', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/dashboard.png'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
+      mockNativeImage.getSize.mockReturnValue({ width: 1200, height: 600 });
+
+      const result = await handlers[IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE]();
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith({
+        title: 'Insert Alert Image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        properties: ['openFile'],
+      });
+      expect(mockNativeImage.resize).toHaveBeenCalledWith({ width: 516 });
+      expect(mockNativeImage.toJPEG).toHaveBeenCalledWith(82);
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/jpeg;base64,' + Buffer.from('jpeg-data').toString('base64'),
+      });
+    });
+
+    it('rejects images over 5MB before reading', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/huge.png'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 5 * 1024 * 1024 + 1 } as never);
+
+      const result = await handlers[IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE]();
+
+      expect(result).toEqual({ success: false, error: 'Image must be under 5MB' });
+      expect(readFile).not.toHaveBeenCalledWith('/mock-dir/huge.png');
     });
   });
 

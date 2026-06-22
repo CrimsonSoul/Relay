@@ -23,6 +23,8 @@ const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
 
 const MAX_ICS_LENGTH = 1_048_576; // 1MB
+const MAX_ALERT_BODY_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB before resize/compression
+const MAX_ALERT_BODY_IMAGE_WIDTH = 516;
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
 
@@ -195,6 +197,49 @@ export function setupWindowHandlers(
         error: getErrorMessage(err),
       });
       return { success: false, error: err instanceof Error ? err.message : 'Selection failed' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE)) {
+      return { success: false, error: 'Untrusted sender' };
+    }
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Insert Alert Image',
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
+
+      const selectedFile = filePaths[0];
+      const fileStat = await stat(selectedFile);
+      if (fileStat.size > MAX_ALERT_BODY_IMAGE_SIZE) {
+        return { success: false, error: 'Image must be under 5MB' };
+      }
+
+      const buf = await readFile(selectedFile);
+      let image = nativeImage.createFromBuffer(buf);
+      if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
+
+      const { width } = image.getSize();
+      if (width > MAX_ALERT_BODY_IMAGE_WIDTH) {
+        image = image.resize({ width: MAX_ALERT_BODY_IMAGE_WIDTH });
+      }
+
+      const jpegBuffer = image.toJPEG(82);
+      return {
+        success: true,
+        data: 'data:image/jpeg;base64,' + jpegBuffer.toString('base64'),
+      };
+    } catch (err) {
+      loggers.ipc.warn('Alert body image selection failed', {
+        error: getErrorMessage(err),
+      });
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Image selection failed',
+      };
     }
   });
 

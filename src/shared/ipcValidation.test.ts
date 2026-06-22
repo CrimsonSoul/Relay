@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SearchQuerySchema, LogEntrySchema } from './ipcValidation';
+import { SearchQuerySchema, LogEntrySchema, AlertHistoryEntrySchema } from './ipcValidation';
 
 describe('SearchQuerySchema', () => {
   it('accepts valid queries', () => {
@@ -49,5 +49,20 @@ describe('LogEntrySchema', () => {
     expect(
       LogEntrySchema.safeParse({ level: 'INFO', module: 'a'.repeat(101), message: 'm' }).success,
     ).toBe(false);
+  });
+});
+
+describe('AlertHistoryEntrySchema', () => {
+  it('accepts alert body HTML with an embedded compressed image', () => {
+    const image = 'data:image/jpeg;base64,' + 'a'.repeat(180000);
+    const result = AlertHistoryEntrySchema.safeParse({
+      severity: 'INFO',
+      subject: 'Dashboard snapshot',
+      bodyHtml: `<p><img src="${image}" alt="Dashboard" class="alert-body-image"></p>`,
+      sender: 'NOC',
+      recipient: 'All Employees',
+    });
+
+    expect(result.success).toBe(true);
   });
 });

@@ -70,7 +70,23 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-/** Strip all HTML tags except basic formatting (b, i, u, em, strong, br, p). */
+function escapeHtmlAttribute(text: string): string {
+  return escapeHtml(text).replaceAll("'", '&#39;');
+}
+
+function isAllowedDataImage(src: string): boolean {
+  return /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src);
+}
+
+function renderDataImage(el: Element): string | null {
+  const src = el.getAttribute('src')?.trim() ?? '';
+  if (!isAllowedDataImage(src)) return null;
+  const alt = el.getAttribute('alt')?.trim() ?? '';
+  const className = el.classList.contains('alert-body-image') ? ' class="alert-body-image"' : '';
+  return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}"${className}>`;
+}
+
+/** Strip unsafe HTML while keeping alert formatting, highlights, and inline data images. */
 export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const walk = (node: Node): string => {
@@ -90,6 +106,9 @@ export function sanitizeHtml(html: string): string {
       if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
         return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
       }
+    }
+    if (tag === 'img') {
+      return renderDataImage(el) ?? '';
     }
     return children;
   };

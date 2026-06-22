@@ -853,6 +853,21 @@
   pointer-events: none;
 }
 
+.alerts-editable-body img {
+  display: block;
+  width: 100%;
+  max-width: 516px;
+  height: auto;
+  margin: 12px 0;
+  border: 1px solid var(--color-border-strong);
+  background: #ffffff;
+}
+
+.alerts-editable-body img.alert-body-image {
+  box-sizing: border-box;
+  object-fit: contain;
+}
+
 /* Severity Grid — square chips in FIXED severity tokens (never themed):
    ISSUE = alarm, MAINTENANCE = warning, RESOLVED = ok, INFO = solid white. */
 
@@ -1103,6 +1118,21 @@
 
 .alerts-email-body li {
   margin: 4px 0;
+}
+
+.alerts-email-body img {
+  display: block;
+  width: 100%;
+  max-width: 516px;
+  height: auto;
+  margin: 17px 0 18px;
+  border: 1px solid #d7d7dc;
+  background: #ffffff;
+}
+
+.alerts-email-body img.alert-body-image {
+  box-sizing: border-box;
+  object-fit: contain;
 }
 
 .alerts-email-body.empty {

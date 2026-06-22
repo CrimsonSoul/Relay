@@ -6,6 +6,7 @@ declare global {
   var api: BridgeAPI | undefined;
   interface Window {
     api?: BridgeAPI;
+    bridge?: BridgeAPI;
   }
 }
 

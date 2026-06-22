@@ -55,6 +55,12 @@ const defaultProps = {
 beforeEach(() => {
   document.execCommand = vi.fn().mockReturnValue(true);
   document.queryCommandState = vi.fn().mockReturnValue(false);
+  Object.defineProperty(window, 'bridge', {
+    configurable: true,
+    value: {
+      selectAlertBodyImage: vi.fn(),
+    },
+  });
 });
 
 describe('AlertBodyEditor', () => {
@@ -102,6 +108,7 @@ describe('AlertBodyEditor', () => {
     );
     expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Insert image' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compact message' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -211,6 +218,51 @@ describe('AlertBodyEditor', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     fireEvent.mouseDown(screen.getByTitle('Numbered List'));
     expect(document.execCommand).toHaveBeenCalledWith('insertOrderedList');
+  });
+
+  it('selects and inserts an alert image block through the toolbar', async () => {
+    const selectedImage = 'data:image/jpeg;base64,SEL';
+    const bridge = window.bridge as NonNullable<typeof window.bridge>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+      success: true,
+      data: selectedImage,
+    });
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    });
+
+    await vi.waitFor(() => {
+      expect(document.execCommand).toHaveBeenCalledWith(
+        'insertHTML',
+        false,
+        `<p><img src="${selectedImage}" alt="Alert image" class="alert-body-image"></p>`,
+      );
+    });
+    expect(defaultProps.setBodyHtml).toHaveBeenCalled();
+  });
+
+  it('does nothing when image selection is cancelled', async () => {
+    const bridge = window.bridge as NonNullable<typeof window.bridge>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+      success: false,
+      error: 'Cancelled',
+    });
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    });
+
+    await vi.waitFor(() => {
+      expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    });
+    expect(document.execCommand).not.toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('<img'),
+    );
   });
 
   it('handles paste with HTML content', () => {
