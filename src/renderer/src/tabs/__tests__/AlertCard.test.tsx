@@ -89,22 +89,6 @@ describe('AlertCard', () => {
     expect(body).not.toHaveClass('empty');
   });
 
-  it('renders image-only body content instead of the placeholder', () => {
-    render(
-      <AlertCard
-        {...makeProps({
-          bodyHtml:
-            '<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="Dashboard screenshot"></p>',
-        })}
-      />,
-    );
-
-    const body = document.querySelector('.alerts-email-body');
-    expect(body?.innerHTML).toContain('alt="Dashboard screenshot"');
-    expect(body?.innerHTML).not.toContain('Your message will appear here...');
-    expect(body).not.toHaveClass('empty');
-  });
-
   it('applies the selected alert body font size class', () => {
     render(<AlertCard {...makeProps({ alertBodyFontSize: 'large' })} />);
 
@@ -124,8 +108,6 @@ describe('AlertCard', () => {
     const layoutRule = /\.alerts-layout\s*\{[^}]*\}/m.exec(css)?.[0];
     const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
     const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
-    const bannerRule = /\.alerts-email-severity-header\s*\{[^}]*\}/m.exec(css)?.[0];
-    const titleRule = /\.alerts-email-header\s*\{[^}]*\}/m.exec(css)?.[0];
 
     expect(layoutRule).toContain('minmax(500px, 704px)');
     expect(scrollRule).toContain('overflow: auto');
@@ -133,9 +115,6 @@ describe('AlertCard', () => {
     expect(cardRule).toContain('min-width: 640px');
     expect(cardRule).toContain('max-width: 640px');
     expect(cardRule).toContain('box-sizing: border-box');
-    expect(cardRule).toContain('font-family: Arial, Helvetica, sans-serif');
-    expect(bannerRule).toContain('padding: 16px 36px 18px');
-    expect(titleRule).toContain('padding: 24px 36px 26px');
   });
 
   it('defines a taller minimum body height for alerts', () => {
@@ -348,6 +327,13 @@ describe('AlertCard', () => {
     vi.stubGlobal('Image', origImage);
   });
 
+  it('applies badge CSS variables for each severity', () => {
+    const { container } = render(<AlertCard {...makeProps({ severity: 'RESOLVED' })} />);
+    const card = container.querySelector('.alerts-email-card') as HTMLElement;
+    expect(card.style.getPropertyValue('--email-badge-bg')).toBeTruthy();
+    expect(card.style.getPropertyValue('--email-badge-text')).toBeTruthy();
+  });
+
   it('renders EventTimeBanner with both start and end time', () => {
     render(
       <AlertCard
@@ -360,9 +346,10 @@ describe('AlertCard', () => {
     expect(screen.getByTestId('event-time-banner')).toBeInTheDocument();
   });
 
-  it('does not render the old preview-only center badge', () => {
+  it('renders severity icon', () => {
     const { container } = render(<AlertCard {...makeProps({ severity: 'ISSUE' })} />);
-    expect(container.querySelector('.alerts-email-icon')).not.toBeInTheDocument();
-    expect(container.querySelector('.alerts-email-icon-wrapper')).not.toBeInTheDocument();
+    const iconWrapper = container.querySelector('.alerts-email-icon');
+    expect(iconWrapper).toBeInTheDocument();
+    expect(iconWrapper?.innerHTML).toBeTruthy();
   });
 });

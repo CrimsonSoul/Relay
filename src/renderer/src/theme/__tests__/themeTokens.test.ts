@@ -27,11 +27,11 @@ describe('theme tokens', () => {
     expect(cssVar('--color-text-quaternary')).toBe('#847c82');
   });
 
-  it('maps the pink accent tokens to a clear muted rose family', () => {
+  it('maps the pink accent tokens to the sampled bottle pink family', () => {
     const pinkRule = ruleFor(":root[data-accent='pink']");
 
-    expect(pinkRule).toContain('--accent: #e78aad');
-    expect(pinkRule).toContain('--accent-hover: #f0a2bf');
-    expect(pinkRule).toContain('--accent-bright: #ffc1d6');
+    expect(pinkRule).toContain('--accent: #d8b2b9');
+    expect(pinkRule).toContain('--accent-hover: #e4c3ca');
+    expect(pinkRule).toContain('--accent-bright: #f0d2d8');
   });
 });

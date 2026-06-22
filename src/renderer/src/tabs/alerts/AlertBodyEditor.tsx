@@ -4,8 +4,6 @@ import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
 
-const MAX_PASTED_IMAGE_BYTES = 3 * 1024 * 1024;
-
 export interface AlertBodyEditorHandle {
   setEditorContent: (html: string) => void;
 }
@@ -40,27 +38,6 @@ const removeEmptyHighlights = (root: ParentNode) => {
     if (!nodeHasContent(element)) element.remove();
   });
 };
-
-const normalizeSafeHref = (rawHref: string): string | null => {
-  const trimmed = rawHref.trim();
-  if (!trimmed) return null;
-  const withProtocol = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const parsed = new URL(withProtocol);
-    if (!['https:', 'http:', 'mailto:', 'tel:', 'msteams:'].includes(parsed.protocol)) return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-};
-
-const readFileAsDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ''));
-    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'));
-    reader.readAsDataURL(file);
-  });
 
 const getHighlightsIntersectingRange = (range: Range, editorRoot: HTMLElement) =>
   Array.from(editorRoot.querySelectorAll<HTMLElement>('[data-hl]')).filter((element) =>
@@ -133,17 +110,11 @@ const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLEle
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
   ({ setBodyHtml, isCompact, onToggleCompact, isEnhanced, onToggleEnhanced }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
-    const linkInputRef = useRef<HTMLInputElement>(null);
-    const linkRangeRef = useRef<Range | null>(null);
-    const linkInputId = React.useId();
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
       italic: false,
       underline: false,
     });
-    const [isLinkEditorOpen, setIsLinkEditorOpen] = useState(false);
-    const [linkValue, setLinkValue] = useState('');
-    const [linkError, setLinkError] = useState('');
 
     React.useImperativeHandle(ref, () => ({
       setEditorContent(html: string) {
@@ -155,32 +126,14 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       setBodyHtml(editorRef.current?.innerHTML ?? '');
     }, [setBodyHtml]);
 
-    const handlePaste = useCallback(
-      (e: React.ClipboardEvent<HTMLDivElement>) => {
-        e.preventDefault();
-        const pastedImage = Array.from(e.clipboardData.items ?? [])
-          .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
-          ?.getAsFile();
-
-        if (pastedImage && pastedImage.size <= MAX_PASTED_IMAGE_BYTES) {
-          void readFileAsDataUrl(pastedImage).then((dataUrl) => {
-            const cleaned = sanitizeHtml(`<img src="${dataUrl}" alt="Pasted alert image">`);
-            // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
-            document.execCommand('insertHTML', false, cleaned);
-            handleBodyInput();
-          });
-          return;
-        }
-
-        const html = e.clipboardData.getData('text/html');
-        const plain = e.clipboardData.getData('text/plain');
-        const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
-        // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
-        document.execCommand('insertHTML', false, cleaned);
-        handleBodyInput();
-      },
-      [handleBodyInput],
-    );
+    const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const html = e.clipboardData.getData('text/html');
+      const plain = e.clipboardData.getData('text/plain');
+      const cleaned = html ? sanitizeHtml(html) : escapeHtml(plain).replaceAll('\n', '<br>');
+      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
+      document.execCommand('insertHTML', false, cleaned);
+    }, []);
 
     const updateActiveFormats = useCallback(() => {
       /* eslint-disable sonarjs/deprecation -- queryCommandState is the only way to check formatting in contentEditable */
@@ -205,10 +158,6 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       return () => document.removeEventListener('selectionchange', handler);
     }, [updateActiveFormats]);
 
-    useEffect(() => {
-      if (isLinkEditorOpen) linkInputRef.current?.focus();
-    }, [isLinkEditorOpen]);
-
     const applyFormat = useCallback(
       (cmd: string) => {
         editorRef.current?.focus();
@@ -218,55 +167,6 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       },
       [updateActiveFormats],
     );
-
-    const closeLinkEditor = useCallback(() => {
-      setIsLinkEditorOpen(false);
-      setLinkValue('');
-      setLinkError('');
-      linkRangeRef.current = null;
-    }, []);
-
-    const openLinkEditor = useCallback(() => {
-      const selection = globalThis.getSelection();
-      const editor = editorRef.current;
-      if (selection && selection.rangeCount > 0 && editor) {
-        const range = selection.getRangeAt(0);
-        linkRangeRef.current = editor.contains(range.commonAncestorContainer)
-          ? range.cloneRange()
-          : null;
-      } else {
-        linkRangeRef.current = null;
-      }
-      setLinkValue('');
-      setLinkError('');
-      setIsLinkEditorOpen(true);
-    }, []);
-
-    const applyLink = useCallback(() => {
-      const href = normalizeSafeHref(linkValue);
-      if (!href) {
-        setLinkError('Enter a valid link');
-        return;
-      }
-
-      const editor = editorRef.current;
-      editor?.focus();
-      const selection = globalThis.getSelection();
-      const range = linkRangeRef.current;
-      if (selection && range && editor?.contains(range.commonAncestorContainer)) {
-        try {
-          selection.removeAllRanges();
-          selection.addRange(range);
-        } catch {
-          linkRangeRef.current = null;
-        }
-      }
-
-      // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to create links in contentEditable
-      document.execCommand('createLink', false, href);
-      closeLinkEditor();
-      handleBodyInput();
-    }, [closeLinkEditor, handleBodyInput, linkValue]);
 
     const applyHighlight = useCallback(
       (type: HighlightType) => {
@@ -477,33 +377,6 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
                 </svg>
               </button>
             </Tooltip>
-            <Tooltip content="Insert link">
-              <button
-                type="button"
-                className={`alerts-fmt-btn${isLinkEditorOpen ? ' active' : ''}`}
-                title="Insert Link"
-                aria-label="Insert link"
-                aria-expanded={isLinkEditorOpen}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  openLinkEditor();
-                }}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.43" />
-                  <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.33-1.33" />
-                </svg>
-              </button>
-            </Tooltip>
             <span className="alerts-fmt-separator" />
             <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
             <span className="alerts-fmt-separator" />
@@ -563,49 +436,6 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
               </button>
             </Tooltip>
           </div>
-          {isLinkEditorOpen && (
-            <form
-              className="alerts-link-editor"
-              aria-label="Insert link URL"
-              onSubmit={(e) => {
-                e.preventDefault();
-                applyLink();
-              }}
-            >
-              <label className="alerts-link-editor-label" htmlFor={linkInputId}>
-                Link URL
-              </label>
-              <input
-                id={linkInputId}
-                ref={linkInputRef}
-                className="alerts-link-editor-input"
-                value={linkValue}
-                placeholder="https://example.com"
-                aria-invalid={linkError ? 'true' : undefined}
-                onChange={(e) => {
-                  setLinkValue(e.target.value);
-                  if (linkError) setLinkError('');
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.preventDefault();
-                    closeLinkEditor();
-                  }
-                }}
-              />
-              <button type="submit" className="alerts-link-editor-action" aria-label="Apply link">
-                Apply
-              </button>
-              <button
-                type="button"
-                className="alerts-link-editor-action alerts-link-editor-action-secondary"
-                onClick={closeLinkEditor}
-              >
-                Cancel
-              </button>
-              {linkError && <span className="alerts-link-editor-error">{linkError}</span>}
-            </form>
-          )}
           <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
             ref={editorRef}
             className="alerts-editable-body"

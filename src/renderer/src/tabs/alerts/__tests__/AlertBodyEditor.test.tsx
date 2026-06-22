@@ -102,7 +102,6 @@ describe('AlertBodyEditor', () => {
     );
     expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Insert link' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Compact message' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -212,38 +211,6 @@ describe('AlertBodyEditor', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     fireEvent.mouseDown(screen.getByTitle('Numbered List'));
     expect(document.execCommand).toHaveBeenCalledWith('insertOrderedList');
-  });
-
-  it('opens an inline link editor instead of using unsupported browser prompt', () => {
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('https://example.com/dashboard');
-
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Insert Link'));
-
-    expect(promptSpy).not.toHaveBeenCalled();
-    expect(screen.getByRole('textbox', { name: 'Link URL' })).toBeInTheDocument();
-    expect(document.execCommand).not.toHaveBeenCalledWith(
-      'createLink',
-      expect.anything(),
-      expect.anything(),
-    );
-    promptSpy.mockRestore();
-  });
-
-  it('applies a safe link URL from the inline link editor', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    fireEvent.mouseDown(screen.getByTitle('Insert Link'));
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Link URL' }), {
-      target: { value: 'example.com/dashboard' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply link' }));
-
-    expect(document.execCommand).toHaveBeenCalledWith(
-      'createLink',
-      false,
-      'https://example.com/dashboard',
-    );
   });
 
   it('handles paste with HTML content', () => {

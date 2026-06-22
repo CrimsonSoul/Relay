@@ -1,5 +1,4 @@
 import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
-import { execFile } from 'node:child_process';
 import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -24,10 +23,8 @@ const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
 
 const MAX_ICS_LENGTH = 1_048_576; // 1MB
-const MAX_EML_LENGTH = 15 * 1024 * 1024; // 15MB
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
-const OUTLOOK_MAC_BUNDLE_ID = 'com.microsoft.Outlook';
 
 function sanitizePngSuggestedName(suggestedName: unknown): string {
   if (typeof suggestedName !== 'string') return 'alert.png';
@@ -88,28 +85,6 @@ function isAllowedExternalUrl(url: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isValidEmlContent(content: unknown): content is string {
-  return (
-    typeof content === 'string' &&
-    content.length > 0 &&
-    content.length < MAX_EML_LENGTH &&
-    content.includes('MIME-Version: 1.0') &&
-    content.includes('Content-Type: multipart/related;')
-  );
-}
-
-function openPathWithMacBundle(filePath: string, bundleId: string): Promise<void> {
-  return new Promise((resolveOpen, rejectOpen) => {
-    execFile('/usr/bin/open', ['-b', bundleId, filePath], (error) => {
-      if (error) {
-        rejectOpen(error);
-        return;
-      }
-      resolveOpen();
-    });
-  });
 }
 
 export function setupWindowHandlers(
@@ -178,51 +153,6 @@ export function setupWindowHandlers(
       return true;
     } catch (err) {
       loggers.ipc.warn('ICS save and open failed', {
-        error: getErrorMessage(err),
-      });
-      return false;
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.EML_SAVE_AND_OPEN, async (event, content: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.EML_SAVE_AND_OPEN)) return false;
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
-    if (!isValidEmlContent(content)) {
-      loggers.security.error('Blocked saving invalid EML content');
-      return false;
-    }
-    try {
-      const filePath = join(app.getPath('temp'), `relay-alert-${Date.now()}.eml`);
-      await writeFile(filePath, content, 'utf8');
-      const openError = await shell.openPath(filePath);
-      if (openError) {
-        loggers.ipc.warn('EML open failed', { error: openError });
-        return false;
-      }
-      return true;
-    } catch (err) {
-      loggers.ipc.warn('EML save and open failed', {
-        error: getErrorMessage(err),
-      });
-      return false;
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.EML_SAVE_AND_OPEN_OUTLOOK, async (event, content: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.EML_SAVE_AND_OPEN_OUTLOOK)) return false;
-    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
-    if (process.platform !== 'darwin') return false;
-    if (!isValidEmlContent(content)) {
-      loggers.security.error('Blocked saving invalid Outlook EML content');
-      return false;
-    }
-    try {
-      const filePath = join(app.getPath('temp'), `relay-alert-${Date.now()}.eml`);
-      await writeFile(filePath, content, 'utf8');
-      await openPathWithMacBundle(filePath, OUTLOOK_MAC_BUNDLE_ID);
-      return true;
-    } catch (err) {
-      loggers.ipc.warn('Outlook EML save and open failed', {
         error: getErrorMessage(err),
       });
       return false;

@@ -8,27 +8,18 @@ const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
     width: 1280,
     height: 1200,
-    toDataURL: vi.fn(() => 'data:image/png;base64,SElHSFJFU0NBUFRVUkU='),
+    toDataURL: vi.fn(() => 'data:image/png;base64,HIGH_RES_CAPTURE'),
   };
   const outlookCanvas = {
     width: 640,
     height: 600,
-    toDataURL: vi.fn(() => 'data:image/png;base64,T1VUTE9PS1NJWkVEQ0FQVFVSRQ=='),
+    toDataURL: vi.fn(() => 'data:image/png;base64,OUTLOOK_SIZED_CAPTURE'),
   };
   const html2canvas = vi.fn((_element: HTMLElement, options?: { scale?: number }) =>
     Promise.resolve(options?.scale === 1 ? outlookCanvas : highResCanvas),
   );
   return { highResCanvas, outlookCanvas, html2canvas };
 });
-
-function decodeHtmlPart(eml: string): string {
-  const htmlPart =
-    /Content-Type: text\/html; charset="UTF-8"\r?\nContent-Transfer-Encoding: base64\r?\n\r?\n([\s\S]*?)\r?\n------=/.exec(
-      eml,
-    );
-  if (!htmlPart) throw new Error('HTML part not found');
-  return Buffer.from(htmlPart[1].replaceAll(/\s/g, ''), 'base64').toString('utf8');
-}
 
 vi.mock('html2canvas', () => ({
   default: mockCapture.html2canvas,
@@ -201,14 +192,6 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-body" onClick={() => setBodyHtml('<p>body</p>')}>
           set-body
         </button>
-        <button
-          data-testid="set-linked-body"
-          onClick={() =>
-            setBodyHtml('<p>Open <a href="https://example.com/dashboard">dashboard</a>.</p>')
-          }
-        >
-          set-linked-body
-        </button>
         <button data-testid="set-sender" onClick={() => setSender('Security')}>
           set-sender
         </button>
@@ -258,12 +241,14 @@ vi.mock('../AlertCard', () => ({
         <div className="alerts-email-severity-header" style={{ background: 'var(--email-banner)' }}>
           mock banner
         </div>
+        <div className="alerts-email-icon-wrapper">
+          <div className="alerts-email-icon">
+            <svg data-testid="mock-alert-icon" />
+          </div>
+        </div>
         <div className="alerts-email-header">mock subject</div>
         <div className="alerts-email-meta">mock meta</div>
-        <div
-          className="alerts-email-body"
-          dangerouslySetInnerHTML={{ __html: String(props.bodyHtml) }}
-        />
+        <div className="alerts-email-body">mock body</div>
         <div className="alerts-email-footer">mock footer</div>
         <span data-testid="card-severity">{String(props.severity)}</span>
         <span data-testid="card-subject">{String(props.displaySubject)}</span>
@@ -389,13 +374,10 @@ beforeEach(() => {
     getFooterLogo: vi.fn().mockResolvedValue(null),
     writeClipboardImage: vi.fn().mockResolvedValue(true),
     saveAlertImage: vi.fn().mockResolvedValue({ success: true }),
-    saveAndOpenEml: vi.fn().mockResolvedValue(true),
-    saveAndOpenEmlInOutlook: vi.fn().mockResolvedValue(true),
     saveCompanyLogo: vi.fn().mockResolvedValue({ success: false }),
     removeCompanyLogo: vi.fn().mockResolvedValue({ success: true }),
     saveFooterLogo: vi.fn().mockResolvedValue({ success: false }),
     removeFooterLogo: vi.fn().mockResolvedValue({ success: true }),
-    platform: 'darwin',
   };
 });
 
@@ -417,8 +399,6 @@ describe('AlertsTab', () => {
     expect(screen.queryByRole('button', { name: 'REMIND' })).not.toBeInTheDocument();
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
     expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
-    expect(screen.getByText('CREATE EML')).toBeInTheDocument();
-    expect(screen.getByText('OPEN IN OUTLOOK')).toBeInTheDocument();
     expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
     expect(screen.getByText('SCHEDULE ALERT ALARM')).toBeInTheDocument();
   });
@@ -540,7 +520,7 @@ describe('AlertsTab', () => {
     fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
-        'data:image/png;base64,SElHSFJFU0NBUFRVUkU=',
+        'data:image/png;base64,HIGH_RES_CAPTURE',
         'alert_alert.png',
       );
     });
@@ -555,13 +535,13 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('clicking COPY FOR OUTLOOK sends a high-density Outlook capture to the clipboard', async () => {
+  it('clicking COPY FOR OUTLOOK sends a high-resolution capture to the clipboard', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
     await waitFor(() => {
       expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,SElHSFJFU0NBUFRVUkU=',
+        'data:image/png;base64,HIGH_RES_CAPTURE',
       );
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
@@ -573,62 +553,6 @@ describe('AlertsTab', () => {
       }),
       expect.objectContaining({ scale: 2 }),
     );
-  });
-
-  it('clicking CREATE EML opens an Outlook-safe EML draft from the current alert', async () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-severity-issue'));
-    fireEvent.click(screen.getByTestId('set-subject'));
-    fireEvent.click(screen.getByTestId('set-body'));
-    fireEvent.click(screen.getByTestId('set-sender'));
-    fireEvent.click(screen.getByTestId('set-recipient'));
-    fireEvent.click(screen.getByTestId('set-alert-font-large'));
-
-    fireEvent.click(screen.getByText('CREATE EML'));
-
-    await waitFor(() => {
-      expect(globalThis.api?.saveAndOpenEml).toHaveBeenCalled();
-    });
-    const content = (globalThis.api?.saveAndOpenEml as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
-    const html = decodeHtmlPart(content);
-    expect(content).toContain('Content-Type: multipart/related;');
-    expect(content).toContain('Subject: ISSUE - Test Subject');
-    expect(content).toContain('Content-Type: text/html; charset="UTF-8"');
-    expect(content).not.toContain('Content-ID: <relay-alert-card-1>');
-    expect(html).toContain('<table class="relay-email-card"');
-    expect(html).toContain('font-size:19px;');
-    expect(html).not.toContain('relay-email-visual-shell');
-    expect(html).not.toContain('Links and embedded content');
-    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
-    expect(mockShowToast).toHaveBeenCalledWith('EML opened in Outlook', 'success');
-  });
-
-  it('clicking OPEN IN OUTLOOK opens the EML with the Outlook-specific bridge', async () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-severity-issue'));
-    fireEvent.click(screen.getByTestId('set-subject'));
-    fireEvent.click(screen.getByTestId('set-body'));
-    fireEvent.click(screen.getByTestId('set-sender'));
-    fireEvent.click(screen.getByTestId('set-recipient'));
-
-    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
-
-    await waitFor(() => {
-      expect(globalThis.api?.saveAndOpenEmlInOutlook).toHaveBeenCalled();
-    });
-    expect(globalThis.api?.saveAndOpenEml).not.toHaveBeenCalled();
-    const content = (globalThis.api?.saveAndOpenEmlInOutlook as ReturnType<typeof vi.fn>).mock
-      .calls[0][0] as string;
-    const html = decodeHtmlPart(content);
-    expect(content).toContain('Content-Type: multipart/related;');
-    expect(content).toContain('Subject: ISSUE - Test Subject');
-    expect(content).not.toContain('Content-ID: <relay-alert-card-1>');
-    expect(html).toContain('<table class="relay-email-card"');
-    expect(html).not.toContain('relay-email-visual-shell');
-    expect(html).not.toContain('Links and embedded content');
-    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
-    expect(mockShowToast).toHaveBeenCalledWith('EML opened in Outlook', 'success');
   });
 
   it('resolves banner colors in the shared capture clone before rendering', async () => {
@@ -666,9 +590,11 @@ describe('AlertsTab', () => {
       });
       const clone = mockCapture.html2canvas.mock.calls.at(-1)?.[0] as HTMLElement;
       const header = clone.querySelector('.alerts-email-severity-header') as HTMLElement;
+      const icon = clone.querySelector('.alerts-email-icon') as HTMLElement;
 
       expect(header.style.backgroundColor).toBe(expectedColor);
       expect(clone.style.borderColor).toBe(expectedColor);
+      expect(icon.style.borderColor).toBe(expectedColor);
     },
   );
 
@@ -689,8 +615,25 @@ describe('AlertsTab', () => {
     expect((clone.querySelector('.alerts-email-body') as HTMLElement).style.backgroundColor).toBe(
       'rgb(255, 255, 255)',
     );
-    expect(clone.querySelector('.alerts-email-icon-wrapper-fill')).not.toBeInTheDocument();
-    expect(clone.querySelector('.alerts-email-icon-fill')).not.toBeInTheDocument();
+    const iconWrapper = clone.querySelector('.alerts-email-icon-wrapper') as HTMLElement;
+    const iconWrapperFill = iconWrapper.querySelector(
+      '.alerts-email-icon-wrapper-fill',
+    ) as HTMLElement;
+    const icon = clone.querySelector('.alerts-email-icon') as HTMLElement;
+    const iconFill = icon.querySelector('.alerts-email-icon-fill') as HTMLElement;
+    const iconSvg = icon.querySelector('svg') as SVGElement;
+    expect(iconWrapper.style.background).toBe('');
+    expect(iconWrapper.style.backgroundColor).toBe('');
+    expect(iconWrapperFill.style.top).toBe('26px');
+    expect(iconWrapperFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(iconFill.style.inset).toBe('0px');
+    expect(iconFill.style.borderRadius).toBe('50%');
+    expect(iconFill.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(icon.style.backgroundColor).toBe('rgb(255, 255, 255)');
+    expect(icon.style.position).toBe('relative');
+    expect(icon.style.zIndex).toBe('1');
+    expect(iconSvg.style.position).toBe('relative');
+    expect(iconSvg.style.zIndex).toBe('1');
     expect((clone.querySelector('.alerts-email-meta') as HTMLElement).style.backgroundColor).toBe(
       'rgb(250, 250, 250)',
     );
