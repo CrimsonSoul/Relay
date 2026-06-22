@@ -18,6 +18,7 @@ import type { AlertBodyFontSize, Severity } from './alertUtils';
 import { localToIso } from './alertTimeUtils';
 import { compactText } from './alerts/compactEngine';
 import { enhanceHtml } from './alerts/enhanceEngine';
+import { buildAlertEml } from './alerts/emlExport';
 import type { AlertFormHandle } from './AlertForm';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import {
@@ -119,42 +120,6 @@ function applySolidColor(element: HTMLElement | null, color: string): void {
   element.style.backgroundColor = color;
 }
 
-function preserveIconOverlapBackground(wrapper: HTMLElement | null): void {
-  if (!wrapper) return;
-  wrapper.style.background = 'transparent';
-  wrapper.style.backgroundColor = '';
-  const fill = document.createElement('div');
-  fill.className = 'alerts-email-icon-wrapper-fill';
-  fill.style.position = 'absolute';
-  fill.style.left = '0';
-  fill.style.right = '0';
-  fill.style.top = '26px';
-  fill.style.bottom = '0';
-  fill.style.background = '#ffffff';
-  fill.style.backgroundColor = '#ffffff';
-  fill.style.pointerEvents = 'none';
-  fill.style.zIndex = '0';
-  wrapper.prepend(fill);
-}
-
-function addWhiteIconFill(icon: HTMLElement): void {
-  const fill = document.createElement('div');
-  fill.className = 'alerts-email-icon-fill';
-  fill.style.position = 'absolute';
-  fill.style.inset = '0';
-  fill.style.borderRadius = '50%';
-  fill.style.background = '#ffffff';
-  fill.style.backgroundColor = '#ffffff';
-  fill.style.pointerEvents = 'none';
-  fill.style.zIndex = '0';
-  icon.prepend(fill);
-
-  icon.querySelectorAll<HTMLElement>('svg').forEach((svg) => {
-    svg.style.position = 'relative';
-    svg.style.zIndex = '1';
-  });
-}
-
 function prepareAlertCaptureClone(clone: HTMLDivElement, source: HTMLDivElement): void {
   clone.style.position = 'fixed';
   clone.style.left = '-9999px';
@@ -172,20 +137,10 @@ function prepareAlertCaptureClone(clone: HTMLDivElement, source: HTMLDivElement)
   clone.style.borderColor = bannerColor;
 
   applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-severity-header'), bannerColor);
-  preserveIconOverlapBackground(clone.querySelector<HTMLElement>('.alerts-email-icon-wrapper'));
   applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-header'), '#ffffff');
   applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-body'), '#ffffff');
   applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-meta'), '#fafafa');
   applySolidColor(clone.querySelector<HTMLElement>('.alerts-email-footer'), '#fafafa');
-  const icon = clone.querySelector<HTMLElement>('.alerts-email-icon');
-  if (icon) {
-    icon.style.position = 'relative';
-    icon.style.zIndex = '1';
-    icon.style.background = '#ffffff';
-    icon.style.backgroundColor = '#ffffff';
-    icon.style.borderColor = bannerColor;
-    addWhiteIconFill(icon);
-  }
 }
 
 type AlertsTabProps = {
@@ -271,6 +226,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
 
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isOpeningEml, setIsOpeningEml] = useState(false);
+  const canOpenEmlInOutlook =
+    globalThis.api?.platform === 'darwin' &&
+    typeof globalThis.api?.saveAndOpenEmlInOutlook === 'function';
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
   const historyModal = useModalState();
@@ -301,6 +260,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
+  const displaySubject = useMemo(() => {
+    const base = subject.trim() || 'Alert Subject';
+    return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
+  }, [subject, updateNumber]);
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
@@ -444,6 +407,58 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [withCapture, showToast, subject, addHistory, severity, bodyHtml, sender, recipient],
   );
 
+  const handleCreateEml = useCallback(
+    async (target: 'default' | 'outlook' = 'default') => {
+      setIsOpeningEml(true);
+      try {
+        const eml = buildAlertEml({
+          severity,
+          displaySubject,
+          displaySender,
+          displayRecipient,
+          bodyHtml,
+          logoDataUrl,
+          footerLogoDataUrl,
+          eventTimeStartIso,
+          eventTimeEndIso,
+          alertBodyFontSize,
+        });
+        const openEml =
+          target === 'outlook'
+            ? globalThis.api?.saveAndOpenEmlInOutlook
+            : globalThis.api?.saveAndOpenEml;
+        const success = await openEml?.(eml);
+        if (success) {
+          showToast('EML opened in Outlook', 'success');
+          void addHistory({ severity, subject, bodyHtml, sender, recipient });
+        } else {
+          showToast('Failed to open EML', 'error');
+        }
+      } catch {
+        showToast('Failed to create EML', 'error');
+      } finally {
+        setIsOpeningEml(false);
+      }
+    },
+    [
+      severity,
+      displaySubject,
+      displaySender,
+      displayRecipient,
+      bodyHtml,
+      logoDataUrl,
+      footerLogoDataUrl,
+      eventTimeStartIso,
+      eventTimeEndIso,
+      alertBodyFontSize,
+      showToast,
+      addHistory,
+      subject,
+      sender,
+      recipient,
+    ],
+  );
+
   const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
     dispatch({ type: 'LOAD_HISTORY', entry });
     formRef.current?.setEditorContent(sanitizeHtml(entry.bodyHtml));
@@ -537,11 +552,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     showToast,
     pinPromptModal,
   ]);
-
-  const displaySubject = useMemo(() => {
-    const base = subject.trim() || 'Alert Subject';
-    return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
-  }, [subject, updateNumber]);
 
   const reminderDraft = useMemo(
     () => ({
@@ -771,6 +781,58 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         >
           SAVE PNG
         </TactileButton>
+        <TactileButton
+          variant="ghost"
+          onClick={() => void handleCreateEml()}
+          loading={isOpeningEml}
+          tooltip="Create an Outlook EML with clickable links and embedded images"
+          icon={
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="m3 7 9 6 9-6" />
+              <path d="M7 15h4" />
+              <path d="M14 15h3" />
+            </svg>
+          }
+        >
+          CREATE EML
+        </TactileButton>
+        {canOpenEmlInOutlook && (
+          <TactileButton
+            variant="ghost"
+            onClick={() => void handleCreateEml('outlook')}
+            loading={isOpeningEml}
+            tooltip="Create an EML and open it directly in Microsoft Outlook"
+            icon={
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="m3 7 9 6 9-6" />
+                <path d="M16 3h5v5" />
+                <path d="m15 9 6-6" />
+              </svg>
+            }
+          >
+            OPEN IN OUTLOOK
+          </TactileButton>
+        )}
         <TactileButton
           variant="secondary"
           onClick={handleSetReminder}

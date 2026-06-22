@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState, useEffect } from 'react';
-import { SEVERITY_COLORS, SEVERITY_ICONS, hasVisibleText, sanitizeHtml } from './alertUtils';
+import { SEVERITY_COLORS, hasVisibleText, sanitizeHtml } from './alertUtils';
 import type { AlertBodyFontSize, Severity } from './alertUtils';
 import { EventTimeBanner } from './alerts/EventTimeBanner';
 
@@ -184,8 +184,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
           style={
             {
               '--email-banner': colors.banner,
-              '--email-badge-bg': colors.badgeBg,
-              '--email-badge-text': colors.badgeText,
             } as React.CSSProperties
           }
         >
@@ -195,9 +193,6 @@ export const AlertCard: React.FC<AlertCardProps> = ({
               <span className="alerts-email-severity-label">{severity}</span>
             </div>
             {whiteLogoUrl && <img src={whiteLogoUrl} alt="" className="alerts-email-header-logo" />}
-          </div>
-          <div className="alerts-email-icon-wrapper">
-            <div className="alerts-email-icon">{SEVERITY_ICONS[severity]}</div>
           </div>
           <div className="alerts-email-header">
             <div className="alerts-email-subject">{displaySubject}</div>

@@ -68,6 +68,10 @@ vi.mock('node:fs/promises', () => ({
   unlink: vi.fn(),
 }));
 
+vi.mock('node:child_process', () => ({
+  execFile: vi.fn((_file, _args, callback) => callback(null, '', '')),
+}));
+
 vi.mock('../logger', () => ({
   loggers: {
     main: {
@@ -478,6 +482,49 @@ describe('windowHandlers', () => {
       const result = await handlers[IPC_CHANNELS.ICS_SAVE_AND_OPEN]({}, 'BEGIN:VCALENDAR');
 
       expect(result).toBe(true);
+    });
+  });
+
+  describe('EML_SAVE_AND_OPEN', () => {
+    it('writes the EML to a temp file, opens it, and returns true', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      const result = await handlers[IPC_CHANNELS.EML_SAVE_AND_OPEN](
+        {},
+        'From: Relay <relay@example.invalid>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: text/html\r\n\r\nbody\r\n--x--',
+      );
+
+      expect(result).toBe(true);
+      const [filePath, content] = vi.mocked(writeFile).mock.calls[0] as [string, string];
+      expect(filePath).toMatch(/^\/mock-temp\/relay-alert-\d+\.eml$/);
+      expect(content).toContain('MIME-Version: 1.0');
+      expect(shell.openPath).toHaveBeenCalledWith(filePath);
+    });
+  });
+
+  describe('EML_SAVE_AND_OPEN_OUTLOOK', () => {
+    it('writes the EML to a temp file, opens it in Outlook on macOS, and returns true', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      const { execFile } = await import('node:child_process');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+
+      const result = await handlers['eml:saveAndOpenInOutlook'](
+        {},
+        'From: Relay <relay@example.invalid>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary="x"\r\n\r\n--x\r\nContent-Type: text/html\r\n\r\nbody\r\n--x--',
+      );
+
+      expect(result).toBe(true);
+      const [filePath, content] = vi.mocked(writeFile).mock.calls[0] as [string, string];
+      expect(filePath).toMatch(/^\/mock-temp\/relay-alert-\d+\.eml$/);
+      expect(content).toContain('MIME-Version: 1.0');
+      expect(shell.openPath).not.toHaveBeenCalled();
+      expect(execFile).toHaveBeenCalledWith(
+        '/usr/bin/open',
+        ['-b', 'com.microsoft.Outlook', filePath],
+        expect.any(Function),
+      );
     });
   });
 

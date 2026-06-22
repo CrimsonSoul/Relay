@@ -85,7 +85,7 @@ describe('sanitizeHtml', () => {
       expect(sanitizeHtml('<script>alert("xss")</script>')).toBe('');
     });
 
-    it('strips <img> tags', () => {
+    it('strips external <img> tags', () => {
       expect(sanitizeHtml('<img src="x.png">')).toBe('');
     });
 
@@ -97,8 +97,18 @@ describe('sanitizeHtml', () => {
       expect(sanitizeHtml('<span>content</span>')).toBe('content');
     });
 
-    it('strips <a> tags but keeps text content', () => {
-      expect(sanitizeHtml('<a href="http://evil.com">click</a>')).toBe('click');
+    it('preserves safe <a> tags', () => {
+      expect(sanitizeHtml('<a href="https://example.com/dashboard">dashboard</a>')).toBe(
+        '<a href="https://example.com/dashboard">dashboard</a>',
+      );
+    });
+
+    it('preserves data-url <img> tags', () => {
+      const image =
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+      expect(sanitizeHtml(`<img src="${image}" alt="Latency chart" width="300">`)).toBe(
+        `<img src="${image}" alt="Latency chart">`,
+      );
     });
   });
 
@@ -276,5 +286,13 @@ describe('hasVisibleText', () => {
 
   it('returns true when text is deeply nested', () => {
     expect(hasVisibleText('<div><p><span>deep</span></p></div>')).toBe(true);
+  });
+
+  it('returns true for image-only alert content', () => {
+    expect(
+      hasVisibleText(
+        '<p><img src="data:image/png;base64,iVBORw0KGgo=" alt="Dashboard screenshot"></p>',
+      ),
+    ).toBe(true);
   });
 });

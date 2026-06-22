@@ -70,7 +70,43 @@ export function escapeHtml(text: string): string {
     .replaceAll('"', '&quot;');
 }
 
-/** Strip all HTML tags except basic formatting (b, i, u, em, strong, br, p). */
+function escapeHtmlAttribute(text: string): string {
+  return escapeHtml(text).replaceAll("'", '&#39;');
+}
+
+function isSafeHref(href: string): boolean {
+  try {
+    const parsed = new URL(href);
+    return ['https:', 'http:', 'mailto:', 'tel:', 'msteams:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedDataImage(src: string): boolean {
+  return /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src);
+}
+
+function renderKnownHighlight(el: Element, children: string): string | null {
+  const hlType = (el as HTMLElement).dataset.hl;
+  if (!hlType || !(HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) return null;
+  return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
+}
+
+function renderSafeLink(el: Element, children: string): string | null {
+  const href = el.getAttribute('href')?.trim() ?? '';
+  if (!href || !isSafeHref(href)) return null;
+  return `<a href="${escapeHtmlAttribute(href)}">${children}</a>`;
+}
+
+function renderDataImage(el: Element): string | null {
+  const src = el.getAttribute('src')?.trim() ?? '';
+  if (!isAllowedDataImage(src)) return null;
+  const alt = el.getAttribute('alt')?.trim() ?? '';
+  return `<img src="${escapeHtmlAttribute(src)}" alt="${escapeHtmlAttribute(alt)}">`;
+}
+
+/** Strip unsafe HTML while keeping alert formatting, safe links, and inline data images. */
 export function sanitizeHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const walk = (node: Node): string => {
@@ -84,21 +120,18 @@ export function sanitizeHtml(html: string): string {
       if (tag === 'br') return '<br>';
       return `<${tag}>${children}</${tag}>`;
     }
-    // Allow <span data-hl="knownType"> for highlight support
-    if (tag === 'span') {
-      const hlType = el.dataset.hl;
-      if (hlType && (HIGHLIGHT_TYPES as readonly string[]).includes(hlType)) {
-        return `<span data-hl="${escapeHtml(hlType)}">${children}</span>`;
-      }
-    }
+    if (tag === 'span') return renderKnownHighlight(el, children) ?? children;
+    if (tag === 'a') return renderSafeLink(el, children) ?? children;
+    if (tag === 'img') return renderDataImage(el) ?? '';
     return children;
   };
   return Array.from(doc.body.childNodes).map(walk).join('');
 }
 
-/** Check if HTML has any visible text content. */
+/** Check if HTML has content that should be visible in the alert body. */
 export function hasVisibleText(html: string): boolean {
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  if (doc.body.querySelector('img')) return true;
   const visibleText = (doc.body.textContent ?? '')
     .replaceAll('\u200b', '')
     .replaceAll('\u200c', '')
