@@ -12,10 +12,6 @@ export interface AlertBodyEditorHandle {
 
 interface AlertBodyEditorProps {
   setBodyHtml: (s: string) => void;
-  isCompact: boolean;
-  onToggleCompact: () => void;
-  isEnhanced: boolean;
-  onToggleEnhanced: () => void;
 }
 
 const nodeHasContent = (node: Node): boolean => {
@@ -110,7 +106,7 @@ const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLEle
 };
 
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
-  ({ setBodyHtml, isCompact, onToggleCompact, isEnhanced, onToggleEnhanced }, ref) => {
+  ({ setBodyHtml }, ref) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
@@ -422,62 +418,6 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
             </Tooltip>
             <span className="alerts-fmt-separator" />
             <HighlightPopover onApply={applyHighlight} onClear={clearHighlight} />
-            <span className="alerts-fmt-separator" />
-            <Tooltip content="Compact - strip filler phrases">
-              <button
-                type="button"
-                className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-compact${isCompact ? ' active' : ''}`}
-                title="Compact - strip filler phrases"
-                aria-label="Compact message"
-                aria-pressed={isCompact}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onToggleCompact();
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="4 14 10 14 10 20" />
-                  <polyline points="20 10 14 10 14 4" />
-                  <line x1="14" y1="10" x2="21" y2="3" />
-                  <line x1="3" y1="21" x2="10" y2="14" />
-                </svg>
-              </button>
-            </Tooltip>
-            <Tooltip content="Enhance - auto-highlight key info">
-              <button
-                type="button"
-                className={`alerts-fmt-btn alerts-toggle-btn alerts-toggle-enhance${isEnhanced ? ' active' : ''}`}
-                title="Enhance - auto-highlight key info"
-                aria-label="Enhance message"
-                aria-pressed={isEnhanced}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  onToggleEnhanced();
-                }}
-              >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 2l2.09 6.26L20 10l-5.91 1.74L12 18l-2.09-6.26L4 10l5.91-1.74z" />
-                </svg>
-              </button>
-            </Tooltip>
           </div>
           <div // NOSONAR - contentEditable rich text editor requires role="textbox", no native equivalent
             ref={editorRef}

@@ -89,18 +89,15 @@ describe('AlertCard', () => {
     expect(body).not.toHaveClass('empty');
   });
 
-  it('applies the selected alert body font size class', () => {
-    render(<AlertCard {...makeProps({ alertBodyFontSize: 'large' })} />);
+  it('renders alert body without retired font-size variant classes', () => {
+    render(<AlertCard {...makeProps()} />);
 
     const body = document.querySelector('.alerts-email-body');
-    expect(body).toHaveClass('alerts-email-body--font-large');
-  });
-
-  it('defines the large alert body font larger than the previous xl size', () => {
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
-    const largeRule = /\.alerts-email-body--font-large\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(largeRule).toContain('font-size: 19px');
+    expect(body?.className).toBe('alerts-email-body');
+    expect(css).not.toContain('.alerts-email-body--font-normal');
+    expect(css).not.toContain('.alerts-email-body--font-large');
   });
 
   it('keeps the preview card at actual export size with scrolling', () => {

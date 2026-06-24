@@ -747,9 +747,10 @@ describe('MainApp', () => {
   it('renders the Dynatrace popout shell without the on-call board', () => {
     renderApp('?popout=dynatrace&name=NOC%20Dashboard');
 
-    expect(screen.getByText('RELAY DYNATRACE')).toBeInTheDocument();
+    expect(screen.getByText('RELAY')).toBeInTheDocument();
     expect(screen.getByText('NOC Dashboard')).toBeInTheDocument();
     expect(screen.getByTestId('window-controls')).toBeInTheDocument();
+    expect(screen.queryByText('RELAY DYNATRACE')).not.toBeInTheDocument();
     expect(screen.queryByText('RELAY ON-CALL BOARD')).not.toBeInTheDocument();
     expect(screen.queryByTestId('popout-board')).not.toBeInTheDocument();
   });

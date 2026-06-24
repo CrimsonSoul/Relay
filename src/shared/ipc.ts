@@ -295,6 +295,8 @@ export type BridgeAPI = {
   writeClipboard: (text: string) => Promise<boolean>;
   /** Accepts PNG data URLs only. This is intentional: clipboard operations use PNG format. */
   writeClipboardImage: (dataUrl: string) => Promise<boolean>;
+  /** Losslessly recompresses PNG data URLs for Outlook clipboard use. */
+  optimizeAlertImage: (dataUrl: string) => Promise<IpcResult<string>>;
   // Alerts
   playAlertSound: () => Promise<boolean>;
   selectReminderSound: () => Promise<IpcResult<string>>;
@@ -380,6 +382,7 @@ export const IPC_CHANNELS = {
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
   CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',
+  OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',
   // Alerts
   ALERT_PLAY_SOUND: 'alert:playSound',
   ALERT_SELECT_REMINDER_SOUND: 'alert:selectReminderSound',

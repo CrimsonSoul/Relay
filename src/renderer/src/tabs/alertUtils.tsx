@@ -2,7 +2,6 @@ import React from 'react';
 import { HIGHLIGHT_TYPES } from './alerts/highlightColors';
 
 export type Severity = 'ISSUE' | 'MAINTENANCE' | 'INFO' | 'RESOLVED';
-export type AlertBodyFontSize = 'normal' | 'large';
 
 export const SEVERITIES: Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 

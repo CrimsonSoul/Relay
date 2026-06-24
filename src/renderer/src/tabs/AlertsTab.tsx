@@ -14,10 +14,8 @@ import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
-import type { AlertBodyFontSize, Severity } from './alertUtils';
+import type { Severity } from './alertUtils';
 import { localToIso } from './alertTimeUtils';
-import { compactText } from './alerts/compactEngine';
-import { enhanceHtml } from './alerts/enhanceEngine';
 import type { AlertFormHandle } from './AlertForm';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
 import {
@@ -29,11 +27,8 @@ import {
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import type { AlertHistoryEntry } from '@shared/ipc';
 
-import '@fontsource/ibm-plex-sans/400.css';
-import '@fontsource/ibm-plex-sans/600.css';
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
-import '@fontsource/montserrat/800.css';
 
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
@@ -50,9 +45,6 @@ interface AlertFormState {
   eventTimeStart: string;
   eventTimeEnd: string;
   eventTimeSourceTz: string;
-  isCompact: boolean;
-  isEnhanced: boolean;
-  alertBodyFontSize: AlertBodyFontSize;
 }
 
 type AlertFormAction =
@@ -70,9 +62,6 @@ const initialFormState: AlertFormState = {
   eventTimeStart: '',
   eventTimeEnd: '',
   eventTimeSourceTz: 'America/Chicago',
-  isCompact: false,
-  isEnhanced: false,
-  alertBodyFontSize: 'normal',
 };
 
 function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormState {
@@ -93,17 +82,6 @@ function formReducer(state: AlertFormState, action: AlertFormAction): AlertFormS
     default:
       return state;
   }
-}
-
-function compactHtml(html: string): string {
-  // eslint-disable-next-line sonarjs/slow-regex -- splitting on HTML tags; input is sanitized, no ReDoS risk
-  const parts = html.split(/(<[^>]*>)/g);
-  return parts
-    .map((part) => {
-      if (part.startsWith('<')) return part;
-      return compactText(part);
-    })
-    .join('');
 }
 
 function readCssValue(element: HTMLElement, property: string): string {
@@ -216,9 +194,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     eventTimeStart,
     eventTimeEnd,
     eventTimeSourceTz,
-    isCompact,
-    isEnhanced,
-    alertBodyFontSize,
   } = form;
 
   const setSeverity = useCallback(
@@ -257,19 +232,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     (v: string) => dispatch({ type: 'SET_FIELD', field: 'eventTimeSourceTz', value: v }),
     [],
   );
-  const setIsCompact = useCallback(
-    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isCompact', value: v }),
-    [],
-  );
-  const setIsEnhanced = useCallback(
-    (v: boolean) => dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: v }),
-    [],
-  );
-  const setAlertBodyFontSize = useCallback(
-    (v: AlertBodyFontSize) => dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: v }),
-    [],
-  );
-
   const [isCapturing, setIsCapturing] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState<string | null>(null);
   const [footerLogoDataUrl, setFooterLogoDataUrl] = useState<string | null>(null);
@@ -281,7 +243,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const [hasCustomReminderAlarm, setHasCustomReminderAlarm] = useState(
     hasCustomReminderAlarmSource,
   );
-  const originalBodyRef = useRef<string | null>(null);
   const pinPromptModal = useModalState();
   const [pinPromptLabel, setPinPromptLabel] = useState('');
 
@@ -318,11 +279,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     dispatch({ type: 'SET_FIELD', field: 'sender', value: loadedReminderAlert.sender.trim() });
     dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
     dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
-    dispatch({ type: 'SET_FIELD', field: 'isCompact', value: false });
-    dispatch({ type: 'SET_FIELD', field: 'isEnhanced', value: false });
-    dispatch({ type: 'SET_FIELD', field: 'alertBodyFontSize', value: 'normal' });
     formRef.current?.setEditorContent(nextBodyHtml);
-    originalBodyRef.current = null;
     showToast('Alert loaded from alarm', 'success');
     onLoadedReminderAlertConsumed?.();
   }, [loadedReminderAlert, onLoadedReminderAlertConsumed, showToast]);
@@ -402,7 +359,9 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const copyCurrentAlertImage = useCallback(
     async (dataUrl: string): Promise<boolean> => {
-      const success = await globalThis.api?.writeClipboardImage(dataUrl);
+      const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
+      const clipboardDataUrl = optimized?.success && optimized.data ? optimized.data : dataUrl;
+      const success = await globalThis.api?.writeClipboardImage(clipboardDataUrl);
       if (success) {
         showToast('Image copied — paste into Outlook!', 'success');
         void addHistory({ severity, subject, bodyHtml, sender, recipient });
@@ -447,13 +406,11 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const handleLoadFromHistory = useCallback((entry: AlertHistoryEntry) => {
     dispatch({ type: 'LOAD_HISTORY', entry });
     formRef.current?.setEditorContent(sanitizeHtml(entry.bodyHtml));
-    originalBodyRef.current = null;
   }, []);
 
   const handleClear = useCallback(() => {
     dispatch({ type: 'RESET' });
     formRef.current?.setEditorContent('');
-    originalBodyRef.current = null;
     // logoDataUrl is intentionally NOT cleared — it's a persistent setting
   }, []);
 
@@ -609,49 +566,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     refreshReminderAlarmState();
     showToast('Alarm sound reset', 'success');
   }, [refreshReminderAlarmState, showToast]);
-
-  const applyTransforms = useCallback((html: string, compact: boolean, enhanced: boolean) => {
-    let result = sanitizeHtml(html);
-    if (compact) result = compactHtml(result);
-    if (enhanced) result = enhanceHtml(result);
-    return result;
-  }, []);
-
-  const handleToggleCompact = useCallback(() => {
-    const nextCompact = !isCompact;
-    if (!nextCompact && !isEnhanced) {
-      // Both off — restore original
-      const original = originalBodyRef.current ?? bodyHtml;
-      originalBodyRef.current = null;
-      setBodyHtml(original);
-      formRef.current?.setEditorContent(original);
-    } else {
-      // Save original if first toggle on
-      originalBodyRef.current ??= bodyHtml;
-      const transformed = applyTransforms(originalBodyRef.current, nextCompact, isEnhanced);
-      setBodyHtml(transformed);
-      formRef.current?.setEditorContent(transformed);
-    }
-    setIsCompact(nextCompact);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsCompact]);
-
-  const handleToggleEnhanced = useCallback(() => {
-    const nextEnhanced = !isEnhanced;
-    if (!isCompact && !nextEnhanced) {
-      // Both off — restore original
-      const original = originalBodyRef.current ?? bodyHtml;
-      originalBodyRef.current = null;
-      setBodyHtml(original);
-      formRef.current?.setEditorContent(original);
-    } else {
-      // Save original if first toggle on
-      originalBodyRef.current ??= bodyHtml;
-      const transformed = applyTransforms(originalBodyRef.current, isCompact, nextEnhanced);
-      setBodyHtml(transformed);
-      formRef.current?.setEditorContent(transformed);
-    }
-    setIsEnhanced(nextEnhanced);
-  }, [isCompact, isEnhanced, bodyHtml, applyTransforms, setBodyHtml, setIsEnhanced]);
 
   return (
     <div className="alerts-tab">
@@ -870,12 +784,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           footerLogoDataUrl={footerLogoDataUrl}
           onSetFooterLogo={handleSetFooterLogo}
           onRemoveFooterLogo={handleRemoveFooterLogo}
-          isCompact={isCompact}
-          onToggleCompact={handleToggleCompact}
-          isEnhanced={isEnhanced}
-          onToggleEnhanced={handleToggleEnhanced}
-          alertBodyFontSize={alertBodyFontSize}
-          setAlertBodyFontSize={setAlertBodyFontSize}
         />
 
         {/* Right Panel — Preview */}
@@ -890,7 +798,6 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           footerLogoDataUrl={footerLogoDataUrl}
           eventTimeStart={eventTimeStartIso}
           eventTimeEnd={eventTimeEndIso}
-          alertBodyFontSize={alertBodyFontSize}
         />
       </div>
 

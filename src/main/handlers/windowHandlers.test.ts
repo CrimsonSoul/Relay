@@ -13,6 +13,13 @@ const mockNativeImage = {
 // Make resize return a new image-like object
 mockNativeImage.resize.mockReturnValue(mockNativeImage);
 
+const mockSharp = vi.hoisted(() => {
+  const png = vi.fn().mockReturnThis();
+  const toBuffer = vi.fn().mockResolvedValue(Buffer.from('optimized-png'));
+  const sharp = vi.fn(() => ({ png, toBuffer }));
+  return { sharp, png, toBuffer };
+});
+
 vi.mock('electron', () => {
   const mockWin = {
     minimize: vi.fn(),
@@ -60,6 +67,10 @@ vi.mock('electron', () => {
     },
   };
 });
+
+vi.mock('sharp', () => ({
+  default: mockSharp.sharp,
+}));
 
 vi.mock('node:fs/promises', () => ({
   writeFile: vi.fn(),
@@ -600,6 +611,45 @@ describe('windowHandlers', () => {
       );
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('OPTIMIZE_ALERT_IMAGE', () => {
+    it('returns a smaller optimized PNG data URL', async () => {
+      const originalDataUrl =
+        'data:image/png;base64,' + Buffer.from('larger-original-png').toString('base64');
+
+      const result = await handlers[IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE]({}, originalDataUrl);
+
+      expect(mockSharp.sharp).toHaveBeenCalledWith(Buffer.from('larger-original-png'));
+      expect(mockSharp.png).toHaveBeenCalledWith({
+        adaptiveFiltering: true,
+        compressionLevel: 9,
+        effort: 10,
+      });
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('optimized-png').toString('base64'),
+      });
+    });
+
+    it('falls back when optimization does not make the image smaller', async () => {
+      mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('larger-than-original'));
+      const originalDataUrl = 'data:image/png;base64,' + Buffer.from('tiny').toString('base64');
+
+      const result = await handlers[IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE]({}, originalDataUrl);
+
+      expect(result).toEqual({ success: false, error: 'Optimized image was not smaller' });
+    });
+
+    it('rejects non-PNG data URLs', async () => {
+      const result = await handlers[IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE](
+        {},
+        'data:image/jpeg;base64,abc',
+      );
+
+      expect(result).toEqual({ success: false, error: 'Invalid image data' });
+      expect(mockSharp.sharp).not.toHaveBeenCalled();
     });
   });
 

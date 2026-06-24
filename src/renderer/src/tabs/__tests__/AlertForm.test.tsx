@@ -80,12 +80,6 @@ const defaultProps = {
   footerLogoDataUrl: null,
   onSetFooterLogo: vi.fn(),
   onRemoveFooterLogo: vi.fn(),
-  isCompact: false,
-  onToggleCompact: vi.fn(),
-  isEnhanced: false,
-  onToggleEnhanced: vi.fn(),
-  alertBodyFontSize: 'normal' as const,
-  setAlertBodyFontSize: vi.fn(),
 };
 
 describe('AlertForm', () => {
@@ -440,36 +434,17 @@ describe('AlertForm', () => {
     expect(screen.getByText('Displays as Central Time on card')).toBeInTheDocument();
   });
 
-  it('offers only normal and large alert body font sizes', () => {
-    const setAlertBodyFontSize = vi.fn();
-    render(<AlertForm {...defaultProps} setAlertBodyFontSize={setAlertBodyFontSize} />);
-
-    const group = screen.getByRole('group', { name: 'Alert font size' });
-    expect(within(group).getByRole('button', { name: 'Normal' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    fireEvent.click(within(group).getByRole('button', { name: 'Large' }));
-
-    expect(setAlertBodyFontSize).toHaveBeenCalledWith('large');
-    expect(within(group).queryByRole('button', { name: 'Small' })).not.toBeInTheDocument();
-    expect(within(group).queryByRole('button', { name: 'XL' })).not.toBeInTheDocument();
-  });
-
-  it('places font size before the body editor and keeps the control compact', () => {
+  it('does not render the retired alert font size control', () => {
     render(<AlertForm {...defaultProps} />);
 
-    const group = screen.getByRole('group', { name: 'Alert font size' });
     const bodyEditor = screen.getByTestId('body-editor');
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
-    const controlRule = /\.alerts-font-size-control\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(group.compareDocumentPosition(bodyEditor) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(controlRule).toContain('grid-template-columns: repeat(2, minmax(112px, 140px))');
-    expect(controlRule).toContain('width: max-content');
-    expect(controlRule).toContain('max-width: 100%');
+    expect(screen.queryByRole('group', { name: 'Alert font size' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Alert Font Size')).not.toBeInTheDocument();
+    expect(bodyEditor).toBeInTheDocument();
+    expect(css).not.toContain('.alerts-font-size-control');
+    expect(css).not.toContain('.alerts-font-size-btn');
   });
 
   it('renders all timezone options in the Source TZ dropdown', () => {

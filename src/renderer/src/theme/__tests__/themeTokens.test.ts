@@ -34,4 +34,8 @@ describe('theme tokens', () => {
     expect(pinkRule).toContain('--accent-hover: #ffa4ba');
     expect(pinkRule).toContain('--accent-bright: #ffc6d4');
   });
+
+  it('uses IBM Plex Sans as the product UI base font', () => {
+    expect(cssVar('--font-family-base')).toBe("'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif");
+  });
 });

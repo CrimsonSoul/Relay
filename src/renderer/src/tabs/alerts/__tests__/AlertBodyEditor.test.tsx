@@ -44,10 +44,6 @@ vi.mock('../HighlightPopover', () => ({
 
 const defaultProps = {
   setBodyHtml: vi.fn(),
-  isCompact: false,
-  onToggleCompact: vi.fn(),
-  isEnhanced: false,
-  onToggleEnhanced: vi.fn(),
 };
 
 // Stub execCommand and queryCommandState since jsdom does not define them
@@ -97,7 +93,7 @@ describe('AlertBodyEditor', () => {
   });
 
   it('exposes toolbar controls with clear accessible labels and pressed states', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={true} />);
+    render(<AlertBodyEditor {...defaultProps} />);
 
     expect(screen.getByRole('toolbar', { name: 'Body formatting' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
@@ -109,14 +105,8 @@ describe('AlertBodyEditor', () => {
     expect(screen.getByRole('button', { name: 'Bullet list' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Numbered list' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Insert image' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Compact message' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Enhance message' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    expect(screen.queryByRole('button', { name: 'Compact message' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enhance message' })).not.toBeInTheDocument();
   });
 
   it('renders list formatting buttons', () => {
@@ -128,44 +118,6 @@ describe('AlertBodyEditor', () => {
   it('renders highlight popover', () => {
     render(<AlertBodyEditor {...defaultProps} />);
     expect(screen.getByTestId('highlight-popover')).toBeInTheDocument();
-  });
-
-  it('renders compact toggle button', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn).toBeInTheDocument();
-  });
-
-  it('renders enhance toggle button', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn).toBeInTheDocument();
-  });
-
-  it('calls onToggleCompact when compact button is clicked', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Compact/);
-    fireEvent.mouseDown(btn);
-    expect(defaultProps.onToggleCompact).toHaveBeenCalled();
-  });
-
-  it('calls onToggleEnhanced when enhance button is clicked', () => {
-    render(<AlertBodyEditor {...defaultProps} />);
-    const btn = screen.getByTitle(/Enhance/);
-    fireEvent.mouseDown(btn);
-    expect(defaultProps.onToggleEnhanced).toHaveBeenCalled();
-  });
-
-  it('adds active class when isCompact is true', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={true} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn.className).toContain('active');
-  });
-
-  it('adds active class when isEnhanced is true', () => {
-    render(<AlertBodyEditor {...defaultProps} isEnhanced={true} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn.className).toContain('active');
   });
 
   it('calls setBodyHtml on editor input', () => {
@@ -536,17 +488,5 @@ describe('AlertBodyEditor', () => {
     // Bold button should not have active class because editor is not the active element
     const boldBtn = screen.getByTitle('Bold (Cmd+B)');
     expect(boldBtn.className).not.toContain('active');
-  });
-
-  it('does not add active class to compact toggle when isCompact is false', () => {
-    render(<AlertBodyEditor {...defaultProps} isCompact={false} />);
-    const btn = screen.getByTitle(/Compact/);
-    expect(btn.className).not.toContain('active');
-  });
-
-  it('does not add active class to enhance toggle when isEnhanced is false', () => {
-    render(<AlertBodyEditor {...defaultProps} isEnhanced={false} />);
-    const btn = screen.getByTitle(/Enhance/);
-    expect(btn.className).not.toContain('active');
   });
 });

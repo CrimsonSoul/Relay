@@ -143,7 +143,7 @@ describe('DynatraceWindowManager', () => {
     expect(session.fromPartition).toHaveBeenCalledWith('persist:relay-dynatrace');
     expect(BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: 'Relay - Dynatrace - NOC',
+        title: 'Relay - NOC',
         titleBarStyle: 'hidden',
         trafficLightPosition: { x: 24, y: 16 },
         webPreferences: expect.objectContaining({

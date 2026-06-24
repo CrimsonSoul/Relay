@@ -230,7 +230,7 @@ export function MainApp({
         <div className="popout-header">
           <div className="popout-title-stack">
             <span className="popout-title">
-              {isDynatracePopout ? 'RELAY DYNATRACE' : 'RELAY ON-CALL BOARD'}
+              {isDynatracePopout ? 'RELAY' : 'RELAY ON-CALL BOARD'}
             </span>
             {isDynatracePopout && dynatracePopoutName && (
               <span className="popout-subtitle">{dynatracePopoutName}</span>

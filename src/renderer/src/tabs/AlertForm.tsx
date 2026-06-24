@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { hasVisibleText, type AlertBodyFontSize, type Severity } from './alertUtils';
+import { hasVisibleText, type Severity } from './alertUtils';
 import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import type { AlertBodyEditorHandle } from './alerts/AlertBodyEditor';
@@ -30,12 +30,6 @@ export interface AlertFormProps {
   footerLogoDataUrl: string | null;
   onSetFooterLogo: () => void;
   onRemoveFooterLogo: () => void;
-  isCompact: boolean;
-  onToggleCompact: () => void;
-  isEnhanced: boolean;
-  onToggleEnhanced: () => void;
-  alertBodyFontSize: AlertBodyFontSize;
-  setAlertBodyFontSize: (s: AlertBodyFontSize) => void;
 }
 
 export interface AlertFormHandle {
@@ -69,12 +63,6 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       footerLogoDataUrl,
       onSetFooterLogo,
       onRemoveFooterLogo,
-      isCompact,
-      onToggleCompact,
-      isEnhanced,
-      onToggleEnhanced,
-      alertBodyFontSize,
-      setAlertBodyFontSize,
     },
     ref,
   ) => {
@@ -146,38 +134,7 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                 />
               </div>
 
-              <div className="alerts-field">
-                <span className="alerts-field-label">Alert Font Size</span>
-                <div className="alerts-font-size-control" role="group" aria-label="Alert font size">
-                  {(
-                    [
-                      ['normal', 'Normal'],
-                      ['large', 'Large'],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      className={`alerts-font-size-btn${
-                        alertBodyFontSize === value ? ' active' : ''
-                      }`}
-                      aria-pressed={alertBodyFontSize === value}
-                      onClick={() => setAlertBodyFontSize(value)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <AlertBodyEditor
-                ref={bodyEditorRef}
-                setBodyHtml={setBodyHtml}
-                isCompact={isCompact}
-                onToggleCompact={onToggleCompact}
-                isEnhanced={isEnhanced}
-                onToggleEnhanced={onToggleEnhanced}
-              />
+              <AlertBodyEditor ref={bodyEditorRef} setBodyHtml={setBodyHtml} />
             </div>
           </section>
 

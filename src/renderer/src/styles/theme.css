@@ -99,7 +99,7 @@
   --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.5);
 
   /* Typography */
-  --font-family-base: 'Outfit Variable', 'Outfit', sans-serif;
+  --font-family-base: 'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif;
   --font-family-mono: 'JetBrains Mono', monospace;
 
   /* Font Size Scale — balanced for 10ft/55" and 1ft/24" at 1080p

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
+import sharp from 'sharp';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
@@ -21,6 +22,7 @@ export const ALLOWED_AUX_ROUTES = new Set([
 ]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
+const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 
 const MAX_ICS_LENGTH = 1_048_576; // 1MB
 const MAX_ALERT_BODY_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB before resize/compression
@@ -296,7 +298,7 @@ export function setupWindowHandlers(
   ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, async (event, dataUrl: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE)) return false;
     try {
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
         return false;
       }
       if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
@@ -312,6 +314,47 @@ export function setupWindowHandlers(
         error: getErrorMessage(err),
       });
       return false;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE, async (event, dataUrl: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE)) {
+      return { success: false, error: 'Untrusted sender' };
+    }
+    try {
+      if (typeof dataUrl !== 'string' || !dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+        return { success: false, error: 'Invalid image data' };
+      }
+      if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        return { success: false, error: 'Image data exceeds size limit' };
+      }
+
+      const sourceBuffer = Buffer.from(dataUrl.slice(PNG_DATA_URL_PREFIX.length), 'base64');
+      if (sourceBuffer.length === 0) {
+        return { success: false, error: 'Invalid image data' };
+      }
+
+      const optimizedBuffer = await sharp(sourceBuffer)
+        .png({
+          adaptiveFiltering: true,
+          compressionLevel: 9,
+          effort: 10,
+        })
+        .toBuffer();
+
+      if (optimizedBuffer.length >= sourceBuffer.length) {
+        return { success: false, error: 'Optimized image was not smaller' };
+      }
+
+      return {
+        success: true,
+        data: PNG_DATA_URL_PREFIX + optimizedBuffer.toString('base64'),
+      };
+    } catch (err) {
+      loggers.ipc.warn('Alert image optimization failed', {
+        error: getErrorMessage(err),
+      });
+      return { success: false, error: 'Optimization failed' };
     }
   });
 

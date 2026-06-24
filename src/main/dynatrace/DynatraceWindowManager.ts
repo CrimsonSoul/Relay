@@ -151,7 +151,7 @@ export class DynatraceWindowManager {
     const window = new BrowserWindow({
       ...(dashboard.bounds ?? DEFAULT_WINDOW_OPTIONS),
       backgroundColor: DEFAULT_WINDOW_OPTIONS.backgroundColor,
-      title: `Relay - Dynatrace - ${dashboard.name}`,
+      title: `Relay - ${dashboard.name}`,
       titleBarStyle: 'hidden',
       trafficLightPosition: { x: 24, y: 16 },
       autoHideMenuBar: true,

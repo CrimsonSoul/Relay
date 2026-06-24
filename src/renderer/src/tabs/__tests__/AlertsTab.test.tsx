@@ -169,9 +169,15 @@ vi.mock('../AlertForm', () => ({
     const setSender = props.setSender as (s: string) => void;
     const setRecipient = props.setRecipient as (s: string) => void;
     const setUpdateNumber = props.setUpdateNumber as (n: number) => void;
-    const setAlertBodyFontSize = props.setAlertBodyFontSize as (s: string) => void;
-    const onToggleCompact = props.onToggleCompact as () => void;
-    const onToggleEnhanced = props.onToggleEnhanced as () => void;
+    const hasRetiredTransformProps = [
+      'isCompact',
+      'onToggleCompact',
+      'isEnhanced',
+      'onToggleEnhanced',
+    ].some((key) => Object.prototype.hasOwnProperty.call(props, key));
+    const hasRetiredFontSizeProps = ['alertBodyFontSize', 'setAlertBodyFontSize'].some((key) =>
+      Object.prototype.hasOwnProperty.call(props, key),
+    );
     return (
       <div data-testid="alert-form">
         <button data-testid="set-severity-issue" onClick={() => setSeverity('ISSUE')}>
@@ -201,18 +207,8 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
           set-update
         </button>
-        <button data-testid="set-alert-font-large" onClick={() => setAlertBodyFontSize('large')}>
-          set-large
-        </button>
-        <button data-testid="toggle-compact" onClick={onToggleCompact}>
-          toggle-compact
-        </button>
-        <button data-testid="toggle-enhanced" onClick={onToggleEnhanced}>
-          toggle-enhanced
-        </button>
-        <span data-testid="form-compact">{String(props.isCompact)}</span>
-        <span data-testid="form-enhanced">{String(props.isEnhanced)}</span>
-        <span data-testid="form-alert-font-size">{String(props.alertBodyFontSize)}</span>
+        <span data-testid="form-retired-transform-props">{String(hasRetiredTransformProps)}</span>
+        <span data-testid="form-retired-font-size-props">{String(hasRetiredFontSizeProps)}</span>
       </div>
     );
   }),
@@ -255,7 +251,9 @@ vi.mock('../AlertCard', () => ({
         <span data-testid="card-sender">{String(props.displaySender)}</span>
         <span data-testid="card-recipient">{String(props.displayRecipient)}</span>
         <span data-testid="card-body">{String(props.bodyHtml)}</span>
-        <span data-testid="card-alert-font-size">{String(props.alertBodyFontSize)}</span>
+        <span data-testid="card-retired-font-size-prop">
+          {String(Object.prototype.hasOwnProperty.call(props, 'alertBodyFontSize'))}
+        </span>
       </div>
     );
   },
@@ -356,14 +354,6 @@ vi.mock('../alertUtils', () => ({
   sanitizeHtml: (html: string) => html,
 }));
 
-vi.mock('../alerts/compactEngine', () => ({
-  compactText: (text: string) => `[compact]${text}`,
-}));
-
-vi.mock('../alerts/enhanceEngine', () => ({
-  enhanceHtml: (html: string) => `[enhanced]${html}`,
-}));
-
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
@@ -373,6 +363,10 @@ beforeEach(() => {
     getCompanyLogo: vi.fn().mockResolvedValue(null),
     getFooterLogo: vi.fn().mockResolvedValue(null),
     writeClipboardImage: vi.fn().mockResolvedValue(true),
+    optimizeAlertImage: vi.fn().mockResolvedValue({
+      success: true,
+      data: 'data:image/png;base64,OPTIMIZED_OUTLOOK_CAPTURE',
+    }),
     saveAlertImage: vi.fn().mockResolvedValue({ success: true }),
     saveCompanyLogo: vi.fn().mockResolvedValue({ success: false }),
     removeCompanyLogo: vi.fn().mockResolvedValue({ success: true }),
@@ -535,13 +529,16 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('clicking COPY FOR OUTLOOK sends a high-resolution capture to the clipboard', async () => {
+  it('clicking COPY FOR OUTLOOK optimizes the high-resolution capture before writing it', async () => {
     render(<AlertsTab />);
     const copyBtn = screen.getByText('COPY FOR OUTLOOK');
     fireEvent.click(copyBtn);
     await waitFor(() => {
-      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
+      expect(globalThis.api?.optimizeAlertImage).toHaveBeenCalledWith(
         'data:image/png;base64,HIGH_RES_CAPTURE',
+      );
+      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
+        'data:image/png;base64,OPTIMIZED_OUTLOOK_CAPTURE',
       );
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
@@ -553,6 +550,23 @@ describe('AlertsTab', () => {
       }),
       expect.objectContaining({ scale: 2 }),
     );
+  });
+
+  it('falls back to the original high-resolution capture when Outlook optimization fails', async () => {
+    vi.mocked(globalThis.api!.optimizeAlertImage!).mockResolvedValueOnce({
+      success: false,
+      error: 'Optimization failed',
+    });
+
+    render(<AlertsTab />);
+    const copyBtn = screen.getByText('COPY FOR OUTLOOK');
+    fireEvent.click(copyBtn);
+
+    await waitFor(() => {
+      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
+        'data:image/png;base64,HIGH_RES_CAPTURE',
+      );
+    });
   });
 
   it('resolves banner colors in the shared capture clone before rendering', async () => {
@@ -818,16 +832,12 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-recipient')).toHaveTextContent('Managers');
   });
 
-  it('routes selected alert font size from the composer to the preview', () => {
+  it('does not expose retired alert font size controls or props', () => {
     render(<AlertsTab />);
 
-    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('normal');
-    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('normal');
-
-    fireEvent.click(screen.getByTestId('set-alert-font-large'));
-
-    expect(screen.getByTestId('form-alert-font-size')).toHaveTextContent('large');
-    expect(screen.getByTestId('card-alert-font-size')).toHaveTextContent('large');
+    expect(screen.queryByTestId('set-alert-font-large')).not.toBeInTheDocument();
+    expect(screen.getByTestId('form-retired-font-size-props')).toHaveTextContent('false');
+    expect(screen.getByTestId('card-retired-font-size-prop')).toHaveTextContent('false');
   });
 
   it('shows UPDATE prefix in subject when updateNumber > 0', () => {
@@ -843,67 +853,11 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-subject')).toHaveTextContent('UPDATE #2 — Test Subject');
   });
 
-  // --- Compact/Enhance toggles ---
-
-  it('toggles compact on then off restoring original body', () => {
+  it('does not expose retired compact or enhance controls to the alert form', () => {
     render(<AlertsTab />);
-    // Set some body content first
-    fireEvent.click(screen.getByTestId('set-body'));
-    expect(screen.getByTestId('card-body')).toHaveTextContent('<p>body</p>');
-
-    // Toggle compact ON
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-
-    // Toggle compact OFF — should restore original
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('false');
-  });
-
-  it('toggles enhanced on then off restoring original body', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-
-    // Toggle enhanced ON
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-
-    // Toggle enhanced OFF — should restore
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('false');
-  });
-
-  it('can have both compact and enhanced on at the same time', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-  });
-
-  it('turning off compact while enhanced is still on keeps enhanced', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    // Turn both on
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    // Turn compact off
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('false');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('true');
-  });
-
-  it('turning off enhanced while compact is still on keeps compact', () => {
-    render(<AlertsTab />);
-    fireEvent.click(screen.getByTestId('set-body'));
-    // Turn both on
-    fireEvent.click(screen.getByTestId('toggle-compact'));
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    // Turn enhanced off
-    fireEvent.click(screen.getByTestId('toggle-enhanced'));
-    expect(screen.getByTestId('form-compact')).toHaveTextContent('true');
-    expect(screen.getByTestId('form-enhanced')).toHaveTextContent('false');
+    expect(screen.queryByTestId('toggle-compact')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('toggle-enhanced')).not.toBeInTheDocument();
+    expect(screen.getByTestId('form-retired-transform-props')).toHaveTextContent('false');
   });
 
   // --- History modal interactions ---
