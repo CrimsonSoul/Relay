@@ -4,8 +4,6 @@ import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
 
-const getBridge = () => window.bridge ?? window.api;
-
 export interface AlertBodyEditorHandle {
   setEditorContent: (html: string) => void;
 }
@@ -167,8 +165,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
     );
 
     const insertAlertImage = useCallback(async () => {
-      const bridge = getBridge();
-      const result = await bridge?.selectAlertBodyImage?.();
+      const result = await window.api?.selectAlertBodyImage?.();
       if (!result?.success || !result.data) return;
 
       editorRef.current?.focus();

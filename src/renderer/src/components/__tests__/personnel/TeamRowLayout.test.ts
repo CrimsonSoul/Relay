@@ -19,12 +19,10 @@ describe('TeamRow layout CSS', () => {
     const bottomRule = ruleFor('.team-row-bottom');
     const topRule = ruleFor('.team-row-top');
     const statusRule = ruleFor('.team-row-time-status');
-    const roleRule = ruleFor('.team-row-role');
 
     expect(topRule).toContain('grid-template-columns: minmax(0, 1fr) max-content');
     expect(bottomRule).toContain('grid-template-columns: minmax(0, 1fr) minmax(0, max-content)');
     expect(bottomRule).toContain('column-gap: 12px');
-    expect(roleRule).toContain('overflow-wrap: anywhere');
     expect(statusRule).toContain('min-width: 0');
     expect(statusRule).toContain('max-width: 100%');
     expect(statusRule).toContain('flex-wrap: wrap');
@@ -35,7 +33,6 @@ describe('TeamRow layout CSS', () => {
     const primaryRule = ruleFor('.team-row--primary');
     const primaryHoverRule = ruleFor('.team-row--primary:hover');
     const primaryNameRule = ruleFor('.team-row--primary .team-row-name');
-    const primaryRoleRule = ruleFor('.team-row--primary .team-row-role');
 
     expect(primaryRule).toContain(
       'background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 9%, transparent)',
@@ -44,7 +41,6 @@ describe('TeamRow layout CSS', () => {
       'background: color-mix(in srgb, var(--team-color-fill, var(--accent)) 13%, transparent)',
     );
     expect(primaryNameRule).toContain('font-weight: 800');
-    expect(primaryRoleRule).toContain('color: var(--team-color, var(--accent-bright))');
   });
 
   it('scales name and phone from a board-scoped font variable while keeping role markers visible', () => {

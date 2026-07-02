@@ -6,7 +6,6 @@ import {
   ON_CALL_FONT_SCALE_STEP,
   ON_CALL_FONT_SCALE_STORAGE_KEY,
   clampOnCallFontScale,
-  getOnCallFontScaleFromStorageValue,
   getStoredOnCallFontScale,
   setOnCallFontScale,
 } from '../onCallDisplay';
@@ -35,7 +34,7 @@ describe('on-call board font scale preferences', () => {
     expect(clampOnCallFontScale(82)).toBe(85);
     expect(clampOnCallFontScale(151)).toBe(150);
     expect(clampOnCallFontScale(123)).toBe(125);
-    expect(getOnCallFontScaleFromStorageValue('not-a-number')).toBe(100);
+    expect(clampOnCallFontScale('not-a-number')).toBe(100);
   });
 
   it('migrates legacy compact, standard, and wall display sizes into numeric scale values', () => {

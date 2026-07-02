@@ -280,19 +280,6 @@
   justify-content: flex-end;
 }
 
-.team-row-role {
-  font-size: var(--oncall-secondary-font-size);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0;
-  color: var(--color-text-tertiary);
-  background: none;
-  padding: 0;
-  border-radius: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
 .team-row-name-wrapper {
   display: flex;
   align-items: center;
@@ -370,10 +357,6 @@
 .team-row--primary .team-row-name {
   color: var(--color-text-primary);
   font-weight: 800;
-}
-
-.team-row--primary .team-row-role {
-  color: var(--team-color, var(--accent-bright));
 }
 
 /* Phone stays visually protected with the name; both are load-bearing board data. */

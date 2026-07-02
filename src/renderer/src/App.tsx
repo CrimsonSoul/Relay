@@ -30,7 +30,7 @@ import {
   type ReminderAlertLoadDetail,
 } from './services/reminderAlertLoadEvent';
 import {
-  getOnCallFontScaleFromStorageValue,
+  clampOnCallFontScale,
   getStoredOnCallFontScale,
   ON_CALL_FONT_SCALE_STORAGE_KEY,
   setOnCallFontScale,
@@ -96,13 +96,13 @@ export function MainApp({
   const [onCallFontScale, setOnCallFontScaleState] = useState(() => getStoredOnCallFontScale());
   const handleOnCallFontScaleChange = useCallback((scale: number) => {
     setOnCallFontScale(scale);
-    setOnCallFontScaleState(getOnCallFontScaleFromStorageValue(scale));
+    setOnCallFontScaleState(clampOnCallFontScale(scale));
   }, []);
 
   useEffect(() => {
     const handleFontScaleStorage = (event: StorageEvent) => {
       if (event.key !== ON_CALL_FONT_SCALE_STORAGE_KEY) return;
-      setOnCallFontScaleState(getOnCallFontScaleFromStorageValue(event.newValue));
+      setOnCallFontScaleState(clampOnCallFontScale(event.newValue));
     };
 
     globalThis.addEventListener('storage', handleFontScaleStorage);

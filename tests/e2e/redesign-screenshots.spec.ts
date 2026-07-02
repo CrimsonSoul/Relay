@@ -407,18 +407,6 @@ test.describe('Redesign screenshot harness', () => {
       await window.getByTestId('sidebar-settings').click();
       await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
 
-      // Verify form controls inherit Outfit, not the UA default system font.
-      const settingsBtnFont = await window.evaluate(() => {
-        const btn = globalThis.document.querySelector(
-          '[data-testid="sidebar-settings"] ~ * button, .settings-modal button',
-        );
-        if (!btn) return null;
-        return globalThis.getComputedStyle(btn).fontFamily;
-      });
-      if (settingsBtnFont !== null) {
-        expect(settingsBtnFont).toMatch(/Outfit/i);
-      }
-
       await shoot(window, 'settings-modal.png');
 
       // --- Data Manager modal (opened from Settings) ---

@@ -51,7 +51,7 @@ const defaultProps = {
 beforeEach(() => {
   document.execCommand = vi.fn().mockReturnValue(true);
   document.queryCommandState = vi.fn().mockReturnValue(false);
-  Object.defineProperty(window, 'bridge', {
+  Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
       selectAlertBodyImage: vi.fn(),
@@ -174,7 +174,7 @@ describe('AlertBodyEditor', () => {
 
   it('selects and inserts an alert image block through the toolbar', async () => {
     const selectedImage = 'data:image/jpeg;base64,SEL';
-    const bridge = window.bridge as NonNullable<typeof window.bridge>;
+    const bridge = window.api as NonNullable<typeof window.api>;
     vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
       success: true,
       data: selectedImage,
@@ -196,7 +196,7 @@ describe('AlertBodyEditor', () => {
   });
 
   it('does nothing when image selection is cancelled', async () => {
-    const bridge = window.bridge as NonNullable<typeof window.bridge>;
+    const bridge = window.api as NonNullable<typeof window.api>;
     vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
       success: false,
       error: 'Cancelled',
