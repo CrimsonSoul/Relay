@@ -11,6 +11,11 @@ vi.mock('../../alertUtils', () => ({
   escapeHtml: (text: string) => text,
 }));
 
+const showToastMock = vi.fn();
+vi.mock('../../../components/Toast', () => ({
+  useToast: () => ({ showToast: showToastMock }),
+}));
+
 vi.mock('../HighlightPopover', () => ({
   HighlightPopover: ({
     onApply,
@@ -209,6 +214,29 @@ describe('AlertBodyEditor', () => {
 
     await vi.waitFor(() => {
       expect(bridge.selectAlertBodyImage).toHaveBeenCalled();
+    });
+    expect(document.execCommand).not.toHaveBeenCalledWith(
+      'insertHTML',
+      false,
+      expect.stringContaining('<img'),
+    );
+    expect(showToastMock).not.toHaveBeenCalled();
+  });
+
+  it('surfaces image selection errors as a toast', async () => {
+    const bridge = window.api as NonNullable<typeof window.api>;
+    vi.mocked(bridge.selectAlertBodyImage).mockResolvedValue({
+      success: false,
+      error: 'Image must be under 5MB',
+    });
+
+    render(<AlertBodyEditor {...defaultProps} />);
+    await act(async () => {
+      fireEvent.mouseDown(screen.getByRole('button', { name: 'Insert image' }));
+    });
+
+    await vi.waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('Image must be under 5MB', 'error');
     });
     expect(document.execCommand).not.toHaveBeenCalledWith(
       'insertHTML',

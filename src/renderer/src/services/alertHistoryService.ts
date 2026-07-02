@@ -1,3 +1,4 @@
+import { AlertHistoryEntrySchema } from '@shared/ipcValidation';
 import { getPb, handleApiError, requireOnline } from './pocketbase';
 
 export interface AlertHistoryRecord {
@@ -17,6 +18,10 @@ export type AlertHistoryInput = Omit<AlertHistoryRecord, 'id' | 'created' | 'upd
 
 export async function addAlertHistory(data: AlertHistoryInput): Promise<AlertHistoryRecord> {
   requireOnline();
+  const parsed = AlertHistoryEntrySchema.safeParse(data);
+  if (!parsed.success) {
+    throw new Error('Alert history entry exceeds size limits');
+  }
   try {
     return await getPb().collection('alert_history').create<AlertHistoryRecord>(data);
   } catch (err) {

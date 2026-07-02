@@ -7,12 +7,9 @@ import { Tooltip } from './Tooltip';
 import { TactileButton } from './TactileButton';
 import { ContextMenu, ContextMenuItem } from './ContextMenu';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
+import { useOnCallBoardLayout } from '../hooks/useOnCallBoardLayout';
 import type { BoardSettingsState } from '../hooks/useAppData';
-import {
-  clampOnCallFontScale,
-  DEFAULT_ON_CALL_FONT_SCALE,
-  getOnCallBoardColumnMinWidth,
-} from '../theme/onCallDisplay';
+import { DEFAULT_ON_CALL_FONT_SCALE } from '../theme/onCallDisplay';
 import { OnCallDisplayControl } from './oncall/OnCallDisplayControl';
 
 interface PopoutBoardProps {
@@ -51,14 +48,9 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
     setLastUpdated(new Date());
   }, [localOnCall]);
 
-  const effectiveOnCallFontScale = clampOnCallFontScale(onCallFontScale);
-  const boardStyle = useMemo(
-    () =>
-      ({
-        '--oncall-font-scale': String(effectiveOnCallFontScale / 100),
-      }) as React.CSSProperties,
-    [effectiveOnCallFontScale],
-  );
+  // Font scale + masonry column distribution (shared with PersonnelTab)
+  const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
+    useOnCallBoardLayout(onCallFontScale);
 
   const getTeamRows = useCallback(
     (teamId: string) => localOnCall.filter((r) => r.teamId === teamId),
@@ -91,35 +83,6 @@ export const PopoutBoard: React.FC<PopoutBoardProps> = ({
       copyAllError: 'Failed to copy to clipboard',
     },
   });
-
-  // Masonry column distribution (matches PersonnelTab)
-  const gridRef = React.useRef<HTMLUListElement | null>(null);
-  const [columnCount, setColumnCount] = useState(3);
-
-  const updateColumnCount = useCallback(() => {
-    const node = gridRef.current;
-    if (!node) return;
-    const width = node.clientWidth;
-    if (width < 1) return;
-    const minCol = getOnCallBoardColumnMinWidth(effectiveOnCallFontScale);
-    const gap = 24;
-    const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
-    setColumnCount((prev) => (prev === next ? prev : next));
-  }, [effectiveOnCallFontScale]);
-
-  useEffect(() => {
-    updateColumnCount();
-    const node = gridRef.current;
-    if (!node) return;
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
-    observer?.observe(node);
-    globalThis.addEventListener('resize', updateColumnCount);
-    return () => {
-      observer?.disconnect();
-      globalThis.removeEventListener('resize', updateColumnCount);
-    };
-  }, [updateColumnCount]);
 
   const teamColumns = useMemo(() => {
     const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);

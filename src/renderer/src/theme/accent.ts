@@ -125,18 +125,31 @@ function defaultAccentSchedule(): AccentSchedule {
 
 function normalizeAccentScheduleChoice(value: unknown): AccentScheduleChoice | null {
   if (isPresetAccentId(value)) return value;
-  if (typeof value !== 'string' || !value.startsWith(CUSTOM_CHOICE_PREFIX)) return null;
-  const normalized = normalizeHexAccent(value.slice(CUSTOM_CHOICE_PREFIX.length));
-  return normalized ? `custom:${normalized}` : null;
+  const hex = customHexFromScheduleChoice(value);
+  return hex ? customAccentScheduleChoice(hex) : null;
 }
 
+/** Build the stored wire format for a custom-color schedule choice. */
+export function customAccentScheduleChoice(hex: string): AccentScheduleChoice | null {
+  const normalized = normalizeHexAccent(hex);
+  return normalized ? `${CUSTOM_CHOICE_PREFIX}${normalized}` : null;
+}
+
+/** Extract the normalized hex from a custom schedule choice, or null for presets/invalid values. */
+export function customHexFromScheduleChoice(choice: unknown): string | null {
+  if (typeof choice !== 'string' || !choice.startsWith(CUSTOM_CHOICE_PREFIX)) return null;
+  return normalizeHexAccent(choice.slice(CUSTOM_CHOICE_PREFIX.length));
+}
+
+const centralTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: CENTRAL_TIME_ZONE,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 function centralTimeMinutes(date: Date): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CENTRAL_TIME_ZONE,
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
+  const parts = centralTimeFormatter.formatToParts(date);
   const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0');
   const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0');
   return hour * 60 + minute;
@@ -244,12 +257,18 @@ function applyCustomAccent(hex: string): void {
   document.documentElement.setAttribute('data-accent', 'custom');
 }
 
+/**
+ * Apply a scheduled choice for this window only — never persist it. The user's
+ * stored accent selection and saved palette must survive schedule boundaries
+ * so disabling the schedule restores their own choice.
+ */
 function applyAccentScheduleChoice(choice: AccentScheduleChoice): void {
-  if (choice.startsWith(CUSTOM_CHOICE_PREFIX)) {
-    setCustomAccent(choice.slice(CUSTOM_CHOICE_PREFIX.length));
+  const customHex = customHexFromScheduleChoice(choice);
+  if (customHex) {
+    applyCustomAccent(customHex);
     return;
   }
-  setAccent(choice);
+  apply(choice as AccentId);
 }
 
 export function getStoredCustomAccent(): string | null {
@@ -400,16 +419,24 @@ function clearAccentScheduleTimer(): void {
   scheduleTimer = null;
 }
 
+// Wall-clock minute deltas drift from real elapsed time across DST shifts and
+// system sleep, so never trust a long sleep: cap it and re-check, letting the
+// callback recompute from the actual current time.
+const MAX_SCHEDULE_TIMER_MS = 15 * 60_000;
+
 function scheduleNextAccentCheck(date = new Date()): void {
   clearAccentScheduleTimer();
   if (!getStoredAccentSchedule().enabled) return;
 
   const now = date;
-  const delayMs = Math.max(
-    1000,
-    minutesUntilNextScheduleBoundary(now) * 60_000 -
-      now.getSeconds() * 1000 -
-      now.getMilliseconds(),
+  const delayMs = Math.min(
+    MAX_SCHEDULE_TIMER_MS,
+    Math.max(
+      1000,
+      minutesUntilNextScheduleBoundary(now) * 60_000 -
+        now.getSeconds() * 1000 -
+        now.getMilliseconds(),
+    ),
   );
   scheduleTimer = window.setTimeout(() => {
     applyScheduledAccent();
@@ -457,27 +484,42 @@ export function setSavedCustomAccent(value: string): string | null {
   return normalized;
 }
 
+function reselectAfterCustomAccentRemoval(
+  nextCustomAccents: string[],
+  onCustomAccent: boolean,
+): void {
+  const nextActiveCustomAccent = nextCustomAccents.at(-1);
+  if (nextActiveCustomAccent) {
+    if (onCustomAccent) {
+      selectCustomAccent(nextActiveCustomAccent);
+    } else {
+      localStorage.setItem(CUSTOM_ACCENT_STORAGE_KEY, nextActiveCustomAccent);
+    }
+    return;
+  }
+  localStorage.removeItem(CUSTOM_ACCENT_STORAGE_KEY);
+  if (onCustomAccent) {
+    localStorage.setItem(ACCENT_STORAGE_KEY, DEFAULT_ACCENT);
+    apply(DEFAULT_ACCENT);
+  }
+}
+
 export function removeCustomAccent(value: string): string[] {
   const normalized = normalizeHexAccent(value);
   if (!normalized) return getStoredCustomAccents();
 
   const nextCustomAccents = getStoredCustomAccents().filter((hex) => hex !== normalized);
-  const activeCustomAccent = getStoredCustomAccent();
+  const isRemovingActive = getStoredCustomAccent() === normalized;
+  // Only re-select a replacement when the custom accent is what's actually in
+  // use — relay-custom-accent lingers after switching to a preset, and deleting
+  // a swatch then must not hijack the preset selection.
+  const onCustomAccent = getStoredAccent() === 'custom';
 
   try {
     saveCustomAccents(nextCustomAccents);
-    if (activeCustomAccent === normalized) {
-      const nextActiveCustomAccent = nextCustomAccents.at(-1);
-      if (nextActiveCustomAccent) {
-        selectCustomAccent(nextActiveCustomAccent);
-      } else {
-        localStorage.removeItem(CUSTOM_ACCENT_STORAGE_KEY);
-        localStorage.setItem(ACCENT_STORAGE_KEY, DEFAULT_ACCENT);
-        apply(DEFAULT_ACCENT);
-      }
-    }
+    if (isRemovingActive) reselectAfterCustomAccentRemoval(nextCustomAccents, onCustomAccent);
   } catch {
-    if (activeCustomAccent === normalized) {
+    if (isRemovingActive && onCustomAccent) {
       const nextActiveCustomAccent = nextCustomAccents.at(-1);
       if (nextActiveCustomAccent) {
         applyCustomAccent(nextActiveCustomAccent);

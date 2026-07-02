@@ -73,8 +73,16 @@ function escapeHtmlAttribute(text: string): string {
   return escapeHtml(text).replaceAll("'", '&#39;');
 }
 
+// Large enough for anything the insert pipeline produces (516px-wide images),
+// small enough to reject multi-megabyte screenshots pasted as raw data URLs,
+// which would bypass the size/width caps of the insert pipeline entirely.
+const MAX_DATA_IMAGE_SRC_LENGTH = 1_500_000;
+
 function isAllowedDataImage(src: string): boolean {
-  return /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src);
+  return (
+    src.length <= MAX_DATA_IMAGE_SRC_LENGTH &&
+    /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=]+$/i.test(src)
+  );
 }
 
 function renderDataImage(el: Element): string | null {

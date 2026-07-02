@@ -25,7 +25,7 @@ import {
   saveReminderAlarmSource,
 } from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
-import type { AlertHistoryEntry } from '@shared/ipc';
+import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
 
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
@@ -374,8 +374,17 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
 
   const handleCopyImage = useCallback(
-    () => withCapture(copyCurrentAlertImage, ALERT_OUTLOOK_CAPTURE_SCALE),
-    [withCapture, copyCurrentAlertImage],
+    () =>
+      withCapture(async (dataUrl) => {
+        // A 2x capture of an image-heavy alert can exceed the IPC data-URL cap,
+        // which would fail the copy outright — retry at 1x instead.
+        if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+          const fallbackCanvas = await captureCard(1);
+          dataUrl = fallbackCanvas.toDataURL('image/png');
+        }
+        return copyCurrentAlertImage(dataUrl);
+      }, ALERT_OUTLOOK_CAPTURE_SCALE),
+    [withCapture, captureCard, copyCurrentAlertImage],
   );
 
   const handleSetReminder = useCallback(() => {

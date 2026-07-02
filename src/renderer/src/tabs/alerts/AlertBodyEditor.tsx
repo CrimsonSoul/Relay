@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Tooltip } from '../../components/Tooltip';
+import { useToast } from '../../components/Toast';
 import { sanitizeHtml, escapeHtml } from '../alertUtils';
 import { HighlightPopover } from './HighlightPopover';
 import { HIGHLIGHTS, type HighlightType } from './highlightColors';
@@ -105,6 +106,7 @@ const liftHighlightOutOfAncestors = (highlight: HTMLElement, editorRoot: HTMLEle
 
 export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBodyEditorProps>(
   ({ setBodyHtml }, ref) => {
+    const { showToast } = useToast();
     const editorRef = useRef<HTMLDivElement>(null);
     const [activeFormats, setActiveFormats] = useState({
       bold: false,
@@ -166,7 +168,10 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
 
     const insertAlertImage = useCallback(async () => {
       const result = await window.api?.selectAlertBodyImage?.();
-      if (!result?.success || !result.data) return;
+      if (!result?.success || !result.data) {
+        if (result?.error && result.error !== 'Cancelled') showToast(result.error, 'error');
+        return;
+      }
 
       editorRef.current?.focus();
       const cleaned = sanitizeHtml(
@@ -175,7 +180,7 @@ export const AlertBodyEditor = React.forwardRef<AlertBodyEditorHandle, AlertBody
       // eslint-disable-next-line sonarjs/deprecation -- execCommand is the only way to insert HTML into contentEditable
       document.execCommand('insertHTML', false, cleaned);
       handleBodyInput();
-    }, [handleBodyInput]);
+    }, [handleBodyInput, showToast]);
 
     const applyHighlight = useCallback(
       (type: HighlightType) => {

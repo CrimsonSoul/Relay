@@ -2,10 +2,9 @@ import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } fr
 import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS } from '@shared/ipc';
+import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
 import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
-import sharp from 'sharp';
 import { loggers } from '../logger';
 import { validatePath } from '../utils/pathSafety';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
@@ -21,7 +20,6 @@ export const ALLOWED_AUX_ROUTES = new Set([
   'popout/board',
 ]);
 const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
-const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024; // 10MB max for image data URLs
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 
 const MAX_ICS_LENGTH = 1_048_576; // 1MB
@@ -29,6 +27,45 @@ const MAX_ALERT_BODY_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB before resize/compress
 const MAX_ALERT_BODY_IMAGE_WIDTH = 516;
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
+
+type PickedImage =
+  | { success: true; image: Electron.NativeImage; filePath: string }
+  | { success: false; error: string };
+
+/**
+ * Shared pick → size-gate → decode → width-cap pipeline for user-selected
+ * images. nativeImage only decodes PNG/JPEG, so the dialog filter must not
+ * advertise formats this cannot load.
+ */
+async function pickAndResizeImage(options: {
+  title: string;
+  maxBytes: number;
+  maxWidth: number;
+  sizeError: string;
+}): Promise<PickedImage> {
+  const { canceled, filePaths } = await dialog.showOpenDialog({
+    title: options.title,
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
+
+  const selectedFile = filePaths[0];
+  const fileStat = await stat(selectedFile);
+  if (fileStat.size > options.maxBytes) {
+    return { success: false, error: options.sizeError };
+  }
+
+  const buf = await readFile(selectedFile);
+  let image = nativeImage.createFromBuffer(buf);
+  if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
+
+  const { width } = image.getSize();
+  if (width > options.maxWidth) {
+    image = image.resize({ width: options.maxWidth });
+  }
+  return { success: true, image, filePath: selectedFile };
+}
 
 function sanitizePngSuggestedName(suggestedName: unknown): string {
   if (typeof suggestedName !== 'string') return 'alert.png';
@@ -207,32 +244,25 @@ export function setupWindowHandlers(
       return { success: false, error: 'Untrusted sender' };
     }
     try {
-      const { canceled, filePaths } = await dialog.showOpenDialog({
+      const picked = await pickAndResizeImage({
         title: 'Insert Alert Image',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-        properties: ['openFile'],
+        maxBytes: MAX_ALERT_BODY_IMAGE_SIZE,
+        maxWidth: MAX_ALERT_BODY_IMAGE_WIDTH,
+        sizeError: 'Image must be under 5MB',
       });
-      if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
+      if (!picked.success) return picked;
 
-      const selectedFile = filePaths[0];
-      const fileStat = await stat(selectedFile);
-      if (fileStat.size > MAX_ALERT_BODY_IMAGE_SIZE) {
-        return { success: false, error: 'Image must be under 5MB' };
+      // JPEG has no alpha channel — keep PNG sources as PNG so transparent
+      // backgrounds survive instead of compositing to black.
+      if (extname(picked.filePath).toLowerCase() === '.png') {
+        return {
+          success: true,
+          data: 'data:image/png;base64,' + picked.image.toPNG().toString('base64'),
+        };
       }
-
-      const buf = await readFile(selectedFile);
-      let image = nativeImage.createFromBuffer(buf);
-      if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
-
-      const { width } = image.getSize();
-      if (width > MAX_ALERT_BODY_IMAGE_WIDTH) {
-        image = image.resize({ width: MAX_ALERT_BODY_IMAGE_WIDTH });
-      }
-
-      const jpegBuffer = image.toJPEG(82);
       return {
         success: true,
-        data: 'data:image/jpeg;base64,' + jpegBuffer.toString('base64'),
+        data: 'data:image/jpeg;base64,' + picked.image.toJPEG(82).toString('base64'),
       };
     } catch (err) {
       loggers.ipc.warn('Alert body image selection failed', {
@@ -334,6 +364,11 @@ export function setupWindowHandlers(
         return { success: false, error: 'Invalid image data' };
       }
 
+      // Lazy-load sharp: its platform-native binary may be missing (packaging
+      // gaps, --omit=optional installs), and optimization is best-effort — the
+      // renderer falls back to the unoptimized capture. An eager import here
+      // would take the whole main process down at startup instead.
+      const { default: sharp } = await import('sharp');
       const optimizedBuffer = await sharp(sourceBuffer)
         .png({
           adaptiveFiltering: true,
@@ -406,32 +441,18 @@ export function setupWindowHandlers(
       }
       if (!getDataRoot) return { success: false, error: 'Data root not available' };
       try {
-        const { canceled, filePaths } = await dialog.showOpenDialog({
+        const picked = await pickAndResizeImage({
           title: dialogTitle,
-          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-          properties: ['openFile'],
+          maxBytes: MAX_LOGO_SIZE,
+          maxWidth: MAX_LOGO_WIDTH,
+          sizeError: 'Image must be under 2MB',
         });
-        if (canceled || !filePaths[0]) return { success: false, error: 'Cancelled' };
-
-        const selectedFile = filePaths[0];
-        const fileStat = await stat(selectedFile);
-        if (fileStat.size > MAX_LOGO_SIZE) {
-          return { success: false, error: 'Image must be under 2MB' };
-        }
-
-        const buf = await readFile(selectedFile);
-        let image = nativeImage.createFromBuffer(buf);
-        if (image.isEmpty()) return { success: false, error: 'Invalid image file' };
-
-        const { width } = image.getSize();
-        if (width > MAX_LOGO_WIDTH) {
-          image = image.resize({ width: MAX_LOGO_WIDTH });
-        }
+        if (!picked.success) return picked;
 
         const assetsDir = join(await getDataRoot(), 'assets');
         await mkdir(assetsDir, { recursive: true });
         const logoPath = join(assetsDir, fileName);
-        const pngBuffer = image.toPNG();
+        const pngBuffer = picked.image.toPNG();
         await writeFile(logoPath, pngBuffer);
 
         const dataUrl = 'data:image/png;base64,' + pngBuffer.toString('base64');

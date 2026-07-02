@@ -11,6 +11,8 @@ import {
 import {
   ACCENT_SCHEMES,
   ACCENT_SCHEDULE_SLOTS,
+  customAccentScheduleChoice,
+  customHexFromScheduleChoice,
   getStoredAccent,
   getStoredAccentSchedule,
   getStoredCustomAccent,
@@ -374,8 +376,8 @@ export const SettingsModal: React.FC<Props> = ({
   const scheduledCustomAccents = useMemo(
     () =>
       Object.values(accentSchedule.slots)
-        .filter((choice) => choice.startsWith('custom:'))
-        .map((choice) => choice.slice('custom:'.length)),
+        .map((choice) => customHexFromScheduleChoice(choice))
+        .filter((hex): hex is string => hex !== null),
     [accentSchedule.slots],
   );
 
@@ -390,11 +392,10 @@ export const SettingsModal: React.FC<Props> = ({
         label: scheme.label,
         swatch: scheme.swatch,
       })),
-      ...customChoices.map((hex, index) => ({
-        value: `custom:${hex}` as AccentScheduleChoice,
-        label: `Custom ${index + 1} ${hex}`,
-        swatch: hex,
-      })),
+      ...customChoices.flatMap((hex, index) => {
+        const value = customAccentScheduleChoice(hex);
+        return value ? [{ value, label: `Custom ${index + 1} ${hex}`, swatch: hex }] : [];
+      }),
     ];
   }, [savedCustomAccents, scheduledCustomAccents]);
 

@@ -355,6 +355,13 @@ export type BridgeAPI = {
 /** Email identity of the single PocketBase app user Relay authenticates as. */
 export const RELAY_APP_USER_EMAIL = 'relay@relay.app';
 
+/**
+ * Hard cap for image data URLs crossing the IPC boundary. The main-process
+ * clipboard/optimize/save handlers reject anything larger, so renderer capture
+ * paths must stay under it (falling back to a smaller capture when needed).
+ */
+export const MAX_IMAGE_DATA_URL_LENGTH = 10 * 1024 * 1024;
+
 export const IPC_CHANNELS = {
   WINDOW_MINIMIZE: 'window:minimize',
   WINDOW_MAXIMIZE: 'window:maximize',

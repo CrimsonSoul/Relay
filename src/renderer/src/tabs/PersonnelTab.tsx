@@ -27,13 +27,10 @@ import {
 import { SortableTeamCard } from '../components/oncall/SortableTeamCard';
 import { OnCallDisplayControl } from '../components/oncall/OnCallDisplayControl';
 import { useOnCallBoard } from '../hooks/useOnCallBoard';
+import { useOnCallBoardLayout } from '../hooks/useOnCallBoardLayout';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import type { BoardSettingsState } from '../hooks/useAppData';
-import {
-  clampOnCallFontScale,
-  DEFAULT_ON_CALL_FONT_SCALE,
-  getOnCallBoardColumnMinWidth,
-} from '../theme/onCallDisplay';
+import { DEFAULT_ON_CALL_FONT_SCALE } from '../theme/onCallDisplay';
 
 export const PersonnelTab: React.FC<{
   onCall: OnCallRow[];
@@ -140,43 +137,9 @@ export const PersonnelTab: React.FC<{
     setLastUpdated(new Date());
   }, [localOnCall]);
 
-  const effectiveOnCallFontScale = clampOnCallFontScale(onCallFontScale);
-  const boardStyle = useMemo(
-    () =>
-      ({
-        '--oncall-font-scale': String(effectiveOnCallFontScale / 100),
-      }) as React.CSSProperties,
-    [effectiveOnCallFontScale],
-  );
-
-  // Masonry column distribution
-  const gridRef = React.useRef<HTMLUListElement | null>(null);
-  const [columnCount, setColumnCount] = useState(3);
-
-  const updateColumnCount = useCallback(() => {
-    const node = gridRef.current;
-    if (!node) return;
-    const width = node.clientWidth;
-    if (width < 1) return;
-    const minCol = getOnCallBoardColumnMinWidth(effectiveOnCallFontScale);
-    const gap = 24;
-    const next = Math.max(1, Math.floor((width + gap) / (minCol + gap)));
-    setColumnCount((prev) => (prev === next ? prev : next));
-  }, [effectiveOnCallFontScale]);
-
-  React.useEffect(() => {
-    updateColumnCount();
-    const node = gridRef.current;
-    if (!node) return;
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateColumnCount);
-    observer?.observe(node);
-    globalThis.addEventListener('resize', updateColumnCount);
-    return () => {
-      observer?.disconnect();
-      globalThis.removeEventListener('resize', updateColumnCount);
-    };
-  }, [updateColumnCount]);
+  // Font scale + masonry column distribution (shared with PopoutBoard)
+  const { effectiveOnCallFontScale, boardStyle, gridRef, columnCount } =
+    useOnCallBoardLayout(onCallFontScale);
 
   const teamColumns = useMemo(() => {
     const cols: string[][] = Array.from({ length: Math.max(1, columnCount) }, () => []);

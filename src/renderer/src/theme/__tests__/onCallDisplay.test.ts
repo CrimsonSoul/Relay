@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   DEFAULT_ON_CALL_FONT_SCALE,
+  ON_CALL_BOARD_GAP_PX,
   ON_CALL_FONT_SCALE_MAX,
   ON_CALL_FONT_SCALE_MIN,
   ON_CALL_FONT_SCALE_STEP,
@@ -35,6 +39,13 @@ describe('on-call board font scale preferences', () => {
     expect(clampOnCallFontScale(151)).toBe(150);
     expect(clampOnCallFontScale(123)).toBe(125);
     expect(clampOnCallFontScale('not-a-number')).toBe(100);
+  });
+
+  it('keeps the JS masonry gap constant in sync with the on-call board CSS', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const css = readFileSync(resolve(testDir, '../../components/oncall/oncall.css'), 'utf8');
+    const masonryRule = /(?:^|\n)\.oncall-masonry\s*\{[^}]*\}/.exec(css)?.[0] ?? '';
+    expect(masonryRule).toContain(`gap: ${ON_CALL_BOARD_GAP_PX}px`);
   });
 
   it('migrates legacy compact, standard, and wall display sizes into numeric scale values', () => {

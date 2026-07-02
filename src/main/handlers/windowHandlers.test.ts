@@ -1139,10 +1139,10 @@ describe('windowHandlers', () => {
   });
 
   describe('SELECT_ALERT_BODY_IMAGE', () => {
-    it('returns a resized JPEG data URL for a selected image', async () => {
+    it('returns a resized JPEG data URL for a selected JPEG image', async () => {
       vi.mocked(dialog.showOpenDialog).mockResolvedValue({
         canceled: false,
-        filePaths: ['/mock-dir/dashboard.png'],
+        filePaths: ['/mock-dir/dashboard.jpg'],
       });
       vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
       vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
@@ -1153,7 +1153,7 @@ describe('windowHandlers', () => {
 
       expect(dialog.showOpenDialog).toHaveBeenCalledWith({
         title: 'Insert Alert Image',
-        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+        filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }],
         properties: ['openFile'],
       });
       expect(mockNativeImage.resize).toHaveBeenCalledWith({ width: 516 });
@@ -1161,6 +1161,25 @@ describe('windowHandlers', () => {
       expect(result).toEqual({
         success: true,
         data: 'data:image/jpeg;base64,' + Buffer.from('jpeg-data').toString('base64'),
+      });
+    });
+
+    it('keeps PNG sources as PNG so transparency survives', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/mock-dir/diagram.png'],
+      });
+      vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+      vi.mocked(readFile).mockResolvedValue(Buffer.from('valid-image') as never);
+      vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
+      mockNativeImage.getSize.mockReturnValue({ width: 400, height: 300 });
+
+      const result = await handlers[IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE]();
+
+      expect(mockNativeImage.toJPEG).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('png-data').toString('base64'),
       });
     });
 

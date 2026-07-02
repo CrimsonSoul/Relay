@@ -59,3 +59,6 @@ export function setOnCallFontScale(scale: number): void {
 export function getOnCallBoardColumnMinWidth(scale: number): number {
   return Math.round(320 * Math.max(1, clampOnCallFontScale(scale) / 100));
 }
+
+/** Must match the .oncall-masonry gap in components/oncall/oncall.css. */
+export const ON_CALL_BOARD_GAP_PX = 20;
