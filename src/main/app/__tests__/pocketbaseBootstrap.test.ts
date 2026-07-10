@@ -34,6 +34,9 @@ const mocks = vi.hoisted(() => {
     stopAdvertising: vi.fn(),
     requestAppRelaunch: vi.fn(),
     broadcastToAllWindows: vi.fn(),
+    backup: vi.fn().mockResolvedValue(undefined),
+    backupIfDue: vi.fn().mockResolvedValue(null),
+    startSchedule: vi.fn(),
     loggers: {
       pocketbase: {
         info: vi.fn(),
@@ -78,13 +81,17 @@ vi.mock('../../pocketbase/binaryPath', () => ({
 
 vi.mock('../../pocketbase/BackupManager', () => ({
   BackupManager: vi.fn(function MockBackupManager() {
-    return { setPocketBase: vi.fn(), backup: vi.fn().mockResolvedValue(undefined) };
+    return {
+      setPocketBase: vi.fn(),
+      backup: mocks.backup,
+      backupIfDue: mocks.backupIfDue,
+    };
   }),
 }));
 
 vi.mock('../../pocketbase/RetentionManager', () => ({
   RetentionManager: vi.fn(function MockRetentionManager() {
-    return { startSchedule: vi.fn(), stop: vi.fn() };
+    return { startSchedule: mocks.startSchedule, stop: vi.fn() };
   }),
 }));
 
@@ -128,6 +135,31 @@ describe('pocketbaseBootstrap', () => {
     mocks.getPbProcess.mockReturnValue(null);
     mocks.pbProcess.isRunning.mockReturnValue(false);
     mocks.pbProcess.start.mockResolvedValue(undefined);
+    mocks.backup.mockResolvedValue(undefined);
+    mocks.backupIfDue.mockResolvedValue(null);
+  });
+
+  it('checks whether the daily automatic backup is due before retention cleanup', async () => {
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toBe(true);
+
+    await vi.waitFor(() => expect(mocks.startSchedule).toHaveBeenCalledOnce());
+    const beforeCleanup = mocks.startSchedule.mock.calls[0]?.[1] as () => Promise<void>;
+    await beforeCleanup();
+
+    expect(mocks.backupIfDue).toHaveBeenCalledOnce();
+    expect(mocks.backup).not.toHaveBeenCalled();
   });
 
   it('relaunches Relay when PocketBase exhausts its own restart recovery', async () => {

@@ -252,7 +252,7 @@ const doStartPocketBase = async (
           await pb
             .collection('_superusers')
             .authWithPassword('admin@relay.app', serverConfig.secret);
-          await backupMgr.backup();
+          await backupMgr.backupIfDue();
         });
         loggers.pocketbase.info('Backup and retention managers started');
       } catch (retErr) {

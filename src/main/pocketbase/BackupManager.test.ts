@@ -169,6 +169,65 @@ describe('BackupManager', () => {
     });
   });
 
+  describe('backupIfDue()', () => {
+    it('skips an automatic backup when the newest regular backup is less than 24 hours old', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync.mockReturnValue([
+        'backup_2026-07-10_11-00-00.zip',
+        'pre_restore_2026-07-10_11-30-00.zip',
+      ] as unknown as string[]);
+      mockStatSync.mockImplementation((filePath) => {
+        const name = String(filePath).split('/').pop();
+        return makeStatResult(
+          new Date(
+            name?.startsWith('pre_restore') ? '2026-07-10T11:30:00Z' : '2026-07-10T11:00:00Z',
+          ),
+        );
+      });
+
+      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toBeNull();
+
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('creates an automatic backup when the newest regular backup is at least 24 hours old', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync
+        .mockReturnValueOnce(['backup_2026-07-09_12-00-00.zip'] as unknown as string[])
+        .mockReturnValueOnce([] as unknown as string[]);
+      mockStatSync.mockReturnValue(makeStatResult(new Date('2026-07-09T12:00:00Z')));
+
+      const result = await manager.backupIfDue(new Date('2026-07-10T12:00:00Z'));
+
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).toHaveBeenCalledOnce();
+      expect(result).toContain('backup_');
+    });
+
+    it('creates an automatic backup when only pre-restore backups exist', async () => {
+      const manager = new BackupManager(dataDir);
+      const pb = makePbClient();
+      manager.setPocketBase(pb);
+      mockReaddirSync
+        .mockReturnValueOnce(['pre_restore_2026-07-10_11-59-00.zip'] as unknown as string[])
+        .mockReturnValueOnce([] as unknown as string[]);
+
+      await expect(manager.backupIfDue(new Date('2026-07-10T12:00:00Z'))).resolves.toContain(
+        'backup_',
+      );
+      expect(
+        (pb.backups as unknown as { create: ReturnType<typeof vi.fn> }).create,
+      ).toHaveBeenCalledOnce();
+    });
+  });
+
   describe('listBackups()', () => {
     it('returns empty array when the backups directory does not exist', () => {
       mockExistsSync.mockReturnValue(false);

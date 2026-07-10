@@ -40,6 +40,24 @@ export class BackupManager {
     return join(this.backupsDir, backupName);
   }
 
+  async backupIfDue(now = new Date(), minimumAgeMs = 24 * 60 * 60 * 1000): Promise<string | null> {
+    const newestRegularBackupTime = readdirSync(this.backupsDir)
+      .filter((name) => name.endsWith('.zip') && !name.startsWith('pre_restore'))
+      .reduce<number | null>((newest, name) => {
+        const modifiedAt = statSync(join(this.backupsDir, name)).mtime.getTime();
+        return newest === null || modifiedAt > newest ? modifiedAt : newest;
+      }, null);
+
+    if (
+      newestRegularBackupTime !== null &&
+      now.getTime() - newestRegularBackupTime < minimumAgeMs
+    ) {
+      return null;
+    }
+
+    return this.backup();
+  }
+
   /**
    * Restore from a named backup.
    * Creates a safety backup first, then delegates to PB's restore API.
