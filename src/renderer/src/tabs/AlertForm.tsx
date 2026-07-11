@@ -4,6 +4,7 @@ import { AlertSeveritySelector } from './alerts/AlertSeveritySelector';
 import { AlertBodyEditor } from './alerts/AlertBodyEditor';
 import type { AlertBodyEditorHandle } from './alerts/AlertBodyEditor';
 import { AlertLogoUpload } from './alerts/AlertLogoUpload';
+import { ALERT_CLICK_URL_MAX_LENGTH, sanitizeAlertClickUrl } from './alertLinks';
 
 export interface AlertFormProps {
   severity: Severity;
@@ -16,6 +17,8 @@ export interface AlertFormProps {
   setSender: (s: string) => void;
   recipient: string;
   setRecipient: (s: string) => void;
+  clickThroughUrl: string;
+  setClickThroughUrl: (s: string) => void;
   updateNumber: number;
   setUpdateNumber: (n: number) => void;
   eventTimeStart: string;
@@ -49,6 +52,8 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
       setSender,
       recipient,
       setRecipient,
+      clickThroughUrl,
+      setClickThroughUrl,
       updateNumber,
       setUpdateNumber,
       eventTimeStart,
@@ -68,6 +73,9 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
   ) => {
     const bodyEditorRef = useRef<AlertBodyEditorHandle>(null);
     const messageComplete = subject.trim().length > 0 && hasVisibleText(bodyHtml);
+    const normalizedClickThroughUrl = sanitizeAlertClickUrl(clickThroughUrl);
+    const hasClickThroughUrl = clickThroughUrl.trim().length > 0;
+    const clickThroughUrlInvalid = hasClickThroughUrl && !normalizedClickThroughUrl;
 
     React.useImperativeHandle(ref, () => ({
       setEditorContent(html: string) {
@@ -187,6 +195,46 @@ export const AlertForm = React.forwardRef<AlertFormHandle, AlertFormProps>(
                       onChange={(e) => setRecipient(e.target.value)}
                     />
                   </div>
+                </div>
+              </div>
+
+              <div className="alerts-delivery-group alerts-click-through-group">
+                <div className="alerts-click-through-heading">
+                  <span className="alerts-delivery-group-title">Outlook action</span>
+                  {normalizedClickThroughUrl && (
+                    <span className="alerts-click-through-state">LINK READY</span>
+                  )}
+                </div>
+                <p className="alerts-click-through-copy">
+                  Optional. Make the entire alert image open one URL in the Outlook draft. Copied
+                  PNGs remain image-only.
+                </p>
+                <div className="alerts-field">
+                  <label className="alerts-field-label" htmlFor="alerts-click-through-url">
+                    Clickable image URL
+                  </label>
+                  <input
+                    id="alerts-click-through-url"
+                    type="url"
+                    className={`alerts-input${clickThroughUrlInvalid ? ' alerts-input-invalid' : ''}`}
+                    placeholder="https://status.example.com/incident"
+                    maxLength={ALERT_CLICK_URL_MAX_LENGTH}
+                    value={clickThroughUrl}
+                    aria-invalid={clickThroughUrlInvalid}
+                    aria-describedby="alerts-click-through-help"
+                    onChange={(event) => setClickThroughUrl(event.target.value)}
+                    onBlur={() => {
+                      if (normalizedClickThroughUrl) setClickThroughUrl(normalizedClickThroughUrl);
+                    }}
+                  />
+                  <span
+                    id="alerts-click-through-help"
+                    className={`alerts-click-through-help${clickThroughUrlInvalid ? ' alerts-click-through-help-error' : ''}`}
+                  >
+                    {clickThroughUrlInvalid
+                      ? 'Enter a valid HTTP or HTTPS address.'
+                      : 'For LAN destinations without a certificate, include http:// explicitly.'}
+                  </span>
                 </div>
               </div>
 

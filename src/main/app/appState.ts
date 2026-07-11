@@ -15,6 +15,8 @@ import type { OfflineCache } from '../cache/OfflineCache';
 import type { PendingChanges } from '../cache/PendingChanges';
 import type { SyncManager } from '../cache/SyncManager';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
+import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
+import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -29,6 +31,8 @@ export interface AppState {
   pendingChanges: PendingChanges | null;
   syncManager: SyncManager | null;
   dynatraceWindowManager: DynatraceWindowManager | null;
+  dynatraceProblemsManager: DynatraceProblemsManager | null;
+  cloudStatusManager: CloudStatusManager | null;
 }
 
 const state: AppState = {
@@ -43,6 +47,8 @@ const state: AppState = {
   pendingChanges: null,
   syncManager: null,
   dynatraceWindowManager: null,
+  dynatraceProblemsManager: null,
+  cloudStatusManager: null,
 };
 
 const log = loggers.main;
@@ -80,6 +86,12 @@ export function getSyncManager() {
 }
 export function getDynatraceWindowManager() {
   return state.dynatraceWindowManager;
+}
+export function getDynatraceProblemsManager() {
+  return state.dynatraceProblemsManager;
+}
+export function getCloudStatusManager() {
+  return state.cloudStatusManager;
 }
 
 // --- Setters ---
@@ -126,6 +138,14 @@ export function setSyncManager(mgr: SyncManager | null) {
 export function setDynatraceWindowManager(mgr: DynatraceWindowManager | null) {
   log.debug('appState.dynatraceWindowManager changed');
   state.dynatraceWindowManager = mgr;
+}
+export function setDynatraceProblemsManager(mgr: DynatraceProblemsManager | null) {
+  log.debug('appState.dynatraceProblemsManager changed');
+  state.dynatraceProblemsManager = mgr;
+}
+export function setCloudStatusManager(mgr: CloudStatusManager | null) {
+  log.debug('appState.cloudStatusManager changed');
+  state.cloudStatusManager = mgr;
 }
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
@@ -203,6 +223,7 @@ export function setupIpc(
     getSyncManager: () => state.syncManager,
     getBackupManager: () => state.backupManager,
     getDynatraceWindowManager: () => state.dynatraceWindowManager,
+    getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
     restartPb,
   });
   setupAuthHandlers();

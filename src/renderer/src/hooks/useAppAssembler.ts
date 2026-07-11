@@ -6,7 +6,6 @@ export function useAppAssembler() {
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
   const [manualAdds, setManualAdds] = useState<string[]>([]);
   const [manualRemoves, setManualRemoves] = useState<string[]>([]);
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const handleAddToAssembler = useCallback((contact: Contact) => {
     setManualRemoves((prev) => prev.filter((e) => e !== contact.email));
@@ -59,8 +58,6 @@ export function useAppAssembler() {
     manualAdds,
     setManualAdds,
     manualRemoves,
-    settingsOpen,
-    setSettingsOpen,
     handleAddToAssembler,
     handleUndoRemove,
     handleReset,

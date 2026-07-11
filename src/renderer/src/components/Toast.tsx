@@ -11,14 +11,24 @@ import React, {
 
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
+type ToastOptions = {
+  title?: string;
+  durationMs?: number;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+};
+
 interface ToastMessage {
   id: string;
   message: string;
   type: ToastType;
+  options?: ToastOptions;
 }
 
 interface ToastContextType {
-  showToast: (message: string, type: ToastType) => void;
+  showToast: (message: string, type: ToastType, options?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
@@ -69,13 +79,13 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: ToastType) => {
+    (message: string, type: ToastType, options?: ToastOptions) => {
       const id = globalThis.crypto.randomUUID();
-      setToasts((prev) => [...prev, { id, message, type }]);
+      setToasts((prev) => [...prev, { id, message, type, options }]);
 
       const timeout = setTimeout(() => {
         removeToast(id);
-      }, 4000);
+      }, options?.durationMs ?? 4000);
       timeoutsRef.current.set(id, timeout);
     },
     [removeToast],
@@ -101,13 +111,41 @@ export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           <div key={toast.id} className={`toast toast-${toast.type} toast-slide-up`}>
             {toast.type === 'error' ? (
               <div className="toast-content" role="alert" aria-live="assertive">
-                <div className="toast-title">{getToastMeta(toast.type).title}</div>
+                <div className="toast-title">
+                  {toast.options?.title ?? getToastMeta(toast.type).title}
+                </div>
                 <div className="toast-message">{toast.message}</div>
+                {toast.options?.action && (
+                  <button
+                    type="button"
+                    className="toast-action"
+                    onClick={() => {
+                      removeToast(toast.id);
+                      toast.options?.action?.onClick();
+                    }}
+                  >
+                    {toast.options.action.label}
+                  </button>
+                )}
               </div>
             ) : (
               <output className="toast-content" aria-live="polite">
-                <div className="toast-title">{getToastMeta(toast.type).title}</div>
+                <div className="toast-title">
+                  {toast.options?.title ?? getToastMeta(toast.type).title}
+                </div>
                 <div className="toast-message">{toast.message}</div>
+                {toast.options?.action && (
+                  <button
+                    type="button"
+                    className="toast-action"
+                    onClick={() => {
+                      removeToast(toast.id);
+                      toast.options?.action?.onClick();
+                    }}
+                  >
+                    {toast.options.action.label}
+                  </button>
+                )}
               </output>
             )}
             <button

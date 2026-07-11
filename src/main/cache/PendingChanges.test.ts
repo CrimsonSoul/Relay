@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { PendingChanges } from './PendingChanges';
+import Database from 'better-sqlite3';
 
 describe('PendingChanges', () => {
   let tempDir: string;
@@ -56,6 +57,74 @@ describe('PendingChanges', () => {
     pending.enqueue('contacts', 'update', { id: '1', name: 'Updated', email: 'a@b.com' });
     const all = pending.getAll();
     expect(all[0].data).toEqual({ id: '1', name: 'Updated', email: 'a@b.com' });
+  });
+
+  it('persists the server revision used as the base of an offline edit', () => {
+    pending.enqueue('contacts', 'update', { id: '1', name: 'Updated' }, '2026-07-10T12:34:56.000Z');
+
+    expect(pending.getAll()[0].baseUpdated).toBe('2026-07-10T12:34:56.000Z');
+  });
+
+  it('persists sync failures so reconnect issues remain visible after restart', () => {
+    const id = pending.enqueue('contacts', 'update', { id: '1', name: 'Updated' });
+    pending.markFailure(id, 'Server conflict');
+
+    expect(pending.getAll()[0].syncError).toBe('Server conflict');
+  });
+
+  it('fails strict migration reads instead of treating malformed rows as an empty queue', () => {
+    const dbPath = join(tempDir, 'pending.db');
+    pending.close();
+    const raw = new Database(dbPath);
+    raw
+      .prepare(
+        'INSERT INTO pending_changes (collection, action, data, timestamp) VALUES (?, ?, ?, ?)',
+      )
+      .run('contacts', 'update', '{malformed-json', Date.now());
+    raw.close();
+    pending = new PendingChanges(dbPath);
+
+    expect(() => pending.getAllStrict()).toThrow();
+  });
+
+  it('coalesces repeated offline updates and preserves the original base revision', () => {
+    pending.enqueueCoalesced(
+      'contacts',
+      'update',
+      { id: '1', name: 'First edit' },
+      '2026-07-10T12:00:00.000Z',
+    );
+    pending.enqueueCoalesced(
+      'contacts',
+      'update',
+      { id: '1', name: 'Second edit' },
+      '2026-07-10T12:05:00.000Z',
+    );
+
+    expect(pending.getAll()).toEqual([
+      expect.objectContaining({
+        action: 'update',
+        data: { id: '1', name: 'Second edit' },
+        baseUpdated: '2026-07-10T12:00:00.000Z',
+      }),
+    ]);
+  });
+
+  it('folds an update after an offline create into the queued create', () => {
+    pending.enqueueCoalesced('contacts', 'create', { id: '1', name: 'Draft' });
+    pending.enqueueCoalesced('contacts', 'update', { id: '1', name: 'Final' });
+
+    expect(pending.getAll()).toEqual([
+      expect.objectContaining({ action: 'create', data: { id: '1', name: 'Final' } }),
+    ]);
+  });
+
+  it('cancels a create that is deleted before reconnect', () => {
+    pending.enqueueCoalesced('contacts', 'create', { id: '1', name: 'Draft' });
+    const result = pending.enqueueCoalesced('contacts', 'delete', { id: '1' });
+
+    expect(result.id).toBeNull();
+    expect(pending.getAll()).toEqual([]);
   });
 
   // --- New tests ---

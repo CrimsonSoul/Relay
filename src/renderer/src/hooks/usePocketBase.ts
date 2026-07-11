@@ -4,11 +4,12 @@ import {
   initPocketBase,
   loadAuthSession,
   onConnectionStateChange,
+  startOfflineMode,
   stopHealthCheck,
   type ConnectionState,
 } from '../services/pocketbase';
 
-export function usePocketBase(url: string | null, auth: PbAuthSession | null) {
+export function usePocketBase(url: string | null, auth: PbAuthSession | null, offlineMode = false) {
   const [state, setState] = useState<ConnectionState>('connecting');
 
   useEffect(() => {
@@ -21,13 +22,14 @@ export function usePocketBase(url: string | null, auth: PbAuthSession | null) {
     initPocketBase(url);
 
     const unsubscribe = onConnectionStateChange(setState);
+    if (offlineMode) startOfflineMode();
 
     return () => {
       unsubscribe();
       stopHealthCheck();
       setState('connecting');
     };
-  }, [url]);
+  }, [url, offlineMode]);
 
   useEffect(() => {
     if (!url || !auth) return;

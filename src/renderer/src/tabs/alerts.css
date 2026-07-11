@@ -601,6 +601,44 @@
   text-transform: uppercase;
 }
 
+.alerts-click-through-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.alerts-click-through-state {
+  color: var(--ok);
+  font-family: var(--font-family-base);
+  font-size: var(--text-2xs);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.alerts-click-through-copy {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.alerts-input.alerts-input-invalid {
+  border-color: var(--alarm);
+  box-shadow: 0 0 0 2px var(--alarm-dim);
+}
+
+.alerts-click-through-help {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+}
+
+.alerts-click-through-help-error {
+  color: var(--alarm-bright);
+}
+
 .alerts-branding-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

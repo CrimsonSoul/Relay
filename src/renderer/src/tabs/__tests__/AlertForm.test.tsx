@@ -66,6 +66,8 @@ const defaultProps = {
   setSender: vi.fn(),
   recipient: '',
   setRecipient: vi.fn(),
+  clickThroughUrl: '',
+  setClickThroughUrl: vi.fn(),
   updateNumber: 0,
   setUpdateNumber: vi.fn(),
   eventTimeStart: '',
@@ -225,6 +227,35 @@ describe('AlertForm', () => {
       target: { value: 'All Staff' },
     });
     expect(defaultProps.setRecipient).toHaveBeenCalledWith('All Staff');
+  });
+
+  it('renders one optional whole-image click-through URL field', () => {
+    render(<AlertForm {...defaultProps} />);
+
+    expect(screen.getByLabelText('Clickable image URL')).toBeInTheDocument();
+    expect(screen.getByText(/entire alert image open one URL/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add click link/i })).not.toBeInTheDocument();
+  });
+
+  it('updates and normalizes a valid click-through URL', () => {
+    const { rerender } = render(<AlertForm {...defaultProps} />);
+    const input = screen.getByLabelText('Clickable image URL');
+    fireEvent.change(input, { target: { value: 'status.example.com/incident' } });
+    expect(defaultProps.setClickThroughUrl).toHaveBeenCalledWith('status.example.com/incident');
+
+    rerender(<AlertForm {...defaultProps} clickThroughUrl="status.example.com/incident" />);
+    fireEvent.blur(screen.getByLabelText('Clickable image URL'));
+    expect(defaultProps.setClickThroughUrl).toHaveBeenCalledWith(
+      'https://status.example.com/incident',
+    );
+    expect(screen.getByText('LINK READY')).toBeInTheDocument();
+  });
+
+  it('marks unsafe click-through URLs invalid', () => {
+    render(<AlertForm {...defaultProps} clickThroughUrl="javascript:alert(1)" />);
+
+    expect(screen.getByLabelText('Clickable image URL')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Enter a valid HTTP or HTTPS address.')).toBeInTheDocument();
   });
 
   it('shows subject char count', () => {

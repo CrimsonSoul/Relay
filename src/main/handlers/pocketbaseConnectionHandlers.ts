@@ -6,6 +6,7 @@ import type { AppConfig } from '../config/AppConfig';
 import type { PocketBaseProcess } from '../pocketbase/PocketBaseProcess';
 import { loggers } from '../logger';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
+import type { OfflineCache } from '../cache/OfflineCache';
 
 const PB_BOOTSTRAP_AUTH_TIMEOUT_MS = 15_000;
 const PB_BOOTSTRAP_AUTH_ATTEMPTS = 4;
@@ -223,9 +224,28 @@ async function authenticatePbConnection(
   return { ok: false, error: lastFailure?.error ?? 'auth-failed' };
 }
 
+function addOfflineFallback(
+  result: PbConnectionResult,
+  config: ReturnType<AppConfig['load']>,
+  pbUrl: string,
+  cache: OfflineCache | null,
+): PbConnectionResult {
+  if (result.ok || result.error !== 'pb-unavailable' || config?.mode !== 'client') return result;
+  const marker = cache?.getUsableCacheMarker();
+  if (!marker || !cache?.hasUsableCacheFor(pbUrl)) return result;
+  return {
+    ok: false,
+    error: 'pb-unavailable',
+    offlineAvailable: true,
+    pbUrl,
+    lastSyncAt: marker.lastSyncAt,
+  };
+}
+
 export function setupPocketbaseConnectionHandlers(
   getAppConfig: () => AppConfig | null,
   getPbProcess: () => PocketBaseProcess | null,
+  getOfflineCache: () => OfflineCache | null = () => null,
 ): void {
   ipcMain.handle(IPC_CHANNELS.PB_GET_CONNECTION, async (event): Promise<PbConnectionResult> => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_GET_CONNECTION)) {
@@ -236,12 +256,13 @@ export function setupPocketbaseConnectionHandlers(
       return context.result;
     }
 
-    return authenticatePbConnection(
+    const result = await authenticatePbConnection(
       context.config,
       context.pbUrl,
       context.config.secret,
       'Failed to bootstrap PocketBase connection',
     );
+    return addOfflineFallback(result, context.config, context.pbUrl, getOfflineCache());
   });
 
   ipcMain.handle(IPC_CHANNELS.PB_REFRESH_CONNECTION, async (event): Promise<PbConnectionResult> => {
@@ -253,11 +274,12 @@ export function setupPocketbaseConnectionHandlers(
       return context.result;
     }
 
-    return authenticatePbConnection(
+    const result = await authenticatePbConnection(
       context.config,
       context.pbUrl,
       context.config.secret,
       'Failed to refresh PocketBase connection',
     );
+    return addOfflineFallback(result, context.config, context.pbUrl, getOfflineCache());
   });
 }

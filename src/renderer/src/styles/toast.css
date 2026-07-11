@@ -98,6 +98,31 @@
   word-break: break-word;
 }
 
+.toast-action {
+  width: fit-content;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--accent-bright);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.toast-action:hover {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.toast-action:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 .toast-close {
   width: 36px;
   height: 36px;

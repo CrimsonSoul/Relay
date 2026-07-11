@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { RecordModel } from 'pocketbase';
 import { TactileButton } from './TactileButton';
 import { useToast } from './Toast';
 import {
   dismissAlertReminder,
-  listDueAlertReminders,
   markAlertReminderDone,
   snoozeAlertReminder,
   type AlertReminderRecord,
 } from '../services/alertReminderService';
+import { useCollection } from '../hooks/useCollection';
 import { getReminderAlarmSource } from '../services/reminderAlarmSoundService';
+import { nextReminderDelay, reminderEffectiveTime } from '../services/reminderScheduler';
 import {
   dispatchReminderAlertLoad,
   hasLoadableReminderAlert,
 } from '../services/reminderAlertLoadEvent';
 
-const POLL_INTERVAL_MS = 30_000;
+const RECONCILIATION_INTERVAL_MS = 5 * 60_000;
 const SNOOZE_MS = 10 * 60_000;
 const FALLBACK_ALARM_REPEAT_MS = 1_500;
 const REMINDER_ALARM_GAIN = 0.38;
@@ -24,11 +26,6 @@ const REMINDER_ALARM_PULSES = [
   { frequency: 740, offset: 0.36 },
   { frequency: 988, offset: 0.54 },
 ];
-
-function getReminderEffectiveTime(reminder: AlertReminderRecord): number {
-  const timestamp = new Date(reminder.snoozeUntil || reminder.dueAt).getTime();
-  return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
-}
 
 function stopReminderAudio(audio: HTMLAudioElement): void {
   try {
@@ -108,6 +105,11 @@ function pruneChimedReminderIds(chimedIds: Set<string>, dueReminders: AlertRemin
 
 export function AlertReminderManager() {
   const { showToast } = useToast();
+  const { data: reminderRecords, refetch } = useCollection<AlertReminderRecord & RecordModel>(
+    'alert_reminders',
+    { sort: 'dueAt' },
+  );
+  const reminders = reminderRecords as AlertReminderRecord[];
   const [current, setCurrent] = useState<AlertReminderRecord | null>(null);
   const currentRef = useRef<AlertReminderRecord | null>(null);
   const dialogRef = useRef<HTMLElement | null>(null);
@@ -121,24 +123,27 @@ export function AlertReminderManager() {
     currentRef.current = current;
   }, [current]);
 
-  const refreshDue = useCallback(async () => {
-    try {
-      const now = Date.now();
-      const dueReminders = (await listDueAlertReminders()).filter((reminder) => {
-        if (getReminderEffectiveTime(reminder) > now) return false;
-        const mutedUntil = mutedUntilRef.current.get(reminder.id);
-        if (!mutedUntil || mutedUntil <= now) {
-          mutedUntilRef.current.delete(reminder.id);
-          return true;
-        }
-        return false;
-      });
-      pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
-      setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
-    } catch {
-      // PocketBase connection health is surfaced elsewhere; polling retries quietly.
+  const refreshDue = useCallback(() => {
+    const now = Date.now();
+    const pendingIds = new Set(
+      reminders.filter((reminder) => reminder.status === 'pending').map((reminder) => reminder.id),
+    );
+    for (const id of mutedUntilRef.current.keys()) {
+      if (!pendingIds.has(id)) mutedUntilRef.current.delete(id);
     }
-  }, []);
+
+    const dueReminders = reminders.filter((reminder) => {
+      if (reminder.status !== 'pending' || reminderEffectiveTime(reminder) > now) return false;
+      const mutedUntil = mutedUntilRef.current.get(reminder.id);
+      if (!mutedUntil || mutedUntil <= now) {
+        mutedUntilRef.current.delete(reminder.id);
+        return true;
+      }
+      return false;
+    });
+    pruneChimedReminderIds(chimedIdsRef.current, dueReminders);
+    setCurrent((previous) => chooseCurrentReminder(previous, dueReminders));
+  }, [reminders]);
 
   const stopReminderAlarm = useCallback(() => {
     activeAlarmIdRef.current = null;
@@ -154,9 +159,9 @@ export function AlertReminderManager() {
     }
   }, []);
 
-  const releaseReminderTracking = useCallback((id: string) => {
+  const suppressResolvedReminder = useCallback((id: string) => {
     chimedIdsRef.current.delete(id);
-    mutedUntilRef.current.delete(id);
+    mutedUntilRef.current.set(id, Number.POSITIVE_INFINITY);
   }, []);
 
   const startRepeatingFallbackAlarm = useCallback(() => {
@@ -170,10 +175,43 @@ export function AlertReminderManager() {
   }, []);
 
   useEffect(() => {
-    void refreshDue();
-    const intervalId = window.setInterval(() => void refreshDue(), POLL_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [refreshDue]);
+    refreshDue();
+    const delay = nextReminderDelay(reminders);
+    if (delay === null || delay === 0) return;
+    const timeoutId = window.setTimeout(refreshDue, delay);
+    return () => window.clearTimeout(timeoutId);
+  }, [refreshDue, reminders]);
+
+  useEffect(() => {
+    let active = true;
+    let timeoutId: number | null = null;
+    const reconcile = async () => {
+      await refetch().catch(() => undefined);
+      if (active) timeoutId = window.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+    };
+    timeoutId = window.setTimeout(() => void reconcile(), RECONCILIATION_INTERVAL_MS);
+    return () => {
+      active = false;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [refetch]);
+
+  useEffect(() => {
+    const refreshOnResume = () => {
+      if (document.visibilityState === 'visible') {
+        refreshDue();
+        void refetch().catch(() => undefined);
+      }
+    };
+    document.addEventListener('visibilitychange', refreshOnResume);
+    window.addEventListener('focus', refreshOnResume);
+    window.addEventListener('online', refreshOnResume);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnResume);
+      window.removeEventListener('focus', refreshOnResume);
+      window.removeEventListener('online', refreshOnResume);
+    };
+  }, [refetch, refreshDue]);
 
   useEffect(() => {
     if (!current) {
@@ -256,7 +294,7 @@ export function AlertReminderManager() {
       mutedUntilRef.current.set(reminder.id, snoozeUntil);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
       showToast('Failed to snooze alarm', 'error');
     }
@@ -268,10 +306,10 @@ export function AlertReminderManager() {
     dispatchReminderAlertLoad(reminder);
     try {
       await dismissAlertReminder(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
       showToast('Failed to dismiss alarm', 'error');
     }
@@ -282,10 +320,10 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await markAlertReminderDone(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
       showToast('Failed to complete alarm', 'error');
     }
@@ -296,10 +334,10 @@ export function AlertReminderManager() {
     if (!reminder) return;
     try {
       await dismissAlertReminder(reminder.id);
-      releaseReminderTracking(reminder.id);
+      suppressResolvedReminder(reminder.id);
       stopReminderAlarm();
       setCurrent(null);
-      void refreshDue();
+      refreshDue();
     } catch {
       showToast('Failed to dismiss alarm', 'error');
     }

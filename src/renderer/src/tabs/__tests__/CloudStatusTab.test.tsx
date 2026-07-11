@@ -69,27 +69,24 @@ describe('CloudStatusTab', () => {
   it('renders with empty status data', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
     expect(screen.getByText('Incident feed')).toBeInTheDocument();
-    expect(screen.getByText(/No recent events/)).toBeInTheDocument();
+    expect(screen.getByText('No active provider incidents')).toBeInTheDocument();
   });
 
-  it('renders provider cards for all providers', () => {
+  it('renders the supported providers without an ADP card', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    // Should show "All services normal" for each provider (10 providers)
     const normalStatuses = screen.getAllByText('All services normal');
     expect(normalStatuses.length).toBe(10);
+    expect(screen.queryByText('ADP')).not.toBeInTheDocument();
   });
 
-  it('renders filter buttons including All', () => {
+  it('renders incident state filters with counts', () => {
     render(<CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />);
-    // The "All" filter button
-    expect(screen.getByText('All')).toBeInTheDocument();
-    // Filter area has provider short labels - AWS appears in both filter and provider card
-    const filterContainer = screen.getByText('All').parentElement!;
-    expect(filterContainer).toBeInTheDocument();
-    // Just verify the filters container has buttons
-    const filterButtons = filterContainer.querySelectorAll('button');
-    // All + 10 providers = 11
-    expect(filterButtons.length).toBe(11);
+    expect(screen.getByRole('tab', { name: /Active\s*0/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('tab', { name: /Recent\s*0/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Resolved\s*0/ })).toBeInTheDocument();
   });
 
   it('renders refresh button', () => {
@@ -158,10 +155,8 @@ describe('CloudStatusTab', () => {
     const awsCard = providerCards.find((card) => card.textContent?.includes('AWS'));
     const azureCard = providerCards.find((card) => card.textContent?.includes('Azure'));
 
-    expect(awsCard?.querySelector('.cloud-status-provider__status--outage')).toBeInTheDocument();
-    expect(
-      azureCard?.querySelector('.cloud-status-provider__status--degraded'),
-    ).toBeInTheDocument();
+    expect(awsCard?.querySelector('.cloud-status-provider__status--error')).toBeInTheDocument();
+    expect(azureCard?.querySelector('.cloud-status-provider__status--warning')).toBeInTheDocument();
   });
 
   it('renders info feed items with the info severity class', () => {
@@ -182,12 +177,12 @@ describe('CloudStatusTab', () => {
       <CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Recent/ }));
     expect(screen.getByText('INFO')).toBeInTheDocument();
     expect(container.querySelector('.cloud-status-item__severity--info')).toBeInTheDocument();
   });
 
-  it('renders command center posture metrics', () => {
+  it('summarizes current posture through filters and the status bar', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -202,11 +197,10 @@ describe('CloudStatusTab', () => {
 
     render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
 
-    expect(screen.getByText('Current posture')).toBeInTheDocument();
-    expect(screen.getByText('3 active issues')).toBeInTheDocument();
-    expect(screen.getByText('2 impacted providers')).toBeInTheDocument();
-    expect(screen.getByText('Worst severity')).toBeInTheDocument();
-    expect(screen.getByText('Outage')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'External service monitor' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Active\s*3/ })).toBeInTheDocument();
+    expect(screen.getByText(/3 active issues/)).toBeInTheDocument();
+    expect(screen.getByText('Provider posture')).toBeInTheDocument();
   });
 
   it('orders impacted providers before healthy providers', () => {
@@ -259,11 +253,11 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('Admin center notice')).not.toBeInTheDocument();
     expect(screen.queryByText('Recovered webhooks')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Recent' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Recent/ }));
     expect(screen.getByText('Admin center notice')).toBeInTheDocument();
     expect(screen.getByText('Active outage')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Resolved' }));
+    fireEvent.click(screen.getByRole('tab', { name: /Resolved/ }));
     expect(screen.getByText('Recovered webhooks')).toBeInTheDocument();
     expect(screen.queryByText('Active outage')).not.toBeInTheDocument();
   });
@@ -293,7 +287,7 @@ describe('CloudStatusTab', () => {
     // Click to expand
     fireEvent.click(screen.getByText('EC2 Outage'));
     expect(screen.getByText('Detailed description here')).toBeInTheDocument();
-    expect(screen.getByText('View details')).toBeInTheDocument();
+    expect(screen.getByText('View source ↗')).toBeInTheDocument();
   });
 
   it('collapses expanded item on second click', () => {
@@ -322,7 +316,7 @@ describe('CloudStatusTab', () => {
     expect(screen.queryByText('Detailed description')).not.toBeInTheDocument();
   });
 
-  it('filters by provider when filter button is clicked', () => {
+  it('filters the incident feed when a provider row is selected', () => {
     const data = makeStatusData({
       providers: {
         ...emptyProviders,
@@ -356,14 +350,28 @@ describe('CloudStatusTab', () => {
     expect(screen.getByText('AWS Issue')).toBeInTheDocument();
     expect(screen.getByText('Azure Issue')).toBeInTheDocument();
 
-    // Click AWS filter button (in the filters container, not the provider card)
-    const filterContainer = screen.getByText('All').parentElement!;
-    const awsFilterBtn = Array.from(filterContainer.querySelectorAll('button')).find((btn) =>
-      btn.textContent?.includes('AWS'),
-    )!;
-    fireEvent.click(awsFilterBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'Show AWS incidents' }));
     expect(screen.getByText('AWS Issue')).toBeInTheDocument();
     expect(screen.queryByText('Azure Issue')).not.toBeInTheDocument();
+    expect(screen.getByText('AWS incidents')).toBeInTheDocument();
+  });
+
+  it('searches providers and incident text from the shared toolbar', () => {
+    const data = makeStatusData({
+      providers: {
+        ...emptyProviders,
+        azure: [makeItem({ id: 'az-1', provider: 'azure', title: 'Storage latency' })],
+      },
+    });
+    render(<CloudStatusTab statusData={data} loading={false} refetch={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText('Search service status'), {
+      target: { value: 'Azure' },
+    });
+
+    expect(screen.getByRole('button', { name: 'Show Azure incidents' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Show AWS incidents' })).not.toBeInTheDocument();
+    expect(screen.getByText('Storage latency')).toBeInTheDocument();
   });
 
   it('shows "Feed unavailable" for providers with errors', () => {
@@ -412,12 +420,16 @@ describe('CloudStatusTab', () => {
     const openExternal = () =>
       (globalThis as { api?: { openExternal: ReturnType<typeof vi.fn> } }).api!.openExternal;
 
-    it('opens the vendor status page from the card main button', () => {
+    it('opens the vendor status page from the explicit source action', () => {
       const { container } = render(
         <CloudStatusTab statusData={makeStatusData()} loading={false} refetch={vi.fn()} />,
       );
       const awsCard = getCard(container, 'AWS');
-      fireEvent.click(awsCard.querySelector('.cloud-status-provider__main')!);
+      fireEvent.click(
+        Array.from(awsCard.querySelectorAll('button')).find(
+          (button) => button.getAttribute('aria-label') === 'Open AWS status page',
+        )!,
+      );
       expect(openExternal()).toHaveBeenCalledWith('https://status.aws.amazon.com/');
     });
 

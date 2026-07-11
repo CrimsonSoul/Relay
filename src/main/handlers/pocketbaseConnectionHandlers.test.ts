@@ -76,6 +76,11 @@ describe('pocketbaseConnectionHandlers', () => {
 
   const getAppConfig = vi.fn(() => mockAppConfig as never);
   const getPbProcess = vi.fn(() => null as never);
+  const mockOfflineCache = {
+    getUsableCacheMarker: vi.fn(),
+    hasUsableCacheFor: vi.fn(),
+  };
+  const getOfflineCache = vi.fn(() => mockOfflineCache as never);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -94,7 +99,9 @@ describe('pocketbaseConnectionHandlers', () => {
       },
     );
 
-    setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess);
+    mockOfflineCache.getUsableCacheMarker.mockReturnValue(null);
+    mockOfflineCache.hasUsableCacheFor.mockReturnValue(false);
+    setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess, getOfflineCache);
   });
 
   it('returns client bootstrap connection data when auth succeeds', async () => {
@@ -346,6 +353,54 @@ describe('pocketbaseConnectionHandlers', () => {
     // Every PocketBase construction used the configured HTTPS URL — no http:// retry.
     const urls = (PocketBase as unknown as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
     expect(urls).toEqual(Array(4).fill('https://192.168.1.50:8090'));
+  });
+
+  it('allows cache-backed startup after an unavailable server when the marker matches', async () => {
+    vi.useFakeTimers();
+    mockAppConfig.load.mockReturnValue({
+      mode: 'client',
+      serverUrl: 'https://relay.example.com',
+      secret: 'super-secret-passphrase',
+    });
+    mockOfflineCache.getUsableCacheMarker.mockReturnValue({
+      serverIdentity: 'https://relay.example.com',
+      authenticatedAt: 100,
+      lastSyncAt: 200,
+    });
+    mockOfflineCache.hasUsableCacheFor.mockReturnValue(true);
+    mockAppUserAuthWithPassword.mockRejectedValue(new TypeError('fetch failed'));
+
+    const resultPromise = handlers[IPC_CHANNELS.PB_GET_CONNECTION]() as Promise<PbConnectionResult>;
+    await vi.advanceTimersByTimeAsync(750 * 3);
+
+    await expect(resultPromise).resolves.toEqual({
+      ok: false,
+      error: 'pb-unavailable',
+      offlineAvailable: true,
+      pbUrl: 'https://relay.example.com',
+      lastSyncAt: 200,
+    });
+  });
+
+  it('does not allow cache-backed startup after credential rejection', async () => {
+    mockAppConfig.load.mockReturnValue({
+      mode: 'client',
+      serverUrl: 'https://relay.example.com',
+      secret: 'wrong-passphrase',
+    });
+    mockOfflineCache.getUsableCacheMarker.mockReturnValue({
+      serverIdentity: 'https://relay.example.com',
+      authenticatedAt: 100,
+      lastSyncAt: 200,
+    });
+    mockOfflineCache.hasUsableCacheFor.mockReturnValue(true);
+    mockAppUserAuthWithPassword.mockRejectedValue(
+      Object.assign(new Error('invalid credentials'), { status: 401 }),
+    );
+
+    const result = (await handlers[IPC_CHANNELS.PB_GET_CONNECTION]()) as PbConnectionResult;
+
+    expect(result).toEqual({ ok: false, error: 'auth-failed' });
   });
 
   it('returns refreshed connection data when refresh auth succeeds', async () => {

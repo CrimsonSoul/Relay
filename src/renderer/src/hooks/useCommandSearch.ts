@@ -46,6 +46,14 @@ export function useCommandSearch(
           data: { action: 'navigate', tab: 'People' },
         },
         {
+          id: 'action-problems',
+          type: 'action',
+          title: 'Go to Dynatrace Problems',
+          subtitle: 'Review the local NOC response queue',
+          iconType: 'problems',
+          data: { action: 'navigate', tab: 'Problems' },
+        },
+        {
           id: 'action-create-contact',
           type: 'action',
           title: 'Create New Contact',

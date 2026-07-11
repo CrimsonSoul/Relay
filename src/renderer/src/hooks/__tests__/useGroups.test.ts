@@ -11,15 +11,9 @@ vi.mock('../../utils/logger', () => ({
 }));
 
 // Mock useCollection
-const mockRefetch = vi.fn();
-const mockCollectionData = { current: [] as unknown[] };
+const mockUseCollection = vi.fn();
 vi.mock('../useCollection', () => ({
-  useCollection: () => ({
-    data: mockCollectionData.current,
-    loading: false,
-    error: null,
-    refetch: mockRefetch,
-  }),
+  useCollection: () => mockUseCollection(),
 }));
 
 // Mock PocketBase bridge group service
@@ -46,24 +40,12 @@ const makeRecord = (id: string, name: string, contacts: string[]) => ({
 describe('useGroups', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCollectionData.current = [
-      makeRecord('g1', 'Network', ['a@test.com']),
-      makeRecord('g2', 'Database', ['b@test.com']),
-    ];
   });
 
-  it('loads groups from useCollection', () => {
-    const { result } = renderHook(() => useGroups(), { wrapper });
+  it('does not create a second bridge_groups subscription for mutation helpers', () => {
+    renderHook(() => useGroups(), { wrapper });
 
-    expect(result.current.groups).toHaveLength(2);
-    expect(result.current.groups[0].name).toBe('Network');
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('returns empty array when no records', () => {
-    mockCollectionData.current = [];
-    const { result } = renderHook(() => useGroups(), { wrapper });
-    expect(result.current.groups).toEqual([]);
+    expect(mockUseCollection).not.toHaveBeenCalled();
   });
 
   it('saves a new group via PocketBase service', async () => {

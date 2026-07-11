@@ -20,6 +20,7 @@ vi.mock('./pocketbase', () => ({
   }),
   handleApiError: vi.fn(),
   isOnline: () => mockIsOnline,
+  getConnectionState: () => (mockIsOnline ? 'online' : 'offline'),
   requireOnline: vi.fn(() => {
     if (!mockIsOnline) throw new Error('You are offline.');
   }),
@@ -66,6 +67,9 @@ function makeSettingsRecord(overrides: Partial<BoardSettingsRecord> = {}): Board
 beforeEach(() => {
   vi.clearAllMocks();
   mockIsOnline = true;
+  (globalThis as Record<string, unknown>).api = {
+    cacheRead: vi.fn().mockResolvedValue([]),
+  };
 });
 
 describe('canonicalizeTeamName', () => {
@@ -157,7 +161,6 @@ describe('initializeBoardSettings', () => {
   it('returns unavailable-offline when offline with no cached record', async () => {
     mockIsOnline = false;
     const rows = [makeOncallRow({ id: 'oc1', team: 'TeamA', teamId: 'team-a' })];
-    mockGetFullList.mockRejectedValueOnce(new Error('network error'));
 
     const result = await initializeBoardSettings(rows);
 
@@ -388,12 +391,29 @@ describe('updatePrimaryBoardSettings', () => {
     expect(mockUpdate).toHaveBeenCalledWith('bs1', { locked: true });
   });
 
-  it('throws when offline', async () => {
+  it('queues an optimistic settings update when offline', async () => {
     mockIsOnline = false;
+    const record = makeSettingsRecord({ locked: true });
+    const mutateOffline = vi.fn().mockResolvedValue({
+      ok: true,
+      mutationId: 'mutation-1',
+      collection: 'oncall_board_settings',
+      action: 'update',
+      record,
+      pendingCount: 1,
+    });
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn().mockResolvedValue([makeSettingsRecord()]),
+      mutateOffline,
+    };
 
-    await expect(updatePrimaryBoardSettings('bs1', { locked: true })).rejects.toThrow(
-      'You are offline.',
-    );
+    await expect(updatePrimaryBoardSettings('bs1', { locked: true })).resolves.toEqual(record);
+    expect(mutateOffline).toHaveBeenCalledWith({
+      collection: 'oncall_board_settings',
+      action: 'update',
+      recordId: 'bs1',
+      data: { locked: true },
+    });
   });
 
   it('throws and calls handleApiError when update fails', async () => {

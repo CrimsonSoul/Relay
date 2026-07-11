@@ -1,5 +1,6 @@
-import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { getConnectionState, getPb, handleApiError, escapeFilter } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
+import { mutateCollection } from './mutationGateway';
 
 export interface NoteRecord {
   id: string;
@@ -39,15 +40,25 @@ export async function setNote(
   note: string,
   tags: string[],
 ): Promise<NoteRecord> {
-  requireOnline();
   try {
-    const existing = await getNote(entityType, entityKey);
+    const existing =
+      getConnectionState() === 'online'
+        ? await getNote(entityType, entityKey)
+        : (((await globalThis.api?.cacheRead?.('notes')) ?? []).find(
+            (record) => record.entityType === entityType && record.entityKey === entityKey,
+          ) as NoteRecord | undefined);
     if (existing) {
-      return await getPb().collection('notes').update<NoteRecord>(existing.id, { note, tags });
+      return (await mutateCollection<NoteRecord>('notes', 'update', existing.id, {
+        note,
+        tags,
+      })) as NoteRecord;
     }
-    return await getPb()
-      .collection('notes')
-      .create<NoteRecord>({ entityType, entityKey, note, tags });
+    return (await mutateCollection<NoteRecord>('notes', 'create', undefined, {
+      entityType,
+      entityKey,
+      note,
+      tags,
+    })) as NoteRecord;
   } catch (err) {
     handleApiError(err);
     throw err;

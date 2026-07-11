@@ -1,8 +1,10 @@
 import { app, ipcMain, BrowserWindow, clipboard, nativeImage, dialog, shell } from 'electron';
+import { execFile } from 'node:child_process';
 import { writeFile, readFile, stat, mkdir, unlink } from 'node:fs/promises';
 import { basename, extname, normalize, parse, resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CLOUD_STATUS_PROVIDERS, IPC_CHANNELS, MAX_IMAGE_DATA_URL_LENGTH } from '@shared/ipc';
+import { isDynatraceHost } from '@shared/dynatrace';
 import { getErrorMessage } from '@shared/types';
 import { describeUrlForLog } from '@shared/urlSecurity';
 import { loggers } from '../logger';
@@ -23,14 +25,44 @@ const MAX_CLIPBOARD_LENGTH = 1_048_576; // 1MB
 const PNG_DATA_URL_PREFIX = 'data:image/png;base64,';
 
 const MAX_ICS_LENGTH = 1_048_576; // 1MB
+const MAX_ALERT_DRAFT_EML_LENGTH = 20 * 1024 * 1024; // 20MB
 const MAX_ALERT_BODY_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB before resize/compression
 const MAX_ALERT_BODY_IMAGE_WIDTH = 516;
 const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2MB
 const MAX_LOGO_WIDTH = 400;
+const MAC_OPEN_COMMAND = '/usr/bin/open';
 
 type PickedImage =
   | { success: true; image: Electron.NativeImage; filePath: string }
   | { success: false; error: string };
+
+function execOutputText(value: string | Buffer | undefined): string {
+  if (!value) return '';
+  return typeof value === 'string' ? value.trim() : value.toString('utf8').trim();
+}
+
+function openMacOutlookDraft(filePath: string): Promise<string> {
+  const openWithOutlook = (args: string[]): Promise<string> =>
+    new Promise((resolveOpen) => {
+      execFile(MAC_OPEN_COMMAND, args, (error, _stdout, stderr) => {
+        if (!error) {
+          resolveOpen('');
+          return;
+        }
+        resolveOpen(execOutputText(stderr) || getErrorMessage(error));
+      });
+    });
+
+  return openWithOutlook(['-b', 'com.microsoft.Outlook', filePath]).then(async (bundleError) => {
+    if (!bundleError) return '';
+    return await openWithOutlook(['-a', 'Microsoft Outlook', filePath]);
+  });
+}
+
+function openAlertDraftFile(filePath: string): Promise<string> {
+  if (process.platform === 'darwin') return openMacOutlookDraft(filePath);
+  return shell.openPath(filePath);
+}
 
 /**
  * Shared pick → size-gate → decode → width-cap pipeline for user-selected
@@ -122,7 +154,9 @@ function isAllowedExternalUrl(url: string): boolean {
       return parsed.hostname.toLowerCase() === 'teams.microsoft.com';
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-    return ALLOWED_EXTERNAL_HOSTS.has(parsed.hostname.toLowerCase());
+    const hostname = parsed.hostname.toLowerCase();
+    if (parsed.protocol === 'https:' && isDynatraceHost(hostname)) return true;
+    return ALLOWED_EXTERNAL_HOSTS.has(hostname);
   } catch {
     return false;
   }
@@ -194,6 +228,39 @@ export function setupWindowHandlers(
       return true;
     } catch (err) {
       loggers.ipc.warn('ICS save and open failed', {
+        error: getErrorMessage(err),
+      });
+      return false;
+    }
+  });
+
+  // Outlook alert draft (.eml) — X-Unsent opens an editable message while the
+  // CID image and its explicit dimensions remain under Relay's control.
+  ipcMain.handle(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN, async (event, content: string) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN)) return false;
+    if (!rateLimiters.fsOperations.tryConsume().allowed) return false;
+    if (
+      typeof content !== 'string' ||
+      content.length === 0 ||
+      content.length >= MAX_ALERT_DRAFT_EML_LENGTH ||
+      !content.includes('X-Unsent: 1') ||
+      !content.includes('Content-Type: multipart/related;') ||
+      !content.includes('Content-ID: <relay-alert-image>')
+    ) {
+      loggers.security.error('Blocked saving invalid alert draft EML content');
+      return false;
+    }
+    try {
+      const filePath = join(app.getPath('temp'), `relay-alert-${Date.now()}.eml`);
+      await writeFile(filePath, content, { encoding: 'utf8', mode: 0o600 });
+      const openError = await openAlertDraftFile(filePath);
+      if (openError) {
+        loggers.ipc.warn('Alert draft open failed', { error: openError });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      loggers.ipc.warn('Alert draft save and open failed', {
         error: getErrorMessage(err),
       });
       return false;
@@ -324,29 +391,6 @@ export function setupWindowHandlers(
     }
   });
 
-  // Clipboard Image - write PNG data URL to clipboard as native image
-  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, async (event, dataUrl: string) => {
-    if (!assertTrustedIpcSender(event, IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE)) return false;
-    try {
-      if (typeof dataUrl !== 'string' || !dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
-        return false;
-      }
-      if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-        loggers.ipc.warn('Clipboard image data URL exceeds size limit');
-        return false;
-      }
-      const image = nativeImage.createFromDataURL(dataUrl);
-      if (image.isEmpty()) return false;
-      clipboard.writeImage(image);
-      return true;
-    } catch (err) {
-      loggers.ipc.warn('Clipboard image write failed', {
-        error: getErrorMessage(err),
-      });
-      return false;
-    }
-  });
-
   ipcMain.handle(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE, async (event, dataUrl: string) => {
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE)) {
       return { success: false, error: 'Untrusted sender' };
@@ -370,6 +414,7 @@ export function setupWindowHandlers(
       // would take the whole main process down at startup instead.
       const { default: sharp } = await import('sharp');
       const optimizedBuffer = await sharp(sourceBuffer)
+        .withMetadata({ density: 96 })
         .png({
           adaptiveFiltering: true,
           compressionLevel: 9,
@@ -377,13 +422,14 @@ export function setupWindowHandlers(
         })
         .toBuffer();
 
-      if (optimizedBuffer.length >= sourceBuffer.length) {
-        return { success: false, error: 'Optimized image was not smaller' };
+      const optimizedDataUrl = PNG_DATA_URL_PREFIX + optimizedBuffer.toString('base64');
+      if (optimizedDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+        return { success: false, error: 'Prepared image exceeds size limit' };
       }
 
       return {
         success: true,
-        data: PNG_DATA_URL_PREFIX + optimizedBuffer.toString('base64'),
+        data: optimizedDataUrl,
       };
     } catch (err) {
       loggers.ipc.warn('Alert image optimization failed', {

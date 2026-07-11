@@ -20,7 +20,6 @@ describe('useAppAssembler', () => {
     expect(result.current.selectedGroupIds).toEqual([]);
     expect(result.current.manualAdds).toEqual([]);
     expect(result.current.manualRemoves).toEqual([]);
-    expect(result.current.settingsOpen).toBe(false);
   });
 
   it('toggles group selection on and off', () => {

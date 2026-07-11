@@ -529,6 +529,17 @@ describe('useNotepad', () => {
       expect(values).toEqual(['amber', 'blue', 'green', 'red', 'purple', 'slate']);
     });
 
+    it('uses the shared Relay semantic palette', () => {
+      expect(Object.fromEntries(NOTE_COLORS.map((color) => [color.value, color.hex]))).toEqual({
+        amber: '#ffb000',
+        blue: '#42a5f5',
+        green: '#2bb24c',
+        red: '#ff4539',
+        purple: '#c084fc',
+        slate: '#928a90',
+      });
+    });
+
     it('each color has value, label, and hex fields', () => {
       for (const color of NOTE_COLORS) {
         expect(color).toHaveProperty('value');

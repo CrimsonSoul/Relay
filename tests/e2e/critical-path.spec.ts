@@ -2,6 +2,7 @@ import { _electron as electron, test, expect, type Page, type Locator } from '@p
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -26,6 +27,23 @@ const rightClick = async (target: Locator) => {
 const getActivePanel = (window: Page) => window.locator('.tab-panel--active');
 
 const makePort = () => 20_000 + crypto.randomInt(20_000);
+
+const runDynatraceSeed = (
+  userDataDir: string,
+  port: number,
+  mode: '--dynatrace-only' | '--clear-dynatrace',
+) => {
+  const env = {
+    ...process.env,
+    RELAY_SEED_PB_URL: `http://127.0.0.1:${port}`,
+    RELAY_SEED_PB_DATA_DIR: path.join(userDataDir, 'data', 'pb_data'),
+    RELAY_SEED_SUPERUSER_PASSWORD: TEST_PASSPHRASE,
+  };
+  execFileSync(process.execPath, [path.join(__dirname, '../../scripts/seed.mjs'), mode], {
+    env,
+    stdio: 'pipe',
+  });
+};
 
 const writeServerConfig = (userDataDir: string, port: number) => {
   const dataDir = path.join(userDataDir, 'data');
@@ -220,6 +238,75 @@ test.describe('Vital Critical Path', () => {
 
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+  });
+
+  test('Dynatrace Problems tab opens without requiring a configured token', async () => {
+    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+
+    await expect(window.getByRole('heading', { name: 'Local response queue' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
+    await expect(window.getByRole('button', { name: 'Refresh Dynatrace Problems' })).toBeVisible();
+  });
+
+  test('Service Status uses the operational queue layout', async () => {
+    await goToTab(window, 'sidebar-status', 'Service Status');
+
+    await expect(window.getByRole('heading', { name: 'External service monitor' })).toBeVisible();
+    await expect(window.getByRole('tablist', { name: 'Incident feed filters' })).toBeVisible();
+    await expect(window.getByLabel('Search service status')).toBeVisible();
+    await expect(window.getByRole('region', { name: 'Provider posture' })).toBeVisible();
+    await expect(window.getByRole('region', { name: 'Service incident feed' })).toBeVisible();
+    await expect(window.getByText('ADP', { exact: true })).toHaveCount(0);
+  });
+
+  test('Dynatrace Problems demo seed is repeatable and isolated', async () => {
+    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+
+    const pb = await makePbClient(pbPort);
+    const seededProblems = await pb.collection('dynatrace_problems').getFullList({
+      filter: 'problemId ~ "RELAY-DEMO-"',
+      requestKey: null,
+    });
+    expect(seededProblems).toHaveLength(7);
+
+    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(window.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'Addressed locally 1' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: 'History 2' })).toBeVisible();
+    await expect(window.getByRole('tab', { name: /^All/ })).toHaveCount(0);
+    await expect(
+      window.getByRole('heading', { name: 'Checkout service availability below SLO' }),
+    ).toBeVisible();
+
+    runDynatraceSeed(tempDataDir, pbPort, '--clear-dynatrace');
+    const remainingDemoProblems = await pb.collection('dynatrace_problems').getFullList({
+      filter: 'problemId ~ "RELAY-DEMO-"',
+      requestKey: null,
+    });
+    expect(remainingDemoProblems).toHaveLength(0);
+  });
+
+  test('new Dynatrace Problems notify with sound wiring and require a NOC note', async () => {
+    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
+    await goToTab(window, 'sidebar-compose', 'Compose');
+
+    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+
+    await expect(window.getByText('New Dynatrace problems')).toBeVisible();
+    await expect(
+      window.getByText('P-DEMO-1001 · Checkout service availability below SLO (+4 more)'),
+    ).toBeVisible();
+    await window.getByRole('button', { name: 'Open Problems' }).click();
+    await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Dynatrace Problems');
+
+    const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
+    await expect(addressedAction).toBeDisabled();
+    await window.getByLabel('Add a note').fill('NOC confirmed impact and paged the checkout team.');
+    await expect(addressedAction).toBeEnabled();
+    await addressedAction.click();
+    await expect(window.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
   });
 
   test('Compose bridge action buttons do not overlap on compact desktop widths', async () => {

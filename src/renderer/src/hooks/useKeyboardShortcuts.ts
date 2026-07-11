@@ -3,14 +3,14 @@ import { TabName } from '@shared/ipc';
 
 interface UseKeyboardShortcutsParams {
   setActiveTab: (tab: TabName) => void;
-  setSettingsOpen: (open: boolean) => void;
+  openSettings: () => void;
   setIsShortcutsOpen: (open: boolean) => void;
   searchInputRef: RefObject<HTMLInputElement>;
 }
 
 export function useKeyboardShortcuts({
   setActiveTab,
-  setSettingsOpen,
+  openSettings,
   setIsShortcutsOpen,
   searchInputRef,
 }: UseKeyboardShortcutsParams): void {
@@ -23,6 +23,7 @@ export function useKeyboardShortcuts({
       '5': 'Status',
       '6': 'Notes',
       '7': 'Alerts',
+      '8': 'Problems',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -38,7 +39,7 @@ export function useKeyboardShortcuts({
       // Cmd/Ctrl+, for Settings
       if (mod && e.key === ',') {
         e.preventDefault();
-        setSettingsOpen(true);
+        openSettings();
         return;
       }
 
@@ -58,5 +59,5 @@ export function useKeyboardShortcuts({
 
     globalThis.addEventListener('keydown', handleKeyDown);
     return () => globalThis.removeEventListener('keydown', handleKeyDown);
-  }, [setActiveTab, setSettingsOpen, setIsShortcutsOpen, searchInputRef]);
+  }, [setActiveTab, openSettings, setIsShortcutsOpen, searchInputRef]);
 }

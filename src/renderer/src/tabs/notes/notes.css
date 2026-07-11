@@ -298,27 +298,27 @@
 
 /* Color category variants — rail color carries the category */
 .note-card--amber {
-  border-left-color: #e11d48;
+  border-left-color: var(--color-warning);
 }
 
 .note-card--blue {
-  border-left-color: #3b82f6;
+  border-left-color: var(--info-bright);
 }
 
 .note-card--green {
-  border-left-color: #22c55e;
+  border-left-color: var(--ok);
 }
 
 .note-card--red {
-  border-left-color: #ef4444;
+  border-left-color: var(--alarm);
 }
 
 .note-card--purple {
-  border-left-color: #a855f7;
+  border-left-color: var(--color-group-purple);
 }
 
 .note-card--slate {
-  border-left-color: #64748b;
+  border-left-color: var(--color-text-tertiary);
 }
 
 /* Copy button — absolutely positioned top-right */

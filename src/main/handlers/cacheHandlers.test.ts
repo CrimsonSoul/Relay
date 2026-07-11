@@ -5,6 +5,7 @@ import { setupCacheHandlers } from './cacheHandlers';
 
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn() },
+  BrowserWindow: { getAllWindows: () => [] },
 }));
 
 vi.mock('../logger', () => ({
@@ -31,6 +32,8 @@ describe('cacheHandlers', () => {
     readCollection: vi.fn(),
     updateRecord: vi.fn(),
     writeCollection: vi.fn(),
+    getUsableCacheMarker: vi.fn(),
+    setUsableCacheMarker: vi.fn(),
     clear: vi.fn(),
   };
 
@@ -38,6 +41,8 @@ describe('cacheHandlers', () => {
     getAll: vi.fn(),
     clear: vi.fn(),
     remove: vi.fn(),
+    count: vi.fn(() => 0),
+    markFailure: vi.fn(),
   };
 
   const mockSync = {
@@ -77,6 +82,16 @@ describe('cacheHandlers', () => {
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('contacts');
       expect(result).toEqual(mockData);
+    });
+
+    it('reads the shared cloud status snapshot for offline clients', () => {
+      const snapshot = [{ id: 'snapshot', key: 'current' }];
+      mockCache.readCollection.mockReturnValue(snapshot);
+
+      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'cloud_status_snapshot');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('cloud_status_snapshot');
+      expect(result).toEqual(snapshot);
     });
 
     it('returns empty array for invalid collection', () => {
@@ -213,9 +228,52 @@ describe('cacheHandlers', () => {
   describe('CACHE_SNAPSHOT', () => {
     it('writes collection for valid inputs', () => {
       const records = [{ id: '1' }, { id: '2' }];
-      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', records);
+      const signature = '2:0123456789abcdef';
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', signature, records);
 
-      expect(mockCache.writeCollection).toHaveBeenCalledWith('contacts', records);
+      expect(mockCache.writeCollection).toHaveBeenCalledWith('contacts', signature, records);
+    });
+
+    it('persists the shared cloud status snapshot for offline clients', () => {
+      const records = [{ id: 'snapshot', key: 'current' }];
+
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT](
+        {},
+        'cloud_status_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+
+      expect(mockCache.writeCollection).toHaveBeenCalledWith(
+        'cloud_status_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+    });
+
+    it('marks a client cache usable only after an authenticated snapshot is written', () => {
+      mockAppConfig.load.mockReturnValue({
+        mode: 'client',
+        serverUrl: 'https://relay.example.com',
+      });
+      mockCache.writeCollection.mockReturnValue(true);
+      mockCache.getUsableCacheMarker.mockReturnValue(null);
+
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', '1:0123456789abcdef', [
+        { id: 'abc123abc123abc' },
+      ]);
+
+      expect(mockCache.setUsableCacheMarker).toHaveBeenCalledWith(
+        'https://relay.example.com',
+        expect.any(Number),
+        expect.any(Number),
+      );
+    });
+
+    it('returns early when the revision signature is invalid', () => {
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT]({}, 'contacts', 'invalid', [{ id: '1' }]);
+
+      expect(mockCache.writeCollection).not.toHaveBeenCalled();
     });
 
     it('returns early for invalid collection', () => {
@@ -388,7 +446,13 @@ describe('cacheHandlers', () => {
 
       const result = await handlers[IPC_CHANNELS.SYNC_PENDING]();
 
-      expect(result).toEqual({ total: 2, conflicts: 0, errors: ['Re-authentication failed'] });
+      expect(result).toEqual({
+        total: 2,
+        conflicts: 0,
+        errors: ['Re-authentication failed'],
+        remaining: 2,
+        remainingChanges: [],
+      });
       expect(mockSync.syncAll).not.toHaveBeenCalled();
     });
 

@@ -23,6 +23,11 @@ import {
   getPendingChanges,
   setPendingChanges,
   setDynatraceWindowManager,
+  getPbClient,
+  getDynatraceProblemsManager,
+  setDynatraceProblemsManager,
+  getCloudStatusManager,
+  setCloudStatusManager,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -40,6 +45,9 @@ import { setupPocketbaseConnectionHandlers } from './handlers/pocketbaseConnecti
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import { DynatraceDashboardStore } from './dynatrace/DynatraceDashboardStore';
 import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
+import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
+import { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
+import { CloudStatusManager } from './handlers/cloudStatus/CloudStatusManager';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -129,6 +137,8 @@ if (gotLock) {
       cleanupMaintenance = null;
       stopMemoryHeartbeat?.();
       stopMemoryHeartbeat = null;
+      getDynatraceProblemsManager()?.stop();
+      getCloudStatusManager()?.stop();
       // PocketBase cleanup — synchronous kill to ensure process dies before app exits
       if (getRetentionManager()) {
         getRetentionManager()!.stop();
@@ -172,6 +182,10 @@ if (gotLock) {
       setAppConfig(new AppConfig(configDataDir));
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
+      setDynatraceProblemsManager(
+        new DynatraceProblemsManager(new DynatraceProblemsConfigStore(configDataDir), getPbClient),
+      );
+      setCloudStatusManager(new CloudStatusManager(getPbClient));
 
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
@@ -192,14 +206,19 @@ if (gotLock) {
       }
 
       // Register PocketBase bootstrap IPC early so it's available when the renderer loads.
-      setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess);
+      setupPocketbaseConnectionHandlers(getAppConfig, getPbProcess, getOfflineCache);
 
       // Start PocketBase on demand (called after first-time setup)
       ipcMain.handle(IPC_CHANNELS.PB_START, async (event) => {
         if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
-        return startPocketBase(config, configDataDir);
+        const started = await startPocketBase(config, configDataDir);
+        if (started) {
+          getDynatraceProblemsManager()?.start();
+          getCloudStatusManager()?.start();
+        }
+        return started;
       });
 
       // Runtime reconfigure — used by the setup flow so the main process rebuilds
@@ -220,7 +239,12 @@ if (gotLock) {
       const restartPb = async (): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
-        return startPocketBase(config, configDataDir);
+        const started = await startPocketBase(config, configDataDir);
+        if (started) {
+          getDynatraceProblemsManager()?.start();
+          getCloudStatusManager()?.start();
+        }
+        return started;
       };
       setupIpc(createAuxWindow, restartPb);
 
@@ -232,7 +256,28 @@ if (gotLock) {
       // connection checks can succeed as soon as the renderer loads.
       const relayConfig = getAppConfig()?.load();
       if (relayConfig?.mode === 'server') {
-        await startPocketBase(relayConfig, configDataDir);
+        const started = await startPocketBase(relayConfig, configDataDir);
+        if (started) {
+          getDynatraceProblemsManager()?.start();
+          getCloudStatusManager()?.start();
+        }
+      }
+
+      // Open the client cache before the renderer asks for its bootstrap
+      // connection. Authentication continues in the background so an
+      // unreachable LAN server cannot delay a cache-backed cold start.
+      if (relayConfig?.mode === 'client') {
+        try {
+          await initializeClientOfflineInfrastructure(configDataDir, relayConfig, {
+            deferAuthentication: true,
+          });
+          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
+        } catch (syncErr) {
+          loggers.pocketbase.warn(
+            'Could not initialize offline infrastructure — local cache unavailable',
+            { error: syncErr },
+          );
+        }
       }
 
       // Show the window as early as possible — the renderer has its own
@@ -242,24 +287,6 @@ if (gotLock) {
       cleanupMaintenance = setupMaintenanceTasks();
       stopMemoryHeartbeat = startMemoryHeartbeat();
 
-      // Initialize offline cache infrastructure for client mode AFTER the
-      // window is visible. All three components (cache, pending, sync) are
-      // initialized together so they're either all available or none —
-      // preventing silent data loss from a half-initialized state.
-      // Auth is capped at 15 s to avoid hanging if the server is unreachable.
-      if (relayConfig?.mode === 'client') {
-        try {
-          await initializeClientOfflineInfrastructure(configDataDir, relayConfig);
-          loggers.pocketbase.info('Client-mode offline infrastructure initialized');
-        } catch (syncErr) {
-          loggers.pocketbase.warn(
-            'Could not initialize offline infrastructure — local cache unavailable',
-            {
-              error: syncErr,
-            },
-          );
-        }
-      }
       app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindow().catch((error_) => {

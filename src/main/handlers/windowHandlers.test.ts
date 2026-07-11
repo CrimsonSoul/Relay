@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ipcMain, BrowserWindow, clipboard, nativeImage, shell, dialog } from 'electron';
+import { execFile } from 'node:child_process';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { setupWindowHandlers, setupWindowListeners, ALLOWED_AUX_ROUTES } from './windowHandlers';
 
@@ -14,10 +15,11 @@ const mockNativeImage = {
 mockNativeImage.resize.mockReturnValue(mockNativeImage);
 
 const mockSharp = vi.hoisted(() => {
+  const withMetadata = vi.fn().mockReturnThis();
   const png = vi.fn().mockReturnThis();
   const toBuffer = vi.fn().mockResolvedValue(Buffer.from('optimized-png'));
-  const sharp = vi.fn(() => ({ png, toBuffer }));
-  return { sharp, png, toBuffer };
+  const sharp = vi.fn(() => ({ withMetadata, png, toBuffer }));
+  return { sharp, withMetadata, png, toBuffer };
 });
 
 vi.mock('electron', () => {
@@ -78,6 +80,10 @@ vi.mock('node:fs/promises', () => ({
   stat: vi.fn(),
   mkdir: vi.fn(),
   unlink: vi.fn(),
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: vi.fn(),
 }));
 
 vi.mock('../logger', () => ({
@@ -150,6 +156,8 @@ describe('windowHandlers', () => {
 
     vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWin as BrowserWindow);
     vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWin as BrowserWindow]);
+    vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
+    vi.mocked(nativeImage.createFromBuffer).mockReturnValue(mockNativeImage as never);
 
     vi.mocked(ipcMain.on).mockImplementation(
       (channel: string, handler: (...args: unknown[]) => unknown) => {
@@ -166,6 +174,10 @@ describe('windowHandlers', () => {
 
     vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
     vi.mocked(stat).mockResolvedValue({ size: 1024 } as never);
+    vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
+      if (typeof callback === 'function') callback(null, '', '');
+      return {} as ReturnType<typeof execFile>;
+    });
 
     setupWindowHandlers(getMainWindow, createAuxWindow, getDataRoot);
   });
@@ -323,6 +335,27 @@ describe('windowHandlers', () => {
       await handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, 'https://downdetector.com/status/github/');
 
       expect(shell.openExternal).toHaveBeenCalledWith('https://downdetector.com/status/github/');
+    });
+
+    it('opens trusted HTTPS Dynatrace tenant URLs', async () => {
+      for (const url of [
+        'https://abc123.apps.dynatrace.com',
+        'https://abc123.live.dynatrace.com/ui/apps/dynatrace.classic.problems',
+      ]) {
+        await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(true);
+        expect(shell.openExternal).toHaveBeenCalledWith(url);
+      }
+    });
+
+    it('blocks insecure or lookalike Dynatrace URLs', async () => {
+      for (const url of [
+        ['http', '://abc123.apps.dynatrace.com'].join(''),
+        'https://dynatrace.com.evil.example/problems',
+        'https://abc123.apps.dynatrace.com@evil.example/problems',
+      ]) {
+        await expect(handlers[IPC_CHANNELS.OPEN_EXTERNAL]({}, url)).resolves.toBe(false);
+      }
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
 
     it('opens Teams meeting draft URL', async () => {
@@ -493,6 +526,105 @@ describe('windowHandlers', () => {
     });
   });
 
+  describe('ALERT_DRAFT_SAVE_AND_OPEN', () => {
+    const validEml = [
+      'MIME-Version: 1.0',
+      'X-Unsent: 1',
+      'Content-Type: multipart/related; boundary="relay"',
+      'Content-ID: <relay-alert-image>',
+      '',
+    ].join('\r\n');
+
+    it('writes the protected EML to temp storage and opens it in Outlook', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(shell.openPath).mockResolvedValue('');
+
+      const result = await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
+
+      expect(result).toBe(true);
+      const [filePath, content, options] = vi.mocked(writeFile).mock.calls[0] as [
+        string,
+        string,
+        { encoding: string; mode: number },
+      ];
+      expect(filePath).toMatch(/^\/mock-temp\/relay-alert-\d+\.eml$/);
+      expect(content).toBe(validEml);
+      expect(options).toEqual({ encoding: 'utf8', mode: 0o600 });
+      if (process.platform === 'darwin') {
+        expect(execFile).toHaveBeenCalledWith(
+          '/usr/bin/open',
+          ['-b', 'com.microsoft.Outlook', filePath],
+          expect.any(Function),
+        );
+        expect(shell.openPath).not.toHaveBeenCalled();
+      } else {
+        expect(shell.openPath).toHaveBeenCalledWith(filePath);
+      }
+    });
+
+    it('rejects malformed, incomplete, and oversized EML input', async () => {
+      const { writeFile } = await import('node:fs/promises');
+
+      expect(await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, 42)).toBe(false);
+      expect(await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, 'X-Unsent: 1')).toBe(false);
+      expect(
+        await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, 'x'.repeat(20 * 1024 * 1024)),
+      ).toBe(false);
+      expect(writeFile).not.toHaveBeenCalled();
+      expect(shell.openPath).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the Outlook application name on macOS', async () => {
+      if (process.platform !== 'darwin') return;
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      vi.mocked(execFile)
+        .mockImplementationOnce((_file, _args, callback) => {
+          if (typeof callback === 'function') callback(new Error('bundle missing'), '', '');
+          return {} as ReturnType<typeof execFile>;
+        })
+        .mockImplementationOnce((_file, _args, callback) => {
+          if (typeof callback === 'function') callback(null, '', '');
+          return {} as ReturnType<typeof execFile>;
+        });
+
+      const result = await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
+
+      const [filePath] = vi.mocked(writeFile).mock.calls[0] as [string];
+      expect(result).toBe(true);
+      expect(execFile).toHaveBeenNthCalledWith(
+        1,
+        '/usr/bin/open',
+        ['-b', 'com.microsoft.Outlook', filePath],
+        expect.any(Function),
+      );
+      expect(execFile).toHaveBeenNthCalledWith(
+        2,
+        '/usr/bin/open',
+        ['-a', 'Microsoft Outlook', filePath],
+        expect.any(Function),
+      );
+    });
+
+    it('returns false when the draft cannot be opened', async () => {
+      const { writeFile } = await import('node:fs/promises');
+      vi.mocked(writeFile).mockResolvedValue(undefined);
+      if (process.platform === 'darwin') {
+        vi.mocked(execFile).mockImplementation((_file, _args, callback) => {
+          if (typeof callback === 'function') callback(new Error('Outlook unavailable'), '', '');
+          return {} as ReturnType<typeof execFile>;
+        });
+      } else {
+        vi.mocked(shell.openPath).mockResolvedValue('no .eml handler');
+      }
+
+      const result = await handlers[IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN]({}, validEml);
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe('ALERT_PLAY_SOUND', () => {
     it('plays the native alert sound and returns true', async () => {
       const result = await handlers[IPC_CHANNELS.ALERT_PLAY_SOUND]();
@@ -552,68 +684,6 @@ describe('windowHandlers', () => {
     });
   });
 
-  describe('CLIPBOARD_WRITE_IMAGE', () => {
-    it('writes valid PNG data URL to clipboard', async () => {
-      const dataUrl = 'data:image/png;base64,iVBORw0KGgo=';
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, dataUrl);
-
-      expect(nativeImage.createFromDataURL).toHaveBeenCalledWith(dataUrl);
-      expect(clipboard.writeImage).toHaveBeenCalled();
-      expect(result).toBe(true);
-    });
-
-    it('returns false for non-string input', async () => {
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, 42);
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false for non-PNG data URL', async () => {
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
-        {},
-        'data:image/jpeg;base64,abc',
-      );
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false for data URL exceeding 10MB', async () => {
-      const bigDataUrl = 'data:image/png;base64,' + 'A'.repeat(10 * 1024 * 1024 + 1);
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE]({}, bigDataUrl);
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false when nativeImage is empty', async () => {
-      const emptyImage = { isEmpty: vi.fn(() => true) };
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(emptyImage as never);
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
-        {},
-        'data:image/png;base64,abc',
-      );
-
-      expect(result).toBe(false);
-    });
-
-    it('returns false when clipboard.writeImage throws', async () => {
-      vi.mocked(nativeImage.createFromDataURL).mockReturnValue(mockNativeImage as never);
-      vi.mocked(clipboard.writeImage).mockImplementationOnce(() => {
-        throw new Error('clipboard fail');
-      });
-
-      const result = await handlers[IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE](
-        {},
-        'data:image/png;base64,abc',
-      );
-
-      expect(result).toBe(false);
-    });
-  });
-
   describe('OPTIMIZE_ALERT_IMAGE', () => {
     it('returns a smaller optimized PNG data URL', async () => {
       const originalDataUrl =
@@ -622,6 +692,7 @@ describe('windowHandlers', () => {
       const result = await handlers[IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE]({}, originalDataUrl);
 
       expect(mockSharp.sharp).toHaveBeenCalledWith(Buffer.from('larger-original-png'));
+      expect(mockSharp.withMetadata).toHaveBeenCalledWith({ density: 96 });
       expect(mockSharp.png).toHaveBeenCalledWith({
         adaptiveFiltering: true,
         compressionLevel: 9,
@@ -633,13 +704,16 @@ describe('windowHandlers', () => {
       });
     });
 
-    it('falls back when optimization does not make the image smaller', async () => {
+    it('keeps the prepared 96-DPI PNG even when metadata makes it larger', async () => {
       mockSharp.toBuffer.mockResolvedValueOnce(Buffer.from('larger-than-original'));
       const originalDataUrl = 'data:image/png;base64,' + Buffer.from('tiny').toString('base64');
 
       const result = await handlers[IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE]({}, originalDataUrl);
 
-      expect(result).toEqual({ success: false, error: 'Optimized image was not smaller' });
+      expect(result).toEqual({
+        success: true,
+        data: 'data:image/png;base64,' + Buffer.from('larger-than-original').toString('base64'),
+      });
     });
 
     it('rejects non-PNG data URLs', async () => {

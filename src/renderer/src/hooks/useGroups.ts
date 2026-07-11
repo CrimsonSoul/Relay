@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import type { BridgeGroup } from '@shared/ipc';
 import { useToast } from '../components/Toast';
 import { loggers } from '../utils/logger';
@@ -7,19 +7,10 @@ import {
   updateGroup as pbUpdateGroup,
   deleteGroup as pbDeleteGroup,
 } from '../services/bridgeGroupService';
-import { useCollection } from './useCollection';
-import type { BridgeGroupRecord } from '../services/bridgeGroupService';
 import { toGroup } from '../utils/transforms';
 
 export function useGroups() {
   const { showToast } = useToast();
-  const {
-    data: groupRecords,
-    loading,
-    refetch: reloadGroups,
-  } = useCollection<BridgeGroupRecord>('bridge_groups', { sort: 'name' });
-
-  const groups = useMemo(() => groupRecords.map(toGroup), [groupRecords]);
 
   const saveGroup = useCallback(
     async (group: Omit<BridgeGroup, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -71,11 +62,8 @@ export function useGroups() {
   );
 
   return {
-    groups,
-    loading,
     saveGroup,
     updateGroup,
     deleteGroup,
-    reloadGroups,
   };
 }

@@ -4,6 +4,7 @@ import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton } from './sidebar/SidebarButton';
 import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
+import { SidebarPresence } from './SidebarPresence';
 import {
   ComposeIcon,
   AlertsIcon,
@@ -12,6 +13,7 @@ import {
   ServersIcon,
   NotesIcon,
   StatusIcon,
+  ProblemsIcon,
   SettingsIcon,
 } from './sidebar/SidebarIcons';
 
@@ -24,6 +26,8 @@ interface SidebarProps {
     hostnames: string[];
   };
   relayMode?: PublicRelayConfig['mode'];
+  relayConfig?: PublicRelayConfig | null;
+  onClientConnected?: (hostname: string) => void;
   dynatraceDashboards?: DynatraceDashboardState[];
   onOpenDynatraceDashboard?: (id: string) => void | Promise<void>;
 }
@@ -35,6 +39,7 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
   { label: 'Notes', tab: 'Notes', icon: <NotesIcon /> },
   { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
+  { label: 'Problems', tab: 'Problems', icon: <ProblemsIcon /> },
   { label: 'People', tab: 'People', icon: <PeopleIcon /> },
   { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
 ];
@@ -43,8 +48,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   onTabChange,
   onOpenSettings,
-  clientPresence = { count: 0, hostnames: [] },
+  clientPresence,
   relayMode,
+  relayConfig,
+  onClientConnected,
   dynatraceDashboards = [],
   onOpenDynatraceDashboard = () => undefined,
 }) => {
@@ -78,8 +85,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       <div className="sidebar-footer">
-        {showClientPresence && (
-          <SidebarClientStatus count={clientPresence.count} hostnames={clientPresence.hostnames} />
+        {clientPresence ? (
+          showClientPresence && (
+            <SidebarClientStatus
+              count={clientPresence.count}
+              hostnames={clientPresence.hostnames}
+            />
+          )
+        ) : (
+          <SidebarPresence relayConfig={relayConfig} onClientConnected={onClientConnected} />
         )}
         <SidebarDashboards
           dashboards={dynatraceDashboards}
@@ -87,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         />
         <SidebarButton
           label="Settings"
-          isActive={false}
+          isActive={activeTab === 'Settings'}
           onClick={onOpenSettings}
           icon={<SettingsIcon />}
         />

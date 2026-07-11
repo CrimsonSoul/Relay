@@ -6,6 +6,8 @@ import {
   getPbProcess,
   getPendingChanges,
   getRetentionManager,
+  getDynatraceProblemsManager,
+  getCloudStatusManager,
   setBackupManager,
   setOfflineCache,
   setPbClient,
@@ -29,6 +31,10 @@ function tryClose(db: { close(): void } | null, label: string): void {
 
 export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   const config = getAppConfig()?.load();
+  const dynatraceProblemsManager = getDynatraceProblemsManager();
+  dynatraceProblemsManager?.stop();
+  const cloudStatusManager = getCloudStatusManager();
+  cloudStatusManager?.stop();
 
   // Stop mDNS advertising; startPocketBase re-starts it for LAN-bound server mode.
   stopAdvertising();
@@ -52,6 +58,8 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   if (config?.mode === 'server') {
     const started = await startPocketBase(config, configDataDir);
     if (!started) throw new Error('Failed to start PocketBase server.');
+    dynatraceProblemsManager?.start();
+    cloudStatusManager?.start();
   } else if (pbProcess) {
     await pbProcess.stop();
     setPbProcess(null);

@@ -44,7 +44,7 @@ export function initPocketBase(url: string): PocketBase {
     void runProbeAndReschedule();
   };
   setConnectionState('connecting');
-  if (previousUrl !== null && previousUrl !== url) {
+  if (previousUrl !== null) {
     clientGeneration++;
     clientListeners.forEach((fn) => fn(clientGeneration));
   }
@@ -88,6 +88,12 @@ export function loadAuthSession(auth: PbAuthSession, skipHealthRestart = false):
   if (!skipHealthRestart) startHealthCheck();
 }
 
+/** Start health retries without an auth session while rendering cached client data. */
+export function startOfflineMode(): void {
+  setConnectionState('offline');
+  startHealthCheck();
+}
+
 export type RefreshResult = 'ok' | 'auth-failed' | 'unavailable';
 
 export async function refreshAuthSession(skipHealthRestart = false): Promise<RefreshResult> {
@@ -117,7 +123,7 @@ export async function refreshAuthSession(skipHealthRestart = false): Promise<Ref
 
 function applyRefreshFailure(result: RefreshResult): void {
   if (result === 'auth-failed') authRejected = true;
-  setConnectionState(result === 'auth-failed' ? 'auth-failed' : 'offline');
+  setConnectionState(authRejected ? 'auth-failed' : 'offline');
 }
 
 function beginHealthCheckProbe(): AbortController | null {
@@ -177,7 +183,7 @@ function handleFailedProbe(): void {
     connectionState === 'auth-failed' ||
     connectionState === 'reconnecting'
   ) {
-    setConnectionState('offline');
+    setConnectionState(authRejected ? 'auth-failed' : 'offline');
   }
 }
 
@@ -276,7 +282,8 @@ export function handleApiError(error: unknown): void {
     'status' in error &&
     ((error as { status: number }).status === 401 || (error as { status: number }).status === 403)
   ) {
-    setConnectionState('reconnecting');
+    authRejected = true;
+    setConnectionState('auth-failed');
     void refreshAuthSession().then((refreshed) => {
       if (refreshed !== 'ok') applyRefreshFailure(refreshed);
     });

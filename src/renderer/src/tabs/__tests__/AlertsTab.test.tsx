@@ -4,6 +4,8 @@ import React from 'react';
 
 // --- Mocks ---
 
+const OPTIMIZED_OUTLOOK_DATA_URL = 'data:image/png;base64,T1BUSU1JWkVEX09VVExPT0tfQ0FQVFVSRQ==';
+
 const mockCapture = vi.hoisted(() => {
   const highResCanvas = {
     width: 1280,
@@ -168,6 +170,7 @@ vi.mock('../AlertForm', () => ({
     const setBodyHtml = props.setBodyHtml as (s: string) => void;
     const setSender = props.setSender as (s: string) => void;
     const setRecipient = props.setRecipient as (s: string) => void;
+    const setClickThroughUrl = props.setClickThroughUrl as (s: string) => void;
     const setUpdateNumber = props.setUpdateNumber as (n: number) => void;
     const hasRetiredTransformProps = [
       'isCompact',
@@ -204,6 +207,19 @@ vi.mock('../AlertForm', () => ({
         <button data-testid="set-recipient" onClick={() => setRecipient('Managers')}>
           set-recipient
         </button>
+        <button
+          data-testid="set-click-through-url"
+          onClick={() => setClickThroughUrl('https://status.example.com/incident')}
+        >
+          set-click-through-url
+        </button>
+        <button
+          data-testid="set-unsafe-click-through-url"
+          onClick={() => setClickThroughUrl('javascript:alert(1)')}
+        >
+          set-unsafe-click-through-url
+        </button>
+        <span data-testid="form-click-through-url">{String(props.clickThroughUrl)}</span>
         <button data-testid="set-update-number" onClick={() => setUpdateNumber(2)}>
           set-update
         </button>
@@ -362,11 +378,11 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).api = {
     getCompanyLogo: vi.fn().mockResolvedValue(null),
     getFooterLogo: vi.fn().mockResolvedValue(null),
-    writeClipboardImage: vi.fn().mockResolvedValue(true),
     optimizeAlertImage: vi.fn().mockResolvedValue({
       success: true,
-      data: 'data:image/png;base64,OPTIMIZED_OUTLOOK_CAPTURE',
+      data: OPTIMIZED_OUTLOOK_DATA_URL,
     }),
+    saveAndOpenAlertDraft: vi.fn().mockResolvedValue(true),
     saveAlertImage: vi.fn().mockResolvedValue({ success: true }),
     saveCompanyLogo: vi.fn().mockResolvedValue({ success: false }),
     removeCompanyLogo: vi.fn().mockResolvedValue({ success: true }),
@@ -392,24 +408,38 @@ describe('AlertsTab', () => {
     expect(screen.getByText('ALARMS')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'REMIND' })).not.toBeInTheDocument();
     expect(screen.getByText('PIN TEMPLATE')).toBeInTheDocument();
-    expect(screen.getByText('SAVE PNG')).toBeInTheDocument();
-    expect(screen.getByText('COPY FOR OUTLOOK')).toBeInTheDocument();
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toBeInTheDocument();
+    expect(screen.getByText('SAVE IMAGE')).toBeInTheDocument();
+    expect(screen.queryByText('COPY IMAGE')).not.toBeInTheDocument();
+    expect(screen.getByText('OPEN IN OUTLOOK')).toBeInTheDocument();
+    expect(screen.getByText('SCHEDULE ALARM')).toBeInTheDocument();
   });
 
-  it('places the alarm action before the Outlook copy action', () => {
+  it('places the alarm action before the primary Outlook draft action', () => {
     render(<AlertsTab />);
     const header = screen.getByTestId('collapsible-header');
     const labels = Array.from(header.querySelectorAll('button')).map((button) =>
       button.textContent?.trim(),
     );
 
-    expect(labels.indexOf('SCHEDULE ALERT ALARM')).toBeLessThan(labels.indexOf('COPY FOR OUTLOOK'));
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute('data-has-icon', 'true');
-    expect(screen.getByText('SCHEDULE ALERT ALARM')).toHaveAttribute(
+    expect(labels.indexOf('SCHEDULE ALARM')).toBeLessThan(labels.indexOf('OPEN IN OUTLOOK'));
+    expect(screen.getByText('SCHEDULE ALARM')).toHaveAttribute('data-has-icon', 'true');
+    expect(screen.getByText('SCHEDULE ALARM')).toHaveAttribute(
       'data-tooltip',
       'Schedule an alarm for this alert',
     );
+    expect(screen.getByText('ALARMS')).toHaveAttribute('data-tooltip', 'View and manage alarms');
+  });
+
+  it('uses distinct alarm-clock and calendar-plus icons for manage and schedule actions', () => {
+    render(<AlertsTab />);
+
+    const alarmsIcon = screen.getByTestId('button-icon-ALARMS');
+    expect(alarmsIcon.querySelector('circle[r="7"]')).toBeInTheDocument();
+    expect(alarmsIcon.querySelector('rect')).not.toBeInTheDocument();
+
+    const scheduleIcon = screen.getByTestId('button-icon-SCHEDULE ALARM');
+    expect(scheduleIcon.querySelector('rect[width="18"]')).toBeInTheDocument();
+    expect(scheduleIcon.querySelector('circle')).not.toBeInTheDocument();
   });
 
   it('shows default sender and recipient on the alert card', () => {
@@ -508,9 +538,9 @@ describe('AlertsTab', () => {
     expect(pinBtn).toBeInTheDocument();
   });
 
-  it('clicking SAVE PNG saves the high-resolution capture', async () => {
+  it('clicking SAVE IMAGE saves the high-resolution PNG capture', async () => {
     render(<AlertsTab />);
-    const saveBtn = screen.getByText('SAVE PNG');
+    const saveBtn = screen.getByText('SAVE IMAGE');
     fireEvent.click(saveBtn);
     await waitFor(() => {
       expect(globalThis.api?.saveAlertImage).toHaveBeenCalledWith(
@@ -529,51 +559,71 @@ describe('AlertsTab', () => {
     );
   });
 
-  it('clicking COPY FOR OUTLOOK optimizes the high-resolution capture before writing it', async () => {
+  it('opens a 2x inline-image Outlook draft at an explicit 640px display size', async () => {
     render(<AlertsTab />);
-    const copyBtn = screen.getByText('COPY FOR OUTLOOK');
-    fireEvent.click(copyBtn);
+    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+
     await waitFor(() => {
-      expect(globalThis.api?.optimizeAlertImage).toHaveBeenCalledWith(
-        'data:image/png;base64,HIGH_RES_CAPTURE',
-      );
-      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,OPTIMIZED_OUTLOOK_CAPTURE',
-      );
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
     });
     expect(mockCapture.html2canvas).toHaveBeenCalledWith(
-      expect.objectContaining({
-        style: expect.objectContaining({
-          minWidth: '640px',
-          maxWidth: '640px',
-        }),
-      }),
+      expect.any(HTMLElement),
       expect.objectContaining({ scale: 2 }),
     );
+
+    const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
+    expect(eml).toContain('X-Unsent: 1');
+    expect(eml).toContain('Subject: Alert Subject');
+    expect(eml).not.toMatch(/(^|\r\n)From:/);
+    expect(eml).not.toMatch(/(^|\r\n)To:/);
+    expect(eml).toContain('Content-ID: <relay-alert-image>');
+    const encodedHtml = eml
+      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
+      ?.split('\r\n--relay_alert_')[0]
+      .replaceAll('\r\n', '');
+    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    expect(html).toContain('width="640" height="600"');
   });
 
-  it('falls back to the original high-resolution capture when Outlook optimization fails', async () => {
-    vi.mocked(globalThis.api!.optimizeAlertImage!).mockResolvedValueOnce({
-      success: false,
-      error: 'Optimization failed',
-    });
-
+  it('wraps the whole Outlook draft image in the one sanitized click-through URL', async () => {
     render(<AlertsTab />);
-    const copyBtn = screen.getByText('COPY FOR OUTLOOK');
-    fireEvent.click(copyBtn);
+    fireEvent.click(screen.getByTestId('set-click-through-url'));
+    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
 
     await waitFor(() => {
-      expect(globalThis.api?.writeClipboardImage).toHaveBeenCalledWith(
-        'data:image/png;base64,HIGH_RES_CAPTURE',
+      expect(globalThis.api?.saveAndOpenAlertDraft).toHaveBeenCalledTimes(1);
+    });
+    const eml = vi.mocked(globalThis.api!.saveAndOpenAlertDraft!).mock.calls[0]?.[0] ?? '';
+    const encodedHtml = eml
+      .split('Content-Transfer-Encoding: base64\r\n\r\n')[1]
+      ?.split('\r\n--relay_alert_')[0]
+      .replaceAll('\r\n', '');
+    const html = Buffer.from(encodedHtml ?? '', 'base64').toString('utf8');
+    expect(html).toContain('<a href="https://status.example.com/incident"');
+    expect(html.match(/<a href=/g)).toHaveLength(1);
+  });
+
+  it('blocks an unsafe click-through URL before capturing or opening Outlook', async () => {
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByTestId('set-unsafe-click-through-url'));
+    mockCapture.html2canvas.mockClear();
+    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
+
+    await waitFor(() => {
+      expect(mockShowToast).toHaveBeenCalledWith(
+        'Enter a valid HTTP or HTTPS click-through URL',
+        'error',
       );
     });
+    expect(mockCapture.html2canvas).not.toHaveBeenCalled();
+    expect(globalThis.api?.saveAndOpenAlertDraft).not.toHaveBeenCalled();
   });
 
   it('resolves banner colors in the shared capture clone before rendering', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByTestId('set-severity-issue'));
 
-    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -597,7 +647,7 @@ describe('AlertsTab', () => {
       render(<AlertsTab />);
       fireEvent.click(screen.getByTestId(testId));
 
-      fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+      fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
 
       await waitFor(() => {
         expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -615,7 +665,7 @@ describe('AlertsTab', () => {
   it('paints alert capture surfaces so Teams and Discord do not show grey transparency', async () => {
     render(<AlertsTab />);
 
-    fireEvent.click(screen.getByText('COPY FOR OUTLOOK'));
+    fireEvent.click(screen.getByText('OPEN IN OUTLOOK'));
 
     await waitFor(() => {
       expect(mockCapture.html2canvas).toHaveBeenCalled();
@@ -663,14 +713,13 @@ describe('AlertsTab', () => {
     fireEvent.click(screen.getByTestId('set-body'));
     fireEvent.click(screen.getByTestId('set-sender'));
 
-    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
 
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Test Subject');
     expect(screen.getByTestId('reminder-draft-body')).toHaveTextContent('<p>body</p>');
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Security');
-    expect(globalThis.api?.writeClipboardImage).not.toHaveBeenCalled();
     expect(mockCapture.html2canvas).not.toHaveBeenCalled();
   });
 
@@ -720,7 +769,7 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('card-sender')).toHaveTextContent('Ops');
     expect(mockShowToast).toHaveBeenCalledWith('Alert loaded from alarm', 'success');
 
-    fireEvent.click(screen.getByText('SCHEDULE ALERT ALARM'));
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
 
     expect(screen.getByTestId('reminder-draft-severity')).toHaveTextContent('ISSUE');
     expect(screen.getByTestId('reminder-draft-subject')).toHaveTextContent('Stored outage alert');

@@ -125,7 +125,7 @@ describe('pocketbase service', () => {
 
       listener.mockClear();
       initPocketBase('http://localhost:8091');
-      expect(listener).not.toHaveBeenCalled();
+      expect(listener).toHaveBeenCalledWith(before + 2);
 
       unsubscribe();
     });
@@ -702,7 +702,7 @@ describe('pocketbase service', () => {
       expect(getConnectionState()).toBe('auth-failed');
     });
 
-    it('stays offline (not auth-failed) when refresh reports pb-unavailable', async () => {
+    it('keeps a directly observed credential rejection latched if refresh is unavailable', async () => {
       initPocketBase('http://localhost:8090');
       loadAuthSession({ token: 't', record: null });
       const refreshPbConnection = vi.fn().mockResolvedValue({
@@ -714,7 +714,7 @@ describe('pocketbase service', () => {
       handleApiError({ status: 401 });
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
     });
 
     it('uses the relaxed 30s cadence while auth-failed (no hot auth retry loop)', async () => {
@@ -760,20 +760,20 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0);
       expect(getConnectionState()).toBe('auth-failed');
 
-      // server outage → offline
+      // A server outage cannot erase a confirmed credential rejection.
       fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
       await vi.advanceTimersByTimeAsync(30_000);
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
 
       // server returns, passphrase still broken: must NOT go online off the stale token
       fetchSpy.mockResolvedValue({ ok: true });
       const refreshCallsBefore = refreshPbConnection.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(5_000); // degraded cadence probe
+      await vi.advanceTimersByTimeAsync(30_000);
       expect(getConnectionState()).toBe('auth-failed'); // re-derived via refresh, not laundered to online
       expect(refreshPbConnection.mock.calls.length).toBeGreaterThan(refreshCallsBefore);
     });
 
-    it('demotes auth-failed to offline when the server becomes unreachable', async () => {
+    it('keeps auth-failed latched when the server later becomes unreachable', async () => {
       const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchSpy);
       const refreshPbConnection = vi.fn().mockResolvedValue({
@@ -787,14 +787,16 @@ describe('pocketbase service', () => {
       await vi.advanceTimersByTimeAsync(0); // immediate probe lands in auth-failed
       expect(getConnectionState()).toBe('auth-failed');
 
-      // Server outage: the diagnosis is now connectivity, not credentials.
+      // A network outage must not erase the prior credential rejection.
       fetchSpy.mockRejectedValue(new Error('net down'));
       await vi.advanceTimersByTimeAsync(30_000); // next probe (30s cadence) fails
-      expect(getConnectionState()).toBe('offline');
+      expect(getConnectionState()).toBe('auth-failed');
 
-      // Offline resumes the 5s degraded cadence.
+      // The latched authentication failure retains the relaxed cadence.
       const callsAfterOutage = fetchSpy.mock.calls.length;
       await vi.advanceTimersByTimeAsync(5_000);
+      expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage);
+      await vi.advanceTimersByTimeAsync(25_000);
       expect(fetchSpy.mock.calls.length).toBe(callsAfterOutage + 1);
     });
   });
@@ -871,7 +873,7 @@ describe('pocketbase service', () => {
       handleApiError({ status: 401, message: 'unauthorized' });
       await Promise.resolve();
 
-      expect(listener).toHaveBeenCalledWith('reconnecting');
+      expect(listener).toHaveBeenCalledWith('auth-failed');
       expect(refreshPbConnection).toHaveBeenCalledOnce();
       expect(mockAuthSave).toHaveBeenCalledWith(refreshedAuth.token, refreshedAuth.record);
       expect(getConnectionState()).toBe('online');

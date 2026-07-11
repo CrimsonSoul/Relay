@@ -45,10 +45,9 @@ export async function clearStandaloneNotes(): Promise<void> {
 export async function reorderStandaloneNotes(
   orderedIds: { id: string; sortOrder: number }[],
 ): Promise<void> {
-  requireOnline();
   try {
     for (const { id, sortOrder } of orderedIds) {
-      await getPb().collection('standalone_notes').update(id, { sortOrder });
+      await updateStandaloneNote(id, { sortOrder });
     }
   } catch (err) {
     handleApiError(err);

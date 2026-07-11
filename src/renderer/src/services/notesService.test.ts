@@ -15,6 +15,7 @@ vi.mock('./pocketbase', () => ({
   handleApiError: vi.fn(),
   escapeFilter: (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"'),
   requireOnline: vi.fn(),
+  getConnectionState: vi.fn(() => 'online'),
 }));
 
 import { getNote, setNote, type NoteRecord } from './notesService';

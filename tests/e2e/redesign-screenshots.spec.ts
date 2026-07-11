@@ -20,6 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SHOTS_DIR = path.join(__dirname, '../../tmp/redesign-shots');
+const CAPTURE_ON_CALL = process.env.RELAY_CAPTURE_ON_CALL !== '0';
+const CAPTURE_COMPACT = process.env.RELAY_CAPTURE_COMPACT === '1';
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const TEST_PASSPHRASE = ['test', crypto.randomUUID()].join('-');
@@ -44,7 +46,19 @@ const makePbClient = async (port: number) => {
   return pb;
 };
 
+const makeSuperuserPbClient = async (port: number) => {
+  const pb = new PocketBase(`http://127.0.0.1:${port}`);
+  await pb.collection('_superusers').authWithPassword('admin@relay.app', TEST_PASSPHRASE, {
+    requestKey: null,
+  });
+  return pb;
+};
+
 const shoot = async (window: Page, name: string) => {
+  // Park the pointer in neutral header chrome so navigation tooltips do not
+  // obscure the UI under review.
+  await window.mouse.move(600, 30);
+
   // Let layout/animations settle before capture.
   await window.waitForTimeout(750);
 
@@ -99,6 +113,79 @@ const expectNoEllipsizedOnCallNames = async (window: Page) => {
       .map((el) => el.textContent?.trim());
   });
   expect(ellipsizedNames).toEqual([]);
+};
+
+type ElectronApp = Awaited<ReturnType<typeof electron.launch>>;
+
+const COMPACT_TABS = [
+  { id: 'sidebar-compose', breadcrumb: 'Compose', shot: 'compose-compact.png' },
+  { id: 'sidebar-alerts', breadcrumb: 'Alerts', shot: 'alerts-compact.png' },
+  { id: 'sidebar-notes', breadcrumb: 'Notes', shot: 'notes-compact.png' },
+  { id: 'sidebar-status', breadcrumb: 'Service Status', shot: 'cloud-status-compact.png' },
+  {
+    id: 'sidebar-problems',
+    breadcrumb: 'Dynatrace Problems',
+    shot: 'dynatrace-problems-compact.png',
+  },
+  { id: 'sidebar-people', breadcrumb: 'People', shot: 'people-compact.png' },
+  { id: 'sidebar-servers', breadcrumb: 'Servers', shot: 'servers-compact.png' },
+  { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
+] as const;
+
+const resizeMainWindow = async (electronApp: ElectronApp, width: number, height: number) => {
+  await electronApp.evaluate(
+    ({ BrowserWindow }, size) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(size.width, size.height);
+    },
+    { width, height },
+  );
+};
+
+const expectCompactComposeActionsAligned = async (window: Page) => {
+  const startBridge = window.getByRole('button', { name: 'START BRIDGE' });
+  const scheduleBridge = window.getByRole('button', { name: 'Schedule Bridge' });
+  const [startBox, scheduleBox] = await Promise.all([
+    startBridge.boundingBox(),
+    scheduleBridge.boundingBox(),
+  ]);
+  expect(startBox).not.toBeNull();
+  expect(scheduleBox).not.toBeNull();
+  expect(Math.abs((startBox?.y ?? 0) - (scheduleBox?.y ?? 0))).toBeLessThan(2);
+};
+
+const expectSettingsBottomGutter = async (window: Page) => {
+  await window.waitForTimeout(300);
+  const workspace = await window.locator('.settings-page__workspace').boundingBox();
+  const viewportHeight = await window.evaluate(() => globalThis.innerHeight);
+  expect(workspace).not.toBeNull();
+  expect(viewportHeight - ((workspace?.y ?? 0) + (workspace?.height ?? 0))).toBeGreaterThanOrEqual(
+    12,
+  );
+};
+
+const captureCompactTabTour = async (window: Page, electronApp: ElectronApp) => {
+  await resizeMainWindow(electronApp, 1366, 768);
+
+  for (const tab of COMPACT_TABS) {
+    await goToTab(window, tab.id, tab.breadcrumb);
+
+    if (tab.id === 'sidebar-compose') await expectCompactComposeActionsAligned(window);
+    if (tab.id === 'sidebar-notes') {
+      await expect(window.locator('.notes-masonry-column')).toHaveCount(2);
+    }
+    if (tab.id === 'sidebar-settings') {
+      await window.getByRole('tab', { name: 'Appearance' }).click();
+      await expectSettingsBottomGutter(window);
+    }
+
+    const activePanel = window.locator('.tab-panel--active');
+    const overflow = await activePanel.evaluate((panel) => panel.scrollWidth - panel.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    await shoot(window, tab.shot);
+  }
+
+  await resizeMainWindow(electronApp, 1920, 1080);
 };
 
 const seedData = async (port: number) => {
@@ -281,6 +368,53 @@ const seedData = async (port: number) => {
     },
     { requestKey: null },
   );
+
+  // --- Dynatrace Problems operational queue ---
+  const syncedAt = new Date().toISOString();
+  const problems = [
+    {
+      problemId: 'RELAY-SHOTS-1001',
+      displayId: 'P-SHOTS-1001',
+      title: 'Checkout service availability below SLO',
+      status: 'OPEN',
+      severity: 'AVAILABILITY',
+      impactLevel: 'APPLICATION',
+      startTime: Date.now() - 18 * 60_000,
+      endTime: -1,
+      rootCauseName: 'checkout-web',
+      affectedEntities: [
+        { id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' },
+        { id: 'SERVICE-SHOTS-1', type: 'SERVICE', name: 'checkout-api' },
+      ],
+      impactedEntities: [{ id: 'APPLICATION-SHOTS-1', type: 'APPLICATION', name: 'Checkout Web' }],
+      managementZones: [{ id: 'ZONE-SHOTS-1', name: 'Payments Production' }],
+      environmentUrl: 'https://relay-shots.live.dynatrace.com',
+      syncedAt,
+    },
+    {
+      problemId: 'RELAY-SHOTS-1002',
+      displayId: 'P-SHOTS-1002',
+      title: 'Payment API response time degradation',
+      status: 'OPEN',
+      severity: 'PERFORMANCE',
+      impactLevel: 'SERVICES',
+      startTime: Date.now() - 47 * 60_000,
+      endTime: -1,
+      rootCauseName: 'payments-api',
+      affectedEntities: [
+        { id: 'SERVICE-SHOTS-2', type: 'SERVICE', name: 'payments-api' },
+        { id: 'HOST-SHOTS-7', type: 'HOST', name: 'prod-api-07' },
+      ],
+      impactedEntities: [{ id: 'SERVICE-SHOTS-3', type: 'SERVICE', name: 'order-submit' }],
+      managementZones: [{ id: 'ZONE-SHOTS-1', name: 'Payments Production' }],
+      environmentUrl: 'https://relay-shots.live.dynatrace.com',
+      syncedAt,
+    },
+  ];
+  const superuserPb = await makeSuperuserPbClient(port);
+  for (const problem of problems) {
+    await superuserPb.collection('dynatrace_problems').create(problem, { requestKey: null });
+  }
 };
 
 test.describe('Redesign screenshot harness', () => {
@@ -345,30 +479,32 @@ test.describe('Redesign screenshot harness', () => {
       await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
       await shoot(window, 'compose.png');
 
-      // --- On-Call ---
-      await goToTab(window, 'sidebar-on-call', 'On-Call');
-      await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
-      await expect(
-        window.locator('.team-card-body', { hasText: 'Database Reliability' }),
-      ).toBeVisible();
-      await expect(
-        window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
-      ).toBeVisible();
-      // Layout contract: member names remain fully visible instead of ellipsizing.
-      await expectNoEllipsizedOnCallNames(window);
-      await shoot(window, 'oncall.png');
-      await setOnCallFontScaleViaStorage(window, 150);
-      await expect(window.locator('.oncall-font-scale-value')).toContainText('150%');
-      await expectNoEllipsizedOnCallNames(window);
-      await shoot(window, 'oncall-150.png');
-      await setOnCallFontScaleViaStorage(window, 100);
-      await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
+      if (CAPTURE_ON_CALL) {
+        // --- On-Call ---
+        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await expect(window.getByRole('button', { name: 'ADD CARD' })).toBeVisible();
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Database Reliability' }),
+        ).toBeVisible();
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        ).toBeVisible();
+        // Layout contract: member names remain fully visible instead of ellipsizing.
+        await expectNoEllipsizedOnCallNames(window);
+        await shoot(window, 'oncall.png');
+        await setOnCallFontScaleViaStorage(window, 150);
+        await expect(window.locator('.oncall-font-scale-value')).toContainText('150%');
+        await expectNoEllipsizedOnCallNames(window);
+        await shoot(window, 'oncall-150.png');
+        await setOnCallFontScaleViaStorage(window, 100);
+        await expect(window.locator('.oncall-font-scale-value')).toContainText('100%');
 
-      // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
-      await window.getByRole('button', { name: 'COPY ALL' }).click();
-      await expect(window.locator('.toast')).toBeVisible();
-      await window.waitForTimeout(400);
-      await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
+        // --- Toast (trigger via Copy All; raw capture — shoot() would dismiss it) ---
+        await window.getByRole('button', { name: 'COPY ALL' }).click();
+        await expect(window.locator('.toast')).toBeVisible();
+        await window.waitForTimeout(400);
+        await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
+      }
 
       // --- People ---
       await goToTab(window, 'sidebar-people', 'People');
@@ -403,11 +539,22 @@ test.describe('Redesign screenshot harness', () => {
       await goToTab(window, 'sidebar-status', 'Service Status');
       await shoot(window, 'cloud-status.png');
 
-      // --- Settings modal with accent picker ---
-      await window.getByTestId('sidebar-settings').click();
-      await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
+      // --- Dynatrace Problems ---
+      await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+      await expect(window.locator('.tab-panel--active')).toContainText(
+        'Checkout service availability below SLO',
+      );
+      await shoot(window, 'dynatrace-problems.png');
 
-      await shoot(window, 'settings-modal.png');
+      // --- Settings tab ---
+      await goToTab(window, 'sidebar-settings', 'Settings');
+      await expect(window.getByRole('radiogroup', { name: 'Accent color' })).toBeVisible();
+      await expectSettingsBottomGutter(window);
+      await shoot(window, 'settings-appearance.png');
+
+      await window.getByRole('tab', { name: 'Relay data' }).click();
+      await expect(window.getByText('Relay connection')).toBeVisible();
+      await shoot(window, 'settings-relay-data.png');
 
       // --- Data Manager modal (opened from Settings) ---
       await window.getByRole('button', { name: 'Open Data Manager...' }).click();
@@ -417,58 +564,68 @@ test.describe('Redesign screenshot harness', () => {
       await expect(
         window.getByRole('tablist', { name: 'Data Manager sections' }),
       ).not.toBeVisible();
-      await window.keyboard.press('Escape');
-      await expect(window.getByRole('radiogroup', { name: 'Accent color' })).not.toBeVisible();
 
-      // --- Accent matrix on the On-Call board (empty-team alarm visible) ---
-      await goToTab(window, 'sidebar-on-call', 'On-Call');
+      await window.getByRole('tab', { name: 'Dynatrace' }).click();
       await expect(
-        window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        window.locator('.settings-section-heading', { hasText: 'Dynatrace Problems' }),
       ).toBeVisible();
-      for (const accent of [
-        'red',
-        'orange',
-        'yellow',
-        'blue',
-        'cyan',
-        'green',
-        'lime',
-        'pink',
-        'purple',
-        'violet',
-      ] as const) {
-        await setAccentViaStorage(window, accent);
-        await expect
-          .poll(() =>
-            window.evaluate(() => globalThis.document.documentElement.getAttribute('data-accent')),
-          )
-          .toBe(accent);
-        await shoot(window, `oncall-${accent}.png`);
-      }
+      await shoot(window, 'settings-dynatrace.png');
 
-      // --- Kiosk popout window ---
-      await setAccentViaStorage(window, 'red');
-      try {
-        await setOnCallFontScaleViaStorage(window, 150);
-        const popoutPromise = electronApp.waitForEvent('window', { timeout: 20_000 });
-        await window.getByRole('button', { name: 'Pop Out Board' }).click();
-        const popout = await popoutPromise;
-        await popout.waitForLoadState('domcontentloaded');
-        await electronApp.evaluate(({ BrowserWindow }) => {
-          const wins = BrowserWindow.getAllWindows();
-          // Resize the most recently created window (the popout).
-          wins[wins.length - 1]?.setSize(1920, 1080);
-        });
-        await expect(popout.locator('.popout-title')).toBeVisible({ timeout: 20_000 });
-        await expect(popout.locator('.oncall-font-scale-value')).toContainText('150%');
-        await expect(popout.locator('body')).toContainText('Database Reliability');
-        await expectNoEllipsizedOnCallNames(popout);
-        await shoot(popout, 'popout.png');
-        await popout.close().catch(() => {});
-      } catch (error) {
-        console.warn('Popout capture skipped:', error);
-      } finally {
-        await setOnCallFontScaleViaStorage(window, 100);
+      if (CAPTURE_COMPACT) await captureCompactTabTour(window, electronApp);
+
+      if (CAPTURE_ON_CALL) {
+        // --- Accent matrix on the On-Call board (empty-team alarm visible) ---
+        await goToTab(window, 'sidebar-on-call', 'On-Call');
+        await expect(
+          window.locator('.team-card-body', { hasText: 'Payments Escalation' }),
+        ).toBeVisible();
+        for (const accent of [
+          'red',
+          'orange',
+          'yellow',
+          'blue',
+          'cyan',
+          'green',
+          'lime',
+          'pink',
+          'purple',
+          'violet',
+        ] as const) {
+          await setAccentViaStorage(window, accent);
+          await expect
+            .poll(() =>
+              window.evaluate(() =>
+                globalThis.document.documentElement.getAttribute('data-accent'),
+              ),
+            )
+            .toBe(accent);
+          await shoot(window, `oncall-${accent}.png`);
+        }
+
+        // --- Kiosk popout window ---
+        await setAccentViaStorage(window, 'red');
+        try {
+          await setOnCallFontScaleViaStorage(window, 150);
+          const popoutPromise = electronApp.waitForEvent('window', { timeout: 20_000 });
+          await window.getByRole('button', { name: 'Pop Out Board' }).click();
+          const popout = await popoutPromise;
+          await popout.waitForLoadState('domcontentloaded');
+          await electronApp.evaluate(({ BrowserWindow }) => {
+            const wins = BrowserWindow.getAllWindows();
+            // Resize the most recently created window (the popout).
+            wins[wins.length - 1]?.setSize(1920, 1080);
+          });
+          await expect(popout.locator('.popout-title')).toBeVisible({ timeout: 20_000 });
+          await expect(popout.locator('.oncall-font-scale-value')).toContainText('150%');
+          await expect(popout.locator('body')).toContainText('Database Reliability');
+          await expectNoEllipsizedOnCallNames(popout);
+          await shoot(popout, 'popout.png');
+          await popout.close().catch(() => {});
+        } catch (error) {
+          console.warn('Popout capture skipped:', error);
+        } finally {
+          await setOnCallFontScaleViaStorage(window, 100);
+        }
       }
 
       // Reset accent to the default red before shutting down.

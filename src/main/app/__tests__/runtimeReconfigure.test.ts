@@ -35,6 +35,16 @@ const mocks = vi.hoisted(() => ({
   getPbProcess: vi.fn(),
   setPbProcess: vi.fn(),
   getMainWindow: vi.fn(),
+  dynatraceProblemsManager: {
+    start: vi.fn(),
+    stop: vi.fn(),
+  },
+  getDynatraceProblemsManager: vi.fn(),
+  cloudStatusManager: {
+    start: vi.fn(),
+    stop: vi.fn(),
+  },
+  getCloudStatusManager: vi.fn(),
   startPocketBase: vi.fn(),
   syncPbClient: {
     collection: vi.fn(),
@@ -42,7 +52,7 @@ const mocks = vi.hoisted(() => ({
   authWithPassword: vi.fn(),
   PocketBase: vi.fn(),
   offlineCacheInstance: { kind: 'offline-cache', close: vi.fn() },
-  pendingChangesInstance: { kind: 'pending-changes', close: vi.fn() },
+  pendingChangesInstance: { kind: 'pending-changes', close: vi.fn(), getAll: vi.fn(() => []) },
   syncManagerInstance: { kind: 'sync-manager' },
   OfflineCache: vi.fn(),
   PendingChanges: vi.fn(),
@@ -63,6 +73,8 @@ vi.mock('../appState', () => ({
   getPbProcess: mocks.getPbProcess,
   setPbProcess: mocks.setPbProcess,
   getMainWindow: mocks.getMainWindow,
+  getDynatraceProblemsManager: mocks.getDynatraceProblemsManager,
+  getCloudStatusManager: mocks.getCloudStatusManager,
 }));
 
 vi.mock('../pocketbaseBootstrap', () => ({
@@ -97,8 +109,10 @@ describe('reconfigureRuntime', () => {
     mocks.getRetentionManager.mockReturnValue(mocks.retentionManager);
     mocks.getOfflineCache.mockReturnValue(mocks.offlineCache);
     mocks.getPendingChanges.mockReturnValue(mocks.pendingChanges);
+    mocks.getCloudStatusManager.mockReturnValue(mocks.cloudStatusManager);
     mocks.getPbProcess.mockReturnValue(mocks.pbProcess);
     mocks.getMainWindow.mockReturnValue(mocks.mainWindow);
+    mocks.getDynatraceProblemsManager.mockReturnValue(mocks.dynatraceProblemsManager);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue(true);
     mocks.offlineCacheInstance.close.mockClear();
@@ -167,9 +181,7 @@ describe('reconfigureRuntime', () => {
       expect.objectContaining({ requestKey: null }),
     );
     expect(mocks.OfflineCache).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
-    expect(mocks.PendingChanges).toHaveBeenCalledWith(
-      '/Users/test/RelayData/data/pending_changes.db',
-    );
+    expect(mocks.PendingChanges).toHaveBeenCalledWith('/Users/test/RelayData/data/cache.db');
     expect(mocks.SyncManager).toHaveBeenCalledWith(mocks.syncPbClient);
     expect(mocks.setOfflineCache).toHaveBeenLastCalledWith(mocks.offlineCacheInstance);
     expect(mocks.setPendingChanges).toHaveBeenLastCalledWith(mocks.pendingChangesInstance);

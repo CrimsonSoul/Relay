@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { StandaloneNote } from '@shared/ipc';
 
@@ -94,12 +94,12 @@ vi.mock('../../hooks/useNotepad', () => ({
     setVisibleOrder: mockSetVisibleOrder,
   }),
   NOTE_COLORS: [
-    { value: 'amber', label: 'Amber', hex: '#e11d48' },
-    { value: 'blue', label: 'Blue', hex: '#3b82f6' },
-    { value: 'green', label: 'Green', hex: '#22c55e' },
-    { value: 'red', label: 'Red', hex: '#ef4444' },
-    { value: 'purple', label: 'Purple', hex: '#a855f7' },
-    { value: 'slate', label: 'Slate', hex: '#64748b' },
+    { value: 'amber', label: 'Amber', hex: '#ffb000' },
+    { value: 'blue', label: 'Blue', hex: '#42a5f5' },
+    { value: 'green', label: 'Green', hex: '#2bb24c' },
+    { value: 'red', label: 'Red', hex: '#ff4539' },
+    { value: 'purple', label: 'Purple', hex: '#c084fc' },
+    { value: 'slate', label: 'Slate', hex: '#928a90' },
   ],
 }));
 
@@ -281,6 +281,20 @@ describe('NotesTab', () => {
 
   it('should keep multiple note columns when the board itself is wide', () => {
     expect(getNotesColumnCount({ width: 1440, fontSize: 'md', isWorkspace: true })).toBe(4);
+  });
+
+  it('recalculates note columns when a hidden tab becomes active', async () => {
+    const { rerender } = render(<NotesTab active={false} />);
+    const board = screen.getByLabelText('Notes board');
+    Object.defineProperty(board, 'clientWidth', { configurable: true, value: 700 });
+
+    expect(document.querySelectorAll('.notes-masonry-column')).toHaveLength(3);
+
+    rerender(<NotesTab active />);
+
+    await waitFor(() => {
+      expect(document.querySelectorAll('.notes-masonry-column')).toHaveLength(2);
+    });
   });
 
   it('should render every visible note on the notes board', () => {

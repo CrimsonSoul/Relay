@@ -45,6 +45,17 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.DYNATRACE_DASHBOARDS_CHANGED, handler);
   },
+  getDynatraceProblemsSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_GET_SETTINGS),
+  saveDynatraceProblemsSettings: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_SETTINGS, input),
+  testDynatraceProblemsSettings: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_TEST_SETTINGS, input),
+  clearDynatraceProblemsSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_CLEAR_SETTINGS),
+  syncDynatraceProblems: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC),
+  saveDynatraceProblemProfileFilter: (alertingProfiles) =>
+    ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER, alertingProfiles),
 
   // Drag Sync
   notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),
@@ -72,7 +83,6 @@ const api: BridgeAPI = {
 
   // Clipboard
   writeClipboard: (text) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE, text),
-  writeClipboardImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_WRITE_IMAGE, dataUrl),
   optimizeAlertImage: (dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.OPTIMIZE_ALERT_IMAGE, dataUrl),
   // Alerts
   playAlertSound: () => ipcRenderer.invoke(IPC_CHANNELS.ALERT_PLAY_SOUND),
@@ -80,6 +90,8 @@ const api: BridgeAPI = {
   saveAlertImage: (dataUrl, suggestedName) =>
     ipcRenderer.invoke(IPC_CHANNELS.SAVE_ALERT_IMAGE, dataUrl, suggestedName),
   selectAlertBodyImage: () => ipcRenderer.invoke(IPC_CHANNELS.SELECT_ALERT_BODY_IMAGE),
+  saveAndOpenAlertDraft: (content) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ALERT_DRAFT_SAVE_AND_OPEN, content),
   // Schedule Bridge (.ics)
   saveAndOpenIcs: (content) => ipcRenderer.invoke(IPC_CHANNELS.ICS_SAVE_AND_OPEN, content),
   saveCompanyLogo: () => ipcRenderer.invoke(IPC_CHANNELS.SAVE_COMPANY_LOGO),
@@ -101,8 +113,22 @@ const api: BridgeAPI = {
   cacheRead: (collection: string) => ipcRenderer.invoke(IPC_CHANNELS.CACHE_READ, collection),
   cacheWrite: (collection: string, action: string, record: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.CACHE_WRITE, collection, action, record),
-  cacheSnapshot: (collection: string, records: unknown[]) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT, collection, records),
+  cacheSnapshot: (collection: string, signature: string, records: unknown[]) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CACHE_SNAPSHOT, collection, signature, records),
+  mutateOffline: (input) => ipcRenderer.invoke(IPC_CHANNELS.OFFLINE_MUTATE, input),
+  onOfflineMutationApplied: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, mutation: Parameters<typeof callback>[0]) =>
+      callback(mutation);
+    ipcRenderer.on(IPC_CHANNELS.OFFLINE_MUTATION_APPLIED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFLINE_MUTATION_APPLIED, handler);
+  },
+  getPendingSyncStatus: () => ipcRenderer.invoke(IPC_CHANNELS.OFFLINE_PENDING_STATUS),
+  onPendingSyncStatusChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
+      callback(status);
+    ipcRenderer.on(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
+  },
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase

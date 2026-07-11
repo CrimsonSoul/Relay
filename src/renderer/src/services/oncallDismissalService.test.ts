@@ -16,6 +16,7 @@ vi.mock('./pocketbase', () => ({
   handleApiError: vi.fn(),
   escapeFilter: (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"'),
   requireOnline: mockRequireOnline,
+  getConnectionState: vi.fn(() => 'online'),
 }));
 
 import { getDismissalsForDate, dismissAlert } from './oncallDismissalService';

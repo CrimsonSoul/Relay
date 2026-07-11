@@ -14,6 +14,7 @@ vi.mock('./pocketbase', () => ({
   }),
   handleApiError: vi.fn(),
   requireOnline: vi.fn(),
+  getConnectionState: vi.fn(() => 'online'),
   escapeFilter: (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"'),
 }));
 

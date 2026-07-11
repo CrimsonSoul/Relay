@@ -35,9 +35,9 @@ const makeGroup = (overrides: Partial<BridgeGroup> = {}): BridgeGroup => ({
 
 describe('useCommandSearch', () => {
   describe('empty query', () => {
-    it('returns 4 default action items when query is empty', () => {
+    it('returns 5 default action items when query is empty', () => {
       const { result } = renderHook(() => useCommandSearch('', [], [], []));
-      expect(result.current).toHaveLength(4);
+      expect(result.current).toHaveLength(5);
       expect(result.current.every((r) => r.type === 'action')).toBe(true);
     });
 
@@ -47,13 +47,14 @@ describe('useCommandSearch', () => {
       expect(ids).toContain('action-compose');
       expect(ids).toContain('action-personnel');
       expect(ids).toContain('action-people');
+      expect(ids).toContain('action-problems');
       expect(ids).toContain('action-create-contact');
     });
 
     it('returns empty results for whitespace-only query', () => {
       const { result } = renderHook(() => useCommandSearch('   ', [], [], []));
       // whitespace trims to empty → returns default actions
-      expect(result.current).toHaveLength(4);
+      expect(result.current).toHaveLength(5);
     });
   });
 

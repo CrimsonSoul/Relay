@@ -1,4 +1,5 @@
 import { getPb, handleApiError, requireOnline } from './pocketbase';
+import { mutateCollection } from './mutationGateway';
 
 export interface BridgeHistoryRecord {
   id: string;
@@ -13,23 +14,16 @@ export interface BridgeHistoryRecord {
 export type BridgeHistoryInput = Omit<BridgeHistoryRecord, 'id' | 'created' | 'updated'>;
 
 export async function addBridgeHistory(data: BridgeHistoryInput): Promise<BridgeHistoryRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('bridge_history').create<BridgeHistoryRecord>(data);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<BridgeHistoryRecord>(
+    'bridge_history',
+    'create',
+    undefined,
+    data,
+  )) as BridgeHistoryRecord;
 }
 
 export async function deleteBridgeHistory(id: string): Promise<void> {
-  requireOnline();
-  try {
-    await getPb().collection('bridge_history').delete(id);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  await mutateCollection('bridge_history', 'delete', id);
 }
 
 export async function clearBridgeHistory(): Promise<void> {

@@ -16,6 +16,23 @@ const ToastTrigger: React.FC<{
   );
 };
 
+const ActionToastTrigger: React.FC<{ onAction: () => void }> = ({ onAction }) => {
+  const { showToast } = useToast();
+  return (
+    <button
+      onClick={() =>
+        showToast('New problem', 'error', {
+          title: 'New Dynatrace problem',
+          durationMs: 8_000,
+          action: { label: 'Open Problems', onClick: onAction },
+        })
+      }
+    >
+      Show action toast
+    </button>
+  );
+};
+
 describe('ToastProvider', () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -120,6 +137,25 @@ describe('ToastProvider', () => {
     expect(screen.getByText('Dismissable')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText('Dismiss notification'));
     expect(screen.queryByText('Dismissable')).toBeNull();
+  });
+
+  it('supports a custom title, duration, and dismissing action', async () => {
+    const onAction = vi.fn();
+    render(
+      <ToastProvider>
+        <ActionToastTrigger onAction={onAction} />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show action toast' }));
+
+    expect(screen.getByText('New Dynatrace problem')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Problems' }));
+    expect(onAction).toHaveBeenCalledOnce();
+    expect(screen.queryByText('New problem')).not.toBeInTheDocument();
+
+    await act(async () => {
+      vi.advanceTimersByTime(8_001);
+    });
   });
 
   it('uses role=alert for error toasts', () => {

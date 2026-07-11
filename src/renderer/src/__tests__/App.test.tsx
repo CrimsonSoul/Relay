@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MainApp } from '../App';
+import { MainApp, RetainedTabPanel } from '../App';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
 
 const mockIsConfigured = vi.fn();
@@ -27,7 +27,8 @@ const LAN_SERVER_LABEL = ['LAN ', LAN_SERVER_ADDRESS, ':8090'].join('');
 const LAN_SERVER_URL = ['http', '://', 'noc-admin-pc', ':8090'].join('');
 let lastConnectionManagerProps: {
   pbUrl: string;
-  pbAuth: { token: string; record: Record<string, unknown> | null };
+  pbAuth: { token: string; record: Record<string, unknown> | null } | null;
+  offlineMode?: boolean;
   onReconfigure: () => void;
 } | null = null;
 let lastSidebarProps: {
@@ -217,21 +218,29 @@ vi.mock('../components/ConnectionManager', () => ({
   ConnectionManager: ({
     pbUrl,
     pbAuth,
+    offlineMode,
     onReconfigure,
     children,
   }: {
     pbUrl: string;
-    pbAuth: { token: string; record: Record<string, unknown> | null };
+    pbAuth: { token: string; record: Record<string, unknown> | null } | null;
+    offlineMode?: boolean;
     onReconfigure: () => void;
     children: React.ReactNode;
   }) => {
-    lastConnectionManagerProps = { pbUrl, pbAuth, onReconfigure };
+    lastConnectionManagerProps = { pbUrl, pbAuth, offlineMode, onReconfigure };
     return <div data-testid="connection-manager">{children}</div>;
   },
 }));
 
 vi.mock('../components/AlertReminderManager', () => ({
   AlertReminderManager: () => <div data-testid="alert-reminder-manager" />,
+}));
+
+vi.mock('../components/DynatraceProblemNotificationManager', () => ({
+  DynatraceProblemNotificationManager: () => (
+    <div data-testid="dynatrace-problem-notification-manager" />
+  ),
 }));
 
 // Lazy loaded tabs
@@ -289,7 +298,7 @@ vi.mock('../components/SettingsModal', () => ({
     (() => {
       lastSettingsModalProps = { dynatrace };
       return isOpen ? (
-        <div data-testid="settings-modal">
+        <div data-testid="settings-tab">
           <button onClick={onClose}>close-settings</button>
           <button onClick={onOpenDataManager}>open-data-manager</button>
         </div>
@@ -446,10 +455,10 @@ describe('MainApp', () => {
     });
   });
 
-  it('opens settings modal when sidebar settings button is clicked', () => {
+  it('navigates to Settings when the sidebar settings button is clicked', () => {
     renderApp();
     fireEvent.click(screen.getByText('open-settings'));
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
   it('renders header search bar', () => {
@@ -536,23 +545,23 @@ describe('MainApp', () => {
     expect(mockUseDynatraceDashboards).toHaveBeenCalledWith(mockShowToast, { enabled: false });
   });
 
-  it('passes the Dynatrace bundle to SettingsModal when settings are open', async () => {
-    mockSettingsOpen = true;
+  it('passes the Dynatrace bundle to the Settings tab', async () => {
+    mockActiveTab = 'Settings';
     renderApp();
 
     await vi.waitFor(() => {
-      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
     });
 
     expect(lastSettingsModalProps?.dynatrace).toBe(mockDynatraceHookState);
   });
 
-  it('does not pass on-call board display controls to SettingsModal', async () => {
-    mockSettingsOpen = true;
+  it('does not pass on-call board display controls to the Settings tab', async () => {
+    mockActiveTab = 'Settings';
     renderApp();
 
     await vi.waitFor(() => {
-      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
     });
 
     expect('onCallFontScale' in (lastSettingsModalProps ?? {})).toBe(false);
@@ -582,7 +591,7 @@ describe('MainApp', () => {
     act(() => {
       fireEvent.keyDown(globalThis, { key: ',', metaKey: true });
     });
-    expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Settings');
   });
 
   it('navigates tab on Cmd+1', () => {
@@ -756,12 +765,12 @@ describe('MainApp', () => {
   });
 
   it('opens data manager modal from settings', async () => {
-    mockSettingsOpen = true;
+    mockActiveTab = 'Settings';
     renderApp();
 
-    // Settings modal should be open since settingsOpen is true
+    // Settings tab should be active.
     await vi.waitFor(() => {
-      expect(screen.getByTestId('settings-modal')).toBeInTheDocument();
+      expect(screen.getByTestId('settings-tab')).toBeInTheDocument();
     });
 
     // Click open-data-manager button inside settings
@@ -799,6 +808,74 @@ describe('MainApp', () => {
 
     expect(localStorage.getItem('relay-oncall-font-scale')).toBe('100');
     expect(lastPopoutBoardProps?.onCallFontScale).toBe(100);
+  });
+});
+
+describe('RetainedTabPanel', () => {
+  it('keeps exactly one active class while switching between retained siblings', () => {
+    const { container, rerender } = render(
+      <>
+        <RetainedTabPanel active>
+          <div>Alerts</div>
+        </RetainedTabPanel>
+        <RetainedTabPanel active={false}>
+          <div>Notes</div>
+        </RetainedTabPanel>
+      </>,
+    );
+
+    rerender(
+      <>
+        <RetainedTabPanel active={false}>
+          <div>Alerts</div>
+        </RetainedTabPanel>
+        <RetainedTabPanel active>
+          <div>Notes</div>
+        </RetainedTabPanel>
+      </>,
+    );
+
+    expect(container.querySelectorAll('.tab-panel--active')).toHaveLength(1);
+    expect(container.querySelector('.tab-panel--active')).toHaveTextContent('Notes');
+  });
+
+  it('preserves local state while cleaning up hidden effects', () => {
+    const effectMounted = vi.fn();
+    const effectCleaned = vi.fn();
+
+    function StatefulPanel() {
+      const [value, setValue] = React.useState('draft');
+      React.useEffect(() => {
+        effectMounted();
+        return effectCleaned;
+      }, []);
+      return <input value={value} onChange={(event) => setValue(event.target.value)} />;
+    }
+
+    const { container, rerender } = render(
+      <RetainedTabPanel active>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+    fireEvent.change(container.querySelector('input')!, { target: { value: 'operator draft' } });
+
+    rerender(
+      <RetainedTabPanel active={false}>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+
+    expect(effectCleaned).toHaveBeenCalledOnce();
+    expect(container.querySelector('input')).toHaveValue('operator draft');
+
+    rerender(
+      <RetainedTabPanel active>
+        <StatefulPanel />
+      </RetainedTabPanel>,
+    );
+
+    expect(effectMounted).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('input')).toHaveValue('operator draft');
   });
 });
 
@@ -904,6 +981,30 @@ describe('App default export', () => {
     expect(await screen.findByText('PocketBase authentication failed.')).toBeInTheDocument();
     expect(screen.getByText('Reconfigure')).toBeInTheDocument();
     expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument();
+  });
+
+  it('starts the main app from a verified cache when the LAN server is unavailable', async () => {
+    mockGetPbConnection.mockResolvedValue({
+      ok: false,
+      error: 'pb-unavailable',
+      offlineAvailable: true,
+      pbUrl: 'https://relay.example.com',
+      lastSyncAt: 200,
+    });
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+    expect(lastConnectionManagerProps).toMatchObject({
+      pbUrl: 'https://relay.example.com',
+      pbAuth: null,
+      offlineMode: true,
+    });
   });
 
   it('shows an error if startup connection bootstrap times out', async () => {

@@ -1,5 +1,6 @@
 import type { RecordModel } from 'pocketbase';
-import { getPb, handleApiError, escapeFilter, requireOnline } from './pocketbase';
+import { getPb, handleApiError, escapeFilter } from './pocketbase';
+import { mutateCollection } from './mutationGateway';
 
 export interface OncallDismissalRecord extends RecordModel {
   alertType: string;
@@ -23,14 +24,8 @@ export async function dismissAlert(
   alertType: string,
   dateKey: string,
 ): Promise<OncallDismissalRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection('oncall_dismissals').create<OncallDismissalRecord>({
-      alertType,
-      dateKey,
-    });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<OncallDismissalRecord>('oncall_dismissals', 'create', undefined, {
+    alertType,
+    dateKey,
+  })) as OncallDismissalRecord;
 }

@@ -99,6 +99,11 @@ Rules:
 - Expose new bridge methods from `src/preload/index.ts`
 - Keep handlers in `src/main/handlers/`
 
+### Service Status Sources
+
+Service Status is aggregated in the main process from official RSS feeds, Statuspage JSON, or a
+documented status API.
+
 ## Connection, Realtime, And Offline Behavior
 
 ### Setup And Transport Security
@@ -182,6 +187,17 @@ Implementation notes:
 - Navigation is limited to Dynatrace hosts and Microsoft authentication hosts
 - Settings exposes a session clear action for forced reauthentication
 
+### Dynatrace Problems
+
+The Relay server polls the read-only Dynatrace Problems API for open problems and a rolling year of
+resolved history. Problems, local NOC notes, and local addressed metadata are stored in PocketBase,
+so clients on the LAN see the same operational history without sending local response data back to
+Dynatrace.
+
+After a successful sync, Relay removes resolved problems whose Dynatrace end time is more than 365
+days old. Their associated local notes and addressed state are removed in the same cleanup. Open
+problems are never aged out, even when they began more than a year ago.
+
 ### Optimistic Lists
 
 When UI state needs optimistic updates on top of realtime collection data, layer `useOptimisticList()` on top of `useCollection()`.
@@ -224,6 +240,27 @@ Conventions:
 For UI guidance, see `docs/DESIGN.md`.
 
 ## Testing
+
+### Dynatrace Problems Demo Data
+
+With Relay running in server mode, supply the server passphrase through the environment and seed a
+realistic mix of open, locally addressed, and resolved Dynatrace Problems:
+
+```bash
+RELAY_SEED_SUPERUSER_PASSWORD='<server passphrase>' npm run seed:dynatrace
+```
+
+The command replaces only demo Problems, local state, and NOC notes whose problem ID begins with
+`RELAY-DEMO-`. It does not alter contacts, alerts, standalone Relay notes, real Dynatrace Problems,
+the stored API token, or Dynatrace itself. Remove the demo records with:
+
+```bash
+RELAY_SEED_SUPERUSER_PASSWORD='<server passphrase>' npm run seed:dynatrace:clear
+```
+
+The default PocketBase endpoint is `http://localhost:8090`. Set `RELAY_SEED_PB_URL` when the Relay
+server uses another port. `RELAY_SEED_PB_DATA_DIR` can override the PocketBase data directory used
+to create the temporary seed superuser.
 
 ### Test Suites
 

@@ -16,6 +16,8 @@
     "build:mac": "node scripts/download-pocketbase.mjs --platform=darwin --arch=arm64 && node scripts/download-pocketbase.mjs --platform=darwin --arch=x64 && npm run build && electron-builder --mac --config electron-builder.yml",
     "release": "npm run build:win -- --publish always",
     "preview": "electron-vite preview",
+    "seed:dynatrace": "node scripts/seed.mjs --dynatrace-only",
+    "seed:dynatrace:clear": "node scripts/seed.mjs --clear-dynatrace",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",

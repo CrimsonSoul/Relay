@@ -8,6 +8,7 @@ import {
   ServersIcon,
   NotesIcon,
   StatusIcon,
+  ProblemsIcon,
   SettingsIcon,
   AppIcon,
 } from '../../sidebar/SidebarIcons';
@@ -20,6 +21,7 @@ describe('SidebarIcons', () => {
     { name: 'ServersIcon', Component: ServersIcon },
     { name: 'NotesIcon', Component: NotesIcon },
     { name: 'StatusIcon', Component: StatusIcon },
+    { name: 'ProblemsIcon', Component: ProblemsIcon },
     { name: 'SettingsIcon', Component: SettingsIcon },
   ];
 

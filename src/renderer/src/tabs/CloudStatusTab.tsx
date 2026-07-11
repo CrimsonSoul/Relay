@@ -1,8 +1,4 @@
-import React, { useState, useMemo } from 'react';
-import { TabFallback } from '../components/TabFallback';
-import { StatusBar, StatusBarLive } from '../components/StatusBar';
-import { Tooltip } from '../components/Tooltip';
-import { ProviderIcon } from '../components/icons/ProviderIcons';
+import React, { useMemo, useState } from 'react';
 import {
   CLOUD_STATUS_PROVIDER_ORDER,
   CLOUD_STATUS_PROVIDERS,
@@ -12,28 +8,35 @@ import {
   type CloudStatusProvider,
   type CloudStatusSeverity,
 } from '@shared/ipc';
+import { ProviderIcon } from '../components/icons/ProviderIcons';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { TabFallback } from '../components/TabFallback';
+import { Tooltip } from '../components/Tooltip';
 
 type FilterMode = 'all' | CloudStatusProvider;
 type FeedMode = 'active' | 'recent' | 'resolved';
 
-// --- Helpers ---
+const FEED_FILTERS: Array<{ id: FeedMode; label: string }> = [
+  { id: 'active', label: 'Active' },
+  { id: 'recent', label: 'Recent' },
+  { id: 'resolved', label: 'Resolved' },
+];
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return '';
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
-function lastUpdatedLabel(ts: number): string {
-  if (!ts) return 'Never';
-  return timeAgo(new Date(ts).toISOString());
+function lastUpdatedLabel(timestamp: number): string {
+  if (!timestamp) return 'Never';
+  return timeAgo(new Date(timestamp).toISOString());
 }
 
 function severityLabel(severity: CloudStatusSeverity): string {
@@ -53,11 +56,6 @@ function providerLabel(provider: CloudStatusProvider): string {
   return CLOUD_STATUS_PROVIDERS[provider]?.label ?? provider;
 }
 
-function providerShortLabel(provider: CloudStatusProvider): string {
-  const cfg = CLOUD_STATUS_PROVIDERS[provider];
-  return cfg?.shortLabel ?? cfg?.label ?? provider;
-}
-
 function formatLocalTime(dateStr: string): string {
   const date = new Date(dateStr);
   if (Number.isNaN(date.getTime())) return '';
@@ -71,14 +69,18 @@ function formatLocalTime(dateStr: string): string {
 }
 
 function stripHtml(html: string): string {
-  // First pass: decode HTML entities (handles double-encoded content like &lt;div&gt;)
   const decoded = new DOMParser().parseFromString(html, 'text/html').body.textContent ?? '';
-  // Second pass: strip any actual HTML tags from the decoded content
   return new DOMParser().parseFromString(decoded, 'text/html').body.textContent ?? '';
 }
 
 function isActiveIssue(item: CloudStatusItem): boolean {
   return item.severity === 'error' || item.severity === 'warning';
+}
+
+function matchesFeedMode(item: CloudStatusItem, mode: FeedMode): boolean {
+  if (mode === 'active') return isActiveIssue(item);
+  if (mode === 'resolved') return item.severity === 'resolved';
+  return item.severity !== 'resolved';
 }
 
 function issueCountLabel(count: number): string {
@@ -89,15 +91,12 @@ function getProviderStats(items: CloudStatusItem[], hasError: boolean) {
   const outages = items.filter((item) => item.severity === 'error').length;
   const degraded = items.filter((item) => item.severity === 'warning').length;
   const activeIssues = outages + degraded;
-  const isImpacted = hasError || activeIssues > 0;
-  return { outages, degraded, activeIssues, isImpacted };
-}
-
-function getWorstSeverityLabel(items: CloudStatusItem[], hasFeedErrors: boolean): string {
-  if (items.some((item) => item.severity === 'error')) return 'Outage';
-  if (items.some((item) => item.severity === 'warning')) return 'Degraded';
-  if (hasFeedErrors) return 'Unknown';
-  return 'Normal';
+  return {
+    outages,
+    degraded,
+    activeIssues,
+    isImpacted: hasError || activeIssues > 0,
+  };
 }
 
 function sortProvidersByPosture(
@@ -115,183 +114,188 @@ function sortProvidersByPosture(
   });
 }
 
-// --- Subcomponents ---
+function providerTone(items: CloudStatusItem[], hasError: boolean) {
+  if (hasError) return 'unknown';
+  if (items.some((item) => item.severity === 'error')) return 'error';
+  if (items.some((item) => item.severity === 'warning')) return 'warning';
+  return 'ok';
+}
 
-const ProviderCard: React.FC<{
+function providerStatusLabel(items: CloudStatusItem[], hasError: boolean): string {
+  if (hasError) return 'Feed unavailable';
+  const stats = getProviderStats(items, false);
+  if (stats.activeIssues === 0) return 'All services normal';
+  return issueCountLabel(stats.activeIssues);
+}
+
+function providerToneLabel(tone: ReturnType<typeof providerTone>): string {
+  if (tone === 'ok') return 'Normal';
+  if (tone === 'unknown') return 'Unknown';
+  if (tone === 'error') return 'Outage';
+  return 'Degraded';
+}
+
+const ProviderRow: React.FC<{
   provider: CloudStatusProvider;
   items: CloudStatusItem[];
   hasError: boolean;
-}> = ({ provider, items, hasError }) => {
+  selected: boolean;
+  onSelect: () => void;
+}> = ({ provider, items, hasError, selected, onSelect }) => {
   const stats = getProviderStats(items, hasError);
-  const isOk = stats.activeIssues === 0 && !hasError;
-
-  const getIndicatorVariant = (): string => {
-    if (hasError) return 'unknown';
-    if (isOk) return 'ok';
-    if (stats.outages > 0) return 'error';
-    return 'warning';
-  };
-
-  const renderStatus = () => {
-    if (hasError) {
-      return (
-        <span className="cloud-status-provider__status cloud-status-provider__status--unknown">
-          Feed unavailable
-        </span>
-      );
-    }
-    if (isOk) {
-      return (
-        <span className="cloud-status-provider__status cloud-status-provider__status--ok">
-          All services normal
-        </span>
-      );
-    }
-    return (
-      <span
-        className={`cloud-status-provider__status ${
-          stats.outages > 0
-            ? 'cloud-status-provider__status--outage'
-            : 'cloud-status-provider__status--degraded'
-        }`}
-      >
-        {issueCountLabel(stats.activeIssues)}
-      </span>
-    );
-  };
-
-  const { twitterHandle, downdetectorSlug } = CLOUD_STATUS_PROVIDERS[provider];
+  const tone = providerTone(items, hasError);
+  const { twitterHandle, downdetectorSlug, statusUrl } = CLOUD_STATUS_PROVIDERS[provider];
 
   return (
-    <div
-      className={`cloud-status-provider cloud-status-provider--${provider}${
-        stats.isImpacted ? ' cloud-status-provider--impacted' : ''
-      }${stats.outages > 0 ? ' cloud-status-provider--outage' : ''}`}
+    <article
+      className={`cloud-status-provider${selected ? ' cloud-status-provider--selected' : ''}`}
     >
       <button
         type="button"
         className="cloud-status-provider__main"
-        onClick={() =>
-          void globalThis.api?.openExternal(CLOUD_STATUS_PROVIDERS[provider].statusUrl)
-        }
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={`Show ${providerLabel(provider)} incidents`}
       >
-        <div className="cloud-status-provider__header">
-          <span className="cloud-status-provider__name">
-            <span className="cloud-status-provider__icon">
+        <span className={`cloud-status-provider__signal cloud-status-provider__signal--${tone}`} />
+        <span className="cloud-status-provider__content">
+          <span className="cloud-status-provider__header">
+            <span className="cloud-status-provider__name">
               <ProviderIcon provider={provider} size={16} />
+              {providerLabel(provider)}
             </span>
-            {providerLabel(provider)}
+            <span className={`cloud-status-badge cloud-status-badge--${tone}`}>
+              {providerToneLabel(tone)}
+            </span>
           </span>
-          <span
-            className={`cloud-status-provider__indicator cloud-status-provider__indicator--${getIndicatorVariant()}`}
-          />
-        </div>
-        <div className="cloud-status-provider__body">
-          {renderStatus()}
-          {!hasError && !isOk && (
-            <span className="cloud-status-provider__counts">
-              {stats.outages > 0 && (
-                <span className="cloud-status-provider__count cloud-status-provider__count--error">
-                  Outage {stats.outages}
-                </span>
-              )}
-              {stats.degraded > 0 && (
-                <span className="cloud-status-provider__count cloud-status-provider__count--warning">
-                  Degraded {stats.degraded}
-                </span>
-              )}
+          <span className="cloud-status-provider__body">
+            <span
+              className={`cloud-status-provider__status cloud-status-provider__status--${tone}`}
+            >
+              {providerStatusLabel(items, hasError)}
             </span>
-          )}
-        </div>
+            {stats.activeIssues > 0 && (
+              <span className="cloud-status-provider__counts">
+                {stats.outages > 0 && <span>Outage {stats.outages}</span>}
+                {stats.degraded > 0 && <span>Degraded {stats.degraded}</span>}
+              </span>
+            )}
+          </span>
+        </span>
       </button>
-      {(twitterHandle || downdetectorSlug) && (
-        <div className="cloud-status-provider__links">
-          {twitterHandle && (
-            <button
-              type="button"
-              className="cloud-status-provider__link"
-              onClick={() => void globalThis.api?.openExternal(`https://x.com/${twitterHandle}`)}
-            >
-              @{twitterHandle}
-            </button>
-          )}
-          {downdetectorSlug && (
-            <button
-              type="button"
-              className="cloud-status-provider__link"
-              onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
-            >
-              Downdetector ↗
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+      <div className="cloud-status-provider__links">
+        <button
+          type="button"
+          onClick={() => void globalThis.api?.openExternal(statusUrl)}
+          aria-label={`Open ${providerLabel(provider)} status page`}
+        >
+          Status page ↗
+        </button>
+        {twitterHandle && (
+          <button
+            type="button"
+            onClick={() => void globalThis.api?.openExternal(`https://x.com/${twitterHandle}`)}
+          >
+            @{twitterHandle}
+          </button>
+        )}
+        {downdetectorSlug && (
+          <button
+            type="button"
+            onClick={() => void globalThis.api?.openExternal(downdetectorUrl(downdetectorSlug))}
+          >
+            Downdetector ↗
+          </button>
+        )}
+      </div>
+    </article>
   );
 };
 
-const StatusItemCard: React.FC<{
+const StatusItemRow: React.FC<{
   item: CloudStatusItem;
-  isExpanded: boolean;
+  expanded: boolean;
   onToggle: () => void;
-}> = ({ item, isExpanded, onToggle }) => {
-  const cleanDescription = useMemo(() => stripHtml(item.description), [item.description]);
+}> = ({ item, expanded, onToggle }) => {
+  const description = useMemo(() => stripHtml(item.description), [item.description]);
 
   return (
-    <div
+    <article
       className={`cloud-status-item cloud-status-item--${item.severity}${
-        isExpanded ? ' cloud-status-item--expanded' : ''
+        expanded ? ' cloud-status-item--expanded' : ''
       }`}
     >
       <button
         type="button"
         className="cloud-status-item__header"
         onClick={onToggle}
-        aria-expanded={isExpanded}
+        aria-expanded={expanded}
       >
-        <span
-          className={`cloud-status-item__severity cloud-status-item__severity--${item.severity}`}
-        >
-          {severityLabel(item.severity)}
+        <span className={`cloud-status-item__signal cloud-status-item__signal--${item.severity}`} />
+        <span className="cloud-status-item__content">
+          <span className="cloud-status-item__topline">
+            <span
+              className={`cloud-status-item__severity cloud-status-item__severity--${item.severity}`}
+            >
+              {severityLabel(item.severity)}
+            </span>
+            <span className="cloud-status-item__provider-tag">{providerLabel(item.provider)}</span>
+            <span className="cloud-status-item__time">{formatLocalTime(item.pubDate)}</span>
+          </span>
+          <span className="cloud-status-item__title">{item.title}</span>
         </span>
-        <span className="cloud-status-item__provider-tag">{providerLabel(item.provider)}</span>
-        <span className="cloud-status-item__title">{item.title}</span>
-        <span className="cloud-status-item__time">{formatLocalTime(item.pubDate)}</span>
         <svg
-          className={`cloud-status-item__chevron ${isExpanded ? 'cloud-status-item__chevron--open' : ''}`}
-          width="24"
-          height="24"
+          className={`cloud-status-item__chevron${expanded ? ' cloud-status-item__chevron--open' : ''}`}
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
           strokeLinecap="round"
           strokeLinejoin="round"
+          aria-hidden="true"
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
-      {isExpanded && (
+      {expanded && (
         <div className="cloud-status-item__body">
-          <p className="cloud-status-item__description">{cleanDescription}</p>
+          <p>{description || 'No additional details were published.'}</p>
           <button
             type="button"
-            className="cloud-status-item__link"
             onClick={() =>
               void globalThis.api?.openExternal(
                 item.link || CLOUD_STATUS_PROVIDERS[item.provider].statusUrl,
               )
             }
           >
-            View details
+            View source ↗
           </button>
         </div>
       )}
-    </div>
+    </article>
   );
 };
 
-// --- Main Tab ---
+function emptyFeedCopy(mode: FeedMode, hasQuery: boolean): { title: string; detail: string } {
+  if (hasQuery) {
+    return {
+      title: 'No matching incidents',
+      detail: 'Clear the search or choose another provider.',
+    };
+  }
+  if (mode === 'resolved') {
+    return {
+      title: 'No resolved incidents in the current feed',
+      detail: 'Resolved vendor updates will appear here when published.',
+    };
+  }
+  if (mode === 'recent') {
+    return { title: 'No recent provider updates', detail: 'The monitored feeds are quiet.' };
+  }
+  return { title: 'No active provider incidents', detail: 'All monitored providers are clear.' };
+}
 
 export const CloudStatusTab: React.FC<{
   statusData: CloudStatusData | null;
@@ -300,73 +304,74 @@ export const CloudStatusTab: React.FC<{
 }> = ({ statusData, loading, refetch }) => {
   const [filter, setFilter] = useState<FilterMode>('all');
   const [feedMode, setFeedMode] = useState<FeedMode>('active');
+  const [query, setQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const errorProviders = useMemo(
-    () => new Set(statusData?.errors.map((e) => e.provider) ?? []),
+    () => new Set(statusData?.errors.map((error) => error.provider) ?? []),
     [statusData?.errors],
   );
-
-  const allItems = useMemo(() => {
-    if (!statusData) return [];
-    return Object.values(statusData.providers).flat();
-  }, [statusData]);
-
-  const posture = useMemo(() => {
-    const activeIssues = allItems.filter(isActiveIssue);
-    const impactedProviders = sortProvidersByPosture(
-      CLOUD_STATUS_PROVIDER_ORDER,
-      statusData,
-      errorProviders,
-    ).filter((provider) => {
-      const stats = getProviderStats(
-        statusData?.providers[provider] ?? [],
-        errorProviders.has(provider),
-      );
-      return stats.isImpacted;
-    });
-    return {
-      activeIssues,
-      impactedProviders,
-      worstSeverity: getWorstSeverityLabel(allItems, errorProviders.size > 0),
-      quietProviderCount: Math.max(
-        0,
-        CLOUD_STATUS_PROVIDER_ORDER.length - impactedProviders.length,
-      ),
-    };
-  }, [allItems, errorProviders, statusData]);
-
+  const allItems = useMemo(
+    () => (statusData ? Object.values(statusData.providers).flat() : []),
+    [statusData],
+  );
+  const counts = useMemo(
+    () => ({
+      active: allItems.filter(isActiveIssue).length,
+      recent: allItems.filter((item) => item.severity !== 'resolved').length,
+      resolved: allItems.filter((item) => item.severity === 'resolved').length,
+    }),
+    [allItems],
+  );
   const providerOrder = useMemo(
     () => sortProvidersByPosture(CLOUD_STATUS_PROVIDER_ORDER, statusData, errorProviders),
     [errorProviders, statusData],
   );
-
-  const items = useMemo(() => {
-    const filteredByProvider =
-      filter === 'all' ? allItems : allItems.filter((item) => item.provider === filter);
-    const filteredByMode = filteredByProvider.filter((item) => {
-      if (feedMode === 'active') return isActiveIssue(item);
-      if (feedMode === 'resolved') return item.severity === 'resolved';
-      return item.severity !== 'resolved';
-    });
-    return [...filteredByMode].sort(
-      (a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime(),
-    );
-  }, [allItems, feedMode, filter]);
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleProviders = useMemo(
+    () =>
+      providerOrder.filter((provider) => {
+        if (!normalizedQuery) return true;
+        const providerItems = statusData?.providers[provider] ?? [];
+        return (
+          providerLabel(provider).toLowerCase().includes(normalizedQuery) ||
+          providerItems.some((item) =>
+            `${item.title} ${item.description}`.toLowerCase().includes(normalizedQuery),
+          )
+        );
+      }),
+    [normalizedQuery, providerOrder, statusData?.providers],
+  );
+  const items = useMemo(
+    () =>
+      allItems
+        .filter((item) => filter === 'all' || item.provider === filter)
+        .filter((item) => matchesFeedMode(item, feedMode))
+        .filter(
+          (item) =>
+            !normalizedQuery ||
+            `${providerLabel(item.provider)} ${item.title} ${item.description}`
+              .toLowerCase()
+              .includes(normalizedQuery),
+        )
+        .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()),
+    [allItems, feedMode, filter, normalizedQuery],
+  );
 
   if (!statusData && loading) return <TabFallback />;
+
+  const updatedLabel = `Updated ${lastUpdatedLabel(statusData?.lastUpdated ?? 0)}`;
+  const emptyCopy = emptyFeedCopy(feedMode, Boolean(normalizedQuery));
 
   return (
     <div className="cloud-status">
       <div className="cloud-status__header">
         <div>
-          <div className="cloud-status__eyebrow">Service Status</div>
-          <h2 className="cloud-status__title">Command Center</h2>
+          <div className="cloud-status__context">Service Status</div>
+          <h2 className="cloud-status__title">External service monitor</h2>
         </div>
         <div className="cloud-status__meta">
-          <span className="cloud-status__updated">
-            Updated {lastUpdatedLabel(statusData?.lastUpdated ?? 0)}
-          </span>
+          <span>{updatedLabel}</span>
           <Tooltip content={loading ? 'Refreshing cloud status' : 'Refresh cloud status'}>
             <button
               type="button"
@@ -377,139 +382,138 @@ export const CloudStatusTab: React.FC<{
             >
               <svg
                 className={loading ? 'cloud-status__refresh-icon--spinning' : ''}
-                width="24"
-                height="24"
+                width="20"
+                height="20"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                aria-hidden="true"
               >
                 <polyline points="23 4 23 10 17 10" />
                 <polyline points="1 20 1 14 7 14" />
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
               </svg>
             </button>
           </Tooltip>
         </div>
       </div>
 
-      <div className="cloud-status__filters" aria-label="Provider filters">
-        <button
-          type="button"
-          className={`cloud-status__filter ${filter === 'all' ? 'cloud-status__filter--active' : ''}`}
-          onClick={() => setFilter('all')}
-        >
-          All
-        </button>
-        {CLOUD_STATUS_PROVIDER_ORDER.map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={`cloud-status__filter ${filter === p ? 'cloud-status__filter--active' : ''}`}
-            onClick={() => setFilter(p)}
+      <div className="cloud-status__toolbar">
+        <div className="cloud-status__filters" role="tablist" aria-label="Incident feed filters">
+          {FEED_FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={feedMode === item.id}
+              className={`cloud-status__filter${
+                feedMode === item.id ? ' cloud-status__filter--active' : ''
+              }`}
+              onClick={() => setFeedMode(item.id)}
+            >
+              <span>{item.label}</span>
+              <span className="cloud-status__filter-count">{counts[item.id]}</span>
+            </button>
+          ))}
+        </div>
+        <label className="cloud-status__search">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
           >
-            <ProviderIcon provider={p} size={14} />
-            {providerShortLabel(p)}
-          </button>
-        ))}
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.35-4.35" />
+          </svg>
+          <span className="sr-only">Search service status</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search provider or incident"
+          />
+        </label>
       </div>
 
-      <div className="cloud-status__posture">
-        <section className="cloud-status-posture-card cloud-status-posture-card--primary">
-          <span className="cloud-status-posture-card__label">Current posture</span>
-          <strong>{issueCountLabel(posture.activeIssues.length)}</strong>
-          <span className="cloud-status-posture-card__sub">
-            {posture.impactedProviders.length > 0
-              ? `${posture.impactedProviders.map(providerShortLabel).slice(0, 3).join(', ')} need attention first.`
-              : 'No providers currently need attention.'}
-          </span>
-        </section>
-        <section className="cloud-status-posture-card">
-          <span className="cloud-status-posture-card__label">Impacted providers</span>
-          <strong>
-            {posture.impactedProviders.length} impacted{' '}
-            {posture.impactedProviders.length === 1 ? 'provider' : 'providers'}
-          </strong>
-          <span className="cloud-status-posture-card__sub">
-            of {CLOUD_STATUS_PROVIDER_ORDER.length} monitored
-          </span>
-        </section>
-        <section className="cloud-status-posture-card">
-          <span className="cloud-status-posture-card__label">Worst severity</span>
-          <strong>{posture.worstSeverity}</strong>
-          <span className="cloud-status-posture-card__sub">highest current signal</span>
-        </section>
-        <section className="cloud-status-posture-card">
-          <span className="cloud-status-posture-card__label">Quiet providers</span>
-          <strong>{posture.quietProviderCount}</strong>
-          <span className="cloud-status-posture-card__sub">normal or informational only</span>
-        </section>
-      </div>
+      {statusData && statusData.errors.length > 0 && (
+        <div className="cloud-status__notice" role="status">
+          <strong>Some provider feeds are unavailable.</strong>
+          <span>Last known data is shown where Relay has it.</span>
+        </div>
+      )}
 
       <div className="cloud-status__workspace">
-        <section className="cloud-status__providers-panel">
-          <div className="cloud-status__section-title">
+        <section className="cloud-status__providers-panel" aria-label="Provider posture">
+          <div className="cloud-status__section-heading">
             <span>Provider posture</span>
-            <span>Impacted first</span>
+            {filter === 'all' ? (
+              <span>{visibleProviders.length} monitored</span>
+            ) : (
+              <button type="button" onClick={() => setFilter('all')}>
+                Clear provider
+              </button>
+            )}
           </div>
           <div className="cloud-status__summary">
-            {providerOrder.map((p) => (
-              <ProviderCard
-                key={p}
-                provider={p}
-                items={statusData?.providers[p] ?? []}
-                hasError={errorProviders.has(p)}
-              />
-            ))}
+            {visibleProviders.length === 0 ? (
+              <div className="cloud-status__empty cloud-status__empty--compact">
+                <strong>No matching providers</strong>
+                <span>Clear the search to restore the provider queue.</span>
+              </div>
+            ) : (
+              visibleProviders.map((provider) => (
+                <ProviderRow
+                  key={provider}
+                  provider={provider}
+                  items={statusData?.providers[provider] ?? []}
+                  hasError={errorProviders.has(provider)}
+                  selected={filter === provider}
+                  onSelect={() => setFilter((current) => (current === provider ? 'all' : provider))}
+                />
+              ))
+            )}
           </div>
         </section>
 
-        <section className="cloud-status__feed">
-          <div className="cloud-status__feed-header">
-            <div className="cloud-status__section-title">Incident feed</div>
-            <div className="cloud-status__feed-toggle" aria-label="Incident feed filters">
-              {(['active', 'recent', 'resolved'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`cloud-status__feed-toggle-btn ${
-                    feedMode === mode ? 'cloud-status__feed-toggle-btn--active' : ''
-                  }`}
-                  onClick={() => setFeedMode(mode)}
-                >
-                  {mode[0].toUpperCase() + mode.slice(1)}
-                </button>
-              ))}
-            </div>
+        <section className="cloud-status__feed" aria-label="Service incident feed">
+          <div className="cloud-status__section-heading">
+            <span>{filter === 'all' ? 'Incident feed' : `${providerLabel(filter)} incidents`}</span>
+            <span>{items.length} shown</span>
           </div>
           {items.length === 0 ? (
             <div className="cloud-status__empty">
               <svg
-                width="64"
-                height="64"
+                width="40"
+                height="40"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity="0.4"
+                aria-hidden="true"
               >
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
                 <polyline points="22 4 12 14.01 9 11.01" />
               </svg>
-              <span>No recent events — all clear</span>
+              <strong>{emptyCopy.title}</strong>
+              <span>{emptyCopy.detail}</span>
             </div>
           ) : (
             <div className="cloud-status__feed-list">
               {items.map((item) => (
-                <StatusItemCard
+                <StatusItemRow
                   key={item.id}
                   item={item}
-                  isExpanded={expandedId === item.id}
-                  onToggle={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
+                  expanded={expandedId === item.id}
+                  onToggle={() =>
+                    setExpandedId((current) => (current === item.id ? null : item.id))
+                  }
                 />
               ))}
             </div>
@@ -519,7 +523,13 @@ export const CloudStatusTab: React.FC<{
 
       <StatusBar
         left={<StatusBarLive />}
-        right={<span>{CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored</span>}
+        center={<span>{updatedLabel}</span>}
+        right={
+          <span className="cloud-status__status-summary">
+            <span>{CLOUD_STATUS_PROVIDER_ORDER.length} providers monitored</span>
+            <span> · {issueCountLabel(counts.active)}</span>
+          </span>
+        }
       />
     </div>
   );

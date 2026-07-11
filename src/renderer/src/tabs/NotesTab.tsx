@@ -228,7 +228,7 @@ function NotesDetailPanel({
   );
 }
 
-export const NotesTab: React.FC = () => {
+export const NotesTab: React.FC<{ active?: boolean }> = ({ active = true }) => {
   const pad = useNotepad();
   const { showToast } = useToast();
   const gridRef = React.useRef<HTMLElement | null>(null);
@@ -385,6 +385,8 @@ export const NotesTab: React.FC = () => {
   }, [contextMenu]);
 
   React.useEffect(() => {
+    if (!active) return;
+
     updateColumnCount();
 
     const node = gridRef.current;
@@ -399,12 +401,14 @@ export const NotesTab: React.FC = () => {
       observer?.disconnect();
       globalThis.removeEventListener('resize', updateColumnCount);
     };
-  }, [updateColumnCount]);
+  }, [active, updateColumnCount]);
 
   React.useEffect(() => {
+    if (!active) return;
+
     const frame = globalThis.requestAnimationFrame(updateColumnCount);
     return () => globalThis.cancelAnimationFrame(frame);
-  }, [boardNotes.length, updateColumnCount]);
+  }, [active, boardNotes.length, updateColumnCount]);
 
   const noteColumns = React.useMemo(() => {
     const normalizedCount = Math.max(1, columnCount);

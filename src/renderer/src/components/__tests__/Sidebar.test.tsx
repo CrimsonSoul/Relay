@@ -34,6 +34,7 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   ServersIcon: () => <span>ServersIcon</span>,
   NotesIcon: () => <span>NotesIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
+  ProblemsIcon: () => <span>ProblemsIcon</span>,
   DashboardsIcon: () => <span>DashboardsIcon</span>,
   SettingsIcon: () => <span>SettingsIcon</span>,
   AppIcon: () => <span>AppIcon</span>,
@@ -55,6 +56,7 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-btn-on-call')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-notes')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-status')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-btn-problems')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-people')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-servers')).toBeInTheDocument();
   });
@@ -139,6 +141,12 @@ describe('Sidebar', () => {
 
     expect(screen.getByTestId('sidebar-btn-alerts').dataset.active).toBe('true');
     expect(screen.getByTestId('sidebar-btn-compose').dataset.active).toBe('false');
+  });
+
+  it('marks Settings active when it is the current tab', () => {
+    render(<Sidebar {...defaultProps} activeTab="Settings" />);
+
+    expect(screen.getByTestId('sidebar-btn-settings').dataset.active).toBe('true');
   });
 
   it('calls onTabChange when a nav item is clicked', () => {

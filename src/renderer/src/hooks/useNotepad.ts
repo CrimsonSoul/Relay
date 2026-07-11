@@ -82,10 +82,10 @@ export function useNotepad() {
 }
 
 export const NOTE_COLORS: { value: NoteColor; label: string; hex: string }[] = [
-  { value: 'amber', label: 'Amber', hex: '#e11d48' },
-  { value: 'blue', label: 'Blue', hex: '#3b82f6' },
-  { value: 'green', label: 'Green', hex: '#22c55e' },
-  { value: 'red', label: 'Red', hex: '#ef4444' },
-  { value: 'purple', label: 'Purple', hex: '#a855f7' },
-  { value: 'slate', label: 'Slate', hex: '#64748b' },
+  { value: 'amber', label: 'Amber', hex: '#ffb000' },
+  { value: 'blue', label: 'Blue', hex: '#42a5f5' },
+  { value: 'green', label: 'Green', hex: '#2bb24c' },
+  { value: 'red', label: 'Red', hex: '#ff4539' },
+  { value: 'purple', label: 'Purple', hex: '#c084fc' },
+  { value: 'slate', label: 'Slate', hex: '#928a90' },
 ];

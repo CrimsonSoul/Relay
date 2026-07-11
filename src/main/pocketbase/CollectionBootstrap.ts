@@ -7,6 +7,12 @@
  */
 
 import PocketBase from 'pocketbase';
+import {
+  DYNATRACE_PROBLEMS_COLLECTION,
+  DYNATRACE_PROBLEM_NOTES_COLLECTION,
+  DYNATRACE_PROBLEM_STATES_COLLECTION,
+  DYNATRACE_PROBLEM_SYNC_COLLECTION,
+} from '@shared/dynatraceProblems';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -28,7 +34,16 @@ interface CollectionDef {
   type: 'base';
   fields: FieldDef[];
   indexes?: string[];
+  rules?: CollectionRules;
 }
+
+type CollectionRules = {
+  listRule: string | null;
+  viewRule: string | null;
+  createRule: string | null;
+  updateRule: string | null;
+  deleteRule: string | null;
+};
 
 type ExistingCollection = {
   id: string;
@@ -64,6 +79,48 @@ const BOARD_SETTINGS_KEY_INDEX =
 const CLIENT_PRESENCE_COLLECTION = 'client_presence';
 const CLIENT_PRESENCE_SESSION_INDEX =
   'CREATE UNIQUE INDEX idx_client_presence_session_id ON client_presence (sessionId)';
+const CLOUD_STATUS_SNAPSHOT_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)';
+const DYNATRACE_PROBLEM_ID_INDEX =
+  'CREATE UNIQUE INDEX idx_dynatrace_problem_id ON dynatrace_problems (problemId)';
+const DYNATRACE_PROBLEM_STATE_ID_INDEX =
+  'CREATE UNIQUE INDEX idx_dynatrace_problem_state_id ON dynatrace_problem_states (problemId)';
+const DYNATRACE_PROBLEM_NOTES_ID_INDEX =
+  'CREATE INDEX idx_dynatrace_problem_notes_id ON dynatrace_problem_notes (problemId)';
+const DYNATRACE_PROBLEM_SYNC_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_dynatrace_problem_sync_key ON dynatrace_problem_sync (key)';
+
+const DEFAULT_AUTH_RULES: CollectionRules = {
+  listRule: AUTH_RULE,
+  viewRule: AUTH_RULE,
+  createRule: AUTH_RULE,
+  updateRule: AUTH_RULE,
+  deleteRule: AUTH_RULE,
+};
+
+const SERVER_OWNED_RULES: CollectionRules = {
+  listRule: AUTH_RULE,
+  viewRule: AUTH_RULE,
+  createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const LOCAL_STATE_RULES: CollectionRules = {
+  listRule: AUTH_RULE,
+  viewRule: AUTH_RULE,
+  createRule: AUTH_RULE,
+  updateRule: AUTH_RULE,
+  deleteRule: null,
+};
+
+const APPEND_ONLY_RULES: CollectionRules = {
+  listRule: AUTH_RULE,
+  viewRule: AUTH_RULE,
+  createRule: AUTH_RULE,
+  updateRule: null,
+  deleteRule: null,
+};
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -239,17 +296,117 @@ const COLLECTIONS: CollectionDef[] = [
     ],
     indexes: [CLIENT_PRESENCE_SESSION_INDEX],
   },
+  {
+    name: 'cloud_status_snapshot',
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'key', required: true },
+      { type: 'json', name: 'providers', required: true },
+      { type: 'json', name: 'errors', required: true },
+      { type: 'number', name: 'lastUpdated', required: true },
+      { type: 'text', name: 'contentHash', required: true },
+    ],
+    indexes: [CLOUD_STATUS_SNAPSHOT_KEY_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
+    name: DYNATRACE_PROBLEMS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'problemId', required: true },
+      { type: 'text', name: 'displayId' },
+      { type: 'text', name: 'title', required: true },
+      {
+        type: 'select',
+        name: 'status',
+        required: true,
+        values: ['OPEN', 'CLOSED'],
+        maxSelect: 1,
+      },
+      {
+        type: 'select',
+        name: 'severity',
+        required: true,
+        values: [
+          'AVAILABILITY',
+          'CUSTOM_ALERT',
+          'ERROR',
+          'INFO',
+          'MONITORING_UNAVAILABLE',
+          'PERFORMANCE',
+          'RESOURCE_CONTENTION',
+        ],
+        maxSelect: 1,
+      },
+      {
+        type: 'select',
+        name: 'impactLevel',
+        required: true,
+        values: ['APPLICATION', 'ENVIRONMENT', 'INFRASTRUCTURE', 'SERVICES'],
+        maxSelect: 1,
+      },
+      { type: 'number', name: 'startTime', required: true },
+      { type: 'number', name: 'endTime', required: true },
+      { type: 'text', name: 'rootCauseName' },
+      { type: 'json', name: 'affectedEntities' },
+      { type: 'json', name: 'impactedEntities' },
+      { type: 'json', name: 'managementZones' },
+      { type: 'json', name: 'alertingProfiles' },
+      { type: 'text', name: 'environmentUrl', required: true },
+      { type: 'date', name: 'syncedAt', required: true },
+    ],
+    indexes: [DYNATRACE_PROBLEM_ID_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
+    name: DYNATRACE_PROBLEM_STATES_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'problemId', required: true },
+      { type: 'bool', name: 'addressed' },
+      { type: 'date', name: 'addressedAt' },
+      { type: 'text', name: 'addressedBy' },
+    ],
+    indexes: [DYNATRACE_PROBLEM_STATE_ID_INDEX],
+    rules: LOCAL_STATE_RULES,
+  },
+  {
+    name: DYNATRACE_PROBLEM_NOTES_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'problemId', required: true },
+      { type: 'text', name: 'note', required: true },
+      { type: 'text', name: 'author', required: true },
+    ],
+    indexes: [DYNATRACE_PROBLEM_NOTES_ID_INDEX],
+    rules: APPEND_ONLY_RULES,
+  },
+  {
+    name: DYNATRACE_PROBLEM_SYNC_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'key', required: true },
+      {
+        type: 'select',
+        name: 'state',
+        required: true,
+        values: ['disabled', 'syncing', 'ok', 'error'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'lastAttemptAt' },
+      { type: 'date', name: 'lastSuccessAt' },
+      { type: 'date', name: 'lastReconciledAt' },
+      { type: 'text', name: 'error' },
+      { type: 'json', name: 'availableAlertingProfiles' },
+      { type: 'json', name: 'selectedAlertingProfiles' },
+      { type: 'bool', name: 'profileFilterConfigured' },
+    ],
+    indexes: [DYNATRACE_PROBLEM_SYNC_KEY_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
 ];
 
 const KNOWN_NAMES = new Set(COLLECTIONS.map((c) => c.name));
-
-const AUTH_RULE_PATCH = {
-  listRule: AUTH_RULE,
-  viewRule: AUTH_RULE,
-  createRule: AUTH_RULE,
-  updateRule: AUTH_RULE,
-  deleteRule: AUTH_RULE,
-};
 
 /** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
 async function patchCollectionDefinition(
@@ -258,6 +415,7 @@ async function patchCollectionDefinition(
   colName: string,
   expectedSchemaFields: FieldDef[],
   expectedIndexes: string[] = [],
+  expectedRules: CollectionRules = DEFAULT_AUTH_RULES,
 ): Promise<boolean> {
   const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
   const fields = colFull.fields || [];
@@ -267,8 +425,8 @@ async function patchCollectionDefinition(
   const indexes = colFull.indexes || [];
   const missingIndexes = expectedIndexes.filter((index) => !indexes.includes(index));
   const rulesPatch = Object.fromEntries(
-    Object.entries(AUTH_RULE_PATCH).filter(([key, value]) => {
-      return colFull[key as keyof typeof AUTH_RULE_PATCH] !== value;
+    Object.entries(expectedRules).filter(([key, value]) => {
+      return colFull[key as keyof CollectionRules] !== value;
     }),
   );
 
@@ -307,11 +465,7 @@ async function createMissing(pb: PocketBase, existing: Set<string>): Promise<num
         type: def.type,
         fields: [...def.fields, ...AUTODATE_FIELDS],
         ...(def.indexes ? { indexes: def.indexes } : {}),
-        listRule: AUTH_RULE,
-        viewRule: AUTH_RULE,
-        createRule: AUTH_RULE,
-        updateRule: AUTH_RULE,
-        deleteRule: AUTH_RULE,
+        ...(def.rules ?? DEFAULT_AUTH_RULES),
       });
       created++;
       logger.info(`Created collection: ${def.name}`);
@@ -335,7 +489,16 @@ async function patchExisting(
     const col = allCols.find((c) => c.name === def.name);
     if (!col) continue;
     try {
-      if (await patchCollectionDefinition(pb, col.id, def.name, def.fields, def.indexes)) {
+      if (
+        await patchCollectionDefinition(
+          pb,
+          col.id,
+          def.name,
+          def.fields,
+          def.indexes,
+          def.rules ?? DEFAULT_AUTH_RULES,
+        )
+      ) {
         patched++;
       }
     } catch (err) {

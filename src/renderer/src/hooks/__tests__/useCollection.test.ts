@@ -1,4 +1,5 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { render, renderHook, waitFor, act } from '@testing-library/react';
+import { Activity, createElement } from 'react';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import type { RecordModel } from 'pocketbase';
 
@@ -34,7 +35,8 @@ vi.mock('../../services/pocketbase', () => ({
 }));
 
 import { isOnline } from '../../services/pocketbase';
-import { useCollection } from '../useCollection';
+import { resetCollectionStoreRegistry } from '../../stores/collectionStoreRegistry';
+import { collectionRevisionSignature, useCollection } from '../useCollection';
 
 function makeRecord(id: string, extra: Record<string, unknown> = {}): RecordModel {
   return {
@@ -48,6 +50,7 @@ function makeRecord(id: string, extra: Record<string, unknown> = {}): RecordMode
 }
 
 beforeEach(() => {
+  resetCollectionStoreRegistry();
   vi.clearAllMocks();
   mockGetFullList.mockResolvedValue([]);
   mockSubscribe.mockResolvedValue(mockUnsubscribe);
@@ -59,6 +62,57 @@ beforeEach(() => {
 });
 
 describe('useCollection', () => {
+  it('shares one fetch, subscription, and cache snapshot for identical queries', async () => {
+    const cacheSnapshot = vi.fn();
+    (globalThis as Record<string, unknown>).api = { cacheSnapshot };
+    mockGetFullList.mockResolvedValue([makeRecord('shared')]);
+
+    function SharedConsumers() {
+      useCollection('test', { sort: '-created' });
+      useCollection('test', { sort: '-created' });
+      return null;
+    }
+
+    render(createElement(SharedConsumers));
+
+    await waitFor(() => expect(cacheSnapshot).toHaveBeenCalled());
+    expect(mockGetFullList).toHaveBeenCalledTimes(1);
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+    expect(cacheSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses separate stores for different filters', async () => {
+    function FilteredConsumers() {
+      useCollection('test', { filter: 'team="noc"' });
+      useCollection('test', { filter: 'team="network"' });
+      return null;
+    }
+
+    render(createElement(FilteredConsumers));
+
+    await waitFor(() => expect(mockGetFullList).toHaveBeenCalledTimes(2));
+    expect(mockSubscribe).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a shared subscription alive across a short hidden Activity', async () => {
+    function CollectionConsumer() {
+      useCollection('test');
+      return null;
+    }
+
+    const renderCollection = (mode: 'visible' | 'hidden') =>
+      createElement(Activity, { mode }, createElement(CollectionConsumer));
+
+    const { rerender } = render(renderCollection('visible'));
+    await waitFor(() => expect(mockSubscribe).toHaveBeenCalledTimes(1));
+
+    await act(async () => rerender(renderCollection('hidden')));
+    await act(async () => rerender(renderCollection('visible')));
+
+    expect(mockGetFullList).toHaveBeenCalledTimes(1);
+    expect(mockSubscribe).toHaveBeenCalledTimes(1);
+  });
+
   it('fetches data on mount and returns records', async () => {
     const records = [makeRecord('1'), makeRecord('2')];
     mockGetFullList.mockResolvedValue(records);
@@ -271,7 +325,27 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(cacheSnapshotMock).toHaveBeenCalledWith('test', records);
+    expect(cacheSnapshotMock).toHaveBeenCalledWith(
+      'test',
+      collectionRevisionSignature(records),
+      records,
+    );
+  });
+
+  it('does not send an unchanged full snapshot again on refetch', async () => {
+    const cacheSnapshotMock = vi.fn();
+    (globalThis as Record<string, unknown>).api = {
+      cacheSnapshot: cacheSnapshotMock,
+    };
+    const records = [makeRecord('1')];
+    mockGetFullList.mockResolvedValue(records);
+
+    const { result } = renderHook(() => useCollection('test'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(async () => result.current.refetch());
+
+    expect(cacheSnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it('calls cacheWrite on realtime events', async () => {
@@ -514,7 +588,11 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(cacheSnapshotMock).toHaveBeenCalledWith('test', records);
+    expect(cacheSnapshotMock).toHaveBeenCalledWith(
+      'test',
+      collectionRevisionSignature(records),
+      records,
+    );
   });
 
   it('falls back to cache on error even without api.cacheRead', async () => {
@@ -543,6 +621,7 @@ describe('useCollection', () => {
 
     const { unmount } = renderHook(() => useCollection('test'));
     unmount();
+    resetCollectionStoreRegistry();
 
     await act(async () => {
       resolveFetch?.([makeRecord('late')]);
@@ -579,6 +658,7 @@ describe('useCollection', () => {
       connectionChangeCallback?.('online');
     });
     unmount();
+    resetCollectionStoreRegistry();
 
     await act(async () => {
       resolveSync?.();
@@ -738,7 +818,51 @@ describe('useCollection', () => {
 
     await waitFor(() => expect(result.current.data[0]?.id).toBe('synced'));
     expect(mockGetFullList).toHaveBeenCalledTimes(2);
-    expect(cacheSnapshotMock).toHaveBeenLastCalledWith('test', syncedRecords);
+    expect(cacheSnapshotMock).toHaveBeenLastCalledWith(
+      'test',
+      collectionRevisionSignature(syncedRecords),
+      syncedRecords,
+    );
+  });
+
+  it('reconciles server data and overlays only unresolved local changes on reconnect', async () => {
+    const serverRecord = makeRecord('server');
+    const optimisticRecord = { ...makeRecord('server'), name: 'Offline edit' };
+    const remoteRecord = makeRecord('remote-change');
+    mockGetFullList
+      .mockResolvedValueOnce([serverRecord])
+      .mockResolvedValueOnce([serverRecord, remoteRecord]);
+    const syncPendingMock = vi.fn().mockResolvedValue({
+      remaining: 1,
+      remainingChanges: [
+        {
+          collection: 'contacts',
+          action: 'update',
+          record: optimisticRecord,
+        },
+      ],
+    });
+    (globalThis as Record<string, unknown>).api = {
+      syncPending: syncPendingMock,
+      cacheRead: vi.fn().mockResolvedValue([optimisticRecord]),
+    };
+
+    const { result } = renderHook(() => useCollection('contacts'));
+    await waitFor(() => expect(result.current.data[0]?.id).toBe('server'));
+
+    vi.mocked(isOnline).mockReturnValue(false);
+    act(() => connectionChangeCallback?.('offline'));
+    await waitFor(() => expect(result.current.data[0]?.name).toBe('Offline edit'));
+
+    vi.mocked(isOnline).mockReturnValue(true);
+    act(() => connectionChangeCallback?.('online'));
+    await waitFor(() => expect(syncPendingMock).toHaveBeenCalledOnce());
+
+    await waitFor(() => expect(result.current.data).toHaveLength(2));
+    expect(result.current.data.find((record) => record.id === 'server')?.name).toBe('Offline edit');
+    expect(result.current.data.some((record) => record.id === 'remote-change')).toBe(true);
+    expect(mockGetFullList).toHaveBeenCalledTimes(2);
+    expect(mockSubscribe).toHaveBeenCalledTimes(2);
   });
 
   it('replays realtime events that arrive while the initial fetch is in flight', async () => {

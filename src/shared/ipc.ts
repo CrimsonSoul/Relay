@@ -1,4 +1,9 @@
 import type { DynatraceDashboardInput, DynatraceDashboardState } from './dynatrace';
+import type {
+  DynatraceProblemsPublicSettings,
+  DynatraceProblemsSettingsInput,
+  DynatraceProblemsTestResult,
+} from './dynatraceProblems';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -67,7 +72,9 @@ export type TabName =
   | 'People'
   | 'Servers'
   | 'Notes'
-  | 'Status';
+  | 'Status'
+  | 'Problems'
+  | 'Settings';
 
 // Cloud Status Types
 export type CloudStatusProvider =
@@ -98,6 +105,14 @@ export type CloudStatusData = {
   providers: Record<CloudStatusProvider, CloudStatusItem[]>;
   lastUpdated: number;
   errors: { provider: CloudStatusProvider; message: string }[];
+};
+
+export type CloudStatusSnapshotRecord = CloudStatusData & {
+  id: string;
+  key: 'current';
+  contentHash: string;
+  created: string;
+  updated: string;
 };
 
 /** Display order for provider cards and filters. */
@@ -230,7 +245,18 @@ export type PbConnection = {
 
 export type PbConnectionResult =
   | { ok: true; connection: PbConnection }
-  | { ok: false; error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable' };
+  | {
+      ok: false;
+      error: 'pb-unavailable';
+      offlineAvailable: true;
+      pbUrl: string;
+      lastSyncAt: number;
+    }
+  | {
+      ok: false;
+      error: 'not-configured' | 'invalid-config' | 'auth-failed' | 'pb-unavailable';
+      offlineAvailable?: false;
+    };
 
 export type SetupTestConnectionResult =
   | { ok: true }
@@ -241,6 +267,52 @@ export type DiscoveredRelayServer = { name: string; host: string; port: number; 
 export type PublicRelayConfig =
   | { mode: 'server'; port: number; bindHost?: '127.0.0.1' | '0.0.0.0'; lanIp?: string }
   | { mode: 'client'; serverUrl: string; allowInsecureHttp?: boolean };
+
+export type OfflineWritableCollection =
+  | 'contacts'
+  | 'servers'
+  | 'oncall'
+  | 'bridge_groups'
+  | 'bridge_history'
+  | 'alert_history'
+  | 'alert_reminders'
+  | 'notes'
+  | 'standalone_notes'
+  | 'oncall_dismissals'
+  | 'oncall_board_settings'
+  | 'dynatrace_problem_states'
+  | 'dynatrace_problem_notes';
+
+export type OfflineMutationInput = {
+  collection: OfflineWritableCollection;
+  action: 'create' | 'update' | 'delete';
+  recordId?: string;
+  data?: Record<string, unknown>;
+};
+
+export type OfflineMutationApplied = {
+  mutationId: string;
+  collection: OfflineWritableCollection;
+  action: 'create' | 'update' | 'delete';
+  record: Record<string, unknown> & { id: string };
+  pendingCount: number;
+};
+
+export type OfflineMutationResult =
+  | ({ ok: true } & OfflineMutationApplied)
+  | { ok: false; error: string };
+
+export type PendingSyncStatus = {
+  pendingCount: number;
+  issueCount?: number;
+  lastError?: string;
+};
+
+export type PendingMutationOverlay = {
+  collection: OfflineWritableCollection;
+  action: 'create' | 'update' | 'delete';
+  record: Record<string, unknown> & { id: string };
+};
 
 export type BridgeAPI = {
   /** Opens a file path. Path validation and sandboxing constraints are enforced on the main process side. */
@@ -273,6 +345,19 @@ export type BridgeAPI = {
   onDynatraceDashboardsChanged: (
     callback: (dashboards: DynatraceDashboardState[]) => void,
   ) => () => void;
+  // Dynatrace Problems — server configuration only; problem records flow through PocketBase.
+  getDynatraceProblemsSettings: () => Promise<DynatraceProblemsPublicSettings>;
+  saveDynatraceProblemsSettings: (
+    input: DynatraceProblemsSettingsInput,
+  ) => Promise<IpcResult<DynatraceProblemsPublicSettings>>;
+  testDynatraceProblemsSettings: (
+    input: DynatraceProblemsSettingsInput,
+  ) => Promise<IpcResult<DynatraceProblemsTestResult>>;
+  clearDynatraceProblemsSettings: () => Promise<IpcResult>;
+  syncDynatraceProblems: () => Promise<IpcResult<{ count: number }>>;
+  saveDynatraceProblemProfileFilter: (
+    alertingProfiles: string[],
+  ) => Promise<IpcResult<{ count: number }>>;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -293,15 +378,15 @@ export type BridgeAPI = {
   onAlertDismissed: (callback: (type: string) => void) => () => void;
   // Clipboard
   writeClipboard: (text: string) => Promise<boolean>;
-  /** Accepts PNG data URLs only. This is intentional: clipboard operations use PNG format. */
-  writeClipboardImage: (dataUrl: string) => Promise<boolean>;
-  /** Losslessly recompresses PNG data URLs for Outlook clipboard use. */
+  /** Losslessly prepares PNG data URLs for Outlook with 96-DPI metadata. */
   optimizeAlertImage: (dataUrl: string) => Promise<IpcResult<string>>;
   // Alerts
   playAlertSound: () => Promise<boolean>;
   selectReminderSound: () => Promise<IpcResult<string>>;
   saveAlertImage: (dataUrl: string, suggestedName: string) => Promise<IpcResult<string>>;
   selectAlertBodyImage: () => Promise<IpcResult<string>>;
+  /** Writes an unsent alert EML draft to temp storage and opens it in Outlook. */
+  saveAndOpenAlertDraft: (content: string) => Promise<boolean>;
   // Schedule Bridge (.ics)
   saveAndOpenIcs: (content: string) => Promise<boolean>;
   saveCompanyLogo: () => Promise<IpcResult<string>>;
@@ -326,9 +411,19 @@ export type BridgeAPI = {
   // Cache (offline)
   cacheRead: (collection: string) => Promise<Record<string, unknown>[]>;
   cacheWrite: (collection: string, action: string, record: unknown) => Promise<void>;
-  cacheSnapshot: (collection: string, records: unknown[]) => Promise<void>;
+  cacheSnapshot: (collection: string, signature: string, records: unknown[]) => Promise<void>;
+  mutateOffline: (input: OfflineMutationInput) => Promise<OfflineMutationResult>;
+  onOfflineMutationApplied: (callback: (event: OfflineMutationApplied) => void) => () => void;
+  getPendingSyncStatus: () => Promise<PendingSyncStatus>;
+  onPendingSyncStatusChanged: (callback: (status: PendingSyncStatus) => void) => () => void;
   // Sync
-  syncPending: () => Promise<{ total: number; conflicts: number; errors: string[] }>;
+  syncPending: () => Promise<{
+    total: number;
+    conflicts: number;
+    errors: string[];
+    remaining?: number;
+    remainingChanges?: PendingMutationOverlay[];
+  }>;
   // PocketBase
   getPbConnection: () => Promise<PbConnectionResult>;
   refreshPbConnection: () => Promise<PbConnectionResult>;
@@ -386,15 +481,21 @@ export const IPC_CHANNELS = {
   DYNATRACE_OPEN_DASHBOARD: 'dynatrace:openDashboard',
   DYNATRACE_CLEAR_SESSION: 'dynatrace:clearSession',
   DYNATRACE_DASHBOARDS_CHANGED: 'dynatrace:dashboardsChanged',
+  DYNATRACE_PROBLEMS_GET_SETTINGS: 'dynatraceProblems:getSettings',
+  DYNATRACE_PROBLEMS_SAVE_SETTINGS: 'dynatraceProblems:saveSettings',
+  DYNATRACE_PROBLEMS_TEST_SETTINGS: 'dynatraceProblems:testSettings',
+  DYNATRACE_PROBLEMS_CLEAR_SETTINGS: 'dynatraceProblems:clearSettings',
+  DYNATRACE_PROBLEMS_SYNC: 'dynatraceProblems:sync',
+  DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER: 'dynatraceProblems:saveProfileFilter',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
-  CLIPBOARD_WRITE_IMAGE: 'clipboard:writeImage',
   OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',
   // Alerts
   ALERT_PLAY_SOUND: 'alert:playSound',
   ALERT_SELECT_REMINDER_SOUND: 'alert:selectReminderSound',
   SAVE_ALERT_IMAGE: 'alert:saveImage',
   SELECT_ALERT_BODY_IMAGE: 'alert:selectBodyImage',
+  ALERT_DRAFT_SAVE_AND_OPEN: 'alert:saveAndOpenDraft',
   // Schedule Bridge (.ics)
   ICS_SAVE_AND_OPEN: 'ics:saveAndOpen',
   SAVE_COMPANY_LOGO: 'alert:saveCompanyLogo',
@@ -421,6 +522,10 @@ export const IPC_CHANNELS = {
   CACHE_READ: 'cache:read',
   CACHE_WRITE: 'cache:write',
   CACHE_SNAPSHOT: 'cache:snapshot',
+  OFFLINE_MUTATE: 'offline:mutate',
+  OFFLINE_MUTATION_APPLIED: 'offline:mutationApplied',
+  OFFLINE_PENDING_STATUS: 'offline:pendingStatus',
+  OFFLINE_PENDING_STATUS_CHANGED: 'offline:pendingStatusChanged',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

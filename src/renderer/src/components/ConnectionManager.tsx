@@ -5,7 +5,8 @@ import { TactileButton } from './TactileButton';
 
 interface ConnectionManagerProps {
   readonly pbUrl: string;
-  readonly pbAuth: PbAuthSession;
+  readonly pbAuth: PbAuthSession | null;
+  readonly offlineMode?: boolean;
   readonly onReconfigure: () => void;
   readonly children: ReactNode;
 }
@@ -13,10 +14,11 @@ interface ConnectionManagerProps {
 export function ConnectionManager({
   pbUrl,
   pbAuth,
+  offlineMode = false,
   onReconfigure,
   children,
 }: ConnectionManagerProps) {
-  const { connectionState } = usePocketBase(pbUrl, pbAuth);
+  const { connectionState } = usePocketBase(pbUrl, pbAuth, offlineMode);
 
   if (connectionState === 'connecting') {
     return (

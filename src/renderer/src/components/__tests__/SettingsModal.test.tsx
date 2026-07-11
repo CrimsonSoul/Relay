@@ -88,6 +88,60 @@ describe('SettingsModal', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('renders focused sections when used as the Settings page', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" onOpenDataManager={vi.fn()} />);
+
+    expect(screen.getByRole('tab', { name: 'Appearance' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.getByRole('radiogroup', { name: 'Accent color' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay data' }));
+
+    expect(screen.getByText('Open Data Manager...')).toBeInTheDocument();
+    expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
+  });
+
+  it('tests Dynatrace Problems with a read-only platform token', async () => {
+    const getSettings = vi.fn().mockResolvedValue({
+      configured: false,
+      environmentUrl: '',
+      profileFilterConfigured: false,
+      selectedAlertingProfiles: [],
+    });
+    const testSettings = vi.fn().mockResolvedValue({
+      success: true,
+      data: { reachable: true, problemCount: 4 },
+    });
+    Object.assign(globalThis.api, {
+      getDynatraceProblemsSettings: getSettings,
+      testDynatraceProblemsSettings: testSettings,
+    });
+
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Dynatrace' }));
+
+    await waitFor(() => expect(getSettings).toHaveBeenCalled());
+    expect(screen.getByText(/Requires storage:events:read and storage:buckets:read/)).toBeVisible();
+
+    fireEvent.change(screen.getByPlaceholderText('https://abc123.apps.dynatrace.com'), {
+      target: { value: 'https://abc123.apps.dynatrace.com' },
+    });
+    fireEvent.change(screen.getByLabelText('Platform token · read-only Grail access'), {
+      target: { value: 'dt0s16.platform-read-only-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Test access' }));
+
+    await waitFor(() => {
+      expect(testSettings).toHaveBeenCalledWith({
+        environmentUrl: 'https://abc123.apps.dynatrace.com',
+        apiToken: 'dt0s16.platform-read-only-token',
+      });
+      expect(screen.getByText(/Connected with platform-token access/)).toBeVisible();
+    });
+  });
+
   it('does not render the on-call board size selector inside settings', () => {
     render(<SettingsModal {...defaultProps} />);
 

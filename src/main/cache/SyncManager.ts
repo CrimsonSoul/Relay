@@ -6,6 +6,7 @@ const logger = loggers.sync;
 
 export interface SyncResult {
   conflict: boolean;
+  applied: boolean;
   overwrittenData?: Record<string, unknown>;
 }
 
@@ -36,9 +37,9 @@ export class SyncManager {
       case 'create':
         return this.applyCreate(collection, data);
       case 'update':
-        return this.applyUpdate(collection, recordId!, data, change.timestamp);
+        return this.applyUpdate(collection, recordId!, data, change);
       case 'delete':
-        return this.applyDelete(collection, recordId!);
+        return this.applyDelete(collection, recordId!, change.baseUpdated);
       default:
         throw new Error(`Unknown action: ${action}`);
     }
@@ -48,16 +49,36 @@ export class SyncManager {
     collection: string,
     data: Record<string, unknown>,
   ): Promise<SyncResult> {
-    const { id: _id, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
-    await this.pb.collection(collection).create(createData);
-    return { conflict: false };
+    const {
+      created: _created, // eslint-disable-line sonarjs/no-unused-vars
+      updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+      ...createData
+    } = data;
+    try {
+      await this.pb.collection(collection).create(createData);
+      return { conflict: false, applied: true };
+    } catch (error) {
+      const recordId = typeof createData.id === 'string' ? createData.id : null;
+      const status = (error as { status?: number })?.status;
+      if (!recordId || (status !== 400 && status !== 409)) throw error;
+      const existing = await this.pb.collection(collection).getOne(recordId);
+      const identical = Object.entries(createData).every(([key, value]) => {
+        return JSON.stringify(existing[key]) === JSON.stringify(value);
+      });
+      if (identical) return { conflict: false, applied: true };
+      logger.warn('Stable offline create ID collided with different server data', {
+        collection,
+        recordId,
+      });
+      return { conflict: true, applied: false, overwrittenData: { ...existing } };
+    }
   }
 
   private async applyUpdate(
     collection: string,
     recordId: string,
     data: Record<string, unknown>,
-    clientTimestamp: number,
+    change: PendingChange,
   ): Promise<SyncResult> {
     let conflict = false;
     let overwrittenData: Record<string, unknown> | undefined;
@@ -66,7 +87,10 @@ export class SyncManager {
       const serverRecord = await this.pb.collection(collection).getOne(recordId);
       const serverUpdated = new Date(serverRecord.updated).getTime();
 
-      if (serverUpdated > clientTimestamp) {
+      const baseTimestamp = change.baseUpdated
+        ? new Date(change.baseUpdated).getTime()
+        : change.timestamp;
+      if (serverUpdated > baseTimestamp) {
         conflict = true;
         overwrittenData = { ...serverRecord };
 
@@ -88,14 +112,26 @@ export class SyncManager {
         }
 
         logger.warn('Conflict detected during sync', { collection, recordId });
+        return { conflict: true, applied: false, overwrittenData };
       }
     } catch (err: unknown) {
       // Distinguish 404 (record not found → create) from other errors (rethrow)
       const status = (err as { status?: number })?.status;
       if (status === 404) {
-        const { id: _id2, ...createData } = data as { id?: string } & Record<string, unknown>; // eslint-disable-line sonarjs/no-unused-vars
+        if (change.baseUpdated) {
+          logger.warn('Offline update conflicts with a record deleted on the server', {
+            collection,
+            recordId,
+          });
+          return { conflict: true, applied: false };
+        }
+        const {
+          created: _created, // eslint-disable-line sonarjs/no-unused-vars
+          updated: _updated, // eslint-disable-line sonarjs/no-unused-vars
+          ...createData
+        } = data;
         await this.pb.collection(collection).create(createData);
-        return { conflict: false };
+        return { conflict: false, applied: true };
       }
       throw err;
     }
@@ -109,11 +145,21 @@ export class SyncManager {
     } = data;
     await this.pb.collection(collection).update(recordId, updateData);
 
-    return { conflict, overwrittenData };
+    return { conflict, applied: true, overwrittenData };
   }
 
-  private async applyDelete(collection: string, recordId: string): Promise<SyncResult> {
+  private async applyDelete(
+    collection: string,
+    recordId: string,
+    baseUpdated?: string,
+  ): Promise<SyncResult> {
     try {
+      if (baseUpdated) {
+        const existing = await this.pb.collection(collection).getOne(recordId);
+        if (new Date(existing.updated).getTime() > new Date(baseUpdated).getTime()) {
+          return { conflict: true, applied: false, overwrittenData: { ...existing } };
+        }
+      }
       await this.pb.collection(collection).delete(recordId);
     } catch (err: unknown) {
       // Only swallow 404 (already deleted); let network/auth errors propagate
@@ -122,7 +168,7 @@ export class SyncManager {
         throw err;
       }
     }
-    return { conflict: false };
+    return { conflict: false, applied: true };
   }
 
   async syncAll(
@@ -131,19 +177,24 @@ export class SyncManager {
   ): Promise<{
     total: number;
     conflicts: number;
+    conflicted: number[];
     synced: number[];
     failed: { changeId: number; error: string }[];
     errors: string[];
   }> {
     let conflicts = 0;
+    const conflicted: number[] = [];
     const synced: number[] = [];
     const failed: { changeId: number; error: string }[] = [];
 
     for (let i = 0; i < changes.length; i++) {
       try {
         const result = await this.applyChange(changes[i]);
-        if (result.conflict) conflicts++;
-        synced.push(changes[i].id);
+        if (result.conflict) {
+          conflicts++;
+          if (!result.applied) conflicted.push(changes[i].id);
+        }
+        if (result.applied) synced.push(changes[i].id);
       } catch (err) {
         const errorMsg = `Failed to sync ${changes[i].collection}/${changes[i].action}: ${err}`;
         failed.push({ changeId: changes[i].id, error: errorMsg });
@@ -156,6 +207,7 @@ export class SyncManager {
     return {
       total: changes.length,
       conflicts,
+      conflicted,
       synced,
       failed,
       errors: failed.map((f) => f.error),

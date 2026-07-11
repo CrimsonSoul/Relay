@@ -217,8 +217,7 @@ describe('SyncManager integration tests', () => {
       (c) => c.method === 'create' && c.collection === 'contacts',
     );
     expect(createCalls).toHaveLength(1);
-    // id field should have been stripped from create payload
-    expect((createCalls[0].data as Record<string, unknown>).id).toBeUndefined();
+    expect((createCalls[0].data as Record<string, unknown>).id).toBe('rec_missing_001');
   });
 
   it('progress callback: called once per change with correct counts', async () => {

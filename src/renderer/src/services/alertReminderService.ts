@@ -1,5 +1,6 @@
-import { getPb, handleApiError, requireOnline, escapeFilter } from './pocketbase';
+import { getPb, handleApiError, escapeFilter } from './pocketbase';
 import type { Severity } from '../tabs/alertUtils';
+import { mutateCollection } from './mutationGateway';
 
 export type AlertReminderStatus = 'pending' | 'done' | 'dismissed';
 
@@ -59,15 +60,12 @@ function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreateP
 }
 
 export async function addAlertReminder(input: AlertReminderInput): Promise<AlertReminderRecord> {
-  requireOnline();
-  try {
-    return await getPb()
-      .collection(COLLECTION)
-      .create<AlertReminderRecord>(normalizeCreatePayload(input));
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertReminderRecord>(
+    COLLECTION,
+    'create',
+    undefined,
+    normalizeCreatePayload(input),
+  )) as AlertReminderRecord;
 }
 
 export async function listDueAlertReminders(now = new Date()): Promise<AlertReminderRecord[]> {
@@ -93,67 +91,41 @@ export async function snoozeAlertReminder(
   id: string,
   snoozeUntil: string,
 ): Promise<AlertReminderRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
-      status: 'pending',
-      snoozeUntil,
-    });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertReminderRecord>(COLLECTION, 'update', id, {
+    status: 'pending',
+    snoozeUntil,
+  })) as AlertReminderRecord;
 }
 
 export async function updateAlertReminder(
   id: string,
   input: AlertReminderUpdateInput,
 ): Promise<AlertReminderRecord> {
-  requireOnline();
-  try {
-    return await getPb()
-      .collection(COLLECTION)
-      .update<AlertReminderRecord>(id, {
-        title: input.title.trim() || 'Send alert',
-        note: input.note?.trim() || '',
-        dueAt: input.dueAt,
-        status: 'pending',
-        snoozeUntil: '',
-      });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertReminderRecord>(COLLECTION, 'update', id, {
+    title: input.title.trim() || 'Send alert',
+    note: input.note?.trim() || '',
+    dueAt: input.dueAt,
+    status: 'pending',
+    snoozeUntil: '',
+  })) as AlertReminderRecord;
 }
 
 export async function markAlertReminderDone(
   id: string,
   now = new Date(),
 ): Promise<AlertReminderRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
-      status: 'done',
-      completedAt: now.toISOString(),
-    });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertReminderRecord>(COLLECTION, 'update', id, {
+    status: 'done',
+    completedAt: now.toISOString(),
+  })) as AlertReminderRecord;
 }
 
 export async function dismissAlertReminder(
   id: string,
   now = new Date(),
 ): Promise<AlertReminderRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection(COLLECTION).update<AlertReminderRecord>(id, {
-      status: 'dismissed',
-      dismissedAt: now.toISOString(),
-    });
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<AlertReminderRecord>(COLLECTION, 'update', id, {
+    status: 'dismissed',
+    dismissedAt: now.toISOString(),
+  })) as AlertReminderRecord;
 }

@@ -1,6 +1,8 @@
 import type { RecordListOptions } from 'pocketbase';
-import { getPb, handleApiError, requireOnline } from './pocketbase';
+import { getPb, handleApiError } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
+import type { OfflineWritableCollection } from '@shared/ipc';
+import { mutateCollection } from './mutationGateway';
 
 export interface CrudService<T> {
   getAll(options?: RecordListOptions): Promise<T[]>;
@@ -32,33 +34,25 @@ export function createCrudService<T>(collectionName: string): CrudService<T> {
     },
 
     async create(data: Partial<T>): Promise<T> {
-      requireOnline();
-      try {
-        return await getPb().collection(collectionName).create<T>(data);
-      } catch (err) {
-        handleApiError(err);
-        throw err;
-      }
+      return (await mutateCollection<T>(
+        collectionName as OfflineWritableCollection,
+        'create',
+        undefined,
+        data as Record<string, unknown>,
+      )) as T;
     },
 
     async update(id: string, data: Partial<T>): Promise<T> {
-      requireOnline();
-      try {
-        return await getPb().collection(collectionName).update<T>(id, data);
-      } catch (err) {
-        handleApiError(err);
-        throw err;
-      }
+      return (await mutateCollection<T>(
+        collectionName as OfflineWritableCollection,
+        'update',
+        id,
+        data as Record<string, unknown>,
+      )) as T;
     },
 
     async remove(id: string): Promise<void> {
-      requireOnline();
-      try {
-        await getPb().collection(collectionName).delete(id);
-      } catch (err) {
-        handleApiError(err);
-        throw err;
-      }
+      await mutateCollection(collectionName as OfflineWritableCollection, 'delete', id);
     },
   };
 }

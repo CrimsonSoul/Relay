@@ -1,5 +1,6 @@
-import { getPb, handleApiError, isOnline, requireOnline } from './pocketbase';
+import { getPb, handleApiError, isOnline } from './pocketbase';
 import type { OnCallRecord } from './oncallService';
+import { mutateCollection } from './mutationGateway';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,6 +203,17 @@ async function fetchPrimarySettings(): Promise<
   | { ok: true; records: BoardSettingsRecord[] }
   | { ok: false; result: BoardSettingsInitializationResult }
 > {
+  if (!isOnline()) {
+    const cached = ((await globalThis.api?.cacheRead?.(COLLECTION)) ??
+      []) as unknown as BoardSettingsRecord[];
+    const records = cached.filter((record) => record.key === PRIMARY_KEY);
+    return records.length > 0
+      ? { ok: true, records }
+      : {
+          ok: false,
+          result: lockedResult('unavailable-offline', ['No cached board settings are available']),
+        };
+  }
   try {
     const records = await getPb()
       .collection(COLLECTION)
@@ -230,6 +242,14 @@ async function bootstrapSettingsRecord(
   | { ok: false; result: BoardSettingsInitializationResult }
 > {
   const derivedOrder = deriveTeamOrder(oncallRows);
+  if (!isOnline()) {
+    const record = (await mutateCollection<BoardSettingsRecord>(COLLECTION, 'create', undefined, {
+      key: PRIMARY_KEY,
+      teamOrder: derivedOrder,
+      locked: false,
+    })) as BoardSettingsRecord;
+    return { ok: true, record };
+  }
   try {
     const record = await getPb().collection(COLLECTION).create<BoardSettingsRecord>({
       key: PRIMARY_KEY,
@@ -382,13 +402,12 @@ export async function updatePrimaryBoardSettings(
   recordId: string,
   updates: Partial<Pick<BoardSettingsRecord, 'teamOrder' | 'locked'>>,
 ): Promise<BoardSettingsRecord> {
-  requireOnline();
-  try {
-    return await getPb().collection(COLLECTION).update<BoardSettingsRecord>(recordId, updates);
-  } catch (err) {
-    handleApiError(err);
-    throw err;
-  }
+  return (await mutateCollection<BoardSettingsRecord>(
+    COLLECTION,
+    'update',
+    recordId,
+    updates,
+  )) as BoardSettingsRecord;
 }
 
 /**
@@ -398,7 +417,17 @@ export async function updatePrimaryBoardSettings(
 export async function ensurePrimaryBoardSettings(
   teamOrder: string[],
 ): Promise<BoardSettingsRecord> {
-  requireOnline();
+  if (!isOnline()) {
+    const cached = ((await globalThis.api?.cacheRead?.(COLLECTION)) ??
+      []) as unknown as BoardSettingsRecord[];
+    const existing = cached.find((record) => record.key === PRIMARY_KEY);
+    if (existing) return existing;
+    return (await mutateCollection<BoardSettingsRecord>(COLLECTION, 'create', undefined, {
+      key: PRIMARY_KEY,
+      teamOrder,
+      locked: false,
+    })) as BoardSettingsRecord;
+  }
   try {
     const records = await getPb()
       .collection(COLLECTION)
@@ -505,7 +534,11 @@ async function resolveSettingsRecord(
 
   const { records } = fetchResult;
   if (records.length > 1) {
-    await deduplicateSettings(records);
+    if (isOnline()) await deduplicateSettings(records);
+    else {
+      records.sort(compareSettingsNewestFirst);
+      records.splice(1);
+    }
   }
 
   if (records.length === 0) {
@@ -554,6 +587,9 @@ export async function initializeBoardSettings(
   // --- Backfill legacy rows ---
   const needsBackfill = oncallRows.filter((r) => !r.teamId);
   if (needsBackfill.length > 0) {
+    if (!isOnline()) {
+      return lockedResult('migrating', ['Reconnect once to finish upgrading legacy on-call rows']);
+    }
     const errors: string[] = [];
     const backfillResult = await backfillTeamIds(oncallRows, errors);
     if (!backfillResult.allSucceeded) {

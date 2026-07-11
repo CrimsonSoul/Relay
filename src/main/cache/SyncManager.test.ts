@@ -43,7 +43,7 @@ describe('SyncManager', () => {
     expect(mockCreate).toHaveBeenCalled();
   });
 
-  it('strips the id field when creating a record', async () => {
+  it('preserves the stable offline id when creating a record', async () => {
     const mockCreate = vi.fn().mockResolvedValue({ id: 'server-generated' });
     mockPb.collection.mockReturnValue({ create: mockCreate });
 
@@ -56,9 +56,8 @@ describe('SyncManager', () => {
     };
 
     await syncManager.applyChange(change);
-    // The create call should NOT include the 'id' field
     const createArg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
-    expect(createArg).not.toHaveProperty('id');
+    expect(createArg).toHaveProperty('id', 'local-1');
     expect(createArg).toHaveProperty('name', 'Bob');
   });
 
@@ -86,7 +85,8 @@ describe('SyncManager', () => {
     const result = await syncManager.applyChange(change);
     expect(result.conflict).toBe(true);
     expect(result.overwrittenData).toEqual(serverRecord);
-    expect(mockUpdate).toHaveBeenCalled();
+    expect(result.applied).toBe(false);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it('applies update without conflict when client record is newer', async () => {
@@ -109,6 +109,29 @@ describe('SyncManager', () => {
     expect(mockUpdate).toHaveBeenCalled();
   });
 
+  it('uses the exact cached server revision as the update conflict baseline', async () => {
+    const serverRecord = { id: '1', name: 'Server edit', updated: '2026-07-10T12:01:00Z' };
+    const mockGetOne = vi.fn().mockResolvedValue(serverRecord);
+    const mockUpdate = vi.fn();
+    mockPb.collection.mockReturnValue({
+      getOne: mockGetOne,
+      update: mockUpdate,
+      create: vi.fn().mockResolvedValue({}),
+    });
+
+    const result = await syncManager.applyChange({
+      id: 2,
+      collection: 'contacts',
+      action: 'update',
+      data: { id: '1', name: 'Offline edit' },
+      timestamp: new Date('2026-07-10T13:00:00Z').getTime(),
+      baseUpdated: '2026-07-10T12:00:00Z',
+    });
+
+    expect(result).toMatchObject({ conflict: true, applied: false });
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('falls back to create when record not found on server during update', async () => {
     const notFoundError = new Error('Not found') as Error & { status: number };
     notFoundError.status = 404;
@@ -127,9 +150,30 @@ describe('SyncManager', () => {
     const result = await syncManager.applyChange(change);
     expect(result.conflict).toBe(false);
     expect(mockCreate).toHaveBeenCalled();
-    // id should be stripped from the create payload
     const createArg = mockCreate.mock.calls[0][0] as Record<string, unknown>;
-    expect(createArg).not.toHaveProperty('id');
+    expect(createArg).toHaveProperty('id', '1');
+  });
+
+  it('does not resurrect a remotely deleted record when the update has a base revision', async () => {
+    const notFoundError = new Error('Not found') as Error & { status: number };
+    notFoundError.status = 404;
+    const mockCreate = vi.fn();
+    mockPb.collection.mockReturnValue({
+      getOne: vi.fn().mockRejectedValue(notFoundError),
+      create: mockCreate,
+    });
+
+    const result = await syncManager.applyChange({
+      id: 2,
+      collection: 'contacts',
+      action: 'update',
+      data: { id: '1', name: 'Offline edit' },
+      timestamp: Date.now(),
+      baseUpdated: '2026-07-10T12:00:00Z',
+    });
+
+    expect(result).toEqual({ conflict: true, applied: false });
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 
   it('strips id/created/updated meta-fields when updating a record', async () => {
@@ -177,6 +221,27 @@ describe('SyncManager', () => {
     const result = await syncManager.applyChange(change);
     expect(result.conflict).toBe(false);
     expect(mockDelete).toHaveBeenCalledWith('1');
+  });
+
+  it('keeps an offline delete pending when the server record changed', async () => {
+    const existing = { id: '1', updated: '2026-07-10T12:01:00Z' };
+    const mockDelete = vi.fn();
+    mockPb.collection.mockReturnValue({
+      getOne: vi.fn().mockResolvedValue(existing),
+      delete: mockDelete,
+    });
+
+    const result = await syncManager.applyChange({
+      id: 3,
+      collection: 'contacts',
+      action: 'delete',
+      data: { id: '1' },
+      timestamp: Date.now(),
+      baseUpdated: '2026-07-10T12:00:00Z',
+    });
+
+    expect(result).toMatchObject({ conflict: true, applied: false });
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('swallows error when deleting an already-deleted record', async () => {
@@ -266,6 +331,7 @@ describe('SyncManager', () => {
 
     const result = await syncManager.syncAll(changes);
     expect(result.conflicts).toBe(1);
+    expect(result.synced).toEqual([]);
     expect(result.errors).toHaveLength(0);
   });
 

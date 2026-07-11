@@ -10,9 +10,9 @@ import {
 
 export const CLIENT_PRESENCE_COLLECTION = 'client_presence';
 export const CLIENT_PRESENCE_SESSION_STORAGE_KEY = 'relay:client-presence-session-id';
-export const CLIENT_PRESENCE_TTL_MS = 45_000;
-const CLIENT_PRESENCE_HEARTBEAT_MS = 15_000;
-const CLIENT_PRESENCE_REFRESH_MS = 5_000;
+export const CLIENT_PRESENCE_TTL_MS = 90_000;
+const CLIENT_PRESENCE_HEARTBEAT_MS = 30_000;
+const MAX_TIMEOUT_MS = 2_147_000_000;
 let fallbackSessionCounter = 0;
 
 export type ClientPresenceRecord = {
@@ -44,6 +44,20 @@ function isNotFoundError(error: unknown): boolean {
 function getRecordTime(record: ClientPresenceRecord): number {
   const time = new Date(record.lastSeen).getTime();
   return Number.isFinite(time) ? time : 0;
+}
+
+export function getNextPresenceExpiry(
+  records: ClientPresenceRecord[],
+  nowMs = Date.now(),
+): number | null {
+  let nextExpiry: number | null = null;
+  for (const record of records) {
+    if (record.mode !== 'client') continue;
+    const expiresAt = getRecordTime(record) + CLIENT_PRESENCE_TTL_MS;
+    if (expiresAt <= nowMs) continue;
+    if (nextExpiry === null || expiresAt < nextExpiry) nextExpiry = expiresAt;
+  }
+  return nextExpiry;
 }
 
 function sortPresence(a: ClientPresenceRecord, b: ClientPresenceRecord): number {
@@ -300,9 +314,12 @@ export function useClientPresence(
   }, [enabled, relayConfig?.mode]);
 
   useEffect(() => {
-    const interval = setInterval(() => setNowMs(Date.now()), CLIENT_PRESENCE_REFRESH_MS);
-    return () => clearInterval(interval);
-  }, []);
+    const expiresAt = getNextPresenceExpiry(records);
+    if (expiresAt === null) return;
+    const delay = Math.min(Math.max(1, expiresAt - Date.now() + 1), MAX_TIMEOUT_MS);
+    const timeout = setTimeout(() => setNowMs(Date.now()), delay);
+    return () => clearTimeout(timeout);
+  }, [records, nowMs]);
 
   const activeClients = useMemo(() => getActiveClientPresence(records, nowMs), [records, nowMs]);
 

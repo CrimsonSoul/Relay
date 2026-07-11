@@ -4,6 +4,7 @@ import type { PublicRelayConfig } from '@shared/ipc';
 import {
   CLIENT_PRESENCE_SESSION_STORAGE_KEY,
   CLIENT_PRESENCE_TTL_MS,
+  getNextPresenceExpiry,
   useClientPresence,
 } from '../useClientPresence';
 
@@ -98,6 +99,16 @@ beforeEach(() => {
 });
 
 describe('useClientPresence', () => {
+  it('schedules expiration at the earliest active client deadline', () => {
+    const now = new Date('2026-07-10T12:00:00Z').getTime();
+    const first = makePresence('first', 'first-session', 'first-host');
+    const second = makePresence('second', 'second-session', 'second-host');
+    first.lastSeen = new Date(now - 60_000).toISOString();
+    second.lastSeen = new Date(now - 30_000).toISOString();
+
+    expect(getNextPresenceExpiry([second, first], now)).toBe(now + 30_000);
+  });
+
   it('does not heartbeat from the server app', async () => {
     const { result } = renderHook(() => useClientPresence(serverConfig, vi.fn()));
 

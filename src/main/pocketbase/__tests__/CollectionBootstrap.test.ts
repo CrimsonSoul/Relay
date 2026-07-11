@@ -82,7 +82,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(13);
+    expect(mockCreate).toHaveBeenCalledTimes(18);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -93,6 +93,95 @@ describe('ensureCollections', () => {
         (call: unknown[]) => (call[0] as { name: string }).name === 'client_presence',
       ),
     ).toBe(true);
+  });
+
+  it('creates a read-only shared cloud status singleton collection', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const snapshotCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'cloud_status_snapshot',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          viewRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<{ name: string; type: string; required?: boolean }>;
+          indexes: string[];
+        }
+      | undefined;
+
+    expect(snapshotCall).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(snapshotCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'key', type: 'text', required: true }),
+        expect.objectContaining({ name: 'providers', type: 'json', required: true }),
+        expect.objectContaining({ name: 'errors', type: 'json', required: true }),
+        expect.objectContaining({ name: 'lastUpdated', type: 'number', required: true }),
+        expect.objectContaining({ name: 'contentHash', type: 'text', required: true }),
+      ]),
+    );
+    expect(snapshotCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_cloud_status_snapshot_key ON cloud_status_snapshot (key)',
+    );
+  });
+
+  it('creates server-owned Dynatrace problem records and append-only local notes', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const problemsCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'dynatrace_problems',
+    )?.[0] as
+      | {
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          listRule: string | null;
+          fields: Array<{ name: string; type: string }>;
+        }
+      | undefined;
+    const notesCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'dynatrace_problem_notes',
+    )?.[0] as
+      | {
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+        }
+      | undefined;
+    const syncCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'dynatrace_problem_sync',
+    )?.[0] as { fields: Array<{ name: string; type: string }> } | undefined;
+
+    expect(problemsCall).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(problemsCall?.fields.some((field) => field.name === 'problemId')).toBe(true);
+    expect(problemsCall?.fields.some((field) => field.name === 'alertingProfiles')).toBe(true);
+    expect(notesCall).toMatchObject({
+      createRule: '@request.auth.id != ""',
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(syncCall?.fields).toContainEqual(
+      expect.objectContaining({ name: 'lastReconciledAt', type: 'date' }),
+    );
   });
 
   it('creates alert_reminders with scheduling and status fields', async () => {

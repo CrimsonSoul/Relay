@@ -8,6 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+const captureSetup = process.env.RELAY_CAPTURE_SETUP === '1';
+const captureSetupCompact = process.env.RELAY_CAPTURE_SETUP_COMPACT === '1';
+const setupShotDir = path.join(__dirname, '../../tmp/setup-shots');
+const setupShotSuffix = captureSetupCompact ? '-compact' : '';
 
 test.describe('Setup Screen & Auth Flow', () => {
   let electronApp: Awaited<ReturnType<typeof electron.launch>> | null;
@@ -46,6 +50,11 @@ test.describe('Setup Screen & Auth Flow', () => {
 
     window = await electronApp.firstWindow();
     await window.waitForLoadState('domcontentloaded');
+    if (captureSetupCompact) {
+      await electronApp.evaluate(({ BrowserWindow }) => {
+        BrowserWindow.getAllWindows()[0]?.setSize(1366, 768);
+      });
+    }
   }
 
   /** Click the mode card by its tag text (Primary Station / Remote Station) */
@@ -64,7 +73,28 @@ test.describe('Setup Screen & Auth Flow', () => {
 
     await expect(window.locator('text=Primary Station')).toBeVisible();
     await expect(window.locator('text=Remote Station')).toBeVisible();
-    await expect(window.locator('text=How will this instance be used?')).toBeVisible();
+    await expect(window.locator("text=Choose this station's role")).toBeVisible();
+
+    if (captureSetup) {
+      fs.mkdirSync(setupShotDir, { recursive: true });
+      await window.waitForTimeout(800);
+      await window.screenshot({
+        path: path.join(setupShotDir, `mode-selection${setupShotSuffix}.png`),
+      });
+
+      await selectMode('Primary Station');
+      await window.waitForTimeout(450);
+      await window.screenshot({
+        path: path.join(setupShotDir, `server-config${setupShotSuffix}.png`),
+      });
+      await window.locator('button.setup-config__back').click();
+
+      await selectMode('Remote Station');
+      await window.waitForTimeout(450);
+      await window.screenshot({
+        path: path.join(setupShotDir, `client-config${setupShotSuffix}.png`),
+      });
+    }
   });
 
   test('Server mode: validates passphrase length', async () => {

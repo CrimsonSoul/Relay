@@ -1,0 +1,1060 @@
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AutoSizer } from 'react-virtualized-auto-sizer';
+import { List } from 'react-window';
+import type { RowComponentProps } from 'react-window';
+import type { PublicRelayConfig } from '@shared/ipc';
+import type {
+  DynatraceEntityRef,
+  DynatraceProblemNoteRecord,
+  DynatraceProblemRecord,
+  DynatraceProblemSeverity,
+  DynatraceProblemStateRecord,
+  DynatraceProblemSyncRecord,
+} from '@shared/dynatraceProblems';
+import { StatusBar, StatusBarLive } from '../components/StatusBar';
+import { TabFallback } from '../components/TabFallback';
+import { useToast } from '../components/Toast';
+import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
+import {
+  getConnectionState,
+  onConnectionStateChange,
+  type ConnectionState,
+} from '../services/pocketbase';
+import './dynatrace-problems.css';
+
+type ProblemFilter = 'unaddressed' | 'addressed' | 'resolved';
+
+const FILTERS: Array<{ id: ProblemFilter; label: string }> = [
+  { id: 'unaddressed', label: 'Unaddressed' },
+  { id: 'addressed', label: 'Addressed locally' },
+  { id: 'resolved', label: 'History' },
+];
+
+function severityLabel(severity: DynatraceProblemSeverity): string {
+  switch (severity) {
+    case 'MONITORING_UNAVAILABLE':
+      return 'Monitoring unavailable';
+    case 'RESOURCE_CONTENTION':
+      return 'Resource contention';
+    case 'CUSTOM_ALERT':
+      return 'Custom alert';
+    default:
+      return severity.charAt(0) + severity.slice(1).toLowerCase();
+  }
+}
+
+function severityTone(severity: DynatraceProblemSeverity): 'critical' | 'warning' | 'info' {
+  if (severity === 'INFO') return 'info';
+  if (
+    severity === 'AVAILABILITY' ||
+    severity === 'MONITORING_UNAVAILABLE' ||
+    severity === 'ERROR'
+  ) {
+    return 'critical';
+  }
+  return 'warning';
+}
+
+function formatDateTime(value: number | string | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function timeAgo(value: string | undefined): string {
+  if (!value) return 'Never';
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return 'Never';
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatDuration(problem: DynatraceProblemRecord): string {
+  const end = problem.status === 'OPEN' || problem.endTime < 0 ? Date.now() : problem.endTime;
+  const durationMs = Math.max(0, end - problem.startTime);
+  const minutes = Math.floor(durationMs / 60_000);
+  if (minutes < 60) return `${Math.max(1, minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+function isAddressed(state: DynatraceProblemStateRecord | undefined): boolean {
+  return state?.addressed === true;
+}
+
+function matchesFilter(
+  problem: DynatraceProblemRecord,
+  state: DynatraceProblemStateRecord | undefined,
+  filter: ProblemFilter,
+): boolean {
+  if (filter === 'resolved') return problem.status === 'CLOSED';
+  if (problem.status !== 'OPEN') return false;
+  return filter === 'addressed' ? isAddressed(state) : !isAddressed(state);
+}
+
+function searchableText(problem: DynatraceProblemRecord): string {
+  return [
+    problem.title,
+    problem.displayId,
+    problem.problemId,
+    problem.rootCauseName,
+    ...problem.affectedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
+    ...problem.impactedEntities.flatMap((entity) => [entity.name, entity.id, entity.type]),
+    ...problem.managementZones.map((zone) => zone.name),
+    ...(problem.alertingProfiles ?? []),
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+function getPrimaryEntity(problem: DynatraceProblemRecord): {
+  kind: 'Root cause' | 'Host' | 'Entity';
+  name: string;
+  additionalCount: number;
+} | null {
+  const entities = [...problem.affectedEntities, ...problem.impactedEntities];
+  const uniqueEntities = entities.filter(
+    (entity, index) => entities.findIndex((candidate) => candidate.id === entity.id) === index,
+  );
+  const rootCause = problem.rootCauseName.trim();
+  if (rootCause) {
+    const additionalCount = uniqueEntities.filter((entity) => entity.name !== rootCause).length;
+    return { kind: 'Root cause', name: rootCause, additionalCount };
+  }
+
+  const entity =
+    uniqueEntities.find((candidate) => candidate.name !== candidate.id) ?? uniqueEntities[0];
+  if (!entity) return null;
+  return {
+    kind: entity.type.toUpperCase().includes('HOST') ? 'Host' : 'Entity',
+    name: entity.name,
+    additionalCount: Math.max(0, uniqueEntities.length - 1),
+  };
+}
+
+function problemSort(a: DynatraceProblemRecord, b: DynatraceProblemRecord): number {
+  return b.startTime - a.startTime;
+}
+
+function EntityList({ entities }: Readonly<{ entities: DynatraceEntityRef[] }>) {
+  if (entities.length === 0) return <span className="dt-problems__muted">None reported</span>;
+  const visible = entities.slice(0, 8);
+  return (
+    <div className="dt-problems__entity-list">
+      {visible.map((entity) => (
+        <span className="dt-problems__entity" key={`${entity.type}:${entity.id}`}>
+          <span>{entity.name}</span>
+          <small>{entity.type.replaceAll('_', ' ')}</small>
+        </span>
+      ))}
+      {entities.length > visible.length && (
+        <span className="dt-problems__entity-more">+{entities.length - visible.length} more</span>
+      )}
+    </div>
+  );
+}
+
+function getLastSyncLabel(sync: DynatraceProblemSyncRecord | null): string {
+  if (sync?.state === 'disabled') return 'Sync disabled';
+  if (sync?.lastSuccessAt) return `Synced ${timeAgo(sync.lastSuccessAt)}`;
+  if (sync?.state === 'syncing') return 'Syncing now';
+  return 'Not yet synced';
+}
+
+function getAddressActionLabel(saving: boolean, addressed: boolean): string {
+  if (saving) return 'Saving…';
+  return addressed ? 'Return to queue' : 'Mark addressed locally';
+}
+
+type AlertingProfilePickerProps = {
+  profiles: string[];
+  selectedProfiles: string[];
+  filterConfigured: boolean;
+  canSave: boolean;
+  saving: boolean;
+  onChange: (profiles: string[]) => void;
+  onCancel: () => void;
+  onSave: () => Promise<boolean>;
+};
+
+function AlertingProfilePicker({
+  profiles,
+  selectedProfiles,
+  filterConfigured,
+  canSave,
+  saving,
+  onChange,
+  onCancel,
+  onSave,
+}: Readonly<AlertingProfilePickerProps>) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [position, setPosition] = useState({ left: 16, top: 80, width: 380 });
+  const selected = useMemo(() => new Set(selectedProfiles), [selectedProfiles]);
+  const visibleProfiles = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return normalizedQuery
+      ? profiles.filter((profile) => profile.toLowerCase().includes(normalizedQuery))
+      : profiles;
+  }, [profiles, query]);
+
+  const closeWithoutSaving = useCallback(() => {
+    setOpen(false);
+    setQuery('');
+    onCancelRef.current();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const width = Math.min(380, window.innerWidth - 32);
+      setPosition({
+        left: Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16)),
+        top: Math.min(rect.bottom + 8, window.innerHeight - 180),
+        width,
+      });
+    };
+    updatePosition();
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (triggerRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      closeWithoutSaving();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeWithoutSaving();
+    };
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeWithoutSaving, open]);
+
+  const toggleProfile = (profile: string) => {
+    const next = new Set(selected);
+    if (next.has(profile)) next.delete(profile);
+    else next.add(profile);
+    onChange(profiles.filter((candidate) => next.has(candidate)));
+  };
+
+  const triggerLabel = filterConfigured
+    ? `${selectedProfiles.length} retained`
+    : 'Choose retained profiles';
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className={`dt-problems__profile-trigger${filterConfigured ? ' dt-problems__profile-trigger--configured' : ''}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        disabled={profiles.length === 0}
+      >
+        <span>Alerting profiles</span>
+        <strong>{profiles.length === 0 ? 'Catalog loading' : triggerLabel}</strong>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="m7 10 5 5 5-5" stroke="currentColor" strokeWidth="2" />
+        </svg>
+      </button>
+      {open &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label="Alerting profile filter"
+            className="dt-profile-picker"
+            style={position}
+          >
+            <div className="dt-profile-picker__header">
+              <div>
+                <strong>Retained alerting profiles</strong>
+                <span>{profiles.length} available from Dynatrace</span>
+              </div>
+              <button type="button" onClick={closeWithoutSaving} aria-label="Close profile filter">
+                ×
+              </button>
+            </div>
+            <label className="dt-profile-picker__search">
+              <span className="sr-only">Search alerting profiles</span>
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Find an alerting profile"
+                autoFocus
+              />
+            </label>
+            <div className="dt-profile-picker__bulk-actions">
+              <button type="button" onClick={() => onChange(profiles)} disabled={!canSave}>
+                Select all
+              </button>
+              <button type="button" onClick={() => onChange([])} disabled={!canSave}>
+                Clear
+              </button>
+              <span>{selectedProfiles.length} selected</span>
+            </div>
+            <div className="dt-profile-picker__list" role="group" aria-label="Alerting profiles">
+              {visibleProfiles.map((profile) => (
+                <label className="dt-profile-picker__option" key={profile}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(profile)}
+                    onChange={() => toggleProfile(profile)}
+                    disabled={!canSave}
+                  />
+                  <span>{profile}</span>
+                </label>
+              ))}
+              {visibleProfiles.length === 0 && (
+                <div className="dt-profile-picker__empty">No profiles match this search.</div>
+              )}
+            </div>
+            <div className="dt-profile-picker__retention-note">
+              {canSave
+                ? 'Saving removes excluded problem records, local dispositions, and notes from Relay.'
+                : 'Profile retention is managed on the Relay server.'}
+            </div>
+            {canSave && (
+              <div className="dt-profile-picker__footer">
+                <button type="button" onClick={closeWithoutSaving} disabled={saving}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="dt-profile-picker__save"
+                  disabled={selectedProfiles.length === 0 || saving}
+                  onClick={() => void onSave().then((saved) => saved && setOpen(false))}
+                >
+                  {saving ? 'Saving and pruning…' : 'Save retention filter'}
+                </button>
+              </div>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+function getDispositionDetail(
+  addressed: boolean,
+  noteRequirementMet: boolean,
+  state: DynatraceProblemStateRecord | undefined,
+  resolved: boolean,
+): string {
+  if (addressed) {
+    return `${state?.addressedBy || 'Relay workstation'} · ${formatDateTime(state?.addressedAt)}`;
+  }
+  if (resolved) {
+    return 'Dynatrace resolved this problem before Relay recorded a local addressed status.';
+  }
+  if (noteRequirementMet) {
+    return 'A NOC note is ready. This status stays in Relay and never changes Dynatrace.';
+  }
+  return 'Add a NOC note below before marking this problem addressed locally.';
+}
+
+type ProblemQueueProps = {
+  problems: DynatraceProblemRecord[];
+  states: Map<string, DynatraceProblemStateRecord>;
+  selectedProblemId: string | null;
+  sync: DynatraceProblemSyncRecord | null;
+  totalProblemCount: number;
+  historyMode: boolean;
+  onSelect: (problemId: string) => void;
+};
+
+type ProblemQueueRowProps = {
+  problems: DynatraceProblemRecord[];
+  states: Map<string, DynatraceProblemStateRecord>;
+  selectedProblemId: string | null;
+  onSelect: (problemId: string) => void;
+};
+
+const PROBLEM_QUEUE_ROW_HEIGHT = 124;
+
+const ProblemQueueRow = memo(
+  ({ index, style, ariaAttributes, ...data }: RowComponentProps<ProblemQueueRowProps>) => {
+    const { problems, states, selectedProblemId, onSelect } = data;
+    const problem = problems[index];
+    if (!problem) return null;
+    const addressed = isAddressed(states.get(problem.problemId));
+    const selected = problem.problemId === selectedProblemId;
+    const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
+    const statusLabel = problem.status === 'CLOSED' ? 'Resolved' : severityLabel(problem.severity);
+    const primaryEntity = getPrimaryEntity(problem);
+    const alertingProfile = problem.alertingProfiles?.[0];
+
+    return (
+      <div style={style} {...ariaAttributes}>
+        <button
+          type="button"
+          className={`dt-problem-row${selected ? ' dt-problem-row--selected' : ''}`}
+          onClick={() => onSelect(problem.problemId)}
+          aria-pressed={selected}
+        >
+          <span className={`dt-problem-row__signal dt-problem-row__signal--${tone}`} />
+          <span className="dt-problem-row__content">
+            <span className="dt-problem-row__topline">
+              <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
+              {addressed && (
+                <span className="dt-problem-badge dt-problem-badge--addressed">
+                  Addressed locally
+                </span>
+              )}
+              <span className="dt-problem-row__time">{formatDuration(problem)}</span>
+            </span>
+            <span className="dt-problem-row__title">{problem.title}</span>
+            {primaryEntity && (
+              <span className="dt-problem-row__entity-context">
+                <span>{primaryEntity.kind}</span>
+                <strong title={primaryEntity.name}>{primaryEntity.name}</strong>
+                {primaryEntity.additionalCount > 0 && (
+                  <small>+{primaryEntity.additionalCount}</small>
+                )}
+              </span>
+            )}
+            <span className="dt-problem-row__meta">
+              <span>{problem.displayId || problem.problemId}</span>
+              <span>{alertingProfile || problem.impactLevel.toLowerCase()}</span>
+              <span>{formatDateTime(problem.startTime)}</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    );
+  },
+);
+
+function ProblemQueue({
+  problems,
+  states,
+  selectedProblemId,
+  sync,
+  totalProblemCount,
+  historyMode,
+  onSelect,
+}: Readonly<ProblemQueueProps>) {
+  const rowProps = useMemo<ProblemQueueRowProps>(
+    () => ({ problems, states, selectedProblemId, onSelect }),
+    [onSelect, problems, selectedProblemId, states],
+  );
+  let queueContents: React.ReactNode;
+  if (problems.length === 0) {
+    const integrationDisabled = sync?.state === 'disabled' && totalProblemCount === 0;
+    let emptyTitle = 'No problems match this queue';
+    let emptyDescription = 'Try another filter or clear the search.';
+    if (integrationDisabled) {
+      emptyTitle = 'Dynatrace Problems is not configured';
+      emptyDescription = 'Configure the read-only integration in Settings on the Relay server.';
+    } else if (historyMode) {
+      emptyTitle = 'No resolved problems in the one-year history';
+      emptyDescription =
+        'Resolved problems will remain here with their local notes and disposition.';
+    }
+    queueContents = (
+      <div className="dt-problems__empty">
+        <svg
+          width="40"
+          height="40"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden="true"
+        >
+          <path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z" />
+          <path d="m9 12 2 2 4-4" />
+        </svg>
+        <strong>{emptyTitle}</strong>
+        <span>{emptyDescription}</span>
+      </div>
+    );
+  } else {
+    queueContents = (
+      <div className="dt-problems__queue-list">
+        <AutoSizer
+          renderProp={({ height, width }) => (
+            <List
+              style={{ height: height ?? 0, width: width ?? 0 }}
+              rowCount={problems.length}
+              rowHeight={PROBLEM_QUEUE_ROW_HEIGHT}
+              rowComponent={ProblemQueueRow}
+              rowProps={rowProps}
+              overscanCount={6}
+            />
+          )}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <section
+      className="dt-problems__queue"
+      aria-label={historyMode ? 'Dynatrace problem history' : 'Dynatrace problem queue'}
+    >
+      <div className="dt-problems__section-heading">
+        <div className="dt-problems__section-heading-copy">
+          <span>{historyMode ? 'History' : 'Problem queue'}</span>
+          {historyMode && <small>Resolved problems are retained for one year.</small>}
+        </div>
+        <span>{problems.length} shown</span>
+      </div>
+      {queueContents}
+    </section>
+  );
+}
+
+type ProblemDetailProps = {
+  problem: DynatraceProblemRecord | undefined;
+  state: DynatraceProblemStateRecord | undefined;
+  notes: DynatraceProblemNoteRecord[];
+  noteDraft: string;
+  online: boolean;
+  savingAction: 'address' | 'note' | 'refresh' | 'profile' | null;
+  onNoteDraftChange: (value: string) => void;
+  onSaveNote: () => void;
+  onAddressToggle: () => void;
+};
+
+function ProblemDetail({
+  problem,
+  state,
+  notes,
+  noteDraft,
+  online,
+  savingAction,
+  onNoteDraftChange,
+  onSaveNote,
+  onAddressToggle,
+}: Readonly<ProblemDetailProps>) {
+  if (!problem) {
+    return (
+      <section className="dt-problems__detail" aria-label="Selected problem details">
+        <div className="dt-problems__empty dt-problems__empty--detail">
+          <strong>Select a problem</strong>
+          <span>Problem context, local disposition, and NOC notes will appear here.</span>
+        </div>
+      </section>
+    );
+  }
+
+  const addressed = isAddressed(state);
+  const noteRequirementMet = notes.length > 0 || noteDraft.trim().length > 0;
+  const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
+  const statusLabel =
+    problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
+  const resolved = problem.status === 'CLOSED';
+  const dispositionDetail = getDispositionDetail(addressed, noteRequirementMet, state, resolved);
+  const addressActionLabel = getAddressActionLabel(savingAction === 'address', addressed);
+  let dispositionTitle = 'Needs local response';
+  if (addressed) dispositionTitle = 'Addressed locally';
+  else if (resolved) dispositionTitle = 'No local disposition recorded';
+
+  return (
+    <section className="dt-problems__detail" aria-label="Selected problem details">
+      <div className="dt-problem-detail">
+        <header className="dt-problem-detail__header">
+          <div className="dt-problem-detail__badges">
+            <span className={`dt-problem-badge dt-problem-badge--${tone}`}>{statusLabel}</span>
+            {addressed && (
+              <span className="dt-problem-badge dt-problem-badge--addressed">
+                Addressed locally
+              </span>
+            )}
+          </div>
+          <h3>{problem.title}</h3>
+          <div className="dt-problem-detail__identity">
+            <span>{problem.displayId || problem.problemId}</span>
+            <span>Started {formatDateTime(problem.startTime)}</span>
+            <span>Duration {formatDuration(problem)}</span>
+          </div>
+        </header>
+
+        <div className="dt-problem-detail__facts">
+          <div>
+            <span>Impact</span>
+            <strong>{problem.impactLevel.toLowerCase()}</strong>
+          </div>
+          <div>
+            <span>Root cause</span>
+            <strong>{problem.rootCauseName || 'Not identified'}</strong>
+          </div>
+          <div>
+            <span>Management zones</span>
+            <strong>{problem.managementZones.map((zone) => zone.name).join(', ') || 'None'}</strong>
+          </div>
+          <div>
+            <span>Alerting profile</span>
+            <strong title={(problem.alertingProfiles ?? []).join(', ')}>
+              {(problem.alertingProfiles ?? []).join(', ') || 'Not assigned'}
+            </strong>
+          </div>
+        </div>
+
+        <div className="dt-problem-detail__section">
+          <div className="dt-problem-detail__section-title">Affected entities</div>
+          <EntityList entities={problem.affectedEntities} />
+        </div>
+
+        <div className="dt-problem-detail__response">
+          <div className="dt-problem-detail__response-copy">
+            <span>Local NOC disposition</span>
+            <strong>{dispositionTitle}</strong>
+            <small id="dt-problem-note-requirement">{dispositionDetail}</small>
+          </div>
+          {!resolved && (
+            <button
+              type="button"
+              className={`dt-problems__primary-action${
+                addressed ? ' dt-problems__primary-action--secondary' : ''
+              }`}
+              onClick={onAddressToggle}
+              disabled={!online || savingAction !== null || (!addressed && !noteRequirementMet)}
+              aria-describedby={!addressed ? 'dt-problem-note-requirement' : undefined}
+            >
+              {addressActionLabel}
+            </button>
+          )}
+        </div>
+
+        <div className="dt-problem-detail__section dt-problem-detail__notes">
+          <div className="dt-problem-detail__section-title">
+            <span>NOC notes</span>
+            <span>{notes.length}</span>
+          </div>
+          <label className="dt-problem-note-composer">
+            <span>Add a note</span>
+            <textarea
+              value={noteDraft}
+              onChange={(event) => onNoteDraftChange(event.target.value)}
+              placeholder="Record investigation details, mitigation, ownership, or next steps"
+              maxLength={5_000}
+              disabled={!online || savingAction !== null}
+            />
+          </label>
+          <div className="dt-problem-note-composer__actions">
+            <span>{noteDraft.length.toLocaleString()} / 5,000</span>
+            <button
+              type="button"
+              onClick={onSaveNote}
+              disabled={!online || !noteDraft.trim() || savingAction !== null}
+            >
+              {savingAction === 'note' ? 'Adding…' : 'Add note'}
+            </button>
+          </div>
+          {!online && (
+            <div className="dt-problems__offline-note">
+              Reconnect to the Relay server to change local status or add notes.
+            </div>
+          )}
+          <div className="dt-problem-notes" aria-live="polite">
+            {notes.length === 0 ? (
+              <div className="dt-problem-notes__empty">
+                No local notes yet. Add context that will help the next operator.
+              </div>
+            ) : (
+              [...notes].reverse().map((note) => (
+                <article className="dt-problem-note" key={note.id}>
+                  <div className="dt-problem-note__meta">
+                    <strong>{note.author}</strong>
+                    <span>{formatDateTime(note.created)}</span>
+                  </div>
+                  <p>{note.note}</p>
+                </article>
+              ))
+            )}
+          </div>
+        </div>
+
+        <footer className="dt-problem-detail__footer">
+          <span>Dynatrace ID {problem.problemId}</span>
+          <button
+            type="button"
+            onClick={() => void globalThis.api?.openExternal(problem.environmentUrl)}
+          >
+            Open Dynatrace ↗
+          </button>
+        </footer>
+      </div>
+    </section>
+  );
+}
+
+export const DynatraceProblemsTab: React.FC<{
+  relayMode?: PublicRelayConfig['mode'];
+}> = ({ relayMode }) => {
+  const { showToast } = useToast();
+  const {
+    problems,
+    stateByProblemId,
+    notesByProblemId,
+    sync,
+    loading,
+    error,
+    setAddressed,
+    addNote,
+    refetch,
+  } = useDynatraceProblems();
+  const [filter, setFilter] = useState<ProblemFilter>('unaddressed');
+  const [query, setQuery] = useState('');
+  const [profileDraft, setProfileDraft] = useState<string[]>([]);
+  const [profileDraftDirty, setProfileDraftDirty] = useState(false);
+  const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [workstationName, setWorkstationName] = useState('Relay workstation');
+  const [savingAction, setSavingAction] = useState<
+    'address' | 'note' | 'refresh' | 'profile' | null
+  >(null);
+  const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
+
+  useEffect(() => onConnectionStateChange(setConnectionState), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void globalThis.api
+      ?.getClientHostname()
+      .then((hostname) => {
+        if (!cancelled && hostname?.trim()) setWorkstationName(hostname.trim());
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const counts = useMemo(() => {
+    let unaddressed = 0;
+    let addressed = 0;
+    let resolved = 0;
+    for (const problem of problems) {
+      if (problem.status === 'CLOSED') resolved += 1;
+      else if (isAddressed(stateByProblemId.get(problem.problemId))) addressed += 1;
+      else unaddressed += 1;
+    }
+    return { unaddressed, addressed, resolved };
+  }, [problems, stateByProblemId]);
+
+  const alertingProfiles = useMemo(() => {
+    const profiles = [
+      ...(sync?.availableAlertingProfiles ?? []),
+      ...(sync?.selectedAlertingProfiles ?? []),
+      ...problems.flatMap((problem) => problem.alertingProfiles ?? []),
+    ];
+    return [...new Set(profiles)].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+  }, [problems, sync?.availableAlertingProfiles, sync?.selectedAlertingProfiles]);
+  const profileFilterConfigured = sync?.profileFilterConfigured === true;
+  const savedProfiles = useMemo(
+    () => (profileFilterConfigured ? (sync?.selectedAlertingProfiles ?? []) : alertingProfiles),
+    [alertingProfiles, profileFilterConfigured, sync?.selectedAlertingProfiles],
+  );
+
+  useEffect(() => {
+    if (!profileDraftDirty) setProfileDraft(savedProfiles);
+  }, [profileDraftDirty, savedProfiles]);
+
+  const filteredProblems = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return problems
+      .filter((problem) => matchesFilter(problem, stateByProblemId.get(problem.problemId), filter))
+      .filter((problem) => {
+        if (!profileFilterConfigured && !profileDraftDirty) return true;
+        return problem.alertingProfiles.some((profile) => profileDraft.includes(profile));
+      })
+      .filter((problem) => !normalizedQuery || searchableText(problem).includes(normalizedQuery))
+      .sort(problemSort);
+  }, [
+    filter,
+    problems,
+    profileDraft,
+    profileDraftDirty,
+    profileFilterConfigured,
+    query,
+    stateByProblemId,
+  ]);
+
+  useEffect(() => {
+    if (filteredProblems.some((problem) => problem.problemId === selectedProblemId)) return;
+    setSelectedProblemId(filteredProblems[0]?.problemId ?? null);
+  }, [filteredProblems, selectedProblemId]);
+
+  useEffect(() => setNoteDraft(''), [selectedProblemId]);
+
+  const selectedProblem = problems.find((problem) => problem.problemId === selectedProblemId);
+  const selectedState = selectedProblem
+    ? stateByProblemId.get(selectedProblem.problemId)
+    : undefined;
+  const selectedNotes = selectedProblem
+    ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
+    : [];
+  const online = connectionState === 'online';
+
+  const handleSaveNote = async () => {
+    if (!selectedProblem || !noteDraft.trim() || savingAction) return;
+    setSavingAction('note');
+    try {
+      await addNote(selectedProblem.problemId, noteDraft, workstationName);
+      setNoteDraft('');
+      showToast('NOC note added', 'success');
+    } catch (saveError) {
+      showToast(saveError instanceof Error ? saveError.message : 'Failed to add note', 'error');
+    } finally {
+      setSavingAction(null);
+    }
+  };
+
+  const handleAddressToggle = async () => {
+    if (!selectedProblem || savingAction) return;
+    const nextAddressed = !isAddressed(selectedState);
+    if (nextAddressed && selectedNotes.length === 0 && !noteDraft.trim()) {
+      showToast('Add a NOC note before marking this problem addressed locally.', 'warning');
+      return;
+    }
+    setSavingAction('address');
+    try {
+      if (nextAddressed && noteDraft.trim()) {
+        await addNote(selectedProblem.problemId, noteDraft, workstationName);
+        setNoteDraft('');
+      }
+      await setAddressed(selectedProblem.problemId, nextAddressed, workstationName);
+      showToast(
+        nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
+        'success',
+      );
+    } catch (saveError) {
+      showToast(
+        saveError instanceof Error ? saveError.message : 'Failed to update local problem state',
+        'error',
+      );
+    } finally {
+      setSavingAction(null);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (savingAction) return;
+    setSavingAction('refresh');
+    try {
+      if (relayMode === 'server' && sync?.state !== 'disabled') {
+        const result = await globalThis.api?.syncDynatraceProblems();
+        if (result && !result.success) throw new Error(result.error || 'Dynatrace sync failed.');
+      }
+      await refetch();
+    } catch (refreshError) {
+      showToast(
+        refreshError instanceof Error ? refreshError.message : 'Failed to refresh problems',
+        'error',
+      );
+    } finally {
+      setSavingAction(null);
+    }
+  };
+
+  const handleProfileDraftChange = (profiles: string[]) => {
+    setProfileDraft(profiles);
+    setProfileDraftDirty(true);
+  };
+
+  const handleProfileDraftCancel = () => {
+    setProfileDraft(savedProfiles);
+    setProfileDraftDirty(false);
+  };
+
+  const handleSaveProfileFilter = async (): Promise<boolean> => {
+    if (relayMode !== 'server') {
+      showToast('Save the retained alerting profiles on the Relay server.', 'warning');
+      return false;
+    }
+    if (profileDraft.length === 0 || savingAction) return false;
+    setSavingAction('profile');
+    try {
+      const result = await globalThis.api?.saveDynatraceProblemProfileFilter(profileDraft);
+      if (!result?.success || !result.data) {
+        throw new Error(result?.error || 'Could not save the alerting profile filter.');
+      }
+      setProfileDraftDirty(false);
+      await refetch();
+      showToast(
+        `Retention filter saved · ${result.data.count.toLocaleString()} matching problems`,
+        'success',
+      );
+      return true;
+    } catch (saveError) {
+      showToast(
+        saveError instanceof Error ? saveError.message : 'Could not save the profile filter',
+        'error',
+      );
+      return false;
+    } finally {
+      setSavingAction(null);
+    }
+  };
+
+  if (loading && problems.length === 0) return <TabFallback />;
+
+  const lastSyncLabel = getLastSyncLabel(sync);
+
+  return (
+    <div className="dt-problems">
+      <div className="dt-problems__header">
+        <div>
+          <div className="dt-problems__context">Dynatrace Problems</div>
+          <h2 className="dt-problems__title">Local response queue</h2>
+        </div>
+        <div className="dt-problems__sync-meta">
+          <span
+            className={`dt-problems__sync-state dt-problems__sync-state--${sync?.state ?? 'disabled'}`}
+          >
+            {lastSyncLabel}
+          </span>
+          <button
+            type="button"
+            className="dt-problems__refresh"
+            onClick={() => void handleRefresh()}
+            disabled={savingAction === 'refresh'}
+            aria-label="Refresh Dynatrace Problems"
+          >
+            <svg
+              className={savingAction === 'refresh' ? 'dt-problems__refresh-icon--spinning' : ''}
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="dt-problems__toolbar">
+        <div className="dt-problems__filters" role="tablist" aria-label="Problem queue filters">
+          {FILTERS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === item.id}
+              className={`dt-problems__filter${filter === item.id ? ' dt-problems__filter--active' : ''}`}
+              onClick={() => setFilter(item.id)}
+            >
+              <span>{item.label}</span>
+              <span className="dt-problems__filter-count">{counts[item.id]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="dt-problems__tools">
+          <AlertingProfilePicker
+            profiles={alertingProfiles}
+            selectedProfiles={profileDraft}
+            filterConfigured={profileFilterConfigured}
+            canSave={relayMode === 'server'}
+            saving={savingAction === 'profile'}
+            onChange={handleProfileDraftChange}
+            onCancel={handleProfileDraftCancel}
+            onSave={handleSaveProfileFilter}
+          />
+          <label className="dt-problems__search">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <path d="m21 21-4.35-4.35" />
+            </svg>
+            <span className="sr-only">Search problems</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search title, ID, entity, profile, or zone"
+            />
+          </label>
+        </div>
+      </div>
+
+      {sync?.state === 'error' && (
+        <div className="dt-problems__notice dt-problems__notice--error" role="alert">
+          <strong>Dynatrace sync needs attention.</strong>
+          <span>{sync.error || 'Relay could not refresh the problem feed.'}</span>
+        </div>
+      )}
+      {error && (
+        <div className="dt-problems__notice dt-problems__notice--error" role="alert">
+          <strong>Relay could not load the complete local problem queue.</strong>
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="dt-problems__workspace">
+        <ProblemQueue
+          problems={filteredProblems}
+          states={stateByProblemId}
+          selectedProblemId={selectedProblemId}
+          sync={sync}
+          totalProblemCount={problems.length}
+          historyMode={filter === 'resolved'}
+          onSelect={setSelectedProblemId}
+        />
+        <ProblemDetail
+          problem={selectedProblem}
+          state={selectedState}
+          notes={selectedNotes}
+          noteDraft={noteDraft}
+          online={online}
+          savingAction={savingAction}
+          onNoteDraftChange={setNoteDraft}
+          onSaveNote={() => void handleSaveNote()}
+          onAddressToggle={() => void handleAddressToggle()}
+        />
+      </div>
+
+      <StatusBar
+        left={<StatusBarLive />}
+        center={<span>{lastSyncLabel}</span>}
+        right={<span>{counts.unaddressed} need local response</span>}
+      />
+    </div>
+  );
+};

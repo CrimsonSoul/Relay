@@ -61,7 +61,7 @@ describe('SetupScreen', () => {
   it('renders mode selection screen initially', () => {
     render(<SetupScreen onComplete={onComplete} />);
     expect(screen.getByText('Relay')).toBeInTheDocument();
-    expect(screen.getByText('How will this instance be used?')).toBeInTheDocument();
+    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
     expect(screen.getByText('Server')).toBeInTheDocument();
     expect(screen.getByText('Client')).toBeInTheDocument();
   });
@@ -420,7 +420,7 @@ describe('SetupScreen', () => {
     fireEvent.click(screen.getByText('Server'));
     expect(screen.getByText('Configure Relay')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Back'));
-    expect(screen.getByText('How will this instance be used?')).toBeInTheDocument();
+    expect(screen.getByText("Choose this station's role")).toBeInTheDocument();
   });
 
   it('clears error when going back', () => {

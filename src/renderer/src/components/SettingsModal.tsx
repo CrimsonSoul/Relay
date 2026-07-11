@@ -3,6 +3,11 @@ import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
+  getDynatraceApiTokenError,
+  getDynatraceEnvironmentUrlError,
+  type DynatraceProblemsPublicSettings,
+} from '@shared/dynatraceProblems';
+import {
   getDynatraceStartUrlError,
   type DynatraceDashboardInput,
   type DynatraceDashboardState,
@@ -44,6 +49,7 @@ type Props = {
   onOpenDataManager?: () => void;
   onReconfigure?: () => void;
   dynatrace?: DynatraceSettingsProps;
+  presentation?: 'modal' | 'page';
 };
 
 type PbConfig = PublicRelayConfig | null;
@@ -61,6 +67,290 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   'load-failed': 'Load failed',
   closed: 'Closed',
 };
+
+type SettingsSectionId = 'appearance' | 'connection' | 'dynatrace';
+
+const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
+  { id: 'appearance', label: 'Appearance' },
+  { id: 'connection', label: 'Relay data' },
+  { id: 'dynatrace', label: 'Dynatrace' },
+];
+
+type SettingsShellProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  presentation: 'modal' | 'page';
+  activeSection: SettingsSectionId;
+  onSectionChange: (section: SettingsSectionId) => void;
+  children: React.ReactNode;
+};
+
+function SettingsShell({
+  isOpen,
+  onClose,
+  presentation,
+  activeSection,
+  onSectionChange,
+  children,
+}: Readonly<SettingsShellProps>) {
+  if (!isOpen) return null;
+
+  if (presentation === 'modal') {
+    return (
+      <Modal isOpen onClose={onClose} title="Settings" width="420px">
+        {children}
+      </Modal>
+    );
+  }
+
+  return (
+    <section className="settings-page" aria-labelledby="settings-page-title">
+      <header className="settings-page__header">
+        <div>
+          <div className="settings-page__context">Settings</div>
+          <h1 id="settings-page-title" className="settings-page__title">
+            Relay configuration
+          </h1>
+          <p className="settings-page__description">
+            Manage this workstation, its shared data connection, and Dynatrace access.
+          </p>
+        </div>
+      </header>
+
+      <div className="settings-page__tabs" aria-label="Settings sections" role="tablist">
+        {SETTINGS_SECTIONS.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            role="tab"
+            aria-selected={activeSection === section.id}
+            className={`settings-page__tab${
+              activeSection === section.id ? ' settings-page__tab--active' : ''
+            }`}
+            onClick={() => onSectionChange(section.id)}
+          >
+            {section.label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="settings-page__workspace"
+        role="tabpanel"
+        aria-label={SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label}
+      >
+        {children}
+      </div>
+    </section>
+  );
+}
+
+function DynatraceProblemsSettingsSection() {
+  const [settings, setSettings] = useState<DynatraceProblemsPublicSettings>({
+    configured: false,
+    environmentUrl: '',
+    profileFilterConfigured: false,
+    selectedAlertingProfiles: [],
+  });
+  const [environmentUrl, setEnvironmentUrl] = useState('');
+  const [apiToken, setApiToken] = useState('');
+  const [busy, setBusy] = useState<'load' | 'test' | 'save' | 'clear' | null>('load');
+  const [feedback, setFeedback] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void globalThis.api
+      ?.getDynatraceProblemsSettings?.()
+      .then((loaded) => {
+        if (cancelled) return;
+        setSettings(loaded);
+        setEnvironmentUrl(loaded.environmentUrl);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFeedback({ type: 'error', message: 'Could not load Dynatrace Problems settings.' });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBusy(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const validate = () => {
+    const urlError = getDynatraceEnvironmentUrlError(environmentUrl);
+    if (urlError) return urlError;
+    if (!settings.configured || apiToken.trim()) return getDynatraceApiTokenError(apiToken);
+    return null;
+  };
+
+  const handleTest = async () => {
+    const validation = validate();
+    if (validation) {
+      setFeedback({ type: 'error', message: validation });
+      return;
+    }
+    setBusy('test');
+    setFeedback({ type: 'info', message: 'Testing read-only Grail Problems access…' });
+    try {
+      const result = await globalThis.api?.testDynatraceProblemsSettings?.({
+        environmentUrl,
+        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
+      });
+      if (!result?.success || !result.data) {
+        throw new Error(result?.error || 'Dynatrace connection test failed.');
+      }
+      setFeedback({
+        type: 'success',
+        message: `Connected with platform-token access. ${result.data.problemCount.toLocaleString()} problems found in the last two hours.`,
+      });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Dynatrace connection test failed.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleSave = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    const validation = validate();
+    if (validation) {
+      setFeedback({ type: 'error', message: validation });
+      return;
+    }
+    setBusy('save');
+    setFeedback(null);
+    try {
+      const result = await globalThis.api?.saveDynatraceProblemsSettings?.({
+        environmentUrl,
+        ...(apiToken.trim() ? { apiToken: apiToken.trim() } : {}),
+      });
+      if (!result?.success || !result.data) {
+        throw new Error(result?.error || 'Could not save Dynatrace Problems settings.');
+      }
+      setSettings(result.data);
+      setEnvironmentUrl(result.data.environmentUrl);
+      setApiToken('');
+      setFeedback({
+        type: 'success',
+        message: 'Saved. The Relay server will refresh Dynatrace Problems every minute.',
+      });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not save Dynatrace settings.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleClear = async () => {
+    setBusy('clear');
+    setFeedback(null);
+    try {
+      const result = await globalThis.api?.clearDynatraceProblemsSettings?.();
+      if (!result?.success) throw new Error(result?.error || 'Could not remove configuration.');
+      setSettings({
+        configured: false,
+        environmentUrl: '',
+        profileFilterConfigured: false,
+        selectedAlertingProfiles: [],
+      });
+      setEnvironmentUrl('');
+      setApiToken('');
+      setFeedback({ type: 'success', message: 'Dynatrace Problems sync disabled.' });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Could not remove configuration.',
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const disabled = busy !== null;
+  let saveButtonLabel = 'Enable sync';
+  if (settings.configured) saveButtonLabel = 'Save changes';
+  if (busy === 'save') saveButtonLabel = 'Saving…';
+
+  return (
+    <div className="settings-section">
+      <div className="settings-section-heading">Dynatrace Problems</div>
+      <div className="settings-data-path">
+        Server-only Grail access. The platform token is encrypted locally and is never sent to Relay
+        clients. Requires storage:events:read and storage:buckets:read.
+      </div>
+      <form className="dynatrace-dashboard-form" onSubmit={(event) => void handleSave(event)}>
+        <label className="dynatrace-dashboard-field">
+          <span className="dynatrace-dashboard-label">Environment URL</span>
+          <input
+            className="tactile-input"
+            value={environmentUrl}
+            placeholder="https://abc123.apps.dynatrace.com"
+            spellCheck={false}
+            autoCapitalize="none"
+            disabled={disabled}
+            onChange={(event) => {
+              setEnvironmentUrl(event.target.value);
+              setFeedback(null);
+            }}
+          />
+        </label>
+        <label className="dynatrace-dashboard-field">
+          <span className="dynatrace-dashboard-label">Platform token · read-only Grail access</span>
+          <input
+            className="tactile-input"
+            type="password"
+            value={apiToken}
+            placeholder={
+              settings.configured
+                ? 'Leave blank to keep the stored platform token'
+                : 'Paste platform token'
+            }
+            autoComplete="new-password"
+            spellCheck={false}
+            disabled={disabled}
+            onChange={(event) => {
+              setApiToken(event.target.value);
+              setFeedback(null);
+            }}
+          />
+        </label>
+        {feedback && (
+          <div
+            className={`dynatrace-problems-settings-feedback dynatrace-problems-settings-feedback--${feedback.type}`}
+            role={feedback.type === 'error' ? 'alert' : 'status'}
+          >
+            {feedback.message}
+          </div>
+        )}
+        <div className="settings-button-row">
+          <TactileButton type="submit" variant="primary" disabled={disabled}>
+            {saveButtonLabel}
+          </TactileButton>
+          <TactileButton type="button" disabled={disabled} onClick={() => void handleTest()}>
+            {busy === 'test' ? 'Testing…' : 'Test access'}
+          </TactileButton>
+          {settings.configured && (
+            <TactileButton type="button" disabled={disabled} onClick={() => void handleClear()}>
+              {busy === 'clear' ? 'Disabling…' : 'Disable'}
+            </TactileButton>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
 
 function getPocketBaseIp(config: PublicRelayConfig): string | null {
   if (config.mode === 'server') {
@@ -317,7 +607,9 @@ export const SettingsModal: React.FC<Props> = ({
   onOpenDataManager,
   onReconfigure,
   dynatrace,
+  presentation = 'modal',
 }) => {
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
   const [pbConfigLoading, setPbConfigLoading] = useState(false);
@@ -477,249 +769,296 @@ export const SettingsModal: React.FC<Props> = ({
     await globalThis.api?.writeClipboard(text);
   };
 
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Settings" width="420px">
-      <div className="settings-body">
-        <div className="settings-section">
-          <div className="settings-section-heading">Accent Color</div>
-          <div className="accent-picker" role="radiogroup" aria-label="Accent color">
-            {ACCENT_SCHEMES.map((scheme) => (
-              <button
-                key={scheme.id}
-                type="button"
-                role="radio"
-                aria-checked={accent === scheme.id}
-                title={scheme.label}
-                className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
-                style={{ ['--swatch' as string]: scheme.swatch }}
-                onClick={() => handleAccentSelect(scheme.id)}
-              >
-                <span className="accent-picker-swatch-label">{scheme.label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="custom-accent-control">
-            <label className="custom-accent-label" htmlFor="custom-accent-input">
-              Custom
-            </label>
-            {savedCustomAccents.length > 0 && (
-              <div
-                className="custom-accent-saved"
-                role="radiogroup"
-                aria-label="Saved custom accent colors"
-              >
-                {savedCustomAccents.map((hex, index) => {
-                  const isActive = accent === 'custom' && activeCustomAccent === hex;
-                  return (
-                    <div className="custom-accent-saved-item" key={hex}>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={isActive}
-                        aria-label={`Custom accent ${hex}`}
-                        title={`Custom ${hex}`}
-                        className={`accent-picker-swatch custom-accent-saved-swatch${isActive ? ' accent-picker-swatch--active' : ''}`}
-                        style={{ ['--swatch' as string]: hex }}
-                        onClick={() => handleSavedCustomAccentSelect(hex)}
-                      >
-                        <span className="accent-picker-swatch-label">Custom {index + 1}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="custom-accent-remove"
-                        aria-label={`Remove custom accent ${hex}`}
-                        title={`Remove ${hex}`}
-                        onClick={() => handleCustomAccentRemove(hex)}
-                      >
-                        x
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="custom-accent-row">
-              <input
-                type="color"
-                className="custom-accent-color-input"
-                value={customAccentPreview}
-                aria-label="Pick custom accent color"
-                onChange={(event) => setCustomAccentInput(event.target.value)}
-              />
-              <input
-                id="custom-accent-input"
-                type="text"
-                className="custom-accent-hex-input"
-                value={customAccentInput}
-                placeholder={CUSTOM_ACCENT_EXAMPLE}
-                aria-label="Custom accent hex code"
-                aria-invalid={customAccentInvalid}
-                aria-describedby={customAccentInvalid ? 'custom-accent-error' : undefined}
-                spellCheck={false}
-                onChange={(event) => setCustomAccentInput(event.target.value)}
-              />
-              <TactileButton
-                type="button"
-                size="sm"
-                variant="primary"
-                className="custom-accent-save-button"
-                aria-label="Save custom accent color"
-                disabled={!normalizedCustomAccent}
-                onClick={handleCustomAccentSave}
-              >
-                Save
-              </TactileButton>
-            </div>
-            {customAccentInvalid && (
-              <div id="custom-accent-error" className="settings-field-error">
-                Enter a 3 or 6 digit hex color.
-              </div>
-            )}
-          </div>
-          <div className="accent-schedule-control">
-            <div className="accent-schedule-header">
-              <div className="accent-schedule-heading-group">
-                <div className="custom-accent-label">Accent Schedule</div>
-                <div className="accent-schedule-description">Fixed Central Time shift windows.</div>
-              </div>
-              <button
-                type="button"
-                className={`settings-inline-action accent-schedule-toggle${
-                  accentSchedule.enabled ? ' accent-schedule-toggle--active' : ''
-                }`}
-                aria-label="Auto accent schedule"
-                aria-pressed={accentSchedule.enabled}
-                onClick={handleAccentScheduleToggle}
-              >
-                {accentSchedule.enabled ? 'On' : 'Off'}
-              </button>
-            </div>
-            <div className="accent-schedule-list">
-              {ACCENT_SCHEDULE_SLOTS.map((slot) => {
-                const selectedChoice = accentSchedule.slots[slot.id];
+  const appearanceSection = (
+    <div className="settings-section settings-section--appearance">
+      <div className="settings-section-heading">Appearance</div>
+      <div className="settings-appearance-accent">
+        <div className="settings-description">
+          Choose the signal color used for navigation, focus, and primary actions.
+        </div>
+        <div className="settings-subsection-label">Accent color</div>
+        <div className="accent-picker" role="radiogroup" aria-label="Accent color">
+          {ACCENT_SCHEMES.map((scheme) => (
+            <button
+              key={scheme.id}
+              type="button"
+              role="radio"
+              aria-checked={accent === scheme.id}
+              title={scheme.label}
+              className={`accent-picker-swatch${accent === scheme.id ? ' accent-picker-swatch--active' : ''}`}
+              style={{ ['--swatch' as string]: scheme.swatch }}
+              onClick={() => handleAccentSelect(scheme.id)}
+            >
+              <span className="accent-picker-swatch-label">{scheme.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="custom-accent-control">
+          <label className="custom-accent-label" htmlFor="custom-accent-input">
+            Custom
+          </label>
+          {savedCustomAccents.length > 0 && (
+            <div
+              className="custom-accent-saved"
+              role="radiogroup"
+              aria-label="Saved custom accent colors"
+            >
+              {savedCustomAccents.map((hex, index) => {
+                const isActive = accent === 'custom' && activeCustomAccent === hex;
                 return (
-                  <div className="accent-schedule-row" key={slot.id}>
-                    <span
-                      className="accent-schedule-swatch"
-                      style={
-                        {
-                          '--schedule-swatch': getScheduleChoiceSwatch(selectedChoice),
-                        } as React.CSSProperties
-                      }
-                      aria-hidden="true"
-                    />
-                    <label className="accent-schedule-label" htmlFor={`accent-schedule-${slot.id}`}>
-                      <span className="accent-schedule-name">{slot.label}</span>
-                      <span className="accent-schedule-time">{slot.rangeLabel}</span>
-                    </label>
-                    <select
-                      id={`accent-schedule-${slot.id}`}
-                      className="accent-schedule-select"
-                      aria-label={`${slot.label} accent`}
-                      value={selectedChoice}
-                      onChange={(event) =>
-                        handleAccentScheduleSlotChange(
-                          slot.id,
-                          event.target.value as AccentScheduleChoice,
-                        )
-                      }
+                  <div className="custom-accent-saved-item" key={hex}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      aria-label={`Custom accent ${hex}`}
+                      title={`Custom ${hex}`}
+                      className={`accent-picker-swatch custom-accent-saved-swatch${isActive ? ' accent-picker-swatch--active' : ''}`}
+                      style={{ ['--swatch' as string]: hex }}
+                      onClick={() => handleSavedCustomAccentSelect(hex)}
                     >
-                      {accentScheduleChoices.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
+                      <span className="accent-picker-swatch-label">Custom {index + 1}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="custom-accent-remove"
+                      aria-label={`Remove custom accent ${hex}`}
+                      title={`Remove ${hex}`}
+                      onClick={() => handleCustomAccentRemove(hex)}
+                    >
+                      x
+                    </button>
                   </div>
                 );
               })}
             </div>
-          </div>
-        </div>
-
-        <div className="settings-divider" />
-
-        {onOpenDataManager && (
-          <>
-            <div className="settings-section">
-              <div className="settings-section-heading">Data Management</div>
-              <TactileButton
-                onClick={() => {
-                  onClose();
-                  onOpenDataManager();
-                }}
-                variant="primary"
-                className="btn-center"
-              >
-                Open Data Manager...
-              </TactileButton>
-            </div>
-
-            <div className="settings-divider" />
-          </>
-        )}
-
-        <div className="settings-section">
-          <div className="settings-section-heading">PocketBase</div>
-          {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
-          {!pbConfigLoading && !pbConfig && (
-            <div className="settings-data-path">Not configured</div>
           )}
-          {!pbConfigLoading && pbConfig && (
-            <>
-              <div className="settings-data-path">
-                Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
+          <div className="custom-accent-row">
+            <input
+              type="color"
+              className="custom-accent-color-input"
+              value={customAccentPreview}
+              aria-label="Pick custom accent color"
+              onChange={(event) => setCustomAccentInput(event.target.value)}
+            />
+            <input
+              id="custom-accent-input"
+              type="text"
+              className="custom-accent-hex-input"
+              value={customAccentInput}
+              placeholder={CUSTOM_ACCENT_EXAMPLE}
+              aria-label="Custom accent hex code"
+              aria-invalid={customAccentInvalid}
+              aria-describedby={customAccentInvalid ? 'custom-accent-error' : undefined}
+              spellCheck={false}
+              onChange={(event) => setCustomAccentInput(event.target.value)}
+            />
+            <TactileButton
+              type="button"
+              size="sm"
+              variant="primary"
+              className="custom-accent-save-button"
+              aria-label="Save custom accent color"
+              disabled={!normalizedCustomAccent}
+              onClick={handleCustomAccentSave}
+            >
+              Save
+            </TactileButton>
+          </div>
+          {customAccentInvalid && (
+            <div id="custom-accent-error" className="settings-field-error">
+              Enter a 3 or 6 digit hex color.
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="accent-schedule-control">
+        <div className="accent-schedule-header">
+          <div className="accent-schedule-heading-group">
+            <div className="custom-accent-label">Accent Schedule</div>
+            <div className="accent-schedule-description">Fixed Central Time shift windows.</div>
+          </div>
+          <button
+            type="button"
+            className={`settings-inline-action accent-schedule-toggle${
+              accentSchedule.enabled ? ' accent-schedule-toggle--active' : ''
+            }`}
+            aria-label="Auto accent schedule"
+            aria-pressed={accentSchedule.enabled}
+            onClick={handleAccentScheduleToggle}
+          >
+            {accentSchedule.enabled ? 'On' : 'Off'}
+          </button>
+        </div>
+        <div className="accent-schedule-list">
+          {ACCENT_SCHEDULE_SLOTS.map((slot) => {
+            const selectedChoice = accentSchedule.slots[slot.id];
+            return (
+              <div className="accent-schedule-row" key={slot.id}>
+                <span
+                  className="accent-schedule-swatch"
+                  style={
+                    {
+                      '--schedule-swatch': getScheduleChoiceSwatch(selectedChoice),
+                    } as React.CSSProperties
+                  }
+                  aria-hidden="true"
+                />
+                <label className="accent-schedule-label" htmlFor={`accent-schedule-${slot.id}`}>
+                  <span className="accent-schedule-name">{slot.label}</span>
+                  <span className="accent-schedule-time">{slot.rangeLabel}</span>
+                </label>
+                <select
+                  id={`accent-schedule-${slot.id}`}
+                  className="accent-schedule-select"
+                  aria-label={`${slot.label} accent`}
+                  value={selectedChoice}
+                  onChange={(event) =>
+                    handleAccentScheduleSlotChange(
+                      slot.id,
+                      event.target.value as AccentScheduleChoice,
+                    )
+                  }
+                >
+                  {accentScheduleChoices.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-              {pbUrl && (
-                <div className="settings-data-path settings-copy-row">
-                  <span>URL: {pbUrl}</span>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  const connectionSections = (
+    <>
+      {presentation === 'modal' && <div className="settings-divider" />}
+      {onOpenDataManager && (
+        <div className="settings-section">
+          <div className="settings-section-heading">Relay data</div>
+          <div className="settings-description">
+            Review, import, or maintain the shared operational records used by Relay.
+          </div>
+          <TactileButton
+            onClick={() => {
+              if (presentation === 'modal') onClose();
+              onOpenDataManager();
+            }}
+            variant="primary"
+            className="btn-center"
+          >
+            Open Data Manager...
+          </TactileButton>
+        </div>
+      )}
+
+      {presentation === 'modal' && onOpenDataManager && <div className="settings-divider" />}
+
+      <div className="settings-section">
+        <div className="settings-section-heading">Relay connection</div>
+        <div className="settings-description">
+          This workstation&apos;s role and the address other Relay stations use.
+        </div>
+        {pbConfigLoading && <div className="settings-data-path">Loading...</div>}
+        {!pbConfigLoading && !pbConfig && <div className="settings-data-path">Not configured</div>}
+        {!pbConfigLoading && pbConfig && (
+          <>
+            <div className="settings-data-path">
+              Mode: {pbConfig.mode === 'server' ? 'Embedded Server' : 'Remote Client'}
+            </div>
+            {pbUrl && (
+              <div className="settings-data-path settings-copy-row">
+                <span>URL: {pbUrl}</span>
+                <button
+                  type="button"
+                  className="settings-inline-action"
+                  onClick={() => void copyText(pbUrl)}
+                >
+                  Copy
+                </button>
+              </div>
+            )}
+            {displayedConnectionSecret && (
+              <div className="settings-data-path settings-copy-row">
+                <span>Passphrase: {displayedConnectionSecret}</span>
+                <span className="settings-inline-actions">
                   <button
                     type="button"
                     className="settings-inline-action"
-                    onClick={() => void copyText(pbUrl)}
+                    aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
+                    onClick={() => setShowConnectionSecret((current) => !current)}
+                  >
+                    {showConnectionSecret ? 'Hide' : 'Show'}
+                  </button>
+                  <button
+                    type="button"
+                    className="settings-inline-action"
+                    onClick={() => void copyText(connectionSecret)}
                   >
                     Copy
                   </button>
-                </div>
-              )}
-              {displayedConnectionSecret && (
-                <div className="settings-data-path settings-copy-row">
-                  <span>Passphrase: {displayedConnectionSecret}</span>
-                  <span className="settings-inline-actions">
-                    <button
-                      type="button"
-                      className="settings-inline-action"
-                      aria-label={showConnectionSecret ? 'Hide passphrase' : 'Show passphrase'}
-                      onClick={() => setShowConnectionSecret((current) => !current)}
-                    >
-                      {showConnectionSecret ? 'Hide' : 'Show'}
-                    </button>
-                    <button
-                      type="button"
-                      className="settings-inline-action"
-                      onClick={() => void copyText(connectionSecret)}
-                    >
-                      Copy
-                    </button>
-                  </span>
-                </div>
-              )}
-              <div className="settings-button-row">
-                <TactileButton onClick={handleReconfigure} className="btn-flex-center">
-                  Reconfigure...
-                </TactileButton>
+                </span>
               </div>
-            </>
-          )}
-        </div>
-
-        {dynatrace && (
-          <>
-            <div className="settings-divider" />
-            <DynatraceSettingsSection dynatrace={dynatrace} />
+            )}
+            <div className="settings-button-row">
+              <TactileButton onClick={handleReconfigure} className="btn-flex-center">
+                Reconfigure...
+              </TactileButton>
+            </div>
           </>
         )}
       </div>
-    </Modal>
+    </>
+  );
+
+  const dynatraceSections = (
+    <>
+      {presentation === 'modal' && <div className="settings-divider" />}
+      {!pbConfigLoading && pbConfig?.mode === 'server' && <DynatraceProblemsSettingsSection />}
+
+      {!pbConfigLoading && pbConfig?.mode === 'client' && (
+        <div className="settings-section">
+          <div className="settings-section-heading">Dynatrace Problems</div>
+          <div className="settings-data-path">
+            Problems sync is configured and secured on the Relay server.
+          </div>
+        </div>
+      )}
+
+      {dynatrace && (
+        <>
+          {presentation === 'modal' && <div className="settings-divider" />}
+          <DynatraceSettingsSection dynatrace={dynatrace} />
+        </>
+      )}
+    </>
+  );
+
+  const settingsContent = (
+    <div
+      className={`settings-body${
+        presentation === 'page' ? ` settings-body--${activeSection}` : ''
+      }`}
+    >
+      {(presentation === 'modal' || activeSection === 'appearance') && appearanceSection}
+      {(presentation === 'modal' || activeSection === 'connection') && connectionSections}
+      {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
+    </div>
+  );
+
+  return (
+    <SettingsShell
+      isOpen={isOpen}
+      onClose={onClose}
+      presentation={presentation}
+      activeSection={activeSection}
+      onSectionChange={setActiveSection}
+    >
+      {settingsContent}
+    </SettingsShell>
   );
 };

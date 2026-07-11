@@ -15,6 +15,7 @@ import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
 import { sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
+import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
 import { localToIso } from './alertTimeUtils';
 import type { AlertFormHandle } from './AlertForm';
 import type { AlertReminderInput, AlertReminderRecord } from '../services/alertReminderService';
@@ -33,6 +34,7 @@ import '@fontsource/ibm-plex-mono/600.css';
 const ALERT_EXPORT_WIDTH_PX = 640;
 const ALERT_CAPTURE_SCALE = 2;
 const ALERT_OUTLOOK_CAPTURE_SCALE = 2;
+const ALERT_OUTLOOK_FALLBACK_SCALE = 1;
 const ALERT_SEVERITIES: readonly Severity[] = ['ISSUE', 'MAINTENANCE', 'INFO', 'RESOLVED'];
 
 interface AlertFormState {
@@ -41,6 +43,7 @@ interface AlertFormState {
   bodyHtml: string;
   sender: string;
   recipient: string;
+  clickThroughUrl: string;
   updateNumber: number;
   eventTimeStart: string;
   eventTimeEnd: string;
@@ -58,6 +61,7 @@ const initialFormState: AlertFormState = {
   bodyHtml: '',
   sender: '',
   recipient: '',
+  clickThroughUrl: '',
   updateNumber: 0,
   eventTimeStart: '',
   eventTimeEnd: '',
@@ -190,6 +194,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     bodyHtml,
     sender,
     recipient,
+    clickThroughUrl,
     updateNumber,
     eventTimeStart,
     eventTimeEnd,
@@ -214,6 +219,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   );
   const setRecipient = useCallback(
     (v: string) => dispatch({ type: 'SET_FIELD', field: 'recipient', value: v }),
+    [],
+  );
+  const setClickThroughUrl = useCallback(
+    (v: string) => dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: v }),
     [],
   );
   const setUpdateNumber = useCallback(
@@ -262,6 +271,10 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const displaySender = sender.trim() || 'IT';
   const displayRecipient = recipient.trim() || 'All Employees';
+  const alertClickHref = useMemo(
+    () => sanitizeAlertClickUrl(clickThroughUrl) ?? undefined,
+    [clickThroughUrl],
+  );
   const nextReminder = pendingReminders[0];
   const additionalReminderCount = Math.max(0, pendingReminders.length - 1);
 
@@ -278,6 +291,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     dispatch({ type: 'SET_FIELD', field: 'bodyHtml', value: nextBodyHtml });
     dispatch({ type: 'SET_FIELD', field: 'sender', value: loadedReminderAlert.sender.trim() });
     dispatch({ type: 'SET_FIELD', field: 'recipient', value: '' });
+    dispatch({ type: 'SET_FIELD', field: 'clickThroughUrl', value: '' });
     dispatch({ type: 'SET_FIELD', field: 'updateNumber', value: 0 });
     formRef.current?.setEditorContent(nextBodyHtml);
     showToast('Alert loaded from alarm', 'success');
@@ -357,42 +371,31 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     [captureCard, showToast],
   );
 
-  const copyCurrentAlertImage = useCallback(
-    async (dataUrl: string): Promise<boolean> => {
-      const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
-      const clipboardDataUrl = optimized?.success && optimized.data ? optimized.data : dataUrl;
-      const success = await globalThis.api?.writeClipboardImage(clipboardDataUrl);
-      if (success) {
-        showToast('Image copied — paste into Outlook!', 'success');
-        void addHistory({ severity, subject, bodyHtml, sender, recipient });
-        return true;
-      }
-      showToast('Failed to copy image to clipboard', 'error');
-      return false;
-    },
-    [showToast, addHistory, severity, subject, bodyHtml, sender, recipient],
-  );
+  const prepareOutlookDraftImage = useCallback(async () => {
+    let canvas = await captureCard(ALERT_OUTLOOK_CAPTURE_SCALE);
+    let dataUrl = canvas.toDataURL('image/png');
 
-  const handleCopyImage = useCallback(
-    () =>
-      withCapture(async (dataUrl) => {
-        // A 2x capture of an image-heavy alert can exceed the IPC data-URL cap,
-        // which would fail the copy outright — retry at 1x instead.
-        if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-          const fallbackCanvas = await captureCard(1);
-          dataUrl = fallbackCanvas.toDataURL('image/png');
-        }
-        return copyCurrentAlertImage(dataUrl);
-      }, ALERT_OUTLOOK_CAPTURE_SCALE),
-    [withCapture, captureCard, copyCurrentAlertImage],
-  );
+    // Inline body images can push a 2x PNG past IPC limits. Preserve the draft
+    // path by falling back to a native-size image.
+    if (dataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+      canvas = await captureCard(ALERT_OUTLOOK_FALLBACK_SCALE);
+      dataUrl = canvas.toDataURL('image/png');
+    }
+
+    const optimized = await globalThis.api?.optimizeAlertImage?.(dataUrl).catch(() => null);
+    return {
+      dataUrl: optimized?.success && optimized.data ? optimized.data : dataUrl,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }, [captureCard]);
 
   const handleSetReminder = useCallback(() => {
     setEditingReminder(null);
     reminderModal.open();
   }, [reminderModal]);
 
-  const handleSavePNG = useCallback(
+  const handleSaveImage = useCallback(
     () =>
       withCapture(async (dataUrl) => {
         const slug =
@@ -508,6 +511,50 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     const base = subject.trim() || 'Alert Subject';
     return updateNumber > 0 ? `UPDATE #${updateNumber} — ${base}` : base;
   }, [subject, updateNumber]);
+
+  const handleOpenOutlookDraft = useCallback(async () => {
+    if (clickThroughUrl.trim() && !alertClickHref) {
+      showToast('Enter a valid HTTP or HTTPS click-through URL', 'error');
+      return false;
+    }
+
+    setIsCapturing(true);
+    try {
+      const image = await prepareOutlookDraftImage();
+      const content = buildAlertOutlookEml({
+        subject: displaySubject,
+        imageDataUrl: image.dataUrl,
+        imageHref: alertClickHref,
+        width: image.width,
+        height: image.height,
+      });
+      const success = await globalThis.api?.saveAndOpenAlertDraft?.(content);
+      if (success) {
+        showToast('Outlook draft opened', 'success');
+        void addHistory({ severity, subject, bodyHtml, sender, recipient });
+        return true;
+      }
+      showToast('Failed to open Outlook draft', 'error');
+      return false;
+    } catch {
+      showToast('Failed to prepare Outlook draft', 'error');
+      return false;
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [
+    clickThroughUrl,
+    alertClickHref,
+    showToast,
+    prepareOutlookDraftImage,
+    displaySubject,
+    addHistory,
+    severity,
+    subject,
+    bodyHtml,
+    sender,
+    recipient,
+  ]);
 
   const reminderDraft = useMemo(
     () => ({
@@ -627,7 +674,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         <TactileButton
           variant="ghost"
           onClick={reminderManagerModal.open}
-          tooltip="Manage alert alarms"
+          tooltip="View and manage alarms"
           icon={
             <svg
               width="14"
@@ -639,10 +686,12 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-              <path d="M9 21h6" />
-              <path d="M8 11h8" />
-              <path d="M8 14h5" />
+              <circle cx="12" cy="13" r="7" />
+              <path d="M12 10v3l2 2" />
+              <path d="M5 3 2.5 5.5" />
+              <path d="m19 3 2.5 2.5" />
+              <path d="m6.5 19.5-1.5 2" />
+              <path d="m17.5 19.5 1.5 2" />
             </svg>
           }
         >
@@ -672,9 +721,9 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         </TactileButton>
         <TactileButton
           variant="ghost"
-          onClick={handleSavePNG}
+          onClick={handleSaveImage}
           loading={isCapturing}
-          tooltip="Save alert preview as PNG"
+          tooltip="Save a high-resolution PNG image"
           icon={
             <svg
               width="14"
@@ -692,7 +741,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
             </svg>
           }
         >
-          SAVE PNG
+          SAVE IMAGE
         </TactileButton>
         <TactileButton
           variant="secondary"
@@ -709,19 +758,22 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <path d="M19 9a7 7 0 10-14 0c0 6-2 6-2 8h18c0-2-2-2-2-8" />
-              <path d="M9 21h6" />
-              <path d="M12 6v4l3 2" />
+              <rect x="3" y="5" width="18" height="16" rx="2" />
+              <path d="M8 3v4" />
+              <path d="M16 3v4" />
+              <path d="M3 10h18" />
+              <path d="M12 13v5" />
+              <path d="M9.5 15.5h5" />
             </svg>
           }
         >
-          SCHEDULE ALERT ALARM
+          SCHEDULE ALARM
         </TactileButton>
         <TactileButton
           variant="primary"
-          onClick={handleCopyImage}
+          onClick={() => void handleOpenOutlookDraft()}
           loading={isCapturing}
-          tooltip="Copy alert preview for Outlook"
+          tooltip="Open an editable Outlook draft with a crisp inline alert"
           icon={
             <svg
               width="14"
@@ -733,12 +785,12 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               strokeLinecap="round"
               strokeLinejoin="round"
             >
-              <rect x="9" y="9" width="13" height="13" rx="2" />
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+              <rect x="3" y="5" width="18" height="14" rx="1" />
+              <path d="m3 7 9 6 9-6" />
             </svg>
           }
         >
-          COPY FOR OUTLOOK
+          OPEN IN OUTLOOK
         </TactileButton>
       </CollapsibleHeader>
 
@@ -779,6 +831,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           setSender={setSender}
           recipient={recipient}
           setRecipient={setRecipient}
+          clickThroughUrl={clickThroughUrl}
+          setClickThroughUrl={setClickThroughUrl}
           updateNumber={updateNumber}
           setUpdateNumber={setUpdateNumber}
           eventTimeStart={eventTimeStart}
