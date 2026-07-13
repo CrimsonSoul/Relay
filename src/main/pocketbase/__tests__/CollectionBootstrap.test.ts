@@ -6,8 +6,18 @@ const mockDelete = vi.fn();
 const mockGetOne = vi.fn();
 const mockUpdate = vi.fn();
 const mockCollectionGetFullList = vi.fn();
+const mockCollectionGetList = vi.fn();
+const mockCollectionCreate = vi.fn();
 const mockCollectionUpdate = vi.fn();
 const mockCollectionDelete = vi.fn();
+
+const mockPbCollection = vi.fn(() => ({
+  getFullList: mockCollectionGetFullList,
+  getList: mockCollectionGetList,
+  create: mockCollectionCreate,
+  update: mockCollectionUpdate,
+  delete: mockCollectionDelete,
+}));
 
 const mockPb = {
   collections: {
@@ -17,17 +27,15 @@ const mockPb = {
     getOne: mockGetOne,
     update: mockUpdate,
   },
-  collection: () => ({
-    getFullList: mockCollectionGetFullList,
-    update: mockCollectionUpdate,
-    delete: mockCollectionDelete,
-  }),
+  collection: mockPbCollection,
 } as never;
 
 import { ensureCollections } from '../CollectionBootstrap';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCollectionGetList.mockResolvedValue({ totalItems: 1 });
+  mockCollectionCreate.mockResolvedValue({});
 });
 
 describe('ensureCollections', () => {
@@ -76,13 +84,13 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
-  it('creates missing collections including alert_reminders and client presence', async () => {
+  it('creates missing collections including alert_reminders, client presence, and operators', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(18);
+    expect(mockCreate).toHaveBeenCalledTimes(19);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -93,6 +101,120 @@ describe('ensureCollections', () => {
         (call: unknown[]) => (call[0] as { name: string }).name === 'client_presence',
       ),
     ).toBe(true);
+    expect(
+      mockCreate.mock.calls.some(
+        (call: unknown[]) => (call[0] as { name: string }).name === 'relay_operators',
+      ),
+    ).toBe(true);
+  });
+
+  it('creates a server-owned operator collection with authenticated read and subscription access', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const operatorsCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'relay_operators',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          viewRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<{
+            name: string;
+            type: string;
+            required?: boolean;
+            max?: number;
+            onCreate?: boolean;
+            onUpdate?: boolean;
+          }>;
+          indexes: string[];
+        }
+      | undefined;
+
+    expect(operatorsCall).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(operatorsCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'displayName',
+          type: 'text',
+          required: true,
+          max: 120,
+        }),
+        expect.objectContaining({ name: 'active', type: 'bool' }),
+        expect.objectContaining({
+          name: 'created',
+          type: 'autodate',
+          onCreate: true,
+          onUpdate: false,
+        }),
+        expect.objectContaining({
+          name: 'updated',
+          type: 'autodate',
+          onCreate: true,
+          onUpdate: true,
+        }),
+      ]),
+    );
+    expect(operatorsCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)',
+    );
+  });
+
+  it('seeds the exact approved operator roster when the collection is empty', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 0 });
+
+    await ensureCollections(mockPb);
+
+    expect(mockPbCollection).toHaveBeenCalledWith('relay_operators');
+    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
+      { displayName: 'Ryan Bell', active: true },
+      { displayName: 'Tristan Stillwell', active: true },
+      { displayName: 'Vlad McCarty', active: true },
+      { displayName: 'Paris Carlson', active: true },
+      { displayName: 'Connor McElroy', active: true },
+      { displayName: 'Weston Yokley', active: true },
+      { displayName: 'Charles Gibbs', active: true },
+    ]);
+  });
+
+  it('does not reseed operators when any operator record already exists', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'operators-col', name: 'relay_operators' }]);
+    mockCreate.mockResolvedValue({});
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'displayName', required: true, max: 120 },
+        { type: 'bool', name: 'active' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: [
+        'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)',
+      ],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 1 });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
   });
 
   it('creates a read-only shared cloud status singleton collection', async () => {

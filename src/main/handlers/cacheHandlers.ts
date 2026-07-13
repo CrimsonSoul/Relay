@@ -12,6 +12,7 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
+import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import type { PendingMutationOverlay, OfflineWritableCollection } from '@shared/ipc';
 
@@ -29,6 +30,7 @@ const VALID_COLLECTIONS = new Set([
   'conflict_log',
   'oncall_board_settings',
   'cloud_status_snapshot',
+  RELAY_OPERATORS_COLLECTION,
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
@@ -151,7 +153,7 @@ export function setupCacheHandlers(
     IPC_CHANNELS.CACHE_WRITE,
     (event, collection: string, action: string, record: Record<string, unknown>) => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return;
-      if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
+      if (typeof collection !== 'string' || !WRITABLE_CACHE_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_WRITE: invalid collection', { collection });
         return;
       }

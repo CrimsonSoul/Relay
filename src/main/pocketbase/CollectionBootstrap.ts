@@ -13,6 +13,11 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
+import {
+  INITIAL_RELAY_OPERATOR_NAMES,
+  MAX_OPERATOR_DISPLAY_NAME_LENGTH,
+  RELAY_OPERATORS_COLLECTION,
+} from '@shared/operators';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -25,6 +30,7 @@ interface FieldDef {
   required?: boolean;
   values?: string[];
   maxSelect?: number;
+  max?: number;
   onCreate?: boolean;
   onUpdate?: boolean;
 }
@@ -89,6 +95,8 @@ const DYNATRACE_PROBLEM_NOTES_ID_INDEX =
   'CREATE INDEX idx_dynatrace_problem_notes_id ON dynatrace_problem_notes (problemId)';
 const DYNATRACE_PROBLEM_SYNC_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_sync_key ON dynatrace_problem_sync (key)';
+const RELAY_OPERATOR_DISPLAY_NAME_INDEX =
+  'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)';
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -310,6 +318,21 @@ const COLLECTIONS: CollectionDef[] = [
     rules: SERVER_OWNED_RULES,
   },
   {
+    name: RELAY_OPERATORS_COLLECTION,
+    type: 'base',
+    fields: [
+      {
+        type: 'text',
+        name: 'displayName',
+        required: true,
+        max: MAX_OPERATOR_DISPLAY_NAME_LENGTH,
+      },
+      { type: 'bool', name: 'active' },
+    ],
+    indexes: [RELAY_OPERATOR_DISPLAY_NAME_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
     name: DYNATRACE_PROBLEMS_COLLECTION,
     type: 'base',
     fields: [
@@ -509,6 +532,17 @@ async function patchExisting(
   return patched;
 }
 
+async function seedRelayOperatorsIfEmpty(pb: PocketBase): Promise<void> {
+  const operators = pb.collection(RELAY_OPERATORS_COLLECTION);
+  const existing = await operators.getList(1, 1);
+  if (existing.totalItems > 0) return;
+
+  for (const displayName of INITIAL_RELAY_OPERATOR_NAMES) {
+    await operators.create({ displayName, active: true });
+  }
+  logger.info(`Seeded ${INITIAL_RELAY_OPERATOR_NAMES.length} Relay operator profiles`);
+}
+
 async function repairDuplicateBoardSettings(pb: PocketBase, existing: Set<string>): Promise<void> {
   if (!existing.has(BOARD_SETTINGS_COLLECTION)) return;
 
@@ -626,6 +660,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   const created = await createMissing(pb, existing);
   await repairDuplicateBoardSettings(pb, existing);
   const patched = await patchExisting(pb, existing, allCols);
+  await seedRelayOperatorsIfEmpty(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
   if (created > 0 || unmanaged > 0 || patched > 0) {

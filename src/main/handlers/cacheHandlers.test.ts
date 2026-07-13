@@ -94,6 +94,16 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(snapshot);
     });
 
+    it('reads the shared operator roster for authenticated offline clients', () => {
+      const operators = [{ id: 'operator-1', displayName: 'Ryan Bell', active: true }];
+      mockCache.readCollection.mockReturnValue(operators);
+
+      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'relay_operators');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('relay_operators');
+      expect(result).toEqual(operators);
+    });
+
     it('returns empty array for invalid collection', () => {
       const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'invalidCollection');
 
@@ -157,6 +167,15 @@ describe('cacheHandlers', () => {
 
     it('returns early for invalid collection', () => {
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'bogus', 'create', { id: '1' });
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+    });
+
+    it('rejects cache writes to the server-owned operator roster', () => {
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'relay_operators', 'update', {
+        id: 'operator-1',
+        displayName: 'Changed Name',
+      });
+
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
