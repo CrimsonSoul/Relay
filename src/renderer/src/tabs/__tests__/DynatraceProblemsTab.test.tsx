@@ -100,6 +100,62 @@ describe('DynatraceProblemsTab', () => {
     ).toBeInTheDocument();
   });
 
+  it('opens the exact Dynatrace Platform Problems URL for the selected problem', async () => {
+    const problemId = '2251993042228772816_1783622735060V2';
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [{ ...openProblem, problemId }],
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.click(screen.getByRole('button', { name: /Open Dynatrace/i }));
+
+    await waitFor(() => {
+      expect(globalThis.api?.openExternal).toHaveBeenCalledWith(
+        'https://abc123.apps.dynatrace.com/ui/apps/dynatrace.davis.problems/problem/' + problemId,
+      );
+    });
+    expect(mocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast when the Dynatrace problem URL is invalid', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      problems: [{ ...openProblem, environmentUrl: 'https://example.com' }],
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.click(screen.getByRole('button', { name: /Open Dynatrace/i }));
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith(
+        'Unable to open this problem in Dynatrace.',
+        'error',
+      );
+    });
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('shows an error toast when the Dynatrace problem URL fails to open', async () => {
+    globalThis.api = {
+      ...globalThis.api,
+      openExternal: vi.fn(async () => false),
+    } as never;
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.click(screen.getByRole('button', { name: /Open Dynatrace/i }));
+
+    await waitFor(() => {
+      expect(mocks.showToast).toHaveBeenCalledWith(
+        'Unable to open this problem in Dynatrace.',
+        'error',
+      );
+    });
+  });
+
   it('sorts the problem queue strictly newest first regardless of severity', () => {
     const olderCritical: DynatraceProblemRecord = {
       ...openProblem,

@@ -4,13 +4,14 @@ import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import type { PublicRelayConfig } from '@shared/ipc';
-import type {
-  DynatraceEntityRef,
-  DynatraceProblemNoteRecord,
-  DynatraceProblemRecord,
-  DynatraceProblemSeverity,
-  DynatraceProblemStateRecord,
-  DynatraceProblemSyncRecord,
+import {
+  buildDynatraceProblemUrl,
+  type DynatraceEntityRef,
+  type DynatraceProblemNoteRecord,
+  type DynatraceProblemRecord,
+  type DynatraceProblemSeverity,
+  type DynatraceProblemStateRecord,
+  type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
@@ -542,6 +543,7 @@ type ProblemDetailProps = {
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
   onAddressToggle: () => void;
+  onOpenDynatrace: (problem: DynatraceProblemRecord) => void;
 };
 
 function ProblemDetail({
@@ -554,6 +556,7 @@ function ProblemDetail({
   onNoteDraftChange,
   onSaveNote,
   onAddressToggle,
+  onOpenDynatrace,
 }: Readonly<ProblemDetailProps>) {
   if (!problem) {
     return (
@@ -696,10 +699,7 @@ function ProblemDetail({
 
         <footer className="dt-problem-detail__footer">
           <span>Dynatrace ID {problem.problemId}</span>
-          <button
-            type="button"
-            onClick={() => void globalThis.api?.openExternal(problem.environmentUrl)}
-          >
+          <button type="button" onClick={() => onOpenDynatrace(problem)}>
             Open Dynatrace ↗
           </button>
         </footer>
@@ -817,6 +817,16 @@ export const DynatraceProblemsTab: React.FC<{
     ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
     : [];
   const online = connectionState === 'online';
+
+  const handleOpenDynatrace = useCallback(
+    async (problem: DynatraceProblemRecord) => {
+      const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
+      if (!url || !(await globalThis.api?.openExternal(url))) {
+        showToast('Unable to open this problem in Dynatrace.', 'error');
+      }
+    },
+    [showToast],
+  );
 
   const handleSaveNote = async () => {
     if (!selectedProblem || !noteDraft.trim() || savingAction) return;
@@ -1047,6 +1057,7 @@ export const DynatraceProblemsTab: React.FC<{
           onNoteDraftChange={setNoteDraft}
           onSaveNote={() => void handleSaveNote()}
           onAddressToggle={() => void handleAddressToggle()}
+          onOpenDynatrace={(problem) => void handleOpenDynatrace(problem)}
         />
       </div>
 

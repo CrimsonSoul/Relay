@@ -109,6 +109,7 @@ export type DynatraceProblemsTestResult = {
 };
 
 const MAX_DYNATRACE_URL_LENGTH = 2048;
+const MAX_DYNATRACE_PROBLEM_ID_LENGTH = 512;
 export const MAX_DYNATRACE_API_TOKEN_LENGTH = 4096;
 export const MAX_DYNATRACE_ALERTING_PROFILES = 250;
 export const MAX_DYNATRACE_ALERTING_PROFILE_LENGTH = 512;
@@ -125,6 +126,28 @@ export function normalizeDynatraceEnvironmentUrl(value: string): string {
   } catch {
     return '';
   }
+}
+
+export function buildDynatraceProblemUrl(environmentUrl: string, problemId: string): string | null {
+  const id = problemId.trim();
+  if (!id || id.length > MAX_DYNATRACE_PROBLEM_ID_LENGTH) return null;
+
+  let source: URL;
+  try {
+    source = new URL(environmentUrl.trim());
+  } catch {
+    return null;
+  }
+  if (source.username || source.password) return null;
+
+  const normalizedOrigin = normalizeDynatraceEnvironmentUrl(source.origin);
+  if (!normalizedOrigin) return null;
+
+  const url = new URL(normalizedOrigin);
+  url.pathname = `/ui/apps/dynatrace.davis.problems/problem/${encodeURIComponent(id)}`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
 }
 
 export function getDynatraceEnvironmentUrlError(value: string): string | null {

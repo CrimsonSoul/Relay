@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDynatraceProblemUrl,
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
   normalizeDynatraceEnvironmentUrl,
@@ -36,5 +37,34 @@ describe('Dynatrace Problems validation', () => {
     expect(getDynatraceApiTokenError('token with spaces')).toMatch(/whitespace/i);
     expect(getDynatraceApiTokenError('x'.repeat(4097))).toMatch(/too long/i);
     expect(getDynatraceApiTokenError('dt0s16.example-token')).toBeNull();
+  });
+});
+
+describe('Dynatrace problem links', () => {
+  it('builds the official Platform Problems route without source query or hash values', () => {
+    expect(
+      buildDynatraceProblemUrl(
+        'https://abc.live.dynatrace.com/?source=relay#old',
+        '2251993042228772816_1783622735060V2',
+      ),
+    ).toBe(
+      'https://abc.apps.dynatrace.com/ui/apps/dynatrace.davis.problems/problem/' +
+        '2251993042228772816_1783622735060V2',
+    );
+  });
+
+  it('encodes the trimmed problem ID as a single path segment', () => {
+    expect(
+      buildDynatraceProblemUrl('https://abc.apps.dynatrace.com', ' problem/with spaces? '),
+    ).toBe(
+      'https://abc.apps.dynatrace.com/ui/apps/dynatrace.davis.problems/problem/' +
+        'problem%2Fwith%20spaces%3F',
+    );
+  });
+
+  it('rejects untrusted origins and blank or oversized problem IDs', () => {
+    expect(buildDynatraceProblemUrl('https://example.com', 'P-1')).toBeNull();
+    expect(buildDynatraceProblemUrl('https://abc.apps.dynatrace.com', '   ')).toBeNull();
+    expect(buildDynatraceProblemUrl('https://abc.apps.dynatrace.com', 'x'.repeat(513))).toBeNull();
   });
 });
