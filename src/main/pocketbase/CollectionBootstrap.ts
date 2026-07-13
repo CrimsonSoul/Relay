@@ -17,6 +17,8 @@ import {
   INITIAL_RELAY_OPERATOR_NAMES,
   MAX_OPERATOR_DISPLAY_NAME_LENGTH,
   RELAY_OPERATORS_COLLECTION,
+  normalizeOperatorDisplayName,
+  type RelayOperatorRecord,
 } from '@shared/operators';
 import { loggers } from '../logger';
 
@@ -532,18 +534,33 @@ async function patchExisting(
   return patched;
 }
 
-async function seedRelayOperatorsIfEmpty(pb: PocketBase): Promise<void> {
+async function seedOrRecoverRelayOperators(pb: PocketBase): Promise<void> {
   const operators = pb.collection(RELAY_OPERATORS_COLLECTION);
-  const existing = await operators.getList(1, 1);
-  if (existing.totalItems > 0) return;
+  const existing = await operators.getList<RelayOperatorRecord>(
+    1,
+    INITIAL_RELAY_OPERATOR_NAMES.length + 1,
+    { requestKey: null },
+  );
+  if (existing.totalItems !== existing.items.length) return;
 
-  const batch = pb.createBatch();
-  const batchOperators = batch.collection(RELAY_OPERATORS_COLLECTION);
-  for (const displayName of INITIAL_RELAY_OPERATOR_NAMES) {
-    batchOperators.create({ displayName, active: true });
+  const initialNames = new Set<string>(INITIAL_RELAY_OPERATOR_NAMES);
+  const existingNames = new Set<string>();
+  for (const record of existing.items) {
+    if (record.active !== true || typeof record.displayName !== 'string') return;
+    const displayName = normalizeOperatorDisplayName(record.displayName);
+    if (!initialNames.has(displayName) || existingNames.has(displayName)) return;
+    existingNames.add(displayName);
   }
-  await batch.send();
-  logger.info(`Seeded ${INITIAL_RELAY_OPERATOR_NAMES.length} Relay operator profiles`);
+
+  const missingNames = INITIAL_RELAY_OPERATOR_NAMES.filter(
+    (displayName) => !existingNames.has(displayName),
+  );
+  for (const displayName of missingNames) {
+    await operators.create({ displayName, active: true });
+  }
+  if (missingNames.length > 0) {
+    logger.info(`Seeded ${missingNames.length} missing Relay operator profiles`);
+  }
 }
 
 async function repairDuplicateBoardSettings(pb: PocketBase, existing: Set<string>): Promise<void> {
@@ -663,7 +680,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   const created = await createMissing(pb, existing);
   await repairDuplicateBoardSettings(pb, existing);
   const patched = await patchExisting(pb, existing, allCols);
-  await seedRelayOperatorsIfEmpty(pb);
+  await seedOrRecoverRelayOperators(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
   if (created > 0 || unmanaged > 0 || patched > 0) {

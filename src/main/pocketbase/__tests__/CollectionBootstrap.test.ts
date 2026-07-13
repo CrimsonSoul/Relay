@@ -12,13 +12,8 @@ const mockCollectionUpdate = vi.fn();
 const mockCollectionDelete = vi.fn();
 const mockBatchCreate = vi.fn();
 const mockBatchSend = vi.fn();
-
-const mockBatchCollection = vi.fn(() => ({
-  create: mockBatchCreate,
-}));
-
 const mockCreateBatch = vi.fn(() => ({
-  collection: mockBatchCollection,
+  collection: () => ({ create: mockBatchCreate }),
   send: mockBatchSend,
 }));
 
@@ -46,7 +41,10 @@ import { ensureCollections } from '../CollectionBootstrap';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockCollectionGetList.mockResolvedValue({ totalItems: 1 });
+  mockCollectionGetList.mockResolvedValue({
+    totalItems: 1,
+    items: [{ id: 'custom', displayName: 'Custom Operator', active: true }],
+  });
   mockCollectionCreate.mockResolvedValue({});
   mockBatchSend.mockResolvedValue([]);
 });
@@ -186,14 +184,13 @@ describe('ensureCollections', () => {
   it('seeds the exact approved operator roster when the collection is empty', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
-    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 0 });
+    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 0, items: [] });
 
     await ensureCollections(mockPb);
 
     expect(mockPbCollection).toHaveBeenCalledWith('relay_operators');
-    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
-    expect(mockBatchCollection).toHaveBeenCalledWith('relay_operators');
-    expect(mockBatchCreate.mock.calls.map(([record]) => record)).toEqual([
+    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 8, { requestKey: null });
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
       { displayName: 'Ryan Bell', active: true },
       { displayName: 'Tristan Stillwell', active: true },
       { displayName: 'Vlad McCarty', active: true },
@@ -202,62 +199,132 @@ describe('ensureCollections', () => {
       { displayName: 'Weston Yokley', active: true },
       { displayName: 'Charles Gibbs', active: true },
     ]);
-    expect(mockBatchSend).toHaveBeenCalledTimes(1);
-    expect(mockCollectionCreate).not.toHaveBeenCalled();
+    expect(mockCreateBatch).not.toHaveBeenCalled();
   });
 
-  it('retries the entire transactional operator seed after a failed batch', async () => {
+  it('recovers only missing initial operators after an interrupted sequential seed', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
-    mockCollectionGetList.mockResolvedValue({ totalItems: 0 });
-    mockBatchSend.mockRejectedValueOnce(new Error('transaction rolled back'));
+    mockCollectionGetList
+      .mockResolvedValueOnce({ totalItems: 0, items: [] })
+      .mockResolvedValueOnce({
+        totalItems: 3,
+        items: [
+          { id: 'ryan', displayName: ' Ryan   Bell ', active: true },
+          { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+          { id: 'vlad', displayName: 'Vlad McCarty', active: true },
+        ],
+      });
+    mockCollectionCreate
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('create interrupted'));
 
-    await expect(ensureCollections(mockPb)).rejects.toThrow('transaction rolled back');
-    await ensureCollections(mockPb);
-
-    const expectedRoster = [
+    await expect(ensureCollections(mockPb)).rejects.toThrow('create interrupted');
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
       { displayName: 'Ryan Bell', active: true },
       { displayName: 'Tristan Stillwell', active: true },
       { displayName: 'Vlad McCarty', active: true },
       { displayName: 'Paris Carlson', active: true },
+    ]);
+
+    mockCollectionCreate.mockClear();
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
+      { displayName: 'Paris Carlson', active: true },
       { displayName: 'Connor McElroy', active: true },
       { displayName: 'Weston Yokley', active: true },
       { displayName: 'Charles Gibbs', active: true },
-    ];
-    expect(mockBatchCreate.mock.calls.slice(0, 7).map(([record]) => record)).toEqual(
-      expectedRoster,
-    );
-    expect(mockBatchCreate.mock.calls.slice(7).map(([record]) => record)).toEqual(expectedRoster);
-    expect(mockBatchSend).toHaveBeenCalledTimes(2);
-    expect(mockCollectionCreate).not.toHaveBeenCalled();
+    ]);
+    expect(mockCreateBatch).not.toHaveBeenCalled();
   });
 
-  it('does not reseed operators when any operator record already exists', async () => {
-    mockGetFullList.mockResolvedValue([{ id: 'operators-col', name: 'relay_operators' }]);
+  it('leaves a renamed operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
     mockCreate.mockResolvedValue({});
-    mockGetOne.mockResolvedValue({
-      fields: [
-        { type: 'text', name: 'displayName', required: true, max: 120 },
-        { type: 'bool', name: 'active' },
-        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
-        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 7,
+      items: [
+        { id: 'ryan', displayName: 'Ryan B.', active: true },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
+        { id: 'paris', displayName: 'Paris Carlson', active: true },
+        { id: 'connor', displayName: 'Connor McElroy', active: true },
+        { id: 'weston', displayName: 'Weston Yokley', active: true },
+        { id: 'charles', displayName: 'Charles Gibbs', active: true },
       ],
-      indexes: [
-        'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)',
-      ],
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: null,
-      updateRule: null,
-      deleteRule: null,
     });
-    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 1 });
 
     await ensureCollections(mockPb);
 
-    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
-    expect(mockCreateBatch).not.toHaveBeenCalled();
-    expect(mockBatchCreate).not.toHaveBeenCalled();
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an inactive initial operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 2,
+      items: [
+        { id: 'ryan', displayName: 'Ryan Bell', active: false },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves a custom operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 1,
+      items: [{ id: 'custom', displayName: 'Taylor Example', active: true }],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unexpectedly duplicated initial operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 2,
+      items: [
+        { id: 'ryan-1', displayName: 'Ryan Bell', active: true },
+        { id: 'ryan-2', displayName: ' Ryan   Bell ', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves the complete initial operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 7,
+      items: [
+        { id: 'ryan', displayName: 'Ryan Bell', active: true },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
+        { id: 'paris', displayName: 'Paris Carlson', active: true },
+        { id: 'connor', displayName: 'Connor McElroy', active: true },
+        { id: 'weston', displayName: 'Weston Yokley', active: true },
+        { id: 'charles', displayName: 'Charles Gibbs', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
     expect(mockCollectionCreate).not.toHaveBeenCalled();
   });
 
