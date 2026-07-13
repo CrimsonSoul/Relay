@@ -17,7 +17,6 @@ import {
   INITIAL_RELAY_OPERATOR_NAMES,
   MAX_OPERATOR_DISPLAY_NAME_LENGTH,
   RELAY_OPERATORS_COLLECTION,
-  normalizeOperatorDisplayName,
   type RelayOperatorRecord,
 } from '@shared/operators';
 import { loggers } from '../logger';
@@ -547,9 +546,8 @@ async function seedOrRecoverRelayOperators(pb: PocketBase): Promise<void> {
   const existingNames = new Set<string>();
   for (const record of existing.items) {
     if (record.active !== true || typeof record.displayName !== 'string') return;
-    const displayName = normalizeOperatorDisplayName(record.displayName);
-    if (!initialNames.has(displayName) || existingNames.has(displayName)) return;
-    existingNames.add(displayName);
+    if (!initialNames.has(record.displayName) || existingNames.has(record.displayName)) return;
+    existingNames.add(record.displayName);
   }
 
   const missingNames = INITIAL_RELAY_OPERATOR_NAMES.filter(

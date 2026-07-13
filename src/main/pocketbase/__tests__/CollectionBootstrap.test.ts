@@ -210,7 +210,7 @@ describe('ensureCollections', () => {
       .mockResolvedValueOnce({
         totalItems: 3,
         items: [
-          { id: 'ryan', displayName: ' Ryan   Bell ', active: true },
+          { id: 'ryan', displayName: 'Ryan Bell', active: true },
           { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
           { id: 'vlad', displayName: 'Vlad McCarty', active: true },
         ],
@@ -239,6 +239,22 @@ describe('ensureCollections', () => {
       { displayName: 'Charles Gibbs', active: true },
     ]);
     expect(mockCreateBatch).not.toHaveBeenCalled();
+  });
+
+  it('leaves a whitespace-modified initial operator subset untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 2,
+      items: [
+        { id: 'ryan', displayName: ' Ryan   Bell ', active: true },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
   });
 
   it('leaves a renamed operator roster untouched', async () => {
@@ -320,6 +336,45 @@ describe('ensureCollections', () => {
         { id: 'connor', displayName: 'Connor McElroy', active: true },
         { id: 'weston', displayName: 'Weston Yokley', active: true },
         { id: 'charles', displayName: 'Charles Gibbs', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an oversized operator roster untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 8,
+      items: [
+        { id: 'ryan', displayName: 'Ryan Bell', active: true },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
+        { id: 'paris', displayName: 'Paris Carlson', active: true },
+        { id: 'connor', displayName: 'Connor McElroy', active: true },
+        { id: 'weston', displayName: 'Weston Yokley', active: true },
+        { id: 'charles', displayName: 'Charles Gibbs', active: true },
+        { id: 'custom', displayName: 'Taylor Example', active: true },
+      ],
+    });
+
+    await ensureCollections(mockPb);
+
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves an incomplete operator roster page untouched', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 5,
+      items: [
+        { id: 'ryan', displayName: 'Ryan Bell', active: true },
+        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
+        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
       ],
     });
 
