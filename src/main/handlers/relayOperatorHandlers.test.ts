@@ -27,7 +27,15 @@ describe('setupRelayOperatorHandlers', () => {
       operator({ id, ...(data as Partial<RelayOperatorRecord>) }),
     ),
   };
-  const pbClient = { collection: vi.fn(() => collection) };
+  const authStore = {
+    isValid: true,
+    record: {
+      id: 'superuser-1',
+      collectionId: 'pbc_3142635823',
+      collectionName: '_superusers',
+    } as { id: string; collectionId: string; collectionName: string } | null,
+  };
+  const pbClient = { authStore, collection: vi.fn(() => collection) };
   const isServer = vi.fn(() => true);
   const getPbClient = vi.fn(() => pbClient);
   const assertTrustedIpcSender = vi.fn(() => true);
@@ -37,6 +45,12 @@ describe('setupRelayOperatorHandlers', () => {
     for (const channel of Object.keys(handlers)) delete handlers[channel];
     collection.getFullList.mockResolvedValue([]);
     collection.getOne.mockResolvedValue(operator());
+    authStore.isValid = true;
+    authStore.record = {
+      id: 'superuser-1',
+      collectionId: 'pbc_3142635823',
+      collectionName: '_superusers',
+    };
     isServer.mockReturnValue(true);
     getPbClient.mockReturnValue(pbClient);
     assertTrustedIpcSender.mockReturnValue(true);
@@ -118,6 +132,73 @@ describe('setupRelayOperatorHandlers', () => {
       success: false,
       error: 'Relay operator management is unavailable.',
     });
+    expect(pbClient.collection).not.toHaveBeenCalled();
+    expect(collection.create).not.toHaveBeenCalled();
+    expect(collection.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      'an expired auth store',
+      () => {
+        authStore.isValid = false;
+      },
+    ],
+    [
+      'an ordinary app-user auth model',
+      () => {
+        authStore.record = {
+          id: 'app-user-1',
+          collectionId: 'pbc_784818227',
+          collectionName: '_pb_users_auth_',
+        };
+      },
+    ],
+  ])('rejects %s before every manager operation', async (_label, configureAuth) => {
+    configureAuth();
+    const requests = [
+      [IPC_CHANNELS.RELAY_OPERATOR_CREATE, { displayName: 'Morgan Lee' }],
+      [
+        IPC_CHANNELS.RELAY_OPERATOR_RENAME,
+        {
+          id: 'operator-1',
+          displayName: 'Morgan Lee',
+          expectedUpdated: '2026-07-13 08:00:00.000Z',
+        },
+      ],
+      [
+        IPC_CHANNELS.RELAY_OPERATOR_SET_ACTIVE,
+        {
+          id: 'operator-1',
+          active: false,
+          expectedUpdated: '2026-07-13 08:00:00.000Z',
+        },
+      ],
+    ] as const;
+
+    for (const [channel, input] of requests) {
+      await expect(handlers[channel]({}, input)).resolves.toEqual({
+        success: false,
+        error: 'Relay operator management is unavailable.',
+      });
+    }
+    expect(pbClient.collection).not.toHaveBeenCalled();
+    expect(collection.create).not.toHaveBeenCalled();
+    expect(collection.update).not.toHaveBeenCalled();
+  });
+
+  it('allows an authenticated _superusers model to manage operators', async () => {
+    await expect(
+      handlers[IPC_CHANNELS.RELAY_OPERATOR_CREATE]({}, { displayName: 'Morgan Lee' }),
+    ).resolves.toMatchObject({
+      success: true,
+      data: { displayName: 'Morgan Lee', active: true },
+    });
+    expect(authStore).toMatchObject({
+      isValid: true,
+      record: { collectionName: '_superusers' },
+    });
+    expect(collection.create).toHaveBeenCalledOnce();
   });
 
   it.each([

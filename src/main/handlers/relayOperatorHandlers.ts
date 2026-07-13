@@ -39,6 +39,12 @@ function invalidRequest<T>(): IpcResult<T> {
   return failure('Invalid Relay operator request.');
 }
 
+function getReadySuperuserClient(getPbClient: () => PocketBase | null): PocketBase | null {
+  const pb = getPbClient();
+  if (!pb?.authStore.isValid || pb.authStore.record?.collectionName !== '_superusers') return null;
+  return pb;
+}
+
 export function setupRelayOperatorHandlers({
   ipcMain,
   isServer,
@@ -52,7 +58,7 @@ export function setupRelayOperatorHandlers({
         return failure('Untrusted sender');
       }
       if (!isServer()) return failure('Manage operators on the Relay server.');
-      const pb = getPbClient();
+      const pb = getReadySuperuserClient(getPbClient);
       if (!pb) return failure('Relay operator management is unavailable.');
       const parsed = createSchema.safeParse(input);
       if (!parsed.success) return invalidRequest();
@@ -75,7 +81,7 @@ export function setupRelayOperatorHandlers({
         return failure('Untrusted sender');
       }
       if (!isServer()) return failure('Manage operators on the Relay server.');
-      const pb = getPbClient();
+      const pb = getReadySuperuserClient(getPbClient);
       if (!pb) return failure('Relay operator management is unavailable.');
       const parsed = renameSchema.safeParse(input);
       if (!parsed.success) return invalidRequest();
@@ -98,7 +104,7 @@ export function setupRelayOperatorHandlers({
         return failure('Untrusted sender');
       }
       if (!isServer()) return failure('Manage operators on the Relay server.');
-      const pb = getPbClient();
+      const pb = getReadySuperuserClient(getPbClient);
       if (!pb) return failure('Relay operator management is unavailable.');
       const parsed = activeSchema.safeParse(input);
       if (!parsed.success) return invalidRequest();
