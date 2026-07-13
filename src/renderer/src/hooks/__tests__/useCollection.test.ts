@@ -247,6 +247,46 @@ describe('useCollection', () => {
 
     expect(result.current.data).toHaveLength(1);
     expect(result.current.data[0].id).toBe('cached-1');
+    expect(result.current.hasLoadedSnapshot).toBe(true);
+  });
+
+  it('does not report a loaded snapshot for an offline cache miss', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn().mockResolvedValue(null),
+    };
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.data).toHaveLength(0);
+    expect(result.current.hasLoadedSnapshot).toBe(false);
+  });
+
+  it('reports a successful cached empty roster as a loaded snapshot', async () => {
+    vi.mocked(isOnline).mockReturnValue(false);
+    (globalThis as Record<string, unknown>).api = {
+      cacheRead: vi.fn().mockResolvedValue([]),
+    };
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.data).toHaveLength(0);
+    expect(result.current.hasLoadedSnapshot).toBe(true);
+  });
+
+  it('reports a successful online empty roster as a loaded snapshot', async () => {
+    mockGetFullList.mockResolvedValue([]);
+
+    const { result } = renderHook(() => useCollection('test'));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.data).toHaveLength(0);
+    expect(result.current.hasLoadedSnapshot).toBe(true);
   });
 
   it('refetch re-fetches data from collection', async () => {
@@ -400,6 +440,7 @@ describe('useCollection', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.data).toHaveLength(0);
+    expect(result.current.hasLoadedSnapshot).toBe(false);
   });
 
   it('sorts records with custom sort option', async () => {

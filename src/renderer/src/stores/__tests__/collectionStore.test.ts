@@ -7,7 +7,12 @@ describe('CollectionStore', () => {
     const store = new CollectionStore<RecordModel>('contacts', {});
 
     expect(store.getSnapshot()).toBe(store.getSnapshot());
-    expect(store.getSnapshot()).toEqual({ data: [], loading: true, error: null });
+    expect(store.getSnapshot()).toEqual({
+      data: [],
+      loading: true,
+      error: null,
+      hasLoadedSnapshot: false,
+    });
   });
 
   it('produces the same revision for unchanged record metadata', () => {

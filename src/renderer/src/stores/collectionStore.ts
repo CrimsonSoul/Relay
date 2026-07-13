@@ -19,6 +19,7 @@ export interface CollectionSnapshot<T extends RecordModel> {
   data: T[];
   loading: boolean;
   error: string | null;
+  hasLoadedSnapshot: boolean;
 }
 
 interface ExtendedApi {
@@ -160,7 +161,12 @@ function sortCachedRecords<T extends RecordModel>(
 }
 
 export class CollectionStore<T extends RecordModel> {
-  private snapshot: CollectionSnapshot<T> = { data: [], loading: true, error: null };
+  private snapshot: CollectionSnapshot<T> = {
+    data: [],
+    loading: true,
+    error: null,
+    hasLoadedSnapshot: false,
+  };
   private readonly listeners = new Set<Listener>();
   private readonly comparator: ((a: T, b: T) => number) | null;
   private active = false;
@@ -331,7 +337,7 @@ export class CollectionStore<T extends RecordModel> {
         next = applyRealtimeEvent(next, overlay.action, overlay.record, this.comparator);
       }
     }
-    this.updateSnapshot({ data: next, error: null });
+    this.updateSnapshot({ data: next, error: null, hasLoadedSnapshot: true });
     this.writeCacheSnapshot(next);
   }
 
@@ -340,7 +346,9 @@ export class CollectionStore<T extends RecordModel> {
       await readOfflineCache<T>(this.collectionName),
       this.comparator,
     );
-    if (isCurrent() && cached) this.updateSnapshot({ data: cached });
+    if (isCurrent() && cached) {
+      this.updateSnapshot({ data: cached, hasLoadedSnapshot: true });
+    }
   }
 
   private async recoverFromFetchError(error: unknown, isCurrent: () => boolean): Promise<void> {
@@ -352,7 +360,7 @@ export class CollectionStore<T extends RecordModel> {
     );
     if (!isCurrent()) return;
     this.updateSnapshot({
-      ...(cached ? { data: cached } : {}),
+      ...(cached ? { data: cached, hasLoadedSnapshot: true } : {}),
       error: errorMessage(error),
     });
   }
@@ -371,7 +379,8 @@ export class CollectionStore<T extends RecordModel> {
     if (
       next.data === this.snapshot.data &&
       next.loading === this.snapshot.loading &&
-      next.error === this.snapshot.error
+      next.error === this.snapshot.error &&
+      next.hasLoadedSnapshot === this.snapshot.hasLoadedSnapshot
     ) {
       return;
     }

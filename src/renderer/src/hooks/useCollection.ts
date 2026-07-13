@@ -10,6 +10,7 @@ interface UseCollectionResult<T> {
   data: T[];
   loading: boolean;
   error: string | null;
+  hasLoadedSnapshot: boolean;
   refetch: () => Promise<void>;
 }
 
@@ -31,6 +32,7 @@ export function useCollection<T extends RecordModel>(
       data: snapshot.data,
       loading: snapshot.loading,
       error: snapshot.error,
+      hasLoadedSnapshot: snapshot.hasLoadedSnapshot,
       refetch: store.refetch,
     }),
     [snapshot, store],

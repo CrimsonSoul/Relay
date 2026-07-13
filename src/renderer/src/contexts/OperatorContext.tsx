@@ -37,6 +37,7 @@ export function OperatorProvider({ children }: Readonly<{ children: ReactNode }>
     data,
     loading,
     error: collectionError,
+    hasLoadedSnapshot,
   } = useCollection<RelayOperatorRecord>(RELAY_OPERATORS_COLLECTION, { sort: 'displayName' });
   const [selectedOperatorId, setSelectedOperatorId] = useState(loadSelectedOperatorId);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -60,7 +61,7 @@ export function OperatorProvider({ children }: Readonly<{ children: ReactNode }>
   );
 
   useEffect(() => {
-    if (!selectedOperatorId || loading || collectionError) return;
+    if (!selectedOperatorId || loading || collectionError || !hasLoadedSnapshot) return;
 
     const storedOperator = operators.find(({ id }) => id === selectedOperatorId);
     if (storedOperator?.active) {
@@ -75,7 +76,7 @@ export function OperatorProvider({ children }: Readonly<{ children: ReactNode }>
       lastInactiveNotificationRef.current = selectedOperatorId;
       showToast('The selected operator is no longer active. Choose another operator.', 'info');
     }
-  }, [collectionError, loading, operators, selectedOperatorId, showToast]);
+  }, [collectionError, hasLoadedSnapshot, loading, operators, selectedOperatorId, showToast]);
 
   const selectOperator = useCallback((id: string) => {
     const normalizedId = id.trim() || null;

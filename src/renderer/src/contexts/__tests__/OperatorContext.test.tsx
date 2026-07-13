@@ -23,6 +23,7 @@ type CollectionState = {
   data: RelayOperatorRecord[];
   loading: boolean;
   error: string | null;
+  hasLoadedSnapshot: boolean;
   refetch: () => Promise<void>;
 };
 
@@ -48,6 +49,7 @@ describe('OperatorProvider', () => {
       data: [],
       loading: false,
       error: null,
+      hasLoadedSnapshot: true,
       refetch: vi.fn().mockResolvedValue(undefined),
     };
     mockUseCollection.mockImplementation(() => collectionState);
@@ -112,6 +114,26 @@ describe('OperatorProvider', () => {
 
     await waitFor(() => expect(localStorage.getItem(SELECTED_OPERATOR_STORAGE_KEY)).toBeNull());
     expect(mockShowToast).not.toHaveBeenCalled();
+  });
+
+  it('preserves an absent selection until a roster snapshot is loaded', async () => {
+    localStorage.setItem(SELECTED_OPERATOR_STORAGE_KEY, 'missing-operator');
+    collectionState = {
+      ...collectionState,
+      hasLoadedSnapshot: false,
+    };
+
+    const { rerender } = renderHook(() => useOperator(), { wrapper });
+
+    expect(localStorage.getItem(SELECTED_OPERATOR_STORAGE_KEY)).toBe('missing-operator');
+
+    collectionState = {
+      ...collectionState,
+      hasLoadedSnapshot: true,
+    };
+    rerender();
+
+    await waitFor(() => expect(localStorage.getItem(SELECTED_OPERATOR_STORAGE_KEY)).toBeNull());
   });
 
   it('preserves a stored selection through loading and transient errors', () => {
