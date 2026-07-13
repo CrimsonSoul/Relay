@@ -257,6 +257,17 @@ describe('setupIpc', () => {
       }),
     );
   });
+
+  it('passes the current authenticated PocketBase client getter to setupIpcHandlers', () => {
+    const client = { authStore: { isValid: true } } as never;
+    setPbClient(client);
+
+    setupIpc();
+
+    const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
+    expect(options?.getPbClient).toEqual(expect.any(Function));
+    expect(options?.getPbClient?.()).toBe(client);
+  });
 });
 
 describe('setupPermissions', () => {

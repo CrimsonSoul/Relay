@@ -224,6 +224,7 @@ export function setupIpc(
     getBackupManager: () => state.backupManager,
     getDynatraceWindowManager: () => state.dynatraceWindowManager,
     getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
+    getPbClient: () => state.pbClient,
     restartPb,
   });
   setupAuthHandlers();

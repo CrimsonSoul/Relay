@@ -1,4 +1,5 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
+import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupWindowHandlers } from './handlers/windowHandlers';
 import { setupSetupHandlers } from './handlers/setupHandlers';
@@ -7,6 +8,7 @@ import { setupOfflineMutationHandlers } from './handlers/offlineMutationHandlers
 import { setupBackupHandlers } from './handlers/backupHandlers';
 import { setupDynatraceHandlers } from './handlers/dynatraceHandlers';
 import { setupDynatraceProblemsHandlers } from './handlers/dynatraceProblemsHandlers';
+import { setupRelayOperatorHandlers } from './handlers/relayOperatorHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
 import type { PendingChanges } from './cache/PendingChanges';
@@ -16,6 +18,7 @@ import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager'
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
+import { assertTrustedIpcSender } from './utils/trustedSender';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -33,6 +36,7 @@ export function setupIpcHandlers(opts: {
   getBackupManager?: () => BackupManager | null;
   getDynatraceWindowManager?: () => DynatraceWindowManager | null;
   getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
+  getPbClient?: () => PocketBase | null;
   restartPb?: () => Promise<boolean>;
 }) {
   const {
@@ -46,6 +50,7 @@ export function setupIpcHandlers(opts: {
     getBackupManager,
     getDynatraceWindowManager,
     getDynatraceProblemsManager,
+    getPbClient,
     restartPb,
   } = opts;
   const safeSetup = (name: string, fn: () => void) => {
@@ -67,6 +72,15 @@ export function setupIpcHandlers(opts: {
       getDynatraceProblemsManager ?? (() => null),
       getAppConfig ?? (() => null),
     ),
+  );
+
+  safeSetup('relayOperators', () =>
+    setupRelayOperatorHandlers({
+      ipcMain,
+      isServer: () => getAppConfig?.()?.load()?.mode === 'server',
+      getPbClient: getPbClient ?? (() => null),
+      assertTrustedIpcSender,
+    }),
   );
 
   // Window Management

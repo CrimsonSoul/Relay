@@ -4,6 +4,7 @@ import type {
   DynatraceProblemsSettingsInput,
   DynatraceProblemsTestResult,
 } from './dynatraceProblems';
+import type { RelayOperatorRecord } from './operators';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -57,6 +58,18 @@ export type IpcResult<T = void> = {
   data?: T;
   error?: string;
   rateLimited?: boolean;
+};
+
+export type RelayOperatorCreateInput = { displayName: string };
+export type RelayOperatorRenameInput = {
+  id: string;
+  displayName: string;
+  expectedUpdated: string;
+};
+export type RelayOperatorActiveInput = {
+  id: string;
+  active: boolean;
+  expectedUpdated: string;
 };
 
 export type BackupEntry = {
@@ -358,6 +371,12 @@ export type BridgeAPI = {
   saveDynatraceProblemProfileFilter: (
     alertingProfiles: string[],
   ) => Promise<IpcResult<{ count: number }>>;
+  // Relay operators — server management only; roster reads flow through PocketBase.
+  createRelayOperator: (input: RelayOperatorCreateInput) => Promise<IpcResult<RelayOperatorRecord>>;
+  renameRelayOperator: (input: RelayOperatorRenameInput) => Promise<IpcResult<RelayOperatorRecord>>;
+  setRelayOperatorActive: (
+    input: RelayOperatorActiveInput,
+  ) => Promise<IpcResult<RelayOperatorRecord>>;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -487,6 +506,10 @@ export const IPC_CHANNELS = {
   DYNATRACE_PROBLEMS_CLEAR_SETTINGS: 'dynatraceProblems:clearSettings',
   DYNATRACE_PROBLEMS_SYNC: 'dynatraceProblems:sync',
   DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER: 'dynatraceProblems:saveProfileFilter',
+  // Relay operators
+  RELAY_OPERATOR_CREATE: 'relayOperator:create',
+  RELAY_OPERATOR_RENAME: 'relayOperator:rename',
+  RELAY_OPERATOR_SET_ACTIVE: 'relayOperator:setActive',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
   OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',

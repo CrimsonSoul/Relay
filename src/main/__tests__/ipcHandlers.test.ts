@@ -3,6 +3,7 @@ import { setupIpcHandlers } from '../ipcHandlers';
 
 vi.mock('electron', () => ({
   BrowserWindow: vi.fn(),
+  ipcMain: { handle: vi.fn() },
 }));
 
 vi.mock('../logger', () => ({
@@ -18,6 +19,7 @@ const mockSetupWindowHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
+const mockSetupRelayOperatorHandlers = vi.fn();
 
 vi.mock('../handlers/cloudStatus', () => ({
   setupCloudStatusHandlers: (...args: unknown[]) => mockSetupCloudStatusHandlers(...args),
@@ -33,6 +35,9 @@ vi.mock('../handlers/cacheHandlers', () => ({
 }));
 vi.mock('../handlers/backupHandlers', () => ({
   setupBackupHandlers: (...args: unknown[]) => mockSetupBackupHandlers(...args),
+}));
+vi.mock('../handlers/relayOperatorHandlers', () => ({
+  setupRelayOperatorHandlers: (...args: unknown[]) => mockSetupRelayOperatorHandlers(...args),
 }));
 
 import { loggers } from '../logger';
@@ -58,6 +63,7 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
+    expect(mockSetupRelayOperatorHandlers).toHaveBeenCalled();
   });
 
   it('passes getMainWindow, createAuxWindow, getDataRoot to window handlers', () => {
@@ -104,6 +110,25 @@ describe('setupIpcHandlers', () => {
     setupIpcHandlers(makeOpts({ getBackupManager, restartPb, getCache }));
 
     expect(mockSetupBackupHandlers).toHaveBeenCalledWith(getBackupManager, restartPb, getCache);
+  });
+
+  it('passes server mode, PocketBase, and trust dependencies to operator handlers', () => {
+    const appConfig = { load: vi.fn(() => ({ mode: 'server' })) };
+    const getAppConfig = vi.fn(() => appConfig);
+    const getPbClient = vi.fn(() => ({ authStore: { isValid: true } }));
+
+    setupIpcHandlers(makeOpts({ getAppConfig, getPbClient }));
+
+    expect(mockSetupRelayOperatorHandlers).toHaveBeenCalledWith({
+      ipcMain: expect.any(Object),
+      isServer: expect.any(Function),
+      getPbClient,
+      assertTrustedIpcSender: expect.any(Function),
+    });
+    const options = mockSetupRelayOperatorHandlers.mock.calls[0]?.[0];
+    expect(options.isServer()).toBe(true);
+    appConfig.load.mockReturnValue({ mode: 'client' });
+    expect(options.isServer()).toBe(false);
   });
 
   it('continues registering handlers if one setup throws', () => {
