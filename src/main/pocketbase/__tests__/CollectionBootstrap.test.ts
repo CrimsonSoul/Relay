@@ -10,6 +10,17 @@ const mockCollectionGetList = vi.fn();
 const mockCollectionCreate = vi.fn();
 const mockCollectionUpdate = vi.fn();
 const mockCollectionDelete = vi.fn();
+const mockBatchCreate = vi.fn();
+const mockBatchSend = vi.fn();
+
+const mockBatchCollection = vi.fn(() => ({
+  create: mockBatchCreate,
+}));
+
+const mockCreateBatch = vi.fn(() => ({
+  collection: mockBatchCollection,
+  send: mockBatchSend,
+}));
 
 const mockPbCollection = vi.fn(() => ({
   getFullList: mockCollectionGetFullList,
@@ -28,6 +39,7 @@ const mockPb = {
     update: mockUpdate,
   },
   collection: mockPbCollection,
+  createBatch: mockCreateBatch,
 } as never;
 
 import { ensureCollections } from '../CollectionBootstrap';
@@ -36,6 +48,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCollectionGetList.mockResolvedValue({ totalItems: 1 });
   mockCollectionCreate.mockResolvedValue({});
+  mockBatchSend.mockResolvedValue([]);
 });
 
 describe('ensureCollections', () => {
@@ -179,7 +192,8 @@ describe('ensureCollections', () => {
 
     expect(mockPbCollection).toHaveBeenCalledWith('relay_operators');
     expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
+    expect(mockBatchCollection).toHaveBeenCalledWith('relay_operators');
+    expect(mockBatchCreate.mock.calls.map(([record]) => record)).toEqual([
       { displayName: 'Ryan Bell', active: true },
       { displayName: 'Tristan Stillwell', active: true },
       { displayName: 'Vlad McCarty', active: true },
@@ -188,6 +202,34 @@ describe('ensureCollections', () => {
       { displayName: 'Weston Yokley', active: true },
       { displayName: 'Charles Gibbs', active: true },
     ]);
+    expect(mockBatchSend).toHaveBeenCalledTimes(1);
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
+  });
+
+  it('retries the entire transactional operator seed after a failed batch', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+    mockCollectionGetList.mockResolvedValue({ totalItems: 0 });
+    mockBatchSend.mockRejectedValueOnce(new Error('transaction rolled back'));
+
+    await expect(ensureCollections(mockPb)).rejects.toThrow('transaction rolled back');
+    await ensureCollections(mockPb);
+
+    const expectedRoster = [
+      { displayName: 'Ryan Bell', active: true },
+      { displayName: 'Tristan Stillwell', active: true },
+      { displayName: 'Vlad McCarty', active: true },
+      { displayName: 'Paris Carlson', active: true },
+      { displayName: 'Connor McElroy', active: true },
+      { displayName: 'Weston Yokley', active: true },
+      { displayName: 'Charles Gibbs', active: true },
+    ];
+    expect(mockBatchCreate.mock.calls.slice(0, 7).map(([record]) => record)).toEqual(
+      expectedRoster,
+    );
+    expect(mockBatchCreate.mock.calls.slice(7).map(([record]) => record)).toEqual(expectedRoster);
+    expect(mockBatchSend).toHaveBeenCalledTimes(2);
+    expect(mockCollectionCreate).not.toHaveBeenCalled();
   });
 
   it('does not reseed operators when any operator record already exists', async () => {
@@ -214,6 +256,8 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     expect(mockCollectionGetList).toHaveBeenCalledWith(1, 1);
+    expect(mockCreateBatch).not.toHaveBeenCalled();
+    expect(mockBatchCreate).not.toHaveBeenCalled();
     expect(mockCollectionCreate).not.toHaveBeenCalled();
   });
 

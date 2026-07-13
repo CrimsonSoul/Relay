@@ -91,6 +91,8 @@ function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): Pending
   });
 }
 
+// Only user-authored pending mutations may become optimistic renderer overlays.
+// Realtime cache ingestion is separately restricted by VALID_COLLECTIONS.
 const WRITABLE_CACHE_COLLECTIONS = new Set<string>([
   'contacts',
   'servers',
@@ -153,7 +155,9 @@ export function setupCacheHandlers(
     IPC_CHANNELS.CACHE_WRITE,
     (event, collection: string, action: string, record: Record<string, unknown>) => {
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.CACHE_WRITE)) return;
-      if (typeof collection !== 'string' || !WRITABLE_CACHE_COLLECTIONS.has(collection)) {
+      // This channel persists trusted realtime events locally. User/offline server mutations
+      // use OFFLINE_MUTATE and its narrower writable-collection allowlist.
+      if (typeof collection !== 'string' || !VALID_COLLECTIONS.has(collection)) {
         loggers.cache.error('CACHE_WRITE: invalid collection', { collection });
         return;
       }

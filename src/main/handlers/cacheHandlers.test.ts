@@ -170,13 +170,29 @@ describe('cacheHandlers', () => {
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
-    it('rejects cache writes to the server-owned operator roster', () => {
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'relay_operators', 'update', {
+    it('ingests realtime updates for an existing server-owned readable collection', () => {
+      const record = { id: 'snapshot', key: 'current', providers: [] };
+
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'cloud_status_snapshot', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith(
+        'cloud_status_snapshot',
+        'update',
+        record,
+      );
+    });
+
+    it('ingests operator realtime updates into cache without queueing a server mutation', () => {
+      const record = {
         id: 'operator-1',
         displayName: 'Changed Name',
-      });
+      };
 
-      expect(mockCache.updateRecord).not.toHaveBeenCalled();
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'relay_operators', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith('relay_operators', 'update', record);
+      expect(mockPending.getAll).not.toHaveBeenCalled();
+      expect(mockSync.syncAll).not.toHaveBeenCalled();
     });
 
     it('returns early for non-string collection', () => {

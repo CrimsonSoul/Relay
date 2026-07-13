@@ -537,9 +537,12 @@ async function seedRelayOperatorsIfEmpty(pb: PocketBase): Promise<void> {
   const existing = await operators.getList(1, 1);
   if (existing.totalItems > 0) return;
 
+  const batch = pb.createBatch();
+  const batchOperators = batch.collection(RELAY_OPERATORS_COLLECTION);
   for (const displayName of INITIAL_RELAY_OPERATOR_NAMES) {
-    await operators.create({ displayName, active: true });
+    batchOperators.create({ displayName, active: true });
   }
+  await batch.send();
   logger.info(`Seeded ${INITIAL_RELAY_OPERATOR_NAMES.length} Relay operator profiles`);
 }
 
