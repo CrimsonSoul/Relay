@@ -85,6 +85,9 @@ const mockUseDynatraceDashboards = vi.fn(() => mockDynatraceHookState);
 vi.mock('../contexts', () => ({
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  OperatorProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="operator-provider">{children}</div>
+  ),
 }));
 
 // ── mock Toast ───────────────────────────────────────────────────────────────
@@ -925,6 +928,18 @@ describe('App default export', () => {
     const { default: App } = await import('../App');
     render(<App />);
     expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+  });
+
+  it('mounts the operator provider inside the initialized connection manager', async () => {
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    const connectionManager = await screen.findByTestId('connection-manager');
+    expect(connectionManager).toContainElement(screen.getByTestId('operator-provider'));
   });
 
   it('uses NoopToastProvider in popout mode', async () => {
