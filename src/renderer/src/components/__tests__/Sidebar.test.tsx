@@ -24,6 +24,14 @@ vi.mock('../sidebar/SidebarButton', () => ({
   ),
 }));
 
+vi.mock('../sidebar/SidebarOperatorSelector', () => ({
+  SidebarOperatorSelector: () => (
+    <button type="button" data-testid="sidebar-operator-selector">
+      Select operator
+    </button>
+  ),
+}));
+
 // Mock sidebar icons to simple spans
 vi.mock('../sidebar/SidebarIcons', () => ({
   ComposeIcon: () => <span>ComposeIcon</span>,
@@ -120,6 +128,37 @@ describe('Sidebar', () => {
     ).toBeTruthy();
     expect(
       dashboardButton.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it('renders the operator selector directly below dashboard tools and above Settings', () => {
+    const { container } = render(
+      <Sidebar
+        {...defaultProps}
+        dynatraceDashboards={[
+          {
+            id: 'dt_1',
+            name: 'NOC',
+            url: 'https://abc.live.dynatrace.com/dashboard',
+            state: 'live',
+          },
+        ]}
+      />,
+    );
+
+    const footer = container.querySelector('.sidebar-footer');
+    const dashboardButton = screen.getByRole('button', {
+      name: 'Open Dynatrace dashboard NOC',
+    });
+    const operatorSelector = screen.getByTestId('sidebar-operator-selector');
+    const settingsButton = screen.getByTestId('sidebar-btn-settings');
+
+    expect(footer).toContainElement(operatorSelector);
+    expect(
+      dashboardButton.compareDocumentPosition(operatorSelector) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      operatorSelector.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 

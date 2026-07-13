@@ -4,6 +4,7 @@ import type { DynatraceDashboardState } from '@shared/dynatrace';
 import { SidebarButton } from './sidebar/SidebarButton';
 import { SidebarClientStatus } from './sidebar/SidebarClientStatus';
 import { SidebarDashboards } from './sidebar/SidebarDashboards';
+import { SidebarOperatorSelector } from './sidebar/SidebarOperatorSelector';
 import { SidebarPresence } from './SidebarPresence';
 import {
   ComposeIcon,
@@ -99,6 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           dashboards={dynatraceDashboards}
           onOpenDashboard={onOpenDynatraceDashboard}
         />
+        <SidebarOperatorSelector />
         <SidebarButton
           label="Settings"
           isActive={activeTab === 'Settings'}
