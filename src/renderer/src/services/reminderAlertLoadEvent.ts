@@ -24,7 +24,9 @@ export function dispatchReminderAlertLoad(reminder: AlertReminderRecord): void {
         severity: reminder.severity,
         subject: reminder.alertSubject,
         bodyHtml: reminder.alertBodyHtml,
-        sender: reminder.alertSender || reminder.createdBy,
+        sender: reminder.operatorId
+          ? (reminder.alertSender ?? '')
+          : reminder.alertSender || reminder.createdBy,
       },
     }),
   );

@@ -154,6 +154,12 @@ describe('setupRelayOperatorHandlers', () => {
         };
       },
     ],
+    [
+      'a missing auth record',
+      () => {
+        authStore.record = null;
+      },
+    ],
   ])('rejects %s before every manager operation', async (_label, configureAuth) => {
     configureAuth();
     const requests = [

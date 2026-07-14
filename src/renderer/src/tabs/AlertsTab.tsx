@@ -28,6 +28,7 @@ import {
 } from '../services/reminderAlarmSoundService';
 import type { ReminderAlertLoadDetail } from '../services/reminderAlertLoadEvent';
 import { MAX_IMAGE_DATA_URL_LENGTH, type AlertHistoryEntry } from '@shared/ipc';
+import type { OperatorAttribution } from '@shared/operators';
 
 import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/600.css';
@@ -250,6 +251,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const reminderModal = useModalState();
   const reminderManagerModal = useModalState();
   const [editingReminder, setEditingReminder] = useState<AlertReminderRecord | null>(null);
+  const [reminderCreationAttribution, setReminderCreationAttribution] =
+    useState<OperatorAttribution | null>(null);
   const [reminderAlarmLabel, setReminderAlarmLabel] = useState(getReminderAlarmLabel);
   const [hasCustomReminderAlarm, setHasCustomReminderAlarm] = useState(
     hasCustomReminderAlarmSource,
@@ -392,10 +395,14 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     };
   }, [captureCard]);
 
-  const handleSetReminder = useCallback(() => {
+  const openNewReminderModal = useCallback(() => {
+    const attribution = requireAttribution();
+    if (!attribution) return;
+
     setEditingReminder(null);
+    setReminderCreationAttribution(attribution);
     reminderModal.open();
-  }, [reminderModal]);
+  }, [reminderModal, requireAttribution]);
 
   const handleSaveImage = useCallback(
     () =>
@@ -571,6 +578,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   const handleReminderModalClose = useCallback(() => {
     reminderModal.close();
     setEditingReminder(null);
+    setReminderCreationAttribution(null);
   }, [reminderModal]);
 
   const handleReminderSubmit = useCallback(
@@ -582,23 +590,22 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
           dueAt: input.dueAt,
         });
       }
-      const attribution = requireAttribution();
-      if (!attribution) return false;
-      return await scheduleReminder(input, attribution);
+      if (!reminderCreationAttribution) return false;
+      return await scheduleReminder(input, reminderCreationAttribution);
     },
-    [editingReminder, requireAttribution, scheduleReminder, updateReminder],
+    [editingReminder, reminderCreationAttribution, scheduleReminder, updateReminder],
   );
 
   const handleScheduleFromManager = useCallback(() => {
     reminderManagerModal.close();
-    setEditingReminder(null);
-    reminderModal.open();
-  }, [reminderManagerModal, reminderModal]);
+    openNewReminderModal();
+  }, [openNewReminderModal, reminderManagerModal]);
 
   const handleEditReminder = useCallback(
     (reminder: AlertReminderRecord) => {
       reminderManagerModal.close();
       setEditingReminder(reminder);
+      setReminderCreationAttribution(null);
       reminderModal.open();
     },
     [reminderManagerModal, reminderModal],
@@ -751,7 +758,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         </TactileButton>
         <TactileButton
           variant="secondary"
-          onClick={handleSetReminder}
+          onClick={openNewReminderModal}
           tooltip="Schedule an alarm for this alert"
           icon={
             <svg

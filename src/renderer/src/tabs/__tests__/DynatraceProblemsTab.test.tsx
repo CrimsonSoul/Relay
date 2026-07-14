@@ -358,6 +358,23 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
+  it('does not mark addressed and reports the error when the drafted note fails', async () => {
+    mocks.addNote.mockRejectedValueOnce(new Error('Unable to queue the NOC note.'));
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Mitigation could not be persisted.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
+
+    await waitFor(() => {
+      expect(mocks.addNote).toHaveBeenCalledOnce();
+      expect(mocks.showToast).toHaveBeenCalledWith('Unable to queue the NOC note.', 'error');
+    });
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
+  });
+
   it.each(['reconnecting', 'auth-failed'])('blocks mutations while %s', async (connectionState) => {
     mocks.connectionState = connectionState;
     mocks.hookValue = {

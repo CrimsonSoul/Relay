@@ -165,17 +165,16 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
         expectedUpdated: operator.updated,
       });
       if (!result?.success) {
-        throw showFailure(result?.error || `Could not ${verb} the operator.`);
+        throw new Error(result?.error || `Could not ${verb} the operator.`);
       }
       setFeedback({
         type: 'success',
         message: `${active ? 'Reactivated' : 'Deactivated'} ${operator.displayName}.`,
       });
     } catch (activeFailure) {
-      const failure = showFailure(
-        getErrorMessage(activeFailure, `Could not ${verb} the operator.`),
-      );
-      if (!active) throw failure;
+      const message = getErrorMessage(activeFailure, `Could not ${verb} the operator.`);
+      if (!active) throw new Error(message);
+      setFeedback({ type: 'error', message });
     } finally {
       setBusy(null);
     }

@@ -110,6 +110,7 @@ vi.mock('../AlertReminderModal', () => ({
     mode?: 'schedule' | 'edit';
     reminder?: { title: string } | null;
     onSchedule: (input: Record<string, unknown>) => Promise<boolean>;
+    onClose: () => void;
   }) =>
     props.isOpen ? (
       <div data-testid="reminder-modal">
@@ -136,6 +137,9 @@ vi.mock('../AlertReminderModal', () => ({
           }
         >
           Schedule alarm
+        </button>
+        <button data-testid="reminder-close" onClick={props.onClose}>
+          Close alarm
         </button>
       </div>
     ) : null,
@@ -805,10 +809,13 @@ describe('AlertsTab', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-schedule'));
+
+    expect(mockRequireAttribution).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
     await waitFor(() => {
-      expect(mockRequireAttribution).toHaveBeenCalledOnce();
       expect(mockScheduleReminder).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Scheduled reminder' }),
         { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
@@ -816,18 +823,58 @@ describe('AlertsTab', () => {
     });
   });
 
-  it('opens the shared operator picker and returns false without scheduling when none is selected', async () => {
+  it('opens the shared operator picker without opening the schedule modal when none is selected', () => {
     mockRequireAttribution.mockReturnValue(null);
     render(<AlertsTab />);
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
+
+    expect(mockRequireAttribution).toHaveBeenCalledOnce();
+    expect(screen.queryByTestId('reminder-modal')).not.toBeInTheDocument();
+    expect(mockScheduleReminder).not.toHaveBeenCalled();
+    expect(mockUpdateReminder).not.toHaveBeenCalled();
+  });
+
+  it('uses the attribution snapshot captured when the creation modal opened', async () => {
+    mockRequireAttribution.mockReturnValueOnce({
+      operatorId: 'operator-opening',
+      operatorName: 'Opening Operator',
+    });
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
+    mockRequireAttribution.mockReturnValue({
+      operatorId: 'operator-later',
+      operatorName: 'Later Operator',
+    });
+    fireEvent.click(screen.getByTestId('reminder-schedule'));
+
+    await waitFor(() => {
+      expect(mockScheduleReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Scheduled reminder' }),
+        { operatorId: 'operator-opening', operatorName: 'Opening Operator' },
+      );
+    });
+    expect(mockRequireAttribution).toHaveBeenCalledOnce();
+  });
+
+  it('captures a fresh attribution snapshot after a creation session closes', async () => {
+    mockRequireAttribution
+      .mockReturnValueOnce({ operatorId: 'operator-first', operatorName: 'First Operator' })
+      .mockReturnValueOnce({ operatorId: 'operator-second', operatorName: 'Second Operator' });
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
+    fireEvent.click(screen.getByTestId('reminder-close'));
     fireEvent.click(screen.getByText('SCHEDULE ALARM'));
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
     await waitFor(() => {
-      expect(mockReminderSubmitResult.current).toBe(false);
+      expect(mockScheduleReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Scheduled reminder' }),
+        { operatorId: 'operator-second', operatorName: 'Second Operator' },
+      );
     });
-    expect(mockRequireAttribution).toHaveBeenCalledOnce();
-    expect(mockScheduleReminder).not.toHaveBeenCalled();
-    expect(mockUpdateReminder).not.toHaveBeenCalled();
+    expect(mockRequireAttribution).toHaveBeenCalledTimes(2);
   });
 
   it('shows the next upcoming reminder compactly', () => {

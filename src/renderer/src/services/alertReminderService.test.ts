@@ -28,11 +28,12 @@ import {
   type AlertReminderInput,
   type AlertReminderRecord,
 } from './alertReminderService';
-import { handleApiError, requireOnline } from './pocketbase';
+import { getConnectionState, handleApiError, requireOnline } from './pocketbase';
 import type { OperatorAttribution } from '@shared/operators';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
+const mockGetConnectionState = vi.mocked(getConnectionState);
 
 const sampleRecord: AlertReminderRecord = {
   id: 'rem-1',
@@ -70,6 +71,8 @@ const attribution: OperatorAttribution = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetConnectionState.mockReturnValue('online');
+  globalThis.api = undefined as never;
 });
 
 describe('addAlertReminder', () => {
@@ -106,6 +109,42 @@ describe('addAlertReminder', () => {
 
     await expect(addAlertReminder(sampleInput, attribution)).rejects.toThrow('create failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(error);
+  });
+
+  it('queues operator attribution and the independent cosmetic sender while offline', async () => {
+    mockGetConnectionState.mockReturnValue('offline');
+    const queuedRecord = {
+      ...sampleRecord,
+      alertSender: 'Network Operations',
+    };
+    const mutateOffline = vi.fn().mockResolvedValue({
+      ok: true,
+      mutationId: 'mutation-reminder-1',
+      collection: 'alert_reminders',
+      action: 'create',
+      record: queuedRecord,
+      pendingCount: 1,
+    });
+    globalThis.api = { mutateOffline } as never;
+
+    await addAlertReminder({ ...sampleInput, alertSender: '  Network Operations  ' }, attribution);
+
+    expect(mutateOffline).toHaveBeenCalledWith({
+      collection: 'alert_reminders',
+      action: 'create',
+      data: {
+        title: 'Send outage alert',
+        note: 'Use the prepared template',
+        dueAt: '2026-05-28T20:00:00.000Z',
+        status: 'pending',
+        severity: 'ISSUE',
+        alertSubject: 'POS outage',
+        alertBodyHtml: '<p>Details</p>',
+        operatorId: 'operator-ryan',
+        createdBy: 'Ryan Bell',
+        alertSender: 'Network Operations',
+      },
+    });
   });
 });
 

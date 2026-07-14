@@ -372,6 +372,8 @@ describe('OperatorSettingsSection', () => {
         'This operator changed since it was loaded. Refresh and try again.',
       ),
     );
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toBe(within(dialog).getByRole('alert'));
     expect(dialog).toBeVisible();
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
   });

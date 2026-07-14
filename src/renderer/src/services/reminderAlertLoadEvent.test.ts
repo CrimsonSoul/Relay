@@ -23,25 +23,42 @@ function makeReminder(overrides: Partial<AlertReminderRecord> = {}): AlertRemind
 }
 
 describe('dispatchReminderAlertLoad', () => {
-  it('restores the cosmetic alert sender for attributed reminders', () => {
+  function captureSender(reminder: AlertReminderRecord): string {
     const listener = vi.fn();
     window.addEventListener('relay:load-alert-reminder', listener as EventListener);
+    try {
+      dispatchReminderAlertLoad(reminder);
+      return (listener.mock.calls[0]?.[0] as CustomEvent).detail.sender as string;
+    } finally {
+      window.removeEventListener('relay:load-alert-reminder', listener as EventListener);
+    }
+  }
 
-    dispatchReminderAlertLoad(
-      makeReminder({ operatorId: 'operator-ryan', alertSender: 'Operations' }),
-    );
+  it.each([{ alertSender: '' }, { alertSender: undefined }])(
+    'keeps an attributed blank or missing cosmetic sender blank: $alertSender',
+    ({ alertSender }) => {
+      expect(captureSender(makeReminder({ operatorId: 'operator-ryan', alertSender }))).toBe('');
+    },
+  );
 
-    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail.sender).toBe('Operations');
-    window.removeEventListener('relay:load-alert-reminder', listener as EventListener);
+  it('restores a nonblank cosmetic sender for attributed reminders', () => {
+    expect(
+      captureSender(makeReminder({ operatorId: 'operator-ryan', alertSender: 'Operations' })),
+    ).toBe('Operations');
   });
 
-  it('falls back to legacy createdBy values when alertSender is absent', () => {
-    const listener = vi.fn();
-    window.addEventListener('relay:load-alert-reminder', listener as EventListener);
+  it.each([{ alertSender: '' }, { alertSender: undefined }])(
+    'falls back to legacy createdBy when cosmetic sender is blank or missing: $alertSender',
+    ({ alertSender }) => {
+      expect(captureSender(makeReminder({ createdBy: 'Legacy Operations', alertSender }))).toBe(
+        'Legacy Operations',
+      );
+    },
+  );
 
-    dispatchReminderAlertLoad(makeReminder({ createdBy: 'Legacy Operations' }));
-
-    expect((listener.mock.calls[0]?.[0] as CustomEvent).detail.sender).toBe('Legacy Operations');
-    window.removeEventListener('relay:load-alert-reminder', listener as EventListener);
+  it('restores a nonblank cosmetic sender for legacy reminders', () => {
+    expect(
+      captureSender(makeReminder({ createdBy: 'Legacy Operator', alertSender: 'Legacy NOC' })),
+    ).toBe('Legacy NOC');
   });
 });
