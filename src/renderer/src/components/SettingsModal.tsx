@@ -33,6 +33,7 @@ import {
   type AccentScheduleSlotId,
   type AccentId,
 } from '../theme/accent';
+import { OperatorSettingsSection } from './settings/OperatorSettingsSection';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -68,11 +69,12 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-type SettingsSectionId = 'appearance' | 'connection' | 'dynatrace';
+type SettingsSectionId = 'appearance' | 'connection' | 'operators' | 'dynatrace';
 
 const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'connection', label: 'Relay data' },
+  { id: 'operators', label: 'Operators' },
   { id: 'dynatrace', label: 'Dynatrace' },
 ];
 
@@ -1038,6 +1040,10 @@ export const SettingsModal: React.FC<Props> = ({
     </>
   );
 
+  const operatorSection = (
+    <OperatorSettingsSection relayMode={pbConfig?.mode ?? null} modeLoading={pbConfigLoading} />
+  );
+
   const settingsContent = (
     <div
       className={`settings-body${
@@ -1046,6 +1052,7 @@ export const SettingsModal: React.FC<Props> = ({
     >
       {(presentation === 'modal' || activeSection === 'appearance') && appearanceSection}
       {(presentation === 'modal' || activeSection === 'connection') && connectionSections}
+      {presentation === 'page' && activeSection === 'operators' && operatorSection}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );

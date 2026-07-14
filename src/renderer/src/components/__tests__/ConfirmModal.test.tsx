@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -93,6 +93,61 @@ describe('ConfirmModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
     expect(onConfirm).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('waits for asynchronous confirmation before closing', async () => {
+    let resolveConfirm!: () => void;
+    const onConfirm = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveConfirm = resolve;
+        }),
+    );
+    const onClose = vi.fn();
+
+    render(
+      <ConfirmModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        title="Deactivate operator?"
+        message="History stays attributed."
+        confirmLabel="Deactivate"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+
+    resolveConfirm();
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays open when asynchronous confirmation fails', async () => {
+    const onClose = vi.fn();
+    const onConfirm = vi.fn().mockRejectedValue(new Error('Could not deactivate operator.'));
+
+    render(
+      <ConfirmModal
+        isOpen={true}
+        onClose={onClose}
+        onConfirm={onConfirm}
+        title="Deactivate operator?"
+        message="History stays attributed."
+        confirmLabel="Deactivate"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
   });
 
   it('uses danger variant when isDanger is true', () => {

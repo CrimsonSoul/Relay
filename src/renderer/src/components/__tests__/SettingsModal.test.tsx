@@ -45,6 +45,14 @@ vi.mock('../TactileButton', () => ({
   }) => React.createElement('button', { onClick, disabled, type }, children),
 }));
 
+vi.mock('../../contexts/OperatorContext', () => ({
+  useOperator: () => ({
+    operators: [],
+    loading: false,
+    error: null,
+  }),
+}));
+
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
@@ -101,6 +109,30 @@ describe('SettingsModal', () => {
 
     expect(screen.getByText('Open Data Manager...')).toBeInTheDocument();
     expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
+  });
+
+  it('offers Operators as a peer Settings page section', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    expect(screen.getByRole('tab', { name: 'Operators' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+  });
+
+  it('routes the Operators tab to the full roster section', async () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operators' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Operators' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Operator roster' })).toBeVisible();
+  });
+
+  it('keeps the full-width operator roster out of the compact legacy modal', () => {
+    render(<SettingsModal {...defaultProps} />);
+
+    expect(screen.queryByRole('heading', { name: 'Operator roster' })).toBeNull();
   });
 
   it('tests Dynatrace Problems with a read-only platform token', async () => {
