@@ -223,10 +223,13 @@ describe('OperatorSettingsSection', () => {
       }),
     );
     expect(screen.queryByRole('textbox', { name: 'Rename Alpha Operator' })).toBeNull();
-    expect(screen.getByRole('status')).toHaveTextContent('Renamed Alpha Operator.');
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Renamed Alpha Operator to Renamed Operator.',
+    );
+    expect(screen.getByRole('button', { name: 'Rename Alpha Operator' })).toHaveFocus();
   });
 
-  it('cancels inline rename with Escape', () => {
+  it('cancels inline rename with Escape and restores focus to that row', () => {
     renderSection();
 
     fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha Operator' }));
@@ -236,6 +239,69 @@ describe('OperatorSettingsSection', () => {
 
     expect(screen.queryByRole('textbox', { name: 'Rename Alpha Operator' })).toBeNull();
     expect(globalThis.api?.renameRelayOperator).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Rename Alpha Operator' })).toHaveFocus();
+  });
+
+  it('retains the add value and focus after a rejected bridge call, then retries', async () => {
+    const createRelayOperator = vi
+      .fn()
+      .mockRejectedValueOnce(new Error())
+      .mockResolvedValueOnce({
+        success: true,
+        data: { ...activeOperator, id: 'new-operator', displayName: 'New Operator' },
+      });
+    setApi({ createRelayOperator });
+    renderSection();
+
+    const input = screen.getByLabelText('New operator name');
+    fireEvent.change(input, { target: { value: 'New Operator' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add operator' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not add the operator.'),
+    );
+    expect(input).toHaveValue('New Operator');
+    await waitFor(() => expect(input).toHaveFocus());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add operator' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Added New Operator.'),
+    );
+    expect(createRelayOperator).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains inline rename after a rejected bridge call, then retries and restores focus', async () => {
+    const renameRelayOperator = vi
+      .fn()
+      .mockRejectedValueOnce(new Error())
+      .mockResolvedValueOnce({
+        success: true,
+        data: { ...activeOperator, displayName: 'Retry Operator' },
+      });
+    setApi({ renameRelayOperator });
+    renderSection();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rename Alpha Operator' }));
+    const input = screen.getByRole('textbox', { name: 'Rename Alpha Operator' });
+    fireEvent.change(input, { target: { value: 'Retry Operator' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not rename the operator.'),
+    );
+    expect(input).toHaveValue('Retry Operator');
+    expect(input).toHaveFocus();
+
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Renamed Alpha Operator to Retry Operator.',
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Rename Alpha Operator' })).toHaveFocus();
+    expect(renameRelayOperator).toHaveBeenCalledTimes(2);
   });
 
   it('preserves the inline rename value and focus on stale-write failure', async () => {
@@ -300,13 +366,40 @@ describe('OperatorSettingsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate Alpha Operator' }));
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
 
+    const dialog = screen.getByRole('dialog', { name: 'Deactivate Alpha Operator?' });
     await waitFor(() =>
-      expect(screen.getByRole('alert')).toHaveTextContent(
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
         'This operator changed since it was loaded. Refresh and try again.',
       ),
     );
-    expect(screen.getByRole('dialog', { name: 'Deactivate Alpha Operator?' })).toBeVisible();
+    expect(dialog).toBeVisible();
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
+  });
+
+  it('shows rejected deactivation inside the modal and allows a successful retry', async () => {
+    const setRelayOperatorActive = vi
+      .fn()
+      .mockRejectedValueOnce(new Error())
+      .mockResolvedValueOnce({ success: true, data: { ...activeOperator, active: false } });
+    setApi({ setRelayOperatorActive });
+    renderSection();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate Alpha Operator' }));
+    const dialog = screen.getByRole('dialog', { name: 'Deactivate Alpha Operator?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'Could not deactivate the operator.',
+      ),
+    );
+    expect(within(dialog).getByRole('button', { name: 'Deactivate' })).toBeEnabled();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Deactivate' }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Deactivated Alpha Operator.');
+    expect(setRelayOperatorActive).toHaveBeenCalledTimes(2);
   });
 
   it('reactivates inline with the literal current revision and busy state', async () => {
@@ -322,7 +415,7 @@ describe('OperatorSettingsSection', () => {
       active: true,
       expectedUpdated: INACTIVE_UPDATED,
     });
-    expect(screen.getByRole('button', { name: 'Reactivating…' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reactivating Former Operator…' })).toBeDisabled();
 
     await act(async () => {
       deferred.resolve({ success: true, data: { ...inactiveOperator, active: true } });
@@ -330,5 +423,29 @@ describe('OperatorSettingsSection', () => {
     });
 
     expect(screen.getByRole('status')).toHaveTextContent('Reactivated Former Operator.');
+  });
+
+  it('announces rejected reactivation locally and allows retry', async () => {
+    const setRelayOperatorActive = vi
+      .fn()
+      .mockRejectedValueOnce(new Error())
+      .mockResolvedValueOnce({ success: true, data: { ...inactiveOperator, active: true } });
+    setApi({ setRelayOperatorActive });
+    renderSection();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reactivate Former Operator' }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('Could not reactivate the operator.'),
+    );
+    const retry = screen.getByRole('button', { name: 'Reactivate Former Operator' });
+    expect(retry).toBeEnabled();
+
+    fireEvent.click(retry);
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Reactivated Former Operator.'),
+    );
+    expect(setRelayOperatorActive).toHaveBeenCalledTimes(2);
   });
 });

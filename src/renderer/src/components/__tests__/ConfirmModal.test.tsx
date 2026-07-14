@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ConfirmModal } from '../ConfirmModal';
 
@@ -121,15 +121,27 @@ describe('ConfirmModal', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.queryByLabelText('Close')).toBeNull();
+    expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onConfirm).toHaveBeenCalledTimes(1);
 
     resolveConfirm();
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it('stays open when asynchronous confirmation fails', async () => {
+  it('shows asynchronous failure inside the dialog and updates it on retry', async () => {
     const onClose = vi.fn();
-    const onConfirm = vi.fn().mockRejectedValue(new Error('Could not deactivate operator.'));
+    const onConfirm = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Could not deactivate operator.'))
+      .mockRejectedValueOnce(new Error('The operator changed. Refresh and retry.'));
 
     render(
       <ConfirmModal
@@ -144,10 +156,23 @@ describe('ConfirmModal', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
 
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    const dialog = screen.getByRole('dialog', { name: 'Deactivate operator?' });
+    const firstError = await within(dialog).findByRole('alert');
+    expect(firstError).toHaveTextContent('Could not deactivate operator.');
+    expect(dialog).toHaveAttribute('aria-describedby', expect.stringContaining(firstError.id));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Deactivate' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
+
+    expect(within(dialog).queryByRole('alert')).toBeNull();
+    await waitFor(() =>
+      expect(within(dialog).getByRole('alert')).toHaveTextContent(
+        'The operator changed. Refresh and retry.',
+      ),
+    );
+    expect(onConfirm).toHaveBeenCalledTimes(2);
   });
 
   it('uses danger variant when isDanger is true', () => {

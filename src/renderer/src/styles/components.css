@@ -1190,6 +1190,17 @@ body.modal-open {
   line-height: 1.5;
 }
 
+.confirm-modal-error {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--alarm);
+  border-radius: 2px;
+  background: var(--alarm-dim);
+  color: var(--alarm-bright);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  line-height: var(--leading-normal);
+}
+
 .confirm-modal-actions {
   display: flex;
   justify-content: flex-end;

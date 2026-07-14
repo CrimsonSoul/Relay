@@ -17,6 +17,8 @@ type Props = {
   dialogClassName?: string;
   /** Extra props spread onto the <dialog> element (e.g. data-entity-id) */
   dialogProps?: React.HTMLAttributes<HTMLDialogElement>;
+  /** When false, removes close affordances and ignores Escape while work is pending. */
+  dismissible?: boolean;
 };
 
 export const Modal: React.FC<Props> = ({
@@ -29,6 +31,7 @@ export const Modal: React.FC<Props> = ({
   overlayClassName = 'modal-overlay-generic',
   dialogClassName = 'modal-dialog-generic',
   dialogProps,
+  dismissible = true,
 }) => {
   const titleId = useId();
 
@@ -40,10 +43,10 @@ export const Modal: React.FC<Props> = ({
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        if (dismissible) onClose();
       }
     },
-    [onClose],
+    [dismissible, onClose],
   );
 
   useEffect(() => {
@@ -66,12 +69,16 @@ export const Modal: React.FC<Props> = ({
 
   return createPortal(
     <div className={`${overlayClassName} animate-fade-in`}>
-      <button
-        type="button"
-        className="overlay-hitbox"
-        aria-label="Close modal backdrop"
-        onClick={onClose}
-      />
+      {dismissible ? (
+        <button
+          type="button"
+          className="overlay-hitbox"
+          aria-label="Close modal backdrop"
+          onClick={onClose}
+        />
+      ) : (
+        <div className="overlay-hitbox" aria-hidden="true" />
+      )}
       <dialog
         open
         ref={focusTrapRef}
@@ -91,28 +98,30 @@ export const Modal: React.FC<Props> = ({
               <h2 id={titleId} className="modal-title-generic">
                 {title}
               </h2>
-              <Tooltip content="Close" position="left">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="modal-close-generic hover-bg"
-                  aria-label="Close"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+              {dismissible && (
+                <Tooltip content="Close" position="left">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="modal-close-generic hover-bg"
+                    aria-label="Close"
                   >
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
-              </Tooltip>
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </Tooltip>
+              )}
             </div>
 
             <div className="modal-body-generic">{children}</div>

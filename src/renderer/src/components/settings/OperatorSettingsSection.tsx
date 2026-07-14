@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { PublicRelayConfig } from '@shared/ipc';
 import {
   getOperatorDisplayNameError,
@@ -40,6 +40,8 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const newDisplayNameRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const operatorRowRefs = useRef(new Map<string, HTMLDivElement>());
+  const pendingRenameFocusRef = useRef<string | null>(null);
 
   const activeOperators = useMemo(
     () => operators.filter((operator) => operator.active),
@@ -55,6 +57,17 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
     if (!editingId) return;
     renameInputRef.current?.focus();
     renameInputRef.current?.select();
+  }, [editingId]);
+
+  useLayoutEffect(() => {
+    if (editingId !== null || !pendingRenameFocusRef.current) return;
+
+    const operatorId = pendingRenameFocusRef.current;
+    pendingRenameFocusRef.current = null;
+    operatorRowRefs.current
+      .get(operatorId)
+      ?.querySelector<HTMLButtonElement>('[data-operator-rename-trigger]')
+      ?.focus();
   }, [editingId]);
 
   const showFailure = (message: string) => {
@@ -99,7 +112,8 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
     setFeedback(null);
   };
 
-  const cancelRename = () => {
+  const closeRename = (operatorId: string) => {
+    pendingRenameFocusRef.current = operatorId;
     setEditingId(null);
     setRenameValue('');
     setRenameError(null);
@@ -126,9 +140,11 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
       if (!result?.success) {
         throw showFailure(result?.error || 'Could not rename the operator.');
       }
-      setEditingId(null);
-      setRenameValue('');
-      setFeedback({ type: 'success', message: `Renamed ${operator.displayName}.` });
+      closeRename(operator.id);
+      setFeedback({
+        type: 'success',
+        message: `Renamed ${operator.displayName} to ${displayName}.`,
+      });
     } catch (renameFailure) {
       const message = getErrorMessage(renameFailure, 'Could not rename the operator.');
       setFeedback({ type: 'error', message });
@@ -171,7 +187,7 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
   ) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      cancelRename();
+      closeRename(operator.id);
       return;
     }
     if (event.key === 'Enter') {
@@ -206,7 +222,7 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
             size="sm"
             className="operator-settings__action"
             disabled={isRenaming}
-            onClick={cancelRename}
+            onClick={() => closeRename(operator.id)}
           >
             Cancel
           </TactileButton>
@@ -217,6 +233,7 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
     return (
       <div className="operator-settings__actions">
         <TactileButton
+          data-operator-rename-trigger
           size="sm"
           className="operator-settings__action"
           aria-label={`Rename ${operator.displayName}`}
@@ -240,12 +257,16 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
             size="sm"
             variant="primary"
             className="operator-settings__action"
-            aria-label={isReactivating ? 'Reactivating…' : `Reactivate ${operator.displayName}`}
+            aria-label={
+              isReactivating
+                ? `Reactivating ${operator.displayName}…`
+                : `Reactivate ${operator.displayName}`
+            }
             disabled={disableRowActions || isReactivating}
             loading={isReactivating}
             onClick={() => void handleSetActive(operator, true)}
           >
-            {isReactivating ? 'Reactivating…' : 'Reactivate'}
+            {isReactivating ? `Reactivating ${operator.displayName}…` : 'Reactivate'}
           </TactileButton>
         )}
       </div>
@@ -260,7 +281,14 @@ export function OperatorSettingsSection({ relayMode, modeLoading }: Readonly<Pro
     const renameErrorId = `operator-rename-error-${operator.id}`;
 
     return (
-      <div className="operator-settings__row" key={operator.id}>
+      <div
+        ref={(element) => {
+          if (element) operatorRowRefs.current.set(operator.id, element);
+          else operatorRowRefs.current.delete(operator.id);
+        }}
+        className="operator-settings__row"
+        key={operator.id}
+      >
         {isEditing ? (
           <div className="operator-settings__rename">
             <label className="sr-only" htmlFor={`operator-rename-${operator.id}`}>

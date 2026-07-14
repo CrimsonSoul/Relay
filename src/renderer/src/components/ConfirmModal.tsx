@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './Modal';
 import { TactileButton } from './TactileButton';
 
@@ -24,32 +24,75 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isDanger = false,
 }) => {
   const [isConfirming, setIsConfirming] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
+  const confirmingRef = useRef(false);
+  const messageId = useId();
+  const errorId = useId();
+
+  useEffect(() => {
+    if (!isOpen) setConfirmationError(null);
+  }, [isOpen]);
 
   const handleConfirm = () => {
-    const result = onConfirm();
+    if (confirmingRef.current) return;
+
+    setConfirmationError(null);
+
+    let result: void | Promise<void>;
+    try {
+      result = onConfirm();
+    } catch (error) {
+      setConfirmationError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Unable to complete the action. Try again.',
+      );
+      return;
+    }
+
     if (!result || typeof result.then !== 'function') {
       onClose();
       return;
     }
 
+    confirmingRef.current = true;
     setIsConfirming(true);
     void result
       .then(() => onClose())
-      .catch(() => {
-        // The caller owns inline failure feedback. Keep the confirmation open for retry.
+      .catch((error: unknown) => {
+        setConfirmationError(
+          error instanceof Error && error.message
+            ? error.message
+            : 'Unable to complete the action. Try again.',
+        );
       })
-      .finally(() => setIsConfirming(false));
+      .finally(() => {
+        confirmingRef.current = false;
+        setIsConfirming(false);
+      });
   };
 
   return (
     <Modal
       isOpen={isOpen}
-      onClose={isConfirming ? () => undefined : onClose}
+      onClose={onClose}
       title={title}
       width="400px"
+      dismissible={!isConfirming}
+      dialogProps={{
+        'aria-busy': isConfirming,
+        'aria-describedby': confirmationError ? `${messageId} ${errorId}` : messageId,
+      }}
     >
       <div className="confirm-modal-body">
-        <div className="confirm-modal-message">{message}</div>
+        <div id={messageId} className="confirm-modal-message">
+          {message}
+        </div>
+        {confirmationError && (
+          <div id={errorId} className="confirm-modal-error" role="alert" aria-live="assertive">
+            {confirmationError}
+          </div>
+        )}
         <div className="confirm-modal-actions">
           <TactileButton variant="secondary" onClick={onClose} disabled={isConfirming}>
             {cancelLabel}

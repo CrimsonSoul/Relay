@@ -167,6 +167,22 @@ describe('Modal', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it('removes close affordances and blocks Escape when dismissal is disabled', () => {
+    const onClose = vi.fn();
+    render(
+      <Modal isOpen={true} onClose={onClose} dismissible={false} title="Working">
+        <p>Pending content</p>
+      </Modal>,
+    );
+
+    expect(screen.queryByLabelText('Close')).toBeNull();
+    expect(screen.queryByLabelText('Close modal backdrop')).toBeNull();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('applies custom width', () => {
     render(
       <Modal isOpen={true} onClose={vi.fn()} width="800px">
