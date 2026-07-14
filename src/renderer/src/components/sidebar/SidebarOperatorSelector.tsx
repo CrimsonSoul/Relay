@@ -157,23 +157,21 @@ export function SidebarOperatorSelector() {
     itemRefs.current[index]?.focus();
   };
 
-  const focusAdjacentToTrigger = (backwards: boolean) => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
+  const focusAdjacentTo = (anchor: HTMLElement | null, backwards: boolean) => {
     const focusableElements = Array.from(
       document.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
     ).filter((element) => !menuRef.current?.contains(element));
-    const triggerIndex = focusableElements.indexOf(trigger);
-    const nextIndex = triggerIndex + (backwards ? -1 : 1);
+    const anchorIndex = anchor ? focusableElements.indexOf(anchor) : -1;
     setPickerOpen(false);
-    focusableElements[nextIndex]?.focus();
+    if (anchorIndex < 0) return;
+    focusableElements[anchorIndex + (backwards ? -1 : 1)]?.focus();
   };
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Tab') {
       event.preventDefault();
-      focusAdjacentToTrigger(event.shiftKey);
+      const focusAnchor = operatorsAvailable ? triggerRef.current : previousFocusRef.current;
+      focusAdjacentTo(focusAnchor, event.shiftKey);
       return;
     }
 

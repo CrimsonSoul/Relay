@@ -60,13 +60,25 @@ function PickerAction() {
   );
 }
 
+function PickerActionWithTabStops() {
+  return (
+    <>
+      <button type="button">Before external picker</button>
+      <PickerAction />
+      <button type="button">After external picker</button>
+    </>
+  );
+}
+
 function renderSelector({
   includeAction = false,
   includePickerAction = false,
+  includePickerActionWithTabStops = false,
   includeTabStops = false,
 }: {
   includeAction?: boolean;
   includePickerAction?: boolean;
+  includePickerActionWithTabStops?: boolean;
   includeTabStops?: boolean;
 } = {}) {
   return render(
@@ -76,6 +88,7 @@ function renderSelector({
       {includeTabStops && <button type="button">After operator selector</button>}
       {includeAction && <AttributionAction />}
       {includePickerAction && <PickerAction />}
+      {includePickerActionWithTabStops && <PickerActionWithTabStops />}
     </OperatorProvider>,
   );
 }
@@ -367,6 +380,28 @@ describe('SidebarOperatorSelector', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(action).toHaveFocus();
   });
+
+  it.each([
+    { keys: 'Tab', shiftKey: false, destination: 'After external picker' },
+    { keys: 'Shift+Tab', shiftKey: true, destination: 'Before external picker' },
+  ])(
+    'closes an externally opened status menu and moves focus to $destination on $keys',
+    ({ shiftKey, destination }) => {
+      collectionState = { ...collectionState, data: [], loading: true };
+      renderSelector({ includePickerActionWithTabStops: true });
+      const action = screen.getByRole('button', { name: 'Open operator picker' });
+      action.focus();
+
+      fireEvent.click(action);
+      const menu = screen.getByRole('menu', { name: 'Select operator' });
+      expect(within(menu).getByRole('menuitem', { name: 'Loading operators' })).toHaveFocus();
+
+      fireEvent.keyDown(menu, { key: 'Tab', shiftKey });
+
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: destination })).toHaveFocus();
+    },
+  );
 
   it('provides a focusable menu status when no active operators exist', () => {
     collectionState = { ...collectionState, data: [] };
