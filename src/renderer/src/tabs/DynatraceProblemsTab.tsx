@@ -17,6 +17,7 @@ import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { useToast } from '../components/Toast';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
+import { useOperator } from '../contexts/OperatorContext';
 import {
   getConnectionState,
   onConnectionStateChange,
@@ -538,7 +539,7 @@ type ProblemDetailProps = {
   state: DynatraceProblemStateRecord | undefined;
   notes: DynatraceProblemNoteRecord[];
   noteDraft: string;
-  online: boolean;
+  connectionState: ConnectionState;
   savingAction: 'address' | 'note' | 'refresh' | 'profile' | null;
   onNoteDraftChange: (value: string) => void;
   onSaveNote: () => void;
@@ -551,7 +552,7 @@ function ProblemDetail({
   state,
   notes,
   noteDraft,
-  online,
+  connectionState,
   savingAction,
   onNoteDraftChange,
   onSaveNote,
@@ -570,6 +571,7 @@ function ProblemDetail({
   }
 
   const addressed = isAddressed(state);
+  const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
   const noteRequirementMet = notes.length > 0 || noteDraft.trim().length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
@@ -640,7 +642,9 @@ function ProblemDetail({
                 addressed ? ' dt-problems__primary-action--secondary' : ''
               }`}
               onClick={onAddressToggle}
-              disabled={!online || savingAction !== null || (!addressed && !noteRequirementMet)}
+              disabled={
+                !mutationsEnabled || savingAction !== null || (!addressed && !noteRequirementMet)
+              }
               aria-describedby={!addressed ? 'dt-problem-note-requirement' : undefined}
             >
               {addressActionLabel}
@@ -660,7 +664,7 @@ function ProblemDetail({
               onChange={(event) => onNoteDraftChange(event.target.value)}
               placeholder="Record investigation details, mitigation, ownership, or next steps"
               maxLength={5_000}
-              disabled={!online || savingAction !== null}
+              disabled={!mutationsEnabled || savingAction !== null}
             />
           </label>
           <div className="dt-problem-note-composer__actions">
@@ -668,14 +672,25 @@ function ProblemDetail({
             <button
               type="button"
               onClick={onSaveNote}
-              disabled={!online || !noteDraft.trim() || savingAction !== null}
+              disabled={!mutationsEnabled || !noteDraft.trim() || savingAction !== null}
             >
               {savingAction === 'note' ? 'Adding…' : 'Add note'}
             </button>
           </div>
-          {!online && (
+          {connectionState === 'offline' && (
             <div className="dt-problems__offline-note">
-              Reconnect to the Relay server to change local status or add notes.
+              You are offline. Changes will sync when Relay reconnects.
+            </div>
+          )}
+          {(connectionState === 'connecting' || connectionState === 'reconnecting') && (
+            <div className="dt-problems__offline-note">
+              Relay is reconnecting. Wait for the connection to settle before changing local status
+              or adding notes.
+            </div>
+          )}
+          {connectionState === 'auth-failed' && (
+            <div className="dt-problems__offline-note">
+              Sign in to the Relay server before changing local status or adding notes.
             </div>
           )}
           <div className="dt-problem-notes" aria-live="polite">
@@ -712,6 +727,7 @@ export const DynatraceProblemsTab: React.FC<{
   relayMode?: PublicRelayConfig['mode'];
 }> = ({ relayMode }) => {
   const { showToast } = useToast();
+  const { requireAttribution } = useOperator();
   const {
     problems,
     stateByProblemId,
@@ -729,26 +745,12 @@ export const DynatraceProblemsTab: React.FC<{
   const [profileDraftDirty, setProfileDraftDirty] = useState(false);
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
-  const [workstationName, setWorkstationName] = useState('Relay workstation');
   const [savingAction, setSavingAction] = useState<
     'address' | 'note' | 'refresh' | 'profile' | null
   >(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>(getConnectionState());
 
   useEffect(() => onConnectionStateChange(setConnectionState), []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void globalThis.api
-      ?.getClientHostname()
-      .then((hostname) => {
-        if (!cancelled && hostname?.trim()) setWorkstationName(hostname.trim());
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const counts = useMemo(() => {
     let unaddressed = 0;
@@ -816,8 +818,6 @@ export const DynatraceProblemsTab: React.FC<{
   const selectedNotes = selectedProblem
     ? (notesByProblemId.get(selectedProblem.problemId) ?? [])
     : [];
-  const online = connectionState === 'online';
-
   const handleOpenDynatrace = useCallback(
     async (problem: DynatraceProblemRecord) => {
       const url = buildDynatraceProblemUrl(problem.environmentUrl, problem.problemId);
@@ -830,9 +830,11 @@ export const DynatraceProblemsTab: React.FC<{
 
   const handleSaveNote = async () => {
     if (!selectedProblem || !noteDraft.trim() || savingAction) return;
+    const attribution = requireAttribution();
+    if (!attribution) return;
     setSavingAction('note');
     try {
-      await addNote(selectedProblem.problemId, noteDraft, workstationName);
+      await addNote(selectedProblem.problemId, noteDraft, attribution);
       setNoteDraft('');
       showToast('NOC note added', 'success');
     } catch (saveError) {
@@ -849,13 +851,15 @@ export const DynatraceProblemsTab: React.FC<{
       showToast('Add a NOC note before marking this problem addressed locally.', 'warning');
       return;
     }
+    const attribution = nextAddressed ? requireAttribution() : null;
+    if (nextAddressed && !attribution) return;
     setSavingAction('address');
     try {
       if (nextAddressed && noteDraft.trim()) {
-        await addNote(selectedProblem.problemId, noteDraft, workstationName);
+        await addNote(selectedProblem.problemId, noteDraft, attribution!);
         setNoteDraft('');
       }
-      await setAddressed(selectedProblem.problemId, nextAddressed, workstationName);
+      await setAddressed(selectedProblem.problemId, nextAddressed, attribution);
       showToast(
         nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
         'success',
@@ -1052,7 +1056,7 @@ export const DynatraceProblemsTab: React.FC<{
           state={selectedState}
           notes={selectedNotes}
           noteDraft={noteDraft}
-          online={online}
+          connectionState={connectionState}
           savingAction={savingAction}
           onNoteDraftChange={setNoteDraft}
           onSaveNote={() => void handleSaveNote()}

@@ -9,6 +9,7 @@ import {
   type DynatraceProblemStateRecord,
   type DynatraceProblemSyncRecord,
 } from '@shared/dynatraceProblems';
+import type { OperatorAttribution } from '@shared/operators';
 import { useCollection } from './useCollection';
 import {
   addDynatraceProblemNote,
@@ -45,19 +46,19 @@ export function useDynatraceProblems() {
   }, [notes.data]);
 
   const setAddressed = useCallback(
-    async (problemId: string, addressed: boolean, author: string) =>
+    async (problemId: string, addressed: boolean, attribution: OperatorAttribution | null) =>
       setDynatraceProblemAddressed(
         problemId,
         addressed,
-        author,
+        attribution,
         stateByProblemId.get(problemId)?.id,
       ),
     [stateByProblemId],
   );
 
   const addNote = useCallback(
-    (problemId: string, note: string, author: string) =>
-      addDynatraceProblemNote(problemId, note, author),
+    (problemId: string, note: string, attribution: OperatorAttribution) =>
+      addDynatraceProblemNote(problemId, note, attribution),
     [],
   );
 

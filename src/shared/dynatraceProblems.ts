@@ -59,6 +59,7 @@ export type DynatraceProblemStateRecord = {
   problemId: string;
   addressed: boolean;
   addressedAt?: string;
+  operatorId?: string;
   addressedBy?: string;
   created?: string;
   updated?: string;
@@ -68,6 +69,7 @@ export type DynatraceProblemNoteRecord = {
   id: string;
   problemId: string;
   note: string;
+  operatorId?: string;
   author: string;
   created: string;
   updated?: string;

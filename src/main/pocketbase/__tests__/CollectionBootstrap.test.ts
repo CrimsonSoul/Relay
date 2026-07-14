@@ -448,6 +448,14 @@ describe('ensureCollections', () => {
           createRule: string | null;
           updateRule: string | null;
           deleteRule: string | null;
+          fields: Array<{ name: string; type: string; required?: boolean }>;
+        }
+      | undefined;
+    const statesCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'dynatrace_problem_states',
+    )?.[0] as
+      | {
+          fields: Array<{ name: string; type: string; required?: boolean }>;
         }
       | undefined;
     const syncCall = mockCreate.mock.calls.find(
@@ -467,9 +475,58 @@ describe('ensureCollections', () => {
       updateRule: null,
       deleteRule: null,
     });
+    expect(notesCall?.fields).toContainEqual(
+      expect.objectContaining({ name: 'operatorId', type: 'text' }),
+    );
+    expect(statesCall?.fields).toContainEqual(
+      expect.objectContaining({ name: 'operatorId', type: 'text' }),
+    );
     expect(syncCall?.fields).toContainEqual(
       expect.objectContaining({ name: 'lastReconciledAt', type: 'date' }),
     );
+  });
+
+  it('patches operator attribution onto existing Dynatrace records without rebuilding them', async () => {
+    mockGetFullList.mockResolvedValue([
+      { id: 'states-col', name: 'dynatrace_problem_states' },
+      { id: 'notes-col', name: 'dynatrace_problem_notes' },
+    ]);
+    mockCreate.mockResolvedValue({});
+    mockGetOne.mockImplementation(async (id: string) => ({
+      fields:
+        id === 'states-col'
+          ? [
+              { type: 'text', name: 'problemId', required: true },
+              { type: 'bool', name: 'addressed' },
+              { type: 'date', name: 'addressedAt' },
+              { type: 'text', name: 'addressedBy' },
+            ]
+          : [
+              { type: 'text', name: 'problemId', required: true },
+              { type: 'text', name: 'note', required: true },
+              { type: 'text', name: 'author', required: true },
+            ],
+      indexes: [],
+    }));
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    for (const collectionId of ['states-col', 'notes-col']) {
+      const update = mockUpdate.mock.calls.find(([id]) => id === collectionId);
+      expect(update).toBeDefined();
+      expect((update?.[1] as { fields: Array<{ name: string }> }).fields).toContainEqual(
+        expect.objectContaining({ name: 'operatorId' }),
+      );
+    }
+    expect(
+      mockCreate.mock.calls.some(
+        ([definition]) =>
+          (definition as { name: string }).name === 'dynatrace_problem_states' ||
+          (definition as { name: string }).name === 'dynatrace_problem_notes',
+      ),
+    ).toBe(false);
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('creates alert_reminders with scheduling and status fields', async () => {

@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   addNote: vi.fn(async () => ({})),
   refetch: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
+  requireAttribution: vi.fn(),
+  connectionState: 'online',
   hookValue: {} as Record<string, unknown>,
 }));
 
@@ -20,8 +22,12 @@ vi.mock('../../hooks/useDynatraceProblems', () => ({
   useDynatraceProblems: () => mocks.hookValue,
 }));
 
+vi.mock('../../contexts/OperatorContext', () => ({
+  useOperator: () => ({ requireAttribution: mocks.requireAttribution }),
+}));
+
 vi.mock('../../services/pocketbase', () => ({
-  getConnectionState: () => 'online',
+  getConnectionState: () => mocks.connectionState,
   onConnectionStateChange: () => () => undefined,
 }));
 
@@ -55,6 +61,11 @@ const openProblem: DynatraceProblemRecord = {
 describe('DynatraceProblemsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.connectionState = 'online';
+    mocks.requireAttribution.mockReturnValue({
+      operatorId: 'operator-ryan',
+      operatorName: 'Ryan Bell',
+    });
     mocks.hookValue = {
       problems: [openProblem],
       stateByProblemId: new Map(),
@@ -246,7 +257,7 @@ describe('DynatraceProblemsTab', () => {
     });
   });
 
-  it('adds a drafted note before marking the problem addressed locally', async () => {
+  it('uses the selected operator and awaits a drafted note before marking addressed', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
@@ -259,13 +270,119 @@ describe('DynatraceProblemsTab', () => {
       expect(mocks.addNote).toHaveBeenCalledWith(
         'problem-1',
         'Mitigated by shifting traffic to the secondary pool.',
-        'noc-laptop-07',
+        { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
       );
-      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'noc-laptop-07');
+      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, {
+        operatorId: 'operator-ryan',
+        operatorName: 'Ryan Bell',
+      });
     });
+    expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
+    expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setAddressed.mock.invocationCallOrder[0],
     );
+  });
+
+  it('uses the selected operator when saving a standalone note', async () => {
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Escalated to the payments team.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
+
+    await waitFor(() => {
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Escalated to the payments team.', {
+        operatorId: 'operator-ryan',
+        operatorName: 'Ryan Bell',
+      });
+    });
+    expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
+  });
+
+  it('opens the operator picker and performs no address mutation when selection is missing', async () => {
+    mocks.requireAttribution.mockReturnValue(null);
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      notesByProblemId: new Map([
+        [
+          'problem-1',
+          [
+            {
+              id: 'note-1',
+              problemId: 'problem-1',
+              note: 'Investigation is in progress.',
+              author: 'Historical Operator',
+              created: new Date().toISOString(),
+            },
+          ],
+        ],
+      ]),
+    };
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
+
+    expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
+    expect(mocks.addNote).not.toHaveBeenCalled();
+  });
+
+  it('queues an offline drafted note before queuing the addressed state', async () => {
+    mocks.connectionState = 'offline';
+    let finishNote: (() => void) | undefined;
+    mocks.addNote.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishNote = () => resolve({});
+        }),
+    );
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    expect(screen.getByText(/changes will sync when Relay reconnects/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Queued mitigation note.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
+
+    await waitFor(() => expect(mocks.addNote).toHaveBeenCalledTimes(1));
+    expect(mocks.setAddressed).not.toHaveBeenCalled();
+    finishNote?.();
+    await waitFor(() => expect(mocks.setAddressed).toHaveBeenCalledTimes(1));
+    expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.setAddressed.mock.invocationCallOrder[0],
+    );
+  });
+
+  it.each(['reconnecting', 'auth-failed'])('blocks mutations while %s', async (connectionState) => {
+    mocks.connectionState = connectionState;
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      notesByProblemId: new Map([
+        [
+          'problem-1',
+          [
+            {
+              id: 'note-1',
+              problemId: 'problem-1',
+              note: 'Investigation is in progress.',
+              author: 'Historical Operator',
+              created: new Date().toISOString(),
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    expect(screen.getByLabelText('Add a note')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeDisabled();
   });
 
   it('requires a saved or drafted NOC note before enabling the addressed action', async () => {
@@ -299,7 +416,7 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeEnabled();
   });
 
-  it('keeps notes and addressed metadata visible in read-only resolved history', async () => {
+  it('keeps historical notes and addressed metadata without operator IDs visible', async () => {
     mocks.hookValue = {
       ...mocks.hookValue,
       problems: [{ ...openProblem, status: 'CLOSED', endTime: Date.now() }],

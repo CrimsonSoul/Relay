@@ -389,6 +389,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'problemId', required: true },
       { type: 'bool', name: 'addressed' },
       { type: 'date', name: 'addressedAt' },
+      { type: 'text', name: 'operatorId' },
       { type: 'text', name: 'addressedBy' },
     ],
     indexes: [DYNATRACE_PROBLEM_STATE_ID_INDEX],
@@ -400,6 +401,7 @@ const COLLECTIONS: CollectionDef[] = [
     fields: [
       { type: 'text', name: 'problemId', required: true },
       { type: 'text', name: 'note', required: true },
+      { type: 'text', name: 'operatorId' },
       { type: 'text', name: 'author', required: true },
     ],
     indexes: [DYNATRACE_PROBLEM_NOTES_ID_INDEX],

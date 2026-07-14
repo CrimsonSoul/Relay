@@ -4,16 +4,12 @@ import {
   type DynatraceProblemNoteRecord,
   type DynatraceProblemStateRecord,
 } from '@shared/dynatraceProblems';
+import type { OperatorAttribution } from '@shared/operators';
 import { escapeFilter, getConnectionState, getPb, handleApiError } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
 import { mutateCollection } from './mutationGateway';
 
 const MAX_NOTE_LENGTH = 5_000;
-const MAX_AUTHOR_LENGTH = 120;
-
-function normalizeAuthor(author: string): string {
-  return author.trim().slice(0, MAX_AUTHOR_LENGTH) || 'Relay workstation';
-}
 
 async function findState(problemId: string): Promise<DynatraceProblemStateRecord | null> {
   try {
@@ -59,16 +55,20 @@ async function requireProblemNoteWhenAddressing(
 export async function setDynatraceProblemAddressed(
   problemId: string,
   addressed: boolean,
-  author: string,
+  attribution: OperatorAttribution | null,
   existingRecordId?: string,
 ): Promise<DynatraceProblemStateRecord> {
+  if (addressed && !attribution) {
+    throw new Error('Choose an operator before marking this problem addressed locally.');
+  }
   const online = getConnectionState() === 'online';
   await requireProblemNoteWhenAddressing(problemId, addressed, online);
   const payload = {
     problemId,
     addressed,
     addressedAt: addressed ? new Date().toISOString() : '',
-    addressedBy: addressed ? normalizeAuthor(author) : '',
+    operatorId: addressed ? attribution!.operatorId : '',
+    addressedBy: addressed ? attribution!.operatorName : '',
   };
   try {
     const recordId = existingRecordId || (online ? (await findState(problemId))?.id : undefined);
@@ -97,7 +97,7 @@ export async function setDynatraceProblemAddressed(
 export async function addDynatraceProblemNote(
   problemId: string,
   note: string,
-  author: string,
+  attribution: OperatorAttribution,
 ): Promise<DynatraceProblemNoteRecord> {
   const normalizedNote = note.trim();
   if (!normalizedNote) throw new Error('Enter a note before saving.');
@@ -113,7 +113,8 @@ export async function addDynatraceProblemNote(
       {
         problemId,
         note: normalizedNote,
-        author: normalizeAuthor(author),
+        operatorId: attribution.operatorId,
+        author: attribution.operatorName,
       },
     )) as DynatraceProblemNoteRecord;
   } catch (error) {
