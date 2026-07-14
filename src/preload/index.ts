@@ -134,6 +134,9 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.OFFLINE_PENDING_STATUS_CHANGED, handler);
   },
+  // Knowledge Base
+  getKnowledgePdf: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_PDF, request),
+  getKnowledgeIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS),
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase

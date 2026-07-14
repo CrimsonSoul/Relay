@@ -20,6 +20,17 @@ const MAX_ID = 200;
 const MAX_ARRAY_ITEMS = 500;
 const MAX_GROUP_CONTACTS = 200;
 
+export const KnowledgePdfRequestSchema = z
+  .object({
+    documentId: z
+      .string()
+      .min(1)
+      .max(MAX_ID)
+      .regex(/^[A-Za-z0-9]+$/),
+    checksum: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
 // ==================== Contact Schemas ====================
 export const ContactSchema = z.object({
   name: z.string().min(1).max(MAX_NAME),

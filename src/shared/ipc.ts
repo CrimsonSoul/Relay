@@ -5,6 +5,7 @@ import type {
   DynatraceProblemsTestResult,
 } from './dynatraceProblems';
 import type { RelayOperatorRecord } from './operators';
+import type { KnowledgeIndexStatus, KnowledgePdfRequest, KnowledgePdfResult } from './knowledge';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -85,6 +86,7 @@ export type TabName =
   | 'People'
   | 'Servers'
   | 'Notes'
+  | 'Knowledge'
   | 'Status'
   | 'Problems'
   | 'Settings';
@@ -435,6 +437,9 @@ export type BridgeAPI = {
   onOfflineMutationApplied: (callback: (event: OfflineMutationApplied) => void) => () => void;
   getPendingSyncStatus: () => Promise<PendingSyncStatus>;
   onPendingSyncStatusChanged: (callback: (status: PendingSyncStatus) => void) => () => void;
+  // Knowledge Base — metadata flows through PocketBase; PDF bytes stay behind this narrow bridge.
+  getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
+  getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -549,6 +554,9 @@ export const IPC_CHANNELS = {
   OFFLINE_MUTATION_APPLIED: 'offline:mutationApplied',
   OFFLINE_PENDING_STATUS: 'offline:pendingStatus',
   OFFLINE_PENDING_STATUS_CHANGED: 'offline:pendingStatusChanged',
+  // Knowledge Base
+  KNOWLEDGE_GET_PDF: 'knowledge:getPdf',
+  KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

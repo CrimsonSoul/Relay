@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { SearchQuerySchema, LogEntrySchema, AlertHistoryEntrySchema } from './ipcValidation';
+import {
+  SearchQuerySchema,
+  LogEntrySchema,
+  AlertHistoryEntrySchema,
+  KnowledgePdfRequestSchema,
+} from './ipcValidation';
 
 describe('SearchQuerySchema', () => {
   it('accepts valid queries', () => {
@@ -64,5 +69,30 @@ describe('AlertHistoryEntrySchema', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('KnowledgePdfRequestSchema', () => {
+  const valid = { documentId: 'abc123DEF456', checksum: 'a'.repeat(64) };
+
+  it('accepts a PocketBase document ID and lowercase SHA-256 checksum', () => {
+    expect(KnowledgePdfRequestSchema.parse(valid)).toEqual(valid);
+  });
+
+  it.each([
+    { ...valid, documentId: '../secret' },
+    { ...valid, documentId: 'has spaces' },
+    { ...valid, documentId: 'a'.repeat(201) },
+    { ...valid, checksum: 'A'.repeat(64) },
+    { ...valid, checksum: 'a'.repeat(63) },
+    { ...valid, checksum: '../'.padEnd(64, 'a') },
+  ])('rejects malformed knowledge PDF requests: %o', (request) => {
+    expect(KnowledgePdfRequestSchema.safeParse(request).success).toBe(false);
+  });
+
+  it('rejects unexpected request fields', () => {
+    expect(
+      KnowledgePdfRequestSchema.safeParse({ ...valid, path: 'outside-source-root' }).success,
+    ).toBe(false);
   });
 });
