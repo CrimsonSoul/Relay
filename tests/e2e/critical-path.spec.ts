@@ -15,6 +15,41 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 type RelayContact = { email: string };
 
+type RelayOperator = {
+  id: string;
+  displayName: string;
+  active: boolean;
+};
+
+type DynatraceProblemNote = {
+  id: string;
+  problemId: string;
+  note: string;
+  operatorId?: string;
+  author: string;
+};
+
+type DynatraceProblemState = {
+  id: string;
+  problemId: string;
+  addressed: boolean;
+  operatorId?: string;
+  addressedBy?: string;
+};
+
+const EXPECTED_OPERATOR_NAMES = [
+  'Charles Gibbs',
+  'Connor McElroy',
+  'Paris Carlson',
+  'Ryan Bell',
+  'Tristan Stillwell',
+  'Vlad McCarty',
+  'Weston Yokley',
+];
+const RYAN_BELL = 'Ryan Bell';
+const CHECKOUT_PROBLEM_ID = 'RELAY-DEMO-1001';
+const CHECKOUT_PROBLEM_TITLE = 'Checkout service availability below SLO';
+
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const makeTestPassphrase = () => ['test', crypto.randomUUID()].join('-');
 const TEST_PASSPHRASE = makeTestPassphrase();
@@ -51,6 +86,24 @@ const writeServerConfig = (userDataDir: string, port: number) => {
   fs.writeFileSync(
     path.join(dataDir, 'config.json'),
     JSON.stringify({ mode: 'server', port, [CONFIG_SECRET_FIELD]: TEST_PASSPHRASE }, null, 2),
+    'utf8',
+  );
+};
+
+const writeClientConfig = (userDataDir: string, port: number) => {
+  const dataDir = path.join(userDataDir, 'data');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dataDir, 'config.json'),
+    JSON.stringify(
+      {
+        mode: 'client',
+        serverUrl: `http://127.0.0.1:${port}`,
+        [CONFIG_SECRET_FIELD]: TEST_PASSPHRASE,
+      },
+      null,
+      2,
+    ),
     'utf8',
   );
 };
@@ -94,6 +147,43 @@ const hasContactDirect = async (port: number, email: string) => {
 const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) => {
   await window.getByTestId(testId).click();
   await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
+};
+
+const selectOperator = async (window: Page, operatorName: string) => {
+  const selector = window.getByTestId('sidebar-operator-selector');
+  await expect(selector).toBeEnabled();
+  await selector.click();
+  await window.getByRole('menuitemradio', { name: operatorName, exact: true }).click();
+  await expect(selector).toHaveAccessibleName(`Selected operator: ${operatorName}`);
+};
+
+const expectNewestProblem = async (window: Page, title: string) => {
+  const queue = window.getByRole('region', { name: 'Dynatrace problem queue' });
+  await expect(queue.locator('.dt-problem-row').first()).toContainText(title);
+};
+
+const getOperatorRoster = async (port: number) => {
+  const pb = await makePbClient(port);
+  return pb.collection('relay_operators').getFullList<RelayOperator>({
+    sort: 'displayName',
+    requestKey: null,
+  });
+};
+
+const getDynatraceAttribution = async (port: number, problemId: string, noteText: string) => {
+  const pb = await makePbClient(port);
+  const [notes, states] = await Promise.all([
+    pb.collection('dynatrace_problem_notes').getFullList<DynatraceProblemNote>({
+      requestKey: null,
+    }),
+    pb.collection('dynatrace_problem_states').getFullList<DynatraceProblemState>({
+      requestKey: null,
+    }),
+  ]);
+  return {
+    note: notes.find((record) => record.problemId === problemId && record.note === noteText),
+    state: states.find((record) => record.problemId === problemId),
+  };
 };
 
 const tryEnsurePeopleTabReady = async (window: Page) => {
@@ -191,34 +281,79 @@ const deleteContactFromPeople = async (window: Page, port: number, email: string
 test.describe('Vital Critical Path', () => {
   let electronApp: Awaited<ReturnType<typeof electron.launch>> | null;
   let window: Awaited<ReturnType<NonNullable<typeof electronApp>['firstWindow']>>;
+  let clientElectronApp: Awaited<ReturnType<typeof electron.launch>> | null;
+  let clientWindow: Page | null;
   let tempDataDir: string;
+  let clientDataDir: string;
   let pbPort: number;
 
-  test.beforeEach(async () => {
+  const launchServer = async () => {
     const mainEntry = path.join(__dirname, '../../dist/main/index.js');
     const launchEnv = { ...process.env, NODE_ENV: 'test' };
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
-    tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
-    pbPort = makePort();
-    writeServerConfig(tempDataDir, pbPort);
 
     electronApp = await electron.launch({
       args: [`--user-data-dir=${tempDataDir}`, mainEntry],
       env: launchEnv,
     });
-
     window = await electronApp.firstWindow();
     await electronApp.evaluate(({ BrowserWindow }) => {
-      const mainWindow = BrowserWindow.getAllWindows()[0];
-      mainWindow?.setSize(1600, 1000);
+      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
     });
     await window.waitForLoadState('domcontentloaded');
-
     await expect(window.getByTestId('sidebar-compose')).toBeVisible();
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
+  };
+
+  const launchClient = async () => {
+    const mainEntry = path.join(__dirname, '../../dist/main/index.js');
+    const launchEnv = { ...process.env, NODE_ENV: 'test' };
+    delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
+    if (!clientDataDir) {
+      clientDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-client-'));
+      writeClientConfig(clientDataDir, pbPort);
+    }
+
+    clientElectronApp = await electron.launch({
+      args: [`--user-data-dir=${clientDataDir}`, mainEntry],
+      env: launchEnv,
+    });
+    clientWindow = await clientElectronApp.firstWindow();
+    await clientElectronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1600, 1000);
+    });
+    await clientWindow.waitForLoadState('domcontentloaded');
+    await expect(clientWindow.getByTestId('sidebar-compose')).toBeVisible();
+    return clientWindow;
+  };
+
+  const launchConnectedClient = async () => {
+    const connectedClient = await launchClient();
+    await expect(connectedClient.locator('[data-connection-state="online"]').first()).toBeVisible();
+    return connectedClient;
+  };
+
+  test.beforeEach(async () => {
+    tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
+    clientElectronApp = null;
+    clientWindow = null;
+    clientDataDir = '';
+    pbPort = makePort();
+    writeServerConfig(tempDataDir, pbPort);
+    await launchServer();
   });
 
   test.afterEach(async () => {
+    if (clientElectronApp) {
+      try {
+        await clientWindow?.context().setOffline(false);
+        await clientElectronApp.close();
+      } catch {
+        // The client app may already be closed after a test failure.
+      }
+      clientElectronApp = null;
+      clientWindow = null;
+    }
     if (electronApp) {
       try {
         await electronApp.close();
@@ -229,6 +364,9 @@ test.describe('Vital Critical Path', () => {
     }
     if (tempDataDir) {
       fs.rmSync(tempDataDir, { recursive: true, force: true });
+    }
+    if (clientDataDir) {
+      fs.rmSync(clientDataDir, { recursive: true, force: true });
     }
   });
 
@@ -287,12 +425,27 @@ test.describe('Vital Critical Path', () => {
     expect(remainingDemoProblems).toHaveLength(0);
   });
 
-  test('new Dynatrace Problems notify with sound wiring and require a NOC note', async () => {
+  test('new Dynatrace Problems sync Ryan Bell attribution to a connected client', async () => {
+    test.setTimeout(90_000);
+    const noteText = 'NOC confirmed impact and paged the checkout team.';
+
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
     await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
     await goToTab(window, 'sidebar-compose', 'Compose');
 
     runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+
+    const operators = await getOperatorRoster(pbPort);
+    expect(operators.map(({ displayName }) => displayName)).toEqual(EXPECTED_OPERATOR_NAMES);
+    expect(operators).toHaveLength(7);
+    const ryan = operators.find(({ displayName }) => displayName === RYAN_BELL);
+    expect(ryan).toMatchObject({ displayName: RYAN_BELL, active: true });
+    expect(ryan?.id).toMatch(/^[a-z0-9]{15}$/);
+
+    const connectedClient = await launchConnectedClient();
+    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
 
     await expect(window.getByText('New Dynatrace problems')).toBeVisible();
     await expect(
@@ -300,13 +453,169 @@ test.describe('Vital Critical Path', () => {
     ).toBeVisible();
     await window.getByRole('button', { name: 'Open Problems' }).click();
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Dynatrace Problems');
+    await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
+    await selectOperator(window, RYAN_BELL);
 
     const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
     await expect(addressedAction).toBeDisabled();
-    await window.getByLabel('Add a note').fill('NOC confirmed impact and paged the checkout team.');
+    await window.getByLabel('Add a note').fill(noteText);
     await expect(addressedAction).toBeEnabled();
     await addressedAction.click();
     await expect(window.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
+
+    await expect
+      .poll(async () => {
+        const { note, state } = await getDynatraceAttribution(
+          pbPort,
+          CHECKOUT_PROBLEM_ID,
+          noteText,
+        );
+        return {
+          noteOperatorId: note?.operatorId,
+          author: note?.author,
+          stateOperatorId: state?.operatorId,
+          addressedBy: state?.addressedBy,
+          addressed: state?.addressed,
+        };
+      })
+      .toEqual({
+        noteOperatorId: ryan!.id,
+        author: RYAN_BELL,
+        stateOperatorId: ryan!.id,
+        addressedBy: RYAN_BELL,
+        addressed: true,
+      });
+
+    await window.getByRole('tab', { name: 'Addressed locally 2' }).click();
+    await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
+
+    await expect(connectedClient.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
+    await connectedClient.getByRole('tab', { name: 'Addressed locally 2' }).click();
+    await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
+    const clientDetail = connectedClient.getByRole('region', {
+      name: 'Selected problem details',
+    });
+    await expect(clientDetail.getByRole('heading', { name: CHECKOUT_PROBLEM_TITLE })).toBeVisible();
+    await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText(
+      RYAN_BELL,
+    );
+    const syncedNote = clientDetail.locator('.dt-problem-note', { hasText: noteText });
+    await expect(syncedNote).toContainText(RYAN_BELL);
+  });
+
+  test('connected client retains Ryan Bell attribution through offline queue sync', async () => {
+    test.setTimeout(90_000);
+    const noteText = `Offline NOC follow-up ${uniqueSuffix()}`;
+
+    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    const operators = await getOperatorRoster(pbPort);
+    expect(operators.map(({ displayName }) => displayName)).toEqual(EXPECTED_OPERATOR_NAMES);
+    expect(operators).toHaveLength(7);
+    const ryan = operators.find(({ displayName }) => displayName === RYAN_BELL);
+    expect(ryan).toMatchObject({ displayName: RYAN_BELL, active: true });
+
+    let connectedClient = await launchConnectedClient();
+    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
+    await selectOperator(connectedClient, RYAN_BELL);
+
+    await expect
+      .poll(() =>
+        connectedClient.evaluate(async () => {
+          const [problems, operators] = await Promise.all([
+            globalThis.api?.cacheRead?.('dynatrace_problems'),
+            globalThis.api?.cacheRead?.('relay_operators'),
+          ]);
+          return { problems: problems?.length ?? 0, operators: operators?.length ?? 0 };
+        }),
+      )
+      .toEqual({ problems: 7, operators: 7 });
+
+    await electronApp?.close();
+    electronApp = null;
+    await expect
+      .poll(async () => {
+        try {
+          await fetch(`http://127.0.0.1:${pbPort}/api/health`);
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .toBe(false);
+    await clientElectronApp?.close();
+    clientElectronApp = null;
+    clientWindow = null;
+
+    connectedClient = await launchClient();
+    const connectionStatus = connectedClient.locator('[data-connection-state]').first();
+    await expect(connectionStatus).toHaveAttribute('data-connection-state', 'offline');
+    await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+    await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
+    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveAccessibleName(
+      `Selected operator: ${RYAN_BELL}`,
+    );
+    await expect(
+      connectedClient.getByText('You are offline. Changes will sync when Relay reconnects.'),
+    ).toBeVisible();
+
+    const addressedAction = connectedClient.getByRole('button', {
+      name: 'Mark addressed locally',
+    });
+    await connectedClient.getByLabel('Add a note').fill(noteText);
+    await expect(addressedAction).toBeEnabled();
+    await addressedAction.click();
+    await expect
+      .poll(() =>
+        connectedClient.evaluate(async () =>
+          globalThis.api?.getPendingSyncStatus?.().then((status) => status.pendingCount),
+        ),
+      )
+      .toBe(2);
+    await expect(
+      connectedClient.locator('[data-connection-state]', { hasText: '2 changes pending' }),
+    ).toBeVisible();
+
+    await clientElectronApp?.close();
+    clientElectronApp = null;
+    clientWindow = null;
+    await launchServer();
+    connectedClient = await launchConnectedClient();
+
+    await expect
+      .poll(async () => {
+        const { note, state } = await getDynatraceAttribution(
+          pbPort,
+          CHECKOUT_PROBLEM_ID,
+          noteText,
+        );
+        return {
+          noteOperatorId: note?.operatorId,
+          author: note?.author,
+          stateOperatorId: state?.operatorId,
+          addressedBy: state?.addressedBy,
+          addressed: state?.addressed,
+        };
+      })
+      .toEqual({
+        noteOperatorId: ryan!.id,
+        author: RYAN_BELL,
+        stateOperatorId: ryan!.id,
+        addressedBy: RYAN_BELL,
+        addressed: true,
+      });
+    await expect
+      .poll(() =>
+        connectedClient.evaluate(async () =>
+          globalThis.api?.getPendingSyncStatus?.().then((status) => status.pendingCount),
+        ),
+      )
+      .toBe(0);
+    await expect(
+      connectedClient.locator('[data-connection-state]', { hasText: 'pending' }),
+    ).toHaveCount(0);
   });
 
   test('Compose bridge action buttons do not overlap on compact desktop widths', async () => {

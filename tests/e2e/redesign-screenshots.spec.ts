@@ -452,7 +452,7 @@ test.describe('Redesign screenshot harness', () => {
 
       // Verify no sidebar nav label is ellipsized at 1920×1080.
       const truncated = await window.evaluate(() => {
-        return [...globalThis.document.querySelectorAll('.sidebar-button-label')]
+        return [...globalThis.document.querySelectorAll('.sidebar-nav .sidebar-button-label')]
           .filter((el) => el.scrollWidth > el.clientWidth)
           .map((el) => el.textContent);
       });
