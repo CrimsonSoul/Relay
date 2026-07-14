@@ -49,6 +49,10 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          knowledgeExtractorWorker: resolve(
+            __dirname,
+            'src/main/knowledge/knowledgeExtractor.worker.ts',
+          ),
         },
         output: {
           format: 'es',

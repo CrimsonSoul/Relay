@@ -6,7 +6,7 @@
 
 **Architecture:** The server owns a `knowledge-base` source folder and a single-concurrency `KnowledgeBaseManager` that validates, hashes, parses, and mirrors PDFs into a server-owned PocketBase collection. Metadata follows Relay's existing collection-store and SQLite cache path; PDF bytes move only through a trusted, typed main-process IPC service backed by validated server files or a content-addressed client cache. The renderer uses bundled PDF.js canvas/text layers and a focused category/document/outline tree without edit controls.
 
-**Tech Stack:** Electron 42, TypeScript 6, React 19, PocketBase 0.26, PDF.js (`pdfjs-dist` 6.1.200), Node worker threads, Vitest, Testing Library, Playwright, electron-vite/Vite.
+**Tech Stack:** Electron 42, TypeScript 6, React 19, PocketBase 0.26, PDF.js (`pdfjs-dist` 5.4.624), Node worker threads, Vitest, Testing Library, Playwright, electron-vite/Vite.
 
 ## Global Constraints
 
@@ -73,7 +73,7 @@
 
 - [ ] Write failing shared tests covering limits, record normalization, `General`-first category sort, case/diacritic-insensitive search text, valid outline levels, and stable document sorting.
 - [ ] Run `npx vitest run src/shared/__tests__/knowledge.test.ts` and confirm it fails because `@shared/knowledge` does not exist.
-- [ ] Install the pinned runtime package with `npm install pdfjs-dist@6.1.200`.
+- [ ] Install the pinned runtime package with `npm install pdfjs-dist@5.4.624`.
 - [ ] Implement the exact shared domain:
 
 ```ts
