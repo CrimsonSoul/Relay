@@ -66,6 +66,13 @@ const mockPendingReminders = {
   }>,
 };
 const mockCompletedReminders = { current: [] as unknown[] };
+const mockRequireAttribution = vi.fn();
+const mockReminderSubmitResult = { current: null as boolean | null };
+
+vi.mock('../../contexts/OperatorContext', () => ({
+  useOperator: () => ({ requireAttribution: mockRequireAttribution }),
+}));
+
 vi.mock('../../hooks/useAlertReminders', () => ({
   useAlertReminders: () => ({
     reminders: [],
@@ -114,7 +121,19 @@ vi.mock('../AlertReminderModal', () => ({
         <span data-testid="reminder-draft-sender">{props.draft.sender}</span>
         <button
           data-testid="reminder-schedule"
-          onClick={() => void props.onSchedule({ title: 'Scheduled reminder' })}
+          onClick={() =>
+            void props
+              .onSchedule({
+                title: 'Scheduled reminder',
+                note: 'Reminder note',
+                dueAt: '2026-05-28T20:00:00.000Z',
+                operatorId: 'malicious-current-operator',
+                createdBy: 'Malicious Current Operator',
+              })
+              .then((result) => {
+                mockReminderSubmitResult.current = result;
+              })
+          }
         >
           Schedule alarm
         </button>
@@ -373,6 +392,11 @@ vi.mock('../alertUtils', () => ({
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
+  mockRequireAttribution.mockReturnValue({
+    operatorId: 'operator-ryan',
+    operatorName: 'Ryan Bell',
+  });
+  mockReminderSubmitResult.current = null;
   mockPendingReminders.current = [];
   mockCompletedReminders.current = [];
   (globalThis as Record<string, unknown>).api = {
@@ -777,15 +801,33 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Ops');
   });
 
-  it('schedules reminders through the reminder hook', async () => {
+  it('requires and forwards operator attribution when scheduling a new reminder', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-schedule'));
     fireEvent.click(screen.getByTestId('reminder-schedule'));
 
     await waitFor(() => {
-      expect(mockScheduleReminder).toHaveBeenCalledWith({ title: 'Scheduled reminder' });
+      expect(mockRequireAttribution).toHaveBeenCalledOnce();
+      expect(mockScheduleReminder).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Scheduled reminder' }),
+        { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
+      );
     });
+  });
+
+  it('opens the shared operator picker and returns false without scheduling when none is selected', async () => {
+    mockRequireAttribution.mockReturnValue(null);
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
+    fireEvent.click(screen.getByTestId('reminder-schedule'));
+
+    await waitFor(() => {
+      expect(mockReminderSubmitResult.current).toBe(false);
+    });
+    expect(mockRequireAttribution).toHaveBeenCalledOnce();
+    expect(mockScheduleReminder).not.toHaveBeenCalled();
+    expect(mockUpdateReminder).not.toHaveBeenCalled();
   });
 
   it('shows the next upcoming reminder compactly', () => {
@@ -841,6 +883,33 @@ describe('AlertsTab', () => {
 
     expect(mockMarkDone).toHaveBeenCalledWith('rem-1');
     expect(mockDismissReminder).toHaveBeenCalledWith('rem-1');
+  });
+
+  it('edits an existing reminder without requiring or replacing its creator attribution', async () => {
+    mockPendingReminders.current = [
+      {
+        id: 'rem-1',
+        title: 'Editable reminder',
+        dueAt: '2026-05-28T20:00:00.000Z',
+        operatorId: 'operator-original',
+        createdBy: 'Original Operator',
+      },
+    ];
+
+    render(<AlertsTab />);
+    fireEvent.click(screen.getByText('ALARMS'));
+    fireEvent.click(screen.getByTestId('manager-edit'));
+    fireEvent.click(screen.getByTestId('reminder-schedule'));
+
+    await waitFor(() => {
+      expect(mockUpdateReminder).toHaveBeenCalledWith('rem-1', {
+        title: 'Scheduled reminder',
+        note: 'Reminder note',
+        dueAt: '2026-05-28T20:00:00.000Z',
+      });
+    });
+    expect(mockRequireAttribution).not.toHaveBeenCalled();
+    expect(mockScheduleReminder).not.toHaveBeenCalled();
   });
 
   it('renders with null logo by default on the card', () => {

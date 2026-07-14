@@ -6,6 +6,7 @@ import { Modal } from '../components/Modal';
 import { useToast } from '../components/Toast';
 import { useAlertHistory } from '../hooks/useAlertHistory';
 import { useAlertReminders } from '../hooks/useAlertReminders';
+import { useOperator } from '../contexts/OperatorContext';
 import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { useModalState } from '../hooks/useModalState';
 import { AlertHistoryModal } from './AlertHistoryModal';
@@ -184,6 +185,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
   onLoadedReminderAlertConsumed,
 }) => {
   const { showToast } = useToast();
+  const { requireAttribution } = useOperator();
   const cardRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<AlertFormHandle>(null);
 
@@ -573,14 +575,18 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   const handleReminderSubmit = useCallback(
     async (input: AlertReminderInput): Promise<boolean> => {
-      if (!editingReminder) return await scheduleReminder(input);
-      return await updateReminder(editingReminder.id, {
-        title: input.title,
-        note: input.note,
-        dueAt: input.dueAt,
-      });
+      if (editingReminder) {
+        return await updateReminder(editingReminder.id, {
+          title: input.title,
+          note: input.note,
+          dueAt: input.dueAt,
+        });
+      }
+      const attribution = requireAttribution();
+      if (!attribution) return false;
+      return await scheduleReminder(input, attribution);
     },
-    [editingReminder, scheduleReminder, updateReminder],
+    [editingReminder, requireAttribution, scheduleReminder, updateReminder],
   );
 
   const handleScheduleFromManager = useCallback(() => {

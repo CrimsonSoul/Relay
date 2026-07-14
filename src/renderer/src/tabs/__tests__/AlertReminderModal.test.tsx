@@ -171,7 +171,7 @@ describe('AlertReminderModal', () => {
         severity: 'MAINTENANCE',
         alertSubject: 'Maintenance window',
         alertBodyHtml: '<p>Window details</p>',
-        createdBy: 'Operations',
+        alertSender: 'Operations',
       });
     });
     expect(onClose).toHaveBeenCalledOnce();

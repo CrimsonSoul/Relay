@@ -111,7 +111,7 @@ export const AlertReminderModal: React.FC<AlertReminderModalProps> = ({
           severity: draft.severity,
           alertSubject: draft.subject.trim(),
           alertBodyHtml: draft.bodyHtml,
-          createdBy: draft.sender.trim(),
+          alertSender: draft.sender.trim(),
         };
 
     const success = await onSchedule(payload);

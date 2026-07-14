@@ -1,6 +1,7 @@
 import { getPb, handleApiError, escapeFilter } from './pocketbase';
 import type { Severity } from '../tabs/alertUtils';
 import { mutateCollection } from './mutationGateway';
+import type { OperatorAttribution } from '@shared/operators';
 
 export type AlertReminderStatus = 'pending' | 'done' | 'dismissed';
 
@@ -14,7 +15,9 @@ export interface AlertReminderRecord {
   severity: Severity | '';
   alertSubject: string;
   alertBodyHtml: string;
+  operatorId?: string;
   createdBy: string;
+  alertSender?: string;
   completedAt: string;
   dismissedAt: string;
   created: string;
@@ -28,7 +31,7 @@ export interface AlertReminderInput {
   severity?: Severity | '';
   alertSubject?: string;
   alertBodyHtml?: string;
-  createdBy?: string;
+  alertSender?: string;
 }
 
 export interface AlertReminderUpdateInput {
@@ -46,7 +49,10 @@ type AlertReminderCreatePayload = Omit<
 
 const COLLECTION = 'alert_reminders';
 
-function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreatePayload {
+function normalizeCreatePayload(
+  input: AlertReminderInput,
+  attribution: OperatorAttribution,
+): AlertReminderCreatePayload {
   return {
     title: input.title.trim() || 'Send alert',
     note: input.note?.trim() || '',
@@ -55,16 +61,21 @@ function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreateP
     severity: input.severity || '',
     alertSubject: input.alertSubject?.trim() || '',
     alertBodyHtml: input.alertBodyHtml || '',
-    createdBy: input.createdBy?.trim() || '',
+    operatorId: attribution.operatorId,
+    createdBy: attribution.operatorName,
+    alertSender: input.alertSender?.trim() || '',
   };
 }
 
-export async function addAlertReminder(input: AlertReminderInput): Promise<AlertReminderRecord> {
+export async function addAlertReminder(
+  input: AlertReminderInput,
+  attribution: OperatorAttribution,
+): Promise<AlertReminderRecord> {
   return (await mutateCollection<AlertReminderRecord>(
     COLLECTION,
     'create',
     undefined,
-    normalizeCreatePayload(input),
+    normalizeCreatePayload(input, attribution),
   )) as AlertReminderRecord;
 }
 

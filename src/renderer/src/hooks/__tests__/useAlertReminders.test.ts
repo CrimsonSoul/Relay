@@ -36,6 +36,12 @@ vi.mock('../../services/alertReminderService', () => ({
 
 import { useAlertReminders } from '../useAlertReminders';
 import type { AlertReminderRecord } from '../../services/alertReminderService';
+import type { OperatorAttribution } from '@shared/operators';
+
+const attribution: OperatorAttribution = {
+  operatorId: 'operator-ryan',
+  operatorName: 'Ryan Bell',
+};
 
 const makeRecord = (overrides: Partial<AlertReminderRecord> = {}): AlertReminderRecord => ({
   id: 'rem-1',
@@ -47,7 +53,9 @@ const makeRecord = (overrides: Partial<AlertReminderRecord> = {}): AlertReminder
   severity: 'INFO',
   alertSubject: 'Subject',
   alertBodyHtml: '<p>Body</p>',
-  createdBy: 'IT',
+  operatorId: 'operator-ryan',
+  createdBy: 'Ryan Bell',
+  alertSender: 'IT',
   completedAt: '',
   dismissedAt: '',
   created: '2026-05-28T19:00:00.000Z',
@@ -134,19 +142,25 @@ describe('useAlertReminders', () => {
 
     let success = false;
     await act(async () => {
-      success = await result.current.scheduleReminder({
-        title: 'Send maintenance alert',
-        dueAt: '2026-05-28T20:00:00.000Z',
-        note: 'Before the window',
-      });
+      success = await result.current.scheduleReminder(
+        {
+          title: 'Send maintenance alert',
+          dueAt: '2026-05-28T20:00:00.000Z',
+          note: 'Before the window',
+        },
+        attribution,
+      );
     });
 
     expect(success).toBe(true);
-    expect(mockAddAlertReminder).toHaveBeenCalledWith({
-      title: 'Send maintenance alert',
-      dueAt: '2026-05-28T20:00:00.000Z',
-      note: 'Before the window',
-    });
+    expect(mockAddAlertReminder).toHaveBeenCalledWith(
+      {
+        title: 'Send maintenance alert',
+        dueAt: '2026-05-28T20:00:00.000Z',
+        note: 'Before the window',
+      },
+      attribution,
+    );
     expect(showToast).toHaveBeenCalledWith('Alarm scheduled', 'success');
   });
 
@@ -157,10 +171,13 @@ describe('useAlertReminders', () => {
 
     let success = true;
     await act(async () => {
-      success = await result.current.scheduleReminder({
-        title: 'Send alert',
-        dueAt: '2026-05-28T20:00:00.000Z',
-      });
+      success = await result.current.scheduleReminder(
+        {
+          title: 'Send alert',
+          dueAt: '2026-05-28T20:00:00.000Z',
+        },
+        attribution,
+      );
     });
 
     expect(success).toBe(false);

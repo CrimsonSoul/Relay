@@ -29,6 +29,7 @@ import {
   type AlertReminderRecord,
 } from './alertReminderService';
 import { handleApiError, requireOnline } from './pocketbase';
+import type { OperatorAttribution } from '@shared/operators';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
@@ -43,7 +44,9 @@ const sampleRecord: AlertReminderRecord = {
   severity: 'ISSUE',
   alertSubject: 'POS outage',
   alertBodyHtml: '<p>Details</p>',
-  createdBy: 'IT',
+  operatorId: 'operator-ryan',
+  createdBy: 'Ryan Bell',
+  alertSender: 'IT',
   completedAt: '',
   dismissedAt: '',
   created: '2026-05-28T19:00:00.000Z',
@@ -57,7 +60,12 @@ const sampleInput: AlertReminderInput = {
   severity: 'ISSUE',
   alertSubject: 'POS outage',
   alertBodyHtml: '<p>Details</p>',
-  createdBy: 'IT',
+  alertSender: 'IT',
+};
+
+const attribution: OperatorAttribution = {
+  operatorId: 'operator-ryan',
+  operatorName: 'Ryan Bell',
 };
 
 beforeEach(() => {
@@ -65,16 +73,18 @@ beforeEach(() => {
 });
 
 describe('addAlertReminder', () => {
-  it('creates a pending reminder', async () => {
+  it('creates a pending reminder with operator attribution separate from its cosmetic sender', async () => {
     mockCreate.mockResolvedValueOnce(sampleRecord);
 
-    const result = await addAlertReminder(sampleInput);
+    const result = await addAlertReminder(sampleInput, attribution);
 
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(mockCreate).toHaveBeenCalledWith({
       ...sampleInput,
       note: 'Use the prepared template',
       status: 'pending',
+      operatorId: 'operator-ryan',
+      createdBy: 'Ryan Bell',
     });
     expect(result).toEqual(sampleRecord);
   });
@@ -82,7 +92,7 @@ describe('addAlertReminder', () => {
   it('omits unset optional date fields so PocketBase does not reject empty dates', async () => {
     mockCreate.mockResolvedValueOnce(sampleRecord);
 
-    await addAlertReminder(sampleInput);
+    await addAlertReminder(sampleInput, attribution);
 
     const payload = mockCreate.mock.calls[0][0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('snoozeUntil');
@@ -94,7 +104,7 @@ describe('addAlertReminder', () => {
     const error = new Error('create failed');
     mockCreate.mockRejectedValueOnce(error);
 
-    await expect(addAlertReminder(sampleInput)).rejects.toThrow('create failed');
+    await expect(addAlertReminder(sampleInput, attribution)).rejects.toThrow('create failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(error);
   });
 });

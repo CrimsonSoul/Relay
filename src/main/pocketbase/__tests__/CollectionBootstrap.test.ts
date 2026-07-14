@@ -572,6 +572,40 @@ describe('ensureCollections', () => {
       maxSelect: 1,
     });
     expect(schema.find((f) => f.name === 'alertBodyHtml')).toMatchObject({ type: 'text' });
+    expect(schema.find((f) => f.name === 'operatorId')).toMatchObject({ type: 'text' });
+    expect(schema.find((f) => f.name === 'alertSender')).toMatchObject({ type: 'text' });
+  });
+
+  it('patches alert reminder attribution fields onto an existing collection', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'reminders-col', name: 'alert_reminders' }]);
+    mockCreate.mockResolvedValue({});
+    mockGetOne.mockResolvedValue({
+      fields: [
+        { type: 'text', name: 'title', required: true },
+        { type: 'text', name: 'createdBy' },
+        { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
+        { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
+      ],
+      indexes: [],
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: '@request.auth.id != ""',
+      updateRule: '@request.auth.id != ""',
+      deleteRule: '@request.auth.id != ""',
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const update = mockUpdate.mock.calls.find(([id]) => id === 'reminders-col');
+    expect(update).toBeDefined();
+    expect((update?.[1] as { fields: Array<{ name: string; type: string }> }).fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'operatorId', type: 'text' }),
+        expect.objectContaining({ name: 'alertSender', type: 'text' }),
+      ]),
+    );
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 
   it('includes teamId in the oncall collection schema', async () => {
