@@ -307,10 +307,17 @@
 
 .sidebar-operator-selector:focus-visible {
   color: var(--color-text-primary);
+  outline: 2px solid var(--accent-bright) !important;
+  outline-offset: -2px !important;
 }
 
-.sidebar-operator-selector .sidebar-button-label {
+.sidebar-operator-selector-label {
   text-transform: none;
+  min-width: 0;
+  max-width: calc(var(--sidebar-button-width) - 24px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-button-indicator {

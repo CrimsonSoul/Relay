@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { RelayOperatorRecord } from '@shared/operators';
 import { useOperator } from '../../contexts/OperatorContext';
 import { Tooltip } from '../Tooltip';
 import { OperatorIcon } from './SidebarIcons';
@@ -8,6 +9,9 @@ const MENU_GAP = 8;
 const MENU_MAX_HEIGHT = 360;
 const MENU_WIDTH = 252;
 const VIEWPORT_GUTTER = 8;
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const NO_OPERATORS: RelayOperatorRecord[] = [];
 
 type MenuPosition = {
   left: number;
@@ -25,9 +29,27 @@ export function SidebarOperatorSelector() {
     loading,
     error,
   } = useOperator();
+
+  let unavailableLabel = 'No active operators';
+  if (loading) unavailableLabel = 'Loading operators';
+  else if (error) unavailableLabel = 'Operators unavailable';
+  const operatorsAvailable = !loading && !error && activeOperators.length > 0;
+  const menuOperators = operatorsAvailable ? activeOperators : NO_OPERATORS;
+  let triggerLabel = selectedOperator?.displayName;
+  if (!operatorsAvailable) triggerLabel = unavailableLabel;
+  else if (!triggerLabel) triggerLabel = 'Select operator';
+  const accessibleLabel =
+    operatorsAvailable && selectedOperator
+      ? `Selected operator: ${selectedOperator.displayName}`
+      : triggerLabel;
+
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const pickerWasOpenRef = useRef(false);
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [menuPosition, setMenuPosition] = useState<MenuPosition>({
     left: 0,
     bottom: VIEWPORT_GUTTER,
@@ -56,8 +78,9 @@ export function SidebarOperatorSelector() {
 
   const closeAndRestoreFocus = useCallback(() => {
     setPickerOpen(false);
-    triggerRef.current?.focus();
-  }, [setPickerOpen]);
+    const focusTarget = operatorsAvailable ? triggerRef.current : previousFocusRef.current;
+    focusTarget?.focus();
+  }, [operatorsAvailable, setPickerOpen]);
 
   useEffect(() => {
     if (!pickerOpen) return undefined;
@@ -72,13 +95,28 @@ export function SidebarOperatorSelector() {
   }, [pickerOpen, updateMenuPosition]);
 
   useEffect(() => {
-    if (!pickerOpen || activeOperators.length === 0) return;
+    if (pickerOpen && !pickerWasOpenRef.current) {
+      const activeElement = document.activeElement;
+      previousFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    }
+    pickerWasOpenRef.current = pickerOpen;
+  }, [pickerOpen]);
 
-    const selectedIndex = activeOperators.findIndex(({ id }) => id === selectedOperator?.id);
-    const target = itemRefs.current[selectedIndex >= 0 ? selectedIndex : 0];
+  useEffect(() => {
+    if (!pickerOpen) return;
+    if (menuOperators.length === 0) {
+      setFocusedIndex(0);
+      statusRef.current?.focus();
+      return;
+    }
+
+    const selectedIndex = menuOperators.findIndex(({ id }) => id === selectedOperator?.id);
+    const nextFocusedIndex = selectedIndex >= 0 ? selectedIndex : 0;
+    const target = itemRefs.current[nextFocusedIndex];
+    setFocusedIndex(nextFocusedIndex);
     target?.focus();
     target?.scrollIntoView?.({ block: 'nearest' });
-  }, [activeOperators, pickerOpen, selectedOperator?.id]);
+  }, [menuOperators, pickerOpen, selectedOperator?.id]);
 
   useEffect(() => {
     if (!pickerOpen) return undefined;
@@ -102,17 +140,7 @@ export function SidebarOperatorSelector() {
     };
   }, [closeAndRestoreFocus, pickerOpen, setPickerOpen]);
 
-  let unavailableLabel = 'No active operators';
-  if (loading) unavailableLabel = 'Loading operators';
-  else if (error) unavailableLabel = 'Operators unavailable';
-  let triggerLabel = selectedOperator?.displayName;
-  if (!triggerLabel) {
-    triggerLabel = activeOperators.length > 0 ? 'Select operator' : unavailableLabel;
-  }
-  const accessibleLabel = selectedOperator
-    ? `Selected operator: ${selectedOperator.displayName}`
-    : triggerLabel;
-  const triggerDisabled = loading || Boolean(error) || activeOperators.length === 0;
+  const triggerDisabled = !operatorsAvailable;
 
   const handleTriggerClick = () => {
     updateMenuPosition();
@@ -125,11 +153,31 @@ export function SidebarOperatorSelector() {
   };
 
   const focusItem = (index: number) => {
+    setFocusedIndex(index);
     itemRefs.current[index]?.focus();
   };
 
+  const focusAdjacentToTrigger = (backwards: boolean) => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const focusableElements = Array.from(
+      document.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    ).filter((element) => !menuRef.current?.contains(element));
+    const triggerIndex = focusableElements.indexOf(trigger);
+    const nextIndex = triggerIndex + (backwards ? -1 : 1);
+    setPickerOpen(false);
+    focusableElements[nextIndex]?.focus();
+  };
+
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (activeOperators.length === 0) return;
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      focusAdjacentToTrigger(event.shiftKey);
+      return;
+    }
+
+    if (menuOperators.length === 0) return;
 
     const focusedIndex = Math.max(
       0,
@@ -139,11 +187,11 @@ export function SidebarOperatorSelector() {
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
-        focusItem((focusedIndex + 1) % activeOperators.length);
+        focusItem((focusedIndex + 1) % menuOperators.length);
         break;
       case 'ArrowUp':
         event.preventDefault();
-        focusItem((focusedIndex - 1 + activeOperators.length) % activeOperators.length);
+        focusItem((focusedIndex - 1 + menuOperators.length) % menuOperators.length);
         break;
       case 'Home':
         event.preventDefault();
@@ -151,7 +199,7 @@ export function SidebarOperatorSelector() {
         break;
       case 'End':
         event.preventDefault();
-        focusItem(activeOperators.length - 1);
+        focusItem(menuOperators.length - 1);
         break;
       default:
         break;
@@ -170,6 +218,7 @@ export function SidebarOperatorSelector() {
           aria-expanded={pickerOpen}
           aria-controls={pickerOpen ? 'sidebar-operator-menu' : undefined}
           disabled={triggerDisabled}
+          data-availability={operatorsAvailable ? 'available' : 'unavailable'}
           data-has-selection={Boolean(selectedOperator)}
           data-testid="sidebar-operator-selector"
           onClick={handleTriggerClick}
@@ -177,7 +226,10 @@ export function SidebarOperatorSelector() {
           <div className="sidebar-button-icon" aria-hidden="true">
             <OperatorIcon />
           </div>
-          <span className="sidebar-button-label" title={triggerLabel}>
+          <span
+            className="sidebar-button-label sidebar-operator-selector-label"
+            title={triggerLabel}
+          >
             {triggerLabel}
           </span>
         </button>
@@ -191,6 +243,7 @@ export function SidebarOperatorSelector() {
             className="sidebar-operator-menu"
             role="menu"
             aria-label="Select operator"
+            aria-busy={loading}
             tabIndex={-1}
             onKeyDown={handleMenuKeyDown}
             style={{
@@ -199,8 +252,8 @@ export function SidebarOperatorSelector() {
               maxHeight: menuPosition.maxHeight,
             }}
           >
-            {activeOperators.length > 0 ? (
-              activeOperators.map((operator, index) => (
+            {menuOperators.length > 0 ? (
+              menuOperators.map((operator, index) => (
                 <button
                   key={operator.id}
                   ref={(node) => {
@@ -209,15 +262,25 @@ export function SidebarOperatorSelector() {
                   type="button"
                   role="menuitemradio"
                   aria-checked={selectedOperator?.id === operator.id}
+                  tabIndex={focusedIndex === index ? 0 : -1}
                   className="sidebar-operator-menu-item"
+                  onFocus={() => setFocusedIndex(index)}
                   onClick={() => handleOperatorClick(operator.id)}
                 >
                   <span className="sidebar-operator-menu-name">{operator.displayName}</span>
                 </button>
               ))
             ) : (
-              <div className="sidebar-operator-menu-status" role="status">
-                {unavailableLabel}
+              <div
+                ref={statusRef}
+                className="sidebar-operator-menu-status"
+                role="menuitem"
+                aria-disabled="true"
+                tabIndex={0}
+              >
+                <span role="status" aria-live="polite">
+                  {unavailableLabel}
+                </span>
               </div>
             )}
           </div>,

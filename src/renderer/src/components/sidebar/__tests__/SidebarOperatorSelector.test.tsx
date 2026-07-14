@@ -51,11 +51,31 @@ function AttributionAction() {
   );
 }
 
-function renderSelector({ includeAction = false }: { includeAction?: boolean } = {}) {
+function PickerAction() {
+  const { setPickerOpen } = useOperator();
+  return (
+    <button type="button" onClick={() => setPickerOpen(true)}>
+      Open operator picker
+    </button>
+  );
+}
+
+function renderSelector({
+  includeAction = false,
+  includePickerAction = false,
+  includeTabStops = false,
+}: {
+  includeAction?: boolean;
+  includePickerAction?: boolean;
+  includeTabStops?: boolean;
+} = {}) {
   return render(
     <OperatorProvider>
+      {includeTabStops && <button type="button">Before operator selector</button>}
       <SidebarOperatorSelector />
+      {includeTabStops && <button type="button">After operator selector</button>}
       {includeAction && <AttributionAction />}
+      {includePickerAction && <PickerAction />}
     </OperatorProvider>,
   );
 }
@@ -173,6 +193,45 @@ describe('SidebarOperatorSelector', () => {
     expect(charlie).toHaveFocus();
   });
 
+  it('uses roving tab stops as arrow keys move menu focus', () => {
+    renderSelector();
+    fireEvent.click(screen.getByRole('button', { name: 'Select operator' }));
+    const menu = screen.getByRole('menu', { name: 'Select operator' });
+    const [alpha, zulu] = within(menu).getAllByRole('menuitemradio');
+
+    expect(alpha).toHaveAttribute('tabindex', '0');
+    expect(zulu).toHaveAttribute('tabindex', '-1');
+
+    fireEvent.keyDown(menu, { key: 'ArrowDown' });
+
+    expect(alpha).toHaveAttribute('tabindex', '-1');
+    expect(zulu).toHaveAttribute('tabindex', '0');
+    expect(zulu).toHaveFocus();
+  });
+
+  it('closes on Tab and continues forward from the compact trigger', () => {
+    renderSelector({ includeTabStops: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Select operator' }));
+
+    fireEvent.keyDown(screen.getByRole('menu', { name: 'Select operator' }), { key: 'Tab' });
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'After operator selector' })).toHaveFocus();
+  });
+
+  it('closes on Shift+Tab and continues backward from the compact trigger', () => {
+    renderSelector({ includeTabStops: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Select operator' }));
+
+    fireEvent.keyDown(screen.getByRole('menu', { name: 'Select operator' }), {
+      key: 'Tab',
+      shiftKey: true,
+    });
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Before operator selector' })).toHaveFocus();
+  });
+
   it('closes on Escape and restores focus to the trigger', () => {
     renderSelector();
     const trigger = screen.getByRole('button', { name: 'Select operator' });
@@ -282,6 +341,47 @@ describe('SidebarOperatorSelector', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading operators');
   });
 
+  it.each([
+    { loading: true, error: null, label: 'Loading operators' },
+    { loading: false, error: 'offline', label: 'Operators unavailable' },
+  ])('gates retained operator data while showing $label', ({ loading, error, label }) => {
+    localStorage.setItem(SELECTED_OPERATOR_STORAGE_KEY, 'alpha');
+    collectionState = { ...collectionState, loading, error };
+    renderSelector({ includePickerAction: true });
+    const action = screen.getByRole('button', { name: 'Open operator picker' });
+    action.focus();
+
+    expect(screen.getByRole('button', { name: label })).toBeDisabled();
+    expect(screen.getByRole('button', { name: label })).toHaveTextContent(label);
+
+    fireEvent.click(action);
+
+    const menu = screen.getByRole('menu', { name: 'Select operator' });
+    expect(within(menu).queryByRole('menuitemradio')).not.toBeInTheDocument();
+    const statusItem = within(menu).getByRole('menuitem', { name: label });
+    expect(statusItem).toHaveAttribute('aria-disabled', 'true');
+    expect(statusItem).toHaveAttribute('tabindex', '0');
+    expect(statusItem).toHaveFocus();
+    expect(within(statusItem).getByRole('status')).toHaveTextContent(label);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(action).toHaveFocus();
+  });
+
+  it('provides a focusable menu status when no active operators exist', () => {
+    collectionState = { ...collectionState, data: [] };
+    renderSelector({ includeAction: true });
+    const action = screen.getByRole('button', { name: 'Save attributed action' });
+    action.focus();
+
+    fireEvent.click(action);
+
+    const menu = screen.getByRole('menu', { name: 'Select operator' });
+    const statusItem = within(menu).getByRole('menuitem', { name: 'No active operators' });
+    expect(statusItem).toHaveFocus();
+    expect(within(menu).queryByRole('menuitemradio')).not.toBeInTheDocument();
+  });
+
   it('compacts every sidebar control when vertical space is constrained', () => {
     expect(sidebarCss).toMatch(
       /@media \(max-height: 760px\) \{\s*\.sidebar-button\s*\{\s*--sidebar-button-height: 48px;/,
@@ -289,8 +389,28 @@ describe('SidebarOperatorSelector', () => {
   });
 
   it('preserves operator display-name casing in the sidebar trigger', () => {
+    expect(sidebarCss).toMatch(/\.sidebar-operator-selector-label\s*\{\s*text-transform: none;/);
+  });
+
+  it('uses the high-contrast sidebar focus vocabulary on the operator trigger', () => {
     expect(sidebarCss).toMatch(
-      /\.sidebar-operator-selector \.sidebar-button-label\s*\{\s*text-transform: none;/,
+      /\.sidebar-operator-selector:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent-bright\) !important;[^}]*outline-offset: -2px !important;/,
+    );
+  });
+
+  it('truncates a long visible name while retaining its full accessible text', () => {
+    const longName =
+      'Alexandria Montgomery-Worthington the Third, Overnight Network Operations Commander';
+    collectionState.data = [makeOperator('long-name', longName)];
+    localStorage.setItem(SELECTED_OPERATOR_STORAGE_KEY, 'long-name');
+    renderSelector();
+
+    const trigger = screen.getByRole('button', { name: `Selected operator: ${longName}` });
+    const label = within(trigger).getByTitle(longName);
+    expect(label).toHaveTextContent(longName);
+    expect(label).toHaveClass('sidebar-operator-selector-label');
+    expect(sidebarCss).toMatch(
+      /\.sidebar-operator-selector-label\s*\{[^}]*min-width: 0;[^}]*max-width: calc\(var\(--sidebar-button-width\) - 24px\);[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/,
     );
   });
 });
