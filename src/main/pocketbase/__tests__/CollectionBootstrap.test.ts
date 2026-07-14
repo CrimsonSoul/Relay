@@ -101,7 +101,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(19);
+    expect(mockCreate).toHaveBeenCalledTimes(20);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -117,6 +117,61 @@ describe('ensureCollections', () => {
         (call: unknown[]) => (call[0] as { name: string }).name === 'relay_operators',
       ),
     ).toBe(true);
+  });
+
+  it('creates a protected server-owned knowledge document collection', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const knowledgeCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_documents',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          viewRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<Record<string, unknown>>;
+          indexes: string[];
+        }
+      | undefined;
+
+    expect(knowledgeCall).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(knowledgeCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'sourceKey', type: 'text', required: true, max: 512 }),
+        expect.objectContaining({ name: 'category', type: 'text', required: true, max: 120 }),
+        expect.objectContaining({ name: 'title', type: 'text', required: true, max: 240 }),
+        expect.objectContaining({ name: 'outline', type: 'json' }),
+        expect.objectContaining({
+          name: 'outlineSource',
+          type: 'select',
+          values: ['native', 'inferred', 'none'],
+          maxSelect: 1,
+        }),
+        expect.objectContaining({
+          name: 'pdf',
+          type: 'file',
+          required: true,
+          maxSelect: 1,
+          maxSize: 50 * 1024 * 1024,
+          mimeTypes: ['application/pdf'],
+          protected: true,
+        }),
+      ]),
+    );
+    expect(knowledgeCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)',
+    );
   });
 
   it('creates a server-owned operator collection with authenticated read and subscription access', async () => {

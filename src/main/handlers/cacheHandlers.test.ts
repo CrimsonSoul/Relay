@@ -104,6 +104,16 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(operators);
     });
 
+    it('reads knowledge metadata for offline clients', () => {
+      const documents = [{ id: 'document123', title: 'Runbook' }];
+      mockCache.readCollection.mockReturnValue(documents);
+
+      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'knowledge_documents');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('knowledge_documents');
+      expect(result).toEqual(documents);
+    });
+
     it('returns empty array for invalid collection', () => {
       const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'invalidCollection');
 
@@ -195,6 +205,16 @@ describe('cacheHandlers', () => {
       expect(mockSync.syncAll).not.toHaveBeenCalled();
     });
 
+    it('ingests knowledge metadata without queueing a server mutation', () => {
+      const record = { id: 'document123', title: 'Updated Runbook' };
+
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_documents', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_documents', 'update', record);
+      expect(mockPending.getAll).not.toHaveBeenCalled();
+      expect(mockSync.syncAll).not.toHaveBeenCalled();
+    });
+
     it('returns early for non-string collection', () => {
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 123, 'create', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
@@ -281,6 +301,23 @@ describe('cacheHandlers', () => {
 
       expect(mockCache.writeCollection).toHaveBeenCalledWith(
         'cloud_status_snapshot',
+        '1:0123456789abcdef',
+        records,
+      );
+    });
+
+    it('persists knowledge metadata snapshots for offline clients', () => {
+      const records = [{ id: 'document123', title: 'Runbook' }];
+
+      handlers[IPC_CHANNELS.CACHE_SNAPSHOT](
+        {},
+        'knowledge_documents',
+        '1:0123456789abcdef',
+        records,
+      );
+
+      expect(mockCache.writeCollection).toHaveBeenCalledWith(
+        'knowledge_documents',
         '1:0123456789abcdef',
         records,
       );

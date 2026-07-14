@@ -117,6 +117,22 @@ describe('offlineMutationHandlers', () => {
     expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
   });
 
+  it('never queues knowledge base mutations', () => {
+    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      {},
+      {
+        collection: 'knowledge_documents',
+        action: 'update',
+        recordId: 'abc123abc123abc',
+        data: { title: 'Operator edit' },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
+    expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
+  });
+
   it('rejects offline queue writes in server mode', () => {
     appConfig.load.mockReturnValueOnce({ mode: 'server' } as never);
 

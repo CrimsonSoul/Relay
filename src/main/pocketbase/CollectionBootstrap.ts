@@ -19,6 +19,12 @@ import {
   RELAY_OPERATORS_COLLECTION,
   type RelayOperatorRecord,
 } from '@shared/operators';
+import {
+  KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_MAX_CATEGORY_LENGTH,
+  KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_MAX_SOURCE_KEY_LENGTH,
+} from '@shared/knowledge';
 import { loggers } from '../logger';
 
 const logger = loggers.pocketbase;
@@ -34,6 +40,9 @@ interface FieldDef {
   max?: number;
   onCreate?: boolean;
   onUpdate?: boolean;
+  maxSize?: number;
+  mimeTypes?: string[];
+  protected?: boolean;
 }
 
 interface CollectionDef {
@@ -98,6 +107,8 @@ const DYNATRACE_PROBLEM_SYNC_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_sync_key ON dynatrace_problem_sync (key)';
 const RELAY_OPERATOR_DISPLAY_NAME_INDEX =
   'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)';
+const KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -333,6 +344,50 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'bool', name: 'active' },
     ],
     indexes: [RELAY_OPERATOR_DISPLAY_NAME_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
+    name: KNOWLEDGE_DOCUMENTS_COLLECTION,
+    type: 'base',
+    fields: [
+      {
+        type: 'text',
+        name: 'sourceKey',
+        required: true,
+        max: KNOWLEDGE_MAX_SOURCE_KEY_LENGTH,
+      },
+      {
+        type: 'text',
+        name: 'category',
+        required: true,
+        max: KNOWLEDGE_MAX_CATEGORY_LENGTH,
+      },
+      { type: 'text', name: 'title', required: true, max: 240 },
+      { type: 'text', name: 'fileName', required: true, max: 240 },
+      {
+        type: 'file',
+        name: 'pdf',
+        required: true,
+        maxSelect: 1,
+        maxSize: KNOWLEDGE_MAX_PDF_BYTES,
+        mimeTypes: ['application/pdf'],
+        protected: true,
+      },
+      { type: 'text', name: 'checksum', required: true, max: 64 },
+      { type: 'number', name: 'byteSize', required: true },
+      { type: 'number', name: 'pageCount', required: true },
+      { type: 'json', name: 'outline' },
+      {
+        type: 'select',
+        name: 'outlineSource',
+        required: true,
+        values: ['native', 'inferred', 'none'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'sourceModifiedAt', required: true },
+      { type: 'date', name: 'indexedAt', required: true },
+    ],
+    indexes: [KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX],
     rules: SERVER_OWNED_RULES,
   },
   {
