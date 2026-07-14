@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-14
 
-**Status:** Approved visual direction; pending written-spec review
+**Status:** Approved for implementation
 
 ## Summary
 
