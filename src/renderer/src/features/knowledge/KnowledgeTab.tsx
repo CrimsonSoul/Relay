@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PublicRelayConfig } from '@shared/ipc';
-import type { KnowledgeIndexStatus, KnowledgeOutlineNode } from '@shared/knowledge';
-import { buildKnowledgeLibrary, findKnowledgeDocument } from './knowledgeModel';
+import type {
+  KnowledgeDocumentRecord,
+  KnowledgeIndexStatus,
+  KnowledgeOutlineNode,
+} from '@shared/knowledge';
+import { useToast } from '../../components/Toast';
+import { buildKnowledgeLibrary } from './knowledgeModel';
 import { useKnowledgeLibrary } from './useKnowledgeLibrary';
 import { KnowledgeTree } from './KnowledgeTree';
 import { KnowledgePdfViewer } from './KnowledgePdfViewer';
@@ -42,17 +47,46 @@ function indexLabel(
   return freshnessLabel(status?.lastIndexedAt ?? latestDocumentIndex);
 }
 
+function headingForTarget(
+  document: KnowledgeDocumentRecord,
+  target: KnowledgeViewerTarget,
+): KnowledgeOutlineNode | undefined {
+  const exact = document.outline.find(
+    (node) =>
+      node.pageIndex === target.pageIndex &&
+      (target.top === null || node.top === null || Math.abs(node.top - target.top) <= 2),
+  );
+  return exact;
+}
+
+function unavailableLinkMessage(reason: 'not-found' | 'ambiguous' | 'unsupported'): string {
+  switch (reason) {
+    case 'not-found':
+      return 'Linked guide not found.';
+    case 'ambiguous':
+      return 'Multiple guides use this filename. Ask the document owner to qualify the category.';
+    default:
+      return 'Relay blocked an unsupported document link.';
+  }
+}
+
 export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   const { documents, loading, error, hasLoadedSnapshot } = useKnowledgeLibrary();
+  const { showToast } = useToast();
   const [query, setQuery] = useState('');
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
+  const [focusRequestKey, setFocusRequestKey] = useState(0);
   const [indexStatus, setIndexStatus] = useState<KnowledgeIndexStatus | null>(null);
   const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
   const lastSelectedTitleRef = useRef<string | null>(null);
+  const documentsRef = useRef(documents);
+  const selectedDocumentIdRef = useRef(selectedDocumentId);
+  documentsRef.current = documents;
+  selectedDocumentIdRef.current = selectedDocumentId;
   const library = useMemo(() => buildKnowledgeLibrary(documents, query), [documents, query]);
-  const selectedDocument = findKnowledgeDocument(library, selectedDocumentId);
+  const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
   const activeHeading = selectedDocument?.outline.find((node) => node.id === activeHeadingId);
   const selectedExistsInLibrary = selectedDocumentId
     ? documents.some((document) => document.id === selectedDocumentId)
@@ -160,15 +194,70 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     [documents, selectedDocument],
   );
 
-  const handleActivateResolvedLink = useCallback((_link: KnowledgeResolvedLink) => {
-    // Task 5 gives the tab ownership of cross-document, web, and blocked-link actions.
-    return undefined;
-  }, []);
+  const handleActivateResolvedLink = useCallback(
+    (link: KnowledgeResolvedLink) => {
+      if (link.kind === 'unavailable') {
+        showToast(unavailableLinkMessage(link.reason), 'error');
+        return;
+      }
 
-  const handleDestinationChange = useCallback((nextTarget: KnowledgeViewerTarget) => {
-    setActiveHeadingId(null);
-    setTarget(nextTarget);
-  }, []);
+      if (link.kind === 'web') {
+        void (async () => {
+          try {
+            const result = await globalThis.api?.openKnowledgeWebLink(link.url);
+            if (result?.ok) return;
+          } catch {
+            // The same approved message covers bridge and system-browser failures.
+          }
+          showToast('Relay could not open this website in the system browser.', 'error');
+        })();
+        return;
+      }
+
+      if (
+        !selectedDocument ||
+        selectedDocumentIdRef.current !== selectedDocument.id ||
+        !documentsRef.current.some((document) => document.id === selectedDocument.id)
+      ) {
+        showToast('Linked guide not found.', 'error');
+        return;
+      }
+
+      if (link.kind === 'same-document') {
+        const nextTarget = { pageIndex: link.pageIndex, top: null };
+        const heading = headingForTarget(selectedDocument, nextTarget);
+        setActiveHeadingId(heading?.id ?? null);
+        setTarget(nextTarget);
+        return;
+      }
+
+      const linkedDocument = documentsRef.current.find(
+        (document) => document.id === link.documentId,
+      );
+      if (!linkedDocument) {
+        showToast('Linked guide not found.', 'error');
+        return;
+      }
+      const nextTarget = { pageIndex: link.pageIndex, top: null };
+      const heading = headingForTarget(linkedDocument, nextTarget);
+      setQuery('');
+      setSelectedDocumentId(linkedDocument.id);
+      setActiveHeadingId(heading?.id ?? null);
+      setTarget(nextTarget);
+      setRemovedDocumentTitle(null);
+      setFocusRequestKey((current) => current + 1);
+    },
+    [selectedDocument, showToast],
+  );
+
+  const handleDestinationChange = useCallback(
+    (nextTarget: KnowledgeViewerTarget) => {
+      const heading = selectedDocument ? headingForTarget(selectedDocument, nextTarget) : undefined;
+      setActiveHeadingId(heading?.id ?? null);
+      setTarget(nextTarget);
+    },
+    [selectedDocument],
+  );
 
   if (loading && !hasLoadedSnapshot) {
     return (
@@ -309,7 +398,8 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
             document={selectedDocument}
             active={active}
             target={target}
-            currentSection={activeHeading?.label ?? null}
+            currentSection={activeHeading?.label ?? (target ? 'Document section' : null)}
+            focusRequestKey={focusRequestKey}
             resolveUrl={resolveUrl}
             onActivateResolvedLink={handleActivateResolvedLink}
             onDestinationChange={handleDestinationChange}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { getDocument, TextLayer } from 'pdfjs-dist/build/pdf.mjs';
@@ -266,6 +266,95 @@ describe('KnowledgePdfViewer', () => {
     expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
     expect(getKnowledgePdf).toHaveBeenCalledOnce();
     expect(onActivateResolvedLink).not.toHaveBeenCalled();
+  });
+
+  it('discards a native destination that resolves after selecting another document', async () => {
+    const destination = deferred<unknown[] | null>();
+    const pageIndex = deferred<number>();
+    const sourceGetDestination = vi.fn(() => destination.promise);
+    const sourceGetPageIndex = vi.fn(() => pageIndex.promise);
+    const sourcePdf = pdf({
+      getDestination: sourceGetDestination,
+      getPageIndex: sourceGetPageIndex,
+    });
+    const selectedPdf = pdf();
+    getDocumentMock
+      .mockReturnValueOnce({
+        promise: Promise.resolve(sourcePdf),
+        destroy: loadingDestroy,
+      } as never)
+      .mockReturnValueOnce({
+        promise: Promise.resolve(selectedPdf),
+        destroy: loadingDestroy,
+      } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: 'late-destination' },
+    ]);
+    const sourceDocument = record({ title: 'Source guide' });
+    const selectedDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Selected guide',
+      sourceKey: 'General/Selected.pdf',
+      fileName: 'Selected.pdf',
+      pdf: 'Selected.pdf',
+    });
+
+    function DestinationRaceHarness() {
+      const [selected, setSelected] = useState(sourceDocument);
+      const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
+      const [section, setSection] = useState('Source section');
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              setSelected(selectedDocument);
+              setTarget(null);
+              setSection('Selected section');
+            }}
+          >
+            Select another document
+          </button>
+          <KnowledgePdfViewer
+            {...viewerProps({
+              document: selected,
+              target,
+              currentSection: section,
+              onDestinationChange: (nextTarget: KnowledgeViewerTarget) => {
+                setTarget(nextTarget);
+                setSection(`${selected.title} destination`);
+              },
+            })}
+          />
+        </>
+      );
+    }
+
+    render(<DestinationRaceHarness />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+    await waitFor(() => expect(sourceGetDestination).toHaveBeenCalledWith('late-destination'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select another document' }));
+    expect(await screen.findByRole('heading', { name: 'Selected guide' })).toBeInTheDocument();
+    expect(await screen.findByText('Current section · Selected section')).toBeInTheDocument();
+    expect(await screen.findByText('Page 1 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      destination.resolve([{ num: 2, gen: 0 }, { name: 'Fit' }]);
+      await sourceGetDestination.mock.results[0]?.value;
+    });
+    await waitFor(() => expect(sourceGetPageIndex).toHaveBeenCalledOnce());
+    await act(async () => {
+      pageIndex.resolve(2);
+      await pageIndex.promise;
+    });
+
+    expect(screen.getByText('Current section · Selected section')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
   });
 
   it('reports an invalid native destination without changing page', async () => {

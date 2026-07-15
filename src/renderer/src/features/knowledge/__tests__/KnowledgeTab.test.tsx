@@ -2,33 +2,77 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { useKnowledgeLibrary } from '../useKnowledgeLibrary';
+import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeViewerTarget } from '../knowledgePdfDestination';
 import { KnowledgeTab } from '../KnowledgeTab';
 
+const toastMocks = vi.hoisted(() => ({ showToast: vi.fn() }));
+
 vi.mock('../useKnowledgeLibrary', () => ({ useKnowledgeLibrary: vi.fn() }));
+vi.mock('../../../components/Toast', () => ({
+  useToast: () => ({ showToast: toastMocks.showToast }),
+}));
+
+type ViewerMockProps = {
+  document: KnowledgeDocumentRecord | null;
+  target: KnowledgeViewerTarget | null;
+  currentSection?: string | null;
+  focusRequestKey?: number;
+  resolveUrl: (url: string) => KnowledgeResolvedLink;
+  onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
+  onDestinationChange: (target: KnowledgeViewerTarget) => void;
+};
+
+let latestViewerProps: ViewerMockProps | null = null;
+
+const TEST_LINKS = [
+  '#page=2',
+  '#page=3',
+  'Lane recovery.pdf#page=3',
+  '../Access/Guide.pdf#page=2',
+  'Missing.pdf',
+  'Guide.pdf',
+  'https://example.com/relay-guide',
+] as const;
+
 vi.mock('../KnowledgePdfViewer', () => ({
-  KnowledgePdfViewer: ({
-    document,
-    target,
-    resolveUrl,
-    onDestinationChange,
-  }: {
-    document: KnowledgeDocumentRecord;
-    target: { label?: string; pageIndex: number; top: number | null } | null;
-    resolveUrl?: (url: string) => unknown;
-    onDestinationChange?: (target: { pageIndex: number; top: number | null }) => void;
-  }) => {
+  KnowledgePdfViewer: (props: ViewerMockProps) => {
+    latestViewerProps = props;
+    const {
+      document,
+      target,
+      currentSection,
+      focusRequestKey,
+      resolveUrl,
+      onActivateResolvedLink,
+      onDestinationChange,
+    } = props;
     let targetLabel = '';
     if (target) {
       targetLabel = 'label' in target ? `at ${target.label}` : `at page ${target.pageIndex + 1}`;
     }
     return (
       <div>
-        Viewer: {document?.title ?? 'none'} {targetLabel}
-        <span data-testid="viewer-resolution">
-          {resolveUrl ? JSON.stringify(resolveUrl('#page=2')) : 'resolver missing'}
+        <span>
+          Viewer: {document?.title ?? 'none'} {targetLabel}
         </span>
-        <button type="button" onClick={() => onDestinationChange?.({ pageIndex: 2, top: null })}>
+        <span data-testid="viewer-document-id">{document?.id ?? 'none'}</span>
+        <span data-testid="viewer-current-section">{currentSection ?? 'Document overview'}</span>
+        <span data-testid="viewer-focus-key">{focusRequestKey ?? 'unset'}</span>
+        <span data-testid="viewer-resolution">{JSON.stringify(resolveUrl('#page=2'))}</span>
+        {TEST_LINKS.map((url) => (
+          <button key={url} type="button" onClick={() => onActivateResolvedLink(resolveUrl(url))}>
+            Activate {url}
+          </button>
+        ))}
+        <button type="button" onClick={() => onDestinationChange({ pageIndex: 1, top: 601 })}>
           Follow native destination
+        </button>
+        <button
+          type="button"
+          onClick={() => onActivateResolvedLink({ kind: 'unavailable', reason: 'unsupported' })}
+        >
+          Report invalid native destination
         </button>
       </div>
     );
@@ -64,6 +108,7 @@ describe('KnowledgeTab', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    latestViewerProps = null;
     globalThis.api = {
       getKnowledgeIndexStatus: vi.fn(async () => ({
         state: 'idle',
@@ -72,6 +117,8 @@ describe('KnowledgeTab', () => {
         lastIndexedAt: '2026-07-14T12:00:00.000Z',
       })),
       onKnowledgeIndexStatusChanged: vi.fn(() => unsubscribe),
+      openKnowledgeWebLink: vi.fn(async () => ({ ok: true })),
+      openExternal: vi.fn(async () => true),
     } as never;
   });
 
@@ -129,7 +176,237 @@ describe('KnowledgeTab', () => {
       ),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Follow native destination' }));
-    expect(screen.getByText(/Viewer: Operator guide at page 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Viewer: Operator guide at page 2/)).toBeInTheDocument();
+    expect(screen.getByTestId('viewer-current-section')).toHaveTextContent(
+      'Restart the lane service',
+    );
+  });
+
+  it('opens a unique linked PDF at the requested page and clears the drawer filter', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('guide', 'Operator guide', 'General'),
+        document('lane', 'Lane recovery', 'Store systems'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+    const search = screen.getByRole('searchbox', { name: 'Search knowledge base' });
+    fireEvent.change(search, { target: { value: 'Operator' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activate Lane recovery.pdf#page=3' }));
+
+    expect(screen.getByTestId('viewer-document-id')).toHaveTextContent('lane');
+    expect(screen.getByText(/Viewer: Lane recovery at page 3/)).toBeInTheDocument();
+    expect(screen.getByTestId('viewer-current-section')).toHaveTextContent('Document section');
+    expect(screen.getByTestId('viewer-focus-key')).toHaveTextContent('1');
+    expect(search).toHaveValue('');
+  });
+
+  it('follows a current-document page link without selecting or refocusing another guide', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activate #page=2' }));
+
+    expect(screen.getByTestId('viewer-document-id')).toHaveTextContent('guide');
+    expect(screen.getByText(/Viewer: Operator guide at page 2/)).toBeInTheDocument();
+    expect(screen.getByTestId('viewer-current-section')).toHaveTextContent(
+      'Restart the lane service',
+    );
+    expect(screen.getByTestId('viewer-focus-key')).toHaveTextContent('0');
+  });
+
+  it('uses a relative authored path to open the correct duplicate category record', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('current', 'Current', '00 Source'),
+        document('operations-guide', 'Guide', 'Operations'),
+        document('access-guide', 'Guide', 'Access'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Activate ../Access/Guide.pdf#page=2' }));
+
+    expect(screen.getByTestId('viewer-document-id')).toHaveTextContent('access-guide');
+    expect(screen.getByText(/Viewer: Guide at page 2/)).toBeInTheDocument();
+    expect(screen.getByTestId('viewer-focus-key')).toHaveTextContent('1');
+  });
+
+  it.each([
+    ['Missing.pdf', 'Linked guide not found.'],
+    [
+      'Guide.pdf',
+      'Multiple guides use this filename. Ask the document owner to qualify the category.',
+    ],
+  ])('reports unavailable link %s with approved copy and without IPC', (url, message) => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('current', 'Current', '00 Source'),
+        document('operations-guide', 'Guide', 'Operations'),
+        document('access-guide', 'Guide', 'Access'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: `Activate ${url}` }));
+
+    expect(toastMocks.showToast).toHaveBeenCalledWith(message, 'error');
+    expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('reports an invalid native destination with approved copy and without IPC', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('current', 'Current', '00 Source')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Report invalid native destination' }));
+
+    expect(toastMocks.showToast).toHaveBeenCalledWith(
+      'Relay blocked an unsupported document link.',
+      'error',
+    );
+    expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /mailto:/i })).not.toBeInTheDocument();
+  });
+
+  it('opens a web link only through the dedicated API and only after activation', async () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+    expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Activate https://example.com/relay-guide' }),
+    );
+
+    await waitFor(() =>
+      expect(globalThis.api?.openKnowledgeWebLink).toHaveBeenCalledWith(
+        'https://example.com/relay-guide',
+      ),
+    );
+    expect(globalThis.api?.openKnowledgeWebLink).toHaveBeenCalledTimes(1);
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+    expect(toastMocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed dedicated web-open result', async () => {
+    vi.mocked(globalThis.api!.openKnowledgeWebLink).mockResolvedValueOnce({
+      ok: false,
+      error: 'open-failed',
+    });
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Activate https://example.com/relay-guide' }),
+    );
+
+    await waitFor(() =>
+      expect(toastMocks.showToast).toHaveBeenCalledWith(
+        'Relay could not open this website in the system browser.',
+        'error',
+      ),
+    );
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+  });
+
+  it('does not activate resolved links during render, document selection, or status refresh', async () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('guide', 'Operator guide', 'General'),
+        document('lane', 'Lane recovery', 'Store systems'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    render(<KnowledgeTab active relayMode="client" />);
+    expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Store systems, 1 document' }));
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Lane recovery' }));
+    const statusListener = vi.mocked(globalThis.api!.onKnowledgeIndexStatusChanged).mock
+      .calls[0]![0];
+    act(() => {
+      statusListener({
+        state: 'idle',
+        documentCount: 2,
+        categoryCount: 2,
+        lastIndexedAt: '2026-07-14T12:05:00.000Z',
+      });
+    });
+
+    await waitFor(() => expect(screen.getByText(/Indexed Jul 14/i)).toBeInTheDocument());
+    expect(globalThis.api?.openKnowledgeWebLink).not.toHaveBeenCalled();
+    expect(globalThis.api?.openExternal).not.toHaveBeenCalled();
+    expect(toastMocks.showToast).not.toHaveBeenCalled();
+  });
+
+  it('does not let a stale resolved action reopen a document removed by realtime sync', () => {
+    const guide = document('guide', 'Operator guide', 'General');
+    const lane = document('lane', 'Lane recovery', 'Store systems');
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [guide, lane],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    const { rerender } = render(<KnowledgeTab active relayMode="client" />);
+    const pendingLink = latestViewerProps!.resolveUrl('Lane recovery.pdf#page=2');
+    const staleActivation = latestViewerProps!.onActivateResolvedLink;
+
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [guide],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    rerender(<KnowledgeTab active relayMode="client" />);
+    act(() => staleActivation(pendingLink));
+
+    expect(screen.getByTestId('viewer-document-id')).toHaveTextContent('guide');
+    expect(screen.queryByText(/Viewer: Lane recovery/)).not.toBeInTheDocument();
+    expect(toastMocks.showToast).toHaveBeenCalledWith('Linked guide not found.', 'error');
   });
 
   it('explains where server operators should place PDF files when the library is empty', async () => {

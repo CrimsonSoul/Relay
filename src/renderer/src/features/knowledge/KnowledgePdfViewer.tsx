@@ -102,11 +102,15 @@ export function KnowledgePdfViewer({
     pdf: PDFDocumentProxy;
     documentId: string;
     checksum: string;
+    generation: number;
   } | null>(null);
+  const pdfGenerationRef = useRef(0);
   const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
   const documentId = knowledgeDocument?.id;
   const documentChecksum = knowledgeDocument?.checksum;
+  const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
+  activeDocumentRef.current = { active, documentId, checksum: documentChecksum };
 
   useEffect(() => {
     if (!active || !documentId || !documentChecksum || !globalThis.api?.getKnowledgePdf) {
@@ -118,6 +122,8 @@ export function KnowledgePdfViewer({
     let loadingTask: PDFDocumentLoadingTask | null = null;
     let loadedPdf: PDFDocumentProxy | null = null;
     let loadingTaskDestroyed = false;
+    const generation = pdfGenerationRef.current + 1;
+    pdfGenerationRef.current = generation;
     pdfIdentityRef.current = null;
     setLoading(true);
     setError(null);
@@ -152,6 +158,7 @@ export function KnowledgePdfViewer({
           pdf: loadedPdf,
           documentId,
           checksum: documentChecksum,
+          generation,
         };
         setPdf(loadedPdf);
       })
@@ -164,6 +171,7 @@ export function KnowledgePdfViewer({
 
     return () => {
       disposed = true;
+      if (pdfIdentityRef.current?.generation === generation) pdfIdentityRef.current = null;
       if (loadedPdf) {
         loadedPdf.destroy().catch(() => undefined);
       } else if (loadingTask) {
@@ -332,7 +340,28 @@ export function KnowledgePdfViewer({
 
   const activateDestination = async (destination: KnowledgePdfDestination) => {
     if (!pdf) return;
+    const sourceIdentity = pdfIdentityRef.current;
+    if (
+      sourceIdentity?.pdf !== pdf ||
+      sourceIdentity.documentId !== documentId ||
+      sourceIdentity.checksum !== documentChecksum
+    ) {
+      return;
+    }
     const nextTarget = await resolveKnowledgePdfDestination(pdf, destination);
+    const currentIdentity = pdfIdentityRef.current;
+    const activeDocument = activeDocumentRef.current;
+    if (
+      currentIdentity?.pdf !== sourceIdentity.pdf ||
+      currentIdentity.generation !== sourceIdentity.generation ||
+      currentIdentity.documentId !== sourceIdentity.documentId ||
+      currentIdentity.checksum !== sourceIdentity.checksum ||
+      !activeDocument.active ||
+      activeDocument.documentId !== sourceIdentity.documentId ||
+      activeDocument.checksum !== sourceIdentity.checksum
+    ) {
+      return;
+    }
     if (nextTarget) {
       onDestinationChange(nextTarget);
       return;
