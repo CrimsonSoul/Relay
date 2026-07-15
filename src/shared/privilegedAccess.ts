@@ -50,6 +50,7 @@ export type RelayPrivilegedStateRecord = {
   adminOperatorId: string;
   publisherOperatorId: string | null;
   assignmentVersion: number;
+  rosterMigrationVersion: number;
   updatedByOperatorId: string | null;
   updatedAt: string;
   created: string;

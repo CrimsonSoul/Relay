@@ -23,15 +23,20 @@ describe('Relay operator display names', () => {
 });
 
 describe('initial Relay operator roster', () => {
-  it('contains exactly the approved seven operators in order', () => {
+  it('contains exactly the approved nine operators in order', () => {
     expect(INITIAL_RELAY_OPERATOR_NAMES).toEqual([
+      'Charles Gibbs',
+      'Connor McElroy',
+      'Paris Carlson',
       'Ryan Bell',
+      'Ryan Bledsoe',
+      'Tristan Bowles',
       'Tristan Stillwell',
       'Vlad McCarty',
-      'Paris Carlson',
-      'Connor McElroy',
       'Weston Yokley',
-      'Charles Gibbs',
     ]);
+    expect(
+      new Set(INITIAL_RELAY_OPERATOR_NAMES.map((name) => name.toLocaleLowerCase('en'))).size,
+    ).toBe(9);
   });
 });

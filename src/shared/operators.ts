@@ -1,13 +1,15 @@
 export const RELAY_OPERATORS_COLLECTION = 'relay_operators';
 export const MAX_OPERATOR_DISPLAY_NAME_LENGTH = 120;
 export const INITIAL_RELAY_OPERATOR_NAMES = [
+  'Charles Gibbs',
+  'Connor McElroy',
+  'Paris Carlson',
   'Ryan Bell',
+  'Ryan Bledsoe',
+  'Tristan Bowles',
   'Tristan Stillwell',
   'Vlad McCarty',
-  'Paris Carlson',
-  'Connor McElroy',
   'Weston Yokley',
-  'Charles Gibbs',
 ] as const;
 
 export type RelayOperatorRecord = {
