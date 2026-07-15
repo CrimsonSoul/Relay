@@ -268,6 +268,75 @@ describe('KnowledgePdfViewer', () => {
     expect(onActivateResolvedLink).not.toHaveBeenCalled();
   });
 
+  it('applies only the latest native destination when lookups resolve out of order', async () => {
+    const firstDestination = deferred<unknown[] | null>();
+    const secondDestination = deferred<unknown[] | null>();
+    const getRaceDestination = vi.fn((name: string) =>
+      name === 'first-destination' ? firstDestination.promise : secondDestination.promise,
+    );
+    getDocumentMock.mockReturnValueOnce({
+      promise: Promise.resolve(pdf({ getDestination: getRaceDestination })),
+      destroy: loadingDestroy,
+    } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'first', rect: [10, 20, 30, 40], dest: 'first-destination' },
+      { subtype: 'Link', id: 'second', rect: [10, 50, 30, 70], dest: 'second-destination' },
+    ]);
+    renderComponent();
+
+    const [firstButton, secondButton] = await screen.findAllByRole('button', {
+      name: 'Open linked location in this guide',
+    });
+    fireEvent.click(firstButton);
+    fireEvent.click(secondButton);
+    await waitFor(() => expect(getRaceDestination).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      secondDestination.resolve([2, { name: 'Fit' }]);
+      await secondDestination.promise;
+    });
+    await waitFor(() =>
+      expect(onDestinationChange).toHaveBeenCalledWith({ pageIndex: 2, top: null }),
+    );
+
+    await act(async () => {
+      firstDestination.resolve([1, { name: 'Fit' }]);
+      await firstDestination.promise;
+      await Promise.resolve();
+    });
+
+    expect(onDestinationChange).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates an in-flight native destination when the operator changes page manually', async () => {
+    const destination = deferred<unknown[] | null>();
+    const getManualRaceDestination = vi.fn(() => destination.promise);
+    getDocumentMock.mockReturnValueOnce({
+      promise: Promise.resolve(pdf({ getDestination: getManualRaceDestination })),
+      destroy: loadingDestroy,
+    } as never);
+    getAnnotations(1).mockResolvedValue([
+      { subtype: 'Link', id: 'destination', rect: [10, 20, 30, 40], dest: 'late-destination' },
+    ]);
+    renderComponent();
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Open linked location in this guide' }),
+    );
+    await waitFor(() => expect(getManualRaceDestination).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      destination.resolve([2, { name: 'Fit' }]);
+      await destination.promise;
+      await Promise.resolve();
+    });
+
+    expect(onDestinationChange).not.toHaveBeenCalled();
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+  });
+
   it('discards a native destination that resolves after selecting another document', async () => {
     const destination = deferred<unknown[] | null>();
     const pageIndex = deferred<number>();
@@ -543,6 +612,32 @@ describe('KnowledgePdfViewer', () => {
     globalThis.removeEventListener('unhandledrejection', unhandled);
   });
 
+  it.each(['rejects', 'throws'])(
+    'keeps an active readable page visible when optional annotation extraction %s',
+    async (failureMode) => {
+      const readablePage = page(1);
+      readablePage.getAnnotations =
+        failureMode === 'throws'
+          ? vi.fn(() => {
+              throw new Error('malformed optional annotation data');
+            })
+          : vi.fn(async () => {
+              throw new Error('malformed optional annotation data');
+            });
+      getPage.mockResolvedValueOnce(readablePage);
+
+      renderComponent();
+
+      await waitFor(() =>
+        expect(readablePage.getAnnotations).toHaveBeenCalledWith({ intent: 'display' }),
+      );
+      await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+      expect(screen.getByLabelText('Page 1')).toBeInTheDocument();
+      expect(screen.queryByText('Relay could not render this page.')).not.toBeInTheDocument();
+      expect(document.querySelector('.knowledge-page__link-target')).not.toBeInTheDocument();
+    },
+  );
+
   it('restores focus after a cross-document request once its target page is rendered', async () => {
     const secondPageText = deferred<{ items: never[]; styles: Record<string, never> }>();
     const secondGetPage = vi.fn(async (pageNumber: number) => {
@@ -658,6 +753,80 @@ describe('KnowledgePdfViewer', () => {
 
     await waitFor(() => expect(unrelatedGetPage).toHaveBeenCalledWith(1));
     await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(2));
+    expect(externalFocus).toHaveFocus();
+    externalFocus.remove();
+  });
+
+  it('focuses and consumes only a matching cross-document request when the target is unavailable offline', async () => {
+    getKnowledgePdf.mockResolvedValue({ ok: false, error: 'not-available-offline' });
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+
+    expect(await screen.findByText(/not cached on this laptop/i)).toBeInTheDocument();
+    expect(externalFocus).toHaveFocus();
+
+    const requestedDocument = record({
+      id: 'doc-2',
+      checksum: 'b'.repeat(64),
+      title: 'Requested guide',
+      sourceKey: 'General/Requested.pdf',
+      fileName: 'Requested.pdf',
+      pdf: 'Requested.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: requestedDocument,
+          target: { pageIndex: 1, top: null },
+          currentSection: 'Requested section',
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getKnowledgePdf).toHaveBeenLastCalledWith({
+        documentId: 'doc-2',
+        checksum: 'b'.repeat(64),
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Requested guide' })).toBeInTheDocument();
+    expect(screen.getByText('Current section · Requested section')).toBeInTheDocument();
+    expect(screen.getByText(/not cached on this laptop/i)).toBeInTheDocument();
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(onPageChange).not.toHaveBeenCalled();
+    expect(onDestinationChange).not.toHaveBeenCalled();
+
+    externalFocus.focus();
+    const unrelatedDocument = record({
+      id: 'doc-3',
+      checksum: 'c'.repeat(64),
+      title: 'Unrelated guide',
+      sourceKey: 'General/Unrelated.pdf',
+      fileName: 'Unrelated.pdf',
+      pdf: 'Unrelated.pdf',
+    });
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({
+          document: unrelatedDocument,
+          target: { pageIndex: 1, top: null },
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(getKnowledgePdf).toHaveBeenLastCalledWith({
+        documentId: 'doc-3',
+        checksum: 'c'.repeat(64),
+      }),
+    );
+    expect(await screen.findByRole('heading', { name: 'Unrelated guide' })).toBeInTheDocument();
+    expect(screen.getByText(/not cached on this laptop/i)).toBeInTheDocument();
     expect(externalFocus).toHaveFocus();
     externalFocus.remove();
   });

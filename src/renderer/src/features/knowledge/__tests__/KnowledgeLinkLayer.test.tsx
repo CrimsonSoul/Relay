@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { AnnotationType } from 'pdfjs-dist/build/pdf.mjs';
 import { describe, expect, it, vi } from 'vitest';
-import type { KnowledgeResolvedLink } from '../knowledgeLinkResolver';
+import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import { resolveKnowledgeLink, type KnowledgeResolvedLink } from '../knowledgeLinkResolver';
 import {
   extractKnowledgeLinkItems,
   KnowledgeLinkLayer,
@@ -212,6 +213,55 @@ describe('KnowledgeLinkLayer', () => {
 
     expect(resolveUrl).toHaveBeenCalledWith('javascript:alert(1)');
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(onActivateResolvedLink).not.toHaveBeenCalled();
+  });
+
+  it('omits web targets that the real resolver knows the main boundary must reject', () => {
+    const currentDocument = {
+      id: 'current',
+      sourceKey: 'General/Current.pdf',
+      category: 'General',
+      title: 'Current guide',
+      fileName: 'Current.pdf',
+      pdf: 'Current.pdf',
+      checksum: 'a'.repeat(64),
+      byteSize: 1024,
+      pageCount: 1,
+      outline: [],
+      outlineSource: 'none',
+      sourceModifiedAt: '2026-07-14T12:00:00.000Z',
+      indexedAt: '2026-07-14T12:00:00.000Z',
+      created: '2026-07-14T12:00:00.000Z',
+      updated: '2026-07-14T12:00:00.000Z',
+    } satisfies KnowledgeDocumentRecord;
+    const onActivateResolvedLink = vi.fn();
+
+    renderLayer(
+      [
+        {
+          id: 'trailing-whitespace',
+          rect: [0, 0, 10, 10],
+          action: { kind: 'url', url: 'https://example.com/runbook ' },
+        },
+        {
+          id: 'credentials',
+          rect: [0, 10, 10, 20],
+          action: { kind: 'url', url: 'https://operator:secret@example.com/runbook' },
+        },
+      ],
+      {
+        resolveUrl: (rawUrl) =>
+          resolveKnowledgeLink({
+            rawUrl,
+            currentDocument,
+            documents: [currentDocument],
+          }),
+        onActivateResolvedLink,
+      },
+    );
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(document.querySelector('a')).not.toBeInTheDocument();
     expect(onActivateResolvedLink).not.toHaveBeenCalled();
   });
 

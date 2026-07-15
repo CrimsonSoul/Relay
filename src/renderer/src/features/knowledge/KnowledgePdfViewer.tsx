@@ -49,6 +49,12 @@ type PendingFocusRequest = {
   target: KnowledgeViewerTarget;
 };
 
+type KnowledgeViewerError = {
+  message: string;
+  documentId: string;
+  checksum: string;
+};
+
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.4;
 const SCALE_STEP = 0.15;
@@ -92,7 +98,7 @@ export function KnowledgePdfViewer({
   const [pageIndex, setPageIndex] = useState(0);
   const [scale, setScale] = useState(1.05);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<KnowledgeViewerError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const [linkRender, setLinkRender] = useState<KnowledgeLinkRender | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -105,6 +111,7 @@ export function KnowledgePdfViewer({
     generation: number;
   } | null>(null);
   const pdfGenerationRef = useRef(0);
+  const destinationRequestTokenRef = useRef(0);
   const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
   const documentId = knowledgeDocument?.id;
@@ -138,7 +145,11 @@ export function KnowledgePdfViewer({
       .then(async (result) => {
         if (disposed) return;
         if (!result.ok) {
-          setError(viewerError(result.error));
+          setError({
+            message: viewerError(result.error),
+            documentId,
+            checksum: documentChecksum,
+          });
           return;
         }
         loadingTask = getDocument({
@@ -163,7 +174,13 @@ export function KnowledgePdfViewer({
         setPdf(loadedPdf);
       })
       .catch(() => {
-        if (!disposed) setError(viewerError('download-failed'));
+        if (!disposed) {
+          setError({
+            message: viewerError('download-failed'),
+            documentId,
+            checksum: documentChecksum,
+          });
+        }
       })
       .finally(() => {
         if (!disposed) setLoading(false);
@@ -186,6 +203,10 @@ export function KnowledgePdfViewer({
     const nextPage = Math.min(Math.max(0, target.pageIndex), pdf.numPages - 1);
     setPageIndex(nextPage);
   }, [pdf, target]);
+
+  useEffect(() => {
+    destinationRequestTokenRef.current += 1;
+  }, [active, documentChecksum, documentId, pdf, retryKey, target?.pageIndex, target?.top]);
 
   useEffect(() => {
     const request = focusRequestRef.current;
@@ -218,6 +239,23 @@ export function KnowledgePdfViewer({
       pendingFocusRequestRef.current = undefined;
     }
   }, [documentId, focusRequestKey, target]);
+
+  useEffect(() => {
+    const pendingRequest = pendingFocusRequestRef.current;
+    if (
+      error &&
+      error.documentId === documentId &&
+      error.checksum === documentChecksum &&
+      pendingRequest !== undefined &&
+      pendingRequest.key === focusRequestKey &&
+      pendingRequest.documentId === documentId &&
+      target?.pageIndex === pendingRequest.target.pageIndex &&
+      target.top === pendingRequest.target.top
+    ) {
+      viewportRef.current?.focus();
+      pendingFocusRequestRef.current = undefined;
+    }
+  }, [documentChecksum, documentId, error, focusRequestKey, target]);
 
   useEffect(() => {
     setLinkRender(null);
@@ -268,9 +306,15 @@ export function KnowledgePdfViewer({
           () => ({ error: null }),
           (renderError: unknown) => ({ error: renderError }),
         );
+        let annotationsPromise: ReturnType<PDFPageProxy['getAnnotations']>;
+        try {
+          annotationsPromise = page.getAnnotations({ intent: 'display' }).catch(() => []);
+        } catch {
+          annotationsPromise = Promise.resolve([]);
+        }
         const [textContent, annotations] = await Promise.all([
           page.getTextContent(),
-          page.getAnnotations({ intent: 'display' }),
+          annotationsPromise,
         ]);
         if (disposed) return;
         textLayer = new TextLayer({
@@ -325,7 +369,11 @@ export function KnowledgePdfViewer({
       })
       .catch((renderError) => {
         if (!disposed && !isCancelledRender(renderError)) {
-          setError('Relay could not render this page.');
+          setError({
+            message: 'Relay could not render this page.',
+            documentId: pdfIdentity.documentId,
+            checksum: pdfIdentity.checksum,
+          });
         }
       });
 
@@ -340,6 +388,8 @@ export function KnowledgePdfViewer({
 
   const activateDestination = async (destination: KnowledgePdfDestination) => {
     if (!pdf) return;
+    const requestToken = destinationRequestTokenRef.current + 1;
+    destinationRequestTokenRef.current = requestToken;
     const sourceIdentity = pdfIdentityRef.current;
     if (
       sourceIdentity?.pdf !== pdf ||
@@ -352,6 +402,7 @@ export function KnowledgePdfViewer({
     const currentIdentity = pdfIdentityRef.current;
     const activeDocument = activeDocumentRef.current;
     if (
+      destinationRequestTokenRef.current !== requestToken ||
       currentIdentity?.pdf !== sourceIdentity.pdf ||
       currentIdentity.generation !== sourceIdentity.generation ||
       currentIdentity.documentId !== sourceIdentity.documentId ||
@@ -371,6 +422,7 @@ export function KnowledgePdfViewer({
 
   const moveToPage = (nextPage: number) => {
     if (!pdf) return;
+    destinationRequestTokenRef.current += 1;
     const boundedPage = Math.min(Math.max(0, nextPage), pdf.numPages - 1);
     setPageIndex(boundedPage);
     onPageChange(boundedPage);
@@ -458,7 +510,7 @@ export function KnowledgePdfViewer({
           <div className="knowledge-viewer-state knowledge-viewer-state--error" role="status">
             <span className="knowledge-viewer-state__eyebrow">Document unavailable</span>
             <h3>Unable to open this guide</h3>
-            <p>{error}</p>
+            <p>{error.message}</p>
             <button type="button" onClick={() => setRetryKey((current) => current + 1)}>
               Retry document
             </button>

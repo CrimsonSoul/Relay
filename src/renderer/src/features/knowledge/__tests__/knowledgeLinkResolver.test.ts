@@ -173,6 +173,15 @@ describe('resolveKnowledgeLink', () => {
     });
   });
 
+  it.each([
+    ' https://example.com/runbook',
+    'https://example.com/runbook ',
+    'https://operator@example.com/runbook',
+    'https://operator:secret@example.com/runbook',
+  ])('rejects a web URL the main-process boundary must reject: %s', (rawUrl) => {
+    expect(resolve(rawUrl)).toEqual({ kind: 'unavailable', reason: 'unsupported' });
+  });
+
   it('reports a missing PDF target', () => {
     expect(resolve('Missing.pdf')).toEqual({ kind: 'unavailable', reason: 'not-found' });
   });

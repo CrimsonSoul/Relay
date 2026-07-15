@@ -113,9 +113,16 @@ function resolvedDocument(
 }
 
 function resolveWebLink(rawUrl: string): KnowledgeResolvedLink {
+  if (rawUrl !== rawUrl.trim()) return unavailable('unsupported');
+
   try {
     const parsedUrl = new URL(rawUrl);
-    if (!['http:', 'https:'].includes(parsedUrl.protocol) || parsedUrl.hostname.length === 0) {
+    if (
+      !['http:', 'https:'].includes(parsedUrl.protocol) ||
+      parsedUrl.hostname.length === 0 ||
+      parsedUrl.username.length > 0 ||
+      parsedUrl.password.length > 0
+    ) {
       return unavailable('unsupported');
     }
     return { kind: 'web', url: rawUrl, hostname: parsedUrl.hostname };
