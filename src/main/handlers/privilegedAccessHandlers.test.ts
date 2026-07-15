@@ -26,6 +26,22 @@ describe('setupPrivilegedAccessHandlers', () => {
   let assertTrustedIpcSender: ReturnType<typeof vi.fn>;
   let broadcast: ReturnType<typeof vi.fn>;
   let sessionListener: ((view: unknown) => void) | null;
+  const accountManager = {
+    setupInitialAdministrator: vi.fn(async () => ({
+      accountId: 'account-admin',
+      operatorId: 'operator-admin',
+      role: 'admin' as const,
+      credentialState: 'configured' as const,
+      credentialVersion: 1,
+    })),
+    setupCredential: vi.fn(async () => ({
+      accountId: 'account-publisher',
+      operatorId: 'operator-publisher',
+      role: 'publisher' as const,
+      credentialState: 'configured' as const,
+      credentialVersion: 1,
+    })),
+  };
 
   beforeEach(() => {
     handlers = new Map();
@@ -66,6 +82,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       getRuntime: () => runtime,
       isServer: () => isServer,
       assertTrustedIpcSender,
+      getAccountManager: () => accountManager,
       broadcast,
       subscribeSessionChanged: (listener) => {
         sessionListener = listener;
@@ -94,6 +111,8 @@ describe('setupPrivilegedAccessHandlers', () => {
       IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE,
       IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING,
       IPC_CHANNELS.PRIVILEGED_SUBMIT_COMMAND,
+      IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN,
+      IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL,
     ]);
   });
 
@@ -109,7 +128,7 @@ describe('setupPrivilegedAccessHandlers', () => {
       );
     }
     expect(runtime.login).not.toHaveBeenCalled();
-    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(8);
+    expect(assertTrustedIpcSender).toHaveBeenCalledTimes(10);
   });
 
   it('strictly validates login and returns generic credential errors', async () => {
@@ -157,6 +176,61 @@ describe('setupPrivilegedAccessHandlers', () => {
       error: 'unauthorized',
     });
     expect(runtime.createPairingChallenge).not.toHaveBeenCalled();
+  });
+
+  it('allows first administrator setup only through trusted local server IPC', async () => {
+    setup();
+    const input = {
+      operatorId: 'operator-admin',
+      password: PASSWORD,
+      passwordConfirm: PASSWORD,
+    };
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, input)).resolves.toMatchObject(
+      {
+        ok: true,
+        value: { operatorId: 'operator-admin', credentialState: 'configured' },
+      },
+    );
+    expect(accountManager.setupInitialAdministrator).toHaveBeenCalledWith(input);
+
+    handlers.clear();
+    setup(false);
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, input)).resolves.toEqual({
+      ok: false,
+      error: 'unauthorized',
+    });
+  });
+
+  it('requires an active local administrator before publisher setup or recovery', async () => {
+    const input = {
+      operatorId: 'operator-publisher',
+      password: PASSWORD,
+      passwordConfirm: PASSWORD,
+    };
+    setup();
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input)).resolves.toEqual({
+      ok: false,
+      error: 'unauthorized',
+    });
+
+    vi.mocked(runtime.getView).mockReturnValue({
+      state: 'active',
+      accountId: 'account-admin',
+      operatorId: 'operator-admin',
+      operatorName: 'Ryan Bledsoe',
+      role: 'admin',
+      capabilities: ['settings.manage'],
+      deviceId: null,
+      expiresAt: '2026-07-15T23:15:00.000Z',
+    });
+    await expect(invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input)).resolves.toMatchObject({
+      ok: true,
+      value: { operatorId: 'operator-publisher' },
+    });
+    expect(accountManager.setupCredential).toHaveBeenCalledWith({
+      actorOperatorId: 'operator-admin',
+      ...input,
+    });
   });
 
   it('rejects internal command names at the generic command bridge', async () => {

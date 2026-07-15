@@ -4,11 +4,13 @@ import {
   type PrivilegedIpcError,
   type PrivilegedIpcResult,
   type PrivilegedPairingCompletionView,
+  type PrivilegedCredentialSetupView,
   type PrivilegedReauthenticationProof,
   type PublicPrivilegedCommandRequest,
 } from '@shared/ipc';
 import {
   PrivilegedLoginSchema,
+  PrivilegedCredentialSetupSchema,
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
@@ -19,6 +21,7 @@ import {
   type PrivilegedSessionView,
 } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
+import type { PrivilegedAccountManager } from '../privileged/PrivilegedAccountManager';
 import { privilegedRateLimiters, type KeyedRateLimiter } from '../rateLimiter';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 
@@ -58,6 +61,10 @@ export type PrivilegedAccessHandlerOptions = {
   broadcast?: (channel: string, value: unknown) => void;
   subscribeSessionChanged?: (listener: (view: unknown) => void) => () => void;
   loginLimiter?: KeyedRateLimiter;
+  getAccountManager?: () => Pick<
+    PrivilegedAccountManager,
+    'setupInitialAdministrator' | 'setupCredential'
+  > | null;
 };
 
 function publicView(value: unknown): PrivilegedSessionView {
@@ -99,6 +106,7 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     broadcast = broadcastToAllWindows,
     subscribeSessionChanged = () => () => undefined,
     loginLimiter = privilegedRateLimiters.login,
+    getAccountManager = () => null,
   } = options;
   const trusted = (event: IpcMainInvokeEvent, channel: string) =>
     assertTrustedIpcSender(event, channel);
@@ -196,6 +204,51 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
       return await runtime.submitPublicCommand(parsed.data);
     } catch {
       return { ok: false, error: 'server-error' } satisfies PrivilegedCommandResult;
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, async (event, input: unknown) => {
+    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN) || !isServer()) {
+      return failure('unauthorized');
+    }
+    const parsed = PrivilegedCredentialSetupSchema.safeParse(input);
+    if (!parsed.success) return failure('invalid-input');
+    const manager = getAccountManager();
+    if (!manager) return failure('offline');
+    try {
+      return success<PrivilegedCredentialSetupView>(
+        await manager.setupInitialAdministrator(parsed.data),
+      );
+    } catch {
+      return failure('server-error');
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, async (event, input: unknown) => {
+    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL) || !isServer()) {
+      return failure('unauthorized');
+    }
+    const parsed = PrivilegedCredentialSetupSchema.safeParse(input);
+    if (!parsed.success) return failure('invalid-input');
+    const runtime = getRuntime();
+    const view = runtime?.getView();
+    if (
+      !runtime ||
+      view?.state !== 'active' ||
+      view.role !== 'admin' ||
+      view.deviceId !== null ||
+      !view.operatorId
+    ) {
+      return failure('unauthorized');
+    }
+    const manager = getAccountManager();
+    if (!manager) return failure('offline');
+    try {
+      return success<PrivilegedCredentialSetupView>(
+        await manager.setupCredential({ actorOperatorId: view.operatorId, ...parsed.data }),
+      );
+    } catch {
+      return failure('server-error');
     }
   });
 

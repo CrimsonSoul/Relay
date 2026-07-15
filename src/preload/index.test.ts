@@ -65,6 +65,13 @@ describe('preload Knowledge web link bridge', () => {
     await api.createPrivilegedPairingChallenge();
     await api.completePrivilegedPairing(pairing);
     await api.submitPrivilegedCommand(command);
+    const credential = {
+      operatorId: 'operator-admin',
+      password: 'Test-access-value-123!',
+      passwordConfirm: 'Test-access-value-123!',
+    };
+    await api.setupInitialAdministratorCredential(credential);
+    await api.setupPrivilegedCredential(credential);
 
     expect(electronMocks.invoke.mock.calls).toEqual(
       expect.arrayContaining([
@@ -76,6 +83,8 @@ describe('preload Knowledge web link bridge', () => {
         ['privileged:createPairingChallenge'],
         ['privileged:completePairing', pairing],
         ['privileged:submitCommand', command],
+        ['privileged:setupInitialAdministrator', credential],
+        ['privileged:setupCredential', credential],
       ]),
     );
   });

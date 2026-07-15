@@ -88,6 +88,18 @@ export type PrivilegedIpcResult<T> =
 
 export type PrivilegedLoginInput = { operatorId: string; password: string };
 export type PrivilegedReauthenticationInput = { password: string };
+export type PrivilegedCredentialSetupInput = {
+  operatorId: string;
+  password: string;
+  passwordConfirm: string;
+};
+export type PrivilegedCredentialSetupView = {
+  accountId: string;
+  operatorId: string;
+  role: 'admin' | 'publisher';
+  credentialState: 'configured';
+  credentialVersion: number;
+};
 export type PrivilegedReauthenticationProof = { proofId: string; expiresAt: string };
 export type PrivilegedPairingCompletionInput = {
   challengeId: string;
@@ -444,6 +456,12 @@ export type BridgeAPI = {
   submitPrivilegedCommand: (
     input: PublicPrivilegedCommandRequest,
   ) => Promise<PrivilegedCommandResult>;
+  setupInitialAdministratorCredential: (
+    input: PrivilegedCredentialSetupInput,
+  ) => Promise<PrivilegedIpcResult<PrivilegedCredentialSetupView>>;
+  setupPrivilegedCredential: (
+    input: PrivilegedCredentialSetupInput,
+  ) => Promise<PrivilegedIpcResult<PrivilegedCredentialSetupView>>;
   onPrivilegedSessionChanged: (callback: (view: PrivilegedSessionView) => void) => () => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -592,6 +610,8 @@ export const IPC_CHANNELS = {
   PRIVILEGED_CREATE_PAIRING_CHALLENGE: 'privileged:createPairingChallenge',
   PRIVILEGED_COMPLETE_PAIRING: 'privileged:completePairing',
   PRIVILEGED_SUBMIT_COMMAND: 'privileged:submitCommand',
+  PRIVILEGED_SETUP_INITIAL_ADMIN: 'privileged:setupInitialAdministrator',
+  PRIVILEGED_SETUP_CREDENTIAL: 'privileged:setupCredential',
   PRIVILEGED_SESSION_CHANGED: 'privileged:sessionChanged',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',

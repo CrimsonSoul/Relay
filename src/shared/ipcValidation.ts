@@ -57,6 +57,23 @@ export const PrivilegedReauthenticationSchema = z
   .object({ password: privilegedPasswordSchema })
   .strict();
 
+export const PrivilegedCredentialSetupSchema = z
+  .object({
+    operatorId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_ID)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    password: privilegedPasswordSchema,
+    passwordConfirm: privilegedPasswordSchema,
+  })
+  .strict()
+  .refine((input) => input.password === input.passwordConfirm, {
+    message: 'Passwords must match.',
+    path: ['passwordConfirm'],
+  });
+
 export const PrivilegedPairingCompletionSchema = z
   .object({
     challengeId: z

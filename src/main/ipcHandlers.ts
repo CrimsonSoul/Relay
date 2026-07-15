@@ -27,6 +27,7 @@ import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
+import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -113,6 +114,19 @@ export function setupIpcHandlers(opts: {
       ipcMain,
       getRuntime: getPrivilegedRuntime ?? (() => null),
       isServer: () => getAppConfig?.()?.load()?.mode === 'server',
+      getAccountManager: () => {
+        const pb = getPbClient?.();
+        if (!pb?.authStore.isValid || pb.authStore.record?.collectionName !== '_superusers') {
+          return null;
+        }
+        return new PrivilegedAccountManager({
+          pb,
+          onCredentialChanged: (operatorId) => {
+            const runtime = getPrivilegedRuntime?.();
+            if (runtime?.getView().operatorId === operatorId) runtime.lock();
+          },
+        });
+      },
       assertTrustedIpcSender,
       subscribeSessionChanged: subscribePrivilegedSessionChanged,
     }),

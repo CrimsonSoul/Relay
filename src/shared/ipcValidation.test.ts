@@ -5,6 +5,7 @@ import {
   AlertHistoryEntrySchema,
   KnowledgePdfRequestSchema,
   PrivilegedLoginSchema,
+  PrivilegedCredentialSetupSchema,
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
@@ -109,6 +110,35 @@ describe('privileged IPC schemas', () => {
       PrivilegedLoginSchema.parse({ operatorId: 'operator-admin', password: ` ${password} ` }),
     ).toEqual({ operatorId: 'operator-admin', password: ` ${password} ` });
     expect(PrivilegedReauthenticationSchema.parse({ password })).toEqual({ password });
+  });
+
+  it('strictly validates local credential setup and preserves password bytes', () => {
+    expect(
+      PrivilegedCredentialSetupSchema.parse({
+        operatorId: 'operator-admin',
+        password: ` ${password} `,
+        passwordConfirm: ` ${password} `,
+      }),
+    ).toEqual({
+      operatorId: 'operator-admin',
+      password: ` ${password} `,
+      passwordConfirm: ` ${password} `,
+    });
+    expect(
+      PrivilegedCredentialSetupSchema.safeParse({
+        operatorId: 'operator-admin',
+        password,
+        passwordConfirm: `${password}-different`,
+      }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedCredentialSetupSchema.safeParse({
+        operatorId: 'operator-admin',
+        password,
+        passwordConfirm: password,
+        remote: true,
+      }).success,
+    ).toBe(false);
   });
 
   it.each([

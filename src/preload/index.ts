@@ -74,6 +74,10 @@ const api: BridgeAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING, input),
   submitPrivilegedCommand: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SUBMIT_COMMAND, input),
+  setupInitialAdministratorCredential: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SETUP_INITIAL_ADMIN, input),
+  setupPrivilegedCredential: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SETUP_CREDENTIAL, input),
   onPrivilegedSessionChanged: (callback) => {
     const handler = (_event: Electron.IpcRendererEvent, view: Parameters<typeof callback>[0]) =>
       callback(view);
