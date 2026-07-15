@@ -1,9 +1,16 @@
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { KnowledgePdfRequestSchema } from '@shared/ipcValidation';
-import type { KnowledgeIndexStatus, KnowledgePdfResult } from '@shared/knowledge';
+import type {
+  KnowledgeIndexStatus,
+  KnowledgeOpenWebLinkResult,
+  KnowledgePdfResult,
+} from '@shared/knowledge';
 import type { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
+import { loggers } from '../logger';
+import { rateLimiters } from '../rateLimiter';
 import { assertTrustedIpcSender } from '../utils/trustedSender';
 
 const EMPTY_STATUS: KnowledgeIndexStatus = {
@@ -37,6 +44,30 @@ export function setupKnowledgeHandlers(
         return EMPTY_STATUS;
       }
       return getManager()?.getStatus() ?? EMPTY_STATUS;
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK,
+    async (event, value: unknown): Promise<KnowledgeOpenWebLinkResult> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK)) {
+        return { ok: false, error: 'invalid-url' };
+      }
+      if (!rateLimiters.fsOperations.tryConsume().allowed) {
+        return { ok: false, error: 'rate-limited' };
+      }
+      const url = normalizeKnowledgeWebUrl(value);
+      if (!url) {
+        loggers.security.warn('Blocked unsupported Knowledge web link');
+        return { ok: false, error: 'invalid-url' };
+      }
+      try {
+        await shell.openExternal(url);
+        return { ok: true };
+      } catch {
+        loggers.ipc.warn('Knowledge web link open failed');
+        return { ok: false, error: 'open-failed' };
+      }
     },
   );
 }

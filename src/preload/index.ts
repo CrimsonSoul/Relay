@@ -143,6 +143,7 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
   },
+  openKnowledgeWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK, url),
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase

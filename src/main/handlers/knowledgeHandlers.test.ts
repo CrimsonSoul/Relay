@@ -1,10 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ipcMain } from 'electron';
+import { ipcMain, shell } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { loggers } from '../logger';
+import { rateLimiters } from '../rateLimiter';
 import { setupKnowledgeHandlers } from './knowledgeHandlers';
 
 const trusted = vi.fn(() => true);
-vi.mock('electron', () => ({ ipcMain: { handle: vi.fn() } }));
+vi.mock('electron', () => ({
+  ipcMain: { handle: vi.fn() },
+  shell: { openExternal: vi.fn() },
+}));
+vi.mock('../logger', () => ({
+  loggers: {
+    ipc: { warn: vi.fn() },
+    security: { warn: vi.fn() },
+  },
+}));
+vi.mock('../rateLimiter', () => ({
+  rateLimiters: {
+    fsOperations: { tryConsume: vi.fn(() => ({ allowed: true })) },
+  },
+}));
 vi.mock('../utils/trustedSender', () => ({
   assertTrustedIpcSender: (...args: unknown[]) => trusted(...args),
 }));
@@ -24,6 +40,8 @@ describe('knowledgeHandlers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     trusted.mockReturnValue(true);
+    vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValue({ allowed: true });
+    vi.mocked(shell.openExternal).mockResolvedValue(undefined);
     vi.mocked(ipcMain.handle).mockImplementation((channel, handler) => {
       handlers[channel] = handler as (...args: unknown[]) => unknown;
       return ipcMain;
@@ -33,6 +51,12 @@ describe('knowledgeHandlers', () => {
       () => manager as never,
     );
   });
+
+  function getOpenWebLinkHandler(): (...args: unknown[]) => Promise<unknown> {
+    const handler = handlers['knowledge:openWebLink'];
+    expect(handler).toBeTypeOf('function');
+    return handler as (...args: unknown[]) => Promise<unknown>;
+  }
 
   it('validates and forwards a trusted PDF request', async () => {
     const request = { documentId: 'document123', checksum: 'a'.repeat(64) };
@@ -101,6 +125,84 @@ describe('knowledgeHandlers', () => {
       documentCount: 0,
       categoryCount: 0,
       lastIndexedAt: null,
+    });
+  });
+
+  describe('KNOWLEDGE_OPEN_WEB_LINK', () => {
+    it('rejects an untrusted sender before rate limiting or opening', async () => {
+      trusted.mockReturnValueOnce(false);
+
+      await expect(
+        getOpenWebLinkHandler()({}, 'https://docs.example.com/runbook'),
+      ).resolves.toEqual({ ok: false, error: 'invalid-url' });
+      expect(rateLimiters.fsOperations.tryConsume).not.toHaveBeenCalled();
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
+    it('returns rate-limited when the filesystem operation budget is exhausted', async () => {
+      vi.mocked(rateLimiters.fsOperations.tryConsume).mockReturnValueOnce({ allowed: false });
+
+      await expect(
+        getOpenWebLinkHandler()({}, 'https://docs.example.com/runbook'),
+      ).resolves.toEqual({ ok: false, error: 'rate-limited' });
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['unsupported scheme', 'javascript:alert(1)'],
+      ['non-string value', { url: 'https://docs.example.com/runbook' }],
+    ])('rejects %s without calling shell.openExternal', async (_label, value) => {
+      await expect(getOpenWebLinkHandler()({}, value)).resolves.toEqual({
+        ok: false,
+        error: 'invalid-url',
+      });
+      expect(shell.openExternal).not.toHaveBeenCalled();
+      expect(loggers.security.warn).toHaveBeenCalledWith('Blocked unsupported Knowledge web link');
+    });
+
+    it.each([
+      ['https://docs.example.com/runbook', 'https://docs.example.com/runbook'],
+      // Plain HTTP is intentionally supported for internal Knowledge runbooks.
+      // eslint-disable-next-line sonarjs/no-clear-text-protocols
+      ['http://INTRANET.Example.local/status', 'http://intranet.example.local/status'],
+    ])('opens valid Knowledge web link %s', async (value, normalized) => {
+      await expect(getOpenWebLinkHandler()({}, value)).resolves.toEqual({ ok: true });
+      expect(shell.openExternal).toHaveBeenCalledWith(normalized);
+    });
+
+    it('returns open-failed when shell.openExternal rejects', async () => {
+      vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error('external handler rejected'));
+
+      await expect(
+        getOpenWebLinkHandler()({}, 'https://docs.example.com/runbook'),
+      ).resolves.toEqual({ ok: false, error: 'open-failed' });
+      expect(loggers.ipc.warn).toHaveBeenCalledWith('Knowledge web link open failed');
+    });
+
+    it('returns open-failed when shell.openExternal throws synchronously', async () => {
+      vi.mocked(shell.openExternal).mockImplementationOnce(() => {
+        throw new Error('external handler threw');
+      });
+
+      await expect(
+        getOpenWebLinkHandler()({}, 'https://docs.example.com/runbook'),
+      ).resolves.toEqual({ ok: false, error: 'open-failed' });
+      expect(loggers.ipc.warn).toHaveBeenCalledWith('Knowledge web link open failed');
+    });
+
+    it('does not log a URL included in the shell failure', async () => {
+      const url = 'https://docs.example.com/runbook?token=secret';
+      vi.mocked(shell.openExternal).mockRejectedValueOnce(new Error(`No handler for ${url}`));
+
+      await expect(getOpenWebLinkHandler()({}, url)).resolves.toEqual({
+        ok: false,
+        error: 'open-failed',
+      });
+
+      expect(loggers.ipc.warn).toHaveBeenCalledWith('Knowledge web link open failed');
+      const loggedValues = JSON.stringify(vi.mocked(loggers.ipc.warn).mock.calls);
+      expect(loggedValues).not.toContain(url);
+      expect(loggedValues).not.toContain('token=secret');
     });
   });
 });

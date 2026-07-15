@@ -46,6 +46,12 @@ export type KnowledgeIndexStatus = {
   message?: string;
 };
 
+export type KnowledgeOpenWebLinkError = 'invalid-url' | 'rate-limited' | 'open-failed';
+
+export type KnowledgeOpenWebLinkResult =
+  | { ok: true }
+  | { ok: false; error: KnowledgeOpenWebLinkError };
+
 export type KnowledgePdfRequest = {
   documentId: string;
   checksum: string;

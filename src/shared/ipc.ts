@@ -5,7 +5,12 @@ import type {
   DynatraceProblemsTestResult,
 } from './dynatraceProblems';
 import type { RelayOperatorRecord } from './operators';
-import type { KnowledgeIndexStatus, KnowledgePdfRequest, KnowledgePdfResult } from './knowledge';
+import type {
+  KnowledgeIndexStatus,
+  KnowledgeOpenWebLinkResult,
+  KnowledgePdfRequest,
+  KnowledgePdfResult,
+} from './knowledge';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
 type ContactRaw = {
@@ -441,6 +446,7 @@ export type BridgeAPI = {
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
   onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
+  openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -559,6 +565,7 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_GET_PDF: 'knowledge:getPdf',
   KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
   KNOWLEDGE_INDEX_STATUS_CHANGED: 'knowledge:indexStatusChanged',
+  KNOWLEDGE_OPEN_WEB_LINK: 'knowledge:openWebLink',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

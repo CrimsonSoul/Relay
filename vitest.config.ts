@@ -7,7 +7,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   test: {
     environment: 'node',
-    include: ['src/main/**/*.test.ts', 'src/shared/**/*.test.ts', 'scripts/**/*.test.mjs'],
+    include: [
+      'src/main/**/*.test.ts',
+      'src/preload/**/*.test.ts',
+      'src/shared/**/*.test.ts',
+      'scripts/**/*.test.mjs',
+    ],
     exclude: ['src/renderer/**', 'src/main/cache/SyncManager.integration.test.ts'],
     alias: {
       '@shared': resolve(__dirname, 'src/shared'),
