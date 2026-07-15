@@ -9,6 +9,11 @@
 
 /* eslint-disable sonarjs/deprecation */
 import { z } from 'zod';
+import {
+  MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
+  MAX_PRIVILEGED_PASSWORD_LENGTH,
+  MIN_PRIVILEGED_PASSWORD_LENGTH,
+} from './privilegedAccess';
 
 // ==================== Size Limits ====================
 const MAX_NAME = 500;
@@ -28,6 +33,47 @@ export const KnowledgePdfRequestSchema = z
       .max(MAX_ID)
       .regex(/^[A-Za-z0-9]+$/),
     checksum: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+const privilegedPasswordSchema = z
+  .string()
+  .min(MIN_PRIVILEGED_PASSWORD_LENGTH)
+  .max(MAX_PRIVILEGED_PASSWORD_LENGTH);
+
+export const PrivilegedLoginSchema = z
+  .object({
+    operatorId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_ID)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    password: privilegedPasswordSchema,
+  })
+  .strict();
+
+export const PrivilegedReauthenticationSchema = z
+  .object({ password: privilegedPasswordSchema })
+  .strict();
+
+export const PrivilegedPairingCompletionSchema = z
+  .object({
+    challengeId: z
+      .string()
+      .min(1)
+      .max(MAX_ID)
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    code: z.string().regex(/^[A-HJ-NP-Z2-9]{8}$/),
+    deviceLabel: z.string().trim().min(1).max(MAX_PRIVILEGED_DEVICE_LABEL_LENGTH),
+  })
+  .strict();
+
+export const PublicPrivilegedCommandRequestSchema = z
+  .object({
+    command: z.literal('privileged.status.read'),
+    payload: z.object({ clientVersion: z.string().min(1).max(100) }).strict(),
+    expectedRevision: z.number().int().min(0).nullable(),
   })
   .strict();
 

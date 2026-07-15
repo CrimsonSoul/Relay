@@ -25,6 +25,8 @@ import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
+  RELAY_PRIVILEGED_PAIRING_CHALLENGES_COLLECTION,
+  RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
 } from '@shared/privilegedAccess';
 import {
@@ -141,6 +143,10 @@ const PRIVILEGED_DEVICE_FINGERPRINT_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_devices_fingerprint ON relay_privileged_devices (fingerprint)';
 const PRIVILEGED_COMMAND_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_commands_request_id ON relay_privileged_commands (requestId)';
+const PRIVILEGED_PAIRING_CHALLENGE_INDEX =
+  'CREATE UNIQUE INDEX idx_relay_privileged_pairing_challenges_id ON relay_privileged_pairing_challenges (challengeId)';
+const PRIVILEGED_PAIRING_REQUEST_INDEX =
+  'CREATE UNIQUE INDEX idx_relay_privileged_pairing_requests_id ON relay_privileged_pairing_requests (requestId)';
 const KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
 const PRIVILEGED_ROSTER_MIGRATION_VERSION = 1;
@@ -192,7 +198,18 @@ const PRIVILEGED_COMMAND_ACCOUNT_RULE =
 const PRIVILEGED_COMMAND_RULES: CollectionRules = {
   listRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
   viewRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
-  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && operatorId = @request.auth.operatorId && deviceId != "" && signature != "" && state = "pending"`,
+  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && operatorId = @request.auth.operatorId && deviceId != "" && signature != "" && state = "pending" && @collection.relay_privileged_devices.accountId ?= accountId && @collection.relay_privileged_devices.deviceId ?= deviceId && @collection.relay_privileged_devices.state ?= "active"`,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const PRIVILEGED_PAIRING_REQUEST_RULE =
+  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id';
+
+const PRIVILEGED_PAIRING_REQUEST_RULES: CollectionRules = {
+  listRule: PRIVILEGED_PAIRING_REQUEST_RULE,
+  viewRule: PRIVILEGED_PAIRING_REQUEST_RULE,
+  createRule: `${PRIVILEGED_PAIRING_REQUEST_RULE} && operatorId = @request.auth.operatorId && state = "pending"`,
   updateRule: null,
   deleteRule: null,
 };
@@ -447,6 +464,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
       { type: 'text', name: 'hostnameSnapshot', required: true, max: 255 },
+      { type: 'text', name: 'label', required: true, max: 80 },
       { type: 'text', name: 'publicKey', required: true, max: 4_096 },
       { type: 'text', name: 'fingerprint', required: true, max: 64 },
       {
@@ -484,6 +502,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'issuedAt', required: true },
       { type: 'date', name: 'expiresAt', required: true },
       { type: 'number', name: 'expectedRevision' },
+      { type: 'bool', name: 'hasExpectedRevision' },
       { type: 'json', name: 'payload', required: true },
       { type: 'text', name: 'bodyHash', required: true, max: 64 },
       { type: 'text', name: 'signature', required: false, max: 1_024 },
@@ -501,6 +520,55 @@ const COLLECTIONS: CollectionDef[] = [
     ],
     indexes: [PRIVILEGED_COMMAND_REQUEST_INDEX],
     rules: PRIVILEGED_COMMAND_RULES,
+  },
+  {
+    name: RELAY_PRIVILEGED_PAIRING_CHALLENGES_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'challengeId', required: true, max: 200 },
+      { type: 'text', name: 'accountId', required: true, max: 200 },
+      { type: 'text', name: 'secretHash', required: true, max: 64 },
+      { type: 'date', name: 'expiresAt', required: true },
+      { type: 'number', name: 'attempts', required: true },
+      {
+        type: 'select',
+        name: 'status',
+        required: true,
+        values: ['pending', 'consuming', 'completed', 'expired', 'locked'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'fingerprint', max: 64 },
+      { type: 'text', name: 'deviceId', max: 200 },
+    ],
+    indexes: [PRIVILEGED_PAIRING_CHALLENGE_INDEX],
+    rules: SERVER_HIDDEN_RULES,
+  },
+  {
+    name: RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'requestId', required: true, max: 200 },
+      { type: 'text', name: 'accountId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'challengeId', required: true, max: 200 },
+      { type: 'text', name: 'code', required: true, max: 8 },
+      { type: 'json', name: 'publicKey', required: true },
+      { type: 'text', name: 'fingerprint', required: true, max: 64 },
+      { type: 'text', name: 'hostname', required: true, max: 255 },
+      { type: 'text', name: 'deviceLabel', required: true, max: 80 },
+      {
+        type: 'select',
+        name: 'state',
+        required: true,
+        values: ['pending', 'completed', 'failed'],
+        maxSelect: 1,
+      },
+      { type: 'json', name: 'result' },
+      { type: 'text', name: 'safeError', max: 80 },
+      { type: 'date', name: 'completedAt' },
+    ],
+    indexes: [PRIVILEGED_PAIRING_REQUEST_INDEX],
+    rules: PRIVILEGED_PAIRING_REQUEST_RULES,
   },
   {
     name: KNOWLEDGE_DOCUMENTS_COLLECTION,

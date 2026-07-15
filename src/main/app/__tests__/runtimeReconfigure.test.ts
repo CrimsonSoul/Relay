@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   setRetentionManager: vi.fn(),
   setBackupManager: vi.fn(),
   setPbClient: vi.fn(),
+  getPbClient: vi.fn(),
   getOfflineCache: vi.fn(),
   setOfflineCache: vi.fn(),
   getPendingChanges: vi.fn(),
@@ -60,6 +61,12 @@ const mocks = vi.hoisted(() => ({
   initializeKnowledgePdfService: vi.fn(),
   startKnowledgeBaseManager: vi.fn(),
   stopKnowledgeBaseManager: vi.fn(),
+  privilegedRuntime: { dispose: vi.fn() },
+  nextPrivilegedRuntime: { dispose: vi.fn() },
+  getPrivilegedRuntime: vi.fn(),
+  setPrivilegedRuntime: vi.fn(),
+  createProductionPrivilegedRuntime: vi.fn(),
+  serverPbClient: { authStore: { isValid: true } },
 }));
 
 vi.mock('../appState', () => ({
@@ -68,6 +75,7 @@ vi.mock('../appState', () => ({
   setRetentionManager: mocks.setRetentionManager,
   setBackupManager: mocks.setBackupManager,
   setPbClient: mocks.setPbClient,
+  getPbClient: mocks.getPbClient,
   getOfflineCache: mocks.getOfflineCache,
   setOfflineCache: mocks.setOfflineCache,
   getPendingChanges: mocks.getPendingChanges,
@@ -78,6 +86,8 @@ vi.mock('../appState', () => ({
   getMainWindow: mocks.getMainWindow,
   getDynatraceProblemsManager: mocks.getDynatraceProblemsManager,
   getCloudStatusManager: mocks.getCloudStatusManager,
+  getPrivilegedRuntime: mocks.getPrivilegedRuntime,
+  setPrivilegedRuntime: mocks.setPrivilegedRuntime,
 }));
 
 vi.mock('../pocketbaseBootstrap', () => ({
@@ -106,6 +116,10 @@ vi.mock('../../knowledge/knowledgeRuntime', () => ({
   stopKnowledgeBaseManager: mocks.stopKnowledgeBaseManager,
 }));
 
+vi.mock('../../privileged/privilegedRuntime', () => ({
+  createProductionPrivilegedRuntime: mocks.createProductionPrivilegedRuntime,
+}));
+
 describe('reconfigureRuntime', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -122,6 +136,9 @@ describe('reconfigureRuntime', () => {
     mocks.getPbProcess.mockReturnValue(mocks.pbProcess);
     mocks.getMainWindow.mockReturnValue(mocks.mainWindow);
     mocks.getDynatraceProblemsManager.mockReturnValue(mocks.dynatraceProblemsManager);
+    mocks.getPrivilegedRuntime.mockReturnValue(mocks.privilegedRuntime);
+    mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
+    mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
     mocks.startPocketBase.mockResolvedValue(true);
     mocks.offlineCacheInstance.close.mockClear();
@@ -172,6 +189,8 @@ describe('reconfigureRuntime', () => {
     expect(mocks.pendingChanges.close).toHaveBeenCalledOnce();
     expect(mocks.setPendingChanges).toHaveBeenCalledWith(null);
     expect(mocks.setSyncManager).toHaveBeenCalledWith(null);
+    expect(mocks.privilegedRuntime.dispose).toHaveBeenCalledOnce();
+    expect(mocks.setPrivilegedRuntime).toHaveBeenNthCalledWith(1, null);
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.setPbProcess).toHaveBeenCalledWith(null);
     expect(mocks.startPocketBase).not.toHaveBeenCalled();
@@ -179,6 +198,31 @@ describe('reconfigureRuntime', () => {
     expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
     expect(mocks.startKnowledgeBaseManager).not.toHaveBeenCalled();
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
+    expect(mocks.createProductionPrivilegedRuntime).toHaveBeenCalledWith({
+      config: expect.objectContaining({ mode: 'client' }),
+      dataDir: '/Users/test/RelayData/data',
+      serverClient: null,
+    });
+    expect(mocks.setPrivilegedRuntime).toHaveBeenLastCalledWith(mocks.nextPrivilegedRuntime);
+  });
+
+  it('waits for privileged work to stop before replacing shared runtime state', async () => {
+    let finishDisposal: (() => void) | undefined;
+    mocks.privilegedRuntime.dispose.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDisposal = resolve;
+        }),
+    );
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    const reconfiguration = reconfigureRuntime('/Users/test/RelayData/data');
+    await vi.waitFor(() => expect(mocks.privilegedRuntime.dispose).toHaveBeenCalledOnce());
+    expect(mocks.setPbClient).not.toHaveBeenCalled();
+
+    finishDisposal?.();
+    await reconfiguration;
+    expect(mocks.setPbClient).toHaveBeenCalledWith(null);
   });
 
   it('starts the knowledge index only after server PocketBase restarts', async () => {
@@ -198,6 +242,9 @@ describe('reconfigureRuntime', () => {
     expect(mocks.startKnowledgeBaseManager).toHaveBeenCalledWith('/Users/test/RelayData/data');
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.startKnowledgeBaseManager.mock.invocationCallOrder[0] as number,
+    );
+    expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.createProductionPrivilegedRuntime.mock.invocationCallOrder[0] as number,
     );
   });
 

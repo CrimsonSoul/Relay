@@ -63,6 +63,9 @@ import {
   setKnowledgeBaseManager,
   getKnowledgePdfService,
   setKnowledgePdfService,
+  getPrivilegedRuntime,
+  setPrivilegedRuntime,
+  subscribePrivilegedSessionChanged,
   getDefaultDataPath,
   getDataRoot,
   resetDataRootCache,
@@ -91,6 +94,7 @@ beforeEach(() => {
   setSyncManager(null);
   setKnowledgeBaseManager(null);
   setKnowledgePdfService(null);
+  setPrivilegedRuntime(null);
   resetDataRootCache();
 });
 
@@ -104,6 +108,33 @@ describe('appState getters/setters', () => {
 
     expect(getKnowledgeBaseManager()).toBe(manager);
     expect(getKnowledgePdfService()).toBe(pdfService);
+  });
+
+  it('owns the privileged runtime and relays only public session views', () => {
+    let runtimeListener: ((view: unknown) => void) | null = null;
+    const stopRuntimeSubscription = vi.fn();
+    const runtime = {
+      getView: vi.fn(() => ({ state: 'signed-out', capabilities: [] })),
+      onSessionChanged: vi.fn((listener) => {
+        runtimeListener = listener;
+        return stopRuntimeSubscription;
+      }),
+      dispose: vi.fn(),
+    } as never;
+    const listener = vi.fn();
+    const unsubscribe = subscribePrivilegedSessionChanged(listener);
+
+    setPrivilegedRuntime(runtime);
+    expect(getPrivilegedRuntime()).toBe(runtime);
+    runtimeListener?.({ state: 'active', capabilities: ['operators.manage'] });
+    expect(listener).toHaveBeenCalledWith({
+      state: 'active',
+      capabilities: ['operators.manage'],
+    });
+
+    setPrivilegedRuntime(null);
+    expect(stopRuntimeSubscription).toHaveBeenCalledOnce();
+    unsubscribe();
   });
 
   it('mainWindow getter/setter', () => {
@@ -297,6 +328,17 @@ describe('setupIpc', () => {
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getKnowledgeBaseManager?.()).toBe(manager);
     expect(options?.getKnowledgePdfService?.()).toBe(pdfService);
+  });
+
+  it('passes live privileged runtime and event getters to setupIpcHandlers', () => {
+    const runtime = { getView: vi.fn(), onSessionChanged: vi.fn(() => vi.fn()) } as never;
+    setPrivilegedRuntime(runtime);
+
+    setupIpc();
+
+    const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
+    expect(options?.getPrivilegedRuntime?.()).toBe(runtime);
+    expect(options?.subscribePrivilegedSessionChanged).toEqual(expect.any(Function));
   });
 });
 

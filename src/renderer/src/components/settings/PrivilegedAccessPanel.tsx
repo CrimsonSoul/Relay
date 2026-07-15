@@ -1,0 +1,259 @@
+import React, { useRef, useState } from 'react';
+import { useOperator } from '../../contexts/OperatorContext';
+import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
+import { TactileButton } from '../TactileButton';
+
+type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
+type Props = { relayMode: 'server' | 'client' | null };
+
+const formatExpiry = (value: string | null) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(parsed);
+};
+
+export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
+  const { selectedOperator } = useOperator();
+  const {
+    session,
+    loading,
+    busy,
+    error,
+    pairingChallenge,
+    clearError,
+    login,
+    logout,
+    lock,
+    createPairingChallenge,
+    completePairing,
+  } = usePrivilegedAccess();
+  const [password, setPassword] = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [deviceLabel, setDeviceLabel] = useState('');
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  const handleLogin = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    try {
+      await login(password);
+    } finally {
+      setPassword('');
+      passwordRef.current?.focus();
+    }
+  };
+
+  const handlePair = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    const paired = await completePairing({
+      challengeId: challengeId.trim(),
+      code: pairingCode.trim().toUpperCase(),
+      deviceLabel: deviceLabel.trim(),
+    });
+    if (paired) setPairingCode('');
+  };
+
+  const statusContent = (() => {
+    if (loading) {
+      return <div className="privileged-access__state">Checking privileged access…</div>;
+    }
+
+    if (session.state === 'offline') {
+      return (
+        <div className="privileged-access__state privileged-access__state--offline">
+          <strong>Privileged access is unavailable offline.</strong>
+          <span>Relay’s normal read-only and cached features remain available.</span>
+        </div>
+      );
+    }
+
+    if (session.state === 'pairing-required') {
+      return (
+        <form className="privileged-access__form" onSubmit={handlePair}>
+          <div className="privileged-access__state">
+            <strong>Pair this workstation</strong>
+            <span>Create a one-time challenge on the Relay server, then enter it here.</span>
+          </div>
+          <div className="privileged-access__field-grid">
+            <label className="privileged-access__field">
+              <span>Pairing challenge ID</span>
+              <input
+                className="input"
+                value={challengeId}
+                onChange={(event) => setChallengeId(event.target.value)}
+                autoComplete="off"
+                required
+              />
+            </label>
+            <label className="privileged-access__field">
+              <span>One-time pairing code</span>
+              <input
+                className="input privileged-access__code"
+                value={pairingCode}
+                onChange={(event) => setPairingCode(event.target.value)}
+                autoCapitalize="characters"
+                autoComplete="off"
+                maxLength={8}
+                required
+              />
+            </label>
+            <label className="privileged-access__field privileged-access__field--wide">
+              <span>Device label</span>
+              <input
+                className="input"
+                value={deviceLabel}
+                onChange={(event) => setDeviceLabel(event.target.value)}
+                placeholder="Work laptop"
+                maxLength={80}
+                required
+              />
+            </label>
+          </div>
+          <div className="privileged-access__actions">
+            <TactileButton type="submit" variant="primary" loading={busy === 'pair'}>
+              Pair device
+            </TactileButton>
+            <TactileButton type="button" onClick={() => void logout()} disabled={busy !== null}>
+              Sign out
+            </TactileButton>
+          </div>
+        </form>
+      );
+    }
+
+    if (session.state === 'active') {
+      const roleLabel = session.role === 'admin' ? 'Administrator' : 'Knowledge publisher';
+      const expiry = formatExpiry(session.expiresAt);
+      return (
+        <div className="privileged-access__active">
+          <div className="privileged-access__identity">
+            <div>
+              <span className={`privileged-access__role privileged-access__role--${session.role}`}>
+                {roleLabel}
+              </span>
+              <strong>{session.operatorName}</strong>
+              <span>
+                {expiry ? `Locks after inactivity · session expires ${expiry}` : 'Active session'}
+              </span>
+            </div>
+            <div className="privileged-access__actions">
+              <TactileButton type="button" onClick={() => void lock()} disabled={busy !== null}>
+                Lock
+              </TactileButton>
+              <TactileButton type="button" onClick={() => void logout()} disabled={busy !== null}>
+                Sign out
+              </TactileButton>
+            </div>
+          </div>
+
+          {session.role === 'admin' && relayMode === 'server' && (
+            <div className="privileged-access__pairing-console">
+              <div>
+                <strong>Pair an administrator workstation</strong>
+                <span>Challenge codes expire after 10 minutes and work once.</span>
+              </div>
+              <TactileButton
+                type="button"
+                onClick={() => void createPairingChallenge()}
+                loading={busy === 'challenge'}
+              >
+                Create pairing code
+              </TactileButton>
+              {pairingChallenge && (
+                <dl className="privileged-access__challenge" aria-label="Active pairing challenge">
+                  <div>
+                    <dt>Challenge ID</dt>
+                    <dd>{pairingChallenge.challengeId}</dd>
+                  </div>
+                  <div>
+                    <dt>Code</dt>
+                    <dd className="privileged-access__challenge-code">{pairingChallenge.code}</dd>
+                  </div>
+                  <div>
+                    <dt>Expires</dt>
+                    <dd>{formatExpiry(pairingChallenge.expiresAt) ?? 'Soon'}</dd>
+                  </div>
+                </dl>
+              )}
+            </div>
+          )}
+          {session.role === 'admin' && relayMode === 'client' && (
+            <div className="privileged-access__state">
+              <strong>Pairing is controlled locally</strong>
+              <span>Pair additional workstations from the Relay server PC.</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const locked = session.state === 'locked';
+    return (
+      <form className="privileged-access__form" onSubmit={handleLogin}>
+        <div className="privileged-access__state">
+          <strong>
+            {locked ? 'Privileged access is locked' : 'Sign in for protected actions'}
+          </strong>
+          <span>
+            {selectedOperator
+              ? `Authenticating as ${selectedOperator.displayName}.`
+              : 'Choose your operator profile in the sidebar first.'}
+          </span>
+        </div>
+        <label className="privileged-access__field privileged-access__password">
+          <span>Privileged password</span>
+          <input
+            ref={passwordRef}
+            type="password"
+            className="input"
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value);
+              if (error) clearError();
+            }}
+            autoComplete="current-password"
+            minLength={12}
+            maxLength={128}
+            disabled={!selectedOperator || busy !== null}
+            required
+          />
+        </label>
+        <div className="privileged-access__actions">
+          <TactileButton
+            type="submit"
+            variant="primary"
+            loading={busy === 'login'}
+            disabled={!selectedOperator}
+          >
+            {locked ? 'Unlock' : 'Sign in'}
+          </TactileButton>
+        </div>
+      </form>
+    );
+  })();
+
+  return (
+    <section
+      className="settings-section privileged-access"
+      aria-labelledby="privileged-access-title"
+    >
+      <header className="privileged-access__header">
+        <div className="settings-section-heading">Access</div>
+        <h2 id="privileged-access-title" className="privileged-access__title">
+          Privileged access
+        </h2>
+        <p className="settings-description">
+          Unlock administration and Knowledge Base publishing. Normal operator attribution stays
+          passwordless.
+        </p>
+      </header>
+      {error && (
+        <div className="privileged-access__feedback" role="alert">
+          {error}
+        </div>
+      )}
+      {statusContent}
+    </section>
+  );
+}

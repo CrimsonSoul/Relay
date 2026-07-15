@@ -88,6 +88,9 @@ vi.mock('../contexts', () => ({
   OperatorProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="operator-provider">{children}</div>
   ),
+  PrivilegedAccessProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="privileged-access-provider">{children}</div>
+  ),
 }));
 
 // ── mock Toast ───────────────────────────────────────────────────────────────
@@ -962,7 +965,7 @@ describe('App default export', () => {
     expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
   });
 
-  it('mounts the operator provider inside the initialized connection manager', async () => {
+  it('mounts operator and privileged-access providers inside the initialized connection', async () => {
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -971,7 +974,10 @@ describe('App default export', () => {
     render(<App />);
 
     const connectionManager = await screen.findByTestId('connection-manager');
-    expect(connectionManager).toContainElement(screen.getByTestId('operator-provider'));
+    const operatorProvider = screen.getByTestId('operator-provider');
+    const privilegedProvider = screen.getByTestId('privileged-access-provider');
+    expect(connectionManager).toContainElement(operatorProvider);
+    expect(operatorProvider).toContainElement(privilegedProvider);
   });
 
   it('uses NoopToastProvider in popout mode', async () => {

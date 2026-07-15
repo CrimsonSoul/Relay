@@ -19,6 +19,8 @@ import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsMan
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
 import type { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
+import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -37,6 +39,7 @@ export interface AppState {
   cloudStatusManager: CloudStatusManager | null;
   knowledgeBaseManager: KnowledgeBaseManager | null;
   knowledgePdfService: KnowledgePdfService | null;
+  privilegedRuntime: PrivilegedRuntime | null;
 }
 
 const state: AppState = {
@@ -55,7 +58,11 @@ const state: AppState = {
   cloudStatusManager: null,
   knowledgeBaseManager: null,
   knowledgePdfService: null,
+  privilegedRuntime: null,
 };
+
+const privilegedSessionListeners = new Set<(view: PrivilegedSessionView) => void>();
+let stopPrivilegedRuntimeSubscription: (() => void) | null = null;
 
 const log = loggers.main;
 
@@ -104,6 +111,9 @@ export function getKnowledgeBaseManager() {
 }
 export function getKnowledgePdfService() {
   return state.knowledgePdfService;
+}
+export function getPrivilegedRuntime() {
+  return state.privilegedRuntime;
 }
 
 // --- Setters ---
@@ -166,6 +176,24 @@ export function setKnowledgeBaseManager(manager: KnowledgeBaseManager | null) {
 export function setKnowledgePdfService(service: KnowledgePdfService | null) {
   log.debug('appState.knowledgePdfService changed');
   state.knowledgePdfService = service;
+}
+export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
+  stopPrivilegedRuntimeSubscription?.();
+  stopPrivilegedRuntimeSubscription = null;
+  state.privilegedRuntime = runtime;
+  if (runtime) {
+    stopPrivilegedRuntimeSubscription = runtime.onSessionChanged((view) => {
+      for (const listener of privilegedSessionListeners) listener(view);
+    });
+  }
+  log.debug('appState.privilegedRuntime changed');
+}
+
+export function subscribePrivilegedSessionChanged(
+  listener: (view: PrivilegedSessionView) => void,
+): () => void {
+  privilegedSessionListeners.add(listener);
+  return () => privilegedSessionListeners.delete(listener);
 }
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
@@ -247,6 +275,8 @@ export function setupIpc(
     getPbClient: () => state.pbClient,
     getKnowledgeBaseManager: () => state.knowledgeBaseManager,
     getKnowledgePdfService: () => state.knowledgePdfService,
+    getPrivilegedRuntime: () => state.privilegedRuntime,
+    subscribePrivilegedSessionChanged,
     restartPb,
   });
   setupAuthHandlers();

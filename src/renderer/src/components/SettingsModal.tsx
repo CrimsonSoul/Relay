@@ -34,6 +34,7 @@ import {
   type AccentId,
 } from '../theme/accent';
 import { OperatorSettingsSection } from './settings/OperatorSettingsSection';
+import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -69,12 +70,13 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-type SettingsSectionId = 'appearance' | 'connection' | 'operators' | 'dynatrace';
+type SettingsSectionId = 'appearance' | 'connection' | 'operators' | 'access' | 'dynatrace';
 
 const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'connection', label: 'Relay data' },
   { id: 'operators', label: 'Operators' },
+  { id: 'access', label: 'Access' },
   { id: 'dynatrace', label: 'Dynatrace' },
 ];
 
@@ -114,7 +116,7 @@ function SettingsShell({
             Relay configuration
           </h1>
           <p className="settings-page__description">
-            Manage this workstation, its shared data connection, and Dynatrace access.
+            Manage this workstation, shared data, operator access, and Dynatrace.
           </p>
         </div>
       </header>
@@ -1044,6 +1046,8 @@ export const SettingsModal: React.FC<Props> = ({
     <OperatorSettingsSection relayMode={pbConfig?.mode ?? null} modeLoading={pbConfigLoading} />
   );
 
+  const accessSection = <PrivilegedAccessPanel relayMode={pbConfig?.mode ?? null} />;
+
   const settingsContent = (
     <div
       className={`settings-body${
@@ -1053,6 +1057,7 @@ export const SettingsModal: React.FC<Props> = ({
       {(presentation === 'modal' || activeSection === 'appearance') && appearanceSection}
       {(presentation === 'modal' || activeSection === 'connection') && connectionSections}
       {presentation === 'page' && activeSection === 'operators' && operatorSection}
+      {presentation === 'page' && activeSection === 'access' && accessSection}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );

@@ -4,6 +4,10 @@ import {
   LogEntrySchema,
   AlertHistoryEntrySchema,
   KnowledgePdfRequestSchema,
+  PrivilegedLoginSchema,
+  PrivilegedPairingCompletionSchema,
+  PrivilegedReauthenticationSchema,
+  PublicPrivilegedCommandRequestSchema,
 } from './ipcValidation';
 
 describe('SearchQuerySchema', () => {
@@ -93,6 +97,62 @@ describe('KnowledgePdfRequestSchema', () => {
   it('rejects unexpected request fields', () => {
     expect(
       KnowledgePdfRequestSchema.safeParse({ ...valid, path: 'outside-source-root' }).success,
+    ).toBe(false);
+  });
+});
+
+describe('privileged IPC schemas', () => {
+  const password = 'Test-access-value-123!';
+
+  it('accepts bounded login and reauthentication inputs without trimming passwords', () => {
+    expect(
+      PrivilegedLoginSchema.parse({ operatorId: 'operator-admin', password: ` ${password} ` }),
+    ).toEqual({ operatorId: 'operator-admin', password: ` ${password} ` });
+    expect(PrivilegedReauthenticationSchema.parse({ password })).toEqual({ password });
+  });
+
+  it.each([
+    { operatorId: '', password },
+    { operatorId: 'operator-admin', password: 'short' },
+    { operatorId: 'operator-admin', password: 'x'.repeat(129) },
+    { operatorId: 'operator-admin', password, token: 'unexpected' },
+  ])('rejects malformed or unknown login fields: %o', (input) => {
+    expect(PrivilegedLoginSchema.safeParse(input).success).toBe(false);
+  });
+
+  it('strictly validates pairing completion input', () => {
+    const valid = {
+      challengeId: 'challenge-1',
+      code: 'ABCD2345',
+      deviceLabel: 'Ryan work laptop',
+    };
+    expect(PrivilegedPairingCompletionSchema.parse(valid)).toEqual(valid);
+    expect(
+      PrivilegedPairingCompletionSchema.safeParse({ ...valid, code: 'TOO-SHORT' }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedPairingCompletionSchema.safeParse({ ...valid, hostname: 'spoofed' }).success,
+    ).toBe(false);
+  });
+
+  it('allows only public status commands and rejects internal reauthentication construction', () => {
+    expect(
+      PublicPrivilegedCommandRequestSchema.parse({
+        command: 'privileged.status.read',
+        payload: { clientVersion: '1.0.0' },
+        expectedRevision: null,
+      }),
+    ).toEqual({
+      command: 'privileged.status.read',
+      payload: { clientVersion: '1.0.0' },
+      expectedRevision: null,
+    });
+    expect(
+      PublicPrivilegedCommandRequestSchema.safeParse({
+        command: 'privileged.reauth.confirm',
+        payload: { authenticatedAt: new Date().toISOString() },
+        expectedRevision: null,
+      }).success,
     ).toBe(false);
   });
 });

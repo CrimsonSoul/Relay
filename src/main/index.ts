@@ -29,6 +29,8 @@ import {
   getCloudStatusManager,
   setCloudStatusManager,
   setKnowledgePdfService,
+  getPrivilegedRuntime,
+  setPrivilegedRuntime,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -55,6 +57,7 @@ import {
   startKnowledgeBaseManager,
   stopKnowledgeBaseManager,
 } from './knowledge/knowledgeRuntime';
+import { createProductionPrivilegedRuntime } from './privileged/privilegedRuntime';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -146,6 +149,8 @@ if (gotLock) {
       stopMemoryHeartbeat = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
+      void getPrivilegedRuntime()?.dispose();
+      setPrivilegedRuntime(null);
       void stopKnowledgeBaseManager();
       setKnowledgePdfService(null);
       // PocketBase cleanup — synchronous kill to ensure process dies before app exits
@@ -205,6 +210,26 @@ if (gotLock) {
         });
       };
 
+      const stopPrivilegedAccess = async () => {
+        const runtime = getPrivilegedRuntime();
+        setPrivilegedRuntime(null);
+        await runtime?.dispose();
+      };
+
+      const startPrivilegedAccess = async (config: NonNullable<ReturnType<AppConfig['load']>>) => {
+        await stopPrivilegedAccess();
+        try {
+          const runtime = await createProductionPrivilegedRuntime({
+            config,
+            dataDir: configDataDir,
+            serverClient: config.mode === 'server' ? getPbClient() : null,
+          });
+          setPrivilegedRuntime(runtime);
+        } catch (error) {
+          loggers.security.warn('Could not initialize privileged access', { error });
+        }
+      };
+
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
       try {
@@ -231,8 +256,10 @@ if (gotLock) {
         if (!assertTrustedIpcSender(event, IPC_CHANNELS.PB_START)) return false;
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
+        await stopPrivilegedAccess();
         const started = await startPocketBase(config, configDataDir);
         if (started) {
+          await startPrivilegedAccess(config);
           startServerDataManagers();
         }
         return started;
@@ -256,8 +283,10 @@ if (gotLock) {
       const restartPb = async (): Promise<boolean> => {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
+        await stopPrivilegedAccess();
         const started = await startPocketBase(config, configDataDir);
         if (started) {
+          await startPrivilegedAccess(config);
           startServerDataManagers();
         }
         return started;
@@ -274,6 +303,7 @@ if (gotLock) {
       if (relayConfig?.mode === 'server') {
         const started = await startPocketBase(relayConfig, configDataDir);
         if (started) {
+          await startPrivilegedAccess(relayConfig);
           startServerDataManagers();
         }
       }
@@ -293,6 +323,7 @@ if (gotLock) {
             { error: syncErr },
           );
         }
+        await startPrivilegedAccess(relayConfig);
       }
 
       // Show the window as early as possible — the renderer has its own

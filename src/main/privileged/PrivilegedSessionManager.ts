@@ -46,6 +46,7 @@ export interface PrivilegedSessionManagerService {
   getView(): PrivilegedSessionView;
   login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView>;
   reauthenticate(password: string): Promise<{ proofId: string; expiresAt: string }>;
+  activatePairedDevice(deviceId: string): PrivilegedSessionView;
   recordPrivilegedActivity(): void;
   lock(): void;
   logout(): Promise<void>;
@@ -238,6 +239,27 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
       proofId: result.requestId,
       expiresAt: new Date(authenticatedAtMs + PRIVILEGED_REAUTH_PROOF_MS).toISOString(),
     };
+  }
+
+  activatePairedDevice(deviceId: string): PrivilegedSessionView {
+    this.assertNotDisposed();
+    const normalizedDeviceId = validateOperatorId(deviceId);
+    const account = this.account;
+    if (this.view.state !== 'pairing-required' || !account) {
+      throw new PrivilegedSessionError('unauthorized');
+    }
+    this.setView({
+      ...this.view,
+      state: 'active',
+      capabilities: getPrivilegedCapabilities({
+        active: account.active,
+        assigned: true,
+        role: account.role,
+      }),
+      deviceId: normalizedDeviceId,
+    });
+    this.refreshIdleDeadline();
+    return this.getView();
   }
 
   recordPrivilegedActivity(): void {

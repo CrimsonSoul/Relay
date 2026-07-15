@@ -183,6 +183,21 @@ describe('PrivilegedSessionManager', () => {
     expect(manager.getView().state).toBe('locked');
   });
 
+  it('activates the authenticated account only after a paired device is bound', async () => {
+    authorization = { ...authorization, deviceId: null, paired: false };
+    const manager = createManager();
+    await manager.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+
+    const view = manager.activatePairedDevice('device-new-laptop');
+
+    expect(view).toMatchObject({
+      state: 'active',
+      accountId: 'account-admin',
+      deviceId: 'device-new-laptop',
+      capabilities: ADMIN_PRIVILEGED_CAPABILITIES,
+    });
+  });
+
   it('clears authentication when current authorization cannot be resolved', async () => {
     resolveAuthorization.mockRejectedValueOnce(new Error('lookup failed'));
     const manager = createManager();

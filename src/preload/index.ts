@@ -61,6 +61,25 @@ const api: BridgeAPI = {
   renameRelayOperator: (input) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPERATOR_RENAME, input),
   setRelayOperatorActive: (input) =>
     ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPERATOR_SET_ACTIVE, input),
+  // Privileged access
+  getPrivilegedSession: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_GET_SESSION),
+  loginPrivileged: (input) => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, input),
+  logoutPrivileged: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGOUT),
+  lockPrivileged: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOCK),
+  reauthenticatePrivileged: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_REAUTHENTICATE, input),
+  createPrivilegedPairingChallenge: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE),
+  completePrivilegedPairing: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING, input),
+  submitPrivilegedCommand: (input) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_SUBMIT_COMMAND, input),
+  onPrivilegedSessionChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, view: Parameters<typeof callback>[0]) =>
+      callback(view);
+    ipcRenderer.on(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.PRIVILEGED_SESSION_CHANGED, handler);
+  },
 
   // Drag Sync
   notifyDragStart: () => ipcRenderer.send(IPC_CHANNELS.DRAG_STARTED),

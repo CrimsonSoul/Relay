@@ -21,6 +21,7 @@ const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
 const mockSetupRelayOperatorHandlers = vi.fn();
 const mockSetupKnowledgeHandlers = vi.fn();
+const mockSetupPrivilegedAccessHandlers = vi.fn();
 
 vi.mock('../handlers/cloudStatus', () => ({
   setupCloudStatusHandlers: (...args: unknown[]) => mockSetupCloudStatusHandlers(...args),
@@ -42,6 +43,9 @@ vi.mock('../handlers/relayOperatorHandlers', () => ({
 }));
 vi.mock('../handlers/knowledgeHandlers', () => ({
   setupKnowledgeHandlers: (...args: unknown[]) => mockSetupKnowledgeHandlers(...args),
+}));
+vi.mock('../handlers/privilegedAccessHandlers', () => ({
+  setupPrivilegedAccessHandlers: (...args: unknown[]) => mockSetupPrivilegedAccessHandlers(...args),
 }));
 
 import { loggers } from '../logger';
@@ -69,6 +73,7 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
     expect(mockSetupRelayOperatorHandlers).toHaveBeenCalled();
     expect(mockSetupKnowledgeHandlers).toHaveBeenCalled();
+    expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalled();
   });
 
   it('passes live knowledge service getters to knowledge handlers', () => {
@@ -146,6 +151,30 @@ describe('setupIpcHandlers', () => {
     expect(options.isServer()).toBe(true);
     appConfig.load.mockReturnValue({ mode: 'client' });
     expect(options.isServer()).toBe(false);
+  });
+
+  it('passes live runtime and public session subscription to privileged handlers', () => {
+    const runtime = { getView: vi.fn() };
+    const getPrivilegedRuntime = vi.fn(() => runtime);
+    const subscribePrivilegedSessionChanged = vi.fn(() => vi.fn());
+    const appConfig = { load: vi.fn(() => ({ mode: 'server' })) };
+
+    setupIpcHandlers(
+      makeOpts({
+        getAppConfig: vi.fn(() => appConfig),
+        getPrivilegedRuntime,
+        subscribePrivilegedSessionChanged,
+      }),
+    );
+
+    expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        getRuntime: getPrivilegedRuntime,
+        subscribeSessionChanged: subscribePrivilegedSessionChanged,
+        isServer: expect.any(Function),
+        assertTrustedIpcSender: expect.any(Function),
+      }),
+    );
   });
 
   it('continues registering handlers if one setup throws', () => {

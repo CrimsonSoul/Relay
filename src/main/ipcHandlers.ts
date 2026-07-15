@@ -10,6 +10,10 @@ import { setupDynatraceHandlers } from './handlers/dynatraceHandlers';
 import { setupDynatraceProblemsHandlers } from './handlers/dynatraceProblemsHandlers';
 import { setupRelayOperatorHandlers } from './handlers/relayOperatorHandlers';
 import { setupKnowledgeHandlers } from './handlers/knowledgeHandlers';
+import {
+  setupPrivilegedAccessHandlers,
+  type PrivilegedAccessRuntime,
+} from './handlers/privilegedAccessHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
 import type { PendingChanges } from './cache/PendingChanges';
@@ -22,6 +26,7 @@ import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
+import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -42,6 +47,10 @@ export function setupIpcHandlers(opts: {
   getPbClient?: () => PocketBase | null;
   getKnowledgeBaseManager?: () => KnowledgeBaseManager | null;
   getKnowledgePdfService?: () => KnowledgePdfService | null;
+  getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
+  subscribePrivilegedSessionChanged?: (
+    listener: (view: PrivilegedSessionView) => void,
+  ) => () => void;
   restartPb?: () => Promise<boolean>;
 }) {
   const {
@@ -58,6 +67,8 @@ export function setupIpcHandlers(opts: {
     getPbClient,
     getKnowledgeBaseManager,
     getKnowledgePdfService,
+    getPrivilegedRuntime,
+    subscribePrivilegedSessionChanged,
     restartPb,
   } = opts;
   const safeSetup = (name: string, fn: () => void) => {
@@ -95,6 +106,16 @@ export function setupIpcHandlers(opts: {
       getKnowledgePdfService ?? (() => null),
       getKnowledgeBaseManager ?? (() => null),
     ),
+  );
+
+  safeSetup('privilegedAccess', () =>
+    setupPrivilegedAccessHandlers({
+      ipcMain,
+      getRuntime: getPrivilegedRuntime ?? (() => null),
+      isServer: () => getAppConfig?.()?.load()?.mode === 'server',
+      assertTrustedIpcSender,
+      subscribeSessionChanged: subscribePrivilegedSessionChanged,
+    }),
   );
 
   // Window Management

@@ -201,6 +201,36 @@ describe('PrivilegedDeviceStore', () => {
     await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.toBeNull();
   });
 
+  it('removes only the matching unbound pairing key', async () => {
+    const store = createStore();
+    const retained = await store.create(ACCOUNT_ID, 'Retained pending key');
+    const discarded = await store.create(ACCOUNT_ID, 'Discarded pending key');
+
+    await store.removePending('different-account', discarded.pendingKeyId);
+    await store.bind(ACCOUNT_ID, retained.pendingKeyId, DEVICE_ID);
+    await store.removePending(ACCOUNT_ID, discarded.pendingKeyId);
+
+    const registry = JSON.parse(
+      await readFile(join(dataDir, 'privileged-device-keys.json'), 'utf8'),
+    ) as { keys: Array<{ pendingKeyId: string }> };
+    expect(registry.keys.map((key) => key.pendingKeyId)).toEqual([retained.pendingKeyId]);
+    await expect(store.load(ACCOUNT_ID, DEVICE_ID)).resolves.not.toBeNull();
+  });
+
+  it('finds the bound protected key for an account without exposing pending keys', async () => {
+    const store = createStore();
+    await store.create(ACCOUNT_ID, 'Pending replacement');
+    const pending = await store.create(ACCOUNT_ID, DEVICE_LABEL);
+    await store.bind(ACCOUNT_ID, pending.pendingKeyId, DEVICE_ID);
+
+    await expect(store.findForAccount(ACCOUNT_ID)).resolves.toMatchObject({
+      accountId: ACCOUNT_ID,
+      deviceId: DEVICE_ID,
+      label: DEVICE_LABEL,
+    });
+    await expect(store.findForAccount('different-account')).resolves.toBeNull();
+  });
+
   it('does not log private key material when protected data is corrupt', async () => {
     const { store } = await createBoundDevice();
     const privateKey = secureStorage.encryptedPlaintexts[0] as string;

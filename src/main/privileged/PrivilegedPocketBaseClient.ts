@@ -30,6 +30,15 @@ type PrivilegedAuthCollection = {
     password: string,
     options: { requestKey: null },
   ): Promise<PrivilegedAuthResponse>;
+  create<T = Record<string, unknown>>(
+    data: Record<string, unknown>,
+    options: { requestKey: null },
+  ): Promise<T>;
+  getOne<T = Record<string, unknown>>(id: string, options: { requestKey: null }): Promise<T>;
+  getFirstListItem<T = Record<string, unknown>>(
+    filter: string,
+    options: { requestKey: null },
+  ): Promise<T>;
 };
 
 export type PrivilegedPocketBaseClientAdapter = {
@@ -157,6 +166,55 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     return normalizeAccountRecord(this.client.authStore.record);
   }
 
+  async createRecord(
+    collection: string,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown> & { id: string }> {
+    this.assertAuthenticated();
+    try {
+      return (await this.client
+        .collection(collection)
+        .create(data, { requestKey: null })) as Record<string, unknown> & { id: string };
+    } catch (error) {
+      throw new PrivilegedAuthenticationError(
+        isOfflineError(error) ? 'offline' : 'invalid-credentials',
+      );
+    }
+  }
+
+  async getRecord(
+    collection: string,
+    id: string,
+  ): Promise<Record<string, unknown> & { id: string }> {
+    this.assertAuthenticated();
+    try {
+      return (await this.client.collection(collection).getOne(id, { requestKey: null })) as Record<
+        string,
+        unknown
+      > & { id: string };
+    } catch (error) {
+      throw new PrivilegedAuthenticationError(
+        isOfflineError(error) ? 'offline' : 'invalid-credentials',
+      );
+    }
+  }
+
+  async getFirstRecord(
+    collection: string,
+    filter: string,
+  ): Promise<Record<string, unknown> & { id: string }> {
+    this.assertAuthenticated();
+    try {
+      return (await this.client.collection(collection).getFirstListItem(filter, {
+        requestKey: null,
+      })) as Record<string, unknown> & { id: string };
+    } catch (error) {
+      throw new PrivilegedAuthenticationError(
+        isOfflineError(error) ? 'offline' : 'invalid-credentials',
+      );
+    }
+  }
+
   private async authenticateFresh(
     operatorId: string,
     password: string,
@@ -183,6 +241,12 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
 
   private buildClient(serverUrl: string): PrivilegedPocketBaseClientAdapter {
     return this.createClient(serverUrl, new BaseAuthStore());
+  }
+
+  private assertAuthenticated(): void {
+    if (!this.client.authStore.token || !this.getAccount()) {
+      throw new PrivilegedAuthenticationError('invalid-credentials');
+    }
   }
 
   private validateServerUrl(serverUrl: string, allowInsecureHttp: boolean): string {

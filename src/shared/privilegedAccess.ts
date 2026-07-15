@@ -2,6 +2,8 @@ export const RELAY_PRIVILEGED_ACCOUNTS_COLLECTION = 'relay_privileged_accounts';
 export const RELAY_PRIVILEGED_STATE_COLLECTION = 'relay_privileged_state';
 export const RELAY_PRIVILEGED_DEVICES_COLLECTION = 'relay_privileged_devices';
 export const RELAY_PRIVILEGED_COMMANDS_COLLECTION = 'relay_privileged_commands';
+export const RELAY_PRIVILEGED_PAIRING_CHALLENGES_COLLECTION = 'relay_privileged_pairing_challenges';
+export const RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION = 'relay_privileged_pairing_requests';
 
 export const PRIVILEGED_SESSION_IDLE_MS = 15 * 60 * 1_000;
 export const MAX_PRIVILEGED_DEVICE_LABEL_LENGTH = 80;
@@ -64,6 +66,7 @@ export type RelayPrivilegedDeviceRecord = {
   accountId: string;
   deviceId: string;
   hostnameSnapshot: string;
+  label: string;
   publicKey: string;
   fingerprint: string;
   state: PrivilegedDeviceState;

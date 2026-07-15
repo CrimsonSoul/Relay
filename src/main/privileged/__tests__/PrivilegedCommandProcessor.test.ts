@@ -101,6 +101,7 @@ describe('PrivilegedCommandProcessor', () => {
       accountId: ACCOUNT_ID,
       deviceId: DEVICE_ID,
       hostnameSnapshot: 'RYAN-WORK-LAPTOP',
+      label: 'Ryan work laptop',
       publicKey: JSON.stringify(publicJwk),
       fingerprint: sha256(spki),
       state: 'active',

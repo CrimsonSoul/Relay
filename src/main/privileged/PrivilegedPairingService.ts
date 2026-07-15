@@ -58,6 +58,7 @@ export type PairingDeviceActivation = {
   accountId: string;
   deviceId: string;
   hostnameSnapshot: string;
+  label: string;
   publicKey: string;
   fingerprint: string;
   state: 'active';
@@ -373,6 +374,7 @@ export class PrivilegedPairingService {
         accountId: record.accountId,
         deviceId,
         hostnameSnapshot: device.hostname,
+        label: device.deviceLabel,
         publicKey: device.publicKey,
         fingerprint: device.fingerprint,
         state: 'active',

@@ -54,8 +54,10 @@ export type LoadedDeviceKey = {
 export interface PrivilegedDeviceKeyStore {
   create(accountId: string, label: string): Promise<PendingDeviceKey>;
   load(accountId: string, deviceId: string): Promise<LoadedDeviceKey | null>;
+  findForAccount(accountId: string): Promise<LoadedDeviceKey | null>;
   bind(accountId: string, pendingKeyId: string, deviceId: string): Promise<void>;
   remove(accountId: string, deviceId: string): Promise<void>;
+  removePending(accountId: string, pendingKeyId: string): Promise<void>;
   sign(accountId: string, deviceId: string, bytes: Uint8Array): Promise<string>;
 }
 
@@ -257,6 +259,28 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
     }
   }
 
+  async findForAccount(accountId: string): Promise<LoadedDeviceKey | null> {
+    const normalizedAccountId = normalizedBoundedInput(
+      accountId,
+      'Account ID',
+      MAX_ACCOUNT_ID_LENGTH,
+    );
+    await this.writeQueue;
+    try {
+      this.assertSecureStorage();
+      const registry = await this.readRegistry();
+      const key = registry.keys.find(
+        (candidate) => candidate.accountId === normalizedAccountId && candidate.deviceId !== null,
+      );
+      if (!key) return null;
+      this.decryptAndValidatePrivateKey(key);
+      return publicView(key);
+    } catch {
+      this.warnUnavailable(normalizedAccountId);
+      return null;
+    }
+  }
+
   bind(accountId: string, pendingKeyId: string, deviceId: string): Promise<void> {
     const normalizedAccountId = normalizedBoundedInput(
       accountId,
@@ -302,6 +326,32 @@ export class PrivilegedDeviceStore implements PrivilegedDeviceKeyStore {
       const registry = await this.readRegistry();
       const keys = registry.keys.filter(
         (key) => !(key.accountId === normalizedAccountId && key.deviceId === normalizedDeviceId),
+      );
+      if (keys.length !== registry.keys.length) await this.writeRegistry({ ...registry, keys });
+    });
+  }
+
+  removePending(accountId: string, pendingKeyId: string): Promise<void> {
+    const normalizedAccountId = normalizedBoundedInput(
+      accountId,
+      'Account ID',
+      MAX_ACCOUNT_ID_LENGTH,
+    );
+    const normalizedPendingKeyId = normalizedBoundedInput(
+      pendingKeyId,
+      'Pending key ID',
+      MAX_DEVICE_ID_LENGTH,
+    );
+
+    return this.enqueueWrite(async () => {
+      const registry = await this.readRegistry();
+      const keys = registry.keys.filter(
+        (key) =>
+          !(
+            key.accountId === normalizedAccountId &&
+            key.pendingKeyId === normalizedPendingKeyId &&
+            key.deviceId === null
+          ),
       );
       if (keys.length !== registry.keys.length) await this.writeRegistry({ ...registry, keys });
     });

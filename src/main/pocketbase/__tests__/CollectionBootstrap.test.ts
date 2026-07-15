@@ -158,7 +158,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(24);
+    expect(mockCreate).toHaveBeenCalledTimes(26);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -179,6 +179,8 @@ describe('ensureCollections', () => {
       'relay_privileged_state',
       'relay_privileged_devices',
       'relay_privileged_commands',
+      'relay_privileged_pairing_challenges',
+      'relay_privileged_pairing_requests',
     ]) {
       expect(
         mockCreate.mock.calls.some(
@@ -315,12 +317,16 @@ describe('ensureCollections', () => {
     expect(commands?.createRule).toContain('operatorId = @request.auth.operatorId');
     expect(commands?.createRule).toContain('deviceId != ""');
     expect(commands?.createRule).toContain('signature != ""');
+    expect(commands?.createRule).toContain('@collection.relay_privileged_devices.accountId');
+    expect(commands?.createRule).toContain('@collection.relay_privileged_devices.deviceId');
+    expect(commands?.createRule).toContain('@collection.relay_privileged_devices.state');
     expect(commands).toMatchObject({ updateRule: null, deleteRule: null });
     expect(commands?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'requestId', type: 'text', required: true, max: 128 }),
         expect.objectContaining({ name: 'deviceId', type: 'text', required: false }),
         expect.objectContaining({ name: 'payload', type: 'json', required: true }),
+        expect.objectContaining({ name: 'hasExpectedRevision', type: 'bool' }),
         expect.objectContaining({ name: 'bodyHash', type: 'text', required: true, max: 64 }),
         expect.objectContaining({ name: 'signature', type: 'text', required: false }),
         expect.objectContaining({ name: 'proofConsumedAt', type: 'date' }),
@@ -333,6 +339,40 @@ describe('ensureCollections', () => {
     );
     expect(commands?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_relay_privileged_commands_request_id ON relay_privileged_commands (requestId)',
+    );
+  });
+
+  it('keeps challenge secrets server-hidden and scopes one-time pairing requests to the account', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockCreate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const challenges = mockCreate.mock.calls.find(
+      ([value]) => (value as { name: string }).name === 'relay_privileged_pairing_challenges',
+    )?.[0] as Record<string, unknown> | undefined;
+    const requests = mockCreate.mock.calls.find(
+      ([value]) => (value as { name: string }).name === 'relay_privileged_pairing_requests',
+    )?.[0] as (Record<string, unknown> & { fields: Array<Record<string, unknown>> }) | undefined;
+
+    expect(challenges).toMatchObject({
+      listRule: null,
+      viewRule: null,
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(requests?.listRule).toContain('accountId = @request.auth.id');
+    expect(requests?.createRule).toContain('operatorId = @request.auth.operatorId');
+    expect(requests?.createRule).toContain('state = "pending"');
+    expect(requests).toMatchObject({ updateRule: null, deleteRule: null });
+    expect(requests?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'challengeId', required: true }),
+        expect.objectContaining({ name: 'code', required: true, max: 8 }),
+        expect.objectContaining({ name: 'publicKey', type: 'json', required: true }),
+        expect.objectContaining({ name: 'result', type: 'json' }),
+      ]),
     );
   });
 

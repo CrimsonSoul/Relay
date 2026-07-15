@@ -5,6 +5,12 @@ import type {
   DynatraceProblemsTestResult,
 } from './dynatraceProblems';
 import type { RelayOperatorRecord } from './operators';
+import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
+import type {
+  PrivilegedCommandResult,
+  PrivilegedCommandPayloadMap,
+  PublicPrivilegedCommandName,
+} from './privilegedCommands';
 import type {
   KnowledgeIndexStatus,
   KnowledgeOpenWebLinkResult,
@@ -64,6 +70,41 @@ export type IpcResult<T = void> = {
   data?: T;
   error?: string;
   rateLimited?: boolean;
+};
+
+export type PrivilegedIpcError =
+  | 'invalid-input'
+  | 'invalid-credentials'
+  | 'unauthorized'
+  | 'locked'
+  | 'offline'
+  | 'pairing-required'
+  | 'conflict'
+  | 'server-error';
+
+export type PrivilegedIpcResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: PrivilegedIpcError };
+
+export type PrivilegedLoginInput = { operatorId: string; password: string };
+export type PrivilegedReauthenticationInput = { password: string };
+export type PrivilegedReauthenticationProof = { proofId: string; expiresAt: string };
+export type PrivilegedPairingCompletionInput = {
+  challengeId: string;
+  code: string;
+  deviceLabel: string;
+};
+export type PrivilegedPairingCompletionView = {
+  deviceId: string;
+  fingerprint: string;
+  pairedAt: string;
+};
+export type PublicPrivilegedCommandRequest<
+  K extends PublicPrivilegedCommandName = PublicPrivilegedCommandName,
+> = {
+  command: K;
+  payload: PrivilegedCommandPayloadMap[K];
+  expectedRevision: number | null;
 };
 
 export type RelayOperatorCreateInput = { displayName: string };
@@ -384,6 +425,26 @@ export type BridgeAPI = {
   setRelayOperatorActive: (
     input: RelayOperatorActiveInput,
   ) => Promise<IpcResult<RelayOperatorRecord>>;
+  // Privileged access — public session metadata only; secrets remain in main.
+  getPrivilegedSession: () => Promise<PrivilegedSessionView>;
+  loginPrivileged: (
+    input: PrivilegedLoginInput,
+  ) => Promise<PrivilegedIpcResult<PrivilegedSessionView>>;
+  logoutPrivileged: () => Promise<PrivilegedSessionView>;
+  lockPrivileged: () => Promise<PrivilegedSessionView>;
+  reauthenticatePrivileged: (
+    input: PrivilegedReauthenticationInput,
+  ) => Promise<PrivilegedIpcResult<PrivilegedReauthenticationProof>>;
+  createPrivilegedPairingChallenge: () => Promise<
+    PrivilegedIpcResult<PrivilegedPairingChallengeView>
+  >;
+  completePrivilegedPairing: (
+    input: PrivilegedPairingCompletionInput,
+  ) => Promise<PrivilegedIpcResult<PrivilegedPairingCompletionView>>;
+  submitPrivilegedCommand: (
+    input: PublicPrivilegedCommandRequest,
+  ) => Promise<PrivilegedCommandResult>;
+  onPrivilegedSessionChanged: (callback: (view: PrivilegedSessionView) => void) => () => void;
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
@@ -522,6 +583,16 @@ export const IPC_CHANNELS = {
   RELAY_OPERATOR_CREATE: 'relayOperator:create',
   RELAY_OPERATOR_RENAME: 'relayOperator:rename',
   RELAY_OPERATOR_SET_ACTIVE: 'relayOperator:setActive',
+  // Privileged access
+  PRIVILEGED_GET_SESSION: 'privileged:getSession',
+  PRIVILEGED_LOGIN: 'privileged:login',
+  PRIVILEGED_LOGOUT: 'privileged:logout',
+  PRIVILEGED_LOCK: 'privileged:lock',
+  PRIVILEGED_REAUTHENTICATE: 'privileged:reauthenticate',
+  PRIVILEGED_CREATE_PAIRING_CHALLENGE: 'privileged:createPairingChallenge',
+  PRIVILEGED_COMPLETE_PAIRING: 'privileged:completePairing',
+  PRIVILEGED_SUBMIT_COMMAND: 'privileged:submitCommand',
+  PRIVILEGED_SESSION_CHANGED: 'privileged:sessionChanged',
   // Clipboard
   CLIPBOARD_WRITE: 'clipboard:write',
   OPTIMIZE_ALERT_IMAGE: 'alert:optimizeImage',

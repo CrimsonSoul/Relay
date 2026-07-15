@@ -42,4 +42,64 @@ describe('preload Knowledge web link bridge', () => {
     await expect(api.openKnowledgeWebLink(url)).resolves.toEqual({ ok: true });
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
   });
+
+  it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {
+    const login = { operatorId: 'operator-admin', password: 'Test-access-value-123!' };
+    const reauthentication = { password: 'Test-access-value-123!' };
+    const pairing = {
+      challengeId: 'challenge-1',
+      code: 'ABCD2345',
+      deviceLabel: 'Ryan work laptop',
+    };
+    const command = {
+      command: 'privileged.status.read' as const,
+      payload: { clientVersion: '1.0.0' },
+      expectedRevision: null,
+    };
+
+    await api.getPrivilegedSession();
+    await api.loginPrivileged(login);
+    await api.logoutPrivileged();
+    await api.lockPrivileged();
+    await api.reauthenticatePrivileged(reauthentication);
+    await api.createPrivilegedPairingChallenge();
+    await api.completePrivilegedPairing(pairing);
+    await api.submitPrivilegedCommand(command);
+
+    expect(electronMocks.invoke.mock.calls).toEqual(
+      expect.arrayContaining([
+        ['privileged:getSession'],
+        ['privileged:login', login],
+        ['privileged:logout'],
+        ['privileged:lock'],
+        ['privileged:reauthenticate', reauthentication],
+        ['privileged:createPairingChallenge'],
+        ['privileged:completePairing', pairing],
+        ['privileged:submitCommand', command],
+      ]),
+    );
+  });
+
+  it('subscribes and unsubscribes from public privileged session changes', () => {
+    const callback = vi.fn();
+    const unsubscribe = api.onPrivilegedSessionChanged(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'privileged:sessionChanged',
+    )?.[1] as (_event: unknown, view: unknown) => void;
+    const view = {
+      state: 'signed-out',
+      accountId: null,
+      operatorId: null,
+      operatorName: null,
+      role: null,
+      capabilities: [],
+      deviceId: null,
+      expiresAt: null,
+    };
+
+    handler({}, view);
+    expect(callback).toHaveBeenCalledWith(view);
+    unsubscribe();
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('privileged:sessionChanged', handler);
+  });
 });

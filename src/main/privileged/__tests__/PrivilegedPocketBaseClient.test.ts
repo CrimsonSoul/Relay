@@ -30,6 +30,9 @@ describe('PrivilegedPocketBaseClient', () => {
   let authStores: BaseAuthStore[];
   let adapters: PrivilegedPocketBaseClientAdapter[];
   let authWithPassword: ReturnType<typeof vi.fn>;
+  let createRecord: ReturnType<typeof vi.fn>;
+  let getOne: ReturnType<typeof vi.fn>;
+  let getFirstListItem: ReturnType<typeof vi.fn>;
   let createClient: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -41,13 +44,21 @@ describe('PrivilegedPocketBaseClient', () => {
       authStore.save(RAW_TOKEN, record);
       return { token: RAW_TOKEN, record };
     });
+    createRecord = vi.fn(async (data) => ({ id: 'created-record', ...data }));
+    getOne = vi.fn(async (id) => ({ id, value: 'safe' }));
+    getFirstListItem = vi.fn(async () => ({ id: 'first-record', value: 'safe' }));
     createClient = vi.fn((serverUrl: string, authStore: BaseAuthStore) => {
       authStores.push(authStore);
       const adapter: PrivilegedPocketBaseClientAdapter = {
         baseURL: serverUrl,
         authStore,
         cancelAllRequests: vi.fn(),
-        collection: vi.fn(() => ({ authWithPassword })),
+        collection: vi.fn(() => ({
+          authWithPassword,
+          create: createRecord,
+          getOne,
+          getFirstListItem,
+        })),
       };
       adapters.push(adapter);
       return adapter;
@@ -165,5 +176,29 @@ describe('PrivilegedPocketBaseClient', () => {
         }),
     ).toThrow('Invalid Relay server URL');
     expect(createClient).not.toHaveBeenCalled();
+  });
+
+  it('keeps authenticated record transport in main and rejects it after logout', async () => {
+    const client = createPrivilegedClient();
+    await expect(client.getRecord('relay_privileged_commands', 'record-1')).rejects.toMatchObject({
+      code: 'invalid-credentials',
+    });
+
+    await client.authenticate(OPERATOR_ID, PASSWORD);
+    await expect(
+      client.createRecord('relay_privileged_commands', { state: 'pending' }),
+    ).resolves.toMatchObject({ id: 'created-record', state: 'pending' });
+    await expect(client.getRecord('relay_privileged_commands', 'record-1')).resolves.toEqual({
+      id: 'record-1',
+      value: 'safe',
+    });
+    await expect(
+      client.getFirstRecord('relay_privileged_state', 'key="primary"'),
+    ).resolves.toMatchObject({ id: 'first-record' });
+
+    client.clear();
+    await expect(client.getRecord('relay_privileged_commands', 'record-1')).rejects.toMatchObject({
+      code: 'invalid-credentials',
+    });
   });
 });

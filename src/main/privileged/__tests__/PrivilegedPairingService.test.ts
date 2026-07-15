@@ -170,6 +170,7 @@ describe('PrivilegedPairingService', () => {
       deviceId: 'generated-id-2',
       fingerprint: input.fingerprint,
       hostnameSnapshot: 'RYAN-WORK-LAPTOP',
+      label: 'Ryan work laptop',
       publicKey: JSON.stringify(input.publicJwk),
       state: 'active',
     });

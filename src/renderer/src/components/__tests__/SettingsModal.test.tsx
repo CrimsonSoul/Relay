@@ -53,6 +53,10 @@ vi.mock('../../contexts/OperatorContext', () => ({
   }),
 }));
 
+vi.mock('../settings/PrivilegedAccessPanel', () => ({
+  PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
+}));
+
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),
@@ -118,6 +122,16 @@ describe('SettingsModal', () => {
       'aria-selected',
       'false',
     );
+  });
+
+  it('offers Access as a peer Settings page section', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    expect(screen.getByRole('tab', { name: 'Access' })).toHaveAttribute('aria-selected', 'false');
+    fireEvent.click(screen.getByRole('tab', { name: 'Access' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Access' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Privileged access' })).toBeVisible();
   });
 
   it('routes the Operators tab to the full roster section', async () => {
