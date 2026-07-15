@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RateLimiter, rateLimiters } from '../main/rateLimiter';
+import { RateLimiter, createPrivilegedRateLimiters, rateLimiters } from '../main/rateLimiter';
 
 // Mock logger to prevent console noise during tests
 vi.mock('./logger', () => ({
@@ -159,5 +159,48 @@ describe('rateLimiters', () => {
 
     // Next request should be blocked
     expect(dataMutation.tryConsume(1).allowed).toBe(false);
+  });
+});
+
+describe('privileged rate limiters', () => {
+  it('allows five login attempts per account and device per 15 minutes', () => {
+    const { login } = createPrivilegedRateLimiters();
+    const key = 'account-admin:device-work-laptop';
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(login.tryConsume(key).allowed).toBe(true);
+    }
+    expect(login.tryConsume(key).allowed).toBe(false);
+    expect(login.tryConsume('different-account:device-work-laptop').allowed).toBe(true);
+
+    vi.advanceTimersByTime(15 * 60 * 1_000);
+    expect(login.tryConsume(key).allowed).toBe(true);
+  });
+
+  it('allows five verification attempts per pairing challenge per 10 minutes', () => {
+    const { pairingVerification } = createPrivilegedRateLimiters();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect(pairingVerification.tryConsume('challenge-1').allowed).toBe(true);
+    }
+    expect(pairingVerification.tryConsume('challenge-1').allowed).toBe(false);
+    expect(pairingVerification.tryConsume('challenge-2').allowed).toBe(true);
+
+    vi.advanceTimersByTime(10 * 60 * 1_000);
+    expect(pairingVerification.tryConsume('challenge-1').allowed).toBe(true);
+  });
+
+  it('sustains 60 signed commands per minute with a burst capacity of 10 per device', () => {
+    const { signedCommand } = createPrivilegedRateLimiters();
+
+    for (let command = 0; command < 10; command += 1) {
+      expect(signedCommand.tryConsume('device-1').allowed).toBe(true);
+    }
+    expect(signedCommand.tryConsume('device-1').allowed).toBe(false);
+    expect(signedCommand.tryConsume('device-2').allowed).toBe(true);
+
+    vi.advanceTimersByTime(1_000);
+    expect(signedCommand.tryConsume('device-1').allowed).toBe(true);
+    expect(signedCommand.tryConsume('device-1').allowed).toBe(false);
   });
 });

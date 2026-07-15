@@ -30,6 +30,11 @@ interface RateLimitResult {
   retryAfterMs?: number;
 }
 
+interface KeyedRateLimiterConfig extends RateLimiterConfig {
+  idleTtlMs: number;
+  maxKeys?: number;
+}
+
 export class RateLimiter {
   private tokens: number;
   private lastRefill: number;
@@ -84,6 +89,91 @@ export class RateLimiter {
     return this.tokens;
   }
 }
+
+/**
+ * Isolates token buckets by an opaque caller key without ever logging that key.
+ * Old buckets are pruned so untrusted identifiers cannot grow memory forever.
+ */
+export class KeyedRateLimiter {
+  private readonly buckets = new Map<string, { limiter: RateLimiter; lastUsedAt: number }>();
+  private readonly maxKeys: number;
+
+  constructor(private readonly config: KeyedRateLimiterConfig) {
+    this.maxKeys = config.maxKeys ?? 10_000;
+  }
+
+  tryConsume(key: string, cost = 1): RateLimitResult {
+    const now = Date.now();
+    this.prune(now);
+    let bucket = this.buckets.get(key);
+    if (!bucket) {
+      this.evictOldestIfFull();
+      bucket = {
+        limiter: new RateLimiter({
+          maxTokens: this.config.maxTokens,
+          refillRate: this.config.refillRate,
+          name: this.config.name,
+        }),
+        lastUsedAt: now,
+      };
+      this.buckets.set(key, bucket);
+    }
+    bucket.lastUsedAt = now;
+    return bucket.limiter.tryConsume(cost);
+  }
+
+  clear(key?: string): void {
+    if (key === undefined) {
+      this.buckets.clear();
+      return;
+    }
+    this.buckets.delete(key);
+  }
+
+  private prune(now: number): void {
+    for (const [key, bucket] of this.buckets) {
+      if (now - bucket.lastUsedAt >= this.config.idleTtlMs) this.buckets.delete(key);
+    }
+  }
+
+  private evictOldestIfFull(): void {
+    if (this.buckets.size < this.maxKeys) return;
+    let oldestKey: string | null = null;
+    let oldestTime = Number.POSITIVE_INFINITY;
+    for (const [key, bucket] of this.buckets) {
+      if (bucket.lastUsedAt < oldestTime) {
+        oldestKey = key;
+        oldestTime = bucket.lastUsedAt;
+      }
+    }
+    if (oldestKey !== null) this.buckets.delete(oldestKey);
+  }
+}
+
+export function createPrivilegedRateLimiters() {
+  return {
+    login: new KeyedRateLimiter({
+      maxTokens: 5,
+      refillRate: 5 / (15 * 60),
+      idleTtlMs: 30 * 60 * 1_000,
+      name: 'PrivilegedLogin',
+    }),
+    pairingVerification: new KeyedRateLimiter({
+      maxTokens: 5,
+      refillRate: 5 / (10 * 60),
+      idleTtlMs: 20 * 60 * 1_000,
+      name: 'PrivilegedPairingVerification',
+    }),
+    signedCommand: new KeyedRateLimiter({
+      maxTokens: 10,
+      refillRate: 1,
+      idleTtlMs: 5 * 60 * 1_000,
+      name: 'PrivilegedSignedCommand',
+    }),
+  };
+}
+
+export const privilegedRateLimiters = createPrivilegedRateLimiters();
 
 // Pre-configured rate limiters for different operation types
 export const rateLimiters = {
