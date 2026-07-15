@@ -20,6 +20,7 @@ const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
 const mockSetupRelayOperatorHandlers = vi.fn();
+const mockSetupKnowledgeHandlers = vi.fn();
 
 vi.mock('../handlers/cloudStatus', () => ({
   setupCloudStatusHandlers: (...args: unknown[]) => mockSetupCloudStatusHandlers(...args),
@@ -38,6 +39,9 @@ vi.mock('../handlers/backupHandlers', () => ({
 }));
 vi.mock('../handlers/relayOperatorHandlers', () => ({
   setupRelayOperatorHandlers: (...args: unknown[]) => mockSetupRelayOperatorHandlers(...args),
+}));
+vi.mock('../handlers/knowledgeHandlers', () => ({
+  setupKnowledgeHandlers: (...args: unknown[]) => mockSetupKnowledgeHandlers(...args),
 }));
 
 import { loggers } from '../logger';
@@ -64,6 +68,19 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
     expect(mockSetupRelayOperatorHandlers).toHaveBeenCalled();
+    expect(mockSetupKnowledgeHandlers).toHaveBeenCalled();
+  });
+
+  it('passes live knowledge service getters to knowledge handlers', () => {
+    const getKnowledgePdfService = vi.fn();
+    const getKnowledgeBaseManager = vi.fn();
+
+    setupIpcHandlers(makeOpts({ getKnowledgePdfService, getKnowledgeBaseManager }));
+
+    expect(mockSetupKnowledgeHandlers).toHaveBeenCalledWith(
+      getKnowledgePdfService,
+      getKnowledgeBaseManager,
+    );
   });
 
   it('passes getMainWindow, createAuxWindow, getDataRoot to window handlers', () => {

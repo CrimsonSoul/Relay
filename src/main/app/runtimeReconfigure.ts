@@ -19,6 +19,11 @@ import {
 import { initializeClientOfflineInfrastructure } from './clientOfflineInfrastructure';
 import { startPocketBase } from './pocketbaseBootstrap';
 import { stopAdvertising } from '../discovery/RelayDiscovery';
+import {
+  initializeKnowledgePdfService,
+  startKnowledgeBaseManager,
+  stopKnowledgeBaseManager,
+} from '../knowledge/knowledgeRuntime';
 
 function tryClose(db: { close(): void } | null, label: string): void {
   if (!db) return;
@@ -35,6 +40,8 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   dynatraceProblemsManager?.stop();
   const cloudStatusManager = getCloudStatusManager();
   cloudStatusManager?.stop();
+  await stopKnowledgeBaseManager();
+  initializeKnowledgePdfService(configDataDir);
 
   // Stop mDNS advertising; startPocketBase re-starts it for LAN-bound server mode.
   stopAdvertising();
@@ -60,6 +67,11 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
     if (!started) throw new Error('Failed to start PocketBase server.');
     dynatraceProblemsManager?.start();
     cloudStatusManager?.start();
+    try {
+      await startKnowledgeBaseManager(configDataDir);
+    } catch (error) {
+      loggers.main.warn('Could not start Knowledge Base index after reconfigure', { error });
+    }
   } else if (pbProcess) {
     await pbProcess.stop();
     setPbProcess(null);

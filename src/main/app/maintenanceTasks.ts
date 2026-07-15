@@ -8,7 +8,7 @@ interface GlobalWithGC {
  * Sets up periodic maintenance tasks. Returns a cleanup function
  * that should be called on app shutdown to clear the interval.
  */
-export function setupMaintenanceTasks(): () => void {
+export function setupMaintenanceTasks(runDailyCleanup?: () => void | Promise<void>): () => void {
   // Periodic maintenance task (runs every 24 hours)
   const intervalId = setInterval(
     () => {
@@ -29,6 +29,12 @@ export function setupMaintenanceTasks(): () => void {
         } catch (e) {
           loggers.main.warn('Failed to trigger manual GC', { error: e });
         }
+      }
+
+      if (runDailyCleanup) {
+        void Promise.resolve(runDailyCleanup()).catch((error) => {
+          loggers.main.warn('Daily cache cleanup failed', { error });
+        });
       }
     },
     24 * 60 * 60 * 1000,

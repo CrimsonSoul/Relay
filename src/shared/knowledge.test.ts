@@ -9,6 +9,7 @@ import {
   normalizeKnowledgeDocumentRecord,
   normalizeKnowledgeSearchText,
 } from './knowledge';
+import { IPC_CHANNELS } from './ipc';
 
 const validRecord = {
   id: 'record123',
@@ -37,6 +38,7 @@ describe('knowledge contracts', () => {
     expect(KNOWLEDGE_MAX_PDF_BYTES).toBe(50 * 1024 * 1024);
     expect(KNOWLEDGE_MAX_PAGES).toBe(1_000);
     expect(KNOWLEDGE_MAX_OUTLINE_NODES).toBe(500);
+    expect(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED).toBe('knowledge:indexStatusChanged');
   });
 
   it('normalizes a valid PocketBase record and discards unknown data', () => {

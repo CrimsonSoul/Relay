@@ -59,6 +59,10 @@ import {
   setPendingChanges,
   getSyncManager,
   setSyncManager,
+  getKnowledgeBaseManager,
+  setKnowledgeBaseManager,
+  getKnowledgePdfService,
+  setKnowledgePdfService,
   getDefaultDataPath,
   getDataRoot,
   resetDataRootCache,
@@ -85,10 +89,23 @@ beforeEach(() => {
   setOfflineCache(null);
   setPendingChanges(null);
   setSyncManager(null);
+  setKnowledgeBaseManager(null);
+  setKnowledgePdfService(null);
   resetDataRootCache();
 });
 
 describe('appState getters/setters', () => {
+  it('knowledge services getters/setters', () => {
+    const manager = { getStatus: vi.fn() } as never;
+    const pdfService = { getPdf: vi.fn() } as never;
+
+    setKnowledgeBaseManager(manager);
+    setKnowledgePdfService(pdfService);
+
+    expect(getKnowledgeBaseManager()).toBe(manager);
+    expect(getKnowledgePdfService()).toBe(pdfService);
+  });
+
   it('mainWindow getter/setter', () => {
     expect(getMainWindow()).toBeNull();
     const win = { webContents: {} } as never;
@@ -267,6 +284,19 @@ describe('setupIpc', () => {
     const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
     expect(options?.getPbClient).toEqual(expect.any(Function));
     expect(options?.getPbClient?.()).toBe(client);
+  });
+
+  it('passes live knowledge service getters to setupIpcHandlers', () => {
+    const manager = { getStatus: vi.fn() } as never;
+    const pdfService = { getPdf: vi.fn() } as never;
+    setKnowledgeBaseManager(manager);
+    setKnowledgePdfService(pdfService);
+
+    setupIpc();
+
+    const options = vi.mocked(setupIpcHandlers).mock.calls[0]?.[0];
+    expect(options?.getKnowledgeBaseManager?.()).toBe(manager);
+    expect(options?.getKnowledgePdfService?.()).toBe(pdfService);
   });
 });
 

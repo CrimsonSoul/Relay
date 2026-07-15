@@ -28,6 +28,7 @@ import {
   setDynatraceProblemsManager,
   getCloudStatusManager,
   setCloudStatusManager,
+  setKnowledgePdfService,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -48,6 +49,12 @@ import { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import { DynatraceProblemsConfigStore } from './dynatrace/DynatraceProblemsConfigStore';
 import { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import { CloudStatusManager } from './handlers/cloudStatus/CloudStatusManager';
+import {
+  cleanupKnowledgePdfCache,
+  initializeKnowledgePdfService,
+  startKnowledgeBaseManager,
+  stopKnowledgeBaseManager,
+} from './knowledge/knowledgeRuntime';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -139,6 +146,8 @@ if (gotLock) {
       stopMemoryHeartbeat = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
+      void stopKnowledgeBaseManager();
+      setKnowledgePdfService(null);
       // PocketBase cleanup — synchronous kill to ensure process dies before app exits
       if (getRetentionManager()) {
         getRetentionManager()!.stop();
@@ -180,12 +189,21 @@ if (gotLock) {
       // Initialize AppConfig — PocketBase data always lives in %APPDATA%/Relay/data,
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
+      initializeKnowledgePdfService(configDataDir);
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
       setDynatraceProblemsManager(
         new DynatraceProblemsManager(new DynatraceProblemsConfigStore(configDataDir), getPbClient),
       );
       setCloudStatusManager(new CloudStatusManager(getPbClient));
+
+      const startServerDataManagers = () => {
+        getDynatraceProblemsManager()?.start();
+        getCloudStatusManager()?.start();
+        void startKnowledgeBaseManager(configDataDir).catch((error) => {
+          loggers.main.warn('Could not start Knowledge Base index', { error });
+        });
+      };
 
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
@@ -215,8 +233,7 @@ if (gotLock) {
         if (config?.mode !== 'server') return false;
         const started = await startPocketBase(config, configDataDir);
         if (started) {
-          getDynatraceProblemsManager()?.start();
-          getCloudStatusManager()?.start();
+          startServerDataManagers();
         }
         return started;
       });
@@ -241,8 +258,7 @@ if (gotLock) {
         if (config?.mode !== 'server') return false;
         const started = await startPocketBase(config, configDataDir);
         if (started) {
-          getDynatraceProblemsManager()?.start();
-          getCloudStatusManager()?.start();
+          startServerDataManagers();
         }
         return started;
       };
@@ -258,8 +274,7 @@ if (gotLock) {
       if (relayConfig?.mode === 'server') {
         const started = await startPocketBase(relayConfig, configDataDir);
         if (started) {
-          getDynatraceProblemsManager()?.start();
-          getCloudStatusManager()?.start();
+          startServerDataManagers();
         }
       }
 
@@ -284,7 +299,7 @@ if (gotLock) {
       // loading/connecting states and doesn't need the offline cache to be ready.
       await createWindow();
       startPeriodicCleanup();
-      cleanupMaintenance = setupMaintenanceTasks();
+      cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
       stopMemoryHeartbeat = startMemoryHeartbeat();
 
       app.on('activate', () => {

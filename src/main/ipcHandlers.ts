@@ -9,6 +9,7 @@ import { setupBackupHandlers } from './handlers/backupHandlers';
 import { setupDynatraceHandlers } from './handlers/dynatraceHandlers';
 import { setupDynatraceProblemsHandlers } from './handlers/dynatraceProblemsHandlers';
 import { setupRelayOperatorHandlers } from './handlers/relayOperatorHandlers';
+import { setupKnowledgeHandlers } from './handlers/knowledgeHandlers';
 import type { AppConfig } from './config/AppConfig';
 import type { OfflineCache } from './cache/OfflineCache';
 import type { PendingChanges } from './cache/PendingChanges';
@@ -16,6 +17,8 @@ import type { SyncManager } from './cache/SyncManager';
 import type { BackupManager } from './pocketbase/BackupManager';
 import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
+import type { KnowledgeBaseManager } from './knowledge/KnowledgeBaseManager';
+import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
@@ -37,6 +40,8 @@ export function setupIpcHandlers(opts: {
   getDynatraceWindowManager?: () => DynatraceWindowManager | null;
   getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
   getPbClient?: () => PocketBase | null;
+  getKnowledgeBaseManager?: () => KnowledgeBaseManager | null;
+  getKnowledgePdfService?: () => KnowledgePdfService | null;
   restartPb?: () => Promise<boolean>;
 }) {
   const {
@@ -51,6 +56,8 @@ export function setupIpcHandlers(opts: {
     getDynatraceWindowManager,
     getDynatraceProblemsManager,
     getPbClient,
+    getKnowledgeBaseManager,
+    getKnowledgePdfService,
     restartPb,
   } = opts;
   const safeSetup = (name: string, fn: () => void) => {
@@ -81,6 +88,13 @@ export function setupIpcHandlers(opts: {
       getPbClient: getPbClient ?? (() => null),
       assertTrustedIpcSender,
     }),
+  );
+
+  safeSetup('knowledge', () =>
+    setupKnowledgeHandlers(
+      getKnowledgePdfService ?? (() => null),
+      getKnowledgeBaseManager ?? (() => null),
+    ),
   );
 
   // Window Management

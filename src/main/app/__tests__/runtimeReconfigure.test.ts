@@ -57,6 +57,9 @@ const mocks = vi.hoisted(() => ({
   OfflineCache: vi.fn(),
   PendingChanges: vi.fn(),
   SyncManager: vi.fn(),
+  initializeKnowledgePdfService: vi.fn(),
+  startKnowledgeBaseManager: vi.fn(),
+  stopKnowledgeBaseManager: vi.fn(),
 }));
 
 vi.mock('../appState', () => ({
@@ -95,6 +98,12 @@ vi.mock('../../cache/PendingChanges', () => ({
 
 vi.mock('../../cache/SyncManager', () => ({
   SyncManager: mocks.SyncManager,
+}));
+
+vi.mock('../../knowledge/knowledgeRuntime', () => ({
+  initializeKnowledgePdfService: mocks.initializeKnowledgePdfService,
+  startKnowledgeBaseManager: mocks.startKnowledgeBaseManager,
+  stopKnowledgeBaseManager: mocks.stopKnowledgeBaseManager,
 }));
 
 describe('reconfigureRuntime', () => {
@@ -166,7 +175,30 @@ describe('reconfigureRuntime', () => {
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.setPbProcess).toHaveBeenCalledWith(null);
     expect(mocks.startPocketBase).not.toHaveBeenCalled();
+    expect(mocks.stopKnowledgeBaseManager).toHaveBeenCalledOnce();
+    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
+    expect(mocks.startKnowledgeBaseManager).not.toHaveBeenCalled();
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
+  });
+
+  it('starts the knowledge index only after server PocketBase restarts', async () => {
+    mocks.appConfig.load.mockReturnValue({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'super-secret-passphrase',
+    });
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(mocks.stopKnowledgeBaseManager).toHaveBeenCalledOnce();
+    expect(mocks.startPocketBase).toHaveBeenCalledOnce();
+    expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
+    expect(mocks.startKnowledgeBaseManager).toHaveBeenCalledWith('/Users/test/RelayData/data');
+    expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.startKnowledgeBaseManager.mock.invocationCallOrder[0] as number,
+    );
   });
 
   it('rebuilds client-mode offline infrastructure during runtime reconfigure', async () => {

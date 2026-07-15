@@ -137,6 +137,12 @@ const api: BridgeAPI = {
   // Knowledge Base
   getKnowledgePdf: (request) => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_PDF, request),
   getKnowledgeIndexStatus: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS),
+  onKnowledgeIndexStatusChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: Parameters<typeof callback>[0]) =>
+      callback(status);
+    ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED, handler);
+  },
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase

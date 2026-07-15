@@ -440,6 +440,7 @@ export type BridgeAPI = {
   // Knowledge Base — metadata flows through PocketBase; PDF bytes stay behind this narrow bridge.
   getKnowledgePdf: (request: KnowledgePdfRequest) => Promise<KnowledgePdfResult>;
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
+  onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -557,6 +558,7 @@ export const IPC_CHANNELS = {
   // Knowledge Base
   KNOWLEDGE_GET_PDF: 'knowledge:getPdf',
   KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
+  KNOWLEDGE_INDEX_STATUS_CHANGED: 'knowledge:indexStatusChanged',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

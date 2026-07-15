@@ -17,6 +17,8 @@ import type { SyncManager } from '../cache/SyncManager';
 import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
+import type { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
+import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 
 export interface AppState {
   mainWindow: BrowserWindow | null;
@@ -33,6 +35,8 @@ export interface AppState {
   dynatraceWindowManager: DynatraceWindowManager | null;
   dynatraceProblemsManager: DynatraceProblemsManager | null;
   cloudStatusManager: CloudStatusManager | null;
+  knowledgeBaseManager: KnowledgeBaseManager | null;
+  knowledgePdfService: KnowledgePdfService | null;
 }
 
 const state: AppState = {
@@ -49,6 +53,8 @@ const state: AppState = {
   dynatraceWindowManager: null,
   dynatraceProblemsManager: null,
   cloudStatusManager: null,
+  knowledgeBaseManager: null,
+  knowledgePdfService: null,
 };
 
 const log = loggers.main;
@@ -92,6 +98,12 @@ export function getDynatraceProblemsManager() {
 }
 export function getCloudStatusManager() {
   return state.cloudStatusManager;
+}
+export function getKnowledgeBaseManager() {
+  return state.knowledgeBaseManager;
+}
+export function getKnowledgePdfService() {
+  return state.knowledgePdfService;
 }
 
 // --- Setters ---
@@ -146,6 +158,14 @@ export function setDynatraceProblemsManager(mgr: DynatraceProblemsManager | null
 export function setCloudStatusManager(mgr: CloudStatusManager | null) {
   log.debug('appState.cloudStatusManager changed');
   state.cloudStatusManager = mgr;
+}
+export function setKnowledgeBaseManager(manager: KnowledgeBaseManager | null) {
+  log.debug('appState.knowledgeBaseManager changed');
+  state.knowledgeBaseManager = manager;
+}
+export function setKnowledgePdfService(service: KnowledgePdfService | null) {
+  log.debug('appState.knowledgePdfService changed');
+  state.knowledgePdfService = service;
 }
 
 export const getDefaultDataPath = () => join(app.getPath('userData'), 'data');
@@ -225,6 +245,8 @@ export function setupIpc(
     getDynatraceWindowManager: () => state.dynatraceWindowManager,
     getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
     getPbClient: () => state.pbClient,
+    getKnowledgeBaseManager: () => state.knowledgeBaseManager,
+    getKnowledgePdfService: () => state.knowledgePdfService,
     restartPb,
   });
   setupAuthHandlers();
