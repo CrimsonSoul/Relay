@@ -5,6 +5,8 @@ import { buildKnowledgeLibrary, findKnowledgeDocument } from './knowledgeModel';
 import { useKnowledgeLibrary } from './useKnowledgeLibrary';
 import { KnowledgeTree } from './KnowledgeTree';
 import { KnowledgePdfViewer } from './KnowledgePdfViewer';
+import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
+import { resolveKnowledgeLink, type KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import {
   acknowledgeKnowledgeDocumentOpen,
   getPendingKnowledgeDocumentOpen,
@@ -45,7 +47,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   const [query, setQuery] = useState('');
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
-  const [target, setTarget] = useState<KnowledgeOutlineNode | null>(null);
+  const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
   const [indexStatus, setIndexStatus] = useState<KnowledgeIndexStatus | null>(null);
   const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
   const lastSelectedTitleRef = useRef<string | null>(null);
@@ -149,6 +151,24 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     },
     [selectedDocument],
   );
+
+  const resolveUrl = useCallback(
+    (url: string): KnowledgeResolvedLink =>
+      selectedDocument
+        ? resolveKnowledgeLink({ rawUrl: url, currentDocument: selectedDocument, documents })
+        : { kind: 'unavailable', reason: 'unsupported' },
+    [documents, selectedDocument],
+  );
+
+  const handleActivateResolvedLink = useCallback((_link: KnowledgeResolvedLink) => {
+    // Task 5 gives the tab ownership of cross-document, web, and blocked-link actions.
+    return undefined;
+  }, []);
+
+  const handleDestinationChange = useCallback((nextTarget: KnowledgeViewerTarget) => {
+    setActiveHeadingId(null);
+    setTarget(nextTarget);
+  }, []);
 
   if (loading && !hasLoadedSnapshot) {
     return (
@@ -290,6 +310,9 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
             active={active}
             target={target}
             currentSection={activeHeading?.label ?? null}
+            resolveUrl={resolveUrl}
+            onActivateResolvedLink={handleActivateResolvedLink}
+            onDestinationChange={handleDestinationChange}
             onPageChange={handlePageChange}
           />
         )}

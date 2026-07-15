@@ -9,14 +9,30 @@ vi.mock('../KnowledgePdfViewer', () => ({
   KnowledgePdfViewer: ({
     document,
     target,
+    resolveUrl,
+    onDestinationChange,
   }: {
     document: KnowledgeDocumentRecord;
-    target: { label: string } | null;
-  }) => (
-    <div>
-      Viewer: {document?.title ?? 'none'} {target ? `at ${target.label}` : ''}
-    </div>
-  ),
+    target: { label?: string; pageIndex: number; top: number | null } | null;
+    resolveUrl?: (url: string) => unknown;
+    onDestinationChange?: (target: { pageIndex: number; top: number | null }) => void;
+  }) => {
+    let targetLabel = '';
+    if (target) {
+      targetLabel = 'label' in target ? `at ${target.label}` : `at page ${target.pageIndex + 1}`;
+    }
+    return (
+      <div>
+        Viewer: {document?.title ?? 'none'} {targetLabel}
+        <span data-testid="viewer-resolution">
+          {resolveUrl ? JSON.stringify(resolveUrl('#page=2')) : 'resolver missing'}
+        </span>
+        <button type="button" onClick={() => onDestinationChange?.({ pageIndex: 2, top: null })}>
+          Follow native destination
+        </button>
+      </div>
+    );
+  },
 }));
 
 const useKnowledgeLibraryMock = vi.mocked(useKnowledgeLibrary);
@@ -94,6 +110,26 @@ describe('KnowledgeTab', () => {
     );
     expect(screen.getByText(/at Restart the lane service/)).toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
+  });
+
+  it('provides the viewer with pure URL resolution and accepts native destination targets', async () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('viewer-resolution')).toHaveTextContent(
+        JSON.stringify({ kind: 'same-document', pageIndex: 1 }),
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Follow native destination' }));
+    expect(screen.getByText(/Viewer: Operator guide at page 3/)).toBeInTheDocument();
   });
 
   it('explains where server operators should place PDF files when the library is empty', async () => {

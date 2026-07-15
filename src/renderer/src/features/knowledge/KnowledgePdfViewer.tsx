@@ -10,16 +10,43 @@ import {
   type RenderTask,
 } from 'pdfjs-dist/build/pdf.mjs';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
+import type { KnowledgeDocumentRecord } from '@shared/knowledge';
+import {
+  extractKnowledgeLinkItems,
+  KnowledgeLinkLayer,
+  type KnowledgeLinkItem,
+  type KnowledgePdfDestination,
+} from './KnowledgeLinkLayer';
+import type { KnowledgeResolvedLink } from './knowledgeLinkResolver';
+import {
+  resolveKnowledgePdfDestination,
+  type KnowledgeViewerTarget,
+} from './knowledgePdfDestination';
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 type Props = {
   document: KnowledgeDocumentRecord | null;
   active: boolean;
-  target: KnowledgeOutlineNode | null;
+  target: KnowledgeViewerTarget | null;
   currentSection?: string | null;
+  focusRequestKey?: number;
+  resolveUrl: (url: string) => KnowledgeResolvedLink;
+  onActivateResolvedLink: (link: KnowledgeResolvedLink) => void;
+  onDestinationChange: (target: KnowledgeViewerTarget) => void;
   onPageChange: (pageIndex: number) => void;
+};
+
+type KnowledgeLinkRender = {
+  pageIndex: number;
+  viewport: ReturnType<PDFPageProxy['getViewport']>;
+  items: KnowledgeLinkItem[];
+};
+
+type PendingFocusRequest = {
+  key: number | undefined;
+  documentId: string;
+  target: KnowledgeViewerTarget;
 };
 
 const MIN_SCALE = 0.6;
@@ -55,6 +82,10 @@ export function KnowledgePdfViewer({
   active,
   target,
   currentSection,
+  focusRequestKey,
+  resolveUrl,
+  onActivateResolvedLink,
+  onDestinationChange,
   onPageChange,
 }: Readonly<Props>) {
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -63,9 +94,17 @@ export function KnowledgePdfViewer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const [linkRender, setLinkRender] = useState<KnowledgeLinkRender | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const pdfIdentityRef = useRef<{
+    pdf: PDFDocumentProxy;
+    documentId: string;
+    checksum: string;
+  } | null>(null);
+  const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
+  const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
   const documentId = knowledgeDocument?.id;
   const documentChecksum = knowledgeDocument?.checksum;
 
@@ -79,6 +118,7 @@ export function KnowledgePdfViewer({
     let loadingTask: PDFDocumentLoadingTask | null = null;
     let loadedPdf: PDFDocumentProxy | null = null;
     let loadingTaskDestroyed = false;
+    pdfIdentityRef.current = null;
     setLoading(true);
     setError(null);
     setPageIndex(0);
@@ -108,6 +148,11 @@ export function KnowledgePdfViewer({
           if (!loadingTaskDestroyed) await loadedPdf.destroy();
           return;
         }
+        pdfIdentityRef.current = {
+          pdf: loadedPdf,
+          documentId,
+          checksum: documentChecksum,
+        };
         setPdf(loadedPdf);
       })
       .catch(() => {
@@ -135,7 +180,49 @@ export function KnowledgePdfViewer({
   }, [pdf, target]);
 
   useEffect(() => {
-    if (!pdf || !active) return;
+    const request = focusRequestRef.current;
+    if (!request.initialized) {
+      request.initialized = true;
+      request.value = focusRequestKey;
+      return;
+    }
+    if (request.value !== focusRequestKey) {
+      request.value = focusRequestKey;
+      pendingFocusRequestRef.current =
+        documentId && target
+          ? {
+              key: focusRequestKey,
+              documentId,
+              target: { pageIndex: target.pageIndex, top: target.top },
+            }
+          : undefined;
+      return;
+    }
+
+    const pendingRequest = pendingFocusRequestRef.current;
+    if (
+      pendingRequest &&
+      (pendingRequest.documentId !== documentId ||
+        !target ||
+        pendingRequest.target.pageIndex !== target.pageIndex ||
+        pendingRequest.target.top !== target.top)
+    ) {
+      pendingFocusRequestRef.current = undefined;
+    }
+  }, [documentId, focusRequestKey, target]);
+
+  useEffect(() => {
+    setLinkRender(null);
+    const pdfIdentity = pdfIdentityRef.current;
+    if (
+      !pdf ||
+      !active ||
+      pdfIdentity?.pdf !== pdf ||
+      pdfIdentity.documentId !== documentId ||
+      pdfIdentity.checksum !== documentChecksum
+    ) {
+      return;
+    }
     let disposed = false;
     let renderTask: RenderTask | null = null;
     let textLayer: TextLayer | null = null;
@@ -173,7 +260,11 @@ export function KnowledgePdfViewer({
           () => ({ error: null }),
           (renderError: unknown) => ({ error: renderError }),
         );
-        const textContent = await page.getTextContent();
+        const [textContent, annotations] = await Promise.all([
+          page.getTextContent(),
+          page.getAnnotations({ intent: 'display' }),
+        ]);
+        if (disposed) return;
         textLayer = new TextLayer({
           textContentSource: textContent,
           container: textContainer,
@@ -188,6 +279,25 @@ export function KnowledgePdfViewer({
           scrollViewer(viewportRef.current, { top: Math.max(0, y - 28), behavior: 'smooth' });
         } else {
           scrollViewer(viewportRef.current, { top: 0 });
+        }
+
+        setLinkRender({
+          pageIndex,
+          viewport,
+          items: extractKnowledgeLinkItems(annotations),
+        });
+
+        const pendingFocusRequest = pendingFocusRequestRef.current;
+        if (
+          pendingFocusRequest !== undefined &&
+          pendingFocusRequest.key === focusRequestKey &&
+          pendingFocusRequest.documentId === documentId &&
+          pendingFocusRequest.target.pageIndex === pageIndex &&
+          target?.pageIndex === pendingFocusRequest.target.pageIndex &&
+          target.top === pendingFocusRequest.target.top
+        ) {
+          viewportRef.current?.focus();
+          pendingFocusRequestRef.current = undefined;
         }
 
         const adjacentIndex = pageIndex + 1 < pdf.numPages ? pageIndex + 1 : pageIndex - 1;
@@ -218,7 +328,17 @@ export function KnowledgePdfViewer({
       renderedPage?.cleanup();
       adjacentPage?.cleanup();
     };
-  }, [active, pageIndex, pdf, scale, target]);
+  }, [active, documentChecksum, documentId, focusRequestKey, pageIndex, pdf, scale, target]);
+
+  const activateDestination = async (destination: KnowledgePdfDestination) => {
+    if (!pdf) return;
+    const nextTarget = await resolveKnowledgePdfDestination(pdf, destination);
+    if (nextTarget) {
+      onDestinationChange(nextTarget);
+      return;
+    }
+    onActivateResolvedLink({ kind: 'unavailable', reason: 'unsupported' });
+  };
 
   const moveToPage = (nextPage: number) => {
     if (!pdf) return;
@@ -303,7 +423,7 @@ export function KnowledgePdfViewer({
           </button>
         </div>
       </header>
-      <div className="knowledge-viewer__viewport" ref={viewportRef}>
+      <div className="knowledge-viewer__viewport" ref={viewportRef} tabIndex={-1}>
         {loading && <div className="knowledge-viewer__loading">Preparing document…</div>}
         {error && (
           <div className="knowledge-viewer-state knowledge-viewer-state--error" role="status">
@@ -319,6 +439,15 @@ export function KnowledgePdfViewer({
           <div className="knowledge-page" hidden={!pdf}>
             <canvas ref={canvasRef} aria-label={`Page ${pageIndex + 1}`} />
             <div ref={textLayerRef} className="knowledge-page__text-layer textLayer" />
+            {linkRender?.pageIndex === pageIndex && (
+              <KnowledgeLinkLayer
+                items={linkRender.items}
+                viewport={linkRender.viewport}
+                resolveUrl={resolveUrl}
+                onActivateResolvedLink={onActivateResolvedLink}
+                onActivateDestination={(destination) => void activateDestination(destination)}
+              />
+            )}
           </div>
         )}
       </div>
