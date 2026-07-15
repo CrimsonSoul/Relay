@@ -104,6 +104,77 @@ export type PrivilegedPairingChallengeView = {
   expiresAt: string;
 };
 
+export const RELAY_ADMINISTRABLE_SETTINGS = [
+  'dynatrace.environment-url',
+  'dynatrace.platform-token',
+  'dynatrace.alerting-profiles',
+] as const;
+
+export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[number];
+
+export type RelayAdministrationSettingValueMap = {
+  'dynatrace.environment-url': { environmentUrl: string };
+  'dynatrace.platform-token': { apiToken: string };
+  'dynatrace.alerting-profiles': { profiles: string[] };
+};
+
+export type RelayOperatorAdminView = {
+  id: string;
+  displayName: string;
+  active: boolean;
+  revision: number;
+  role: PrivilegedRole | null;
+  created: string;
+  updated: string;
+};
+
+export type RelayPrivilegedAccountAdminView = {
+  accountId: string;
+  operatorId: string;
+  role: PrivilegedRole;
+  active: boolean;
+  credentialState: 'configured' | 'not-configured';
+  mustChangePassword: boolean;
+  credentialVersion: number;
+  updatedAt: string;
+};
+
+export type RelayPrivilegedDeviceAdminView = {
+  id: string;
+  deviceId: string;
+  accountId: string;
+  operatorId: string;
+  operatorName: string;
+  label: string;
+  hostname: string;
+  state: PrivilegedDeviceState;
+  lastSeenAt: string | null;
+  fingerprintSuffix: string;
+  revision: number;
+};
+
+export type RelayAdministrationSettingSummary = {
+  setting: RelayAdministrableSetting;
+  configured: boolean;
+  summary: 'Configured' | 'Not configured';
+  revision: number;
+};
+
+export type RelayAdministrationSnapshot = {
+  operators: RelayOperatorAdminView[];
+  privilegedAccounts: RelayPrivilegedAccountAdminView[];
+  devices: RelayPrivilegedDeviceAdminView[];
+  settings: RelayAdministrationSettingSummary[];
+  adminOperatorId: string;
+  publisherOperatorId: string | null;
+  assignmentRevision: number;
+  generatedAt: string;
+};
+
+const MAX_ADMINISTRATION_OPERATORS = 500;
+const MAX_ADMINISTRATION_ACCOUNTS = 10;
+const MAX_ADMINISTRATION_DEVICES = 500;
+
 const CAPABILITY_SET = new Set<PrivilegedCapability>(ADMIN_PRIVILEGED_CAPABILITIES);
 const SESSION_STATES = new Set<PrivilegedSessionState>([
   'signed-out',
@@ -119,6 +190,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nullableBoundedString(value: unknown, max: number): value is string | null {
   return value === null || (typeof value === 'string' && value.length > 0 && value.length <= max);
+}
+
+function boundedString(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 100) return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+export function isRelayAdministrableSetting(value: unknown): value is RelayAdministrableSetting {
+  return (
+    typeof value === 'string' && (RELAY_ADMINISTRABLE_SETTINGS as readonly string[]).includes(value)
+  );
 }
 
 export function isPrivilegedRole(value: unknown): value is PrivilegedRole {
@@ -191,5 +282,213 @@ export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessio
     capabilities: normalizedCapabilities,
     deviceId,
     expiresAt,
+  };
+}
+
+function normalizeOperatorAdminView(value: unknown): RelayOperatorAdminView | null {
+  if (!isRecord(value)) return null;
+  const { id, displayName, active, revision, role, created, updated } = value;
+  if (
+    !boundedString(id, 200) ||
+    !boundedString(displayName, 120) ||
+    typeof active !== 'boolean' ||
+    !nonNegativeInteger(revision) ||
+    (role !== null && !isPrivilegedRole(role)) ||
+    !canonicalTimestamp(created) ||
+    !canonicalTimestamp(updated)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    displayName,
+    active,
+    revision,
+    role: role as PrivilegedRole | null,
+    created,
+    updated,
+  };
+}
+
+function normalizePrivilegedAccountAdminView(
+  value: unknown,
+): RelayPrivilegedAccountAdminView | null {
+  if (!isRecord(value)) return null;
+  const {
+    accountId,
+    operatorId,
+    role,
+    active,
+    credentialState,
+    mustChangePassword,
+    credentialVersion,
+    updatedAt,
+  } = value;
+  if (
+    !boundedString(accountId, 200) ||
+    !boundedString(operatorId, 200) ||
+    !isPrivilegedRole(role) ||
+    typeof active !== 'boolean' ||
+    (credentialState !== 'configured' && credentialState !== 'not-configured') ||
+    typeof mustChangePassword !== 'boolean' ||
+    !nonNegativeInteger(credentialVersion) ||
+    !canonicalTimestamp(updatedAt)
+  ) {
+    return null;
+  }
+  return {
+    accountId,
+    operatorId,
+    role,
+    active,
+    credentialState,
+    mustChangePassword,
+    credentialVersion,
+    updatedAt,
+  };
+}
+
+function normalizePrivilegedDeviceAdminView(value: unknown): RelayPrivilegedDeviceAdminView | null {
+  if (!isRecord(value)) return null;
+  const {
+    id,
+    deviceId,
+    accountId,
+    operatorId,
+    operatorName,
+    label,
+    hostname,
+    state,
+    lastSeenAt,
+    fingerprintSuffix,
+    revision,
+  } = value;
+  if (
+    !boundedString(id, 200) ||
+    !boundedString(deviceId, 200) ||
+    !boundedString(accountId, 200) ||
+    !boundedString(operatorId, 200) ||
+    !boundedString(operatorName, 120) ||
+    !boundedString(label, MAX_PRIVILEGED_DEVICE_LABEL_LENGTH) ||
+    !boundedString(hostname, MAX_PRIVILEGED_HOSTNAME_LENGTH) ||
+    (state !== 'active' && state !== 'revoked') ||
+    !nullableBoundedString(lastSeenAt, 100) ||
+    (lastSeenAt !== null && !canonicalTimestamp(lastSeenAt)) ||
+    !boundedString(fingerprintSuffix, 16) ||
+    !/^[A-Fa-f0-9]+$/.test(fingerprintSuffix) ||
+    !nonNegativeInteger(revision)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    deviceId,
+    accountId,
+    operatorId,
+    operatorName,
+    label,
+    hostname,
+    state,
+    lastSeenAt,
+    fingerprintSuffix,
+    revision,
+  };
+}
+
+function normalizeAdministrationSettingSummary(
+  value: unknown,
+): RelayAdministrationSettingSummary | null {
+  if (!isRecord(value)) return null;
+  const { setting, configured, summary, revision } = value;
+  if (
+    !isRelayAdministrableSetting(setting) ||
+    typeof configured !== 'boolean' ||
+    summary !== (configured ? 'Configured' : 'Not configured') ||
+    !nonNegativeInteger(revision)
+  ) {
+    return null;
+  }
+  return { setting, configured, summary, revision };
+}
+
+function normalizeBoundedList<T>(
+  value: unknown,
+  max: number,
+  normalize: (entry: unknown) => T | null,
+): T[] | null {
+  if (!Array.isArray(value) || value.length > max) return null;
+  const normalized: T[] = [];
+  for (const entry of value) {
+    const row = normalize(entry);
+    if (!row) return null;
+    normalized.push(row);
+  }
+  return normalized;
+}
+
+function hasUniqueSettings(settings: RelayAdministrationSettingSummary[]): boolean {
+  return new Set(settings.map(({ setting }) => setting)).size === settings.length;
+}
+
+export function normalizeRelayAdministrationSnapshot(
+  value: unknown,
+): RelayAdministrationSnapshot | null {
+  if (!isRecord(value)) return null;
+  const {
+    operators,
+    privilegedAccounts,
+    devices,
+    settings,
+    adminOperatorId,
+    publisherOperatorId,
+    assignmentRevision,
+    generatedAt,
+  } = value;
+
+  const normalizedOperators = normalizeBoundedList(
+    operators,
+    MAX_ADMINISTRATION_OPERATORS,
+    normalizeOperatorAdminView,
+  );
+  const normalizedAccounts = normalizeBoundedList(
+    privilegedAccounts,
+    MAX_ADMINISTRATION_ACCOUNTS,
+    normalizePrivilegedAccountAdminView,
+  );
+  const normalizedDevices = normalizeBoundedList(
+    devices,
+    MAX_ADMINISTRATION_DEVICES,
+    normalizePrivilegedDeviceAdminView,
+  );
+  const normalizedSettings = normalizeBoundedList(
+    settings,
+    RELAY_ADMINISTRABLE_SETTINGS.length,
+    normalizeAdministrationSettingSummary,
+  );
+
+  if (
+    !normalizedOperators ||
+    !normalizedAccounts ||
+    !normalizedDevices ||
+    !normalizedSettings ||
+    !hasUniqueSettings(normalizedSettings) ||
+    !boundedString(adminOperatorId, 200) ||
+    !nullableBoundedString(publisherOperatorId, 200) ||
+    publisherOperatorId === adminOperatorId ||
+    !nonNegativeInteger(assignmentRevision) ||
+    !canonicalTimestamp(generatedAt)
+  ) {
+    return null;
+  }
+
+  return {
+    operators: normalizedOperators,
+    privilegedAccounts: normalizedAccounts,
+    devices: normalizedDevices,
+    settings: normalizedSettings,
+    adminOperatorId,
+    publisherOperatorId,
+    assignmentRevision,
+    generatedAt,
   };
 }

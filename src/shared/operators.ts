@@ -16,9 +16,13 @@ export type RelayOperatorRecord = {
   id: string;
   displayName: string;
   active: boolean;
+  /** Present on server-managed records; optional for legacy cached projections. */
+  revision?: number;
   created: string;
   updated: string;
 };
+
+export type RelayOperatorRoleView = 'admin' | 'publisher' | null;
 
 export type OperatorAttribution = {
   operatorId: string;
@@ -36,4 +40,11 @@ export function getOperatorDisplayNameError(value: string): string | null {
     return `Operator display names can be up to ${MAX_OPERATOR_DISPLAY_NAME_LENGTH} characters.`;
   }
   return null;
+}
+
+export function isEligibleKnowledgePublisher(input: {
+  active: boolean;
+  role: RelayOperatorRoleView;
+}): boolean {
+  return input.active && input.role !== 'admin';
 }

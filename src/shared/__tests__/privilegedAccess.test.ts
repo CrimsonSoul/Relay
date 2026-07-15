@@ -7,6 +7,7 @@ import {
   PUBLISHER_PRIVILEGED_CAPABILITIES,
   getPrivilegedCapabilities,
   isPrivilegedRole,
+  normalizeRelayAdministrationSnapshot,
   normalizePrivilegedSessionView,
 } from '../privilegedAccess';
 
@@ -90,6 +91,157 @@ describe('privileged access contracts', () => {
         capabilities: [],
         deviceId: null,
         expiresAt: null,
+      }),
+    ).toBeNull();
+  });
+
+  it('normalizes bounded administration views without retaining secret material', () => {
+    const normalized = normalizeRelayAdministrationSnapshot({
+      operators: [
+        {
+          id: 'operator-1',
+          displayName: 'Ryan Bledsoe',
+          active: true,
+          revision: 4,
+          role: 'admin',
+          created: '2026-07-15T20:00:00.000Z',
+          updated: '2026-07-15T21:00:00.000Z',
+          password: 'must-not-survive',
+        },
+      ],
+      privilegedAccounts: [
+        {
+          accountId: 'account-1',
+          operatorId: 'operator-1',
+          role: 'admin',
+          active: true,
+          credentialState: 'configured',
+          mustChangePassword: false,
+          credentialVersion: 2,
+          updatedAt: '2026-07-15T21:00:00.000Z',
+          passwordHash: 'must-not-survive',
+          token: 'must-not-survive',
+        },
+      ],
+      devices: [
+        {
+          id: 'record-1',
+          deviceId: 'device-1',
+          accountId: 'account-1',
+          operatorId: 'operator-1',
+          operatorName: 'Ryan Bledsoe',
+          label: 'Ryan work laptop',
+          hostname: 'NOC-LT-01',
+          state: 'active',
+          lastSeenAt: '2026-07-15T21:00:00.000Z',
+          fingerprintSuffix: '9A2F',
+          revision: 3,
+          publicKey: 'must-not-survive',
+        },
+      ],
+      settings: [
+        {
+          setting: 'dynatrace.platform-token',
+          configured: true,
+          summary: 'Configured',
+          revision: 7,
+          value: 'must-not-survive',
+        },
+      ],
+      adminOperatorId: 'operator-1',
+      publisherOperatorId: null,
+      assignmentRevision: 5,
+      generatedAt: '2026-07-15T21:00:00.000Z',
+      commandEnvelope: { signature: 'must-not-survive' },
+    });
+
+    expect(normalized).toEqual({
+      operators: [
+        {
+          id: 'operator-1',
+          displayName: 'Ryan Bledsoe',
+          active: true,
+          revision: 4,
+          role: 'admin',
+          created: '2026-07-15T20:00:00.000Z',
+          updated: '2026-07-15T21:00:00.000Z',
+        },
+      ],
+      privilegedAccounts: [
+        {
+          accountId: 'account-1',
+          operatorId: 'operator-1',
+          role: 'admin',
+          active: true,
+          credentialState: 'configured',
+          mustChangePassword: false,
+          credentialVersion: 2,
+          updatedAt: '2026-07-15T21:00:00.000Z',
+        },
+      ],
+      devices: [
+        {
+          id: 'record-1',
+          deviceId: 'device-1',
+          accountId: 'account-1',
+          operatorId: 'operator-1',
+          operatorName: 'Ryan Bledsoe',
+          label: 'Ryan work laptop',
+          hostname: 'NOC-LT-01',
+          state: 'active',
+          lastSeenAt: '2026-07-15T21:00:00.000Z',
+          fingerprintSuffix: '9A2F',
+          revision: 3,
+        },
+      ],
+      settings: [
+        {
+          setting: 'dynatrace.platform-token',
+          configured: true,
+          summary: 'Configured',
+          revision: 7,
+        },
+      ],
+      adminOperatorId: 'operator-1',
+      publisherOperatorId: null,
+      assignmentRevision: 5,
+      generatedAt: '2026-07-15T21:00:00.000Z',
+    });
+    expect(JSON.stringify(normalized)).not.toContain('must-not-survive');
+  });
+
+  it('rejects oversized or inconsistent administration snapshots', () => {
+    expect(
+      normalizeRelayAdministrationSnapshot({
+        operators: [],
+        privilegedAccounts: [],
+        devices: [],
+        settings: [],
+        adminOperatorId: 'operator-1',
+        publisherOperatorId: 'operator-1',
+        assignmentRevision: 0,
+        generatedAt: '2026-07-15T21:00:00.000Z',
+      }),
+    ).toBeNull();
+
+    expect(
+      normalizeRelayAdministrationSnapshot({
+        operators: Array.from({ length: 501 }, (_, index) => ({
+          id: `operator-${index}`,
+          displayName: `Operator ${index}`,
+          active: true,
+          revision: 0,
+          role: null,
+          created: '2026-07-15T20:00:00.000Z',
+          updated: '2026-07-15T20:00:00.000Z',
+        })),
+        privilegedAccounts: [],
+        devices: [],
+        settings: [],
+        adminOperatorId: 'operator-1',
+        publisherOperatorId: null,
+        assignmentRevision: 0,
+        generatedAt: '2026-07-15T21:00:00.000Z',
       }),
     ).toBeNull();
   });

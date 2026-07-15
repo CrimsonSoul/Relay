@@ -1,4 +1,19 @@
-import { isPrivilegedRole, type PrivilegedRole } from './privilegedAccess';
+import {
+  MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
+  isPrivilegedRole,
+  isRelayAdministrableSetting,
+  type PrivilegedRole,
+  type RelayAdministrableSetting,
+  type RelayAdministrationSettingValueMap,
+} from './privilegedAccess';
+import {
+  MAX_DYNATRACE_ALERTING_PROFILES,
+  MAX_DYNATRACE_ALERTING_PROFILE_LENGTH,
+  getDynatraceApiTokenError,
+  getDynatraceEnvironmentUrlError,
+  normalizeDynatraceEnvironmentUrl,
+} from './dynatraceProblems';
+import { getOperatorDisplayNameError, normalizeOperatorDisplayName } from './operators';
 
 export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
 export const MAX_PRIVILEGED_REQUEST_ID_LENGTH = 128;
@@ -14,9 +29,34 @@ const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{64,512}$/;
 
+export type RelayAdministrationSettingReplacePayload = {
+  [K in RelayAdministrableSetting]: {
+    setting: K;
+    value: RelayAdministrationSettingValueMap[K];
+    expectedRevision: number;
+    reauthRequestId?: string;
+  };
+}[RelayAdministrableSetting];
+
 export type PrivilegedCommandPayloadMap = {
   'privileged.status.read': { clientVersion: string };
   'privileged.reauth.confirm': { authenticatedAt: string };
+  'administration.snapshot.read': Record<string, never>;
+  'operator.create': { displayName: string };
+  'operator.rename': { operatorId: string; displayName: string; expectedRevision: number };
+  'operator.active.set': { operatorId: string; active: boolean; expectedRevision: number };
+  'publisher.assign': {
+    operatorId: string | null;
+    expectedStateRevision: number;
+    reauthRequestId: string;
+  };
+  'privileged.device.rename': { deviceId: string; label: string; expectedRevision: number };
+  'privileged.device.revoke': {
+    deviceId: string;
+    expectedRevision: number;
+    reauthRequestId: string;
+  };
+  'administration.setting.replace': RelayAdministrationSettingReplacePayload;
 };
 
 export type PrivilegedCommandName = keyof PrivilegedCommandPayloadMap;
@@ -190,7 +230,214 @@ export function isPrivilegedSha256(value: unknown): value is string {
 export function isPublicPrivilegedCommandName(
   value: unknown,
 ): value is PublicPrivilegedCommandName {
-  return value === 'privileged.status.read';
+  return typeof value === 'string' && PUBLIC_PRIVILEGED_COMMANDS.has(value);
+}
+
+const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
+  'privileged.status.read',
+  'administration.snapshot.read',
+  'operator.create',
+  'operator.rename',
+  'operator.active.set',
+  'publisher.assign',
+  'privileged.device.rename',
+  'privileged.device.revoke',
+  'administration.setting.replace',
+]);
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function normalizeDeviceLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized && normalized.length <= MAX_PRIVILEGED_DEVICE_LABEL_LENGTH ? normalized : null;
+}
+
+function normalizeAlertingProfiles(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length > MAX_DYNATRACE_ALERTING_PROFILES) return null;
+  const profiles: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') return null;
+    const profile = entry.trim().replace(/\s+/g, ' ');
+    const key = profile.toLocaleLowerCase('en');
+    if (!profile || profile.length > MAX_DYNATRACE_ALERTING_PROFILE_LENGTH || seen.has(key)) {
+      return null;
+    }
+    seen.add(key);
+    profiles.push(profile);
+  }
+  return profiles;
+}
+
+function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSetting>(
+  setting: K,
+  value: unknown,
+): RelayAdministrationSettingValueMap[K] | null {
+  if (!isRecord(value)) return null;
+  if (setting === 'dynatrace.environment-url') {
+    if (!hasExactKeys(value, ['environmentUrl'])) return null;
+    const { environmentUrl } = value;
+    if (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl)) {
+      return null;
+    }
+    return {
+      environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl),
+    } as RelayAdministrationSettingValueMap[K];
+  }
+  if (setting === 'dynatrace.platform-token') {
+    if (!hasExactKeys(value, ['apiToken'])) return null;
+    const { apiToken } = value;
+    if (typeof apiToken !== 'string' || getDynatraceApiTokenError(apiToken)) return null;
+    return { apiToken: apiToken.trim() } as RelayAdministrationSettingValueMap[K];
+  }
+  if (!hasExactKeys(value, ['profiles'])) return null;
+  const profiles = normalizeAlertingProfiles(value.profiles);
+  return profiles ? ({ profiles } as RelayAdministrationSettingValueMap[K]) : null;
+}
+
+export function getRelayAdministrationSettingValueError(
+  setting: RelayAdministrableSetting,
+  value: unknown,
+): string | null {
+  if (
+    setting === 'dynatrace.alerting-profiles' &&
+    isRecord(value) &&
+    Array.isArray(value.profiles)
+  ) {
+    const normalized = value.profiles.map((entry) =>
+      typeof entry === 'string' ? entry.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en') : '',
+    );
+    if (new Set(normalized).size !== normalized.length)
+      return 'Remove duplicate alerting profiles.';
+  }
+  return normalizeRelayAdministrationSettingValue(setting, value)
+    ? null
+    : 'Enter a supported value for this Relay setting.';
+}
+
+type NormalizedCommandPayload = PrivilegedCommandPayloadMap[PrivilegedCommandName];
+
+function normalizeStatusPayload(payload: Record<string, unknown>): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['clientVersion'])) return null;
+  const { clientVersion } = payload;
+  if (typeof clientVersion !== 'string' || !clientVersion || clientVersion.length > 100)
+    return null;
+  return { clientVersion };
+}
+
+function normalizeReauthenticationPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['authenticatedAt'])) return null;
+  const { authenticatedAt } = payload;
+  return canonicalTimestamp(authenticatedAt) ? { authenticatedAt } : null;
+}
+
+function normalizeOperatorCreatePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['displayName']) || typeof payload.displayName !== 'string')
+    return null;
+  const displayName = normalizeOperatorDisplayName(payload.displayName);
+  return getOperatorDisplayNameError(displayName) ? null : { displayName };
+}
+
+function normalizeOperatorRenamePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['operatorId', 'displayName', 'expectedRevision'])) return null;
+  const { operatorId, displayName: rawDisplayName, expectedRevision } = payload;
+  if (
+    !boundedIdentifier(operatorId, 200) ||
+    typeof rawDisplayName !== 'string' ||
+    !nonNegativeInteger(expectedRevision)
+  ) {
+    return null;
+  }
+  const displayName = normalizeOperatorDisplayName(rawDisplayName);
+  return getOperatorDisplayNameError(displayName)
+    ? null
+    : { operatorId, displayName, expectedRevision };
+}
+
+function normalizeOperatorActivePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['operatorId', 'active', 'expectedRevision'])) return null;
+  const { operatorId, active, expectedRevision } = payload;
+  return boundedIdentifier(operatorId, 200) &&
+    typeof active === 'boolean' &&
+    nonNegativeInteger(expectedRevision)
+    ? { operatorId, active, expectedRevision }
+    : null;
+}
+
+function normalizePublisherAssignmentPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['operatorId', 'expectedStateRevision', 'reauthRequestId']))
+    return null;
+  const { operatorId, expectedStateRevision, reauthRequestId } = payload;
+  return (operatorId === null || boundedIdentifier(operatorId, 200)) &&
+    nonNegativeInteger(expectedStateRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { operatorId, expectedStateRevision, reauthRequestId }
+    : null;
+}
+
+function normalizeDeviceRenamePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['deviceId', 'label', 'expectedRevision'])) return null;
+  const { deviceId, expectedRevision } = payload;
+  const label = normalizeDeviceLabel(payload.label);
+  return boundedIdentifier(deviceId, 200) && label && nonNegativeInteger(expectedRevision)
+    ? { deviceId, label, expectedRevision }
+    : null;
+}
+
+function normalizeDeviceRevokePayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  if (!hasExactKeys(payload, ['deviceId', 'expectedRevision', 'reauthRequestId'])) return null;
+  const { deviceId, expectedRevision, reauthRequestId } = payload;
+  return boundedIdentifier(deviceId, 200) &&
+    nonNegativeInteger(expectedRevision) &&
+    boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+    ? { deviceId, expectedRevision, reauthRequestId }
+    : null;
+}
+
+function normalizeSettingReplacementPayload(
+  payload: Record<string, unknown>,
+): NormalizedCommandPayload | null {
+  const hasRequiredKeys = hasExactKeys(payload, ['setting', 'value', 'expectedRevision']);
+  const hasReauthentication = hasExactKeys(payload, [
+    'setting',
+    'value',
+    'expectedRevision',
+    'reauthRequestId',
+  ]);
+  if (!hasRequiredKeys && !hasReauthentication) return null;
+  const { setting, expectedRevision, reauthRequestId } = payload;
+  if (!isRelayAdministrableSetting(setting) || !nonNegativeInteger(expectedRevision)) return null;
+  if (
+    reauthRequestId !== undefined &&
+    !boundedIdentifier(reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+  ) {
+    return null;
+  }
+  const normalizedValue = normalizeRelayAdministrationSettingValue(setting, payload.value);
+  if (!normalizedValue) return null;
+  return {
+    setting,
+    value: normalizedValue,
+    expectedRevision,
+    ...(reauthRequestId === undefined ? {} : { reauthRequestId }),
+  } as PrivilegedCommandPayloadMap['administration.setting.replace'];
 }
 
 function normalizePayload(
@@ -198,19 +445,28 @@ function normalizePayload(
   payload: unknown,
 ): PrivilegedCommandPayloadMap[PrivilegedCommandName] | null {
   if (!isRecord(payload)) return null;
-  if (command === 'privileged.status.read') {
-    if (!hasExactKeys(payload, ['clientVersion'])) return null;
-    const { clientVersion } = payload;
-    if (typeof clientVersion !== 'string' || !clientVersion || clientVersion.length > 100) {
-      return null;
-    }
-    return { clientVersion };
+  switch (command) {
+    case 'privileged.status.read':
+      return normalizeStatusPayload(payload);
+    case 'privileged.reauth.confirm':
+      return normalizeReauthenticationPayload(payload);
+    case 'administration.snapshot.read':
+      return hasExactKeys(payload, []) ? {} : null;
+    case 'operator.create':
+      return normalizeOperatorCreatePayload(payload);
+    case 'operator.rename':
+      return normalizeOperatorRenamePayload(payload);
+    case 'operator.active.set':
+      return normalizeOperatorActivePayload(payload);
+    case 'publisher.assign':
+      return normalizePublisherAssignmentPayload(payload);
+    case 'privileged.device.rename':
+      return normalizeDeviceRenamePayload(payload);
+    case 'privileged.device.revoke':
+      return normalizeDeviceRevokePayload(payload);
+    case 'administration.setting.replace':
+      return normalizeSettingReplacementPayload(payload);
   }
-
-  if (!hasExactKeys(payload, ['authenticatedAt'])) return null;
-  const { authenticatedAt } = payload;
-  if (!canonicalTimestamp(authenticatedAt)) return null;
-  return { authenticatedAt };
 }
 
 const ENVELOPE_KEYS = [
@@ -257,7 +513,7 @@ export function validateSignedPrivilegedCommandEnvelope(
     !boundedIdentifier(accountId, 200) ||
     !boundedIdentifier(deviceId, 200) ||
     !isPrivilegedRole(roleClaim) ||
-    (command !== 'privileged.status.read' && command !== 'privileged.reauth.confirm') ||
+    (command !== 'privileged.reauth.confirm' && !isPublicPrivilegedCommandName(command)) ||
     !isPrivilegedSha256(payloadHash) ||
     (expectedRevision !== null &&
       (!Number.isInteger(expectedRevision) || (expectedRevision as number) < 0)) ||

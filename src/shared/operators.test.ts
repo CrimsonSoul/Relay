@@ -4,6 +4,7 @@ import {
   INITIAL_RELAY_OPERATOR_NAMES,
   MAX_OPERATOR_DISPLAY_NAME_LENGTH,
   normalizeOperatorDisplayName,
+  isEligibleKnowledgePublisher,
 } from './operators';
 
 describe('Relay operator display names', () => {
@@ -38,5 +39,25 @@ describe('initial Relay operator roster', () => {
     expect(
       new Set(INITIAL_RELAY_OPERATOR_NAMES.map((name) => name.toLocaleLowerCase('en'))).size,
     ).toBe(9);
+  });
+});
+
+describe('operator administration projections', () => {
+  it('keeps the record revision optional for existing attribution consumers', () => {
+    const legacy = {
+      id: 'operator-1',
+      displayName: 'Ryan Bell',
+      active: true,
+      created: '2026-07-15T20:00:00.000Z',
+      updated: '2026-07-15T20:00:00.000Z',
+    };
+    expect(legacy).not.toHaveProperty('revision');
+  });
+
+  it('allows only active non-admin operators to become publisher', () => {
+    expect(isEligibleKnowledgePublisher({ active: true, role: null })).toBe(true);
+    expect(isEligibleKnowledgePublisher({ active: false, role: null })).toBe(false);
+    expect(isEligibleKnowledgePublisher({ active: true, role: 'admin' })).toBe(false);
+    expect(isEligibleKnowledgePublisher({ active: true, role: 'publisher' })).toBe(true);
   });
 });
