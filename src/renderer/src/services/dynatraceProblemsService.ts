@@ -71,7 +71,9 @@ async function requireProblemNoteWhenAddressing(
   if (!addressed || !online) return;
   try {
     if (!(await hasProblemNote(problemId))) {
-      throw new Error('Add a NOC note before marking this problem addressed locally.');
+      throw new Error(
+        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
+      );
     }
   } catch (error) {
     handleApiError(error);

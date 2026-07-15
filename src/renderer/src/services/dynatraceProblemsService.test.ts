@@ -82,11 +82,11 @@ describe('Dynatrace problem mutations', () => {
     });
   });
 
-  it('rejects an addressed state when the problem has no NOC note', async () => {
+  it('rejects an addressed state when the problem has no ticket reference or NOC note', async () => {
     mocks.notesGetFirst.mockRejectedValue(notFound);
 
     await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
-      /add a NOC note/i,
+      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
     );
     expect(mocks.statesCreate).not.toHaveBeenCalled();
     expect(mocks.statesUpdate).not.toHaveBeenCalled();
