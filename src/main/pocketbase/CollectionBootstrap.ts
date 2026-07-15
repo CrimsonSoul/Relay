@@ -192,7 +192,7 @@ const PRIVILEGED_COMMAND_ACCOUNT_RULE =
 const PRIVILEGED_COMMAND_RULES: CollectionRules = {
   listRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
   viewRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
-  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && state = "pending"`,
+  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && operatorId = @request.auth.operatorId && deviceId != "" && signature != "" && state = "pending"`,
   updateRule: null,
   deleteRule: null,
 };
@@ -471,7 +471,7 @@ const COLLECTIONS: CollectionDef[] = [
     fields: [
       { type: 'text', name: 'requestId', required: true, max: 128 },
       { type: 'text', name: 'accountId', required: true, max: 200 },
-      { type: 'text', name: 'deviceId', required: true, max: 200 },
+      { type: 'text', name: 'deviceId', required: false, max: 200 },
       { type: 'text', name: 'operatorId', required: true, max: 200 },
       {
         type: 'select',
@@ -486,7 +486,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'number', name: 'expectedRevision' },
       { type: 'json', name: 'payload', required: true },
       { type: 'text', name: 'bodyHash', required: true, max: 64 },
-      { type: 'text', name: 'signature', required: true, max: 1_024 },
+      { type: 'text', name: 'signature', required: false, max: 1_024 },
       {
         type: 'select',
         name: 'state',
@@ -497,6 +497,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'json', name: 'result' },
       { type: 'text', name: 'safeError', max: 500 },
       { type: 'date', name: 'completedAt' },
+      { type: 'date', name: 'proofConsumedAt' },
     ],
     indexes: [PRIVILEGED_COMMAND_REQUEST_INDEX],
     rules: PRIVILEGED_COMMAND_RULES,

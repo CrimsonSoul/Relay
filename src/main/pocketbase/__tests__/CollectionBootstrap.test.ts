@@ -312,13 +312,18 @@ describe('ensureCollections', () => {
     expect(commands?.listRule).toContain('@request.auth.collectionName');
     expect(commands?.listRule).toContain('accountId = @request.auth.id');
     expect(commands?.createRule).toContain('state = "pending"');
+    expect(commands?.createRule).toContain('operatorId = @request.auth.operatorId');
+    expect(commands?.createRule).toContain('deviceId != ""');
+    expect(commands?.createRule).toContain('signature != ""');
     expect(commands).toMatchObject({ updateRule: null, deleteRule: null });
     expect(commands?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'requestId', type: 'text', required: true, max: 128 }),
+        expect.objectContaining({ name: 'deviceId', type: 'text', required: false }),
         expect.objectContaining({ name: 'payload', type: 'json', required: true }),
         expect.objectContaining({ name: 'bodyHash', type: 'text', required: true, max: 64 }),
-        expect.objectContaining({ name: 'signature', type: 'text', required: true }),
+        expect.objectContaining({ name: 'signature', type: 'text', required: false }),
+        expect.objectContaining({ name: 'proofConsumedAt', type: 'date' }),
         expect.objectContaining({
           name: 'state',
           type: 'select',
