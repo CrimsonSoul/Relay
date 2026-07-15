@@ -109,6 +109,8 @@
 .dt-profile-picker input:focus-visible,
 .dt-problem-row:focus-visible,
 .dt-problems__primary-action:focus-visible,
+.dt-problem-ticket-composer input:focus-visible,
+.dt-problem-ticket-composer button:focus-visible,
 .dt-problem-note-composer__actions button:focus-visible,
 .dt-problem-detail__footer button:focus-visible {
   outline: 2px solid var(--accent-bright);
@@ -661,9 +663,9 @@
 }
 
 .dt-problem-badge--addressed {
-  border-color: var(--color-border-strong);
-  background: var(--color-bg-surface-3);
-  color: var(--color-text-primary);
+  border-color: var(--info);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  color: var(--info-bright);
 }
 
 .dt-problem-row__title {
@@ -936,6 +938,7 @@
 }
 
 .dt-problems__primary-action:disabled,
+.dt-problem-ticket-composer button:disabled,
 .dt-problem-note-composer__actions button:disabled {
   cursor: default;
   opacity: 0.45;
@@ -943,6 +946,53 @@
 
 .dt-problem-detail__notes {
   padding-top: var(--space-1);
+}
+
+.dt-problem-ticket-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dt-problem-ticket-composer label {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.dt-problem-ticket-composer__control {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.dt-problem-ticket-composer input {
+  min-width: 0;
+  min-height: 40px;
+  flex: 1 1 auto;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 3px;
+  outline: 0;
+  background: var(--color-bg-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-sm);
+}
+
+.dt-problem-ticket-composer input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.dt-problem-ticket-composer input:disabled {
+  opacity: 0.55;
+}
+
+.dt-problem-ticket-composer > small {
+  color: var(--color-text-tertiary);
+  font-size: var(--text-2xs);
+  line-height: 1.45;
 }
 
 .dt-problem-note-composer {
@@ -985,6 +1035,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+.dt-problem-ticket-composer button,
 .dt-problem-note-composer__actions button,
 .dt-problem-detail__footer button {
   min-height: 36px;
@@ -999,6 +1050,7 @@
   font-weight: var(--weight-bold);
 }
 
+.dt-problem-ticket-composer button:hover:not(:disabled),
 .dt-problem-note-composer__actions button:hover:not(:disabled),
 .dt-problem-detail__footer button:hover {
   border-color: var(--accent);
@@ -1061,6 +1113,34 @@
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.dt-problem-note__ticket {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--info) 55%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+}
+
+.dt-problem-note__ticket span {
+  color: var(--info-bright);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.dt-problem-note__ticket strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-primary);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-sm);
 }
 
 .dt-problem-detail__footer {
