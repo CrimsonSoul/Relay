@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-15
 
-**Status:** Approved design; specification awaiting final review
+**Status:** Approved for implementation
 
 ## Summary
 
