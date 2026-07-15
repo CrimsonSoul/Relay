@@ -10,7 +10,7 @@ Relay will make link annotations in Knowledge Base PDFs interactive without weak
 
 PDF authors will use ordinary links created in Word, Acrobat, or another PDF-authoring tool. They will not need Relay-specific URLs, record IDs, client hostnames, or absolute server paths. Relay will treat any file path embedded by the authoring tool only as a document identifier and will never read that path from the operator's laptop.
 
-This design supersedes the original Knowledge Base specification's external-link non-goal. Forms, attachments, embedded scripts, automatic navigation, and arbitrary local-file access remain out of scope.
+This design supersedes the original Knowledge Base specification's external-link non-goal. Forms, attachments, embedded-script execution, automatic navigation, and arbitrary local-file access remain out of scope. Relay never executes an originating PDF action; it only reinterprets destination and URL data through Relay-owned navigation and security boundaries.
 
 ## Goals
 
@@ -31,7 +31,7 @@ This design supersedes the original Knowledge Base specification's external-link
 - No automatic link activation while opening or rendering a PDF.
 - No local filesystem access based on an embedded `file:` URL.
 - No embedded web browser, web preview, iframe, or remote page rendering inside Relay.
-- No PDF forms, attachments, embedded JavaScript, launch actions, media actions, or executable actions.
+- No PDF forms, attachments, embedded JavaScript execution, launch-action execution, media actions, or other executable action semantics.
 - No fuzzy selection when multiple indexed documents have the same filename.
 - No promise that a link survives renaming its target PDF.
 
@@ -59,14 +59,16 @@ Author guidance:
 
 ## Link Classification
 
-Relay will inspect link annotations only after a page is opened. Each annotation is classified into exactly one of these types:
+Relay will inspect link annotations only after a page is opened. PDF.js 5.4.624 flattens ordinary URI actions, Launch/GoToR actions, and recoverable JavaScript such as `app.launchURL(...)` into the same `url` / `unsafeUrl` fields before `getAnnotations()` returns. Relay therefore cannot reliably identify the originating action for every recovered URL and does not attempt to do so.
+
+Relay treats every recovered URL as inert text and reclassifies it through its pure Knowledge resolver. It never asks PDF.js to execute the originating action. Each retained destination or inert URL value is classified into exactly one of these types:
 
 1. **Same-document destination** — a native PDF destination or a fragment referring to the current PDF.
 2. **Knowledge document link** — a relative path, absolute path, or `file:` URL whose path ends in `.pdf`.
 3. **Web link** — an absolute `https:` or `http:` URL.
-4. **Blocked link** — every other protocol or action, including `javascript:`, `data:`, `blob:`, `ftp:`, local launch actions, and malformed values.
+4. **Blocked value** — every unsupported protocol or malformed value, including `javascript:`, `data:`, `blob:`, and `ftp:`, plus action fields PDF.js actually retains, such as Named actions.
 
-Classification is deterministic and does not fetch, resolve, or probe the target.
+Classification is deterministic and does not fetch, resolve, probe, or execute the PDF target. A recovered HTTP(S) string can reach the system browser only after an explicit operator click and the dedicated Relay validation boundary. A recovered PDF-like path can only be matched against indexed Knowledge metadata.
 
 ## Cross-Document Resolution
 
@@ -108,7 +110,7 @@ The dedicated main-process handler will:
 - return a typed success/failure result; and
 - rate-limit repeated requests through Relay's existing filesystem/external-action limiter.
 
-The renderer cannot call `shell`, cannot navigate its own window, and cannot open a web link automatically. Redirect handling remains the responsibility of the operator's managed system browser.
+The renderer cannot call `shell`, cannot navigate its own window, and cannot open a web link automatically. This remains true when PDF.js recovered the URL from a flattened Launch/GoToR or JavaScript action: Relay invokes only its own resolver and, after an explicit click, its own web-link bridge; the originating PDF action is never executed. Redirect handling remains the responsibility of the operator's managed system browser.
 
 `file:` is not an allowed external protocol. A `file:` link ending in `.pdf` may supply a filename for indexed-document matching, but Relay will never send it to `openPath`, `openExternal`, `fetch`, or a filesystem API.
 
@@ -117,12 +119,12 @@ The renderer cannot call `shell`, cannot navigate its own window, and cannot ope
 Relay will not enable PDF.js's complete annotation UI because the Knowledge Base remains read-only and does not support forms or attachments. The Focus Reader will render a narrow link-annotation overlay for the current page:
 
 - obtain display annotations from the active `PDFPageProxy`;
-- retain only link annotations with a supported destination;
+- retain native destinations and inert URL text from link annotations, while excluding action fields PDF.js still exposes directly;
 - transform each annotation rectangle through the current PDF viewport;
 - render an accessible button over the linked PDF region; and
 - cancel and replace the overlay whenever the page, scale, document, or active state changes.
 
-Internal links call the Focus Reader's document/page navigation callbacks. Web links call the dedicated external-link IPC action. No raw annotation HTML is inserted into the DOM.
+Internal links call the Focus Reader's document/page navigation callbacks. After an explicit click, web links call the dedicated external-link IPC action. Annotation extraction and rendering never activate a target. No raw annotation HTML is inserted into the DOM.
 
 Visual behavior:
 
@@ -138,10 +140,14 @@ Visual behavior:
 PDF page annotation
   -> renderer classifier
      -> same PDF destination -> current viewer page/position
-     -> PDF filename/path -> indexed metadata resolver -> Focus Reader document/page
-     -> HTTP(S) URL -> typed preload IPC -> main-process validation -> system browser
-     -> unsupported value -> blocked-link message
+     -> inert PDF.js URL text -> pure Relay resolver
+        -> PDF filename/path -> indexed metadata -> Focus Reader document/page
+        -> HTTP(S) -> explicit click -> typed preload IPC -> main validation -> system browser
+        -> unsupported value -> no focusable target
+     -> retained PDF action field -> excluded
 ```
+
+The inert URL branch is intentionally origin-agnostic because PDF.js may have recovered the same fields from URI, Launch/GoToR, or JavaScript actions. No branch executes PDF action semantics.
 
 No collection schema change is required. Link targets are read from PDF annotations at view time and are not persisted in PocketBase or the offline metadata cache.
 
@@ -185,6 +191,9 @@ Errors are announced through the existing non-blocking notification surface. The
 - same-document destinations navigate without reloading bytes;
 - a cross-PDF link selects the expected indexed document and page;
 - external links call only the typed preload action;
+- flattened HTTP(S) and PDF-path values are passed only to the Relay resolver and are never auto-activated;
+- flattened `javascript:` values resolve unsupported and create no focusable target;
+- retained Named actions are excluded without claiming that every Launch/JavaScript origin remains identifiable;
 - blocked schemes never invoke IPC;
 - cancellation during page/link-layer replacement produces no unhandled rejection; and
 - keyboard focus and accessible labels remain correct.
@@ -220,6 +229,6 @@ Update the Knowledge Base administrator instructions with a short authoring sect
 - Duplicate filenames are never resolved ambiguously.
 - Same-document and optional page navigation work without leaving the Focus Reader.
 - HTTPS and HTTP links open only in the default system browser after dedicated main-process validation.
-- No PDF link can cause Relay to read an arbitrary local file, run an embedded action, or navigate the renderer to remote content.
+- No PDF link can cause Relay to read an arbitrary local file, execute an originating PDF action, or navigate the renderer to remote content; flattened URL text is usable only through Relay's resolver and explicit-click security boundaries.
 - Link overlays are aligned, keyboard accessible, visually cohesive, and cancellation-safe.
 - Existing client/server synchronization, offline PDF caching, and read-only permissions remain unchanged.

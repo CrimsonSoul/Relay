@@ -4,7 +4,7 @@
 
 **Goal:** Make ordinary same-document, cross-PDF, and web links inside Relay Knowledge Base PDFs usable without exposing arbitrary local-file access or weakening the existing read-only Focus Reader.
 
-**Architecture:** PDF.js continues to render only the canvas and selectable text, while a narrow Relay-owned overlay turns supported link annotations into positioned buttons. A pure renderer resolver maps authored PDF filenames and relative paths only against the already-indexed `knowledge_documents` metadata; same-document destinations stay in the current PDF.js instance; web links cross a new Knowledge-only typed preload channel whose main-process handler accepts only bounded credential-free HTTP(S) URLs. No link target is persisted, no PocketBase schema changes, and no embedded path is ever opened or read from disk.
+**Architecture:** PDF.js continues to render only the canvas and selectable text, while a narrow Relay-owned overlay turns supported link annotations into positioned buttons. URL values returned by PDF.js are treated as inert, origin-agnostic text because PDF.js may flatten URI, Launch/GoToR, and recoverable JavaScript actions into the same fields. A pure renderer resolver maps PDF filenames and relative paths only against the already-indexed `knowledge_documents` metadata; same-document destinations stay in the current PDF.js instance; web links cross a new Knowledge-only typed preload channel whose main-process handler accepts only bounded credential-free HTTP(S) URLs after an explicit click. Relay never executes the originating PDF action. No link target is persisted, no PocketBase schema changes, and no embedded path is ever opened or read from disk.
 
 **Tech Stack:** Electron 42, TypeScript 6, React 19, PDF.js (`pdfjs-dist` 5.4.624), PocketBase 0.26 metadata, Vitest, Testing Library, Playwright Electron, existing Relay Toast and design tokens.
 
@@ -12,9 +12,10 @@
 
 - Preserve the existing server/client authentication, PocketBase metadata sync, protected PDF transport, on-demand cache, offline-open behavior, and read-only collection rules.
 - Treat `file:` URLs, Windows paths, POSIX paths, and relative paths as metadata-only strings. Never pass them to `openPath`, `openExternal`, `fetch`, `fs`, or a URL probe.
+- Treat every PDF.js `url` / `unsafeUrl` value as inert text with unknown action provenance. Reclassify it through Relay's pure resolver; do not attempt to infer whether PDF.js flattened a URI, Launch/GoToR, or recoverable JavaScript action.
 - Do not broaden `IPC_CHANNELS.OPEN_EXTERNAL` or its provider allowlist. Knowledge web links get a dedicated handler and typed result.
 - Accept only explicit operator clicks. Do not auto-open a URL during PDF load, page render, annotation extraction, document selection, or realtime refresh.
-- Keep PDF.js evaluation, XFA, auto-fetch, streaming, and full annotation UI disabled. Render only Relay-owned link buttons; forms, attachments, launch actions, media, JavaScript, and named application actions remain blocked.
+- Keep PDF.js evaluation, XFA, auto-fetch, streaming, and full annotation UI disabled. Render only Relay-owned link buttons; Relay never executes form, attachment, launch, media, JavaScript, or named-action semantics. Exclude action fields PDF.js retains, such as Named actions; recovered URL text remains usable only if Relay independently resolves it to an allowed target.
 - Use test-driven development for every task: add the focused failing test, run it and confirm the expected failure, add the smallest implementation, and rerun the focused test.
 - Use Relay's current product register: precise, dark, tactile, restrained. Preserve the authored PDF appearance at rest; use existing accent/focus tokens only for hover and keyboard focus. Do not add cards, decorative glow, new toolbar chrome, or gratuitous motion.
 - Keep controls keyboard accessible and screen-reader labelled. Unsupported protocols are not focusable; missing or ambiguous PDF targets remain user-activatable only so Relay can explain the problem through the existing toast surface.
@@ -247,7 +248,10 @@ npm run typecheck
 - [ ] Add failing component tests with small annotation-shaped objects for:
   - retaining only PDF.js link annotations with a four-number rectangle and either `dest`, `url`, or `unsafeUrl`;
   - preferring a native `dest` when an annotation also carries a URL;
-  - ignoring named actions, launch actions, attachments, forms, JavaScript, and malformed rectangles;
+  - excluding retained Named actions, attachments, forms, and malformed rectangles without claiming flattened Launch/JavaScript origins remain identifiable;
+  - passing a flattened HTTP(S) `unsafeUrl` only to Relay's resolver and never auto-activating it;
+  - passing a flattened PDF path only to the Knowledge resolver;
+  - resolving a flattened `javascript:` URL as unsupported with no focusable target;
   - using `viewport.convertToViewportRectangle()` and normalizing reversed coordinates;
   - recomputing geometry when the viewport changes;
   - preserving annotation order as keyboard tab order;
@@ -278,7 +282,7 @@ export type KnowledgeLinkItem = {
 export function extractKnowledgeLinkItems(annotations: readonly unknown[]): KnowledgeLinkItem[];
 ```
 
-- [ ] Accept only `annotationType === AnnotationType.LINK` (with `subtype === 'Link'` as a compatibility fallback), a bounded string ID, and finite rectangle coordinates. For URL annotations, take the raw authored value from `unsafeUrl ?? url`; never set it as `href`, inject it as HTML, or navigate the renderer.
+- [ ] Accept only `annotationType === AnnotationType.LINK` (with `subtype === 'Link'` as a compatibility fallback), a bounded string ID, and finite rectangle coordinates. Exclude action fields PDF.js actually retains, such as Named actions. For URL annotations, take the inert value from `unsafeUrl ?? url` without attempting to reconstruct its URI/Launch/GoToR/JavaScript provenance; pass it only to `resolveUrl`, and never set it as `href`, inject it as HTML, auto-activate it, execute its originating PDF action, or navigate the renderer.
 - [ ] Use this component boundary:
 
 ```ts
@@ -512,7 +516,7 @@ Expected: PASS with the server/client path, protected PDF download, renderer ove
   - absolute author paths are treated only as filenames;
   - HTTP(S) opens in the managed system browser; and
   - renamed target PDFs require author link updates.
-- [ ] Update `docs/SECURITY.md` to replace the old blanket "no annotations/external links" statement with the narrow link-overlay boundary, metadata-only `file:` handling, trusted/rate-limited HTTP(S)-only IPC, credential rejection, and unchanged general `OPEN_EXTERNAL` allowlist.
+- [ ] Update `docs/SECURITY.md` to replace the old blanket "no annotations/external links" statement with the narrow link-overlay boundary, origin-agnostic inert reinterpretation of PDF.js URL fields, no originating PDF action execution, metadata-only `file:` handling, trusted/rate-limited HTTP(S)-only IPC, credential rejection, and unchanged general `OPEN_EXTERNAL` allowlist.
 - [ ] Update `docs/architecture.md` with this runtime branch:
 
 ```text
@@ -591,6 +595,6 @@ npm run test:electron
 - [ ] Same-document/native destinations and valid page fragments navigate without reloading PDF bytes.
 - [ ] Invalid page fragments open page 1 without an error.
 - [ ] Web links open only after a click, through the dedicated HTTP(S)-only trusted/rate-limited main-process boundary.
-- [ ] Unsupported actions and protocols cannot access disk, execute content, navigate the renderer, invoke the general external handler, or reach Electron shell.
+- [ ] Originating PDF actions are never executed. Unsupported values cannot access disk, execute content, navigate the renderer, invoke the general external handler, or reach Electron shell; flattened URL text reaches any Relay-owned action only after independent resolution and an explicit operator click.
 - [ ] Overlay targets remain aligned at every supported zoom level and are keyboard accessible with Relay-consistent hover/focus treatment.
 - [ ] Client/server sync, protected PDF transport, offline cache behavior, read-only permissions, and existing external-link policies remain unchanged.
