@@ -133,6 +133,18 @@ The server mirrors metadata and a protected PDF file into the server-owned `know
 
 Opened client PDFs are stored content-addressed at `<config data>/knowledge-cache/<sha256>.pdf`. Downloads are size-, signature-, and checksum-verified before atomic promotion. The cache is on demand, has a 2 GiB LRU budget, and retains unreferenced entries for at most 30 days. Cached documents remain available while disconnected; unopened documents show an offline-unavailable state. Knowledge metadata and PDF bytes stay on the configured Relay LAN path.
 
+Link annotations branch through Relay-owned navigation rather than PDF action execution:
+
+```text
+PDF link annotation
+  -> Relay overlay
+     -> native destination -> current PDF.js document
+     -> PDF filename/path -> indexed metadata -> selected Relay guide
+     -> HTTP(S) -> dedicated preload IPC -> main validation -> system browser
+```
+
+PDF.js may recover URI, Launch/GoToR, or JavaScript actions into indistinguishable URL fields. The overlay treats those fields as origin-agnostic inert text, then reclassifies them through Relay's resolver. No branch executes the originating PDF action: local paths are metadata-only document identifiers, while browser navigation requires an explicit click and the dedicated trusted, rate-limited HTTP(S) IPC boundary.
+
 Deletion reconciliation preserves the last healthy index when the folder is missing or unreadable. Any invalid or unreadable entry also blocks deletions for that scan, so a partial copy cannot turn the last healthy mirror into a deletion. If more than 25% of known documents disappear, Relay requires the identical missing set in two healthy scans at least five minutes apart before deleting records. Failed extraction or upload preserves the last valid record.
 
 PocketBase backup/restore includes the mirrored collection and protected file storage. The administrator-managed source folder and each workstation's local PDF cache are outside that backup; preserve the source folder separately. After a restore, the server reconciles the mirror against the source library, while clients can repopulate caches on demand.

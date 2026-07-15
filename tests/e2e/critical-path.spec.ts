@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import PocketBase from 'pocketbase';
+import { writeKnowledgeLinkFixtures } from '../fixtures/knowledgePdfFixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -333,21 +334,44 @@ test.describe('Vital Critical Path', () => {
     return connectedClient;
   };
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ browserName: _browserName }, testInfo) => {
     tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
     clientElectronApp = null;
     clientWindow = null;
     clientDataDir = '';
     pbPort = makePort();
     writeServerConfig(tempDataDir, pbPort);
+    if (testInfo.title.includes('Knowledge PDF links')) {
+      writeKnowledgeLinkFixtures(path.join(tempDataDir, 'data', 'knowledge-base'));
+    }
     await launchServer();
   });
 
   test.afterEach(async () => {
     if (clientElectronApp) {
+      const activeClientApp = clientElectronApp;
+      try {
+        await activeClientApp.evaluate(({ shell }) => {
+          const scope = globalThis as typeof globalThis & {
+            __relayKnowledgeOriginalOpenExternal?: typeof shell.openExternal;
+            __relayKnowledgeOpenExternalUrls?: string[];
+          };
+          if (scope.__relayKnowledgeOriginalOpenExternal) {
+            shell.openExternal = scope.__relayKnowledgeOriginalOpenExternal;
+          }
+          delete scope.__relayKnowledgeOriginalOpenExternal;
+          delete scope.__relayKnowledgeOpenExternalUrls;
+        });
+      } catch {
+        // The client may already be closed; restoring a test-only spy is best effort.
+      }
       try {
         await clientWindow?.context().setOffline(false);
-        await clientElectronApp.close();
+      } catch {
+        // Resetting Playwright's network state is independent of Electron shutdown.
+      }
+      try {
+        await activeClientApp.close();
       } catch {
         // The client app may already be closed after a test failure.
       }
@@ -376,6 +400,101 @@ test.describe('Vital Critical Path', () => {
 
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Compose');
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
+  });
+
+  test('Knowledge PDF links navigate within Relay and open HTTPS in the system browser', async () => {
+    test.setTimeout(120_000);
+    const connectedClient = await launchConnectedClient();
+    const rendererLogs: string[] = [];
+    connectedClient.on('console', (message) => rendererLogs.push(message.text()));
+
+    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    const sourceDocument = connectedClient.getByRole('treeitem', {
+      name: 'Link navigation test',
+      exact: true,
+    });
+    await expect(sourceDocument).toBeVisible();
+    await sourceDocument.click();
+
+    const sourceViewer = connectedClient.getByRole('region', {
+      name: 'Link navigation test PDF viewer',
+    });
+    await expect(sourceViewer).toContainText('Page 1 of 2');
+    await sourceViewer.getByRole('button', { name: 'Open linked location in this guide' }).click();
+    await expect(sourceViewer).toContainText('Page 2 of 2');
+    await expect(sourceDocument).toHaveAttribute('aria-current', 'page');
+
+    await sourceViewer.getByRole('button', { name: 'Previous page' }).click();
+    await expect(sourceViewer).toContainText('Page 1 of 2');
+    await sourceViewer
+      .getByRole('button', { name: 'Open Payment API Degradation Guide, page 2' })
+      .click();
+
+    const paymentViewer = connectedClient.getByRole('region', {
+      name: 'Payment API Degradation Guide PDF viewer',
+    });
+    await expect(paymentViewer).toContainText('Page 2 of 2');
+
+    await connectedClient.getByRole('treeitem', { name: 'General, 1 document' }).click();
+    await connectedClient
+      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
+      .click();
+    await expect(sourceViewer).toContainText('Page 1 of 2');
+    const authorDirectory = 'C:/Users/Author/Documents';
+    const absoluteFileOverlay = sourceViewer.getByRole('button', {
+      name: 'Open Checkout Service Incident Runbook, page 1',
+      exact: true,
+    });
+    await expect(absoluteFileOverlay).toBeVisible();
+    await expect(sourceViewer).not.toContainText(authorDirectory);
+    await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
+    await absoluteFileOverlay.focus();
+    await expect(absoluteFileOverlay).toBeFocused();
+    await expect(absoluteFileOverlay).toHaveAccessibleName(
+      'Open Checkout Service Incident Runbook, page 1',
+    );
+    await expect(absoluteFileOverlay).not.toHaveAccessibleName(/C:\/Users\/Author\/Documents/);
+    await absoluteFileOverlay.click();
+
+    const checkoutViewer = connectedClient.getByRole('region', {
+      name: 'Checkout Service Incident Runbook PDF viewer',
+    });
+    await expect(checkoutViewer).toContainText('Page 1 of 1');
+    await expect(connectedClient.locator('body')).not.toContainText(authorDirectory);
+    expect(rendererLogs.join('\n')).not.toContain(authorDirectory);
+
+    await connectedClient.getByRole('treeitem', { name: 'General, 1 document' }).click();
+    await connectedClient
+      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
+      .click();
+    await expect(sourceViewer).toContainText('Page 1 of 2');
+
+    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+    await clientElectronApp.evaluate(({ shell }) => {
+      const scope = globalThis as typeof globalThis & {
+        __relayKnowledgeOriginalOpenExternal?: typeof shell.openExternal;
+        __relayKnowledgeOpenExternalUrls?: string[];
+      };
+      scope.__relayKnowledgeOriginalOpenExternal = shell.openExternal;
+      scope.__relayKnowledgeOpenExternalUrls = [];
+      shell.openExternal = async (url) => {
+        scope.__relayKnowledgeOpenExternalUrls?.push(url);
+      };
+    });
+
+    await sourceViewer.getByRole('button', { name: 'Open example.com in browser' }).click();
+    await expect
+      .poll(() =>
+        clientElectronApp?.evaluate(
+          () =>
+            (
+              globalThis as typeof globalThis & {
+                __relayKnowledgeOpenExternalUrls?: string[];
+              }
+            ).__relayKnowledgeOpenExternalUrls ?? [],
+        ),
+      )
+      .toContain('https://example.com/relay-knowledge-test');
   });
 
   test('Dynatrace Problems tab opens without requiring a configured token', async () => {

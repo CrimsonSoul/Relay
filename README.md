@@ -57,6 +57,12 @@ Root PDFs appear under **General**. One immediate folder level becomes the categ
 
 Relay extracts PDF bookmarks when available and otherwise infers a bounded two-level heading outline from page text. Clients receive searchable metadata in realtime and download PDF bytes only when an operator opens a document. There are no in-app upload, edit, download, print, or annotation controls.
 
+### Authoring links
+
+Use the ordinary **Insert Link** action in Word or Acrobat when one guide should point to another. Prefer unique PDF filenames so Relay can identify a guide even if it moves to another category. When duplicate filenames are necessary, author a relative path from the source guide to disambiguate the target.
+
+Append an optional, one-based `#page=N` fragment to open a specific page. Relay treats an absolute author path only as a PDF filename for matching indexed metadata; it never reads the author's directory from an operator's computer. HTTP(S) links open in the operator's managed system browser. If a target PDF is renamed, update links that refer to its old filename.
+
 ## Docs
 
 - `docs/architecture.md`: runtime model, data flow, and subsystem layout
