@@ -24,6 +24,7 @@ export function useKeyboardShortcuts({
       '6': 'Notes',
       '7': 'Alerts',
       '8': 'Problems',
+      '9': 'Knowledge',
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {

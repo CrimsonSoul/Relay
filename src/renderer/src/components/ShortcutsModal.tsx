@@ -21,6 +21,7 @@ const shortcuts = [
       { keys: `${modKey} + 6`, description: 'Go to Notes' },
       { keys: `${modKey} + 7`, description: 'Go to Alerts' },
       { keys: `${modKey} + 8`, description: 'Go to Dynatrace Problems' },
+      { keys: `${modKey} + 9`, description: 'Go to Knowledge Base' },
     ],
   },
   {

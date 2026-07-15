@@ -41,6 +41,7 @@ vi.mock('../sidebar/SidebarIcons', () => ({
   PeopleIcon: () => <span>PeopleIcon</span>,
   ServersIcon: () => <span>ServersIcon</span>,
   NotesIcon: () => <span>NotesIcon</span>,
+  KnowledgeIcon: () => <span>KnowledgeIcon</span>,
   StatusIcon: () => <span>StatusIcon</span>,
   ProblemsIcon: () => <span>ProblemsIcon</span>,
   DashboardsIcon: () => <span>DashboardsIcon</span>,
@@ -63,6 +64,7 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('sidebar-btn-alerts')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-on-call')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-notes')).toBeInTheDocument();
+    expect(screen.getByTestId('sidebar-btn-knowledge')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-status')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-problems')).toBeInTheDocument();
     expect(screen.getByTestId('sidebar-btn-people')).toBeInTheDocument();
@@ -194,6 +196,18 @@ describe('Sidebar', () => {
 
     fireEvent.click(screen.getByTestId('sidebar-btn-alerts'));
     expect(onTabChange).toHaveBeenCalledWith('Alerts');
+  });
+
+  it('opens Knowledge from the navigation immediately after Notes', () => {
+    const onTabChange = vi.fn();
+    const { container } = render(<Sidebar {...defaultProps} onTabChange={onTabChange} />);
+
+    fireEvent.click(screen.getByTestId('sidebar-btn-knowledge'));
+    expect(onTabChange).toHaveBeenCalledWith('Knowledge');
+    const navLabels = [...container.querySelectorAll('.sidebar-nav button')].map(
+      (button) => button.textContent,
+    );
+    expect(navLabels.indexOf('Knowledge')).toBe(navLabels.indexOf('Notes') + 1);
   });
 
   it('calls onOpenSettings when Settings is clicked', () => {

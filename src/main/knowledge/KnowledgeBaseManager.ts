@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { watch as watchFiles, type FSWatcher } from 'node:fs';
-import { readFile as readFilePromise } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import type PocketBase from 'pocketbase';
 import {
@@ -12,6 +11,7 @@ import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
 import {
   ensureKnowledgeRoot,
+  readKnowledgeSourceFile,
   scanKnowledgeRoot,
   type KnowledgeSourceCandidate,
   type KnowledgeSourceScan,
@@ -102,7 +102,7 @@ export class KnowledgeBaseManager {
   private readonly extractor: Extractor;
   private readonly ensureRoot: (root: string) => Promise<void>;
   private readonly scan: (root: string) => Promise<KnowledgeSourceScan>;
-  private readonly readFile: (path: string) => Promise<Buffer>;
+  private readonly readSource: (source: KnowledgeSourceCandidate) => Promise<Buffer>;
   private readonly checksum: (data: Uint8Array) => string;
   private readonly watch: NonNullable<KnowledgeBaseManagerOptions['watch']>;
   private readonly broadcastStatus: (status: KnowledgeIndexStatus) => void;
@@ -127,7 +127,9 @@ export class KnowledgeBaseManager {
     this.extractor = options.extractor ?? new KnowledgeExtractorWorker();
     this.ensureRoot = options.ensureRoot ?? ensureKnowledgeRoot;
     this.scan = options.scan ?? scanKnowledgeRoot;
-    this.readFile = options.readFile ?? (async (path) => readFilePromise(path));
+    this.readSource = options.readFile
+      ? (source) => options.readFile!(source.canonicalPath)
+      : (source) => readKnowledgeSourceFile(this.root, source);
     this.checksum = options.checksum ?? defaultChecksum;
     this.watch = options.watch ?? defaultWatch;
     this.broadcastStatus = options.broadcastStatus ?? (() => undefined);
@@ -138,7 +140,6 @@ export class KnowledgeBaseManager {
     if (this.started) return;
     this.started = true;
     this.stopped = false;
-    await this.ensureRoot(this.root);
     await this.reconcile();
     if (this.stopped) return;
     this.startWatcher();
@@ -165,9 +166,13 @@ export class KnowledgeBaseManager {
 
   async reconcile(): Promise<void> {
     if (this.reconciliation) return this.reconciliation;
-    this.reconciliation = this.performReconciliation().finally(() => {
-      this.reconciliation = null;
-    });
+    this.reconciliation = this.performReconciliation()
+      .catch(() => {
+        this.updateStatus({ state: 'error', message: 'Knowledge index refresh failed' });
+      })
+      .finally(() => {
+        this.reconciliation = null;
+      });
     return this.reconciliation;
   }
 
@@ -208,7 +213,12 @@ export class KnowledgeBaseManager {
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
       .getFullList<KnowledgeDocumentRecord>({ requestKey: null });
     const recordsBySource = new Map(records.map((record) => [record.sourceKey, record]));
-    const scan = await this.scan(this.root);
+    let scan = await this.scan(this.root);
+
+    if (!scan.healthy && recordsBySource.size === 0) {
+      await this.ensureRoot(this.root);
+      scan = await this.scan(this.root);
+    }
 
     if (!scan.healthy) {
       this.updateCounts(recordsBySource, 'warning', 'Knowledge source is unavailable');
@@ -229,7 +239,13 @@ export class KnowledgeBaseManager {
     const missing = [...recordsBySource.values()].filter(
       (record) => !sourceKeys.has(record.sourceKey),
     );
-    const deletionWarning = await this.applySafeDeletions(pb, missing, recordsBySource);
+    let deletionWarning = false;
+    if (scan.issues.length > 0) {
+      this.pendingBulkDeletion = null;
+      deletionWarning = missing.length > 0;
+    } else {
+      deletionWarning = await this.applySafeDeletions(pb, missing, recordsBySource);
+    }
     const hasWarning = failures > 0 || deletionWarning;
     this.updateCounts(
       recordsBySource,
@@ -251,7 +267,7 @@ export class KnowledgeBaseManager {
       return existing;
     }
 
-    const data = await this.readFile(source.canonicalPath);
+    const data = await this.readSource(source);
     const checksum = this.checksum(data);
     if (existing?.checksum === checksum) {
       await pb.collection(KNOWLEDGE_DOCUMENTS_COLLECTION).update(existing.id, {

@@ -130,6 +130,8 @@ Key files:
 - `src/main/utils/pathValidation.ts`
 - `src/main/utils/pathSafety.ts`
 
+Knowledge Base source handling adds a feature-specific containment layer in `src/main/knowledge/knowledgePathSafety.ts`. Scans accept only regular PDF files from the configured source root or one immediate category directory. They reject symbolic links, traversal, control characters, invalid signatures, oversize files, and paths whose canonical target leaves the root. Reads reopen with no-follow semantics and revalidate the file identity, size, modification time, signature, and canonical containment to close scan/read replacement races.
+
 ### Cache IPC Validation
 
 `src/main/handlers/cacheHandlers.ts` restricts cache access with explicit allowlists.
@@ -196,6 +198,18 @@ When the server is LAN-bound (`0.0.0.0`), Relay advertises a `_relay._tcp` servi
 Relay manages its own collections at startup. Bootstrap creates missing Relay collections, adds missing fields, and re-applies authenticated API rules to existing managed collections.
 
 Unknown collections are left in place and logged as unmanaged. Startup must not delete application or operator-created collections outside Relay's managed collection list.
+
+### Knowledge Base Documents
+
+The Knowledge Base is read-only from the renderer. `knowledge_documents` has authenticated list/view rules and no create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only the server-side indexer writes it.
+
+The preload bridge exposes only `getKnowledgePdf({ documentId, checksum })` and `getKnowledgeIndexStatus()`. The request schema accepts a bounded PocketBase-style ID and lowercase SHA-256 checksum; it does not accept paths, URLs, tokens, or credentials. Each handler validates the sender as a trusted Relay main frame before invoking the main-process service.
+
+On clients, the main process checks the configured Relay server's PocketBase health endpoint, then authenticates with Relay's existing app account and configured connection secret before requesting the protected file. This distinguishes Relay reachability from generic internet connectivity. It uses the configured, policy-validated LAN server URL and does not add certificate bypasses, external fetches, or permissive CORS headers. Response bodies are streamed through a hard bound before allocation; cached files are size-checked before reading. Downloaded bytes must match the PDF signature, collection byte count, 50 MiB limit, and requested SHA-256 before an atomic cache write.
+
+PDF parsing runs in a single-concurrency worker with a 30-second job timeout, a 1,000-page limit, and a 500-heading output limit. PDF.js evaluation is disabled. The renderer loads the bundled PDF.js worker locally with automatic fetch/streaming disabled and exposes canvas/text rendering only: no PDF forms, attachments, annotations, external links, print, or download controls. CSP retains `object-src 'none'`; the feature does not embed a browser PDF plugin or use cloud OCR, telemetry, or CDN assets.
+
+Knowledge metadata uses the normal authenticated PocketBase/realtime path and may be stored in the read-only offline snapshot. PDF caches are content-addressed, checksum-validated, bounded to 2 GiB, and pruned through Relay's existing daily maintenance cycle. This protects integrity and limits disk use, but it is not encryption: continue to rely on managed-device access controls and full-disk encryption for confidential runbooks. HTTP remains appropriate only on the trusted LAN deployment described above; use HTTPS if traffic crosses that boundary.
 
 ## Backups, Sync, And Resilience
 

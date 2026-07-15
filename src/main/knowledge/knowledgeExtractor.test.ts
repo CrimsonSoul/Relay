@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { extractKnowledgePdf } from './knowledgeExtractor';
 
-function buildPdf({ outline = false, text = true }: { outline?: boolean; text?: boolean } = {}) {
+function buildPdf({
+  outline = false,
+  text = true,
+  title = 'Operations Runbook',
+}: { outline?: boolean; text?: boolean; title?: string } = {}) {
   const stream = text
     ? 'BT\n/F1 24 Tf\n72 700 Td\n(Overview) Tj\n/F1 12 Tf\n0 -50 Td\n(This paragraph contains the operational details for the runbook.) Tj\nET'
     : '';
@@ -12,7 +16,7 @@ function buildPdf({ outline = false, text = true }: { outline?: boolean; text?: 
     '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
     '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
     `5 0 obj\n<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream\nendobj\n`,
-    '6 0 obj\n<< /Title (Operations Runbook) >>\nendobj\n',
+    `6 0 obj\n<< /Title (${title}) >>\nendobj\n`,
     ...(outline
       ? [
           '7 0 obj\n<< /Type /Outlines /First 8 0 R /Last 8 0 R /Count 1 >>\nendobj\n',
@@ -63,6 +67,12 @@ describe('extractKnowledgePdf', () => {
     const result = await extractKnowledgePdf(buildPdf({ text: false }));
 
     expect(result).toMatchObject({ pageCount: 1, outline: [], outlineSource: 'none' });
+  });
+
+  it('discards metadata titles containing control characters', async () => {
+    const result = await extractKnowledgePdf(buildPdf({ title: 'Unsafe\u0007Title' }));
+
+    expect(result.metadataTitle).toBeNull();
   });
 
   it('rejects malformed PDF bytes', async () => {

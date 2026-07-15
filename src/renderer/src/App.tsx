@@ -45,6 +45,7 @@ import {
   ON_CALL_FONT_SCALE_STORAGE_KEY,
   setOnCallFontScale,
 } from './theme/onCallDisplay';
+import { requestKnowledgeDocumentOpen } from './features/knowledge/knowledgeNavigation';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -61,6 +62,7 @@ const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab'
 const SettingsTab = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
 const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
 const NotesTab = lazyTab(() => import('./tabs/NotesTab'), 'NotesTab');
+const KnowledgeTab = lazyTab(() => import('./features/knowledge/KnowledgeTab'), 'KnowledgeTab');
 const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
 const DynatraceProblemsTab = lazyTab(
   () => import('./tabs/DynatraceProblemsTab'),
@@ -308,6 +310,7 @@ export function MainApp({
                   People: 'People',
                   Servers: 'Servers',
                   Notes: 'Notes',
+                  Knowledge: 'Knowledge Base',
                   Status: 'Service Status',
                   Problems: 'Dynatrace Problems',
                   Alerts: 'Alerts',
@@ -331,6 +334,10 @@ export function MainApp({
                   onOpenAddContact: (email) => {
                     setInitialContactEmail(email || '');
                     addContactModal.open();
+                  },
+                  onOpenKnowledgeDocument: (documentId, headingId) => {
+                    requestKnowledgeDocumentOpen(documentId, headingId);
+                    setActiveTab('Knowledge');
                   },
                 }}
               />
@@ -406,6 +413,18 @@ export function MainApp({
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
                     <NotesTab active={activeTab === 'Notes'} />
+                  </Suspense>
+                </ErrorBoundary>
+              </RetainedTabPanel>
+            )}
+            {mountedTabs.has('Knowledge') && (
+              <RetainedTabPanel active={activeTab === 'Knowledge'}>
+                <ErrorBoundary fallback={errorFallback}>
+                  <Suspense fallback={<TabFallback />}>
+                    <KnowledgeTab
+                      active={activeTab === 'Knowledge'}
+                      relayMode={relayConfig?.mode}
+                    />
                   </Suspense>
                 </ErrorBoundary>
               </RetainedTabPanel>

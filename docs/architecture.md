@@ -50,6 +50,7 @@ IPC is reserved for operations the renderer should not perform directly, includi
 - Clipboard and file-system actions
 - Backup and restore
 - Offline cache reads and sync triggers
+- Knowledge Base PDF/status reads
 - Logging bridge events
 
 The canonical channel and bridge definitions live in `src/shared/ipc.ts`.
@@ -122,6 +123,20 @@ Responsibilities:
 - Replay queued changes when the connection returns
 - Record conflicts in the `conflict_log` collection
 
+### Read-Only Knowledge Base
+
+The Relay server owns the Knowledge Base source library at `<config data>/knowledge-base`. A PDF at the root is categorized as `General`; an immediate child directory becomes a category; deeper directories are ignored. Source files are limited to 50 MiB and 1,000 pages. The renderer has no mutation path for the library.
+
+`KnowledgeBaseManager` creates the source folder for a new empty library, performs a startup reconciliation, debounces filesystem changes, and repeats reconciliation every five minutes as a watcher fallback. If mirrored records already exist but the source root is absent, it preserves the mirror and waits for the source to be restored instead of creating an empty root that could look like a mass deletion. It hashes and reparses changed files only. A single-concurrency worker extracts native PDF bookmarks when present and otherwise infers a bounded, two-level heading outline. The persisted outline is limited to 500 nodes.
+
+The server mirrors metadata and a protected PDF file into the server-owned `knowledge_documents` PocketBase collection. Clients subscribe to that metadata through the same realtime and offline snapshot path as other read models. PDF bytes do not ride the metadata stream: the renderer requests one validated document/checksum pair through trusted IPC, and the main process either reads the validated server source or authenticates to the Relay server's protected file endpoint.
+
+Opened client PDFs are stored content-addressed at `<config data>/knowledge-cache/<sha256>.pdf`. Downloads are size-, signature-, and checksum-verified before atomic promotion. The cache is on demand, has a 2 GiB LRU budget, and retains unreferenced entries for at most 30 days. Cached documents remain available while disconnected; unopened documents show an offline-unavailable state. Knowledge metadata and PDF bytes stay on the configured Relay LAN path.
+
+Deletion reconciliation preserves the last healthy index when the folder is missing or unreadable. Any invalid or unreadable entry also blocks deletions for that scan, so a partial copy cannot turn the last healthy mirror into a deletion. If more than 25% of known documents disappear, Relay requires the identical missing set in two healthy scans at least five minutes apart before deleting records. Failed extraction or upload preserves the last valid record.
+
+PocketBase backup/restore includes the mirrored collection and protected file storage. The administrator-managed source folder and each workstation's local PDF cache are outside that backup; preserve the source folder separately. After a restore, the server reconciles the mirror against the source library, while clients can repopulate caches on demand.
+
 ## Renderer Structure
 
 ### App Shell
@@ -146,6 +161,7 @@ The current primary tabs are:
 - Alerts
 - On-Call
 - Notes
+- Knowledge
 - Service Status
 - People
 - Servers
@@ -164,23 +180,26 @@ This keeps React views thin and moves data operations into testable modules.
 
 Relay bootstraps the PocketBase collections it needs at runtime. The core collections include:
 
-| Collection              | Purpose                                |
-| ----------------------- | -------------------------------------- |
-| `contacts`              | People directory                       |
-| `servers`               | Server directory                       |
-| `oncall`                | On-call rows and ordering              |
-| `bridge_groups`         | Saved compose groups                   |
-| `bridge_history`        | Compose history                        |
-| `alert_history`         | Saved alert cards                      |
-| `alert_reminders`       | Follow-up reminders from alerts        |
-| `notes`                 | Notes attached to contacts and servers |
-| `standalone_notes`      | Freeform notes tab data                |
-| `oncall_dismissals`     | On-call alert dismissals               |
-| `oncall_board_settings` | Board-level settings                   |
-| `client_presence`       | Active client heartbeat records        |
-| `conflict_log`          | Offline sync conflict records          |
+| Collection              | Purpose                                     |
+| ----------------------- | ------------------------------------------- |
+| `contacts`              | People directory                            |
+| `servers`               | Server directory                            |
+| `oncall`                | On-call rows and ordering                   |
+| `bridge_groups`         | Saved compose groups                        |
+| `bridge_history`        | Compose history                             |
+| `alert_history`         | Saved alert cards                           |
+| `alert_reminders`       | Follow-up reminders from alerts             |
+| `notes`                 | Notes attached to contacts and servers      |
+| `standalone_notes`      | Freeform notes tab data                     |
+| `oncall_dismissals`     | On-call alert dismissals                    |
+| `oncall_board_settings` | Board-level settings                        |
+| `client_presence`       | Active client heartbeat records             |
+| `conflict_log`          | Offline sync conflict records               |
+| `knowledge_documents`   | Read-only PDF metadata and protected mirror |
 
 Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local operator convenience and contains external URLs rather than shared operational data.
+
+`knowledge_documents` is server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. It is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists.
 
 ## Windowing
 

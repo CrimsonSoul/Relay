@@ -1,5 +1,5 @@
 import { lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
-import type { Dirent } from 'node:fs';
+import { constants, type Dirent, type Stats } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
@@ -60,6 +60,56 @@ function hasControlCharacter(value: string): boolean {
 function isContained(root: string, candidate: string): boolean {
   const pathFromRoot = relative(root, candidate);
   return pathFromRoot !== '' && pathFromRoot !== '..' && !pathFromRoot.startsWith(`..${sep}`);
+}
+
+function sameFile(left: Stats, right: Stats): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.size === right.size &&
+    left.mtimeMs === right.mtimeMs
+  );
+}
+
+/** Revalidate a scanned candidate through its open file handle to close path-swap races. */
+export async function readKnowledgeSourceFile(
+  root: string,
+  source: KnowledgeSourceCandidate,
+): Promise<Buffer> {
+  try {
+    const canonicalRoot = await realpath(resolve(root));
+    const pathStats = await lstat(source.canonicalPath);
+    if (pathStats.isSymbolicLink() || !pathStats.isFile()) throw new Error('unsafe path');
+    const canonicalPath = await realpath(source.canonicalPath);
+    if (!isContained(canonicalRoot, canonicalPath)) throw new Error('outside root');
+
+    const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
+    const handle = await open(source.canonicalPath, constants.O_RDONLY | noFollow);
+    try {
+      const openedStats = await handle.stat();
+      if (
+        !openedStats.isFile() ||
+        !sameFile(pathStats, openedStats) ||
+        openedStats.size !== source.byteSize ||
+        openedStats.mtime.toISOString() !== source.sourceModifiedAt ||
+        openedStats.size <= 0 ||
+        openedStats.size > KNOWLEDGE_MAX_PDF_BYTES
+      ) {
+        throw new Error('source changed');
+      }
+      const data = await handle.readFile();
+      const finalStats = await handle.stat();
+      if (!sameFile(openedStats, finalStats) || data.byteLength !== finalStats.size) {
+        throw new Error('source changed while reading');
+      }
+      if (data.subarray(0, 5).toString('ascii') !== '%PDF-') throw new Error('invalid signature');
+      return data;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    throw new Error('Knowledge source changed or is no longer safe');
+  }
 }
 
 async function hasPdfSignature(path: string): Promise<boolean> {

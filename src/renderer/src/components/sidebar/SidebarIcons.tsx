@@ -123,6 +123,23 @@ export const NotesIcon = () => (
   </svg>
 );
 
+export const KnowledgeIcon = () => (
+  <svg
+    width="20"
+    height="20"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z" />
+    <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z" />
+    <path d="M7 7h2M15 7h2M7 11h2M15 11h2" />
+  </svg>
+);
+
 export const AlertsIcon = () => (
   <svg
     width="20"

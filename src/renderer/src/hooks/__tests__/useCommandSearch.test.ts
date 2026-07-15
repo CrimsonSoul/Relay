@@ -2,6 +2,7 @@ import { renderHook } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { useCommandSearch } from '../useCommandSearch';
 import type { Contact, Server, BridgeGroup } from '@shared/ipc';
+import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 
 const makeContact = (overrides: Partial<Contact> = {}): Contact => ({
   email: 'alice@example.com',
@@ -30,6 +31,29 @@ const makeGroup = (overrides: Partial<BridgeGroup> = {}): BridgeGroup => ({
   id: 'g1',
   name: 'Group Alpha',
   contacts: [],
+  ...overrides,
+});
+
+const makeKnowledgeDocument = (
+  overrides: Partial<KnowledgeDocumentRecord> = {},
+): KnowledgeDocumentRecord => ({
+  id: 'kb-1',
+  sourceKey: 'Operations/Lane recovery.pdf',
+  category: 'Operations',
+  title: 'Lane recovery',
+  fileName: 'Lane recovery.pdf',
+  pdf: 'Lane recovery.pdf',
+  checksum: 'a'.repeat(64),
+  byteSize: 1024,
+  pageCount: 3,
+  outline: [
+    { id: 'heading', label: 'Restart the store service', level: 1, pageIndex: 1, top: 700 },
+  ],
+  outlineSource: 'native',
+  sourceModifiedAt: '2026-07-14T12:00:00.000Z',
+  indexedAt: '2026-07-14T12:00:00.000Z',
+  created: '2026-07-14T12:00:00.000Z',
+  updated: '2026-07-14T12:00:00.000Z',
   ...overrides,
 });
 
@@ -174,6 +198,23 @@ describe('useCommandSearch', () => {
       );
       const { result } = renderHook(() => useCommandSearch('user', contacts, [], []));
       expect(result.current.length).toBeLessThanOrEqual(15);
+    });
+  });
+
+  describe('knowledge search', () => {
+    it('finds a document by extracted heading and preserves the document for navigation', () => {
+      const guide = makeKnowledgeDocument();
+      const { result } = renderHook(() => useCommandSearch('store service', [], [], [], [guide]));
+
+      expect(result.current).toEqual([
+        expect.objectContaining({
+          id: 'knowledge-kb-1',
+          type: 'knowledge',
+          title: 'Lane recovery',
+          subtitle: 'Operations · Restart the store service',
+          data: { document: guide, headingId: 'heading' },
+        }),
+      ]);
     });
   });
 

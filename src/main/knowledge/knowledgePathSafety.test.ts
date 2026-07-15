@@ -3,7 +3,11 @@ import { mkdtemp, mkdir, rm, symlink, truncate, writeFile } from 'node:fs/promis
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { KNOWLEDGE_MAX_PDF_BYTES } from '@shared/knowledge';
-import { ensureKnowledgeRoot, scanKnowledgeRoot } from './knowledgePathSafety';
+import {
+  ensureKnowledgeRoot,
+  readKnowledgeSourceFile,
+  scanKnowledgeRoot,
+} from './knowledgePathSafety';
 
 const roots: string[] = [];
 const pdfBytes = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF');
@@ -96,5 +100,25 @@ describe('knowledgePathSafety', () => {
     const result = await scanKnowledgeRoot(join(parent, 'missing'));
 
     expect(result).toMatchObject({ healthy: false, candidates: [], issues: [] });
+  });
+
+  it('reads the scanned file but rejects a symlink swapped in after validation', async () => {
+    const root = await temporaryRoot();
+    const outside = await temporaryRoot();
+    const sourcePath = join(root, 'Guide.pdf');
+    await writeFile(sourcePath, pdfBytes);
+    const scan = await scanKnowledgeRoot(root);
+    const candidate = scan.candidates[0]!;
+
+    await expect(readKnowledgeSourceFile(root, candidate)).resolves.toEqual(pdfBytes);
+
+    const outsidePath = join(outside, 'Outside.pdf');
+    await writeFile(outsidePath, pdfBytes);
+    await rm(sourcePath);
+    await symlink(outsidePath, sourcePath);
+
+    await expect(readKnowledgeSourceFile(root, candidate)).rejects.toThrow(
+      /changed or is no longer safe/i,
+    );
   });
 });

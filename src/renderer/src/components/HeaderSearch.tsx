@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Contact, Server, BridgeGroup } from '@shared/ipc';
+import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { useSearchContext } from '../contexts/SearchContext';
 import { useCommandSearch, SearchResult, ResultType } from '../hooks/useCommandSearch';
-import { ContactIcon, GroupIcon, ServerIcon, ActionIcon } from './command-palette/CommandIcons';
+import {
+  ContactIcon,
+  GroupIcon,
+  ServerIcon,
+  KnowledgeIcon,
+  ActionIcon,
+} from './command-palette/CommandIcons';
 import { Tooltip } from './Tooltip';
+import { useKnowledgeLibrary } from '../features/knowledge/useKnowledgeLibrary';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
@@ -19,6 +27,7 @@ export type HeaderSearchActions = {
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
   onOpenAddContact: (email?: string) => void;
+  onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
 };
 
 type HeaderSearchProps = {
@@ -26,6 +35,7 @@ type HeaderSearchProps = {
   contacts: Contact[];
   servers: Server[];
   groups: BridgeGroup[];
+  knowledgeDocuments?: KnowledgeDocumentRecord[];
   actions: HeaderSearchActions;
 };
 
@@ -37,6 +47,8 @@ const RenderIcon: React.FC<{ result: SearchResult }> = ({ result }) => {
       return <GroupIcon />;
     case 'server':
       return <ServerIcon />;
+    case 'knowledge':
+      return <KnowledgeIcon />;
     case 'action':
       return <ActionIcon type={result.iconType} />;
     default:
@@ -49,9 +61,18 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
   contacts,
   servers,
   groups,
+  knowledgeDocuments,
   actions,
 }) => {
-  const { onAddContactToBridge, onToggleGroup, onNavigateToTab, onOpenAddContact } = actions;
+  const knowledgeLibrary = useKnowledgeLibrary();
+  const searchableKnowledgeDocuments = knowledgeDocuments ?? knowledgeLibrary.documents;
+  const {
+    onAddContactToBridge,
+    onToggleGroup,
+    onNavigateToTab,
+    onOpenAddContact,
+    onOpenKnowledgeDocument,
+  } = actions;
   const { query, setQuery, isSearchFocused, setIsSearchFocused, searchInputRef, clearSearch } =
     useSearchContext();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -66,7 +87,13 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     return () => clearTimeout(timer);
   }, [query]);
 
-  const allResults = useCommandSearch(dropdownQuery, contacts, servers, groups);
+  const allResults = useCommandSearch(
+    dropdownQuery,
+    contacts,
+    servers,
+    groups,
+    searchableKnowledgeDocuments,
+  );
 
   // On filterable tabs, hide results that duplicate the tab's filtered list
   const dropdownResults = useMemo(() => {
@@ -108,6 +135,14 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           onNavigateToTab('Servers');
           break;
         }
+        case 'knowledge': {
+          const selection = result.data as {
+            document: KnowledgeDocumentRecord;
+            headingId?: string;
+          };
+          onOpenKnowledgeDocument(selection.document.id, selection.headingId);
+          break;
+        }
         case 'action': {
           const action = result.data as { action: string; tab?: string; value?: string };
           if (action.action === 'navigate' && action.tab) {
@@ -128,6 +163,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       onToggleGroup,
       onNavigateToTab,
       onOpenAddContact,
+      onOpenKnowledgeDocument,
       clearSearch,
       searchInputRef,
     ],

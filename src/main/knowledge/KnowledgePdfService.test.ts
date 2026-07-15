@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import { KNOWLEDGE_MAX_PDF_BYTES } from '@shared/knowledge';
 import { KnowledgePdfService } from './KnowledgePdfService';
 
 const roots: string[] = [];
@@ -26,6 +27,7 @@ describe('KnowledgePdfService', () => {
   const getOne = vi.fn();
   const getToken = vi.fn(async () => 'protected-file-token');
   const getURL = vi.fn(() => `${relayUrl}/api/files/knowledge/document123/runbook.pdf`);
+  const healthCheck = vi.fn(async () => ({ code: 200 }));
   const authStore = { isValid: false };
   const pb = {
     authStore,
@@ -33,6 +35,7 @@ describe('KnowledgePdfService', () => {
       name === '_pb_users_auth_' ? { authWithPassword } : { getOne },
     ),
     files: { getToken, getURL },
+    health: { check: healthCheck },
   };
   const createClient = vi.fn(() => pb as never);
   const fetchPdf = vi.fn(async () => new Response(pdf, { status: 200 }));
@@ -136,6 +139,7 @@ describe('KnowledgePdfService', () => {
       expect.stringContaining(`${relayUrl}/`),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    expect(fetchPdf.mock.calls[0]?.[1]).not.toHaveProperty('headers');
     await expect(
       readFile(join(configDataDir, 'knowledge-cache', `${pdfChecksum}.pdf`)),
     ).resolves.toEqual(pdf);
@@ -164,7 +168,13 @@ describe('KnowledgePdfService', () => {
     expect(fetchPdf).toHaveBeenCalledTimes(2);
   });
 
-  it('returns not-available-offline without attempting auth for an uncached client PDF', async () => {
+  it('rejects an oversized response before buffering its body', async () => {
+    const response = new Response(pdf, {
+      status: 200,
+      headers: { 'content-length': String(KNOWLEDGE_MAX_PDF_BYTES + 1) },
+    });
+    const arrayBuffer = vi.spyOn(response, 'arrayBuffer');
+    fetchPdf.mockResolvedValue(response);
     const service = new KnowledgePdfService({
       configDataDir,
       getConfig: () => ({
@@ -176,13 +186,35 @@ describe('KnowledgePdfService', () => {
       getPbClient: () => null,
       createClient,
       fetch: fetchPdf,
-      isOnline: () => false,
+    });
+
+    await expect(
+      service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
+    ).resolves.toEqual({ ok: false, error: 'download-failed' });
+    expect(arrayBuffer).not.toHaveBeenCalled();
+  });
+
+  it('returns not-available-offline without attempting auth for an uncached client PDF', async () => {
+    healthCheck.mockRejectedValueOnce(Object.assign(new Error('Relay unavailable'), { status: 0 }));
+    const service = new KnowledgePdfService({
+      configDataDir,
+      getConfig: () => ({
+        mode: 'client',
+        serverUrl: relayUrl,
+        allowInsecureHttp: true,
+        secret: 'secret',
+      }),
+      getPbClient: () => null,
+      createClient,
+      fetch: fetchPdf,
     });
 
     await expect(
       service.getPdf({ documentId: 'document123', checksum: pdfChecksum }),
     ).resolves.toEqual({ ok: false, error: 'not-available-offline' });
-    expect(createClient).not.toHaveBeenCalled();
+    expect(createClient).toHaveBeenCalledOnce();
+    expect(healthCheck).toHaveBeenCalledWith({ requestKey: null });
+    expect(authWithPassword).not.toHaveBeenCalled();
   });
 
   it('removes old orphans and evicts least-recently-used files without deleting active content', async () => {

@@ -87,6 +87,14 @@ describe('KnowledgeBaseManager', () => {
   }
 
   it('creates the root, indexes a PDF, and starts watcher and reconciliation resources', async () => {
+    scan
+      .mockResolvedValueOnce({
+        healthy: false,
+        candidates: [],
+        issues: [],
+        error: 'missing source root',
+      })
+      .mockResolvedValueOnce({ healthy: true, candidates: [source], issues: [] });
     const instance = manager();
 
     await instance.start();
@@ -140,6 +148,25 @@ describe('KnowledgeBaseManager', () => {
 
     await instance.start();
 
+    expect(ensureRoot).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(instance.getStatus()).toMatchObject({ state: 'warning', documentCount: 1 });
+    await instance.stop();
+  });
+
+  it('does not treat invalid source entries as confirmed deletions', async () => {
+    getFullList.mockResolvedValue([record()]);
+    scan.mockResolvedValue({
+      healthy: true,
+      candidates: [],
+      issues: [{ code: 'invalid-signature', sourceKey: source.sourceKey }],
+    });
+    const instance = manager();
+
+    await instance.start();
+    now += 5 * 60 * 1_000;
+    await instance.reconcile();
+
     expect(remove).not.toHaveBeenCalled();
     expect(instance.getStatus()).toMatchObject({ state: 'warning', documentCount: 1 });
     await instance.stop();
@@ -183,5 +210,18 @@ describe('KnowledgeBaseManager', () => {
     await instance.stop();
     expect(closeWatcher).toHaveBeenCalledOnce();
     expect(extractor.stop).toHaveBeenCalledOnce();
+  });
+
+  it('contains a failed reconciliation and reports it without rejecting background work', async () => {
+    scan.mockRejectedValueOnce(new Error('source changed during scan'));
+    const instance = manager();
+
+    await expect(instance.start()).resolves.toBeUndefined();
+    expect(instance.getStatus()).toMatchObject({
+      state: 'error',
+      message: 'Knowledge index refresh failed',
+    });
+    expect(watch).toHaveBeenCalledOnce();
+    await instance.stop();
   });
 });

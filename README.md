@@ -8,7 +8,7 @@ Relay is an Electron desktop command center for operations teams managing people
 
 - Embedded PocketBase server/client mode with local-first storage and realtime sync
 - Typed preload bridge with Zod-validated IPC contracts
-- Feature tabs for compose, alerts, on-call, notes, service status, people, and servers
+- Feature tabs for compose, alerts, on-call, notes, knowledge, service status, people, and servers
 - Sidebar client presence, connect toasts, and a unified connected/cached/offline indicator
 - Dynatrace dashboard launcher with Relay-styled popout windows and isolated SSO session storage
 - Electron hardening with context isolation, sandboxing, CSP, path validation, and domain-gated external navigation
@@ -34,10 +34,28 @@ Relay is an Electron desktop command center for operations teams managing people
 - **People and Servers**: Search large directories, filter operational records, open context actions, and keep entity notes close to the record
 - **Alerts**: Compose styled incident cards, apply severity formatting, schedule reminders, and capture them to disk or clipboard
 - **Notes**: Maintain standalone tagged notes with reorderable cards and adjustable reading density
+- **Knowledge Base**: Read server-managed PDF runbooks with nested document headings, local search, and on-demand offline caching
 - **Service Status**: Monitor provider incident feeds across major cloud and SaaS vendors
 - **Client Presence**: Show connected Relay clients in server mode, list hostnames on hover, and notify when clients connect
 - **Dynatrace Dashboards**: Save Dynatrace dashboard URLs in Settings, launch them from the sidebar, support Microsoft SSO, and clear the dashboard session when needed
 - **Data Management**: Export, import, reset, and restore Relay data from the Settings modal
+
+## Knowledge Base Setup
+
+The Knowledge tab is read-only for operators. On the Relay server, place PDFs in the `knowledge-base` folder under Relay's configuration data directory:
+
+```text
+knowledge-base/
+├── General runbook.pdf
+├── Monitoring/
+│   └── Dynatrace triage.pdf
+└── Network/
+    └── Edge response.pdf
+```
+
+Root PDFs appear under **General**. One immediate folder level becomes the category; deeper folders are ignored. Relay accepts PDFs up to 50 MiB and 1,000 pages, watches the folder for changes, and also reconciles it every five minutes.
+
+Relay extracts PDF bookmarks when available and otherwise infers a bounded two-level heading outline from page text. Clients receive searchable metadata in realtime and download PDF bytes only when an operator opens a document. There are no in-app upload, edit, download, print, or annotation controls.
 
 ## Docs
 

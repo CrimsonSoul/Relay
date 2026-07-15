@@ -32,10 +32,15 @@ vi.mock('../../hooks/useCommandSearch', () => ({
   useCommandSearch: () => mockSearchResults,
 }));
 
+vi.mock('../../features/knowledge/useKnowledgeLibrary', () => ({
+  useKnowledgeLibrary: () => ({ documents: [] }),
+}));
+
 vi.mock('../command-palette/CommandIcons', () => ({
   ContactIcon: ({ name }: { name: string }) => <span data-testid="contact-icon">{name}</span>,
   GroupIcon: () => <span data-testid="group-icon" />,
   ServerIcon: () => <span data-testid="server-icon" />,
+  KnowledgeIcon: () => <span data-testid="knowledge-icon" />,
   ActionIcon: ({ type }: { type: string }) => <span data-testid="action-icon">{type}</span>,
 }));
 
@@ -44,6 +49,7 @@ const defaultActions: HeaderSearchActions = {
   onToggleGroup: vi.fn(),
   onNavigateToTab: vi.fn(),
   onOpenAddContact: vi.fn(),
+  onOpenKnowledgeDocument: vi.fn(),
 };
 
 const defaultProps = {
@@ -561,6 +567,41 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       expect(screen.getAllByRole('option')).toHaveLength(3);
+    });
+  });
+
+  describe('knowledge result selection', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      mockSearchContext.isSearchFocused = true;
+      mockSearchContext.query = 'recovery';
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('opens the selected knowledge document and renders its distinct icon', () => {
+      mockSearchResults.push({
+        id: 'knowledge-kb-1',
+        title: 'Lane recovery',
+        type: 'knowledge',
+        data: {
+          document: { id: 'kb-1' },
+          headingId: 'restart-service',
+        },
+      });
+      render(<HeaderSearch {...defaultProps} activeTab="Alerts" />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      expect(screen.getByTestId('knowledge-icon')).toBeInTheDocument();
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(defaultActions.onOpenKnowledgeDocument).toHaveBeenCalledWith(
+        'kb-1',
+        'restart-service',
+      );
     });
   });
 

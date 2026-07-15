@@ -90,6 +90,16 @@ async function extractTextPages(document: PDFDocumentProxy): Promise<KnowledgeTe
 function metadataTitle(info: object): string | null {
   const title = 'Title' in info ? (info as { Title?: unknown }).Title : null;
   if (typeof title !== 'string') return null;
+  const hasUnsafeCharacter = Array.from(title).some((character) => {
+    const code = character.codePointAt(0) ?? 0;
+    return (
+      code <= 31 ||
+      (code >= 127 && code <= 159) ||
+      (code >= 0x202a && code <= 0x202e) ||
+      (code >= 0x2066 && code <= 0x2069)
+    );
+  });
+  if (hasUnsafeCharacter) return null;
   const normalized = title.trim().replace(/\s+/g, ' ');
   return normalized.length > 0 && normalized.length <= 240 ? normalized : null;
 }

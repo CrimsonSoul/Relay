@@ -166,6 +166,7 @@ vi.mock('../components/HeaderSearch', () => ({
       onToggleGroup: (id: string) => void;
       onNavigateToTab: (tab: string) => void;
       onOpenAddContact: (email?: string) => void;
+      onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
     };
   }) => (
     <div data-testid="header-search">
@@ -174,6 +175,7 @@ vi.mock('../components/HeaderSearch', () => ({
         add-to-bridge
       </button>
       <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
+      <button onClick={() => actions.onOpenKnowledgeDocument('kb-1')}>open-knowledge</button>
     </div>
   ),
 }));
@@ -274,6 +276,12 @@ vi.mock('../tabs/PersonnelTab', () => ({
 
 vi.mock('../tabs/NotesTab', () => ({
   NotesTab: () => <div data-testid="notes-tab" />,
+}));
+
+vi.mock('../features/knowledge/KnowledgeTab', () => ({
+  KnowledgeTab: ({ active, relayMode }: { active: boolean; relayMode?: string }) => (
+    <div data-testid="knowledge-tab" data-active={active} data-relay-mode={relayMode} />
+  ),
 }));
 
 vi.mock('../tabs/CloudStatusTab', () => ({
@@ -458,6 +466,16 @@ describe('MainApp', () => {
     });
   });
 
+  it('renders Knowledge as a retained top-level tab with the correct breadcrumb', async () => {
+    mockActiveTab = 'Knowledge';
+    renderApp('', { relayConfig: { mode: 'server', port: 8090 } as never });
+
+    await vi.waitFor(() => expect(screen.getByTestId('knowledge-tab')).toBeInTheDocument());
+    expect(screen.getByTestId('knowledge-tab')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('knowledge-tab')).toHaveAttribute('data-relay-mode', 'server');
+    expect(screen.getByText('Relay / Knowledge Base')).toBeInTheDocument();
+  });
+
   it('navigates to Settings when the sidebar settings button is clicked', () => {
     renderApp();
     fireEvent.click(screen.getByText('open-settings'));
@@ -467,6 +485,12 @@ describe('MainApp', () => {
   it('renders header search bar', () => {
     renderApp();
     expect(screen.getByTestId('header-search')).toBeInTheDocument();
+  });
+
+  it('routes a global knowledge search result to the Knowledge tab', () => {
+    renderApp();
+    fireEvent.click(screen.getByText('open-knowledge'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
   });
 
   it('mounts global alert reminders', () => {
@@ -723,6 +747,14 @@ describe('MainApp', () => {
       fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
     });
     expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
+  });
+
+  it('navigates tab on Cmd+9 (Knowledge)', () => {
+    renderApp();
+    act(() => {
+      fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
+    });
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
   });
 
   it('navigates tab on Cmd+7 (Alerts)', () => {

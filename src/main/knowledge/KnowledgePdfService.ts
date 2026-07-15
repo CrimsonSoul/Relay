@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import PocketBase from 'pocketbase';
-import { IPC_CHANNELS, RELAY_APP_USER_EMAIL } from '@shared/ipc';
+import { RELAY_APP_USER_EMAIL } from '@shared/ipc';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -14,7 +14,7 @@ import {
 } from '@shared/knowledge';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
-import { scanKnowledgeRoot } from './knowledgePathSafety';
+import { readKnowledgeSourceFile, scanKnowledgeRoot } from './knowledgePathSafety';
 
 const DEFAULT_CACHE_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_ORPHAN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -28,7 +28,6 @@ type KnowledgePdfServiceOptions = {
   resolveServerSource?: (record: KnowledgeDocumentRecord) => Promise<string | null>;
   createClient?: (url: string) => PocketBase;
   fetch?: typeof globalThis.fetch;
-  isOnline?: () => boolean;
   cacheBudgetBytes?: number;
   orphanMaxAgeMs?: number;
   now?: () => number;
@@ -63,10 +62,9 @@ export class KnowledgePdfService {
   private readonly knowledgeRoot: string;
   private readonly getConfig: () => RelayConfig | null;
   private readonly getPbClient: () => PocketBase | null;
-  private readonly resolveServerSource: (record: KnowledgeDocumentRecord) => Promise<string | null>;
+  private readonly readServerSource: (record: KnowledgeDocumentRecord) => Promise<Buffer | null>;
   private readonly createClient: (url: string) => PocketBase;
   private readonly fetchPdf: typeof globalThis.fetch;
-  private readonly isOnline: () => boolean;
   private readonly cacheBudgetBytes: number;
   private readonly orphanMaxAgeMs: number;
   private readonly now: () => number;
@@ -78,18 +76,18 @@ export class KnowledgePdfService {
     this.knowledgeRoot = join(options.configDataDir, 'knowledge-base');
     this.getConfig = options.getConfig;
     this.getPbClient = options.getPbClient;
-    this.resolveServerSource =
-      options.resolveServerSource ??
-      (async (record) => {
-        const scan = await scanKnowledgeRoot(this.knowledgeRoot);
-        return (
-          scan.candidates.find((candidate) => candidate.sourceKey === record.sourceKey)
-            ?.canonicalPath ?? null
-        );
-      });
+    this.readServerSource = options.resolveServerSource
+      ? async (record) => {
+          const sourcePath = await options.resolveServerSource!(record);
+          return sourcePath ? readFile(sourcePath) : null;
+        }
+      : async (record) => {
+          const scan = await scanKnowledgeRoot(this.knowledgeRoot);
+          const candidate = scan.candidates.find((source) => source.sourceKey === record.sourceKey);
+          return candidate ? readKnowledgeSourceFile(this.knowledgeRoot, candidate) : null;
+        };
     this.createClient = options.createClient ?? ((url) => new PocketBase(url));
     this.fetchPdf = options.fetch ?? globalThis.fetch;
-    this.isOnline = options.isOnline ?? (() => true);
     this.cacheBudgetBytes = options.cacheBudgetBytes ?? DEFAULT_CACHE_BUDGET_BYTES;
     this.orphanMaxAgeMs = options.orphanMaxAgeMs ?? DEFAULT_ORPHAN_MAX_AGE_MS;
     this.now = options.now ?? Date.now;
@@ -112,7 +110,6 @@ export class KnowledgePdfService {
     if (config.mode === 'client') {
       const cached = await this.readCache(request.checksum);
       if (cached) return this.success(cached, request.checksum, 'cache');
-      if (!this.isOnline()) return { ok: false, error: 'not-available-offline' };
       return this.getClientPdf(config, request);
     }
     return this.getServerPdf(request);
@@ -160,10 +157,13 @@ export class KnowledgePdfService {
       return { ok: false, error: 'invalid-document' };
     }
 
-    const sourcePath = await this.resolveServerSource(record);
-    if (sourcePath) {
-      const data = await readFile(sourcePath);
-      if (validPdfBytes(data, record)) return this.success(data, record.checksum, 'server');
+    try {
+      const data = await this.readServerSource(record);
+      if (data && validPdfBytes(data, record)) {
+        return this.success(data, record.checksum, 'server');
+      }
+    } catch {
+      // A changed local source falls back to the authenticated PocketBase file copy.
     }
 
     return this.downloadProtectedPdf(pb, raw, record, false);
@@ -177,9 +177,15 @@ export class KnowledgePdfService {
       return { ok: false, error: 'invalid-document' };
     }
 
+    const pb = this.client ?? this.createClient(config.serverUrl);
+    this.client = pb;
     try {
-      const pb = this.client ?? this.createClient(config.serverUrl);
-      this.client = pb;
+      await pb.health.check({ requestKey: null });
+    } catch {
+      return { ok: false, error: 'not-available-offline' };
+    }
+
+    try {
       if (!pb.authStore.isValid) {
         await pb
           .collection('_pb_users_auth_')
@@ -194,9 +200,7 @@ export class KnowledgePdfService {
       }
       return await this.downloadProtectedPdf(pb, raw, record, true);
     } catch {
-      return this.isOnline()
-        ? { ok: false, error: 'download-failed' }
-        : { ok: false, error: 'not-available-offline' };
+      return { ok: false, error: 'download-failed' };
     }
   }
 
@@ -217,7 +221,7 @@ export class KnowledgePdfService {
     if (!url) return { ok: false, error: 'not-found' };
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const data = await this.fetchBytes(url);
+      const data = await this.fetchBytes(url, Math.min(record.byteSize, KNOWLEDGE_MAX_PDF_BYTES));
       if (!data) return { ok: false, error: 'download-failed' };
       if (!validPdfBytes(data, record)) continue;
       if (cache) await this.promoteCache(record.checksum, data);
@@ -226,17 +230,39 @@ export class KnowledgePdfService {
     return { ok: false, error: 'checksum-mismatch' };
   }
 
-  private async fetchBytes(url: string): Promise<Uint8Array | null> {
+  private async fetchBytes(url: string, maxBytes: number): Promise<Uint8Array | null> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
     try {
       const response = await this.fetchPdf(url, {
         signal: controller.signal,
-        headers: { 'X-Relay-Channel': IPC_CHANNELS.KNOWLEDGE_GET_PDF },
       });
       if (!response.ok) return null;
-      const data = new Uint8Array(await response.arrayBuffer());
-      return data.byteLength <= KNOWLEDGE_MAX_PDF_BYTES ? data : null;
+      const declaredLength = Number(response.headers.get('content-length'));
+      if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return null;
+      const reader = response.body?.getReader();
+      if (!reader) return null;
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel();
+          return null;
+        }
+        chunks.push(value);
+      }
+      const data = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        data.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return data;
+    } catch {
+      return null;
     } finally {
       clearTimeout(timeout);
     }
@@ -249,6 +275,11 @@ export class KnowledgePdfService {
   private async readCache(checksum: string): Promise<Uint8Array | null> {
     const path = this.cachePath(checksum);
     try {
+      const details = await stat(path);
+      if (!details.isFile() || details.size <= 0 || details.size > KNOWLEDGE_MAX_PDF_BYTES) {
+        await rm(path, { force: true });
+        return null;
+      }
       const data = await readFile(path);
       if (
         checksumOf(data) !== checksum ||

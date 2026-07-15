@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import { Contact, Server, BridgeGroup } from '@shared/ipc';
+import type { KnowledgeDocumentRecord, KnowledgeOutlineNode } from '@shared/knowledge';
+import { normalizeKnowledgeSearchText } from '@shared/knowledge';
+import { knowledgeDocumentMatches } from '../features/knowledge/knowledgeModel';
 
-export type ResultType = 'contact' | 'server' | 'group' | 'action';
+export type ResultType = 'contact' | 'server' | 'group' | 'knowledge' | 'action';
 
 export type SearchResult = {
   id: string;
@@ -12,11 +15,21 @@ export type SearchResult = {
   data: unknown;
 };
 
+function findMatchingKnowledgeHeading(
+  document: KnowledgeDocumentRecord,
+  terms: string[],
+): KnowledgeOutlineNode | undefined {
+  return document.outline.find((node) =>
+    terms.every((term) => normalizeKnowledgeSearchText(node.label).includes(term)),
+  );
+}
+
 export function useCommandSearch(
   query: string,
   contacts: Contact[],
   servers: Server[],
   groups: BridgeGroup[],
+  knowledgeDocuments: KnowledgeDocumentRecord[] = [],
 ) {
   return useMemo((): SearchResult[] => {
     if (!query.trim()) {
@@ -131,6 +144,21 @@ export function useCommandSearch(
       }
     });
 
+    const normalizedQuery = normalizeKnowledgeSearchText(query);
+    const knowledgeQueryTerms = normalizedQuery.split(' ');
+    knowledgeDocuments.forEach((document) => {
+      if (!knowledgeDocumentMatches(document, query)) return;
+      const heading = findMatchingKnowledgeHeading(document, knowledgeQueryTerms);
+      results.push({
+        id: `knowledge-${document.id}`,
+        type: 'knowledge',
+        title: document.title,
+        subtitle: heading ? `${document.category} · ${heading.label}` : document.category,
+        iconType: 'knowledge',
+        data: { document, headingId: heading?.id },
+      });
+    });
+
     return results.slice(0, 15);
-  }, [query, contacts, servers, groups]);
+  }, [query, contacts, servers, groups, knowledgeDocuments]);
 }

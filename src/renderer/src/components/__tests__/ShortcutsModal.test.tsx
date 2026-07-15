@@ -41,6 +41,7 @@ describe('ShortcutsModal', () => {
   it('renders shortcut descriptions', () => {
     render(<ShortcutsModal isOpen={true} onClose={vi.fn()} />);
     expect(screen.getByText('Go to Compose')).toBeInTheDocument();
+    expect(screen.getByText('Go to Knowledge Base')).toBeInTheDocument();
     expect(screen.getByText('Focus Search')).toBeInTheDocument();
     expect(screen.getByText('Close modal / dialog')).toBeInTheDocument();
   });
