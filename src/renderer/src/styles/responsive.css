@@ -8,6 +8,82 @@
   }
 }
 
+/* Compact workstation shell: preserve the full navigation set while returning
+   horizontal space to operational content in half-screen and narrow windows. */
+@media (max-width: 1200px) {
+  :root {
+    --sidebar-width-collapsed: 64px;
+  }
+
+  .sidebar-app-icon {
+    align-items: center;
+    padding-inline: 0;
+  }
+
+  .sidebar-app-icon-label {
+    font-size: 0;
+  }
+
+  .sidebar-app-icon-label::before {
+    content: 'r';
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-app-icon-label::after {
+    font-size: var(--text-lg);
+  }
+
+  .sidebar-nav {
+    width: 100%;
+  }
+
+  .sidebar-button {
+    --sidebar-button-width: 56px;
+    --sidebar-button-height: 48px;
+
+    align-items: center;
+    padding: 0;
+    border-left-width: 3px;
+  }
+
+  .sidebar-button-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sidebar-button-label {
+    display: none;
+  }
+
+  .sidebar-footer {
+    width: 100%;
+    padding: 8px 4px;
+  }
+
+  .world-clock-container {
+    display: none;
+  }
+
+  .app-header {
+    padding-inline: 20px;
+  }
+
+  .header-title-container {
+    min-width: 0;
+  }
+
+  .header-breadcrumb {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .header-search-container {
+    min-width: 180px;
+    padding-inline: 16px 0;
+  }
+}
+
 /* Shared Responsive Grid */
 .relay-grid {
   display: grid;

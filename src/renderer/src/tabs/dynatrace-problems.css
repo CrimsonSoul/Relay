@@ -1236,7 +1236,7 @@
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .dt-problems {
     padding-inline: var(--space-4);
     overflow-y: auto;
@@ -1278,10 +1278,20 @@
     align-items: stretch;
     flex-direction: column;
   }
+
+  .dt-problem-ticket-composer__control {
+    flex-direction: column;
+  }
+
+  .dt-problem-ticket-composer__control button,
+  .dt-problems__primary-action {
+    width: 100%;
+  }
 }
 
 @media (pointer: coarse) {
   .dt-problems__filter,
+  .dt-problem-ticket-composer button,
   .dt-problem-note-composer__actions button,
   .dt-problem-detail__footer button,
   .dt-problems__primary-action {

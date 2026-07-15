@@ -374,16 +374,27 @@ Static design values must stay in CSS.
 
 ## Layout Tokens
 
-| Token                           | Value          |
-| ------------------------------- | -------------- |
-| `--sidebar-width-collapsed`     | 110 px         |
-| `--header-height`               | 56 px          |
-| `--space-1` … `--space-12`      | 4 px … 64 px   |
-| `--radius-sm` … `--radius-pill` | 6 px … 9999 px |
-| `--z-dropdown`                  | 100            |
-| `--z-overlay`                   | 1000           |
-| `--z-popover`                   | 5000           |
-| `--z-modal`                     | 9999           |
-| `--z-window-controls`           | 10001          |
-| `--z-command-palette`           | 10002          |
-| `--z-critical`                  | 20000          |
+| Token                           | Value                  |
+| ------------------------------- | ---------------------- |
+| `--sidebar-width-collapsed`     | 136 px / 64 px compact |
+| `--header-height`               | 56 px                  |
+| `--space-1` … `--space-12`      | 4 px … 64 px           |
+| `--radius-sm` … `--radius-pill` | 6 px … 9999 px         |
+| `--z-dropdown`                  | 100                    |
+| `--z-overlay`                   | 1000                   |
+| `--z-popover`                   | 5000                   |
+| `--z-modal`                     | 9999                   |
+| `--z-window-controls`           | 10001                  |
+| `--z-command-palette`           | 10002                  |
+| `--z-critical`                  | 20000                  |
+
+### Compact workstation windows
+
+At viewport widths of 1200 px and below, Relay keeps every navigation destination available but
+reduces the main sidebar to a 64 px icon rail, changes the brand to `r.`, and hides the world clock.
+Labels remain available through accessible names and hover tooltips. This returns horizontal space
+to the active workflow without creating a second navigation mode.
+
+The Dynatrace Problems workspace switches from its queue/detail split to a single stacked column at
+900 px and below. Its Service Desk ticket control and primary local-disposition action also become
+full-width so they remain usable around half of a 1080p display.
