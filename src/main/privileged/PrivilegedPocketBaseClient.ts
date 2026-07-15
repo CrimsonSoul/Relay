@@ -94,8 +94,8 @@ function normalizeAccountRecord(value: unknown): RelayPrivilegedAccountRecord | 
     typeof mustChangePassword !== 'boolean' ||
     !Number.isSafeInteger(credentialVersion) ||
     (credentialVersion as number) < 0 ||
-    !isBoundedString(created, 100) ||
-    !isBoundedString(updated, 100)
+    (created !== undefined && (typeof created !== 'string' || created.length > 100)) ||
+    (updated !== undefined && (typeof updated !== 'string' || updated.length > 100))
   ) {
     return null;
   }
@@ -106,8 +106,8 @@ function normalizeAccountRecord(value: unknown): RelayPrivilegedAccountRecord | 
     active,
     mustChangePassword,
     credentialVersion: credentialVersion as number,
-    created,
-    updated,
+    created: typeof created === 'string' ? created : '',
+    updated: typeof updated === 'string' ? updated : '',
   };
 }
 

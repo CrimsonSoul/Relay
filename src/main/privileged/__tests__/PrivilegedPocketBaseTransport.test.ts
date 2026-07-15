@@ -107,6 +107,26 @@ describe('PrivilegedPocketBaseClientTransport', () => {
 });
 
 describe('PocketBasePrivilegedRepository', () => {
+  it('accepts PocketBase auth records that omit non-authorizing timestamps', async () => {
+    const getOne = vi.fn(async () => ({
+      id: 'account-admin',
+      operatorId: 'operator-1',
+      role: 'admin',
+      active: true,
+      mustChangePassword: false,
+      credentialVersion: 1,
+    }));
+    const repository = new PocketBasePrivilegedRepository({
+      collection: vi.fn(() => ({ getOne })),
+    } as never);
+
+    await expect(repository.getAccount('account-admin')).resolves.toMatchObject({
+      id: 'account-admin',
+      created: '',
+      updated: '',
+    });
+  });
+
   it('activates paired devices with the validated label and completes the challenge', async () => {
     const create = vi.fn(async (data) => ({ id: 'record-device', ...data }));
     const update = vi.fn(async () => ({}));
@@ -272,6 +292,44 @@ describe('PrivilegedServerQueue', () => {
         safeError: 'invalid-request',
       }),
       { requestKey: null },
+    );
+  });
+
+  it('restores PocketBase date serialization before validating a signed command', async () => {
+    const persistedCommand = {
+      id: 'command-record',
+      ...envelope,
+      issuedAt: '2026-07-15 12:00:00.000Z',
+      expiresAt: '2026-07-15 12:01:00.000Z',
+      operatorId: 'operator-1',
+      bodyHash: 'b'.repeat(64),
+      hasExpectedRevision: false,
+      state: 'pending',
+    };
+    const processor = {
+      process: vi.fn(async () => ({ ok: true, requestId: 'request-1', value: {} })),
+    };
+    const pb = {
+      collection: vi.fn((name: string) => ({
+        getFullList: vi.fn(async () =>
+          name === RELAY_PRIVILEGED_COMMANDS_COLLECTION ? [persistedCommand] : [],
+        ),
+        update: vi.fn(async () => ({})),
+      })),
+    };
+    const queue = new PrivilegedServerQueue({
+      commandProcessor: processor as never,
+      pairingService: { completePairing: vi.fn() } as never,
+      pb: pb as never,
+    });
+
+    await queue.drain();
+
+    expect(processor.process).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issuedAt: '2026-07-15T12:00:00.000Z',
+        expiresAt: '2026-07-15T12:01:00.000Z',
+      }),
     );
   });
 

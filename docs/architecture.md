@@ -51,6 +51,7 @@ IPC is reserved for operations the renderer should not perform directly, includi
 - Backup and restore
 - Offline cache reads and sync triggers
 - Knowledge Base PDF/status reads
+- Privileged sign-in, pairing, session, and typed-command actions
 - Logging bridge events
 
 The canonical channel and bridge definitions live in `src/shared/ipc.ts`.
@@ -123,6 +124,30 @@ Responsibilities:
 - Replay queued changes when the connection returns
 - Record conflicts in the `conflict_log` collection
 
+### Privileged Identity And Commands
+
+Relay keeps ordinary operator attribution and privileged authorization as separate identities. Selecting a name in the sidebar remains passwordless and only controls attribution. It never signs that operator into an administrator or publisher account.
+
+Privileged authentication uses a dedicated main-process PocketBase client backed by its own in-memory `BaseAuthStore`. Its token does not replace the shared Relay app-user session and is never returned through preload, written to renderer state, placed in local storage, copied into the offline cache, or queued for offline replay. A privileged session locks after 15 minutes without a privileged action; ordinary Relay activity does not extend it.
+
+Remote privileged actions use the existing PocketBase connection and port:
+
+```text
+operator password
+  -> trusted IPC -> main-only privileged auth store
+  -> paired P-256 key in Electron safeStorage
+  -> canonical command + 90-second expiry + unique request ID
+  -> existing PocketBase command collection / realtime signal
+  -> server validates current account, operator, assignment, device, and signature
+  -> allowlisted handler -> bounded safe result
+```
+
+The server PC is the local trust and recovery boundary. It does not need a paired-device record, but it still requires an active privileged login and sends local actions through the same typed authorization and command-result path. Client laptops must be paired with a server-issued, single-use challenge that expires after 10 minutes. Only the public P-256 key and fingerprint are stored on the server; the encrypted private key stays on its originating workstation.
+
+Command request IDs are unique and results are idempotent. A repeated matching request returns its stored safe result, while conflicting reuse is rejected. The server derives capabilities from current records for every command rather than trusting the role claimed by the renderer or client. Privileged commands are online-only and are absent from both the cache allowlists and pending-mutation queue.
+
+The foundation intentionally exposes only a read-only status probe and the internal reauthentication proof command. Operator and Knowledge Base mutations are added as separate allowlisted handlers rather than a general-purpose data bridge.
+
 ### Read-Only Knowledge Base
 
 The Relay server owns the Knowledge Base source library at `<config data>/knowledge-base`. A PDF at the root is categorized as `General`; an immediate child directory becomes a category; deeper directories are ignored. Source files are limited to 50 MiB and 1,000 pages. The renderer has no mutation path for the library.
@@ -192,26 +217,35 @@ This keeps React views thin and moves data operations into testable modules.
 
 Relay bootstraps the PocketBase collections it needs at runtime. The core collections include:
 
-| Collection              | Purpose                                     |
-| ----------------------- | ------------------------------------------- |
-| `contacts`              | People directory                            |
-| `servers`               | Server directory                            |
-| `oncall`                | On-call rows and ordering                   |
-| `bridge_groups`         | Saved compose groups                        |
-| `bridge_history`        | Compose history                             |
-| `alert_history`         | Saved alert cards                           |
-| `alert_reminders`       | Follow-up reminders from alerts             |
-| `notes`                 | Notes attached to contacts and servers      |
-| `standalone_notes`      | Freeform notes tab data                     |
-| `oncall_dismissals`     | On-call alert dismissals                    |
-| `oncall_board_settings` | Board-level settings                        |
-| `client_presence`       | Active client heartbeat records             |
-| `conflict_log`          | Offline sync conflict records               |
-| `knowledge_documents`   | Read-only PDF metadata and protected mirror |
+| Collection                            | Purpose                                             |
+| ------------------------------------- | --------------------------------------------------- |
+| `contacts`                            | People directory                                    |
+| `servers`                             | Server directory                                    |
+| `oncall`                              | On-call rows and ordering                           |
+| `bridge_groups`                       | Saved compose groups                                |
+| `bridge_history`                      | Compose history                                     |
+| `alert_history`                       | Saved alert cards                                   |
+| `alert_reminders`                     | Follow-up reminders from alerts                     |
+| `notes`                               | Notes attached to contacts and servers              |
+| `standalone_notes`                    | Freeform notes tab data                             |
+| `oncall_dismissals`                   | On-call alert dismissals                            |
+| `oncall_board_settings`               | Board-level settings                                |
+| `client_presence`                     | Active client heartbeat records                     |
+| `conflict_log`                        | Offline sync conflict records                       |
+| `knowledge_documents`                 | Read-only PDF metadata and protected mirror         |
+| `relay_operators`                     | Passwordless operator attribution profiles          |
+| `relay_privileged_accounts`           | Main-only administrator/publisher authentication    |
+| `relay_privileged_state`              | Current administrator/publisher assignments         |
+| `relay_privileged_devices`            | Paired workstation public keys and revocation state |
+| `relay_privileged_commands`           | Signed request IDs and bounded safe results         |
+| `relay_privileged_pairing_challenges` | Server-only one-time pairing challenges             |
+| `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions           |
 
 Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local operator convenience and contains external URLs rather than shared operational data.
 
 `knowledge_documents` is server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. It is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists.
+
+Privileged account, device, command, and pairing collections are not part of the ordinary Relay cache. The nonsecret assignment singleton is readable by authenticated Relay clients for role labels, but only the server can mutate it.
 
 ## Windowing
 

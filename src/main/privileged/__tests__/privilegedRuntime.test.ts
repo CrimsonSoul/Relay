@@ -2,7 +2,11 @@ import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayPrivilegedAccountRecord } from '@shared/privilegedAccess';
 import { canonicalPrivilegedSigningBytes } from '@shared/privilegedCommands';
-import { PrivilegedRuntime, type PrivilegedClientTransport } from '../privilegedRuntime';
+import {
+  PrivilegedRuntime,
+  installPrivilegedE2EControl,
+  type PrivilegedClientTransport,
+} from '../privilegedRuntime';
 
 const OPERATOR_ID = 'operator-ryan-bledsoe';
 const ACCOUNT_ID = 'account-admin';
@@ -275,5 +279,35 @@ describe('PrivilegedRuntime', () => {
     expect(authClient.clear).toHaveBeenCalled();
     expect(clientTransport.dispose).toHaveBeenCalled();
     expect(runtime.getView().state).toBe('signed-out');
+  });
+});
+
+describe('installPrivilegedE2EControl', () => {
+  afterEach(() => {
+    delete process.env.RELAY_E2E_PRIVILEGED_FIXTURES;
+    delete (globalThis as typeof globalThis & { __relayE2EPrivileged?: unknown })
+      .__relayE2EPrivileged;
+  });
+
+  it('installs a main-process-only inactivity control behind the explicit E2E flag', () => {
+    process.env.RELAY_E2E_PRIVILEGED_FIXTURES = '1';
+    const runtime = {
+      getView: vi.fn(() => ({ state: 'locked' })),
+      lock: vi.fn(),
+    };
+
+    const cleanup = installPrivilegedE2EControl(() => runtime as never);
+    const fixture = (
+      globalThis as typeof globalThis & {
+        __relayE2EPrivileged?: { simulateInactivity(): { state: string } | null };
+      }
+    ).__relayE2EPrivileged;
+
+    expect(fixture?.simulateInactivity()).toEqual({ state: 'locked' });
+    expect(runtime.lock).toHaveBeenCalledOnce();
+    cleanup();
+    expect(
+      (globalThis as typeof globalThis & { __relayE2EPrivileged?: unknown }).__relayE2EPrivileged,
+    ).toBeUndefined();
   });
 });

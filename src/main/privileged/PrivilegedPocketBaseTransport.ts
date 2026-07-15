@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
@@ -84,12 +85,24 @@ const COMMAND_ERRORS = new Set<PrivilegedCommandError>([
   'server-error',
 ]);
 
+function installMainProcessEventSource(): void {
+  if (typeof globalThis.EventSource === 'undefined') {
+    globalThis.EventSource = MainProcessEventSource as unknown as typeof globalThis.EventSource;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function boundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+
+function restoreCanonicalTimestamp(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : value;
 }
 
 function waitDefault(milliseconds: number): Promise<void> {
@@ -255,8 +268,8 @@ function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
     typeof active !== 'boolean' ||
     typeof mustChangePassword !== 'boolean' ||
     !Number.isSafeInteger(credentialVersion) ||
-    !boundedString(created, 100) ||
-    !boundedString(updated, 100)
+    (created !== undefined && (typeof created !== 'string' || created.length > 100)) ||
+    (updated !== undefined && (typeof updated !== 'string' || updated.length > 100))
   ) {
     return null;
   }
@@ -267,8 +280,8 @@ function normalizeAccount(value: unknown): RelayPrivilegedAccountRecord | null {
     active,
     mustChangePassword,
     credentialVersion: credentialVersion as number,
-    created,
-    updated,
+    created: typeof created === 'string' ? created : '',
+    updated: typeof updated === 'string' ? updated : '',
   };
 }
 
@@ -636,6 +649,7 @@ export class PrivilegedServerQueue {
 
   async start(): Promise<void> {
     if (this.disposed) return;
+    installMainProcessEventSource();
     await Promise.all([
       this.subscribe(RELAY_PRIVILEGED_COMMANDS_COLLECTION),
       this.subscribe(RELAY_PRIVILEGED_PAIRING_REQUESTS_COLLECTION),
@@ -707,8 +721,10 @@ export class PrivilegedServerQueue {
           .update(canonicalizePrivilegedValue(record.payload))
           .digest('hex'),
         expectedRevision,
-        issuedAt: record.issuedAt,
-        expiresAt: record.expiresAt,
+        // PocketBase serializes date fields with a space separator. Restore the
+        // exact canonical ISO representation that the client originally signed.
+        issuedAt: restoreCanonicalTimestamp(record.issuedAt),
+        expiresAt: restoreCanonicalTimestamp(record.expiresAt),
         signature: record.signature,
       };
       const result = await this.commandProcessor.process(envelope);

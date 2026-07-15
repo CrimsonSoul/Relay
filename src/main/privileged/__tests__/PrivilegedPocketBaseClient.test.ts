@@ -99,6 +99,23 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(Object.keys(account)).not.toContain('token');
   });
 
+  it('accepts PocketBase auth responses that omit non-authorizing timestamps', async () => {
+    authWithPassword.mockImplementationOnce(async () => {
+      const authStore = authStores.at(-1) as BaseAuthStore;
+      const record = accountRecord({ created: undefined, updated: undefined });
+      authStore.save(RAW_TOKEN, record);
+      return { token: RAW_TOKEN, record };
+    });
+    const client = createPrivilegedClient();
+
+    await expect(client.authenticate(OPERATOR_ID, PASSWORD)).resolves.toMatchObject({
+      id: 'account-admin',
+      operatorId: OPERATOR_ID,
+      created: '',
+      updated: '',
+    });
+  });
+
   it('clears privileged authentication on disconnect and reconfigure', async () => {
     const client = createPrivilegedClient();
     await client.authenticate(OPERATOR_ID, PASSWORD);

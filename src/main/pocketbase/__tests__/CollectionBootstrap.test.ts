@@ -350,7 +350,7 @@ describe('ensureCollections', () => {
 
     const challenges = mockCreate.mock.calls.find(
       ([value]) => (value as { name: string }).name === 'relay_privileged_pairing_challenges',
-    )?.[0] as Record<string, unknown> | undefined;
+    )?.[0] as (Record<string, unknown> & { fields: Array<Record<string, unknown>> }) | undefined;
     const requests = mockCreate.mock.calls.find(
       ([value]) => (value as { name: string }).name === 'relay_privileged_pairing_requests',
     )?.[0] as (Record<string, unknown> & { fields: Array<Record<string, unknown>> }) | undefined;
@@ -362,6 +362,11 @@ describe('ensureCollections', () => {
       updateRule: null,
       deleteRule: null,
     });
+    expect(challenges?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'attempts', type: 'number', required: false }),
+      ]),
+    );
     expect(requests?.listRule).toContain('accountId = @request.auth.id');
     expect(requests?.createRule).toContain('operatorId = @request.auth.operatorId');
     expect(requests?.createRule).toContain('state = "pending"');
@@ -516,6 +521,7 @@ describe('ensureCollections', () => {
     ]);
     expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
       expect.objectContaining({
+        email: 'operator-ryan-bledsoe@relay.invalid',
         operatorId: 'operator-ryan-bledsoe',
         role: 'admin',
         active: false,

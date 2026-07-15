@@ -54,6 +54,7 @@
     "@formkit/auto-animate": "^0.9.0",
     "better-sqlite3": "12.10.1",
     "bonjour-service": "1.4.1",
+    "eventsource": "4.1.0",
     "html2canvas": "^1.4.1",
     "papaparse": "5.5.3",
     "pdfjs-dist": "5.4.624",

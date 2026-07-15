@@ -529,7 +529,9 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'secretHash', required: true, max: 64 },
       { type: 'date', name: 'expiresAt', required: true },
-      { type: 'number', name: 'attempts', required: true },
+      // PocketBase treats zero as empty for required numeric fields. Pairing
+      // challenges intentionally begin with zero failed attempts.
+      { type: 'number', name: 'attempts', required: false },
       {
         type: 'select',
         name: 'status',
@@ -956,7 +958,12 @@ async function ensureInitialAdministratorAccount(
   if (existing.totalItems > 0) return;
 
   const unreachableCredential = randomBytes(48).toString('base64url');
+  const internalEmailIdentity = adminOperatorId
+    .toLocaleLowerCase('en')
+    .replaceAll(/[^a-z0-9._-]/g, '-')
+    .slice(0, 120);
   await accounts.create({
+    email: `${internalEmailIdentity}@relay.invalid`,
     operatorId: adminOperatorId,
     role: 'admin',
     active: false,

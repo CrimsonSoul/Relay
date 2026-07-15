@@ -199,6 +199,33 @@ Relay manages its own collections at startup. Bootstrap creates missing Relay co
 
 Unknown collections are left in place and logged as unmanaged. Startup must not delete application or operator-created collections outside Relay's managed collection list.
 
+### Privileged Access Boundary
+
+Relay's sidebar operator selector is attribution, not authentication. It remains passwordless for every operator, including the names assigned as administrator or Knowledge Base publisher. Protected actions require a separate password sign-in through trusted IPC.
+
+The privileged PocketBase client is created in the main process with an independent in-memory auth store. The privileged token never replaces the ordinary Relay app-user token and is not exposed to preload consumers, renderer state, local storage, logs, exports, cache snapshots, or the offline mutation queue. Password values are bounded, passed only for the awaited authentication request, cleared from the form, and not retained by Relay.
+
+Privileged sessions lock after 15 minutes without privileged activity. Switching the selected operator, disconnecting, reconfiguring, explicitly locking, signing out, or closing Relay clears the privileged auth state. Normal browsing and note-taking do not keep an administrator session alive. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
+
+Client workstations use a P-256 signing key generated in the main process. The private PKCS#8 material is stored only as Electron `safeStorage` ciphertext with owner-only file permissions where supported. If OS encryption is unavailable or the registry is corrupt, Relay requires pairing again instead of falling back to plaintext. The server stores only the public JWK, fingerprint, device label, hostname snapshot, state, and revision.
+
+Pairing is initiated from the Relay server PC by an authenticated operator with `devices.manage`. The server creates an eight-character human code backed by a high-entropy secret; the challenge expires after 10 minutes, is account-bound and single-use, and locks after repeated failures. A successfully paired client keeps its private key locally. Revoking a device on the authoritative server record causes subsequent signed probes and commands to fail without needing access to that laptop.
+
+Every remote privileged request is a canonical, typed envelope containing the command name, payload hash, request ID, account, device, role claim, optional expected revision, issuance time, expiry, and signature. The server:
+
+1. validates shape, size, clock skew, and the 90-second maximum lifetime;
+2. loads the current account, operator, role assignment, and device records;
+3. derives effective capabilities from those records instead of trusting the claimed role;
+4. verifies the device fingerprint and ECDSA signature;
+5. claims the unique request ID before running an allowlisted handler; and
+6. stores only a bounded safe result or generic error.
+
+Matching retries are idempotent. Conflicting request-ID reuse, expired requests, stale revisions, disabled accounts/operators, role changes, and revoked or unknown devices are rejected. Privileged commands are online-only; they never use Relay's offline write queue. The server PC may execute the same typed handlers without a device signature only after server-mode, trusted-sender, and active-session checks.
+
+The server PC is the recovery trust boundary. Bootstrap creates Ryan Bledsoe's administrator account inactive with no usable default credential. The foundation does not permit remote activation or remote recovery; the local first-password and recovery controls are implemented as server-only administrator workflows.
+
+Privileged requests reuse the configured PocketBase endpoint, authentication, and realtime channel; Relay opens no additional inbound port. On a trusted HTTP LAN, signatures provide request authenticity, integrity, authorization, and replay resistance, but they do not encrypt passwords, pairing codes, metadata, or responses. HTTP therefore does not provide confidentiality. Keep this deployment on the managed trusted LAN and use HTTPS if traffic crosses that boundary.
+
 ### Knowledge Base Documents
 
 The Knowledge Base is read-only from the renderer. `knowledge_documents` has authenticated list/view rules and no create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only the server-side indexer writes it.

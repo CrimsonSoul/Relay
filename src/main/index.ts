@@ -57,7 +57,10 @@ import {
   startKnowledgeBaseManager,
   stopKnowledgeBaseManager,
 } from './knowledge/knowledgeRuntime';
-import { createProductionPrivilegedRuntime } from './privileged/privilegedRuntime';
+import {
+  createProductionPrivilegedRuntime,
+  installPrivilegedE2EControl,
+} from './privileged/privilegedRuntime';
 
 // Ensure a consistent userData path for portable builds on Windows.
 // Without this, portable .exe instances launched from different locations
@@ -136,6 +139,7 @@ if (gotLock) {
     let cleanupMaintenance: (() => void) | null = null;
     let stopMemoryHeartbeat: (() => void) | null = null;
     let cleanupComplete = false;
+    const cleanupPrivilegedE2EControl = installPrivilegedE2EControl(getPrivilegedRuntime);
 
     const cleanupAppResources = () => {
       if (cleanupComplete) return;
@@ -147,6 +151,7 @@ if (gotLock) {
       cleanupMaintenance = null;
       stopMemoryHeartbeat?.();
       stopMemoryHeartbeat = null;
+      cleanupPrivilegedE2EControl();
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
       void getPrivilegedRuntime()?.dispose();

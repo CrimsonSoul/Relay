@@ -91,6 +91,38 @@ export type PrivilegedRuntimeOptions = {
 
 type SessionListener = (view: PrivilegedSessionView) => void;
 
+type PrivilegedE2EControl = {
+  simulateInactivity(): PrivilegedSessionView | null;
+};
+
+export function installPrivilegedE2EControl(
+  getRuntime: () => Pick<PrivilegedRuntime, 'getView' | 'lock'> | null,
+): () => void {
+  if (process.env.NODE_ENV !== 'test' || process.env.RELAY_E2E_PRIVILEGED_FIXTURES !== '1') {
+    return () => undefined;
+  }
+  const scope = globalThis as typeof globalThis & {
+    __relayE2EPrivileged?: PrivilegedE2EControl;
+  };
+  const control: PrivilegedE2EControl = {
+    simulateInactivity: () => {
+      const runtime = getRuntime();
+      if (!runtime) return null;
+      runtime.lock();
+      return runtime.getView();
+    },
+  };
+  Object.defineProperty(scope, '__relayE2EPrivileged', {
+    configurable: true,
+    enumerable: false,
+    value: control,
+    writable: false,
+  });
+  return () => {
+    if (scope.__relayE2EPrivileged === control) delete scope.__relayE2EPrivileged;
+  };
+}
+
 function sha256(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
 }
