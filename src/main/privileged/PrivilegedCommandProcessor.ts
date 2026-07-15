@@ -143,6 +143,13 @@ export class PrivilegedCommandConflictError extends Error {
   }
 }
 
+export class PrivilegedCommandAuthorizationError extends Error {
+  constructor() {
+    super('Privileged authorization is required.');
+    this.name = 'PrivilegedCommandAuthorizationError';
+  }
+}
+
 type NormalizedCommand = {
   requestId: string;
   accountId: string;
@@ -602,6 +609,15 @@ export class PrivilegedCommandProcessor {
       });
       return { ok: true, requestId: command.requestId, value: result };
     } catch (error) {
+      if (error instanceof PrivilegedCommandAuthorizationError) {
+        await this.repository.completeCommand(command.requestId, {
+          state: 'failed',
+          result: null,
+          safeError: 'unauthorized',
+          completedAt: new Date(this.now()).toISOString(),
+        });
+        return errorResult('unauthorized', command.requestId);
+      }
       if (error instanceof PrivilegedCommandConflictError) {
         const result = { currentRevision: error.currentRevision, refresh: true as const };
         await this.repository.completeCommand(command.requestId, {

@@ -54,6 +54,7 @@ import {
   type PrivilegedAuthorization,
 } from './PrivilegedSessionManager';
 import { registerAdministrationCommands } from './registerAdministrationCommands';
+import { PublisherAssignmentManager } from './PublisherAssignmentManager';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -509,6 +510,9 @@ export async function createProductionPrivilegedRuntime(
   registerAdministrationCommands({
     registrar: commandProcessor,
     operatorManager: new RelayOperatorManager(options.serverClient),
+    publisherManager: new PublisherAssignmentManager({ pb: options.serverClient }),
+    consumeReauthenticationProof: (requestId, context) =>
+      commandProcessor.consumeReauthenticationProof(requestId, context),
   });
   const serverQueue = new PrivilegedServerQueue({
     pb: options.serverClient as unknown as PrivilegedServerPocketBase,
