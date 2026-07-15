@@ -5,6 +5,7 @@ export const KNOWLEDGE_MAX_OUTLINE_NODES = 500;
 export const KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH = 240;
 export const KNOWLEDGE_MAX_CATEGORY_LENGTH = 120;
 export const KNOWLEDGE_MAX_SOURCE_KEY_LENGTH = 512;
+export const KNOWLEDGE_MAX_LINK_URL_LENGTH = 4_096;
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });

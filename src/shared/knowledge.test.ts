@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_MAX_LINK_URL_LENGTH,
   KNOWLEDGE_MAX_OUTLINE_NODES,
   KNOWLEDGE_MAX_PAGES,
   KNOWLEDGE_MAX_PDF_BYTES,
@@ -38,6 +39,7 @@ describe('knowledge contracts', () => {
     expect(KNOWLEDGE_MAX_PDF_BYTES).toBe(50 * 1024 * 1024);
     expect(KNOWLEDGE_MAX_PAGES).toBe(1_000);
     expect(KNOWLEDGE_MAX_OUTLINE_NODES).toBe(500);
+    expect(KNOWLEDGE_MAX_LINK_URL_LENGTH).toBe(4_096);
     expect(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED).toBe('knowledge:indexStatusChanged');
   });
 
