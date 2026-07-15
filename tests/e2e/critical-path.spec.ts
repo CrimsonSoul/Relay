@@ -546,7 +546,8 @@ test.describe('Vital Critical Path', () => {
 
   test('new Dynatrace Problems sync Ryan Bell attribution to a connected client', async () => {
     test.setTimeout(90_000);
-    const noteText = 'NOC confirmed impact and paged the checkout team.';
+    const ticketNumber = `INC${crypto.randomInt(1_000_000, 9_999_999)}`;
+    const ticketNote = `Ticket: ${ticketNumber}`;
 
     await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
     await expect(window.getByRole('tab', { name: 'Unaddressed 0' })).toBeVisible();
@@ -577,7 +578,7 @@ test.describe('Vital Critical Path', () => {
 
     const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
     await expect(addressedAction).toBeDisabled();
-    await window.getByLabel('Add a note').fill(noteText);
+    await window.getByLabel('Service Desk ticket number').fill(ticketNumber);
     await expect(addressedAction).toBeEnabled();
     await addressedAction.click();
     await expect(window.getByRole('tab', { name: 'Addressed locally 2' })).toBeVisible();
@@ -587,7 +588,7 @@ test.describe('Vital Critical Path', () => {
         const { note, state } = await getDynatraceAttribution(
           pbPort,
           CHECKOUT_PROBLEM_ID,
-          noteText,
+          ticketNote,
         );
         return {
           noteOperatorId: note?.operatorId,
@@ -618,8 +619,10 @@ test.describe('Vital Critical Path', () => {
     await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText(
       RYAN_BELL,
     );
-    const syncedNote = clientDetail.locator('.dt-problem-note', { hasText: noteText });
-    await expect(syncedNote).toContainText(RYAN_BELL);
+    const syncedTicket = clientDetail.locator('.dt-problem-note', { hasText: ticketNumber });
+    await expect(syncedTicket).toContainText('Service Desk ticket');
+    await expect(syncedTicket).toContainText(ticketNumber);
+    await expect(syncedTicket).toContainText(RYAN_BELL);
   });
 
   test('connected client retains Ryan Bell attribution through offline queue sync', async () => {
@@ -735,6 +738,57 @@ test.describe('Vital Critical Path', () => {
     await expect(
       connectedClient.locator('[data-connection-state]', { hasText: 'pending' }),
     ).toHaveCount(0);
+  });
+
+  test('Relay shell and Dynatrace workspace adapt to compact desktop widths', async () => {
+    if (!electronApp) throw new Error('Electron app not launched');
+    runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
+    await goToTab(window, 'sidebar-problems', 'Dynatrace Problems');
+    await expect(window.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
+
+    const readGeometry = () =>
+      window.evaluate(() => {
+        const sidebar = globalThis.document.querySelector('.sidebar');
+        const label = globalThis.document.querySelector('.sidebar-button-label');
+        const clock = globalThis.document.querySelector('.world-clock-container');
+        const queue = globalThis.document.querySelector('.dt-problems__queue');
+        const detail = globalThis.document.querySelector('.dt-problems__detail');
+        if (!sidebar || !label || !clock || !queue || !detail) {
+          throw new Error('Responsive shell geometry target is missing.');
+        }
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const queueRect = queue.getBoundingClientRect();
+        const detailRect = detail.getBoundingClientRect();
+        return {
+          viewportWidth: globalThis.innerWidth,
+          documentWidth: globalThis.document.documentElement.scrollWidth,
+          sidebarWidth: Math.round(sidebarRect.width),
+          labelDisplay: globalThis.getComputedStyle(label).display,
+          clockDisplay: globalThis.getComputedStyle(clock).display,
+          queue: { right: queueRect.right, bottom: queueRect.bottom },
+          detail: { left: detailRect.left, top: detailRect.top, right: detailRect.right },
+        };
+      });
+
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(960, 1000);
+    });
+    await expect.poll(async () => (await readGeometry()).sidebarWidth).toBe(64);
+    const halfScreen = await readGeometry();
+    expect(halfScreen.labelDisplay).toBe('none');
+    expect(halfScreen.clockDisplay).toBe('none');
+    expect(halfScreen.queue.right).toBeLessThanOrEqual(halfScreen.detail.left + 1);
+    expect(halfScreen.documentWidth).toBeLessThanOrEqual(halfScreen.viewportWidth);
+
+    await electronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(840, 1000);
+    });
+    await expect.poll(async () => (await readGeometry()).viewportWidth).toBeLessThanOrEqual(840);
+    const narrow = await readGeometry();
+    expect(narrow.sidebarWidth).toBe(64);
+    expect(narrow.queue.bottom).toBeLessThanOrEqual(narrow.detail.top + 1);
+    expect(narrow.detail.right).toBeLessThanOrEqual(narrow.viewportWidth);
+    expect(narrow.documentWidth).toBeLessThanOrEqual(narrow.viewportWidth);
   });
 
   test('Compose bridge action buttons do not overlap on compact desktop widths', async () => {
