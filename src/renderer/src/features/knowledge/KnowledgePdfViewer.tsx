@@ -169,13 +169,18 @@ export function KnowledgePdfViewer({
           annotationMode: 0,
           transform: pixelRatio === 1 ? undefined : [pixelRatio, 0, 0, pixelRatio, 0, 0],
         });
+        const canvasRenderResult = renderTask.promise.then(
+          () => ({ error: null }),
+          (renderError: unknown) => ({ error: renderError }),
+        );
         const textContent = await page.getTextContent();
         textLayer = new TextLayer({
           textContentSource: textContent,
           container: textContainer,
           viewport,
         });
-        await Promise.all([renderTask.promise, textLayer.render()]);
+        const [canvasResult] = await Promise.all([canvasRenderResult, textLayer.render()]);
+        if (canvasResult.error !== null) throw canvasResult.error;
         if (disposed) return;
 
         if (target?.pageIndex === pageIndex && target.top !== null) {

@@ -95,6 +95,31 @@ describe('KnowledgePdfViewer', () => {
     await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
   });
 
+  it('observes canvas rendering before text extraction can be interrupted', async () => {
+    const renderPromise = new Promise<void>(() => undefined);
+    const renderPromiseThen = vi.spyOn(renderPromise, 'then');
+    const render = vi.fn(() => ({ promise: renderPromise, cancel: vi.fn() }));
+    const getTextContent = vi.fn(() => new Promise(() => undefined));
+    getPage.mockResolvedValueOnce({
+      pageNumber: 1,
+      cleanup: vi.fn(),
+      getOperatorList: vi.fn(async () => ({ fnArray: [], argsArray: [] })),
+      getViewport: ({ scale }: { scale: number }) => ({
+        width: 600 * scale,
+        height: 800 * scale,
+        scale,
+        convertToViewportPoint: (_x: number, top: number) => [0, (800 - top) * scale],
+      }),
+      render,
+      getTextContent,
+    });
+
+    renderComponent();
+
+    await waitFor(() => expect(getTextContent).toHaveBeenCalledOnce());
+    expect(renderPromiseThen).toHaveBeenCalled();
+  });
+
   it('navigates pages and follows an outline target', async () => {
     const onPageChange = vi.fn();
     const { rerender } = render(
@@ -181,3 +206,9 @@ describe('KnowledgePdfViewer', () => {
     expect(loadingDestroy).not.toHaveBeenCalled();
   });
 });
+
+function renderComponent() {
+  return render(
+    <KnowledgePdfViewer document={record()} active target={null} onPageChange={vi.fn()} />,
+  );
+}
