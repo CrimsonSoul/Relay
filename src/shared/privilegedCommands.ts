@@ -100,7 +100,14 @@ export type PrivilegedCommandError =
 
 export type PrivilegedCommandResult<T = unknown> =
   | { ok: true; requestId: string; value: T }
-  | { ok: false; requestId?: string; error: PrivilegedCommandError; message?: string };
+  | {
+      ok: false;
+      requestId?: string;
+      error: PrivilegedCommandError;
+      message?: string;
+      currentRevision?: number;
+      refresh?: true;
+    };
 
 export type PrivilegedEnvelopeValidationResult =
   | { ok: true; envelope: SignedPrivilegedCommandEnvelope }
@@ -467,6 +474,13 @@ function normalizePayload(
     case 'administration.setting.replace':
       return normalizeSettingReplacementPayload(payload);
   }
+}
+
+export function normalizePrivilegedCommandPayload<K extends PrivilegedCommandName>(
+  command: K,
+  payload: unknown,
+): PrivilegedCommandPayloadMap[K] | null {
+  return normalizePayload(command, payload) as PrivilegedCommandPayloadMap[K] | null;
 }
 
 const ENVELOPE_KEYS = [

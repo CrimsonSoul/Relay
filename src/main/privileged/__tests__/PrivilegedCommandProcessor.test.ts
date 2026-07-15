@@ -15,6 +15,7 @@ import {
 } from '@shared/privilegedCommands';
 import type { RelayOperatorRecord } from '@shared/operators';
 import {
+  PrivilegedCommandConflictError,
   PrivilegedCommandProcessor,
   type PrivilegedCommandClaim,
   type PrivilegedCommandRepository,
@@ -258,6 +259,68 @@ describe('PrivilegedCommandProcessor', () => {
       expect.objectContaining({ account: expect.objectContaining({ id: ACCOUNT_ID }) }),
     );
     expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('requires the command-specific capability for administration commands', async () => {
+    const administrationHandler = vi.fn(async () => ({ operators: [] }));
+    const processor = createProcessor();
+    processor.registerCommand(
+      'administration.snapshot.read',
+      'settings.manage',
+      administrationHandler,
+    );
+    const currentEnvelope = envelope({
+      command: 'administration.snapshot.read',
+      payload: {},
+    });
+
+    await expect(processor.process(currentEnvelope)).resolves.toMatchObject({ ok: true });
+    expect(administrationHandler).toHaveBeenCalledOnce();
+
+    const publisherProcessor = createProcessor({
+      capabilityResolver: () => ['privileged.status.read', 'knowledge.manage'],
+    });
+    publisherProcessor.registerCommand(
+      'administration.snapshot.read',
+      'settings.manage',
+      administrationHandler,
+    );
+    await expect(
+      publisherProcessor.process(
+        envelope({
+          requestId: 'request-2',
+          command: 'administration.snapshot.read',
+          payload: {},
+        }),
+      ),
+    ).resolves.toMatchObject({ ok: false, error: 'unauthorized' });
+  });
+
+  it('returns bounded revision conflict details from registered handlers', async () => {
+    const processor = createProcessor();
+    processor.registerCommand('operator.rename', 'operators.manage', async () => {
+      throw new PrivilegedCommandConflictError(9);
+    });
+
+    await expect(
+      processor.process(
+        envelope({
+          command: 'operator.rename',
+          payload: {
+            operatorId: 'operator-2',
+            displayName: 'Morgan Lee',
+            expectedRevision: 8,
+          },
+        }),
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: 'conflict',
+      message: 'Refresh administration data and try again.',
+      currentRevision: 9,
+      refresh: true,
+    });
   });
 
   it('verifies the registered fingerprint and ECDSA signature before claiming the request', async () => {

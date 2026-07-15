@@ -414,6 +414,7 @@ const COLLECTIONS: CollectionDef[] = [
         max: MAX_OPERATOR_DISPLAY_NAME_LENGTH,
       },
       { type: 'bool', name: 'active' },
+      { type: 'number', name: 'revision', required: true },
     ],
     indexes: [RELAY_OPERATOR_DISPLAY_NAME_INDEX],
     rules: SERVER_OWNED_RULES,
@@ -855,7 +856,10 @@ async function patchExisting(
   return patched;
 }
 
-type OperatorBootstrapRecord = Pick<RelayOperatorRecord, 'id' | 'displayName' | 'active'>;
+type OperatorBootstrapRecord = Pick<
+  RelayOperatorRecord,
+  'id' | 'displayName' | 'active' | 'revision'
+>;
 
 type PrivilegedStateBootstrapRecord = {
   id: string;
@@ -926,6 +930,7 @@ async function migrateRelayOperatorRoster(pb: PocketBase): Promise<OperatorBoots
     const created = await operators.create<OperatorBootstrapRecord>({
       displayName,
       active: true,
+      revision: 0,
     });
     if (!created?.id || created.displayName !== displayName) {
       throw new Error('Failed to create required Relay operator profile');

@@ -5,6 +5,10 @@ import {
   normalizeOperatorDisplayName,
   type RelayOperatorRecord,
 } from '@shared/operators';
+import {
+  RELAY_PRIVILEGED_STATE_COLLECTION,
+  type RelayPrivilegedStateRecord,
+} from '@shared/privilegedAccess';
 import type {
   RelayOperatorActiveInput,
   RelayOperatorCreateInput,
@@ -13,6 +17,20 @@ import type {
 
 const DUPLICATE_NAME_ERROR = 'An operator with this display name already exists.';
 const STALE_WRITE_ERROR = 'This operator changed since it was loaded. Refresh and try again.';
+
+export type OperatorRoleProtection = Pick<
+  RelayPrivilegedStateRecord,
+  'adminOperatorId' | 'publisherOperatorId'
+>;
+
+export class RelayOperatorConflictError extends Error {
+  readonly code = 'conflict';
+
+  constructor(readonly currentRevision: number) {
+    super(STALE_WRITE_ERROR);
+    this.name = 'RelayOperatorConflictError';
+  }
+}
 
 function validatedDisplayName(value: string): string {
   const error = getOperatorDisplayNameError(value);
@@ -28,7 +46,10 @@ export class RelayOperatorManager {
     await this.assertUniqueDisplayName(displayName);
     return this.pb
       .collection(RELAY_OPERATORS_COLLECTION)
-      .create<RelayOperatorRecord>({ displayName, active: true }, { requestKey: null });
+      .create<RelayOperatorRecord>(
+        { displayName, active: true, revision: 0 },
+        { requestKey: null },
+      );
   }
 
   async rename(input: RelayOperatorRenameInput): Promise<RelayOperatorRecord> {
@@ -38,15 +59,59 @@ export class RelayOperatorManager {
     await this.assertUniqueDisplayName(displayName, input.id);
     return this.pb
       .collection(RELAY_OPERATORS_COLLECTION)
-      .update<RelayOperatorRecord>(input.id, { displayName }, { requestKey: null });
+      .update<RelayOperatorRecord>(
+        input.id,
+        { displayName, revision: this.revisionOf(current) + 1 },
+        { requestKey: null },
+      );
   }
 
   async setActive(input: RelayOperatorActiveInput): Promise<RelayOperatorRecord> {
     const current = await this.getCurrent(input.id);
     this.assertCurrentRevision(current, input.expectedUpdated);
+    const protection = await this.getRoleProtectionState();
+    return this.updateActive(current, input.active, protection);
+  }
+
+  async renameByRevision(input: {
+    operatorId: string;
+    displayName: string;
+    expectedRevision: number;
+  }): Promise<RelayOperatorRecord> {
+    const displayName = validatedDisplayName(input.displayName);
+    const current = await this.getCurrent(input.operatorId);
+    this.assertNumericRevision(current, input.expectedRevision);
+    await this.assertUniqueDisplayName(displayName, input.operatorId);
     return this.pb
       .collection(RELAY_OPERATORS_COLLECTION)
-      .update<RelayOperatorRecord>(input.id, { active: input.active }, { requestKey: null });
+      .update<RelayOperatorRecord>(
+        input.operatorId,
+        { displayName, revision: this.revisionOf(current) + 1 },
+        { requestKey: null },
+      );
+  }
+
+  async setActiveByRevision(
+    input: { operatorId: string; active: boolean; expectedRevision: number },
+    protection?: OperatorRoleProtection,
+  ): Promise<RelayOperatorRecord> {
+    const current = await this.getCurrent(input.operatorId);
+    this.assertNumericRevision(current, input.expectedRevision);
+    return this.updateActive(
+      current,
+      input.active,
+      protection ?? (await this.getRoleProtectionState()),
+    );
+  }
+
+  async getRoleProtectionState(): Promise<OperatorRoleProtection> {
+    const state = await this.pb
+      .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
+      .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null });
+    return {
+      adminOperatorId: state.adminOperatorId,
+      publisherOperatorId: state.publisherOperatorId,
+    };
   }
 
   private async getCurrent(id: string): Promise<RelayOperatorRecord> {
@@ -62,6 +127,35 @@ export class RelayOperatorManager {
 
   private assertCurrentRevision(current: RelayOperatorRecord, expectedUpdated: string): void {
     if (current.updated !== expectedUpdated) throw new Error(STALE_WRITE_ERROR);
+  }
+
+  private assertNumericRevision(current: RelayOperatorRecord, expectedRevision: number): void {
+    const revision = this.revisionOf(current);
+    if (revision !== expectedRevision) throw new RelayOperatorConflictError(revision);
+  }
+
+  private revisionOf(record: RelayOperatorRecord): number {
+    return Number.isInteger(record.revision) && (record.revision ?? -1) >= 0 ? record.revision! : 0;
+  }
+
+  private async updateActive(
+    current: RelayOperatorRecord,
+    active: boolean,
+    protection: OperatorRoleProtection,
+  ): Promise<RelayOperatorRecord> {
+    if (!active && current.id === protection.adminOperatorId) {
+      throw new Error('The active Relay administrator cannot be deactivated.');
+    }
+    if (!active && current.id === protection.publisherOperatorId) {
+      throw new Error('Remove the Knowledge Publisher role before deactivating this operator.');
+    }
+    return this.pb
+      .collection(RELAY_OPERATORS_COLLECTION)
+      .update<RelayOperatorRecord>(
+        current.id,
+        { active, revision: this.revisionOf(current) + 1 },
+        { requestKey: null },
+      );
   }
 
   private async assertUniqueDisplayName(displayName: string, excludeId?: string): Promise<void> {

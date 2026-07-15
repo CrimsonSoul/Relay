@@ -10,6 +10,7 @@ function operator(overrides: Partial<RelayOperatorRecord> = {}): RelayOperatorRe
     id: 'operator-1',
     displayName: 'Ryan Bell',
     active: true,
+    revision: 0,
     created: '2026-07-13 08:00:00.000Z',
     updated: '2026-07-13 08:00:00.000Z',
     ...overrides,
@@ -22,6 +23,10 @@ describe('setupRelayOperatorHandlers', () => {
   const collection = {
     getFullList: vi.fn(async () => [] as RelayOperatorRecord[]),
     getOne: vi.fn(async () => operator()),
+    getFirstListItem: vi.fn(async () => ({
+      adminOperatorId: 'admin-operator',
+      publisherOperatorId: null,
+    })),
     create: vi.fn(async (data: unknown) => operator(data as Partial<RelayOperatorRecord>)),
     update: vi.fn(async (id: string, data: unknown) =>
       operator({ id, ...(data as Partial<RelayOperatorRecord>) }),

@@ -13,11 +13,13 @@ import {
   MAX_PRIVILEGED_REQUEST_ID_LENGTH,
   canonicalPrivilegedSigningBytes,
   canonicalizePrivilegedValue,
+  normalizePrivilegedCommandPayload,
   validateSignedPrivilegedCommandEnvelope,
   type PrivilegedCommandError,
   type PrivilegedCommandName,
   type PrivilegedCommandPayloadMap,
   type PrivilegedCommandResult,
+  type PublicPrivilegedCommandName,
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
 import type { RelayOperatorRecord } from '@shared/operators';
@@ -119,6 +121,28 @@ export type PrivilegedCommandProcessorOptions = {
   commandLimiter?: KeyedRateLimiter;
 };
 
+export type RegisteredPrivilegedCommandName = Exclude<
+  PublicPrivilegedCommandName,
+  'privileged.status.read'
+>;
+
+export type PrivilegedCommandHandler<K extends RegisteredPrivilegedCommandName> = (
+  context: PrivilegedCommandHandlerContext,
+  payload: PrivilegedCommandPayloadMap[K],
+) => Promise<unknown>;
+
+type RegisteredPrivilegedCommand = {
+  capability: PrivilegedCapability;
+  handler: PrivilegedCommandHandler<RegisteredPrivilegedCommandName>;
+};
+
+export class PrivilegedCommandConflictError extends Error {
+  constructor(readonly currentRevision: number) {
+    super('Refresh administration data and try again.');
+    this.name = 'PrivilegedCommandConflictError';
+  }
+}
+
 type NormalizedCommand = {
   requestId: string;
   accountId: string;
@@ -159,10 +183,6 @@ function effectiveRole(
   return null;
 }
 
-function requiredCapability(_command: PrivilegedCommandName): PrivilegedCapability {
-  return 'privileged.status.read';
-}
-
 function defaultCapabilityResolver(
   context: PrivilegedAuthorizationContext,
 ): PrivilegedCapability[] {
@@ -187,8 +207,17 @@ function safeRequestId(value: unknown): string | undefined {
 function errorResult(
   error: PrivilegedCommandError,
   requestId?: string,
+  conflict?: { currentRevision: number },
 ): PrivilegedCommandResult<never> {
-  return requestId ? { ok: false, requestId, error } : { ok: false, error };
+  const base = requestId ? { ok: false as const, requestId, error } : { ok: false as const, error };
+  return conflict
+    ? {
+        ...base,
+        message: 'Refresh administration data and try again.',
+        currentRevision: conflict.currentRevision,
+        refresh: true,
+      }
+    : base;
 }
 
 function normalizeSafeResult(value: unknown): unknown {
@@ -231,29 +260,7 @@ function normalizeLocalPayload(
   command: PrivilegedCommandName,
   payload: unknown,
 ): PrivilegedCommandPayloadMap[PrivilegedCommandName] | null {
-  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const record = payload as Record<string, unknown>;
-  if (command === 'privileged.status.read') {
-    if (
-      Object.keys(record).length !== 1 ||
-      typeof record.clientVersion !== 'string' ||
-      record.clientVersion.length === 0 ||
-      record.clientVersion.length > 100
-    ) {
-      return null;
-    }
-    return { clientVersion: record.clientVersion };
-  }
-  if (Object.keys(record).length !== 1 || !isCanonicalTimestamp(record.authenticatedAt)) {
-    return null;
-  }
-  return { authenticatedAt: record.authenticatedAt };
-}
-
-function isCanonicalTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string' || value.length > 100) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+  return normalizePrivilegedCommandPayload(command, payload);
 }
 
 function safeStoredError(value: PrivilegedCommandError | null): PrivilegedCommandError {
@@ -281,6 +288,10 @@ export class PrivilegedCommandProcessor {
   >;
   private readonly statusHandler: NonNullable<PrivilegedCommandProcessorOptions['statusHandler']>;
   private readonly commandLimiter: KeyedRateLimiter;
+  private readonly registeredCommands = new Map<
+    RegisteredPrivilegedCommandName,
+    RegisteredPrivilegedCommand
+  >();
 
   constructor(options: PrivilegedCommandProcessorOptions) {
     this.repository = options.repository;
@@ -298,6 +309,17 @@ export class PrivilegedCommandProcessor {
         status: 'ready',
       }));
     this.commandLimiter = options.commandLimiter ?? createPrivilegedRateLimiters().signedCommand;
+  }
+
+  registerCommand<K extends RegisteredPrivilegedCommandName>(
+    command: K,
+    capability: PrivilegedCapability,
+    handler: PrivilegedCommandHandler<K>,
+  ): void {
+    this.registeredCommands.set(command, {
+      capability,
+      handler: handler as PrivilegedCommandHandler<RegisteredPrivilegedCommandName>,
+    });
   }
 
   async process(value: unknown): Promise<PrivilegedCommandResult> {
@@ -428,7 +450,8 @@ export class PrivilegedCommandProcessor {
 
     const authorization = { account, operator, state, device, role };
     const capabilities = [...new Set(this.capabilityResolver(authorization))];
-    if (!capabilities.includes(requiredCapability(command.command))) {
+    const requiredCapability = this.getRequiredCapability(command.command);
+    if (!requiredCapability || !capabilities.includes(requiredCapability)) {
       return { ok: false, error: 'unauthorized' };
     }
     const limiterKey = command.deviceId ?? `local:${account.id}`;
@@ -439,6 +462,13 @@ export class PrivilegedCommandProcessor {
       ok: true,
       authorized: { command, context: { ...authorization, capabilities } },
     };
+  }
+
+  private getRequiredCapability(command: PrivilegedCommandName): PrivilegedCapability | null {
+    if (command === 'privileged.status.read' || command === 'privileged.reauth.confirm') {
+      return 'privileged.status.read';
+    }
+    return this.registeredCommands.get(command)?.capability ?? null;
   }
 
   private async authorizeDevice(
@@ -540,7 +570,12 @@ export class PrivilegedCommandProcessor {
       }
     }
     if (stored.state === 'failed') {
-      return errorResult(safeStoredError(stored.safeError), stored.requestId);
+      const safeError = safeStoredError(stored.safeError);
+      return errorResult(
+        safeError,
+        stored.requestId,
+        safeError === 'conflict' ? this.getStoredConflict(stored.result) : undefined,
+      );
     }
     const staleBefore = new Date(this.now() - IN_PROGRESS_RECOVERY_MS).toISOString();
     if (stored.state === 'processing' && Date.parse(stored.updated) > Date.parse(staleBefore)) {
@@ -557,13 +592,7 @@ export class PrivilegedCommandProcessor {
   private async executeHandler(authorized: AuthorizedCommand): Promise<PrivilegedCommandResult> {
     const { command, context } = authorized;
     try {
-      const rawResult =
-        command.command === 'privileged.status.read'
-          ? await this.statusHandler(
-              context,
-              command.payload as PrivilegedCommandPayloadMap['privileged.status.read'],
-            )
-          : this.createReauthenticationAttestation(command, context);
+      const rawResult = await this.invokeHandler(command, context);
       const result = normalizeSafeResult(rawResult);
       await this.repository.completeCommand(command.requestId, {
         state: 'succeeded',
@@ -572,7 +601,17 @@ export class PrivilegedCommandProcessor {
         completedAt: new Date(this.now()).toISOString(),
       });
       return { ok: true, requestId: command.requestId, value: result };
-    } catch {
+    } catch (error) {
+      if (error instanceof PrivilegedCommandConflictError) {
+        const result = { currentRevision: error.currentRevision, refresh: true as const };
+        await this.repository.completeCommand(command.requestId, {
+          state: 'failed',
+          result,
+          safeError: 'conflict',
+          completedAt: new Date(this.now()).toISOString(),
+        });
+        return errorResult('conflict', command.requestId, result);
+      }
       this.warnFailure(command.requestId, 'handler');
       await this.repository.completeCommand(command.requestId, {
         state: 'failed',
@@ -582,6 +621,32 @@ export class PrivilegedCommandProcessor {
       });
       return errorResult('server-error', command.requestId);
     }
+  }
+
+  private invokeHandler(
+    command: NormalizedCommand,
+    context: PrivilegedCommandHandlerContext,
+  ): Promise<unknown> {
+    if (command.command === 'privileged.status.read') {
+      return this.statusHandler(
+        context,
+        command.payload as PrivilegedCommandPayloadMap['privileged.status.read'],
+      );
+    }
+    if (command.command === 'privileged.reauth.confirm') {
+      return Promise.resolve(this.createReauthenticationAttestation(command, context));
+    }
+    const registration = this.registeredCommands.get(command.command);
+    if (!registration) return Promise.reject(new TypeError('Privileged command is unavailable.'));
+    return registration.handler(context, command.payload);
+  }
+
+  private getStoredConflict(value: unknown): { currentRevision: number } | undefined {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const currentRevision = (value as Record<string, unknown>).currentRevision;
+    return Number.isInteger(currentRevision) && (currentRevision as number) >= 0
+      ? { currentRevision: currentRevision as number }
+      : undefined;
   }
 
   private createReauthenticationAttestation(

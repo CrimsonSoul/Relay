@@ -25,6 +25,7 @@ import type {
 import { RELAY_PRIVILEGED_STATE_COLLECTION } from '@shared/privilegedAccess';
 import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import type { RelayConfig } from '../config/AppConfig';
+import { RelayOperatorManager } from '../operators/RelayOperatorManager';
 import {
   PrivilegedPocketBaseClient,
   type PrivilegedAuthClient,
@@ -52,6 +53,7 @@ import {
   PrivilegedSessionManager,
   type PrivilegedAuthorization,
 } from './PrivilegedSessionManager';
+import { registerAdministrationCommands } from './registerAdministrationCommands';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -504,6 +506,10 @@ export async function createProductionPrivilegedRuntime(
   );
   const pairingService = new PrivilegedPairingService({ repository });
   const commandProcessor = new PrivilegedCommandProcessor({ repository });
+  registerAdministrationCommands({
+    registrar: commandProcessor,
+    operatorManager: new RelayOperatorManager(options.serverClient),
+  });
   const serverQueue = new PrivilegedServerQueue({
     pb: options.serverClient as unknown as PrivilegedServerPocketBase,
     commandProcessor,

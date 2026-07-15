@@ -7,6 +7,7 @@ function operator(overrides: Partial<RelayOperatorRecord> = {}): RelayOperatorRe
     id: 'operator-1',
     displayName: 'Ryan Bell',
     active: true,
+    revision: 0,
     created: '2026-07-13 08:00:00.000Z',
     updated: '2026-07-13 08:00:00.000Z',
     ...overrides,
@@ -17,6 +18,10 @@ describe('RelayOperatorManager', () => {
   const collection = {
     getFullList: vi.fn(async () => [] as RelayOperatorRecord[]),
     getOne: vi.fn(async () => operator()),
+    getFirstListItem: vi.fn(async () => ({
+      adminOperatorId: 'admin-operator',
+      publisherOperatorId: null,
+    })),
     create: vi.fn(async (data: unknown) => operator(data as Partial<RelayOperatorRecord>)),
     update: vi.fn(async (id: string, data: unknown) =>
       operator({ id, ...(data as Partial<RelayOperatorRecord>) }),
@@ -30,6 +35,10 @@ describe('RelayOperatorManager', () => {
     vi.clearAllMocks();
     collection.getFullList.mockResolvedValue([]);
     collection.getOne.mockResolvedValue(operator());
+    collection.getFirstListItem.mockResolvedValue({
+      adminOperatorId: 'admin-operator',
+      publisherOperatorId: null,
+    });
   });
 
   it('creates an active operator with a normalized display name', async () => {
@@ -40,7 +49,7 @@ describe('RelayOperatorManager', () => {
       active: true,
     });
     expect(collection.create).toHaveBeenCalledWith(
-      { displayName: 'Morgan Lee', active: true },
+      { displayName: 'Morgan Lee', active: true, revision: 0 },
       { requestKey: null },
     );
   });
@@ -58,7 +67,7 @@ describe('RelayOperatorManager', () => {
     expect(collection.getOne).toHaveBeenCalledWith('operator-1', { requestKey: null });
     expect(collection.update).toHaveBeenCalledWith(
       'operator-1',
-      { displayName: 'Ryan Cooper' },
+      { displayName: 'Ryan Cooper', revision: 1 },
       { requestKey: null },
     );
   });
@@ -77,7 +86,11 @@ describe('RelayOperatorManager', () => {
         expectedUpdated: '2026-07-13 08:00:00.000Z',
       }),
     ).resolves.toMatchObject({ id: 'operator-1', active });
-    expect(collection.update).toHaveBeenCalledWith('operator-1', { active }, { requestKey: null });
+    expect(collection.update).toHaveBeenCalledWith(
+      'operator-1',
+      { active, revision: 1 },
+      { requestKey: null },
+    );
   });
 
   it('rejects duplicate names case-insensitively across active and inactive operators', async () => {
@@ -149,5 +162,71 @@ describe('RelayOperatorManager', () => {
       'This operator changed since it was loaded. Refresh and try again.',
     );
     expect(collection.update).not.toHaveBeenCalled();
+  });
+
+  it('applies revision-safe remote renames and reports the current revision on conflict', async () => {
+    collection.getOne.mockResolvedValue(operator({ revision: 4 }));
+    const manager = new RelayOperatorManager(pb as never);
+
+    await expect(
+      manager.renameByRevision({
+        operatorId: 'operator-1',
+        displayName: 'Ryan Cooper',
+        expectedRevision: 4,
+      }),
+    ).resolves.toMatchObject({ displayName: 'Ryan Cooper' });
+    expect(collection.update).toHaveBeenCalledWith(
+      'operator-1',
+      { displayName: 'Ryan Cooper', revision: 5 },
+      { requestKey: null },
+    );
+
+    collection.getOne.mockResolvedValue(operator({ revision: 5 }));
+    await expect(
+      manager.renameByRevision({
+        operatorId: 'operator-1',
+        displayName: 'Ryan Cooper',
+        expectedRevision: 4,
+      }),
+    ).rejects.toMatchObject({ code: 'conflict', currentRevision: 5 });
+  });
+
+  it('protects the administrator and active publisher from deactivation', async () => {
+    const manager = new RelayOperatorManager(pb as never);
+    const constraints = {
+      adminOperatorId: 'operator-1',
+      publisherOperatorId: 'operator-2',
+    };
+
+    await expect(
+      manager.setActiveByRevision(
+        { operatorId: 'operator-1', active: false, expectedRevision: 0 },
+        constraints,
+      ),
+    ).rejects.toThrow(/administrator/i);
+
+    collection.getOne.mockResolvedValue(operator({ id: 'operator-2' }));
+    await expect(
+      manager.setActiveByRevision(
+        { operatorId: 'operator-2', active: false, expectedRevision: 0 },
+        constraints,
+      ),
+    ).rejects.toThrow(/publisher/i);
+    expect(collection.update).not.toHaveBeenCalled();
+  });
+
+  it('deactivates records without deleting historical operator attribution', async () => {
+    const manager = new RelayOperatorManager(pb as never);
+    await manager.setActiveByRevision(
+      { operatorId: 'operator-1', active: false, expectedRevision: 0 },
+      { adminOperatorId: 'admin-1', publisherOperatorId: null },
+    );
+
+    expect(collection.update).toHaveBeenCalledWith(
+      'operator-1',
+      { active: false, revision: 1 },
+      { requestKey: null },
+    );
+    expect(collection).not.toHaveProperty('delete');
   });
 });

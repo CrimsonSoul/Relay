@@ -509,15 +509,15 @@ describe('ensureCollections', () => {
     expect(mockPbCollection).toHaveBeenCalledWith('relay_operators');
     expect(mockCollectionGetList).toHaveBeenCalledWith(1, 500, { requestKey: null });
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Charles Gibbs', active: true },
-      { displayName: 'Connor McElroy', active: true },
-      { displayName: 'Paris Carlson', active: true },
-      { displayName: 'Ryan Bell', active: true },
-      { displayName: 'Ryan Bledsoe', active: true },
-      { displayName: 'Tristan Bowles', active: true },
-      { displayName: 'Tristan Stillwell', active: true },
-      { displayName: 'Vlad McCarty', active: true },
-      { displayName: 'Weston Yokley', active: true },
+      { displayName: 'Charles Gibbs', active: true, revision: 0 },
+      { displayName: 'Connor McElroy', active: true, revision: 0 },
+      { displayName: 'Paris Carlson', active: true, revision: 0 },
+      { displayName: 'Ryan Bell', active: true, revision: 0 },
+      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
+      { displayName: 'Tristan Bowles', active: true, revision: 0 },
+      { displayName: 'Tristan Stillwell', active: true, revision: 0 },
+      { displayName: 'Vlad McCarty', active: true, revision: 0 },
+      { displayName: 'Weston Yokley', active: true, revision: 0 },
     ]);
     expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -565,12 +565,12 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bell', active: true },
-      { displayName: 'Ryan Bledsoe', active: true },
-      { displayName: 'Tristan Bowles', active: true },
-      { displayName: 'Tristan Stillwell', active: true },
-      { displayName: 'Vlad McCarty', active: true },
-      { displayName: 'Weston Yokley', active: true },
+      { displayName: 'Ryan Bell', active: true, revision: 0 },
+      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
+      { displayName: 'Tristan Bowles', active: true, revision: 0 },
+      { displayName: 'Tristan Stillwell', active: true, revision: 0 },
+      { displayName: 'Vlad McCarty', active: true, revision: 0 },
+      { displayName: 'Weston Yokley', active: true, revision: 0 },
     ]);
     expect(mockPrivilegedStateCreate).toHaveBeenCalledOnce();
   });
@@ -595,8 +595,8 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bledsoe', active: true },
-      { displayName: 'Tristan Bowles', active: true },
+      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
+      { displayName: 'Tristan Bowles', active: true, revision: 0 },
     ]);
   });
 
@@ -615,8 +615,8 @@ describe('ensureCollections', () => {
     await ensureCollections(mockPb);
 
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bledsoe', active: true },
-      { displayName: 'Tristan Bowles', active: true },
+      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
+      { displayName: 'Tristan Bowles', active: true, revision: 0 },
     ]);
     expect(mockCollectionUpdate).not.toHaveBeenCalled();
   });
