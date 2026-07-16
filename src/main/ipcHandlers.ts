@@ -21,7 +21,7 @@ import type { SyncManager } from './cache/SyncManager';
 import type { BackupManager } from './pocketbase/BackupManager';
 import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager';
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
-import type { KnowledgeBaseManager } from './knowledge/KnowledgeBaseManager';
+import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
 import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
 import { loggers } from './logger';
@@ -48,7 +48,6 @@ export function setupIpcHandlers(opts: {
   getDynatraceWindowManager?: () => DynatraceWindowManager | null;
   getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
   getPbClient?: () => PocketBase | null;
-  getKnowledgeBaseManager?: () => KnowledgeBaseManager | null;
   getKnowledgePdfService?: () => KnowledgePdfService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   subscribePrivilegedSessionChanged?: (
@@ -68,12 +67,12 @@ export function setupIpcHandlers(opts: {
     getDynatraceWindowManager,
     getDynatraceProblemsManager,
     getPbClient,
-    getKnowledgeBaseManager,
     getKnowledgePdfService,
     getPrivilegedRuntime,
     subscribePrivilegedSessionChanged,
     restartPb,
   } = opts;
+  const knowledgeIndexStatusService = new KnowledgeIndexStatusService(getPbClient ?? (() => null));
   const safeSetup = (name: string, fn: () => void) => {
     try {
       fn();
@@ -107,7 +106,7 @@ export function setupIpcHandlers(opts: {
   safeSetup('knowledge', () =>
     setupKnowledgeHandlers(
       getKnowledgePdfService ?? (() => null),
-      getKnowledgeBaseManager ?? (() => null),
+      () => knowledgeIndexStatusService,
       () =>
         new KnowledgeUploadService({
           getRuntime: () => (getPrivilegedRuntime?.() as never) ?? null,

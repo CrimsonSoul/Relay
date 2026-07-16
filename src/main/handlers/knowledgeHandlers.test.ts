@@ -35,7 +35,7 @@ describe('knowledgeHandlers', () => {
     categoryCount: 2,
     lastIndexedAt: '2026-07-14T12:00:00.000Z',
   }));
-  const manager = { getStatus };
+  const indexStatusService = { getStatus };
   const selectAndStage = vi.fn();
   const uploadService = { selectAndStage };
 
@@ -50,7 +50,7 @@ describe('knowledgeHandlers', () => {
     });
     setupKnowledgeHandlers(
       () => service as never,
-      () => manager as never,
+      () => indexStatusService as never,
       () => uploadService as never,
     );
   });
@@ -113,7 +113,7 @@ describe('knowledgeHandlers', () => {
     });
   });
 
-  it('returns manager status or a stable idle fallback', async () => {
+  it('returns PocketBase-derived status or a stable idle fallback', async () => {
     await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS]({})).resolves.toMatchObject({
       documentCount: 3,
       categoryCount: 2,

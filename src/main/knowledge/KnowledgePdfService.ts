@@ -14,7 +14,6 @@ import {
 } from '@shared/knowledge';
 import { isAllowedRelayServerUrl } from '@shared/urlSecurity';
 import type { RelayConfig } from '../config/AppConfig';
-import { readKnowledgeSourceFile, scanKnowledgeRoot } from './knowledgePathSafety';
 
 const DEFAULT_CACHE_BUDGET_BYTES = 2 * 1024 * 1024 * 1024;
 const DEFAULT_ORPHAN_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
@@ -25,7 +24,6 @@ type KnowledgePdfServiceOptions = {
   configDataDir: string;
   getConfig: () => RelayConfig | null;
   getPbClient: () => PocketBase | null;
-  resolveServerSource?: (record: KnowledgeDocumentRecord) => Promise<string | null>;
   createClient?: (url: string) => PocketBase;
   fetch?: typeof globalThis.fetch;
   cacheBudgetBytes?: number;
@@ -59,10 +57,8 @@ function asKnowledgeRecord(value: unknown): KnowledgeDocumentRecord | null {
 
 export class KnowledgePdfService {
   private readonly cacheDir: string;
-  private readonly knowledgeRoot: string;
   private readonly getConfig: () => RelayConfig | null;
   private readonly getPbClient: () => PocketBase | null;
-  private readonly readServerSource: (record: KnowledgeDocumentRecord) => Promise<Buffer | null>;
   private readonly createClient: (url: string) => PocketBase;
   private readonly fetchPdf: typeof globalThis.fetch;
   private readonly cacheBudgetBytes: number;
@@ -73,19 +69,8 @@ export class KnowledgePdfService {
 
   constructor(options: KnowledgePdfServiceOptions) {
     this.cacheDir = join(options.configDataDir, 'knowledge-cache');
-    this.knowledgeRoot = join(options.configDataDir, 'knowledge-base');
     this.getConfig = options.getConfig;
     this.getPbClient = options.getPbClient;
-    this.readServerSource = options.resolveServerSource
-      ? async (record) => {
-          const sourcePath = await options.resolveServerSource!(record);
-          return sourcePath ? readFile(sourcePath) : null;
-        }
-      : async (record) => {
-          const scan = await scanKnowledgeRoot(this.knowledgeRoot);
-          const candidate = scan.candidates.find((source) => source.sourceKey === record.sourceKey);
-          return candidate ? readKnowledgeSourceFile(this.knowledgeRoot, candidate) : null;
-        };
     this.createClient = options.createClient ?? ((url) => new PocketBase(url));
     this.fetchPdf = options.fetch ?? globalThis.fetch;
     this.cacheBudgetBytes = options.cacheBudgetBytes ?? DEFAULT_CACHE_BUDGET_BYTES;
@@ -155,15 +140,6 @@ export class KnowledgePdfService {
     const record = asKnowledgeRecord(raw);
     if (!record || record.checksum !== request.checksum) {
       return { ok: false, error: 'invalid-document' };
-    }
-
-    try {
-      const data = await this.readServerSource(record);
-      if (data && validPdfBytes(data, record)) {
-        return this.success(data, record.checksum, 'server');
-      }
-    } catch {
-      // A changed local source falls back to the authenticated PocketBase file copy.
     }
 
     return this.downloadProtectedPdf(pb, raw, record, false);

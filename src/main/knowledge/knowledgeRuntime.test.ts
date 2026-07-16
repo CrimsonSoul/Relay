@@ -5,49 +5,18 @@ const mocks = vi.hoisted(() => ({
   getAppConfig: vi.fn(),
   getPbClient: vi.fn(),
   getOfflineCache: vi.fn(),
-  getKnowledgeBaseManager: vi.fn(),
   getKnowledgePdfService: vi.fn(),
-  setKnowledgeBaseManager: vi.fn(),
   setKnowledgePdfService: vi.fn(),
-  managerStart: vi.fn(async () => undefined),
-  managerReconcile: vi.fn(async () => undefined),
-  managerStatus: vi.fn(() => ({ state: 'idle' })),
-  managerStop: vi.fn(async () => undefined),
-  managerConstructor: vi.fn(),
   cleanup: vi.fn(async () => undefined),
   pdfConstructor: vi.fn(),
-  broadcast: vi.fn(),
-  migrationRun: vi.fn(async () => ({ mode: 'managed' })),
-  migrationConstructor: vi.fn(),
 }));
 
 vi.mock('../app/appState', () => ({
   getAppConfig: mocks.getAppConfig,
   getPbClient: mocks.getPbClient,
   getOfflineCache: mocks.getOfflineCache,
-  getKnowledgeBaseManager: mocks.getKnowledgeBaseManager,
   getKnowledgePdfService: mocks.getKnowledgePdfService,
-  setKnowledgeBaseManager: mocks.setKnowledgeBaseManager,
   setKnowledgePdfService: mocks.setKnowledgePdfService,
-}));
-
-vi.mock('./KnowledgeBaseManager', () => ({
-  KnowledgeBaseManager: vi.fn(function MockKnowledgeBaseManager(options) {
-    mocks.managerConstructor(options);
-    return {
-      start: mocks.managerStart,
-      reconcile: mocks.managerReconcile,
-      getStatus: mocks.managerStatus,
-      stop: mocks.managerStop,
-    };
-  }),
-}));
-
-vi.mock('./ManagedKnowledgeMigration', () => ({
-  ManagedKnowledgeMigration: vi.fn(function MockManagedKnowledgeMigration(options) {
-    mocks.migrationConstructor(options);
-    return { run: mocks.migrationRun };
-  }),
 }));
 
 vi.mock('./KnowledgePdfService', () => ({
@@ -55,10 +24,6 @@ vi.mock('./KnowledgePdfService', () => ({
     mocks.pdfConstructor(options);
     return { cleanup: mocks.cleanup };
   }),
-}));
-
-vi.mock('../utils/broadcastToAllWindows', () => ({
-  broadcastToAllWindows: mocks.broadcast,
 }));
 
 describe('knowledgeRuntime', () => {
@@ -72,7 +37,6 @@ describe('knowledgeRuntime', () => {
       secret: 'secret',
     });
     mocks.getPbClient.mockReturnValue({ collection: vi.fn() });
-    mocks.getKnowledgeBaseManager.mockReturnValue(null);
     mocks.getKnowledgePdfService.mockReturnValue(null);
     mocks.getOfflineCache.mockReturnValue(null);
   });
@@ -88,42 +52,11 @@ describe('knowledgeRuntime', () => {
     expect(mocks.setKnowledgePdfService).toHaveBeenCalledWith(service);
   });
 
-  it('runs the one-time authority migration and leaves no folder watcher active', async () => {
-    const previous = { stop: vi.fn(async () => undefined) };
-    mocks.getKnowledgeBaseManager.mockReturnValue(previous);
-    const { startKnowledgeBaseManager } = await import('./knowledgeRuntime');
+  it('does not expose a folder manager lifecycle', async () => {
+    const runtime = await import('./knowledgeRuntime');
 
-    await startKnowledgeBaseManager('/relay/data');
-
-    expect(previous.stop).toHaveBeenCalledOnce();
-    expect(mocks.managerConstructor).toHaveBeenCalledWith(
-      expect.objectContaining({ root: '/relay/data/knowledge-base' }),
-    );
-    expect(mocks.migrationRun).toHaveBeenCalledOnce();
-    expect(mocks.managerStart).not.toHaveBeenCalled();
-    expect(mocks.managerStop).toHaveBeenCalledOnce();
-    expect(mocks.setKnowledgeBaseManager).toHaveBeenLastCalledWith(null);
-  });
-
-  it('does not start a manager outside server mode or before PocketBase is ready', async () => {
-    const { startKnowledgeBaseManager } = await import('./knowledgeRuntime');
-    mocks.config.load.mockReturnValue({
-      mode: 'client',
-      serverUrl: 'https://relay.example.com',
-      secret: 'secret',
-    });
-    await startKnowledgeBaseManager('/relay/data');
-    expect(mocks.managerStart).not.toHaveBeenCalled();
-
-    mocks.config.load.mockReturnValue({
-      mode: 'server',
-      port: 8090,
-      bindHost: '0.0.0.0',
-      secret: 'secret',
-    });
-    mocks.getPbClient.mockReturnValue(null);
-    await startKnowledgeBaseManager('/relay/data');
-    expect(mocks.managerStart).not.toHaveBeenCalled();
+    expect(runtime).not.toHaveProperty('startKnowledgeBaseManager');
+    expect(runtime).not.toHaveProperty('stopKnowledgeBaseManager');
   });
 
   it('passes cached metadata checksums into daily PDF cache cleanup', async () => {

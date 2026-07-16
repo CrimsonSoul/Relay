@@ -59,8 +59,6 @@ const mocks = vi.hoisted(() => ({
   PendingChanges: vi.fn(),
   SyncManager: vi.fn(),
   initializeKnowledgePdfService: vi.fn(),
-  startKnowledgeBaseManager: vi.fn(),
-  stopKnowledgeBaseManager: vi.fn(),
   privilegedRuntime: { dispose: vi.fn() },
   nextPrivilegedRuntime: { dispose: vi.fn() },
   getPrivilegedRuntime: vi.fn(),
@@ -112,8 +110,6 @@ vi.mock('../../cache/SyncManager', () => ({
 
 vi.mock('../../knowledge/knowledgeRuntime', () => ({
   initializeKnowledgePdfService: mocks.initializeKnowledgePdfService,
-  startKnowledgeBaseManager: mocks.startKnowledgeBaseManager,
-  stopKnowledgeBaseManager: mocks.stopKnowledgeBaseManager,
 }));
 
 vi.mock('../../privileged/privilegedRuntime', () => ({
@@ -194,9 +190,7 @@ describe('reconfigureRuntime', () => {
     expect(mocks.pbProcess.stop).toHaveBeenCalledOnce();
     expect(mocks.setPbProcess).toHaveBeenCalledWith(null);
     expect(mocks.startPocketBase).not.toHaveBeenCalled();
-    expect(mocks.stopKnowledgeBaseManager).toHaveBeenCalledOnce();
     expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
-    expect(mocks.startKnowledgeBaseManager).not.toHaveBeenCalled();
     expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
     expect(mocks.createProductionPrivilegedRuntime).toHaveBeenCalledWith({
       config: expect.objectContaining({ mode: 'client' }),
@@ -226,7 +220,7 @@ describe('reconfigureRuntime', () => {
     expect(mocks.setPbClient).toHaveBeenCalledWith(null);
   });
 
-  it('starts the knowledge index only after server PocketBase restarts', async () => {
+  it('uses PocketBase directly for Knowledge after server PocketBase restarts', async () => {
     mocks.appConfig.load.mockReturnValue({
       mode: 'server',
       port: 8090,
@@ -237,13 +231,8 @@ describe('reconfigureRuntime', () => {
 
     await reconfigureRuntime('/Users/test/RelayData/data');
 
-    expect(mocks.stopKnowledgeBaseManager).toHaveBeenCalledOnce();
     expect(mocks.startPocketBase).toHaveBeenCalledOnce();
     expect(mocks.initializeKnowledgePdfService).toHaveBeenCalledWith('/Users/test/RelayData/data');
-    expect(mocks.startKnowledgeBaseManager).toHaveBeenCalledWith('/Users/test/RelayData/data');
-    expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.startKnowledgeBaseManager.mock.invocationCallOrder[0] as number,
-    );
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createProductionPrivilegedRuntime.mock.invocationCallOrder[0] as number,
     );

@@ -54,8 +54,6 @@ import { CloudStatusManager } from './handlers/cloudStatus/CloudStatusManager';
 import {
   cleanupKnowledgePdfCache,
   initializeKnowledgePdfService,
-  startKnowledgeBaseManager,
-  stopKnowledgeBaseManager,
 } from './knowledge/knowledgeRuntime';
 import {
   createProductionPrivilegedRuntime,
@@ -156,7 +154,6 @@ if (gotLock) {
       getCloudStatusManager()?.stop();
       void getPrivilegedRuntime()?.dispose();
       setPrivilegedRuntime(null);
-      void stopKnowledgeBaseManager();
       setKnowledgePdfService(null);
       // PocketBase cleanup — synchronous kill to ensure process dies before app exits
       if (getRetentionManager()) {
@@ -210,9 +207,6 @@ if (gotLock) {
       const startServerDataManagers = () => {
         getDynatraceProblemsManager()?.start();
         getCloudStatusManager()?.start();
-        void startKnowledgeBaseManager(configDataDir).catch((error) => {
-          loggers.main.warn('Could not start Knowledge Base index', { error });
-        });
       };
 
       const stopPrivilegedAccess = async () => {

@@ -6,7 +6,7 @@ import type {
   KnowledgeOpenWebLinkResult,
   KnowledgePdfResult,
 } from '@shared/knowledge';
-import type { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
+import type { KnowledgeIndexStatusService } from '../knowledge/KnowledgeIndexStatusService';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
@@ -23,7 +23,7 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
 
 export function setupKnowledgeHandlers(
   getService: () => KnowledgePdfService | null,
-  getManager: () => KnowledgeBaseManager | null,
+  getIndexStatusService: () => KnowledgeIndexStatusService | null,
   getUploadService: () => KnowledgeUploadService | null = () => null,
 ): void {
   ipcMain.handle(
@@ -45,7 +45,7 @@ export function setupKnowledgeHandlers(
       if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_GET_INDEX_STATUS)) {
         return EMPTY_STATUS;
       }
-      return getManager()?.getStatus() ?? EMPTY_STATUS;
+      return (await getIndexStatusService()?.getStatus()) ?? EMPTY_STATUS;
     },
   );
 

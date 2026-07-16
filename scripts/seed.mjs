@@ -7,6 +7,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getSuperuserPassword } from './seedConfig.mjs';
+import { seedKnowledgeDocuments } from './seedKnowledge.mjs';
 
 const PB = process.env.RELAY_SEED_PB_URL ?? 'http://localhost:8090';
 const __filename = fileURLToPath(import.meta.url);
@@ -196,6 +197,7 @@ async function clearDynatraceDemoData() {
     'dynatrace_problem_notes',
     'dynatrace_problem_states',
     'dynatrace_problems',
+    'knowledge_documents',
   ]) {
     const records = await listCollection(collection);
     const demoRecords = records.filter((record) =>
@@ -1105,6 +1107,10 @@ async function seed() {
     },
     overwrittenBy: 'seed-script',
   });
+
+  console.log('Seeding Knowledge Base documents...');
+  const knowledgeDocuments = await seedKnowledgeDocuments({ baseUrl: PB, token });
+  console.log(`  Created ${knowledgeDocuments.length} protected PDF documents`);
 
   await seedDynatraceProblems();
 

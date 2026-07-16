@@ -71,23 +71,28 @@ describe('KnowledgePdfService', () => {
     getOne.mockResolvedValue(rawRecord());
   });
 
-  it('returns a validated local source in server mode', async () => {
-    const sourcePath = join(configDataDir, 'Runbook.pdf');
-    await writeFile(sourcePath, pdf);
-    const service = new KnowledgePdfService({
+  it('reads server PDFs only from the protected PocketBase file', async () => {
+    const resolveServerSource = vi.fn(async () => {
+      throw new Error('server folders must not be consulted');
+    });
+    const options = {
       configDataDir,
-      getConfig: () => ({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'secret' }),
+      getConfig: () =>
+        ({ mode: 'server', port: 8090, bindHost: '0.0.0.0', secret: 'secret' }) as const,
       getPbClient: () => pb as never,
-      resolveServerSource: async () => sourcePath,
+      resolveServerSource,
       createClient,
       fetch: fetchPdf,
-    });
+    };
+    const service = new KnowledgePdfService(options);
 
     const result = await service.getPdf({ documentId: 'document123', checksum: pdfChecksum });
 
-    expect(result).toMatchObject({ ok: true, checksum: pdfChecksum, source: 'server' });
+    expect(result).toMatchObject({ ok: true, checksum: pdfChecksum, source: 'download' });
     expect(Buffer.from(result.ok ? result.data : new ArrayBuffer(0))).toEqual(pdf);
-    expect(fetchPdf).not.toHaveBeenCalled();
+    expect(resolveServerSource).not.toHaveBeenCalled();
+    expect(getToken).toHaveBeenCalledWith({ requestKey: null });
+    expect(fetchPdf).toHaveBeenCalledOnce();
   });
 
   it('reuses a matching client cache entry without authenticating', async () => {
