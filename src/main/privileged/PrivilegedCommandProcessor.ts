@@ -151,6 +151,13 @@ export class PrivilegedCommandAuthorizationError extends Error {
   }
 }
 
+export class PrivilegedCommandSafeError extends Error {
+  constructor(readonly code: 'invalid-request' | 'insufficient-storage') {
+    super('The privileged command could not be completed safely.');
+    this.name = 'PrivilegedCommandSafeError';
+  }
+}
+
 type NormalizedCommand = {
   requestId: string;
   accountId: string;
@@ -278,6 +285,7 @@ function safeStoredError(value: PrivilegedCommandError | null): PrivilegedComman
     'offline',
     'pairing-required',
     'invalid-request',
+    'insufficient-storage',
     'expired',
     'replayed',
     'conflict',
@@ -631,6 +639,15 @@ export class PrivilegedCommandProcessor {
           completedAt: new Date(this.now()).toISOString(),
         });
         return errorResult('conflict', command.requestId, result);
+      }
+      if (error instanceof PrivilegedCommandSafeError) {
+        await this.repository.completeCommand(command.requestId, {
+          state: 'failed',
+          result: null,
+          safeError: error.code,
+          completedAt: new Date(this.now()).toISOString(),
+        });
+        return errorResult(error.code, command.requestId);
       }
       this.warnFailure(command.requestId, 'handler');
       await this.repository.completeCommand(command.requestId, {

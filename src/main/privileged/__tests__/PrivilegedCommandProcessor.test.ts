@@ -17,6 +17,7 @@ import type { RelayOperatorRecord } from '@shared/operators';
 import {
   PrivilegedCommandConflictError,
   PrivilegedCommandProcessor,
+  PrivilegedCommandSafeError,
   type PrivilegedCommandClaim,
   type PrivilegedCommandRepository,
   type StoredPrivilegedCommand,
@@ -321,6 +322,25 @@ describe('PrivilegedCommandProcessor', () => {
       currentRevision: 9,
       refresh: true,
     });
+  });
+
+  it('persists and returns bounded storage admission errors from registered handlers', async () => {
+    const processor = createProcessor();
+    processor.registerCommand('administration.snapshot.read', 'settings.manage', async () => {
+      throw new PrivilegedCommandSafeError('insufficient-storage');
+    });
+
+    await expect(
+      processor.process(envelope({ command: 'administration.snapshot.read', payload: {} })),
+    ).resolves.toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: 'insufficient-storage',
+    });
+    expect(repository.completeCommand).toHaveBeenCalledWith(
+      'request-1',
+      expect.objectContaining({ state: 'failed', safeError: 'insufficient-storage' }),
+    );
   });
 
   it('verifies the registered fingerprint and ECDSA signature before claiming the request', async () => {

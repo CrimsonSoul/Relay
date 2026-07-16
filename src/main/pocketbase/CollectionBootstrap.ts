@@ -166,6 +166,8 @@ const KNOWLEDGE_UPLOAD_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)';
 const KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_upload_batches_request_id ON knowledge_upload_batches (requestId)';
+const KNOWLEDGE_UPLOAD_BATCH_ACTIVE_ACCOUNT_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_upload_batches_active_account ON knowledge_upload_batches (accountId) WHERE state = "active"';
 const KNOWLEDGE_UPLOAD_CHUNK_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)';
 const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
@@ -217,7 +219,7 @@ const KNOWLEDGE_UPLOAD_BATCH_RULES: CollectionRules = {
 };
 
 const KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE =
-  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id && @collection.knowledge_uploads.id ?= uploadId && @collection.knowledge_uploads.accountId ?= @request.auth.id && @collection.knowledge_uploads.deviceId ?= deviceId && @collection.knowledge_uploads.batchId ?= batchId && @collection.knowledge_upload_batches.id ?= batchId && @collection.knowledge_upload_batches.accountId ?= @request.auth.id';
+  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id && @collection.knowledge_uploads.id ?= uploadId && @collection.knowledge_uploads.accountId ?= @request.auth.id && @collection.knowledge_uploads.deviceId ?= deviceId && @collection.knowledge_uploads.batchId ?= batchId && @collection.knowledge_uploads.state ?= "uploading" && @collection.knowledge_upload_batches.id ?= batchId && @collection.knowledge_upload_batches.accountId ?= @request.auth.id && @collection.knowledge_upload_batches.state ?= "active"';
 const KNOWLEDGE_UPLOAD_CHUNK_RULES: CollectionRules = {
   listRule: KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE,
   viewRule: KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE,
@@ -729,7 +731,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'expiresAt', required: true },
       { type: 'number', name: 'revision', required: true },
     ],
-    indexes: [KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX],
+    indexes: [KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX, KNOWLEDGE_UPLOAD_BATCH_ACTIVE_ACCOUNT_INDEX],
     rules: KNOWLEDGE_UPLOAD_BATCH_RULES,
   },
   {

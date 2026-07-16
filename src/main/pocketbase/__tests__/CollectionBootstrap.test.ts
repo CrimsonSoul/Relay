@@ -518,6 +518,7 @@ describe('ensureCollections', () => {
           updateRule: string | null;
           deleteRule: string | null;
           fields: Array<Record<string, unknown>>;
+          indexes: string[];
         }
       | undefined;
     expect(batchCall).toMatchObject({ createRule: null, updateRule: null, deleteRule: null });
@@ -528,6 +529,9 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'totalBytes', type: 'number', required: true }),
         expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
       ]),
+    );
+    expect(batchCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_knowledge_upload_batches_active_account ON knowledge_upload_batches (accountId) WHERE state = "active"',
     );
 
     const chunkCall = mockCreate.mock.calls.find(

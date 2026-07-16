@@ -318,6 +318,33 @@ describe('PrivilegedRuntime', () => {
     expect(clientTransport.dispose).toHaveBeenCalled();
     expect(runtime.getView().state).toBe('signed-out');
   });
+
+  it('awaits server-owned background resources during privileged runtime disposal', async () => {
+    const additionalDisposable = { dispose: vi.fn(async () => undefined) };
+    const pairingService = {
+      createChallenge: vi.fn(),
+      completePairing: vi.fn(),
+      dispose: vi.fn(),
+    };
+    const runtime = new PrivilegedRuntime({
+      additionalDisposable,
+      authClient,
+      commandProcessor: { process: vi.fn(), processLocal: vi.fn() },
+      deviceStore,
+      hostname: 'RELAY-SERVER',
+      mode: 'server',
+      pairingService,
+      resolveAccountIdentity: vi.fn(async () => ({
+        assigned: true,
+        operatorName: 'Ryan Bledsoe',
+      })),
+    } as never);
+
+    await runtime.dispose();
+
+    expect(additionalDisposable.dispose).toHaveBeenCalledOnce();
+    expect(pairingService.dispose).toHaveBeenCalledOnce();
+  });
 });
 
 describe('resolveProductionPairingTarget', () => {

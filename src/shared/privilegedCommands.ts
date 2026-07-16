@@ -149,6 +149,7 @@ export type PrivilegedCommandError =
   | 'offline'
   | 'pairing-required'
   | 'invalid-request'
+  | 'insufficient-storage'
   | 'expired'
   | 'replayed'
   | 'conflict'

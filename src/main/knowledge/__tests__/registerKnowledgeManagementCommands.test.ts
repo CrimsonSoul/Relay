@@ -3,7 +3,7 @@ import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagem
 
 const context = {
   requestId: 'command-request-1',
-  account: { id: 'account-admin' },
+  account: { id: 'account-admin', role: 'admin' as const },
   operator: { id: 'operator-admin', displayName: 'Ryan Bledsoe' },
   device: { deviceId: 'device-1' },
 };
@@ -56,6 +56,15 @@ describe('registerKnowledgeManagementCommands', () => {
     readAudit: vi.fn(async () => ({ items: [], nextCursor: null })),
   };
   const consumeReauthenticationProof = vi.fn(async () => true);
+  const uploadCoordinator = {
+    beginBatch: vi.fn(async () => ({ id: 'batch-1' })),
+    beginFile: vi.fn(async () => ({ id: 'upload-1' })),
+    status: vi.fn(async () => ({ batch: { id: 'batch-1' }, uploads: [] })),
+    finalize: vi.fn(async () => ({ id: 'upload-1', state: 'assembling' })),
+    cancelFile: vi.fn(async () => undefined),
+    cancelBatch: vi.fn(async () => undefined),
+    dispose: vi.fn(async () => undefined),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,6 +81,7 @@ describe('registerKnowledgeManagementCommands', () => {
       consumeReauthenticationProof,
       extractor: { extract, stop },
       readUploadPdf,
+      uploadCoordinator: uploadCoordinator as never,
     });
   });
 
@@ -133,6 +143,12 @@ describe('registerKnowledgeManagementCommands', () => {
 
   it('registers and attributes every managed library command', async () => {
     expect([...handlers.keys()]).toEqual([
+      'knowledge.upload.batch.begin',
+      'knowledge.upload.file.begin',
+      'knowledge.upload.status',
+      'knowledge.upload.file.finalize',
+      'knowledge.upload.file.cancel',
+      'knowledge.upload.batch.cancel',
       'knowledge.upload.validate',
       'knowledge.snapshot.read',
       'knowledge.document.publish',
@@ -160,6 +176,74 @@ describe('registerKnowledgeManagementCommands', () => {
       uploadId: 'upload-1',
       title: 'Runbook',
       category: 'Operations',
+    });
+  });
+
+  it('registers all resumable commands with the current account, device, operator, and request ID', async () => {
+    const actor = {
+      accountId: 'account-admin',
+      deviceId: 'device-1',
+      operatorId: 'operator-admin',
+      operatorName: 'Ryan Bledsoe',
+      role: 'admin',
+    };
+    await handlers.get('knowledge.upload.batch.begin')!(
+      context as never,
+      { requestId: 'batch-client-1', fileCount: 2, totalBytes: 100 } as never,
+    );
+    expect(uploadCoordinator.beginBatch).toHaveBeenCalledWith(actor, {
+      requestId: 'batch-client-1',
+      fileCount: 2,
+      totalBytes: 100,
+    });
+
+    await handlers.get('knowledge.upload.file.begin')!(
+      context as never,
+      {
+        batchId: 'batch-1',
+        fileName: 'Runbook.pdf',
+        byteSize: 9,
+        checksum: 'a'.repeat(64),
+        chunkCount: 1,
+      } as never,
+    );
+    expect(uploadCoordinator.beginFile).toHaveBeenCalledWith(actor, {
+      requestId: 'command-request-1',
+      batchId: 'batch-1',
+      fileName: 'Runbook.pdf',
+      byteSize: 9,
+      checksum: 'a'.repeat(64),
+      chunkCount: 1,
+    });
+
+    await handlers.get('knowledge.upload.status')!(
+      context as never,
+      { batchId: 'batch-1' } as never,
+    );
+    await handlers.get('knowledge.upload.file.finalize')!(
+      context as never,
+      { uploadId: 'upload-1', expectedRevision: 1 } as never,
+    );
+    await handlers.get('knowledge.upload.file.cancel')!(
+      context as never,
+      { uploadId: 'upload-1', expectedRevision: 2 } as never,
+    );
+    await handlers.get('knowledge.upload.batch.cancel')!(
+      context as never,
+      { batchId: 'batch-1', expectedRevision: 3 } as never,
+    );
+    expect(uploadCoordinator.status).toHaveBeenCalledWith(actor, 'batch-1');
+    expect(uploadCoordinator.finalize).toHaveBeenCalledWith(actor, {
+      uploadId: 'upload-1',
+      expectedRevision: 1,
+    });
+    expect(uploadCoordinator.cancelFile).toHaveBeenCalledWith(actor, {
+      uploadId: 'upload-1',
+      expectedRevision: 2,
+    });
+    expect(uploadCoordinator.cancelBatch).toHaveBeenCalledWith(actor, {
+      batchId: 'batch-1',
+      expectedRevision: 3,
     });
   });
 

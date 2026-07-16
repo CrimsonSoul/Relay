@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname as getHostname } from 'node:os';
+import { join } from 'node:path';
 import type PocketBase from 'pocketbase';
 import type { JsonWebKey } from 'node:crypto';
 import type {
@@ -65,6 +66,10 @@ import { RelayAdministrationService } from './RelayAdministrationService';
 import { registerKnowledgeManagementCommands } from '../knowledge/registerKnowledgeManagementCommands';
 import { ManagedKnowledgeService } from '../knowledge/ManagedKnowledgeService';
 import { KnowledgeMutationCoordinator } from '../knowledge/KnowledgeMutationCoordinator';
+import { KnowledgeUploadCapacity } from '../knowledge/KnowledgeUploadCapacity';
+import { KnowledgeUploadCoordinator } from '../knowledge/KnowledgeUploadCoordinator';
+import { KnowledgeExtractorWorker } from '../knowledge/KnowledgeExtractorWorker';
+import { PocketBaseKnowledgeUploadRepository } from '../knowledge/PocketBaseKnowledgeUploadRepository';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -601,11 +606,24 @@ export async function createProductionPrivilegedRuntime(
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });
   const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
+  const knowledgeUploadRepository = new PocketBaseKnowledgeUploadRepository({
+    pb: options.serverClient,
+  });
+  const knowledgeUploadCoordinator = new KnowledgeUploadCoordinator({
+    repository: knowledgeUploadRepository,
+    capacity: new KnowledgeUploadCapacity({
+      storagePath: join(dataDir, 'pb_data', 'storage'),
+      hasActiveBatch: (accountId) => knowledgeUploadRepository.hasActiveBatch(accountId),
+    }),
+    extractor: new KnowledgeExtractorWorker(),
+  });
+  await knowledgeUploadCoordinator.start();
   const knowledgeCommands = registerKnowledgeManagementCommands({
     registrar: commandProcessor,
     pb: options.serverClient,
     service: managedKnowledgeService,
     coordinator: new KnowledgeMutationCoordinator(),
+    uploadCoordinator: knowledgeUploadCoordinator,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });

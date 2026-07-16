@@ -15,6 +15,7 @@ import type {
 import {
   PrivilegedCommandAuthorizationError,
   PrivilegedCommandConflictError,
+  PrivilegedCommandSafeError,
 } from '../privileged/PrivilegedCommandProcessor';
 import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
 import { KnowledgeMutationCoordinator } from './KnowledgeMutationCoordinator';
@@ -23,6 +24,12 @@ import {
   type ManagedKnowledgeService,
 } from './ManagedKnowledgeService';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
+import { KnowledgeUploadAdmissionError } from './KnowledgeUploadCapacity';
+import {
+  KnowledgeUploadCoordinatorError,
+  type KnowledgeUploadActor,
+  type KnowledgeUploadCoordinator,
+} from './KnowledgeUploadCoordinator';
 
 type KnowledgeUploadRecord = {
   id: string;
@@ -65,6 +72,10 @@ type KnowledgeManagementCommandOptions = {
     | 'readAudit'
   >;
   coordinator?: KnowledgeMutationCoordinator;
+  uploadCoordinator: Pick<
+    KnowledgeUploadCoordinator,
+    'beginBatch' | 'beginFile' | 'status' | 'finalize' | 'cancelFile' | 'cancelBatch' | 'dispose'
+  >;
   consumeReauthenticationProof?: (
     requestId: string,
     context: { accountId: string; deviceId: string | null },
@@ -85,6 +96,20 @@ function actor(context: {
   };
 }
 
+function uploadActor(context: {
+  account: { id: string; role: 'admin' | 'publisher' };
+  operator: { id: string; displayName: string };
+  device: { deviceId: string } | null;
+}): KnowledgeUploadActor {
+  return {
+    accountId: context.account.id,
+    deviceId: context.device?.deviceId ?? 'server-local',
+    operatorId: context.operator.id,
+    operatorName: context.operator.displayName,
+    role: context.account.role,
+  };
+}
+
 async function translateConflict<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -92,6 +117,32 @@ async function translateConflict<T>(operation: () => Promise<T>): Promise<T> {
     if (error instanceof ManagedKnowledgeConflictError) {
       throw new PrivilegedCommandConflictError(error.currentRevision);
     }
+    throw error;
+  }
+}
+
+function translateAdmissionError(error: KnowledgeUploadAdmissionError): never {
+  if (error.code === 'conflict') throw new PrivilegedCommandConflictError(0);
+  throw new PrivilegedCommandSafeError(error.code);
+}
+
+function translateCoordinatorError(error: KnowledgeUploadCoordinatorError): never {
+  if (error.code === 'unauthorized') throw new PrivilegedCommandAuthorizationError();
+  if (error.code === 'conflict') {
+    throw new PrivilegedCommandConflictError(error.currentRevision ?? 0);
+  }
+  if (error.code === 'invalid-request' || error.code === 'not-found') {
+    throw new PrivilegedCommandSafeError('invalid-request');
+  }
+  throw error;
+}
+
+async function translateUploadError<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof KnowledgeUploadAdmissionError) translateAdmissionError(error);
+    if (error instanceof KnowledgeUploadCoordinatorError) translateCoordinatorError(error);
     throw error;
   }
 }
@@ -156,6 +207,56 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
       if (bytes.byteLength > KNOWLEDGE_MAX_PDF_BYTES) throw new Error('upload-too-large');
       return bytes;
     });
+
+  options.registrar.registerCommand(
+    'knowledge.upload.batch.begin',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() =>
+        options.uploadCoordinator.beginBatch(uploadActor(context), payload),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.upload.file.begin',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() =>
+        options.uploadCoordinator.beginFile(uploadActor(context), {
+          requestId: context.requestId,
+          ...payload,
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.upload.status',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() =>
+        options.uploadCoordinator.status(uploadActor(context), payload.batchId),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.upload.file.finalize',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() => options.uploadCoordinator.finalize(uploadActor(context), payload)),
+  );
+  options.registrar.registerCommand(
+    'knowledge.upload.file.cancel',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() =>
+        options.uploadCoordinator.cancelFile(uploadActor(context), payload),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.upload.batch.cancel',
+    'knowledge.manage',
+    (context, payload) =>
+      translateUploadError(() =>
+        options.uploadCoordinator.cancelBatch(uploadActor(context), payload),
+      ),
+  );
 
   options.registrar.registerCommand(
     'knowledge.upload.validate',
@@ -381,5 +482,10 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
     (_context, payload) => options.service.readAudit(payload),
   );
 
-  return { dispose: () => extractor.stop() };
+  return {
+    dispose: async () => {
+      await options.uploadCoordinator.dispose();
+      await extractor.stop();
+    },
+  };
 }
