@@ -167,13 +167,15 @@ The initial administrator password and later privileged credential recovery stay
 
 Remote settings are intentionally limited to the Dynatrace environment URL, platform-token replacement, and alerting-profile filter. Relay connection paths, backup/restore selection, folder pickers, executables, and other filesystem-dependent operations remain local to the server PC.
 
-### Read-Only Knowledge Base
+### Managed Knowledge Base
 
-The Relay server owns the Knowledge Base source library at `<config data>/knowledge-base`. A PDF at the root is categorized as `General`; an immediate child directory becomes a category; deeper directories are ignored. Source files are limited to 50 MiB and 1,000 pages. The renderer has no mutation path for the library.
+PocketBase on the Relay server is the sole Knowledge Base document authority. There is no administrator-managed source folder, watcher, or filesystem reconciliation path. Ordinary operators have read-only access. An administrator or the single designated publisher can choose PDFs on the server PC or a paired work laptop and manage them through capability-checked privileged commands. Source files are limited to 50 MiB and 1,000 pages; batches are limited to 100 files.
 
-`KnowledgeBaseManager` creates the source folder for a new empty library, performs a startup reconciliation, debounces filesystem changes, and repeats reconciliation every five minutes as a watcher fallback. If mirrored records already exist but the source root is absent, it preserves the mirror and waits for the source to be restored instead of creating an empty root that could look like a mass deletion. It hashes and reparses changed files only. A single-concurrency worker extracts native PDF bookmarks when present and otherwise infers a bounded, two-level heading outline. The persisted outline is limited to 500 nodes.
+The client main process inspects each selected regular PDF without exposing its path or bytes to the renderer. It builds a persistent upload queue, hashes and reads the file in bounded 4 MiB chunks, and revalidates the canonical path, file identity, size, modification time, signature, and checksum before transfer. At most two chunks are in flight. Retryable network failures use bounded exponential backoff; after eight attempts the item pauses for network recovery. The encrypted queue survives restart when Electron `safeStorage` is available. If the source moved or changed, the publisher must reselect the same unchanged PDF.
 
-The server mirrors metadata and a protected PDF file into the server-owned `knowledge_documents` PocketBase collection. Clients subscribe to that metadata through the same realtime and offline snapshot path as other read models. PDF bytes do not ride the metadata stream: the renderer requests one validated document/checksum pair through trusted IPC, and the main process either reads the validated server source or authenticates to the Relay server's protected file endpoint.
+Upload manifests and chunks live in account- and device-bound PocketBase collections. The server reports missing chunk indexes so a client reconnecting over VPN sends only unacknowledged data. Once complete, a single-concurrency worker assembles and checksum-validates the file, extracts native PDF bookmarks or a bounded inferred outline, and leaves the upload ready for publisher review. Publishing or replacing copies the protected PDF into `knowledge_documents` and immediately clears the temporary staged file. Unpublished upload records expire after seven days.
+
+Clients subscribe to `knowledge_documents` metadata through the same realtime and offline snapshot path as other read models. PDF bytes do not ride the metadata stream: the renderer requests one validated document/checksum pair through trusted IPC, and the main process authenticates to the Relay server's protected file endpoint.
 
 Opened client PDFs are stored content-addressed at `<config data>/knowledge-cache/<sha256>.pdf`. Downloads are size-, signature-, and checksum-verified before atomic promotion. The cache is on demand, has a 2 GiB LRU budget, and retains unreferenced entries for at most 30 days. Cached documents remain available while disconnected; unopened documents show an offline-unavailable state. Knowledge metadata and PDF bytes stay on the configured Relay LAN path.
 
@@ -189,9 +191,9 @@ PDF link annotation
 
 PDF.js may recover URI, Launch/GoToR, or JavaScript actions into indistinguishable URL fields. The overlay treats those fields as origin-agnostic inert text, then reclassifies them through Relay's resolver. No branch executes the originating PDF action: local paths are metadata-only document identifiers, while browser navigation requires an explicit click and the dedicated trusted, rate-limited HTTP(S) IPC boundary.
 
-Deletion reconciliation preserves the last healthy index when the folder is missing or unreadable. Any invalid or unreadable entry also blocks deletions for that scan, so a partial copy cannot turn the last healthy mirror into a deletion. If more than 25% of known documents disappear, Relay requires the identical missing set in two healthy scans at least five minutes apart before deleting records. Failed extraction or upload preserves the last valid record.
+Failed validation or extraction leaves an upload unpublished and preserves the last valid document. Move-to-trash is reversible; permanent deletion requires reauthentication and is recorded in the management audit history.
 
-PocketBase backup/restore includes the mirrored collection and protected file storage. The administrator-managed source folder and each workstation's local PDF cache are outside that backup; preserve the source folder separately. After a restore, the server reconciles the mirror against the source library, while clients can repopulate caches on demand.
+PocketBase backup/restore includes managed document metadata and protected PDF storage. Each workstation's local read cache and encrypted in-progress upload queue are outside the backup. After a restore, clients resubscribe to the authoritative managed library and repopulate read caches on demand; interrupted publisher uploads may require source reselection if the server no longer has their manifests or acknowledged chunks.
 
 ## Renderer Structure
 

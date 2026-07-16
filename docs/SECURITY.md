@@ -130,7 +130,7 @@ Key files:
 - `src/main/utils/pathValidation.ts`
 - `src/main/utils/pathSafety.ts`
 
-Knowledge Base source handling adds a feature-specific containment layer in `src/main/knowledge/knowledgePathSafety.ts`. Scans accept only regular PDF files from the configured source root or one immediate category directory. They reject symbolic links, traversal, control characters, invalid signatures, oversize files, and paths whose canonical target leaves the root. Reads reopen with no-follow semantics and revalidate the file identity, size, modification time, signature, and canonical containment to close scan/read replacement races.
+Knowledge Base publishing has no configured source root or watched folder. The native file picker returns selected paths only to the main process. Relay accepts regular, non-symbolic PDF files within the size limit, records their canonical identity, and reopens them with no-follow semantics. Before every bounded chunk read it revalidates the canonical path, device, inode, size, modification time, PDF signature, and whole-file checksum. A moved or changed source becomes `source-required` instead of uploading replacement bytes under an existing manifest.
 
 ### Cache IPC Validation
 
@@ -250,7 +250,11 @@ Privileged requests reuse the configured PocketBase endpoint, authentication, an
 
 ### Knowledge Base Documents
 
-The Knowledge Base is read-only from the renderer. `knowledge_documents` has authenticated list/view rules and no create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only the server-side indexer writes it.
+The Knowledge Base is read-only for ordinary operators. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
+
+Publisher uploads use account- and device-bound `knowledge_upload_batches`, `knowledge_uploads`, and `knowledge_upload_chunks` records. A batch contains at most 100 files; files are split into fixed 4 MiB chunks and limited to two concurrent transfers. Every chunk is bound to its batch, upload, account, device, index, size, and SHA-256. The server reassembles chunks in order, verifies each checksum and the declared whole-file checksum, validates the PDF signature and size, then performs bounded extraction. Temporary upload records expire after seven days. Cancelling removes chunks and staged bytes; successful publication copies the protected PDF into `knowledge_documents` and clears the staged upload file immediately.
+
+The resumable queue lives in the main process. The renderer receives only bounded filenames, sizes, state, and progress—never source paths or PDF bytes. Persisted source paths are Electron `safeStorage` ciphertext in an owner-only file. If encryption is unavailable Relay keeps the queue in memory only. On restart or resume, Relay asks the server which chunk indexes are missing and sends only those indexes after revalidating the unchanged source file.
 
 The preload bridge exposes the bounded PDF/status reads `getKnowledgePdf({ documentId, checksum })` and `getKnowledgeIndexStatus()`, plus a dedicated `openKnowledgeWebLink(url)` action. The PDF request schema accepts a bounded PocketBase-style ID and lowercase SHA-256 checksum; it does not accept paths, URLs, tokens, or credentials. Each handler validates the sender as a trusted Relay main frame before invoking the main-process service.
 
