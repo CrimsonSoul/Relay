@@ -8,6 +8,7 @@ import {
   compareKnowledgeCategories,
   compareKnowledgeDocuments,
   normalizeKnowledgeDocumentRecord,
+  normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeSearchText,
 } from './knowledge';
 import { IPC_CHANNELS } from './ipc';
@@ -107,6 +108,26 @@ describe('knowledge contracts', () => {
 
   it('normalizes search text case and diacritics', () => {
     expect(normalizeKnowledgeSearchText('  Résolution ÉTAPES  ')).toBe('resolution etapes');
+  });
+
+  it('normalizes metadata-only management snapshots without exposing PDF fields', () => {
+    const document = normalizeKnowledgeDocumentRecord(validRecord)!;
+    const safeDocument: typeof document & { pdf?: string; outline?: unknown[] } = { ...document };
+    delete safeDocument.pdf;
+    delete safeDocument.outline;
+    const snapshot = normalizeKnowledgeManagementSnapshot({
+      mode: 'managed',
+      documents: { items: [safeDocument], nextCursor: null },
+      trash: { items: [], nextCursor: null },
+      uploads: { items: [], nextCursor: null },
+    });
+
+    expect(snapshot?.documents.items[0]).toMatchObject({
+      id: document.id,
+      displayTitle: document.title,
+    });
+    expect(snapshot?.documents.items[0]).not.toHaveProperty('pdf');
+    expect(snapshot?.documents.items[0]).not.toHaveProperty('outline');
   });
 
   it('sorts General before alphabetical categories', () => {

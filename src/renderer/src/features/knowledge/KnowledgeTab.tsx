@@ -6,10 +6,13 @@ import type {
   KnowledgeOutlineNode,
 } from '@shared/knowledge';
 import { useToast } from '../../components/Toast';
+import { TactileButton } from '../../components/TactileButton';
+import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { buildKnowledgeLibrary } from './knowledgeModel';
 import { useKnowledgeLibrary } from './useKnowledgeLibrary';
 import { KnowledgeTree } from './KnowledgeTree';
 import { KnowledgePdfViewer } from './KnowledgePdfViewer';
+import { KnowledgeManagementWorkspace } from './KnowledgeManagementWorkspace';
 import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
 import { resolveKnowledgeLink, type KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import {
@@ -70,8 +73,59 @@ function unavailableLinkMessage(reason: 'not-found' | 'ambiguous' | 'unsupported
   }
 }
 
+function emptyLibraryDescription(isServer: boolean, canManage: boolean): string {
+  if (!isServer) {
+    return 'The Relay server has not shared any knowledge documents yet. They will appear here automatically when available.';
+  }
+  if (canManage) {
+    return 'Use the protected management workspace to stage and publish PDF guides for every Relay operator.';
+  }
+  return 'A designated Knowledge Base publisher can add PDF guides from their signed-in Relay workstation.';
+}
+
+function KnowledgeEmptyState({
+  relayMode,
+  canManage,
+  indexStatus,
+  error,
+  onManage,
+}: Readonly<{
+  relayMode: PublicRelayConfig['mode'] | undefined;
+  canManage: boolean;
+  indexStatus: KnowledgeIndexStatus | null;
+  error: string | null;
+  onManage: () => void;
+}>) {
+  const statusMessage =
+    indexStatus?.state === 'warning' || indexStatus?.state === 'error' ? indexStatus.message : null;
+  return (
+    <div className="knowledge-tab knowledge-tab--empty">
+      <div className="knowledge-empty">
+        <div className="knowledge-empty__glyph" aria-hidden="true">
+          KB
+        </div>
+        <span className="knowledge-empty__eyebrow">Read-only reference library</span>
+        <h1>No knowledge documents yet</h1>
+        <p>{emptyLibraryDescription(relayMode === 'server', canManage)}</p>
+        {statusMessage && (
+          <span className="knowledge-empty__error" role="status">
+            {statusMessage}
+          </span>
+        )}
+        {error && <span className="knowledge-empty__error">{error}</span>}
+        {canManage && (
+          <TactileButton variant="primary" onClick={onManage}>
+            Manage knowledge base
+          </TactileButton>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
-  const { documents, loading, error, hasLoadedSnapshot } = useKnowledgeLibrary();
+  const { documents, loading, error, hasLoadedSnapshot, refetch } = useKnowledgeLibrary();
+  const { session } = usePrivilegedAccess();
   const { showToast } = useToast();
   const [query, setQuery] = useState('');
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
@@ -80,6 +134,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   const [focusRequestKey, setFocusRequestKey] = useState(0);
   const [indexStatus, setIndexStatus] = useState<KnowledgeIndexStatus | null>(null);
   const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
+  const [managementOpen, setManagementOpen] = useState(false);
   const lastSelectedTitleRef = useRef<string | null>(null);
   const documentsRef = useRef(documents);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
@@ -91,6 +146,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   const selectedExistsInLibrary = selectedDocumentId
     ? documents.some((document) => document.id === selectedDocumentId)
     : true;
+  const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
 
   useEffect(() => {
     if (selectedDocument) lastSelectedTitleRef.current = selectedDocument.title;
@@ -259,6 +315,15 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     [selectedDocument],
   );
 
+  if (managementOpen && canManage) {
+    return (
+      <KnowledgeManagementWorkspace
+        onExit={() => setManagementOpen(false)}
+        onLibraryChanged={refetch}
+      />
+    );
+  }
+
   if (loading && !hasLoadedSnapshot) {
     return (
       <div className="knowledge-tab knowledge-tab--loading" aria-busy="true">
@@ -272,34 +337,14 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   }
 
   if (documents.length === 0) {
-    const isServer = relayMode === 'server';
     return (
-      <div className="knowledge-tab knowledge-tab--empty">
-        <div className="knowledge-empty">
-          <div className="knowledge-empty__glyph" aria-hidden="true">
-            KB
-          </div>
-          <span className="knowledge-empty__eyebrow">Read-only reference library</span>
-          <h1>No knowledge documents yet</h1>
-          <p>
-            {isServer
-              ? 'Add PDF guides to the server knowledge-base folder. Relay will organize them by folder and extract usable section headings automatically.'
-              : 'The Relay server has not shared any knowledge documents yet. They will appear here automatically when available.'}
-          </p>
-          {isServer && (
-            <code className="knowledge-empty__path">
-              &lt;Relay config data directory&gt;/knowledge-base
-            </code>
-          )}
-          {indexStatus?.message &&
-            (indexStatus.state === 'warning' || indexStatus.state === 'error') && (
-              <span className="knowledge-empty__error" role="status">
-                {indexStatus.message}
-              </span>
-            )}
-          {error && <span className="knowledge-empty__error">{error}</span>}
-        </div>
-      </div>
+      <KnowledgeEmptyState
+        relayMode={relayMode}
+        canManage={canManage}
+        indexStatus={indexStatus}
+        error={error}
+        onManage={() => setManagementOpen(true)}
+      />
     );
   }
 
@@ -320,9 +365,16 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
           <h1>Knowledge base</h1>
           <p>Find the guide, jump to the procedure, and stay in the flow.</p>
         </div>
-        <div className="knowledge-tab__mode" aria-label="Library permissions">
-          <span className="knowledge-tab__mode-dot" aria-hidden="true" />
-          Read only
+        <div className="knowledge-tab__header-actions">
+          <div className="knowledge-tab__mode" aria-label="Library permissions">
+            <span className="knowledge-tab__mode-dot" aria-hidden="true" />
+            Read only
+          </div>
+          {canManage && (
+            <TactileButton size="sm" variant="primary" onClick={() => setManagementOpen(true)}>
+              Manage library
+            </TactileButton>
+          )}
         </div>
       </header>
 

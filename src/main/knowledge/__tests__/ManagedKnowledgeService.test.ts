@@ -211,7 +211,6 @@ describe('ManagedKnowledgeService', () => {
       }),
     ).resolves.toMatchObject({
       lifecycleState: 'active',
-      trashedByOperatorId: null,
       trashedByName: null,
       trashedAt: null,
       revision: 4,

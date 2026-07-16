@@ -12,6 +12,20 @@ vi.mock('../useKnowledgeLibrary', () => ({ useKnowledgeLibrary: vi.fn() }));
 vi.mock('../../../components/Toast', () => ({
   useToast: () => ({ showToast: toastMocks.showToast }),
 }));
+vi.mock('../../../contexts/PrivilegedAccessContext', () => ({
+  usePrivilegedAccess: () => ({
+    session: {
+      state: 'signed-out',
+      accountId: null,
+      operatorId: null,
+      operatorName: null,
+      role: null,
+      capabilities: [],
+      deviceId: null,
+      expiresAt: null,
+    },
+  }),
+}));
 
 type ViewerMockProps = {
   document: KnowledgeDocumentRecord | null;
@@ -98,6 +112,15 @@ function document(id: string, title: string, category: string): KnowledgeDocumen
     outlineSource: 'native',
     sourceModifiedAt: '2026-07-14T12:00:00.000Z',
     indexedAt: '2026-07-14T12:00:00.000Z',
+    lifecycleState: 'active',
+    displayTitle: title,
+    revision: 1,
+    publishedByOperatorId: '',
+    publishedByName: '',
+    publishedAt: '2026-07-14T12:00:00.000Z',
+    trashedByOperatorId: null,
+    trashedByName: null,
+    trashedAt: null,
     created: '2026-07-14T12:00:00.000Z',
     updated: '2026-07-14T12:00:00.000Z',
   };
@@ -409,7 +432,7 @@ describe('KnowledgeTab', () => {
     expect(toastMocks.showToast).toHaveBeenCalledWith('Linked guide not found.', 'error');
   });
 
-  it('explains where server operators should place PDF files when the library is empty', async () => {
+  it('routes an empty managed library through the designated publisher', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [],
       loading: false,
@@ -421,7 +444,8 @@ describe('KnowledgeTab', () => {
     render(<KnowledgeTab active relayMode="server" />);
 
     expect(screen.getByText(/no knowledge documents yet/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/knowledge-base/i)).toHaveLength(2);
+    expect(screen.getByText(/designated Knowledge Base publisher/i)).toBeInTheDocument();
+    expect(screen.queryByText(/config data directory/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /upload/i })).not.toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
   });

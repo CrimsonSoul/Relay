@@ -138,7 +138,26 @@ export type KnowledgeAuditEventView = {
   occurredAt: string;
 };
 
-export type KnowledgeManagementDocumentView = Omit<KnowledgeDocumentRecord, 'pdf'>;
+export type KnowledgeManagementDocumentView = Pick<
+  KnowledgeDocumentRecord,
+  | 'id'
+  | 'category'
+  | 'displayTitle'
+  | 'fileName'
+  | 'byteSize'
+  | 'pageCount'
+  | 'lifecycleState'
+  | 'revision'
+  | 'publishedByName'
+  | 'publishedAt'
+  | 'trashedByName'
+  | 'trashedAt'
+  | 'updated'
+>;
+
+export type KnowledgeManagementUploadView = Omit<KnowledgeUploadView, 'outline'> & {
+  outlineCount: number;
+};
 
 export type KnowledgePage<T> = {
   items: T[];
@@ -148,7 +167,7 @@ export type KnowledgePage<T> = {
 export type KnowledgeManagementSnapshot = {
   mode: KnowledgeLibraryMode;
   documents: KnowledgePage<KnowledgeManagementDocumentView>;
-  uploads: KnowledgePage<KnowledgeUploadView>;
+  uploads: KnowledgePage<KnowledgeManagementUploadView>;
   trash: KnowledgePage<KnowledgeManagementDocumentView>;
 };
 
@@ -355,4 +374,190 @@ export function compareKnowledgeDocuments(
 
 export function isKnowledgeChecksum(value: unknown): value is string {
   return typeof value === 'string' && SHA256_PATTERN.test(value);
+}
+
+function optionalBoundedString(value: unknown, max: number): value is string | null {
+  return value === null || boundedString(value, max);
+}
+
+export function normalizeKnowledgeManagementDocumentView(
+  value: unknown,
+): KnowledgeManagementDocumentView | null {
+  if (!isRecord(value)) return null;
+  const lifecycleState = value.lifecycleState as KnowledgeLifecycleState;
+  const trashedByName = value.trashedByName || null;
+  const trashedAt = value.trashedAt || null;
+  if (
+    !boundedString(value.id, 200) ||
+    !boundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    !boundedString(value.displayTitle, 240) ||
+    !boundedString(value.fileName, 240) ||
+    !Number.isInteger(value.byteSize) ||
+    (value.byteSize as number) <= 0 ||
+    !Number.isInteger(value.pageCount) ||
+    (value.pageCount as number) <= 0 ||
+    !['active', 'trashed'].includes(lifecycleState) ||
+    !Number.isInteger(value.revision) ||
+    (value.revision as number) < 1 ||
+    typeof value.publishedByName !== 'string' ||
+    value.publishedByName.length > 120 ||
+    !boundedString(value.publishedAt, 100) ||
+    (trashedByName !== null && !boundedString(trashedByName, 120)) ||
+    (trashedAt !== null && !boundedString(trashedAt, 100)) ||
+    !boundedString(value.updated, 100) ||
+    (lifecycleState === 'active' && (trashedByName !== null || trashedAt !== null)) ||
+    (lifecycleState === 'trashed' && (trashedByName === null || trashedAt === null))
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    category: value.category,
+    displayTitle: value.displayTitle,
+    fileName: value.fileName,
+    byteSize: value.byteSize as number,
+    pageCount: value.pageCount as number,
+    lifecycleState,
+    revision: value.revision as number,
+    publishedByName: value.publishedByName,
+    publishedAt: value.publishedAt,
+    trashedByName,
+    trashedAt,
+    updated: value.updated,
+  };
+}
+
+export function normalizeKnowledgeManagementUploadView(
+  value: unknown,
+): KnowledgeManagementUploadView | null {
+  if (!isRecord(value)) return null;
+  const state = value.state as KnowledgeUploadState;
+  const outlineSource = value.outlineSource as KnowledgeOutlineSource | null;
+  const safeError = value.safeError as KnowledgeManagementErrorCode | null;
+  const validStates: KnowledgeUploadState[] = [
+    'queued',
+    'uploading',
+    'validating',
+    'extracting',
+    'ready',
+    'failed',
+    'published',
+  ];
+  const validErrors: Array<KnowledgeManagementErrorCode | null> = [
+    null,
+    'offline',
+    'unauthorized',
+    'invalid-file',
+    'upload-failed',
+    'validation-failed',
+    'encrypted-pdf',
+    'too-large',
+    'too-many-pages',
+    'extraction-timeout',
+    'duplicate-file-name',
+    'conflict',
+    'not-found',
+    'server-error',
+  ];
+  if (
+    !boundedString(value.id, 200) ||
+    !boundedString(value.requestId, 128) ||
+    !boundedString(value.fileName, 240) ||
+    !Number.isInteger(value.byteSize) ||
+    (value.byteSize as number) <= 0 ||
+    !isKnowledgeChecksum(value.checksum) ||
+    !validStates.includes(state) ||
+    typeof value.progress !== 'number' ||
+    value.progress < 0 ||
+    value.progress > 100 ||
+    typeof value.proposedTitle !== 'string' ||
+    value.proposedTitle.length > 240 ||
+    typeof value.proposedCategory !== 'string' ||
+    value.proposedCategory.length > KNOWLEDGE_MAX_CATEGORY_LENGTH ||
+    (value.pageCount !== null && (!Number.isInteger(value.pageCount) || value.pageCount <= 0)) ||
+    (outlineSource !== null && !['native', 'inferred', 'none'].includes(outlineSource)) ||
+    !optionalBoundedString(value.duplicateDocumentId, 200) ||
+    !validErrors.includes(safeError) ||
+    !boundedString(value.expiresAt, 100) ||
+    !Number.isInteger(value.revision) ||
+    (value.revision as number) < 0 ||
+    !Number.isInteger(value.outlineCount) ||
+    (value.outlineCount as number) < 0
+  ) {
+    return null;
+  }
+  return value as KnowledgeManagementUploadView;
+}
+
+export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAuditEventView | null {
+  if (!isRecord(value)) return null;
+  const action = value.action as KnowledgeAuditAction;
+  const validActions: KnowledgeAuditAction[] = [
+    'upload-validated',
+    'published',
+    'replaced',
+    'title-changed',
+    'category-changed',
+    'category-renamed',
+    'trashed',
+    'restored',
+    'deleted',
+    'upload-expired',
+    'migration-completed',
+    'recovery-completed',
+  ];
+  if (
+    !boundedString(value.id, 200) ||
+    !boundedString(value.requestId, 128) ||
+    !validActions.includes(action) ||
+    !optionalBoundedString(value.targetId, 200) ||
+    !optionalBoundedString(value.fileName, 240) ||
+    !optionalBoundedString(value.title, 240) ||
+    !optionalBoundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    !boundedString(value.operatorId, 200) ||
+    !boundedString(value.operatorName, 120) ||
+    !boundedString(value.occurredAt, 100)
+  ) {
+    return null;
+  }
+  return {
+    id: value.id,
+    requestId: value.requestId,
+    action,
+    targetId: value.targetId,
+    fileName: value.fileName,
+    title: value.title,
+    category: value.category,
+    operatorId: value.operatorId,
+    operatorName: value.operatorName,
+    occurredAt: value.occurredAt,
+  };
+}
+
+function normalizeKnowledgePage<T>(
+  value: unknown,
+  normalizeItem: (item: unknown) => T | null,
+): KnowledgePage<T> | null {
+  if (!isRecord(value) || !Array.isArray(value.items)) return null;
+  const items = value.items.map(normalizeItem);
+  if (items.some((item) => item === null)) return null;
+  if (value.nextCursor !== null && !boundedString(value.nextCursor, 200)) return null;
+  return { items: items as T[], nextCursor: value.nextCursor };
+}
+
+export function normalizeKnowledgeManagementSnapshot(
+  value: unknown,
+): KnowledgeManagementSnapshot | null {
+  if (!isRecord(value) || !['managed', 'recovery-required'].includes(String(value.mode))) {
+    return null;
+  }
+  const documents = normalizeKnowledgePage(
+    value.documents,
+    normalizeKnowledgeManagementDocumentView,
+  );
+  const uploads = normalizeKnowledgePage(value.uploads, normalizeKnowledgeManagementUploadView);
+  const trash = normalizeKnowledgePage(value.trash, normalizeKnowledgeManagementDocumentView);
+  return documents && uploads && trash
+    ? { mode: value.mode as KnowledgeLibraryMode, documents, uploads, trash }
+    : null;
 }

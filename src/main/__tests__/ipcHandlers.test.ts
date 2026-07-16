@@ -85,6 +85,7 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupKnowledgeHandlers).toHaveBeenCalledWith(
       getKnowledgePdfService,
       getKnowledgeBaseManager,
+      expect.any(Function),
     );
   });
 

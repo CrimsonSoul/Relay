@@ -42,24 +42,15 @@ Relay is an Electron desktop command center for operations teams managing people
 
 ## Knowledge Base Setup
 
-The Knowledge tab is read-only for operators. On the Relay server, place PDFs in the `knowledge-base` folder under Relay's configuration data directory:
+The Knowledge tab is read-only for ordinary operators. An administrator can designate an existing operator as the Knowledge Base publisher from Settings. That publisher can open **Manage library** on either the server or their connected Relay client, select PDFs from their work laptop, review extracted metadata, and publish them to every Relay client.
 
-```text
-knowledge-base/
-├── General runbook.pdf
-├── Monitoring/
-│   └── Dynatrace triage.pdf
-└── Network/
-    └── Edge response.pdf
-```
+Categories and display titles are managed in Relay; they are not inferred from a document header. Relay accepts PDFs up to 50 MiB and 1,000 pages. It extracts PDF bookmarks when available and otherwise infers a bounded two-level heading outline from page text. Clients receive searchable metadata in realtime and download PDF bytes only when an operator opens a document. Reader access remains available from the local cache if the server connection drops; publishing and other management actions require a live server connection.
 
-Root PDFs appear under **General**. One immediate folder level becomes the category; deeper folders are ignored. Relay accepts PDFs up to 50 MiB and 1,000 pages, watches the folder for changes, and also reconciles it every five minutes.
-
-Relay extracts PDF bookmarks when available and otherwise infers a bounded two-level heading outline from page text. Clients receive searchable metadata in realtime and download PDF bytes only when an operator opens a document. There are no in-app upload, edit, download, print, or annotation controls.
+See [`docs/knowledge-base.md`](docs/knowledge-base.md) for publishing, links, recovery, and retention details.
 
 ### Authoring links
 
-Use the ordinary **Insert Link** action in Word or Acrobat when one guide should point to another. Prefer unique PDF filenames so Relay can identify a guide even if it moves to another category. When duplicate filenames are necessary, author a relative path from the source guide to disambiguate the target.
+Use the ordinary **Insert Link** action in Word or Acrobat when one guide should point to another. Prefer unique PDF filenames so Relay can identify a guide even if it moves to another category. When duplicate filenames are necessary, author a relative path from the source guide to disambiguate the target. Relative links do not depend on an operator's local file path.
 
 Append an optional, one-based `#page=N` fragment to open a specific page. Relay treats an absolute author path only as a PDF filename for matching indexed metadata; it never reads the author's directory from an operator's computer. HTTP(S) links open in the operator's managed system browser. If a target PDF is renamed, update links that refer to its old filename.
 
@@ -68,6 +59,7 @@ Append an optional, one-based `#page=N` fragment to open a specific page. Relay 
 - `docs/architecture.md`: runtime model, data flow, and subsystem layout
 - `docs/DEVELOPMENT.md`: service patterns, hooks, testing, and contributor conventions
 - `docs/DESIGN.md`: current renderer styling and component conventions
+- `docs/knowledge-base.md`: publisher workflow, document linking, retention, and recovery
 - `docs/SECURITY.md`: trust boundaries, hardening, validation, and secret handling
 
 ## Quick Start

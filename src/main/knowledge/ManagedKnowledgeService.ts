@@ -16,12 +16,23 @@ import {
   type KnowledgeLibraryMode,
   type KnowledgeManagementDocumentView,
   type KnowledgeManagementSnapshot,
+  type KnowledgeManagementUploadView,
   type KnowledgePage,
   type KnowledgeUploadView,
 } from '@shared/knowledge';
 
 type Actor = { operatorId: string; operatorName: string; accountId: string };
 type UploadRecord = KnowledgeUploadView & { pdf: string; accountId: string; operatorId: string };
+type StoredUploadRecord = Partial<KnowledgeUploadView> & {
+  id: string;
+  requestId: string;
+  fileName: string;
+  checksum: string;
+  byteSize: number;
+  state: KnowledgeUploadView['state'];
+  expiresAt: string;
+  revision: number;
+};
 
 type ManagedKnowledgeServiceOptions = {
   pb: PocketBase;
@@ -52,9 +63,60 @@ function sourceKey(category: string, fileName: string): string {
 }
 
 function documentView(document: KnowledgeDocumentRecord): KnowledgeManagementDocumentView {
-  const view: KnowledgeDocumentRecord & { pdf?: string } = { ...document };
-  delete view.pdf;
-  return view;
+  return {
+    id: document.id,
+    category: document.category,
+    displayTitle: document.displayTitle,
+    fileName: document.fileName,
+    byteSize: document.byteSize,
+    pageCount: document.pageCount,
+    lifecycleState: document.lifecycleState,
+    revision: document.revision,
+    publishedByName: document.publishedByName,
+    publishedAt: document.publishedAt,
+    trashedByName: document.trashedByName,
+    trashedAt: document.trashedAt,
+    updated: document.updated,
+  };
+}
+
+function uploadView(upload: StoredUploadRecord): KnowledgeManagementUploadView {
+  let progress = 50;
+  if (upload.state === 'failed') progress = 0;
+  if (upload.state === 'ready' || upload.state === 'published') progress = 100;
+  return {
+    id: upload.id,
+    requestId: upload.requestId,
+    fileName: upload.fileName,
+    byteSize: upload.byteSize,
+    checksum: upload.checksum,
+    state: upload.state,
+    progress,
+    proposedTitle: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
+    proposedCategory: upload.proposedCategory || 'General',
+    pageCount: Number.isInteger(upload.pageCount) ? (upload.pageCount ?? null) : null,
+    outlineSource: upload.outlineSource || null,
+    outlineCount: Array.isArray(upload.outline) ? upload.outline.length : 0,
+    duplicateDocumentId: upload.duplicateDocumentId || null,
+    safeError: upload.safeError || null,
+    expiresAt: canonicalTimestamp(upload.expiresAt),
+    revision: Number.isInteger(upload.revision) ? upload.revision : 0,
+  };
+}
+
+function auditView(event: KnowledgeAuditEventView): KnowledgeAuditEventView {
+  return {
+    id: event.id,
+    requestId: event.requestId,
+    action: event.action,
+    targetId: event.targetId || null,
+    fileName: event.fileName || null,
+    title: event.title || null,
+    category: event.category || null,
+    operatorId: event.operatorId,
+    operatorName: event.operatorName,
+    occurredAt: canonicalTimestamp(event.occurredAt),
+  };
 }
 
 function canonicalTimestamp(value: string): string {
@@ -91,10 +153,11 @@ export class ManagedKnowledgeService {
     cursor: string | null;
     pageSize: number;
   }): Promise<KnowledgeManagementSnapshot> {
+    const pageSize = Math.min(input.pageSize, 25);
     const [mode, documents, uploads] = await Promise.all([
       this.readMode(),
       this.readDocuments(),
-      this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).getFullList<KnowledgeUploadView>({
+      this.pb.collection(KNOWLEDGE_UPLOADS_COLLECTION).getFullList<StoredUploadRecord>({
         filter: `accountId="${escapeFilter(input.accountId)}"`,
         requestKey: null,
       }),
@@ -106,22 +169,29 @@ export class ManagedKnowledgeService {
       );
       return !query || query.split(' ').every((term) => text.includes(term));
     });
+    const sortedUploads = uploads.toSorted((left, right) =>
+      right.expiresAt.localeCompare(left.expiresAt),
+    );
+    const uploadStart = input.cursor
+      ? Math.max(0, sortedUploads.findIndex(({ id }) => id === input.cursor) + 1)
+      : 0;
+    const uploadItems = sortedUploads.slice(uploadStart, uploadStart + pageSize);
     return {
       mode,
       documents: this.page(
         matches.filter(({ lifecycleState }) => lifecycleState === 'active'),
         input.cursor,
-        input.pageSize,
+        pageSize,
       ),
       trash: this.page(
         matches.filter(({ lifecycleState }) => lifecycleState === 'trashed'),
         input.cursor,
-        input.pageSize,
+        pageSize,
       ),
       uploads: {
-        items: uploads.slice(0, input.pageSize),
+        items: uploadItems.map(uploadView),
         nextCursor:
-          uploads.length > input.pageSize ? (uploads[input.pageSize - 1]?.id ?? null) : null,
+          uploadStart + pageSize < sortedUploads.length ? (uploadItems.at(-1)?.id ?? null) : null,
       },
     };
   }
@@ -320,10 +390,11 @@ export class ManagedKnowledgeService {
     const start = input.cursor
       ? Math.max(0, filtered.findIndex(({ id }) => id === input.cursor) + 1)
       : 0;
-    const items = filtered.slice(start, start + input.pageSize);
+    const pageSize = Math.min(input.pageSize, 25);
+    const items = filtered.slice(start, start + pageSize).map(auditView);
     return {
       items,
-      nextCursor: start + input.pageSize < filtered.length ? (items.at(-1)?.id ?? null) : null,
+      nextCursor: start + pageSize < filtered.length ? (items.at(-1)?.id ?? null) : null,
     };
   }
 

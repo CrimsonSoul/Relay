@@ -45,6 +45,12 @@ vi.mock('../TactileButton', () => ({
     React.createElement('button', { onClick, disabled, ...buttonProps }, children),
 }));
 
+vi.mock('../../contexts/PrivilegedAccessContext', () => ({
+  usePrivilegedAccess: () => ({
+    session: { state: 'signed-out', role: null },
+  }),
+}));
+
 const defaultProps = {
   isOpen: true,
   onClose: vi.fn(),

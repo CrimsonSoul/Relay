@@ -650,6 +650,25 @@ test.describe('Vital Critical Path', () => {
     ).rejects.toBeTruthy();
 
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await connectedClient.getByRole('button', { name: 'Manage library', exact: true }).click();
+    await expect(
+      connectedClient.getByRole('heading', { name: 'Manage knowledge base', exact: true }),
+    ).toBeVisible();
+    await expect(connectedClient.getByRole('button', { name: /Documents \d+/ })).toBeVisible();
+    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+    await clientElectronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(920, 900);
+    });
+    await expect
+      .poll(() =>
+        connectedClient
+          .locator('.knowledge-management__workspace')
+          .evaluate((element) =>
+            globalThis.getComputedStyle(element).getPropertyValue('grid-template-columns'),
+          ),
+      )
+      .toMatch(/^\d+(?:\.\d+)?px$/);
+    await connectedClient.getByRole('button', { name: 'Return to library', exact: true }).click();
     await connectedClient
       .getByRole('treeitem', { name: 'Link navigation test', exact: true })
       .click();
