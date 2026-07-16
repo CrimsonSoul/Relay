@@ -114,7 +114,7 @@ export type RelayAdministrableSetting = (typeof RELAY_ADMINISTRABLE_SETTINGS)[nu
 
 export type RelayAdministrationSettingValueMap = {
   'dynatrace.environment-url': { environmentUrl: string };
-  'dynatrace.platform-token': { apiToken: string };
+  'dynatrace.platform-token': { apiToken: string; environmentUrl?: string };
   'dynatrace.alerting-profiles': { profiles: string[] };
 };
 
@@ -157,6 +157,7 @@ export type RelayAdministrationSettingSummary = {
   setting: RelayAdministrableSetting;
   configured: boolean;
   summary: 'Configured' | 'Not configured';
+  valueSummary?: string | string[];
   revision: number;
 };
 
@@ -399,7 +400,7 @@ function normalizeAdministrationSettingSummary(
   value: unknown,
 ): RelayAdministrationSettingSummary | null {
   if (!isRecord(value)) return null;
-  const { setting, configured, summary, revision } = value;
+  const { setting, configured, summary, valueSummary, revision } = value;
   if (
     !isRelayAdministrableSetting(setting) ||
     typeof configured !== 'boolean' ||
@@ -408,7 +409,23 @@ function normalizeAdministrationSettingSummary(
   ) {
     return null;
   }
-  return { setting, configured, summary, revision };
+  if (setting === 'dynatrace.platform-token' && valueSummary !== undefined) return null;
+  if (
+    valueSummary !== undefined &&
+    typeof valueSummary !== 'string' &&
+    (!Array.isArray(valueSummary) ||
+      valueSummary.length > 250 ||
+      valueSummary.some((entry) => typeof entry !== 'string' || entry.length > 512))
+  ) {
+    return null;
+  }
+  return {
+    setting,
+    configured,
+    summary,
+    ...(valueSummary === undefined ? {} : { valueSummary: valueSummary as string | string[] }),
+    revision,
+  };
 }
 
 function normalizeBoundedList<T>(

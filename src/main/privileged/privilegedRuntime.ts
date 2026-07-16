@@ -25,6 +25,7 @@ import type {
 import { RELAY_PRIVILEGED_STATE_COLLECTION } from '@shared/privilegedAccess';
 import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import type { RelayConfig } from '../config/AppConfig';
+import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import { RelayOperatorManager } from '../operators/RelayOperatorManager';
 import {
   PrivilegedPocketBaseClient,
@@ -56,6 +57,7 @@ import {
 import { registerAdministrationCommands } from './registerAdministrationCommands';
 import { PublisherAssignmentManager } from './PublisherAssignmentManager';
 import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
+import { RelayAdministrationService } from './RelayAdministrationService';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -450,6 +452,10 @@ export type ProductionPrivilegedRuntimeOptions = {
   dataDir: string;
   serverClient?: PocketBase | null;
   hostname?: string;
+  dynatraceProblemsManager?: Pick<
+    DynatraceProblemsManager,
+    'getSettings' | 'saveSettings' | 'saveAlertingProfiles'
+  > | null;
 };
 
 function boundedIdentityString(value: unknown, max: number): value is string {
@@ -513,6 +519,9 @@ export async function createProductionPrivilegedRuntime(
     operatorManager: new RelayOperatorManager(options.serverClient),
     publisherManager: new PublisherAssignmentManager({ pb: options.serverClient }),
     deviceManager: new PrivilegedDeviceManager({ pb: options.serverClient }),
+    administrationService: options.dynatraceProblemsManager
+      ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
+      : undefined,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });

@@ -228,6 +228,7 @@ if (gotLock) {
             config,
             dataDir: configDataDir,
             serverClient: config.mode === 'server' ? getPbClient() : null,
+            dynatraceProblemsManager: getDynatraceProblemsManager(),
           });
           setPrivilegedRuntime(runtime);
         } catch (error) {

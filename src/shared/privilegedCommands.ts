@@ -279,26 +279,50 @@ function normalizeAlertingProfiles(value: unknown): string[] | null {
   return profiles;
 }
 
+function normalizeEnvironmentSettingValue(value: Record<string, unknown>): {
+  environmentUrl: string;
+} | null {
+  if (!hasExactKeys(value, ['environmentUrl'])) return null;
+  const { environmentUrl } = value;
+  if (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl)) {
+    return null;
+  }
+  return { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) };
+}
+
+function normalizeTokenSettingValue(value: Record<string, unknown>): {
+  apiToken: string;
+  environmentUrl?: string;
+} | null {
+  if (!hasExactKeys(value, ['apiToken']) && !hasExactKeys(value, ['apiToken', 'environmentUrl'])) {
+    return null;
+  }
+  const { apiToken, environmentUrl } = value;
+  if (typeof apiToken !== 'string' || getDynatraceApiTokenError(apiToken)) return null;
+  if (
+    environmentUrl !== undefined &&
+    (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl))
+  ) {
+    return null;
+  }
+  return {
+    apiToken: apiToken.trim(),
+    ...(environmentUrl === undefined
+      ? {}
+      : { environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl) }),
+  };
+}
+
 function normalizeRelayAdministrationSettingValue<K extends RelayAdministrableSetting>(
   setting: K,
   value: unknown,
 ): RelayAdministrationSettingValueMap[K] | null {
   if (!isRecord(value)) return null;
   if (setting === 'dynatrace.environment-url') {
-    if (!hasExactKeys(value, ['environmentUrl'])) return null;
-    const { environmentUrl } = value;
-    if (typeof environmentUrl !== 'string' || getDynatraceEnvironmentUrlError(environmentUrl)) {
-      return null;
-    }
-    return {
-      environmentUrl: normalizeDynatraceEnvironmentUrl(environmentUrl),
-    } as RelayAdministrationSettingValueMap[K];
+    return normalizeEnvironmentSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
   }
   if (setting === 'dynatrace.platform-token') {
-    if (!hasExactKeys(value, ['apiToken'])) return null;
-    const { apiToken } = value;
-    if (typeof apiToken !== 'string' || getDynatraceApiTokenError(apiToken)) return null;
-    return { apiToken: apiToken.trim() } as RelayAdministrationSettingValueMap[K];
+    return normalizeTokenSettingValue(value) as RelayAdministrationSettingValueMap[K] | null;
   }
   if (!hasExactKeys(value, ['profiles'])) return null;
   const profiles = normalizeAlertingProfiles(value.profiles);

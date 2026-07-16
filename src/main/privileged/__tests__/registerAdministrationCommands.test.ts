@@ -46,6 +46,14 @@ describe('registerAdministrationCommands', () => {
     rename: vi.fn(async (input) => ({ deviceId: input.deviceId, revision: 2 })),
     revoke: vi.fn(async (input) => ({ deviceId: input.deviceId, state: 'revoked', revision: 2 })),
   };
+  const administrationService = {
+    replace: vi.fn(async (payload) => ({
+      setting: payload.setting,
+      configured: true,
+      summary: 'Configured',
+      revision: payload.expectedRevision + 1,
+    })),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -56,6 +64,7 @@ describe('registerAdministrationCommands', () => {
       publisherManager: publisherManager as never,
       consumeReauthenticationProof,
       deviceManager: deviceManager as never,
+      administrationService: administrationService as never,
     });
   });
 
@@ -69,7 +78,36 @@ describe('registerAdministrationCommands', () => {
       ['publisher.assign', 'publisher.assign'],
       ['privileged.device.rename', 'devices.manage'],
       ['privileged.device.revoke', 'devices.manage'],
+      ['administration.setting.replace', 'settings.manage'],
     ]);
+  });
+
+  it('requires fresh reauthentication only for secret setting replacement', async () => {
+    await handlers.get('administration.setting.replace')!(context, {
+      setting: 'dynatrace.environment-url',
+      value: { environmentUrl: 'https://abc123.apps.dynatrace.com' },
+      expectedRevision: 0,
+    } as never);
+    expect(administrationService.replace).toHaveBeenCalledOnce();
+
+    await handlers.get('administration.setting.replace')!(context, {
+      setting: 'dynatrace.platform-token',
+      value: { apiToken: 'dt0s16.new-token' },
+      expectedRevision: 0,
+      reauthRequestId: 'reauth-setting',
+    } as never);
+    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-setting', {
+      accountId: 'account-1',
+      deviceId: null,
+    });
+
+    await expect(
+      handlers.get('administration.setting.replace')!(context, {
+        setting: 'dynatrace.platform-token',
+        value: { apiToken: 'dt0s16.new-token' },
+        expectedRevision: 0,
+      } as never),
+    ).rejects.toMatchObject({ name: 'PrivilegedCommandAuthorizationError' });
   });
 
   it('renames devices directly but requires fresh reauthentication to revoke', async () => {

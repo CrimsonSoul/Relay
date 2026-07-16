@@ -247,6 +247,12 @@ describe('privileged command validation', () => {
       }),
     ).toBeNull();
     expect(
+      getRelayAdministrationSettingValueError('dynatrace.platform-token', {
+        apiToken: 'dt0s16.example-token',
+        environmentUrl: 'https://abc123.apps.dynatrace.com',
+      }),
+    ).toBeNull();
+    expect(
       getRelayAdministrationSettingValueError('dynatrace.alerting-profiles', {
         profiles: ['NOC Core'],
       }),

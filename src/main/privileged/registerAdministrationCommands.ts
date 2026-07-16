@@ -17,6 +17,10 @@ import {
   PrivilegedDeviceConflictError,
   type PrivilegedDeviceManager,
 } from './PrivilegedDeviceManager';
+import {
+  RelaySettingConflictError,
+  type RelayAdministrationService,
+} from './RelayAdministrationService';
 
 type AdministrationRegistrar = {
   registerCommand<K extends RegisteredPrivilegedCommandName>(
@@ -33,6 +37,7 @@ type OperatorAdministrationManager = Pick<
 
 type PublisherAdministrationManager = Pick<PublisherAssignmentManager, 'assign'>;
 type DeviceAdministrationManager = Pick<PrivilegedDeviceManager, 'rename' | 'revoke'>;
+type AdministrationSettingService = Pick<RelayAdministrationService, 'replace'>;
 
 type ReauthenticationProofConsumer = (
   requestId: string,
@@ -44,6 +49,7 @@ export type RegisterAdministrationCommandsOptions = {
   operatorManager: OperatorAdministrationManager;
   publisherManager?: PublisherAdministrationManager;
   deviceManager?: DeviceAdministrationManager;
+  administrationService?: AdministrationSettingService;
   consumeReauthenticationProof?: ReauthenticationProofConsumer;
 };
 
@@ -55,6 +61,9 @@ function translateConflict(error: unknown): never {
     throw new PrivilegedCommandConflictError(error.currentRevision);
   }
   if (error instanceof PrivilegedDeviceConflictError) {
+    throw new PrivilegedCommandConflictError(error.currentRevision);
+  }
+  if (error instanceof RelaySettingConflictError) {
     throw new PrivilegedCommandConflictError(error.currentRevision);
   }
   throw error;
@@ -73,6 +82,7 @@ export function registerAdministrationCommands({
   operatorManager,
   publisherManager,
   deviceManager,
+  administrationService,
   consumeReauthenticationProof,
 }: RegisterAdministrationCommandsOptions): void {
   registrar.registerCommand('operator.create', 'operators.manage', (_context, payload) =>
@@ -137,6 +147,25 @@ export function registerAdministrationCommands({
             expectedRevision: payload.expectedRevision,
           }),
         );
+      },
+    );
+  }
+  if (administrationService) {
+    registrar.registerCommand(
+      'administration.setting.replace',
+      'settings.manage',
+      async (context, payload) => {
+        if (payload.setting === 'dynatrace.platform-token') {
+          if (!payload.reauthRequestId || !consumeReauthenticationProof) {
+            throw new PrivilegedCommandAuthorizationError();
+          }
+          const authorized = await consumeReauthenticationProof(payload.reauthRequestId, {
+            accountId: context.account.id,
+            deviceId: context.device?.deviceId ?? null,
+          });
+          if (!authorized) throw new PrivilegedCommandAuthorizationError();
+        }
+        return withConflictTranslation(() => administrationService.replace(payload));
       },
     );
   }

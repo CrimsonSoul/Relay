@@ -202,6 +202,7 @@ describe('reconfigureRuntime', () => {
       config: expect.objectContaining({ mode: 'client' }),
       dataDir: '/Users/test/RelayData/data',
       serverClient: null,
+      dynatraceProblemsManager: mocks.dynatraceProblemsManager,
     });
     expect(mocks.setPrivilegedRuntime).toHaveBeenLastCalledWith(mocks.nextPrivilegedRuntime);
   });

@@ -53,6 +53,7 @@ async function rebuildPrivilegedRuntime(
       config,
       dataDir: configDataDir,
       serverClient: config.mode === 'server' ? getPbClient() : null,
+      dynatraceProblemsManager: getDynatraceProblemsManager(),
     });
     setPrivilegedRuntime(privilegedRuntime);
   } catch (error) {
