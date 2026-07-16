@@ -16,6 +16,7 @@ import {
 } from '../app/appState';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import { KnowledgeBaseManager } from './KnowledgeBaseManager';
+import { ManagedKnowledgeMigration } from './ManagedKnowledgeMigration';
 import { KnowledgePdfService } from './KnowledgePdfService';
 
 export function initializeKnowledgePdfService(configDataDir: string): KnowledgePdfService {
@@ -47,7 +48,17 @@ export async function startKnowledgeBaseManager(configDataDir: string): Promise<
   });
   setKnowledgeBaseManager(manager);
   try {
-    await manager.start();
+    const migration = new ManagedKnowledgeMigration({
+      pb: getPbClient()!,
+      root: join(configDataDir, 'knowledge-base'),
+      reconcileLegacy: async () => {
+        await manager.reconcile();
+        return { healthy: manager.getStatus().state !== 'error' };
+      },
+    });
+    await migration.run();
+    await manager.stop();
+    setKnowledgeBaseManager(null);
   } catch (error) {
     setKnowledgeBaseManager(null);
     await manager.stop();

@@ -10,11 +10,15 @@ const mocks = vi.hoisted(() => ({
   setKnowledgeBaseManager: vi.fn(),
   setKnowledgePdfService: vi.fn(),
   managerStart: vi.fn(async () => undefined),
+  managerReconcile: vi.fn(async () => undefined),
+  managerStatus: vi.fn(() => ({ state: 'idle' })),
   managerStop: vi.fn(async () => undefined),
   managerConstructor: vi.fn(),
   cleanup: vi.fn(async () => undefined),
   pdfConstructor: vi.fn(),
   broadcast: vi.fn(),
+  migrationRun: vi.fn(async () => ({ mode: 'managed' })),
+  migrationConstructor: vi.fn(),
 }));
 
 vi.mock('../app/appState', () => ({
@@ -30,7 +34,19 @@ vi.mock('../app/appState', () => ({
 vi.mock('./KnowledgeBaseManager', () => ({
   KnowledgeBaseManager: vi.fn(function MockKnowledgeBaseManager(options) {
     mocks.managerConstructor(options);
-    return { start: mocks.managerStart, stop: mocks.managerStop };
+    return {
+      start: mocks.managerStart,
+      reconcile: mocks.managerReconcile,
+      getStatus: mocks.managerStatus,
+      stop: mocks.managerStop,
+    };
+  }),
+}));
+
+vi.mock('./ManagedKnowledgeMigration', () => ({
+  ManagedKnowledgeMigration: vi.fn(function MockManagedKnowledgeMigration(options) {
+    mocks.migrationConstructor(options);
+    return { run: mocks.migrationRun };
   }),
 }));
 
@@ -72,7 +88,7 @@ describe('knowledgeRuntime', () => {
     expect(mocks.setKnowledgePdfService).toHaveBeenCalledWith(service);
   });
 
-  it('starts a server manager after replacing any previous manager', async () => {
+  it('runs the one-time authority migration and leaves no folder watcher active', async () => {
     const previous = { stop: vi.fn(async () => undefined) };
     mocks.getKnowledgeBaseManager.mockReturnValue(previous);
     const { startKnowledgeBaseManager } = await import('./knowledgeRuntime');
@@ -83,10 +99,10 @@ describe('knowledgeRuntime', () => {
     expect(mocks.managerConstructor).toHaveBeenCalledWith(
       expect.objectContaining({ root: '/relay/data/knowledge-base' }),
     );
-    expect(mocks.managerStart).toHaveBeenCalledOnce();
-    expect(mocks.setKnowledgeBaseManager).toHaveBeenLastCalledWith(
-      expect.objectContaining({ start: mocks.managerStart }),
-    );
+    expect(mocks.migrationRun).toHaveBeenCalledOnce();
+    expect(mocks.managerStart).not.toHaveBeenCalled();
+    expect(mocks.managerStop).toHaveBeenCalledOnce();
+    expect(mocks.setKnowledgeBaseManager).toHaveBeenLastCalledWith(null);
   });
 
   it('does not start a manager outside server mode or before PocketBase is ready', async () => {

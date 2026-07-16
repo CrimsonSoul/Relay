@@ -87,6 +87,12 @@ function createDocumentForm(
   addFormValue(form, 'outlineSource', extraction.outlineSource);
   addFormValue(form, 'sourceModifiedAt', source.sourceModifiedAt);
   addFormValue(form, 'indexedAt', indexedAt);
+  addFormValue(form, 'lifecycleState', 'active');
+  addFormValue(form, 'displayTitle', documentTitle(source, extraction));
+  addFormValue(form, 'revision', 1);
+  addFormValue(form, 'publishedByOperatorId', '');
+  addFormValue(form, 'publishedByName', '');
+  addFormValue(form, 'publishedAt', indexedAt);
   const bytes = Uint8Array.from(data);
   form.set(
     'pdf',
@@ -298,6 +304,15 @@ export class KnowledgeBaseManager {
       indexedAt,
       created: existing?.created ?? indexedAt,
       updated: indexedAt,
+      lifecycleState: 'active',
+      displayTitle: documentTitle(source, extraction),
+      revision: 1,
+      publishedByOperatorId: '',
+      publishedByName: '',
+      publishedAt: indexedAt,
+      trashedByOperatorId: null,
+      trashedByName: null,
+      trashedAt: null,
     };
   }
 
