@@ -44,9 +44,44 @@ describe('knowledge contracts', () => {
   });
 
   it('normalizes a valid PocketBase record and discards unknown data', () => {
-    expect(normalizeKnowledgeDocumentRecord({ ...validRecord, ignored: 'value' })).toEqual(
-      validRecord,
-    );
+    expect(normalizeKnowledgeDocumentRecord({ ...validRecord, ignored: 'value' })).toEqual({
+      ...validRecord,
+      lifecycleState: 'active',
+      displayTitle: 'Runbook',
+      revision: 1,
+      publishedByOperatorId: '',
+      publishedByName: '',
+      publishedAt: '2026-07-14T12:01:00.000Z',
+      trashedByOperatorId: null,
+      trashedByName: null,
+      trashedAt: null,
+    });
+  });
+
+  it('normalizes managed active and trashed records while preserving the authored filename', () => {
+    const managed = {
+      ...validRecord,
+      lifecycleState: 'trashed',
+      displayTitle: 'Checkout recovery',
+      revision: 7,
+      publishedByOperatorId: 'operator-1',
+      publishedByName: 'Ryan Bledsoe',
+      publishedAt: '2026-07-15T12:00:00.000Z',
+      trashedByOperatorId: 'operator-2',
+      trashedByName: 'Ryan Bell',
+      trashedAt: '2026-07-15T13:00:00.000Z',
+    };
+
+    expect(normalizeKnowledgeDocumentRecord(managed)).toMatchObject({
+      lifecycleState: 'trashed',
+      displayTitle: 'Checkout recovery',
+      fileName: 'Runbook.pdf',
+      revision: 7,
+      trashedByName: 'Ryan Bell',
+    });
+    expect(normalizeKnowledgeDocumentRecord({ ...managed, lifecycleState: 'deleted' })).toBeNull();
+    expect(normalizeKnowledgeDocumentRecord({ ...managed, revision: -1 })).toBeNull();
+    expect(normalizeKnowledgeDocumentRecord({ ...managed, displayTitle: '' })).toBeNull();
   });
 
   it('drops malformed outline nodes without rejecting a readable document', () => {
@@ -94,6 +129,17 @@ describe('knowledge contracts', () => {
       '1',
       '2',
       '3',
+    ]);
+  });
+
+  it('prefers the managed display title when sorting', () => {
+    const records = [
+      { ...validRecord, id: 'legacy-first', displayTitle: 'Zulu' },
+      { ...validRecord, id: 'managed-first', displayTitle: 'Alpha' },
+    ];
+    expect(records.toSorted(compareKnowledgeDocuments).map(({ id }) => id)).toEqual([
+      'managed-first',
+      'legacy-first',
     ]);
   });
 });

@@ -19,7 +19,7 @@ export function knowledgeDocumentMatches(
   const searchableText = normalizeKnowledgeSearchText(
     [
       document.category,
-      document.title,
+      document.displayTitle,
       document.fileName,
       ...document.outline.map((node) => node.label),
     ].join(' '),
@@ -33,6 +33,7 @@ export function buildKnowledgeLibrary(
 ): KnowledgeCategoryGroup[] {
   const grouped = new Map<string, KnowledgeDocumentRecord[]>();
   for (const document of documents) {
+    if (document.lifecycleState !== 'active') continue;
     if (!knowledgeDocumentMatches(document, query)) continue;
     const category = document.category.trim() || 'General';
     const categoryDocuments = grouped.get(category) ?? [];

@@ -14,6 +14,15 @@ function document(
     sourceKey: `${overrides.id}.pdf`,
     category: 'General',
     title: overrides.title,
+    displayTitle: overrides.title,
+    lifecycleState: 'active',
+    revision: 1,
+    publishedByOperatorId: '',
+    publishedByName: '',
+    publishedAt: '2026-07-14T12:00:00.000Z',
+    trashedByOperatorId: null,
+    trashedByName: null,
+    trashedAt: null,
     fileName: `${overrides.title}.pdf`,
     pdf: `${overrides.title}.pdf`,
     checksum: 'a'.repeat(64),
@@ -72,5 +81,26 @@ describe('knowledgeModel', () => {
     expect(findKnowledgeDocument(library, null)?.id).toBe('first');
     expect(findKnowledgeDocument(library, 'missing')).toBeNull();
     expect(findKnowledgeDocument([], 'missing')).toBeNull();
+  });
+
+  it('uses display titles and excludes trashed documents from the reader model', () => {
+    const active = document({
+      id: 'active',
+      title: 'Legacy title',
+      displayTitle: 'Current title',
+      fileName: 'current.pdf',
+    });
+    const trashed = document({
+      id: 'trashed',
+      title: 'Hidden',
+      lifecycleState: 'trashed',
+      trashedByOperatorId: 'operator-1',
+      trashedByName: 'Ryan Bledsoe',
+      trashedAt: '2026-07-15T12:00:00.000Z',
+    });
+
+    const library = buildKnowledgeLibrary([trashed, active], 'current');
+    expect(library[0]?.documents.map(({ id }) => id)).toEqual(['active']);
+    expect(knowledgeDocumentMatches(active, 'legacy')).toBe(false);
   });
 });
