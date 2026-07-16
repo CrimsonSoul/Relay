@@ -13,6 +13,10 @@ import {
   PublisherAssignmentConflictError,
   type PublisherAssignmentManager,
 } from './PublisherAssignmentManager';
+import {
+  PrivilegedDeviceConflictError,
+  type PrivilegedDeviceManager,
+} from './PrivilegedDeviceManager';
 
 type AdministrationRegistrar = {
   registerCommand<K extends RegisteredPrivilegedCommandName>(
@@ -28,6 +32,7 @@ type OperatorAdministrationManager = Pick<
 >;
 
 type PublisherAdministrationManager = Pick<PublisherAssignmentManager, 'assign'>;
+type DeviceAdministrationManager = Pick<PrivilegedDeviceManager, 'rename' | 'revoke'>;
 
 type ReauthenticationProofConsumer = (
   requestId: string,
@@ -38,6 +43,7 @@ export type RegisterAdministrationCommandsOptions = {
   registrar: AdministrationRegistrar;
   operatorManager: OperatorAdministrationManager;
   publisherManager?: PublisherAdministrationManager;
+  deviceManager?: DeviceAdministrationManager;
   consumeReauthenticationProof?: ReauthenticationProofConsumer;
 };
 
@@ -46,6 +52,9 @@ function translateConflict(error: unknown): never {
     throw new PrivilegedCommandConflictError(error.currentRevision);
   }
   if (error instanceof PublisherAssignmentConflictError) {
+    throw new PrivilegedCommandConflictError(error.currentRevision);
+  }
+  if (error instanceof PrivilegedDeviceConflictError) {
     throw new PrivilegedCommandConflictError(error.currentRevision);
   }
   throw error;
@@ -63,6 +72,7 @@ export function registerAdministrationCommands({
   registrar,
   operatorManager,
   publisherManager,
+  deviceManager,
   consumeReauthenticationProof,
 }: RegisterAdministrationCommandsOptions): void {
   registrar.registerCommand('operator.create', 'operators.manage', (_context, payload) =>
@@ -96,5 +106,38 @@ export function registerAdministrationCommands({
         }),
       );
     });
+  }
+  if (deviceManager) {
+    registrar.registerCommand('privileged.device.rename', 'devices.manage', (context, payload) =>
+      withConflictTranslation(() =>
+        deviceManager.rename({
+          actorRole: context.role,
+          deviceId: payload.deviceId,
+          label: payload.label,
+          expectedRevision: payload.expectedRevision,
+        }),
+      ),
+    );
+  }
+  if (deviceManager && consumeReauthenticationProof) {
+    registrar.registerCommand(
+      'privileged.device.revoke',
+      'devices.manage',
+      async (context, payload) => {
+        const authorized = await consumeReauthenticationProof(payload.reauthRequestId, {
+          accountId: context.account.id,
+          deviceId: context.device?.deviceId ?? null,
+        });
+        if (!authorized) throw new PrivilegedCommandAuthorizationError();
+        return withConflictTranslation(() =>
+          deviceManager.revoke({
+            actorRole: context.role,
+            actorOperatorId: context.operator.id,
+            deviceId: payload.deviceId,
+            expectedRevision: payload.expectedRevision,
+          }),
+        );
+      },
+    );
   }
 }

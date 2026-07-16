@@ -42,6 +42,10 @@ describe('registerAdministrationCommands', () => {
     })),
   };
   const consumeReauthenticationProof = vi.fn(async () => true);
+  const deviceManager = {
+    rename: vi.fn(async (input) => ({ deviceId: input.deviceId, revision: 2 })),
+    revoke: vi.fn(async (input) => ({ deviceId: input.deviceId, state: 'revoked', revision: 2 })),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,6 +55,7 @@ describe('registerAdministrationCommands', () => {
       operatorManager: operatorManager as never,
       publisherManager: publisherManager as never,
       consumeReauthenticationProof,
+      deviceManager: deviceManager as never,
     });
   });
 
@@ -62,7 +67,39 @@ describe('registerAdministrationCommands', () => {
       ['operator.rename', 'operators.manage'],
       ['operator.active.set', 'operators.manage'],
       ['publisher.assign', 'publisher.assign'],
+      ['privileged.device.rename', 'devices.manage'],
+      ['privileged.device.revoke', 'devices.manage'],
     ]);
+  });
+
+  it('renames devices directly but requires fresh reauthentication to revoke', async () => {
+    await handlers.get('privileged.device.rename')!(context, {
+      deviceId: 'device-2',
+      label: 'Spare laptop',
+      expectedRevision: 1,
+    } as never);
+    expect(deviceManager.rename).toHaveBeenCalledWith({
+      actorRole: 'admin',
+      deviceId: 'device-2',
+      label: 'Spare laptop',
+      expectedRevision: 1,
+    });
+
+    await handlers.get('privileged.device.revoke')!(context, {
+      deviceId: 'device-2',
+      expectedRevision: 1,
+      reauthRequestId: 'reauth-device',
+    } as never);
+    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-device', {
+      accountId: 'account-1',
+      deviceId: null,
+    });
+    expect(deviceManager.revoke).toHaveBeenCalledWith({
+      actorRole: 'admin',
+      actorOperatorId: 'admin-1',
+      deviceId: 'device-2',
+      expectedRevision: 1,
+    });
   });
 
   it('consumes a fresh command-bound proof before assigning the publisher', async () => {
