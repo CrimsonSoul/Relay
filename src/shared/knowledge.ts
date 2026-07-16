@@ -242,9 +242,9 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
   const publishedByOperatorId = rawPublishedByOperatorId ?? '';
   const publishedByName = rawPublishedByName ?? '';
   const publishedAt = rawPublishedAt ?? indexedAt;
-  const trashedByOperatorId = rawTrashedByOperatorId ?? null;
-  const trashedByName = rawTrashedByName ?? null;
-  const trashedAt = rawTrashedAt ?? null;
+  const trashedByOperatorId = rawTrashedByOperatorId || null;
+  const trashedByName = rawTrashedByName || null;
+  const trashedAt = rawTrashedAt || null;
 
   if (
     !boundedString(id, 200) ||

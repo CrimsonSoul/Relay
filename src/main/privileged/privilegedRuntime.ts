@@ -61,6 +61,8 @@ import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
 import { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 import { RelayAdministrationService } from './RelayAdministrationService';
 import { registerKnowledgeManagementCommands } from '../knowledge/registerKnowledgeManagementCommands';
+import { ManagedKnowledgeService } from '../knowledge/ManagedKnowledgeService';
+import { KnowledgeMutationCoordinator } from '../knowledge/KnowledgeMutationCoordinator';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -563,9 +565,14 @@ export async function createProductionPrivilegedRuntime(
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });
+  const managedKnowledgeService = new ManagedKnowledgeService({ pb: options.serverClient });
   const knowledgeCommands = registerKnowledgeManagementCommands({
     registrar: commandProcessor,
     pb: options.serverClient,
+    service: managedKnowledgeService,
+    coordinator: new KnowledgeMutationCoordinator(),
+    consumeReauthenticationProof: (requestId, context) =>
+      commandProcessor.consumeReauthenticationProof(requestId, context),
   });
   const serverQueue = new PrivilegedServerQueue({
     pb: options.serverClient as unknown as PrivilegedServerPocketBase,

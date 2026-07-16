@@ -91,6 +91,7 @@ export type PrivilegedAuthorizationContext = {
 
 export type PrivilegedCommandHandlerContext = PrivilegedAuthorizationContext & {
   capabilities: PrivilegedCapability[];
+  requestId: string;
 };
 
 export type LocalPrivilegedCommand = {
@@ -467,7 +468,10 @@ export class PrivilegedCommandProcessor {
     }
     return {
       ok: true,
-      authorized: { command, context: { ...authorization, capabilities } },
+      authorized: {
+        command,
+        context: { ...authorization, capabilities, requestId: command.requestId },
+      },
     };
   }
 

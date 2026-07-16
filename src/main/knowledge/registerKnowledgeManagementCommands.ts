@@ -12,7 +12,16 @@ import type {
   PrivilegedCommandHandler,
   RegisteredPrivilegedCommandName,
 } from '../privileged/PrivilegedCommandProcessor';
+import {
+  PrivilegedCommandAuthorizationError,
+  PrivilegedCommandConflictError,
+} from '../privileged/PrivilegedCommandProcessor';
 import { KnowledgeExtractorWorker } from './KnowledgeExtractorWorker';
+import { KnowledgeMutationCoordinator } from './KnowledgeMutationCoordinator';
+import {
+  ManagedKnowledgeConflictError,
+  type ManagedKnowledgeService,
+} from './ManagedKnowledgeService';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
 
 type KnowledgeUploadRecord = {
@@ -42,10 +51,50 @@ type KnowledgeCommandRegistrar = {
 type KnowledgeManagementCommandOptions = {
   registrar: KnowledgeCommandRegistrar;
   pb: PocketBase;
+  service: Pick<
+    ManagedKnowledgeService,
+    | 'snapshot'
+    | 'publish'
+    | 'replace'
+    | 'setTitle'
+    | 'setCategory'
+    | 'renameCategory'
+    | 'trash'
+    | 'restore'
+    | 'deletePermanently'
+    | 'readAudit'
+  >;
+  coordinator?: KnowledgeMutationCoordinator;
+  consumeReauthenticationProof?: (
+    requestId: string,
+    context: { accountId: string; deviceId: string | null },
+  ) => Promise<boolean>;
   extractor?: Pick<KnowledgeExtractorWorker, 'extract' | 'stop'>;
   readUploadPdf?: (record: KnowledgeUploadRecord) => Promise<Uint8Array>;
   fetch?: typeof globalThis.fetch;
 };
+
+function actor(context: {
+  account: { id: string };
+  operator: { id: string; displayName: string };
+}) {
+  return {
+    accountId: context.account.id,
+    operatorId: context.operator.id,
+    operatorName: context.operator.displayName,
+  };
+}
+
+async function translateConflict<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error instanceof ManagedKnowledgeConflictError) {
+      throw new PrivilegedCommandConflictError(error.currentRevision);
+    }
+    throw error;
+  }
+}
 
 function checksumOf(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex');
@@ -90,6 +139,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
   dispose(): Promise<void>;
 } {
   const extractor = options.extractor ?? new KnowledgeExtractorWorker();
+  const coordinator = options.coordinator ?? new KnowledgeMutationCoordinator();
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const readUploadPdf =
     options.readUploadPdf ??
@@ -176,6 +226,159 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
         return view;
       }
     },
+  );
+
+  options.registrar.registerCommand(
+    'knowledge.snapshot.read',
+    'knowledge.manage',
+    (context, payload) => options.service.snapshot({ accountId: context.account.id, ...payload }),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.publish',
+    'knowledge.manage',
+    (context, payload) =>
+      coordinator.run({
+        requestId: context.requestId,
+        action: 'published',
+        mutate: () =>
+          options.service.publish({
+            actor: actor(context),
+            requestId: context.requestId,
+            ...payload,
+          }),
+      }),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.replace',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'replaced',
+          mutate: () =>
+            options.service.replace({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.title.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'title-changed',
+          mutate: () =>
+            options.service.setTitle({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.category.set',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'category-changed',
+          mutate: () =>
+            options.service.setCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.category.rename',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'category-renamed',
+          mutate: () =>
+            options.service.renameCategory({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.trash',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'trashed',
+          mutate: () =>
+            options.service.trash({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.restore',
+    'knowledge.manage',
+    (context, payload) =>
+      translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'restored',
+          mutate: () =>
+            options.service.restore({
+              actor: actor(context),
+              requestId: context.requestId,
+              ...payload,
+            }),
+        }),
+      ),
+  );
+  options.registrar.registerCommand(
+    'knowledge.document.delete',
+    'knowledge.manage',
+    async (context, payload) => {
+      if (!options.consumeReauthenticationProof) throw new PrivilegedCommandAuthorizationError();
+      const authorized = await options.consumeReauthenticationProof(payload.reauthRequestId, {
+        accountId: context.account.id,
+        deviceId: context.device?.deviceId ?? null,
+      });
+      if (!authorized) throw new PrivilegedCommandAuthorizationError();
+      return translateConflict(() =>
+        coordinator.run({
+          requestId: context.requestId,
+          action: 'deleted',
+          mutate: () =>
+            options.service.deletePermanently({
+              actor: actor(context),
+              requestId: context.requestId,
+              documentId: payload.documentId,
+              expectedRevision: payload.expectedRevision,
+            }),
+        }),
+      );
+    },
+  );
+  options.registrar.registerCommand(
+    'knowledge.audit.read',
+    'knowledge.manage',
+    (_context, payload) => options.service.readAudit(payload),
   );
 
   return { dispose: () => extractor.stop() };

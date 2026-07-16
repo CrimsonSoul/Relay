@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagementCommands';
 
 const context = {
+  requestId: 'command-request-1',
   account: { id: 'account-admin' },
   operator: { id: 'operator-admin', displayName: 'Ryan Bledsoe' },
   device: { deviceId: 'device-1' },
@@ -42,6 +43,19 @@ describe('registerKnowledgeManagementCommands', () => {
   }));
   const stop = vi.fn(async () => undefined);
   const readUploadPdf = vi.fn(async () => Buffer.from('%PDF-test'));
+  const service = {
+    snapshot: vi.fn(async () => ({ mode: 'managed' })),
+    publish: vi.fn(async () => ({ id: 'document-1' })),
+    replace: vi.fn(async () => ({ id: 'document-1' })),
+    setTitle: vi.fn(async () => ({ id: 'document-1' })),
+    setCategory: vi.fn(async () => ({ id: 'document-1' })),
+    renameCategory: vi.fn(async () => []),
+    trash: vi.fn(async () => ({ id: 'document-1' })),
+    restore: vi.fn(async () => ({ id: 'document-1' })),
+    deletePermanently: vi.fn(async () => ({ id: 'document-1', deleted: true as const })),
+    readAudit: vi.fn(async () => ({ items: [], nextCursor: null })),
+  };
+  const consumeReauthenticationProof = vi.fn(async () => true);
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,6 +68,8 @@ describe('registerKnowledgeManagementCommands', () => {
         }),
       },
       pb: pb as never,
+      service: service as never,
+      consumeReauthenticationProof,
       extractor: { extract, stop },
       readUploadPdf,
     });
@@ -112,6 +128,60 @@ describe('registerKnowledgeManagementCommands', () => {
       'upload-1',
       expect.objectContaining({ state: 'failed', safeError: 'validation-failed' }),
       { requestKey: null },
+    );
+  });
+
+  it('registers and attributes every managed library command', async () => {
+    expect([...handlers.keys()]).toEqual([
+      'knowledge.upload.validate',
+      'knowledge.snapshot.read',
+      'knowledge.document.publish',
+      'knowledge.document.replace',
+      'knowledge.document.title.set',
+      'knowledge.document.category.set',
+      'knowledge.category.rename',
+      'knowledge.document.trash',
+      'knowledge.document.restore',
+      'knowledge.document.delete',
+      'knowledge.audit.read',
+    ]);
+
+    await handlers.get('knowledge.document.publish')!(
+      context as never,
+      { uploadId: 'upload-1', title: 'Runbook', category: 'Operations' } as never,
+    );
+    expect(service.publish).toHaveBeenCalledWith({
+      actor: {
+        accountId: 'account-admin',
+        operatorId: 'operator-admin',
+        operatorName: 'Ryan Bledsoe',
+      },
+      requestId: 'command-request-1',
+      uploadId: 'upload-1',
+      title: 'Runbook',
+      category: 'Operations',
+    });
+  });
+
+  it('requires a bound reauthentication proof for permanent deletion', async () => {
+    await handlers.get('knowledge.document.delete')!(
+      context as never,
+      {
+        documentId: 'document-1',
+        expectedRevision: 3,
+        reauthRequestId: 'reauth-delete',
+      } as never,
+    );
+    expect(consumeReauthenticationProof).toHaveBeenCalledWith('reauth-delete', {
+      accountId: 'account-admin',
+      deviceId: 'device-1',
+    });
+    expect(service.deletePermanently).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: 'command-request-1',
+        documentId: 'document-1',
+        expectedRevision: 3,
+      }),
     );
   });
 });
