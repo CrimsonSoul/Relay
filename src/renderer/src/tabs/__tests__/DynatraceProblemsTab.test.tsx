@@ -6,7 +6,7 @@ import { DynatraceProblemsTab } from '../DynatraceProblemsTab';
 const mocks = vi.hoisted(() => ({
   showToast: vi.fn(),
   setAddressed: vi.fn(async () => ({})),
-  addNote: vi.fn(async () => ({})),
+  addNote: vi.fn(async () => ({ id: 'new-response-note' })),
   refetch: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
   requireAttribution: vi.fn(),
@@ -274,10 +274,15 @@ describe('DynatraceProblemsTab', () => {
         'Mitigated by shifting traffic to the secondary pool.',
         { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
       );
-      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, {
-        operatorId: 'operator-ryan',
-        operatorName: 'Ryan Bell',
-      });
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        {
+          operatorId: 'operator-ryan',
+          operatorName: 'Ryan Bell',
+        },
+        'new-response-note',
+      );
     });
     expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
@@ -302,10 +307,15 @@ describe('DynatraceProblemsTab', () => {
         operatorId: 'operator-ryan',
         operatorName: 'Ryan Bell',
       });
-      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, {
-        operatorId: 'operator-ryan',
-        operatorName: 'Ryan Bell',
-      });
+      expect(mocks.setAddressed).toHaveBeenCalledWith(
+        'problem-1',
+        true,
+        {
+          operatorId: 'operator-ryan',
+          operatorName: 'Ryan Bell',
+        },
+        'new-response-note',
+      );
     });
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setAddressed.mock.invocationCallOrder[0],
@@ -430,26 +440,12 @@ describe('DynatraceProblemsTab', () => {
 
   it('opens the operator picker and performs no address mutation when selection is missing', async () => {
     mocks.requireAttribution.mockReturnValue(null);
-    mocks.hookValue = {
-      ...mocks.hookValue,
-      notesByProblemId: new Map([
-        [
-          'problem-1',
-          [
-            {
-              id: 'note-1',
-              problemId: 'problem-1',
-              note: 'Investigation is in progress.',
-              author: 'Historical Operator',
-              created: new Date().toISOString(),
-            },
-          ],
-        ],
-      ]),
-    };
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
+    fireEvent.change(screen.getByLabelText('Add a note'), {
+      target: { value: 'Investigating the current problem.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
     expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
@@ -463,7 +459,7 @@ describe('DynatraceProblemsTab', () => {
     mocks.addNote.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
-          finishNote = () => resolve({});
+          finishNote = () => resolve({ id: 'new-response-note' });
         }),
     );
     render(<DynatraceProblemsTab relayMode="client" />);
@@ -528,7 +524,7 @@ describe('DynatraceProblemsTab', () => {
     expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeDisabled();
   });
 
-  it('accepts saved local response history before enabling the addressed action', async () => {
+  it('does not let saved response history enable a new addressed action', async () => {
     const { rerender } = render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
@@ -558,7 +554,7 @@ describe('DynatraceProblemsTab', () => {
     };
     rerender(<DynatraceProblemsTab relayMode="client" />);
 
-    expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Mark addressed locally' })).toBeDisabled();
   });
 
   it('renders Relay ticket notes as timestamped Service Desk references', async () => {

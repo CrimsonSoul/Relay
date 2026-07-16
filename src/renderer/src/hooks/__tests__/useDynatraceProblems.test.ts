@@ -61,11 +61,17 @@ describe('useDynatraceProblems', () => {
 
     await act(async () => {
       await result.current.addNote('problem-1', 'Investigating', attribution);
-      await result.current.setAddressed('problem-1', true, attribution);
+      await result.current.setAddressed('problem-1', true, attribution, 'new-response-note');
     });
 
     expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Investigating', attribution);
-    expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, attribution, 'state-1');
+    expect(mocks.setAddressed).toHaveBeenCalledWith(
+      'problem-1',
+      true,
+      attribution,
+      'state-1',
+      'new-response-note',
+    );
   });
 
   it('preserves historical records that do not have an operator ID', () => {

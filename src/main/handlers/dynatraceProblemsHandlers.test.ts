@@ -124,6 +124,7 @@ describe('setupDynatraceProblemsHandlers', () => {
       success: true,
       data: { count: 7 },
     });
+    expect(manager.syncNow).toHaveBeenCalledWith(true);
   });
 
   it('validates, deduplicates, and saves a server-side profile filter', async () => {

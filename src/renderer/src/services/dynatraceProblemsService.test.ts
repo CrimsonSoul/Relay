@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   handleApiError: vi.fn(),
   getConnectionState: vi.fn(),
   notesGetFirst: vi.fn(),
+  notesGetOne: vi.fn(),
   notesCreate: vi.fn(),
   statesGetFirst: vi.fn(),
   statesCreate: vi.fn(),
@@ -31,7 +32,11 @@ vi.mock('./pocketbase', () => ({
   getPb: () => ({
     collection: (name: string) => {
       if (name === DYNATRACE_PROBLEM_NOTES_COLLECTION) {
-        return { getFirstListItem: mocks.notesGetFirst, create: mocks.notesCreate };
+        return {
+          getFirstListItem: mocks.notesGetFirst,
+          getOne: mocks.notesGetOne,
+          create: mocks.notesCreate,
+        };
       }
       if (name === DYNATRACE_PROBLEM_STATES_COLLECTION) {
         return {
@@ -61,6 +66,7 @@ describe('Dynatrace problem mutations', () => {
     vi.clearAllMocks();
     mocks.getConnectionState.mockReturnValue('online');
     mocks.notesCreate.mockResolvedValue({ id: 'note-1', problemId: 'problem-1' });
+    mocks.notesGetOne.mockResolvedValue({ id: 'note-1', problemId: 'problem-1' });
     mocks.statesGetFirst.mockRejectedValue(notFound);
     mocks.statesCreate.mockResolvedValue({ id: 'state-1', problemId: 'problem-1' });
     mocks.statesUpdate.mockResolvedValue({ id: 'state-1', problemId: 'problem-1' });
@@ -92,11 +98,20 @@ describe('Dynatrace problem mutations', () => {
     expect(mocks.statesUpdate).not.toHaveBeenCalled();
   });
 
-  it('marks a problem addressed after confirming that a note exists', async () => {
+  it('does not let a historical note satisfy a new address action', async () => {
     mocks.notesGetFirst.mockResolvedValue({ id: 'note-1', problemId: 'problem-1' });
 
-    await setDynatraceProblemAddressed('problem-1', true, attribution);
+    await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
+      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
+    );
 
+    expect(mocks.statesCreate).not.toHaveBeenCalled();
+  });
+
+  it('marks a problem addressed after validating the newly persisted response note', async () => {
+    await setDynatraceProblemAddressed('problem-1', true, attribution, undefined, 'note-1');
+
+    expect(mocks.notesGetOne).toHaveBeenCalledWith('note-1', { requestKey: null });
     expect(mocks.statesCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         problemId: 'problem-1',
@@ -105,6 +120,18 @@ describe('Dynatrace problem mutations', () => {
         addressedBy: 'Ryan Bell',
       }),
     );
+  });
+
+  it('rejects response evidence that belongs to a different problem', async () => {
+    mocks.notesGetOne.mockResolvedValue({ id: 'note-1', problemId: 'problem-2' });
+
+    await expect(
+      setDynatraceProblemAddressed('problem-1', true, attribution, undefined, 'note-1'),
+    ).rejects.toThrow(
+      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
+    );
+
+    expect(mocks.statesCreate).not.toHaveBeenCalled();
   });
 
   it('allows returning a problem to the queue without requiring another note', async () => {
@@ -139,7 +166,13 @@ describe('Dynatrace problem mutations', () => {
     (globalThis as Record<string, unknown>).api = { mutateOffline };
 
     await addDynatraceProblemNote('problem-1', 'Queued note', attribution);
-    await setDynatraceProblemAddressed('problem-1', true, attribution);
+    await setDynatraceProblemAddressed(
+      'problem-1',
+      true,
+      attribution,
+      undefined,
+      'dynatrace_probl',
+    );
 
     expect(mutateOffline).toHaveBeenNthCalledWith(1, {
       collection: DYNATRACE_PROBLEM_NOTES_COLLECTION,
@@ -161,6 +194,18 @@ describe('Dynatrace problem mutations', () => {
         addressedBy: 'Ryan Bell',
       }),
     });
+  });
+
+  it('requires newly persisted response evidence while offline', async () => {
+    mocks.getConnectionState.mockReturnValue('offline');
+    const mutateOffline = vi.fn();
+    (globalThis as Record<string, unknown>).api = { mutateOffline };
+
+    await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
+      'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
+    );
+
+    expect(mutateOffline).not.toHaveBeenCalled();
   });
 });
 

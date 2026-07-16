@@ -154,7 +154,7 @@ export function setupDynatraceProblemsHandlers(
       if (!manager) return failure('Dynatrace Problems manager is unavailable.');
 
       try {
-        return { success: true, data: { count: await manager.syncNow() } };
+        return { success: true, data: { count: await manager.syncNow(true) } };
       } catch (error) {
         return failure(error);
       }

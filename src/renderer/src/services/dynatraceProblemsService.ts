@@ -12,6 +12,8 @@ import { mutateCollection } from './mutationGateway';
 const MAX_NOTE_LENGTH = 5_000;
 export const MAX_DYNATRACE_TICKET_REFERENCE_LENGTH = 120;
 export const DYNATRACE_TICKET_NOTE_PREFIX = 'Ticket: ';
+const REQUIRED_RESPONSE_MESSAGE =
+  'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.';
 
 function normalizeDynatraceTicketReference(value: string): string {
   const normalized = value.trim();
@@ -51,31 +53,26 @@ async function findState(problemId: string): Promise<DynatraceProblemStateRecord
   }
 }
 
-async function hasProblemNote(problemId: string): Promise<boolean> {
-  try {
-    await getPb()
-      .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
-      .getFirstListItem(`problemId="${escapeFilter(problemId)}"`, { requestKey: null });
-    return true;
-  } catch (error) {
-    if (isPbNotFoundError(error)) return false;
-    throw error;
-  }
-}
-
-async function requireProblemNoteWhenAddressing(
+async function requireProblemResponseWhenAddressing(
   problemId: string,
   addressed: boolean,
   online: boolean,
+  responseNoteId?: string,
 ): Promise<void> {
-  if (!addressed || !online) return;
+  if (!addressed) return;
+  const normalizedResponseNoteId = responseNoteId?.trim();
+  if (!normalizedResponseNoteId) throw new Error(REQUIRED_RESPONSE_MESSAGE);
+  if (!online) return;
+
   try {
-    if (!(await hasProblemNote(problemId))) {
-      throw new Error(
-        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
-      );
-    }
+    const responseNote = await getPb()
+      .collection(DYNATRACE_PROBLEM_NOTES_COLLECTION)
+      .getOne<Pick<DynatraceProblemNoteRecord, 'problemId'>>(normalizedResponseNoteId, {
+        requestKey: null,
+      });
+    if (responseNote.problemId !== problemId) throw new Error(REQUIRED_RESPONSE_MESSAGE);
   } catch (error) {
+    if (isPbNotFoundError(error)) throw new Error(REQUIRED_RESPONSE_MESSAGE);
     handleApiError(error);
     throw error;
   }
@@ -86,12 +83,13 @@ export async function setDynatraceProblemAddressed(
   addressed: boolean,
   attribution: OperatorAttribution | null,
   existingRecordId?: string,
+  responseNoteId?: string,
 ): Promise<DynatraceProblemStateRecord> {
   if (addressed && !attribution) {
     throw new Error('Choose an operator before marking this problem addressed locally.');
   }
   const online = getConnectionState() === 'online';
-  await requireProblemNoteWhenAddressing(problemId, addressed, online);
+  await requireProblemResponseWhenAddressing(problemId, addressed, online, responseNoteId);
   const payload = {
     problemId,
     addressed,

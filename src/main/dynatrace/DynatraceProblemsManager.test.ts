@@ -122,6 +122,57 @@ describe('DynatraceProblemsManager', () => {
     );
   });
 
+  it('reloads the alerting profile catalog during a forced manual reconciliation', async () => {
+    const problemCollection = {
+      getFullList: vi.fn().mockResolvedValue([]),
+      update: vi.fn(),
+      create: vi.fn(),
+      delete: vi.fn(),
+    };
+    const syncCollection = {
+      getFirstListItem: vi.fn().mockResolvedValue({ id: 'sync-1', key: 'primary' }),
+      update: vi.fn().mockResolvedValue({}),
+      create: vi.fn().mockResolvedValue({}),
+    };
+    const pocketBase = {
+      collection: vi.fn((name: string) =>
+        name === DYNATRACE_PROBLEMS_COLLECTION ? problemCollection : syncCollection,
+      ),
+    };
+    const store = {
+      load: vi.fn().mockReturnValue(config),
+      getPublicSettings: vi.fn(),
+      save: vi.fn(),
+      clear: vi.fn(),
+    };
+    const client = {
+      fetchAlertingProfiles: vi
+        .fn()
+        .mockResolvedValueOnce(['Payments Production'])
+        .mockResolvedValueOnce(['New Retail Profile', 'Payments Production']),
+      fetchProblems: vi.fn().mockResolvedValue({ problems: [], totalCount: 0 }),
+      testConnection: vi.fn(),
+    };
+    const manager = new DynatraceProblemsManager(
+      store as unknown as DynatraceProblemsConfigStore,
+      () => pocketBase as never,
+      client as unknown as DynatraceProblemsClient,
+    );
+
+    await manager.syncNow();
+    await manager.syncNow(true);
+
+    expect(client.fetchAlertingProfiles).toHaveBeenCalledTimes(2);
+    expect(syncCollection.update).toHaveBeenLastCalledWith(
+      'sync-1',
+      expect.objectContaining({
+        state: 'ok',
+        availableAlertingProfiles: ['New Retail Profile', 'Payments Production'],
+      }),
+      { requestKey: null },
+    );
+  });
+
   it('stores only selected-profile problems and removes excluded history with its local records', async () => {
     const selectedConfig = { ...config, alertingProfiles: ['POS Store', 'Alerts for NOC'] };
     const matchedProblem = {

@@ -586,8 +586,7 @@ function ProblemDetail({
 
   const addressed = isAddressed(state);
   const mutationsEnabled = connectionState === 'online' || connectionState === 'offline';
-  const responseRequirementMet =
-    notes.length > 0 || ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
+  const responseRequirementMet = ticketDraft.trim().length > 0 || noteDraft.trim().length > 0;
   const tone = problem.status === 'CLOSED' ? 'resolved' : severityTone(problem.severity);
   const statusLabel =
     problem.status === 'CLOSED' ? 'Resolved by Dynatrace' : severityLabel(problem.severity);
@@ -928,20 +927,33 @@ export const DynatraceProblemsTab: React.FC<{
   };
 
   const saveDraftedResponses = async (problemId: string, attribution: OperatorAttribution) => {
+    let responseNoteId = '';
     if (ticketDraft.trim()) {
-      await addNote(problemId, formatDynatraceTicketReferenceNote(ticketDraft), attribution);
+      const ticketNote = await addNote(
+        problemId,
+        formatDynatraceTicketReferenceNote(ticketDraft),
+        attribution,
+      );
+      responseNoteId = ticketNote.id;
       setTicketDraft('');
     }
     if (noteDraft.trim()) {
-      await addNote(problemId, noteDraft, attribution);
+      const nocNote = await addNote(problemId, noteDraft, attribution);
+      responseNoteId ||= nocNote.id;
       setNoteDraft('');
     }
+    if (!responseNoteId) {
+      throw new Error(
+        'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
+      );
+    }
+    return responseNoteId;
   };
 
   const handleAddressToggle = async () => {
     if (!selectedProblem || savingAction) return;
     const nextAddressed = !isAddressed(selectedState);
-    if (nextAddressed && selectedNotes.length === 0 && !ticketDraft.trim() && !noteDraft.trim()) {
+    if (nextAddressed && !ticketDraft.trim() && !noteDraft.trim()) {
       showToast(
         'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
         'warning',
@@ -952,8 +964,10 @@ export const DynatraceProblemsTab: React.FC<{
     if (nextAddressed && !attribution) return;
     setSavingAction('address');
     try {
-      if (nextAddressed) await saveDraftedResponses(selectedProblem.problemId, attribution!);
-      await setAddressed(selectedProblem.problemId, nextAddressed, attribution);
+      const responseNoteId = nextAddressed
+        ? await saveDraftedResponses(selectedProblem.problemId, attribution!)
+        : undefined;
+      await setAddressed(selectedProblem.problemId, nextAddressed, attribution, responseNoteId);
       showToast(
         nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
         'success',

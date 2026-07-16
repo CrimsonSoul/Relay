@@ -46,12 +46,18 @@ export function useDynatraceProblems() {
   }, [notes.data]);
 
   const setAddressed = useCallback(
-    async (problemId: string, addressed: boolean, attribution: OperatorAttribution | null) =>
+    async (
+      problemId: string,
+      addressed: boolean,
+      attribution: OperatorAttribution | null,
+      responseNoteId?: string,
+    ) =>
       setDynatraceProblemAddressed(
         problemId,
         addressed,
         attribution,
         stateByProblemId.get(problemId)?.id,
+        responseNoteId,
       ),
     [stateByProblemId],
   );

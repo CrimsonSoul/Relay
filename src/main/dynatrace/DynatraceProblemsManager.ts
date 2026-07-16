@@ -243,7 +243,7 @@ export class DynatraceProblemsManager {
         this.profileCatalogRefreshedAt = parsedTimestamp(previousSync?.lastReconciledAt) ?? 0;
       }
       const catalog = reconciliation
-        ? await this.getAvailableAlertingProfiles(config)
+        ? await this.getAvailableAlertingProfiles(config, forceReconciliation)
         : this.availableAlertingProfiles;
       const result = await this.client.fetchProblems(config, queryScope);
       const selectedProfiles = config.alertingProfiles;
@@ -289,8 +289,12 @@ export class DynatraceProblemsManager {
     }
   }
 
-  private async getAvailableAlertingProfiles(config: DynatraceProblemsConfig): Promise<string[]> {
+  private async getAvailableAlertingProfiles(
+    config: DynatraceProblemsConfig,
+    forceRefresh = false,
+  ): Promise<string[]> {
     if (
+      !forceRefresh &&
       this.availableAlertingProfiles.length > 0 &&
       Date.now() - this.profileCatalogRefreshedAt < PROFILE_CATALOG_REFRESH_MS
     ) {
