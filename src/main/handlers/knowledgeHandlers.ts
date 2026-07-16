@@ -75,7 +75,7 @@ export function setupKnowledgeHandlers(
     if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET)) {
       return EMPTY_UPLOAD_QUEUE;
     }
-    return getUploadService()?.snapshot() ?? EMPTY_UPLOAD_QUEUE;
+    return (await getUploadService()?.refresh()) ?? EMPTY_UPLOAD_QUEUE;
   });
 
   const registerUploadControl = (

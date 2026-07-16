@@ -44,6 +44,7 @@ describe('knowledgeHandlers', () => {
     acknowledgedBytes: 0,
     items: [],
   }));
+  const refresh = vi.fn(async () => snapshot());
   const pauseBatch = vi.fn();
   const resumeBatch = vi.fn();
   const retryUpload = vi.fn();
@@ -53,6 +54,7 @@ describe('knowledgeHandlers', () => {
   const uploadService = {
     selectAndQueue,
     snapshot,
+    refresh,
     pauseBatch,
     resumeBatch,
     retryUpload,

@@ -291,6 +291,139 @@ describe('KnowledgeUploadService', () => {
     });
   });
 
+  it('reconciles a published server upload before accepting the next batch', async () => {
+    const checksum = manifest().checksum;
+    const store = queueStore({
+      version: 1,
+      restartRecovery: true,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 0,
+          uploadId: 'upload-1',
+          uploadRevision: 1,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: { ...candidate(), checksum, chunkCount: 1 },
+          acknowledgedChunkIndexes: [0],
+          state: 'assembling',
+          safeError: null,
+          retryCount: 0,
+        },
+      ],
+    });
+    const published = manifest({
+      state: 'published',
+      missingChunkIndexes: [],
+      revision: 2,
+    });
+    const { runtime, createPrivilegedRecord, submitPublicCommand } = commandRuntime([published]);
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      selectFiles: vi.fn(async () => []),
+      revalidateSource: vi.fn(async () => true),
+    });
+
+    await service.start();
+    await service.whenIdle();
+
+    expect(service.snapshot().items[0]?.state).toBe('published');
+    expect(createPrivilegedRecord).not.toHaveBeenCalled();
+    expect(
+      submitPublicCommand.mock.calls.some(
+        ([request]) => request.command === 'knowledge.upload.file.finalize',
+      ),
+    ).toBe(false);
+  });
+
+  it('reconciles a locally ready upload after the server publishes it', async () => {
+    const checksum = manifest().checksum;
+    const store = queueStore({
+      version: 1,
+      restartRecovery: false,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 1,
+          uploadId: 'upload-1',
+          uploadRevision: 1,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: { ...candidate(), checksum, chunkCount: 1 },
+          acknowledgedChunkIndexes: [0],
+          state: 'ready',
+          safeError: null,
+          retryCount: 0,
+        },
+      ],
+    });
+    const { runtime, submitPublicCommand } = commandRuntime([
+      manifest({ state: 'published', missingChunkIndexes: [], revision: 2 }),
+    ]);
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+    });
+
+    await service.start();
+    await service.refresh();
+
+    expect(service.snapshot().items[0]?.state).toBe('published');
+    expect(submitPublicCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'knowledge.upload.status' }),
+    );
+  });
+
+  it('does not persist or emit an unchanged server status during queue polling', async () => {
+    const checksum = manifest().checksum;
+    const store = queueStore({
+      version: 1,
+      restartRecovery: false,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 0,
+          uploadId: 'upload-1',
+          uploadRevision: 1,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: { ...candidate(), checksum, chunkCount: 1 },
+          acknowledgedChunkIndexes: [0],
+          state: 'ready',
+          safeError: null,
+          retryCount: 0,
+        },
+      ],
+    });
+    const ready = manifest({
+      state: 'ready',
+      missingChunkIndexes: [],
+      revision: 1,
+    });
+    const { runtime } = commandRuntime([ready]);
+    const emitSnapshot = vi.fn();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      emitSnapshot,
+    });
+
+    await service.start();
+    store.save.mockClear();
+    emitSnapshot.mockClear();
+    await service.refresh();
+
+    expect(store.save).not.toHaveBeenCalled();
+    expect(emitSnapshot).not.toHaveBeenCalled();
+  });
+
   it('bounds cancellation and authorization failures before queueing paths', async () => {
     const store = queueStore();
     const { runtime } = commandRuntime();

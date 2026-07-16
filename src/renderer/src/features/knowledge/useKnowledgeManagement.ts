@@ -3,10 +3,11 @@ import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
+  normalizeKnowledgeUploadQueueView,
   type KnowledgeAuditEventView,
   type KnowledgeManagementSnapshot,
   type KnowledgePage,
-  type KnowledgeUploadProgress,
+  type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
 } from '@shared/knowledge';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
@@ -23,6 +24,14 @@ const SAFE_ERRORS = {
   conflict: 'This item changed on the server. Review the refreshed information and try again.',
   'server-error': 'Relay could not complete the Knowledge Base request.',
 } as const;
+
+const EMPTY_UPLOAD_QUEUE: KnowledgeUploadQueueView = {
+  restartRecovery: false,
+  activeBatchId: null,
+  totalBytes: 0,
+  acknowledgedBytes: 0,
+  items: [],
+};
 
 function commandError(result: Extract<PrivilegedCommandResult, { ok: false }>): string {
   return SAFE_ERRORS[result.error];
@@ -46,15 +55,22 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
   const [auditNextCursor, setAuditNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<KnowledgeUploadProgress | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<KnowledgeUploadQueueView>(EMPTY_UPLOAD_QUEUE);
   const [error, setError] = useState<string | null>(null);
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
+
+  const refreshUploadQueue = useCallback(async (): Promise<KnowledgeUploadQueueView | null> => {
+    const queue = await globalThis.api?.getKnowledgeUploadQueue?.();
+    const normalized = normalizeKnowledgeUploadQueueView(queue);
+    if (normalized) setUploadQueue(normalized);
+    return normalized;
+  }, []);
 
   const requestSnapshot = useCallback(
     async (cursor: string | null): Promise<KnowledgeManagementSnapshot | null> => {
       const result = await submitCommand({
         command: 'knowledge.snapshot.read',
-        payload: { query: '', cursor, pageSize: 25 },
+        payload: { query: '', cursor, pageSize: 100 },
         expectedRevision: null,
       });
       if (!result.ok) {
@@ -100,8 +116,36 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
 
   useEffect(() => {
     if (!canManage) return;
-    return globalThis.api?.onKnowledgeUploadProgress?.((progress) => setUploadProgress(progress));
-  }, [canManage]);
+    let active = true;
+    const acceptQueue = (value: unknown) => {
+      const normalized = normalizeKnowledgeUploadQueueView(value);
+      if (active && normalized) setUploadQueue(normalized);
+    };
+    void refreshUploadQueue();
+    const unsubscribe = globalThis.api?.onKnowledgeUploadQueueChanged?.(acceptQueue);
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [canManage, refreshUploadQueue]);
+
+  useEffect(() => {
+    if (!canManage || uploadQueue.items.length === 0) return;
+    const terminal = new Set(['ready', 'failed', 'cancelled', 'published']);
+    const serverStates = new Map(
+      (snapshot?.uploads.items ?? []).map((upload) => [upload.id, upload.state]),
+    );
+    const needsServerRefresh = uploadQueue.items.some((item) => {
+      if (terminal.has(item.state)) return false;
+      return !item.uploadId || !terminal.has(serverStates.get(item.uploadId) ?? '');
+    });
+    if (!needsServerRefresh) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+      void refreshUploadQueue();
+    }, 2_000);
+    return () => window.clearInterval(timer);
+  }, [canManage, refresh, refreshUploadQueue, snapshot?.uploads.items, uploadQueue.items]);
 
   const execute = useCallback(
     async (request: PublicPrivilegedCommandRequest, busyKey: string): Promise<boolean> => {
@@ -115,32 +159,55 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
           if (result.error === 'conflict') await refresh();
           return false;
         }
-        await Promise.all([refresh(), Promise.resolve(onLibraryChanged?.())]);
+        await Promise.all([refresh(), refreshUploadQueue(), Promise.resolve(onLibraryChanged?.())]);
         return true;
       } finally {
         setBusy(null);
       }
     },
-    [canManage, onLibraryChanged, refresh, submitCommand],
+    [canManage, onLibraryChanged, refresh, refreshUploadQueue, submitCommand],
   );
 
   const stagePdfs = useCallback(async (): Promise<KnowledgeUploadSelectionResult> => {
-    if (!canManage || !globalThis.api?.selectAndStageKnowledgePdfs) {
+    if (!canManage || !globalThis.api?.selectAndQueueKnowledgePdfs) {
       return { ok: false, error: canManage ? 'upload-failed' : 'unauthorized' };
     }
     setBusy('upload');
     setError(null);
     try {
-      const result = await globalThis.api.selectAndStageKnowledgePdfs();
+      const result = await globalThis.api.selectAndQueueKnowledgePdfs();
       if (!result.ok && result.error !== 'cancelled') {
-        setError('Relay could not stage the selected PDF files.');
+        setError(
+          result.error === 'invalid-file'
+            ? 'Choose up to 100 valid PDF files with unique filenames.'
+            : 'Relay could not queue the selected PDF files.',
+        );
       }
-      if (result.ok) await refresh();
+      if (result.ok) {
+        await refreshUploadQueue();
+        await refresh();
+      }
       return result;
     } finally {
       setBusy(null);
     }
-  }, [canManage, refresh]);
+  }, [canManage, refresh, refreshUploadQueue]);
+
+  const runUploadControl = useCallback(
+    async (busyKey: string, operation: (() => Promise<boolean>) | undefined, message: string) => {
+      if (!canManage || !operation) return false;
+      setBusy(busyKey);
+      setError(null);
+      try {
+        const ok = await operation();
+        if (!ok) setError(message);
+        return ok;
+      } finally {
+        setBusy(null);
+      }
+    },
+    [canManage],
+  );
 
   const requestAuditPage = useCallback(
     async (cursor: string | null): Promise<KnowledgePage<KnowledgeAuditEventView> | null> => {
@@ -247,13 +314,61 @@ export function useKnowledgeManagement(onLibraryChanged?: () => void | Promise<v
     auditNextCursor,
     loading,
     busy,
-    uploadProgress,
+    uploadQueue,
     error,
     refresh,
     readAudit,
     loadMoreAudit,
     loadMore,
     stagePdfs,
+    pauseUploadBatch: (batchId: string) =>
+      runUploadControl(
+        `pause:${batchId}`,
+        globalThis.api?.pauseKnowledgeUploadBatch
+          ? () => globalThis.api.pauseKnowledgeUploadBatch(batchId)
+          : undefined,
+        'Relay could not pause this upload batch.',
+      ),
+    resumeUploadBatch: (batchId: string) =>
+      runUploadControl(
+        `resume:${batchId}`,
+        globalThis.api?.resumeKnowledgeUploadBatch
+          ? () => globalThis.api.resumeKnowledgeUploadBatch(batchId)
+          : undefined,
+        'Relay could not resume this upload batch.',
+      ),
+    retryUpload: (uploadId: string) =>
+      runUploadControl(
+        `retry:${uploadId}`,
+        globalThis.api?.retryKnowledgeUpload
+          ? () => globalThis.api.retryKnowledgeUpload(uploadId)
+          : undefined,
+        'Relay could not retry this PDF.',
+      ),
+    reselectUploadSource: (uploadId: string) =>
+      runUploadControl(
+        `reselect:${uploadId}`,
+        globalThis.api?.reselectKnowledgeUploadSource
+          ? () => globalThis.api.reselectKnowledgeUploadSource(uploadId)
+          : undefined,
+        'Choose the same unchanged PDF to resume this upload.',
+      ),
+    cancelUpload: (uploadId: string) =>
+      runUploadControl(
+        `cancel:${uploadId}`,
+        globalThis.api?.cancelKnowledgeUpload
+          ? () => globalThis.api.cancelKnowledgeUpload(uploadId)
+          : undefined,
+        'Relay could not cancel this PDF.',
+      ),
+    cancelUploadBatch: (batchId: string) =>
+      runUploadControl(
+        `cancel-batch:${batchId}`,
+        globalThis.api?.cancelKnowledgeUploadBatch
+          ? () => globalThis.api.cancelKnowledgeUploadBatch(batchId)
+          : undefined,
+        'Relay could not cancel this upload batch.',
+      ),
     clearError: () => setError(null),
     publish: (uploadId: string, title: string, category: string) =>
       execute(

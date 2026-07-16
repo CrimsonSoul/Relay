@@ -1,8 +1,11 @@
 import { useMemo, useState } from 'react';
 import type {
   KnowledgeAuditAction,
+  KnowledgeManagementErrorCode,
   KnowledgeManagementDocumentView,
   KnowledgeManagementUploadView,
+  KnowledgeUploadQueueItemState,
+  KnowledgeUploadQueueItemView,
 } from '@shared/knowledge';
 import { TactileButton } from '../../components/TactileButton';
 import { useKnowledgeManagement } from './useKnowledgeManagement';
@@ -39,9 +42,57 @@ function formatDate(value: string | null): string {
 }
 
 function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 KB';
   return bytes >= 1_048_576
     ? `${(bytes / 1_048_576).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1_024))} KB`;
+}
+
+const QUEUE_STATE_LABELS: Record<KnowledgeUploadQueueItemState, string> = {
+  planning: 'Preparing',
+  paused: 'Paused',
+  queued: 'Queued',
+  uploading: 'Uploading',
+  assembling: 'Processing',
+  validating: 'Checking',
+  extracting: 'Indexing',
+  ready: 'Ready to publish',
+  failed: 'Needs attention',
+  cancelled: 'Cancelled',
+  published: 'Published',
+  'paused-network': 'Waiting for network',
+  'source-required': 'Source file needed',
+};
+
+const QUEUE_ERROR_LABELS: Record<KnowledgeManagementErrorCode, string> = {
+  offline: 'Network unavailable',
+  unauthorized: 'Publisher sign-in required',
+  'invalid-file': 'Invalid PDF',
+  'upload-failed': 'Transfer failed',
+  'validation-failed': 'PDF validation failed',
+  'encrypted-pdf': 'Password-protected PDF',
+  'too-large': 'PDF exceeds 50 MiB',
+  'too-many-pages': 'PDF exceeds 1,000 pages',
+  'extraction-timeout': 'Indexing timed out',
+  'duplicate-file-name': 'Duplicate filename',
+  'checksum-mismatch': 'File checksum mismatch',
+  'insufficient-storage': 'Server storage is low',
+  'source-required': 'Original PDF must be reselected',
+  conflict: 'Upload changed on the server',
+  'not-found': 'Upload no longer exists',
+  'server-error': 'Server could not process this PDF',
+};
+
+function queueProgress(item: KnowledgeUploadQueueItemView): number {
+  return Math.min(100, Math.round((item.acknowledgedBytes / item.byteSize) * 100));
+}
+
+function effectiveQueueState(
+  item: KnowledgeUploadQueueItemView,
+  uploads: KnowledgeManagementUploadView[],
+): KnowledgeUploadQueueItemState {
+  const serverState = uploads.find(({ id }) => id === item.uploadId)?.state;
+  return serverState ?? item.state;
 }
 
 function matchesDocument(document: KnowledgeManagementDocumentView, query: string): boolean {
@@ -78,10 +129,22 @@ export function KnowledgeManagementWorkspace({
   const [categoryFrom, setCategoryFrom] = useState('');
   const [categoryTo, setCategoryTo] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [cancelBatchConfirmation, setCancelBatchConfirmation] = useState(false);
   const snapshot = management.snapshot;
   const documents = useMemo(() => snapshot?.documents.items ?? [], [snapshot]);
   const trash = snapshot?.trash.items ?? [];
   const uploads = snapshot?.uploads.items.filter(({ state }) => state !== 'published') ?? [];
+  const queueItems = management.uploadQueue.items.filter(
+    ({ state }) => state !== 'published' && state !== 'cancelled',
+  );
+  const uploadBatchId = management.uploadQueue.activeBatchId ?? queueItems[0]?.batchId ?? null;
+  const uploadQueueHasActiveItems = queueItems.some(
+    (item) =>
+      !['ready', 'published', 'cancelled', 'failed'].includes(effectiveQueueState(item, uploads)),
+  );
+  const uploadQueueHasPausedItems = queueItems.some(({ state }) =>
+    ['paused', 'paused-network'].includes(state),
+  );
   const filteredDocuments = documents.filter((document) => matchesDocument(document, query));
   const categories = useMemo(
     () =>
@@ -94,6 +157,7 @@ export function KnowledgeManagementWorkspace({
   const selectSection = (next: Section) => {
     setSection(next);
     setNotice(null);
+    setCancelBatchConfirmation(false);
     if (next === 'audit') void management.readAudit();
   };
 
@@ -101,7 +165,7 @@ export function KnowledgeManagementWorkspace({
     const result = await management.stagePdfs();
     if (result.ok && result.uploads.length > 0) {
       setSection('uploads');
-      setNotice(`${result.uploads.length} PDF${result.uploads.length === 1 ? '' : 's'} staged.`);
+      setNotice(`${result.uploads.length} PDF${result.uploads.length === 1 ? '' : 's'} queued.`);
     }
   };
 
@@ -125,20 +189,11 @@ export function KnowledgeManagementWorkspace({
   const replacePdf = async (document: KnowledgeManagementDocumentView) => {
     const result = await management.stagePdfs();
     if (!result.ok) return;
-    const ready = result.uploads.filter(({ state }) => state === 'ready');
-    if (ready.length !== 1) {
-      setSection('uploads');
-      setNotice(
-        'Choose one staged PDF from Uploads to publish. Replace accepts one PDF at a time.',
-      );
-      return;
-    }
-    await management.replace(
-      ready[0]!.id,
-      document.id,
-      document.revision,
-      document.displayTitle,
-      document.category,
+    setSection('uploads');
+    setNotice(
+      result.uploads.length === 1
+        ? `Replacement for ${document.displayTitle} queued. Use Replace existing when it is ready.`
+        : 'PDFs queued. Each duplicate filename can replace its existing document when ready.',
     );
   };
 
@@ -171,7 +226,10 @@ export function KnowledgeManagementWorkspace({
 
   const counts: Record<Section, number> = {
     documents: documents.length,
-    uploads: uploads.length,
+    uploads: new Set([
+      ...uploads.map(({ id }) => id),
+      ...queueItems.map((item) => item.uploadId ?? item.id),
+    ]).size,
     trash: trash.length,
     audit: management.auditEvents.length,
   };
@@ -388,21 +446,146 @@ export function KnowledgeManagementWorkspace({
 
           {snapshot && section === 'uploads' && (
             <div className="knowledge-management-list">
-              {management.uploadProgress && (
-                <div className="knowledge-management-progress" role="status">
-                  <span>{management.uploadProgress.fileName}</span>
-                  <progress max={100} value={management.uploadProgress.progress} />
-                  <strong>{management.uploadProgress.progress}%</strong>
+              {queueItems.length > 0 && (
+                <section className="knowledge-upload-queue" aria-labelledby="upload-queue-title">
+                  <div className="knowledge-upload-queue__summary">
+                    <div>
+                      <span className="knowledge-tab__kicker">Transfer status</span>
+                      <h2 id="upload-queue-title">Upload queue</h2>
+                      <p>
+                        {queueItems.length} PDF{queueItems.length === 1 ? '' : 's'} ·{' '}
+                        {formatBytes(management.uploadQueue.acknowledgedBytes)} of{' '}
+                        {formatBytes(management.uploadQueue.totalBytes)} transferred
+                      </p>
+                    </div>
+                    <div className="knowledge-upload-queue__summary-actions">
+                      {management.uploadQueue.restartRecovery && (
+                        <span className="knowledge-upload-queue__recovery">
+                          Restored after restart
+                        </span>
+                      )}
+                      {uploadBatchId && uploadQueueHasActiveItems && (
+                        <>
+                          {uploadQueueHasPausedItems ? (
+                            <TactileButton
+                              size="sm"
+                              onClick={() => void management.resumeUploadBatch(uploadBatchId)}
+                            >
+                              Resume all
+                            </TactileButton>
+                          ) : (
+                            <TactileButton
+                              size="sm"
+                              onClick={() => void management.pauseUploadBatch(uploadBatchId)}
+                            >
+                              Pause all
+                            </TactileButton>
+                          )}
+                          <TactileButton
+                            size="sm"
+                            variant={cancelBatchConfirmation ? 'danger' : 'secondary'}
+                            onClick={() => {
+                              if (!cancelBatchConfirmation) {
+                                setCancelBatchConfirmation(true);
+                                return;
+                              }
+                              void management.cancelUploadBatch(uploadBatchId);
+                              setCancelBatchConfirmation(false);
+                            }}
+                          >
+                            {cancelBatchConfirmation ? 'Confirm cancel' : 'Cancel batch'}
+                          </TactileButton>
+                        </>
+                      )}
+                    </div>
+                    <progress
+                      aria-label="Batch upload progress"
+                      max={management.uploadQueue.totalBytes || 1}
+                      value={management.uploadQueue.acknowledgedBytes}
+                    />
+                  </div>
+                  <div className="knowledge-upload-queue__files">
+                    {queueItems.map((item) => {
+                      const state = effectiveQueueState(item, uploads);
+                      const id = item.uploadId ?? item.id;
+                      const progress = queueProgress(item);
+                      return (
+                        <article className="knowledge-upload-file" key={item.id}>
+                          <div className="knowledge-upload-file__state">
+                            <span className={`knowledge-management-status is-${state}`}>
+                              {QUEUE_STATE_LABELS[state]}
+                            </span>
+                            <strong>{item.fileName}</strong>
+                            <span className="knowledge-upload-file__size">
+                              {formatBytes(item.byteSize)}
+                            </span>
+                            {item.safeError && (
+                              <span className="knowledge-upload-file__issue">
+                                {QUEUE_ERROR_LABELS[item.safeError]}
+                              </span>
+                            )}
+                          </div>
+                          <div className="knowledge-upload-file__progress">
+                            <progress
+                              aria-label={`${item.fileName} upload progress`}
+                              max={item.byteSize}
+                              value={item.acknowledgedBytes}
+                            />
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="knowledge-upload-file__actions">
+                            {['failed', 'paused-network'].includes(state) && (
+                              <TactileButton
+                                size="sm"
+                                aria-label={`Retry ${item.fileName}`}
+                                loading={management.busy === `retry:${id}`}
+                                onClick={() => void management.retryUpload(id)}
+                              >
+                                Retry
+                              </TactileButton>
+                            )}
+                            {state === 'source-required' && (
+                              <TactileButton
+                                size="sm"
+                                aria-label={`Reselect ${item.fileName}`}
+                                loading={management.busy === `reselect:${id}`}
+                                onClick={() => void management.reselectUploadSource(id)}
+                              >
+                                Reselect PDF
+                              </TactileButton>
+                            )}
+                            {!['ready', 'published', 'cancelled'].includes(state) && (
+                              <TactileButton
+                                size="sm"
+                                aria-label={`Cancel ${item.fileName}`}
+                                loading={management.busy === `cancel:${id}`}
+                                onClick={() => void management.cancelUpload(id)}
+                              >
+                                Cancel
+                              </TactileButton>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+              {uploads.length > 0 && (
+                <div className="knowledge-management-section-heading">
+                  <span className="knowledge-tab__kicker">Review</span>
+                  <h2>Upload review</h2>
                 </div>
               )}
-              {uploads.length === 0 && (
-                <EmptyPanel>No staged uploads. Add PDFs to begin.</EmptyPanel>
+              {uploads.length === 0 && queueItems.length === 0 && (
+                <EmptyPanel>No uploads queued or awaiting review. Add PDFs to begin.</EmptyPanel>
               )}
               {uploads.map((upload) => {
                 const draft = uploadDrafts[upload.id] ?? {
                   title: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
                   category: upload.proposedCategory || 'General',
                 };
+                const duplicate = documents.find(({ id }) => id === upload.duplicateDocumentId);
                 return (
                   <article
                     className="knowledge-management-row knowledge-management-row--upload"
@@ -450,15 +633,35 @@ export function KnowledgeManagementWorkspace({
                           Filename already exists
                         </span>
                       )}
-                      <TactileButton
-                        size="sm"
-                        variant="primary"
-                        disabled={upload.state !== 'ready' || Boolean(upload.duplicateDocumentId)}
-                        loading={management.busy === `publish:${upload.id}`}
-                        onClick={() => void publishUpload(upload)}
-                      >
-                        Publish
-                      </TactileButton>
+                      {duplicate ? (
+                        <TactileButton
+                          size="sm"
+                          variant="primary"
+                          disabled={upload.state !== 'ready'}
+                          loading={management.busy === `replace:${duplicate.id}`}
+                          onClick={() =>
+                            void management.replace(
+                              upload.id,
+                              duplicate.id,
+                              duplicate.revision,
+                              draft.title,
+                              draft.category,
+                            )
+                          }
+                        >
+                          Replace existing
+                        </TactileButton>
+                      ) : (
+                        <TactileButton
+                          size="sm"
+                          variant="primary"
+                          disabled={upload.state !== 'ready' || Boolean(upload.duplicateDocumentId)}
+                          loading={management.busy === `publish:${upload.id}`}
+                          onClick={() => void publishUpload(upload)}
+                        >
+                          Publish
+                        </TactileButton>
+                      )}
                     </div>
                   </article>
                 );

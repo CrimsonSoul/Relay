@@ -14,6 +14,14 @@ const snapshot = {
 };
 
 describe('useKnowledgeManagement', () => {
+  let queueListener: ((queue: unknown) => void) | null = null;
+  const uploadQueue = {
+    restartRecovery: false,
+    activeBatchId: null,
+    totalBytes: 0,
+    acknowledgedBytes: 0,
+    items: [],
+  };
   const submitCommand = vi.fn(async (input: { command: string }) => ({
     ok: true as const,
     requestId: 'request-1',
@@ -26,6 +34,7 @@ describe('useKnowledgeManagement', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queueListener = null;
     usePrivilegedAccessMock.mockReturnValue({
       session: {
         state: 'active',
@@ -41,7 +50,18 @@ describe('useKnowledgeManagement', () => {
       reauthenticate,
     } as never);
     globalThis.api = {
-      selectAndStageKnowledgePdfs: vi.fn(async () => ({ ok: true, uploads: [] })),
+      selectAndQueueKnowledgePdfs: vi.fn(async () => ({ ok: true, uploads: [] })),
+      getKnowledgeUploadQueue: vi.fn(async () => uploadQueue),
+      onKnowledgeUploadQueueChanged: vi.fn((listener) => {
+        queueListener = listener;
+        return vi.fn();
+      }),
+      pauseKnowledgeUploadBatch: vi.fn(async () => true),
+      resumeKnowledgeUploadBatch: vi.fn(async () => true),
+      retryKnowledgeUpload: vi.fn(async () => true),
+      reselectKnowledgeUploadSource: vi.fn(async () => true),
+      cancelKnowledgeUpload: vi.fn(async () => true),
+      cancelKnowledgeUploadBatch: vi.fn(async () => true),
     } as never;
   });
 
@@ -50,7 +70,7 @@ describe('useKnowledgeManagement', () => {
     await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
     expect(submitCommand).toHaveBeenCalledWith({
       command: 'knowledge.snapshot.read',
-      payload: { query: '', cursor: null, pageSize: 25 },
+      payload: { query: '', cursor: null, pageSize: 100 },
       expectedRevision: null,
     });
     expect(result.current.canManage).toBe(true);
@@ -68,12 +88,44 @@ describe('useKnowledgeManagement', () => {
       }),
     );
 
-    expect(globalThis.api?.selectAndStageKnowledgePdfs).toHaveBeenCalledOnce();
+    expect(globalThis.api?.selectAndQueueKnowledgePdfs).toHaveBeenCalledOnce();
     expect(submitCommand).toHaveBeenCalledWith({
       command: 'knowledge.document.trash',
       payload: { documentId: 'document-1', expectedRevision: 4 },
       expectedRevision: null,
     });
+  });
+
+  it('loads, validates, and updates the resumable upload queue without renderer file paths', async () => {
+    const { result } = renderHook(() => useKnowledgeManagement());
+    await waitFor(() => expect(result.current.uploadQueue).toEqual(uploadQueue));
+
+    const next = {
+      restartRecovery: true,
+      activeBatchId: 'batch-1',
+      totalBytes: 100,
+      acknowledgedBytes: 40,
+      items: [
+        {
+          id: 'local-1',
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 100,
+          acknowledgedBytes: 40,
+          chunkCount: 2,
+          acknowledgedChunkCount: 1,
+          state: 'paused-network' as const,
+          safeError: 'offline' as const,
+          retryCount: 8,
+          restartRecovery: true,
+        },
+      ],
+    };
+    act(() => queueListener?.(next));
+
+    expect(result.current.uploadQueue).toEqual(next);
+    expect(JSON.stringify(result.current.uploadQueue)).not.toContain('/private/');
   });
 
   it('reauthenticates before permanent deletion', async () => {

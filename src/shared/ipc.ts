@@ -16,7 +16,6 @@ import type {
   KnowledgeOpenWebLinkResult,
   KnowledgePdfRequest,
   KnowledgePdfResult,
-  KnowledgeUploadProgress,
   KnowledgeUploadQueueView,
   KnowledgeUploadSelectionResult,
 } from './knowledge';
@@ -535,8 +534,6 @@ export type BridgeAPI = {
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
   onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
   openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
-  selectAndStageKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
-  onKnowledgeUploadProgress: (callback: (progress: KnowledgeUploadProgress) => void) => () => void;
   selectAndQueueKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
   getKnowledgeUploadQueue: () => Promise<KnowledgeUploadQueueView>;
   pauseKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;
@@ -680,7 +677,6 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_INDEX_STATUS_CHANGED: 'knowledge:indexStatusChanged',
   KNOWLEDGE_OPEN_WEB_LINK: 'knowledge:openWebLink',
   KNOWLEDGE_SELECT_AND_STAGE: 'knowledge:selectAndStage',
-  KNOWLEDGE_UPLOAD_PROGRESS: 'knowledge:uploadProgress',
   KNOWLEDGE_UPLOAD_QUEUE_GET: 'knowledge:uploadQueue',
   KNOWLEDGE_UPLOAD_BATCH_PAUSE: 'knowledge:uploadBatchPause',
   KNOWLEDGE_UPLOAD_BATCH_RESUME: 'knowledge:uploadBatchResume',

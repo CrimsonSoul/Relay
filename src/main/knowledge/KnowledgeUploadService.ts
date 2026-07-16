@@ -118,6 +118,22 @@ function isTerminal(state: KnowledgeUploadQueueItemState): boolean {
   return state === 'cancelled' || state === 'published' || state === 'ready';
 }
 
+function needsServerReconciliation(state: KnowledgeUploadQueueItemState): boolean {
+  return state !== 'cancelled' && state !== 'published';
+}
+
+function reconciliationFingerprint(entry: KnowledgeUploadQueueEntry): string {
+  return JSON.stringify([
+    entry.batchId,
+    entry.batchRevision,
+    entry.uploadId,
+    entry.uploadRevision,
+    entry.state,
+    entry.safeError,
+    entry.acknowledgedChunkIndexes,
+  ]);
+}
+
 function isRetryablePreparationError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || !('status' in error)) return false;
   const status = (error as { status?: unknown }).status;
@@ -221,6 +237,7 @@ export class KnowledgeUploadService {
     if (!runtime || !session) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
+    await this.refresh();
     const activeEntries = this.queue.entries.filter((entry) => !isTerminal(entry.state));
     if (activeEntries.length > 0) return { ok: false, error: 'upload-failed' };
 
@@ -269,11 +286,6 @@ export class KnowledgeUploadService {
     return { ok: true, uploads: entries.map((entry) => this.itemView(entry)) };
   }
 
-  /** Compatibility alias while the renderer migrates to the queue terminology. */
-  selectAndStage(window?: BrowserWindow): Promise<KnowledgeUploadSelectionResult> {
-    return this.selectAndQueue(window);
-  }
-
   snapshot(): KnowledgeUploadQueueView {
     const items = this.queue.entries.map((entry) => this.itemView(entry));
     return {
@@ -283,6 +295,40 @@ export class KnowledgeUploadService {
       acknowledgedBytes: items.reduce((total, item) => total + item.acknowledgedBytes, 0),
       items,
     };
+  }
+
+  async refresh(): Promise<KnowledgeUploadQueueView> {
+    const session = activeUploadSession(this.getRuntime());
+    if (!session) return this.snapshot();
+    const batchIds = new Set(
+      this.queue.entries
+        .filter(
+          (entry) =>
+            entry.batchId &&
+            needsServerReconciliation(entry.state) &&
+            entry.accountId === session.accountId &&
+            entry.deviceId === session.deviceId,
+        )
+        .map((entry) => entry.batchId as string),
+    );
+    let changed = false;
+    for (const batchId of batchIds) {
+      try {
+        const status = await this.status(batchId);
+        for (const entry of this.queue.entries) {
+          if (entry.batchId !== batchId) continue;
+          const upload = this.matchManifest(status, entry);
+          if (!upload) continue;
+          const prior = reconciliationFingerprint(entry);
+          this.reconcile(entry, status, upload);
+          changed ||= reconciliationFingerprint(entry) !== prior;
+        }
+      } catch {
+        // Queue reads remain available while the server or VPN is temporarily unreachable.
+      }
+    }
+    if (changed) await this.persistAndEmit();
+    return this.snapshot();
   }
 
   pauseBatch(batchId: string): void {
@@ -440,7 +486,7 @@ export class KnowledgeUploadService {
       const { status, upload } = await this.ensureUpload(entry, batchId, plan);
       this.reconcile(entry, status, upload);
       await this.persistAndEmit();
-      this.scheduler.enqueue(this.schedulerTask(entry));
+      if (!isTerminal(entry.state)) this.scheduler.enqueue(this.schedulerTask(entry));
     } catch (error) {
       this.updateEntry(entry, preparationFailure(error));
       await this.persistAndEmit();
