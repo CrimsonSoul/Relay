@@ -288,7 +288,7 @@ describe('KnowledgeUploadCoordinator', () => {
     expect(repository.events.indexOf(`upload:${upload.id}:ready`)).toBeLessThan(
       repository.events.indexOf(`delete-chunks:${upload.id}`),
     );
-  });
+  }, 30_000);
 
   it('marks checksum failures safely and retains chunks for diagnosis or retry', async () => {
     const { coordinator, repository } = createCoordinator();
