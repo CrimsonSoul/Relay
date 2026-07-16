@@ -325,7 +325,7 @@ describe('ensureCollections', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'requestId', type: 'text', required: true, max: 128 }),
         expect.objectContaining({ name: 'deviceId', type: 'text', required: false }),
-        expect.objectContaining({ name: 'payload', type: 'json', required: true }),
+        expect.objectContaining({ name: 'payload', type: 'json', required: false }),
         expect.objectContaining({ name: 'hasExpectedRevision', type: 'bool' }),
         expect.objectContaining({ name: 'bodyHash', type: 'text', required: true, max: 64 }),
         expect.objectContaining({ name: 'signature', type: 'text', required: false }),
@@ -479,6 +479,7 @@ describe('ensureCollections', () => {
           max: 120,
         }),
         expect.objectContaining({ name: 'active', type: 'bool' }),
+        expect.objectContaining({ name: 'revision', type: 'number', required: false }),
         expect.objectContaining({
           name: 'created',
           type: 'autodate',
@@ -496,6 +497,12 @@ describe('ensureCollections', () => {
     expect(operatorsCall?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)',
     );
+    const privilegedAccountsCall = mockCreate.mock.calls.find(
+      ([value]) => (value as { name: string }).name === 'relay_privileged_accounts',
+    )?.[0] as { fields: Array<{ name: string }> } | undefined;
+    expect(
+      privilegedAccountsCall?.fields.filter(({ name }) => name === 'mustChangePassword'),
+    ).toHaveLength(1);
   });
 
   it('seeds the exact approved operator roster when the collection is empty', async () => {

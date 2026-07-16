@@ -414,7 +414,8 @@ const COLLECTIONS: CollectionDef[] = [
         max: MAX_OPERATOR_DISPLAY_NAME_LENGTH,
       },
       { type: 'bool', name: 'active' },
-      { type: 'number', name: 'revision', required: true },
+      // PocketBase treats numeric zero as empty for required fields; new operators start at 0.
+      { type: 'number', name: 'revision', required: false },
     ],
     indexes: [RELAY_OPERATOR_DISPLAY_NAME_INDEX],
     rules: SERVER_OWNED_RULES,
@@ -479,7 +480,8 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'lastUsedAt' },
       { type: 'date', name: 'revokedAt' },
       { type: 'text', name: 'revokedByOperatorId', max: 200 },
-      { type: 'number', name: 'revision', required: true },
+      // Newly paired devices start at revision zero.
+      { type: 'number', name: 'revision', required: false },
     ],
     indexes: [PRIVILEGED_DEVICE_ID_INDEX, PRIVILEGED_DEVICE_FINGERPRINT_INDEX],
     rules: SERVER_HIDDEN_RULES,
@@ -504,7 +506,10 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'expiresAt', required: true },
       { type: 'number', name: 'expectedRevision' },
       { type: 'bool', name: 'hasExpectedRevision' },
-      { type: 'json', name: 'payload', required: true },
+      // Read-only commands intentionally use an empty object. PocketBase treats
+      // `{}` as empty for required JSON fields, so command validity is enforced
+      // by the signed-command parser instead of the storage schema.
+      { type: 'json', name: 'payload', required: false },
       { type: 'text', name: 'bodyHash', required: true, max: 64 },
       { type: 'text', name: 'signature', required: false, max: 1_024 },
       {

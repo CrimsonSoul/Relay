@@ -94,6 +94,9 @@ describe('PrivilegedDeviceManager', () => {
   }
 
   it('returns a sanitized device list for an administrator', async () => {
+    deviceCollection.getFullList.mockResolvedValue([
+      device({ lastUsedAt: '2026-07-16 00:20:00.000Z' }),
+    ]);
     const result = await manager().list({ role: 'admin', accountId: 'account-admin' });
     expect(result).toEqual([
       {

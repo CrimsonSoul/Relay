@@ -15,6 +15,7 @@ import {
 import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
 import {
   canonicalizePrivilegedValue,
+  isPublicPrivilegedCommandName,
   type PrivilegedCommandError,
   type PrivilegedCommandResult,
   type SignedPrivilegedCommandEnvelope,
@@ -380,7 +381,8 @@ function normalizeStoredCommand(value: unknown): StoredPrivilegedCommand | null 
     (value.deviceId !== null && value.deviceId !== '' && !boundedString(value.deviceId, 200)) ||
     !boundedString(value.operatorId, 200) ||
     (value.roleClaim !== 'admin' && value.roleClaim !== 'publisher') ||
-    (value.command !== 'privileged.status.read' && value.command !== 'privileged.reauth.confirm') ||
+    (value.command !== 'privileged.reauth.confirm' &&
+      !isPublicPrivilegedCommandName(value.command)) ||
     !isRecord(value.payload) ||
     !boundedString(value.bodyHash, 64) ||
     !boundedString(value.issuedAt, 100) ||

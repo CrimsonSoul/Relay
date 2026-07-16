@@ -224,6 +224,28 @@ Matching retries are idempotent. Conflicting request-ID reuse, expired requests,
 
 The server PC is the recovery trust boundary. Bootstrap creates Ryan Bledsoe's administrator account inactive with no usable default credential. The foundation does not permit remote activation or remote recovery; the local first-password and recovery controls are implemented as server-only administrator workflows.
 
+### Administration Authorization Matrix
+
+Normal operator selection is never an authentication shortcut. Only an active administrator session may invoke roster, role, device, account-summary, or server-setting commands. A Knowledge Publisher session can invoke Knowledge Base management commands only. Ordinary app-user credentials can read the active roster but collection rules prevent them from creating, updating, or deleting server-owned operator records.
+
+| Protected action                  | Required capability | Additional requirement                                            |
+| --------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| Administration snapshot           | `settings.manage`   | Active administrator session                                      |
+| Operator create/rename/status     | `operators.manage`  | Current operator revision for mutations                           |
+| Publisher assign/remove           | `publisher.assign`  | Current assignment revision and single-use reauthentication proof |
+| Device rename                     | `devices.manage`    | Current device revision                                           |
+| Device revoke                     | `devices.manage`    | Current device revision and single-use reauthentication proof     |
+| Dynatrace URL/profile replacement | `settings.manage`   | Current setting revision                                          |
+| Dynatrace token replacement       | `settings.manage`   | Current setting revision and single-use reauthentication proof    |
+
+The administration snapshot exposes only `Configured` or `Not configured` for secrets. Replacement fields start blank and are cleared on submit, cancellation, failure, session lock, and unmount. No endpoint reveals an existing password or token. Device views expose only a short fingerprint suffix; public keys and signing metadata remain server-side.
+
+Publisher reassignment is exclusive: the singleton privileged-state record authoritatively contains zero or one publisher operator. Reassignment first validates the active non-admin target, reserves the next assignment revision, revokes the previous publisher's devices/sessions, and leaves the new publisher pending local credential setup. The administrator account cannot be assigned as publisher, and active administrator/publisher operators cannot be deactivated until the protected role condition is resolved.
+
+Revoking a paired device changes the authoritative server record immediately. The next signed probe or command is rejected even if the laptop retains its encrypted local key. Credential changes likewise revoke all paired devices for that account. Files on another workstation are never remotely deleted.
+
+Server configuration remains an exhaustive allowlist. Dynatrace environment URL, platform-token replacement, and alerting-profile names are typed and revision-checked. Connection paths, backup destinations, restore files, folder/executable pickers, and arbitrary settings objects are not remotely callable and remain local to the managed Relay server PC.
+
 Privileged requests reuse the configured PocketBase endpoint, authentication, and realtime channel; Relay opens no additional inbound port. On a trusted HTTP LAN, signatures provide request authenticity, integrity, authorization, and replay resistance, but they do not encrypt passwords, pairing codes, metadata, or responses. HTTP therefore does not provide confidentiality. Keep this deployment on the managed trusted LAN and use HTTPS if traffic crosses that boundary.
 
 ### Knowledge Base Documents

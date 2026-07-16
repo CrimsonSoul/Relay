@@ -129,11 +129,26 @@ const makeSuperuserPbClient = async (port: number) => {
   return pb;
 };
 
+const waitForOperator = async (pb: PocketBase, displayName: string) => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    try {
+      return await pb
+        .collection('relay_operators')
+        .getFirstListItem<RelayOperator>(`displayName = "${displayName}"`, {
+          requestKey: null,
+        });
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError;
+};
+
 const activatePrivilegedAdministratorFixture = async (port: number) => {
   const pb = await makeSuperuserPbClient(port);
-  const operator = await pb
-    .collection('relay_operators')
-    .getFirstListItem<RelayOperator>('displayName = "Ryan Bledsoe"', { requestKey: null });
+  const operator = await waitForOperator(pb, RYAN_BLEDSOE);
   const accounts = await pb
     .collection('relay_privileged_accounts')
     .getFullList<{ id: string; credentialVersion: number }>({
@@ -447,7 +462,7 @@ test.describe('Vital Critical Path', () => {
     writeServerConfig(tempDataDir, pbPort);
     if (
       testInfo.title.includes('Knowledge PDF links') ||
-      testInfo.title.includes('privileged access foundation')
+      testInfo.title.includes('remote operator administration')
     ) {
       writeKnowledgeLinkFixtures(path.join(tempDataDir, 'data', 'knowledge-base'));
     }
@@ -509,9 +524,24 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
   });
 
-  test('privileged access foundation preserves passwordless operation and offline reading', async () => {
+  test('remote operator administration preserves passwordless operation and offline reading', async () => {
     test.setTimeout(150_000);
-    await activatePrivilegedAdministratorFixture(pbPort);
+    try {
+      await activatePrivilegedAdministratorFixture(pbPort);
+    } catch (error) {
+      const logPath = path.join(tempDataDir, 'logs', 'relay.log');
+      const logTail = fs.existsSync(logPath)
+        ? fs
+            .readFileSync(logPath, 'utf8')
+            .split('\n')
+            .filter((line) => /Privileged|Security|administration|command/i.test(line))
+            .slice(-100)
+            .join('\n')
+        : '';
+      throw new Error(`Privileged fixture failed after server startup.\n${logTail}`, {
+        cause: error,
+      });
+    }
     let connectedClient = await launchConnectedClient();
     let connectionStatus = connectedClient.locator('[data-connection-state]').first();
 
@@ -559,6 +589,65 @@ test.describe('Vital Critical Path', () => {
     await clientAccess.getByRole('button', { name: 'Unlock', exact: true }).click();
     await expect(clientAccess.getByText('Administrator', { exact: true })).toBeVisible();
     await expect(connectionStatus).toHaveAttribute('data-connection-state', 'online');
+
+    await connectedClient.getByRole('tab', { name: 'Administration', exact: true }).click();
+    const clientAdministration = connectedClient.getByRole('region', {
+      name: 'Relay administration',
+    });
+    await expect(clientAdministration).toBeVisible();
+    await expect(clientAdministration.getByText('ADMIN', { exact: true }).first()).toBeVisible();
+    await connectedClient.waitForTimeout(1_000);
+    const administrationAlert = clientAdministration.getByRole('alert');
+    if (await administrationAlert.isVisible()) {
+      const logPath = path.join(tempDataDir, 'logs', 'relay.log');
+      const logTail = fs.existsSync(logPath)
+        ? fs
+            .readFileSync(logPath, 'utf8')
+            .split('\n')
+            .filter((line) => /Privileged|Security|administration|command/i.test(line))
+            .slice(-100)
+            .join('\n')
+        : '';
+      throw new Error(
+        `Administration snapshot failed: ${await administrationAlert.textContent()}\n${logTail}`,
+      );
+    }
+    await clientAdministration.getByLabel('New operator').fill('E2E Operator');
+    await clientAdministration.getByRole('button', { name: 'Add operator' }).click();
+    await expect(clientAdministration.getByText('E2E Operator', { exact: true })).toBeVisible();
+
+    const createdRow = clientAdministration.locator('.administration-row', {
+      hasText: 'E2E Operator',
+    });
+    await createdRow.getByRole('button', { name: 'Rename' }).click();
+    await createdRow.getByLabel('Rename E2E Operator').fill('E2E Operator Renamed');
+    await createdRow.getByRole('button', { name: 'Save' }).click();
+    await expect(
+      clientAdministration.getByText('E2E Operator Renamed', { exact: true }),
+    ).toBeVisible();
+    const renamedRow = clientAdministration.locator('.administration-row', {
+      hasText: 'E2E Operator Renamed',
+    });
+    await renamedRow.getByRole('button', { name: 'Deactivate' }).click();
+    await expect(renamedRow.getByText('Inactive operator', { exact: true })).toBeVisible();
+    await renamedRow.getByRole('button', { name: 'Reactivate' }).click();
+    await expect(renamedRow.getByText('Active operator', { exact: true })).toBeVisible();
+
+    await window.getByRole('tab', { name: 'Operators', exact: true }).click();
+    const serverRoster = window.getByRole('region', { name: 'Operator roster' });
+    await expect(serverRoster.getByText('E2E Operator Renamed', { exact: true })).toBeVisible();
+
+    const ordinaryPb = await makePbClient(pbPort);
+    const managedOperator = await ordinaryPb
+      .collection('relay_operators')
+      .getFirstListItem<RelayOperator>('displayName = "E2E Operator Renamed"', {
+        requestKey: null,
+      });
+    await expect(
+      ordinaryPb
+        .collection('relay_operators')
+        .update(managedOperator.id, { displayName: 'Unauthorized rename' }, { requestKey: null }),
+    ).rejects.toBeTruthy();
 
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
     await connectedClient

@@ -49,7 +49,7 @@ describe('RelayAdministrationSnapshotReader', () => {
             credentialVersion: 1,
             passwordHash: 'must-never-leave-main',
             tokenKey: 'must-never-leave-main',
-            updated: '2026-07-15 11:00:00.000Z',
+            updated: '',
           },
           {
             id: 'account-admin',
@@ -128,7 +128,7 @@ describe('RelayAdministrationSnapshotReader', () => {
         {
           accountId: 'account-publisher',
           credentialState: 'not-configured',
-          updatedAt: '2026-07-15T11:00:00.000Z',
+          updatedAt: null,
         },
       ],
       adminOperatorId: 'operator-admin',

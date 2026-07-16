@@ -35,6 +35,12 @@ function normalizedLabel(value: string): string {
   return label;
 }
 
+function canonicalTimestamp(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) throw new Error('Paired device timestamp is invalid.');
+  return new Date(timestamp).toISOString();
+}
+
 export class PrivilegedDeviceManager {
   private readonly pb: PocketBase;
   private readonly now: () => number;
@@ -168,7 +174,7 @@ export class PrivilegedDeviceManager {
       label: device.label,
       hostname: device.hostnameSnapshot,
       state: device.state,
-      lastSeenAt: device.lastUsedAt ?? device.pairedAt,
+      lastSeenAt: canonicalTimestamp(device.lastUsedAt || device.pairedAt),
       fingerprintSuffix: device.fingerprint.slice(-8).toUpperCase(),
       revision: device.revision,
     };

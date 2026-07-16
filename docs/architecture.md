@@ -146,7 +146,26 @@ The server PC is the local trust and recovery boundary. It does not need a paire
 
 Command request IDs are unique and results are idempotent. A repeated matching request returns its stored safe result, while conflicting reuse is rejected. The server derives capabilities from current records for every command rather than trusting the role claimed by the renderer or client. Privileged commands are online-only and are absent from both the cache allowlists and pending-mutation queue.
 
-The foundation intentionally exposes only a read-only status probe and the internal reauthentication proof command. Operator and Knowledge Base mutations are added as separate allowlisted handlers rather than a general-purpose data bridge.
+The public command catalog is an explicit allowlist rather than a general-purpose data bridge. Administrator commands cover the operator roster, the single Knowledge Publisher assignment, paired devices, sanitized administration snapshots, and three typed Dynatrace settings. The server resolves current account, operator, role, assignment, device, and revision records again for every command. Publisher sessions retain only `privileged.status.read` and `knowledge.manage`.
+
+### Remote Relay Administration
+
+Settings exposes the ordinary operator roster as a synchronized read-only surface. An `Administration` area appears only while Ryan Bledsoe's administrator session is active. The same signed command path works from the Relay server PC and a paired work laptop:
+
+| Area                                           | Administrator                            | Publisher | Ordinary operator |
+| ---------------------------------------------- | ---------------------------------------- | --------- | ----------------- |
+| Read synchronized roster                       | Yes                                      | Yes       | Yes               |
+| Add, rename, activate, or deactivate operators | Yes                                      | No        | No                |
+| Assign the single Knowledge Publisher          | Yes, fresh reauthentication              | No        | No                |
+| Rename or revoke paired devices                | Yes; revoke needs fresh reauthentication | No        | No                |
+| Replace approved Dynatrace settings            | Yes; token needs fresh reauthentication  | No        | No                |
+| Manage Knowledge Base documents                | Yes                                      | Yes       | No                |
+
+`administration.snapshot.read` returns only bounded public views: operator status and revisions, role assignment IDs, configured/not-configured credential state, device labels and fingerprint suffixes, and redacted setting summaries. Passwords, hashes, tokens, public keys, private-key state, command envelopes, filesystem paths, and raw PocketBase errors are excluded.
+
+The initial administrator password and later privileged credential recovery stay on the server PC. Bootstrap leaves the Ryan Bledsoe administrator account unusable until that local first-password step succeeds; Relay ships no default credential. Publisher reassignment creates a pending inactive account, revokes the prior publisher's sessions/devices, and requires local credential setup before the new publisher can sign in.
+
+Remote settings are intentionally limited to the Dynatrace environment URL, platform-token replacement, and alerting-profile filter. Relay connection paths, backup/restore selection, folder pickers, executables, and other filesystem-dependent operations remain local to the server PC.
 
 ### Read-Only Knowledge Base
 

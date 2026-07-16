@@ -26,6 +26,7 @@ import { RELAY_PRIVILEGED_STATE_COLLECTION } from '@shared/privilegedAccess';
 import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import type { RelayConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
+import { loggers } from '../logger';
 import { RelayOperatorManager } from '../operators/RelayOperatorManager';
 import {
   PrivilegedPocketBaseClient,
@@ -514,7 +515,10 @@ export async function createProductionPrivilegedRuntime(
     options.serverClient as unknown as PrivilegedServerPocketBase,
   );
   const pairingService = new PrivilegedPairingService({ repository });
-  const commandProcessor = new PrivilegedCommandProcessor({ repository });
+  const commandProcessor = new PrivilegedCommandProcessor({
+    repository,
+    logger: loggers.security,
+  });
   const operatorManager = new RelayOperatorManager(options.serverClient);
   const publisherManager = new PublisherAssignmentManager({ pb: options.serverClient });
   const deviceManager = new PrivilegedDeviceManager({ pb: options.serverClient });
@@ -532,6 +536,7 @@ export async function createProductionPrivilegedRuntime(
           pb: options.serverClient,
           deviceManager,
           administrationService,
+          logger: loggers.security,
         })
       : undefined,
     consumeReauthenticationProof: (requestId, context) =>

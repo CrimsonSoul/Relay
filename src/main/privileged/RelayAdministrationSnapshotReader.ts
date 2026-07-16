@@ -17,12 +17,19 @@ type SnapshotReaderOptions = {
   deviceManager: Pick<PrivilegedDeviceManager, 'list'>;
   administrationService: Pick<RelayAdministrationService, 'getSettingSummaries'>;
   now?: () => number;
+  logger?: { warn(message: string, metadata?: Record<string, unknown>): void };
 };
+
+const silentLogger = { warn: () => undefined };
 
 function canonicalTimestamp(value: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) throw new Error('Administration data contains an invalid date.');
   return new Date(timestamp).toISOString();
+}
+
+function canonicalTimestampOrNull(value: string | undefined): string | null {
+  return value ? canonicalTimestamp(value) : null;
 }
 
 function operatorView(
@@ -53,7 +60,7 @@ function accountView(account: RelayPrivilegedAccountRecord): RelayPrivilegedAcco
       account.active && !account.mustChangePassword ? 'configured' : 'not-configured',
     mustChangePassword: account.mustChangePassword,
     credentialVersion: account.credentialVersion,
-    updatedAt: canonicalTimestamp(account.updated),
+    updatedAt: canonicalTimestampOrNull(account.updated),
   };
 }
 
@@ -62,38 +69,71 @@ export class RelayAdministrationSnapshotReader {
   private readonly deviceManager: Pick<PrivilegedDeviceManager, 'list'>;
   private readonly administrationService: Pick<RelayAdministrationService, 'getSettingSummaries'>;
   private readonly now: () => number;
+  private readonly logger: NonNullable<SnapshotReaderOptions['logger']>;
 
   constructor(options: SnapshotReaderOptions) {
     this.pb = options.pb;
     this.deviceManager = options.deviceManager;
     this.administrationService = options.administrationService;
     this.now = options.now ?? Date.now;
+    this.logger = options.logger ?? silentLogger;
+  }
+
+  private async source<T>(name: string, read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch {
+      this.logger.warn('Administration snapshot source is unavailable.', { source: name });
+      throw new Error('Administration snapshot source is unavailable.');
+    }
   }
 
   async read(input: { accountId: string }): Promise<RelayAdministrationSnapshot> {
     const [state, operators, privilegedAccounts, devices] = await Promise.all([
-      this.pb
-        .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
-        .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null }),
-      this.pb
-        .collection(RELAY_OPERATORS_COLLECTION)
-        .getFullList<RelayOperatorRecord>({ requestKey: null }),
-      this.pb
-        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
-      this.deviceManager.list({ role: 'admin', accountId: input.accountId }),
+      this.source('state', () =>
+        this.pb
+          .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
+          .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null }),
+      ),
+      this.source('operators', () =>
+        this.pb
+          .collection(RELAY_OPERATORS_COLLECTION)
+          .getFullList<RelayOperatorRecord>({ requestKey: null }),
+      ),
+      this.source('accounts', () =>
+        this.pb
+          .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+          .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
+      ),
+      this.source('devices', () =>
+        this.deviceManager.list({ role: 'admin', accountId: input.accountId }),
+      ),
     ]);
-    return {
-      operators: operators.map((operator) => operatorView(operator, state)),
-      privilegedAccounts: privilegedAccounts
-        .map(accountView)
-        .sort((left, right) => left.role.localeCompare(right.role)),
-      devices,
-      settings: this.administrationService.getSettingSummaries(),
-      adminOperatorId: state.adminOperatorId,
-      publisherOperatorId: state.publisherOperatorId,
-      assignmentRevision: state.assignmentVersion,
-      generatedAt: new Date(this.now()).toISOString(),
-    };
+    try {
+      return {
+        operators: operators.map((operator) => operatorView(operator, state)),
+        privilegedAccounts: privilegedAccounts
+          .map(accountView)
+          .sort((left, right) => left.role.localeCompare(right.role)),
+        devices,
+        settings: this.administrationService.getSettingSummaries(),
+        adminOperatorId: state.adminOperatorId,
+        publisherOperatorId: state.publisherOperatorId || null,
+        assignmentRevision: state.assignmentVersion,
+        generatedAt: new Date(this.now()).toISOString(),
+      };
+    } catch {
+      this.logger.warn('Administration snapshot data could not be normalized.', {
+        operatorsHaveDates: operators.every(
+          (operator) =>
+            Boolean(operator.created) &&
+            Boolean(operator.updated) &&
+            Number.isFinite(Date.parse(operator.created)) &&
+            Number.isFinite(Date.parse(operator.updated)),
+        ),
+        source: 'normalization',
+      });
+      throw new Error('Administration snapshot data is invalid.');
+    }
   }
 }

@@ -107,6 +107,56 @@ describe('PrivilegedPocketBaseClientTransport', () => {
 });
 
 describe('PocketBasePrivilegedRepository', () => {
+  it('recognizes stored administration commands instead of recreating their request IDs', async () => {
+    const getFirstListItem = vi.fn(async () => ({
+      id: 'command-record',
+      requestId: 'request-admin',
+      accountId: 'account-admin',
+      deviceId: 'device-1',
+      operatorId: 'operator-1',
+      roleClaim: 'admin',
+      command: 'administration.snapshot.read',
+      payload: {},
+      bodyHash: 'b'.repeat(64),
+      issuedAt: '2026-07-15T12:00:00.000Z',
+      expiresAt: '2026-07-15T12:01:00.000Z',
+      hasExpectedRevision: false,
+      expectedRevision: 0,
+      signature: 's'.repeat(86),
+      state: 'pending',
+      result: null,
+      safeError: '',
+      completedAt: '',
+      updated: '2026-07-15T12:00:00.000Z',
+    }));
+    const create = vi.fn();
+    const repository = new PocketBasePrivilegedRepository({
+      collection: vi.fn(() => ({ getFirstListItem, create })),
+    } as never);
+
+    await expect(
+      repository.claimCommand({
+        requestId: 'request-admin',
+        accountId: 'account-admin',
+        deviceId: 'device-1',
+        operatorId: 'operator-1',
+        roleClaim: 'admin',
+        command: 'administration.snapshot.read',
+        payload: {},
+        bodyHash: 'b'.repeat(64),
+        issuedAt: '2026-07-15T12:00:00.000Z',
+        expiresAt: '2026-07-15T12:01:00.000Z',
+        expectedRevision: null,
+        signature: 's'.repeat(86),
+        state: 'processing',
+      }),
+    ).resolves.toMatchObject({
+      kind: 'existing',
+      command: { command: 'administration.snapshot.read' },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('accepts PocketBase auth records that omit non-authorizing timestamps', async () => {
     const getOne = vi.fn(async () => ({
       id: 'account-admin',

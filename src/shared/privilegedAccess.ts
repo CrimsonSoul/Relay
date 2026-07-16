@@ -136,7 +136,7 @@ export type RelayPrivilegedAccountAdminView = {
   credentialState: 'configured' | 'not-configured';
   mustChangePassword: boolean;
   credentialVersion: number;
-  updatedAt: string;
+  updatedAt: string | null;
 };
 
 export type RelayPrivilegedDeviceAdminView = {
@@ -333,7 +333,7 @@ function normalizePrivilegedAccountAdminView(
     (credentialState !== 'configured' && credentialState !== 'not-configured') ||
     typeof mustChangePassword !== 'boolean' ||
     !nonNegativeInteger(credentialVersion) ||
-    !canonicalTimestamp(updatedAt)
+    (updatedAt !== null && !canonicalTimestamp(updatedAt))
   ) {
     return null;
   }
