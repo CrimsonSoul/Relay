@@ -158,7 +158,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(26);
+    expect(mockCreate).toHaveBeenCalledTimes(29);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -402,8 +402,8 @@ describe('ensureCollections', () => {
       | undefined;
 
     expect(knowledgeCall).toMatchObject({
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
+      listRule: '@request.auth.id != "" && lifecycleState = "active"',
+      viewRule: '@request.auth.id != "" && lifecycleState = "active"',
       createRule: null,
       updateRule: null,
       deleteRule: null,
@@ -413,6 +413,16 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'sourceKey', type: 'text', required: true, max: 512 }),
         expect.objectContaining({ name: 'category', type: 'text', required: true, max: 120 }),
         expect.objectContaining({ name: 'title', type: 'text', required: true, max: 240 }),
+        expect.objectContaining({ name: 'displayTitle', type: 'text', required: false, max: 240 }),
+        expect.objectContaining({
+          name: 'lifecycleState',
+          type: 'select',
+          required: false,
+          values: ['active', 'trashed'],
+        }),
+        expect.objectContaining({ name: 'revision', type: 'number', required: false }),
+        expect.objectContaining({ name: 'publishedByOperatorId', type: 'text' }),
+        expect.objectContaining({ name: 'trashedAt', type: 'date' }),
         expect.objectContaining({ name: 'outline', type: 'json' }),
         expect.objectContaining({
           name: 'outlineSource',
@@ -434,6 +444,53 @@ describe('ensureCollections', () => {
     expect(knowledgeCall?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)',
     );
+    expect(knowledgeCall?.indexes).toContain(
+      'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)',
+    );
+
+    const uploadsCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_uploads',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          viewRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<Record<string, unknown>>;
+          indexes: string[];
+        }
+      | undefined;
+    expect(uploadsCall).toMatchObject({
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(uploadsCall?.listRule).toContain(
+      '@request.auth.collectionName = "relay_privileged_accounts"',
+    );
+    expect(uploadsCall?.createRule).toContain('accountId = @request.auth.id');
+    expect(uploadsCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'requestId', required: true }),
+        expect.objectContaining({
+          name: 'pdf',
+          type: 'file',
+          protected: true,
+          maxSize: 50 * 1024 * 1024,
+        }),
+        expect.objectContaining({ name: 'expiresAt', type: 'date', required: true }),
+      ]),
+    );
+    expect(uploadsCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)',
+    );
+
+    for (const collection of ['knowledge_audit_events', 'knowledge_library_state']) {
+      const call = mockCreate.mock.calls.find(
+        (entry: unknown[]) => (entry[0] as { name: string }).name === collection,
+      )?.[0] as { listRule: string | null; createRule: string | null } | undefined;
+      expect(call).toMatchObject({ listRule: null, createRule: null });
+    }
   });
 
   it('creates a server-owned operator collection with authenticated read and subscription access', async () => {

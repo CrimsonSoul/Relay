@@ -105,13 +105,26 @@ describe('cacheHandlers', () => {
     });
 
     it('reads knowledge metadata for offline clients', () => {
-      const documents = [{ id: 'document123', title: 'Runbook' }];
+      const documents = [
+        { id: 'document123', title: 'Runbook', lifecycleState: 'active' },
+        { id: 'trashed123', title: 'Old Runbook', lifecycleState: 'trashed' },
+      ];
       mockCache.readCollection.mockReturnValue(documents);
 
       const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'knowledge_documents');
 
       expect(mockCache.readCollection).toHaveBeenCalledWith('knowledge_documents');
-      expect(result).toEqual(documents);
+      expect(result).toEqual([documents[0]]);
+    });
+
+    it.each([
+      'knowledge_uploads',
+      'knowledge_audit_events',
+      'knowledge_library_state',
+      'relay_privileged_commands',
+    ])('does not expose protected management collection %s', (collection) => {
+      expect(handlers[IPC_CHANNELS.CACHE_READ]({}, collection)).toEqual([]);
+      expect(mockCache.readCollection).not.toHaveBeenCalled();
     });
 
     it('returns empty array for invalid collection', () => {
@@ -215,6 +228,15 @@ describe('cacheHandlers', () => {
       expect(mockSync.syncAll).not.toHaveBeenCalled();
     });
 
+    it('removes trashed knowledge metadata instead of caching it', () => {
+      const record = { id: 'document123', title: 'Runbook', lifecycleState: 'trashed' };
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_documents', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_documents', 'delete', {
+        id: 'document123',
+      });
+    });
+
     it('returns early for non-string collection', () => {
       handlers[IPC_CHANNELS.CACHE_WRITE]({}, 123, 'create', { id: '1' });
       expect(mockCache.updateRecord).not.toHaveBeenCalled();
@@ -307,7 +329,10 @@ describe('cacheHandlers', () => {
     });
 
     it('persists knowledge metadata snapshots for offline clients', () => {
-      const records = [{ id: 'document123', title: 'Runbook' }];
+      const records = [
+        { id: 'document123', title: 'Runbook', lifecycleState: 'active' },
+        { id: 'trashed123', title: 'Old Runbook', lifecycleState: 'trashed' },
+      ];
 
       handlers[IPC_CHANNELS.CACHE_SNAPSHOT](
         {},
@@ -319,7 +344,7 @@ describe('cacheHandlers', () => {
       expect(mockCache.writeCollection).toHaveBeenCalledWith(
         'knowledge_documents',
         '1:0123456789abcdef',
-        records,
+        [records[0]],
       );
     });
 

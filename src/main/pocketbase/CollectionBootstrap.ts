@@ -30,10 +30,13 @@ import {
   RELAY_PRIVILEGED_STATE_COLLECTION,
 } from '@shared/privilegedAccess';
 import {
+  KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_MAX_SOURCE_KEY_LENGTH,
+  KNOWLEDGE_UPLOADS_COLLECTION,
 } from '@shared/knowledge';
 import { loggers } from '../logger';
 
@@ -149,6 +152,12 @@ const PRIVILEGED_PAIRING_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_pairing_requests_id ON relay_privileged_pairing_requests (requestId)';
 const KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
+const KNOWLEDGE_DOCUMENT_LIFECYCLE_INDEX =
+  'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)';
+const KNOWLEDGE_UPLOAD_REQUEST_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)';
+const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_library_state_key ON knowledge_library_state (key)';
 const PRIVILEGED_ROSTER_MIGRATION_VERSION = 1;
 const PRIVILEGED_MIGRATION_OPERATOR_NAMES = ['Ryan Bledsoe', 'Tristan Bowles'] as const;
 
@@ -164,6 +173,25 @@ const SERVER_OWNED_RULES: CollectionRules = {
   listRule: AUTH_RULE,
   viewRule: AUTH_RULE,
   createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const ACTIVE_KNOWLEDGE_RULE = '@request.auth.id != "" && lifecycleState = "active"';
+const ACTIVE_KNOWLEDGE_RULES: CollectionRules = {
+  listRule: ACTIVE_KNOWLEDGE_RULE,
+  viewRule: ACTIVE_KNOWLEDGE_RULE,
+  createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const KNOWLEDGE_UPLOAD_ACCOUNT_RULE =
+  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id && operatorId = @request.auth.operatorId';
+const KNOWLEDGE_UPLOAD_RULES: CollectionRules = {
+  listRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
+  viewRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
+  createRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
   updateRule: null,
   deleteRule: null,
 };
@@ -618,9 +646,108 @@ const COLLECTIONS: CollectionDef[] = [
       },
       { type: 'date', name: 'sourceModifiedAt', required: true },
       { type: 'date', name: 'indexedAt', required: true },
+      {
+        type: 'select',
+        name: 'lifecycleState',
+        required: false,
+        values: ['active', 'trashed'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'displayTitle', required: false, max: 240 },
+      { type: 'number', name: 'revision', required: false },
+      { type: 'text', name: 'publishedByOperatorId', max: 200 },
+      { type: 'text', name: 'publishedByName', max: 120 },
+      { type: 'date', name: 'publishedAt' },
+      { type: 'text', name: 'trashedByOperatorId', max: 200 },
+      { type: 'text', name: 'trashedByName', max: 120 },
+      { type: 'date', name: 'trashedAt' },
     ],
-    indexes: [KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX],
-    rules: SERVER_OWNED_RULES,
+    indexes: [KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX, KNOWLEDGE_DOCUMENT_LIFECYCLE_INDEX],
+    rules: ACTIVE_KNOWLEDGE_RULES,
+  },
+  {
+    name: KNOWLEDGE_UPLOADS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'requestId', required: true, max: 128 },
+      { type: 'text', name: 'accountId', required: true, max: 200 },
+      { type: 'text', name: 'deviceId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorName', required: true, max: 120 },
+      { type: 'text', name: 'descriptorHash', required: true, max: 64 },
+      { type: 'text', name: 'fileName', required: true, max: 240 },
+      {
+        type: 'file',
+        name: 'pdf',
+        required: true,
+        maxSelect: 1,
+        maxSize: KNOWLEDGE_MAX_PDF_BYTES,
+        mimeTypes: ['application/pdf'],
+        protected: true,
+      },
+      { type: 'text', name: 'checksum', required: true, max: 64 },
+      { type: 'number', name: 'byteSize', required: true },
+      { type: 'number', name: 'pageCount' },
+      { type: 'json', name: 'outline' },
+      {
+        type: 'select',
+        name: 'outlineSource',
+        values: ['native', 'inferred', 'none'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'proposedTitle', max: 240 },
+      { type: 'text', name: 'proposedCategory', max: KNOWLEDGE_MAX_CATEGORY_LENGTH },
+      { type: 'text', name: 'duplicateDocumentId', max: 200 },
+      {
+        type: 'select',
+        name: 'state',
+        required: true,
+        values: ['queued', 'uploading', 'validating', 'extracting', 'ready', 'failed', 'published'],
+        maxSelect: 1,
+      },
+      { type: 'text', name: 'safeError', max: 80 },
+      { type: 'date', name: 'expiresAt', required: true },
+      { type: 'number', name: 'revision', required: false },
+    ],
+    indexes: [KNOWLEDGE_UPLOAD_REQUEST_INDEX],
+    rules: KNOWLEDGE_UPLOAD_RULES,
+  },
+  {
+    name: KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'requestId', required: true, max: 128 },
+      { type: 'text', name: 'action', required: true, max: 80 },
+      { type: 'text', name: 'targetId', max: 200 },
+      { type: 'text', name: 'fileName', max: 240 },
+      { type: 'text', name: 'title', max: 240 },
+      { type: 'text', name: 'category', max: KNOWLEDGE_MAX_CATEGORY_LENGTH },
+      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorName', required: true, max: 120 },
+      { type: 'date', name: 'occurredAt', required: true },
+      { type: 'json', name: 'details' },
+    ],
+    rules: SERVER_HIDDEN_RULES,
+  },
+  {
+    name: KNOWLEDGE_LIBRARY_STATE_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'key', required: true, max: 40 },
+      {
+        type: 'select',
+        name: 'mode',
+        required: true,
+        values: ['legacy-watch', 'migrating', 'managed', 'recovery-required'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'transitionedAt', required: true },
+      { type: 'text', name: 'transitionedByOperatorId', max: 200 },
+      { type: 'text', name: 'safeError', max: 200 },
+      { type: 'number', name: 'revision', required: false },
+    ],
+    indexes: [KNOWLEDGE_LIBRARY_STATE_KEY_INDEX],
+    rules: SERVER_HIDDEN_RULES,
   },
   {
     name: DYNATRACE_PROBLEMS_COLLECTION,

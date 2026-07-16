@@ -79,6 +79,16 @@ function isSnapshotWithinCacheLimit(records: Record<string, unknown>[]): boolean
   return true;
 }
 
+function readableCacheRecords(
+  collection: string,
+  records: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  if (collection !== KNOWLEDGE_DOCUMENTS_COLLECTION) return records;
+  return records.filter(
+    (record) => record.lifecycleState === undefined || record.lifecycleState === 'active',
+  );
+}
+
 function pendingOverlays(changes: ReturnType<PendingChanges['getAll']>): PendingMutationOverlay[] {
   return changes.flatMap((change) => {
     const id = change.data?.id;
@@ -150,7 +160,10 @@ export function setupCacheHandlers(
     }
     const cache = getCache();
     if (!cache) return [];
-    return cache.readCollection(collection);
+    const records = cache.readCollection(collection);
+    return Array.isArray(records)
+      ? readableCacheRecords(collection, records as Record<string, unknown>[])
+      : [];
   });
 
   ipcMain.handle(
@@ -183,6 +196,10 @@ export function setupCacheHandlers(
       }
       const cache = getCache();
       if (!cache) return;
+      if (collection === KNOWLEDGE_DOCUMENTS_COLLECTION && record.lifecycleState === 'trashed') {
+        cache.updateRecord(collection, 'delete', { id: record.id });
+        return;
+      }
       cache.updateRecord(collection, action as 'create' | 'update' | 'delete', record);
     },
   );
@@ -207,7 +224,8 @@ export function setupCacheHandlers(
         loggers.cache.error('CACHE_SNAPSHOT: records contain invalid ids');
         return;
       }
-      if (!isSnapshotWithinCacheLimit(records)) {
+      const readableRecords = readableCacheRecords(collection, records);
+      if (!isSnapshotWithinCacheLimit(readableRecords)) {
         loggers.cache.error('CACHE_SNAPSHOT: records exceed cache size limit', {
           collection,
           count: records.length,
@@ -216,7 +234,7 @@ export function setupCacheHandlers(
       }
       const cache = getCache();
       if (!cache) return;
-      const wrote = cache.writeCollection(collection, signature, records);
+      const wrote = cache.writeCollection(collection, signature, readableRecords);
       const config = getAppConfig?.()?.load();
       if (wrote !== false && config?.mode === 'client') {
         const existing = cache.getUsableCacheMarker();
