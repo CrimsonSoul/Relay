@@ -103,6 +103,12 @@ export type PrivilegedCredentialSetupView = {
   credentialVersion: number;
 };
 export type PrivilegedReauthenticationProof = { proofId: string; expiresAt: string };
+export type PrivilegedPairingChallengeTarget = {
+  accountId: string;
+  operatorId: string;
+  operatorName: string;
+  role: 'admin' | 'publisher';
+};
 export type PrivilegedPairingCompletionInput = {
   challengeId: string;
   code: string;
@@ -449,9 +455,9 @@ export type BridgeAPI = {
   reauthenticatePrivileged: (
     input: PrivilegedReauthenticationInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedReauthenticationProof>>;
-  createPrivilegedPairingChallenge: () => Promise<
-    PrivilegedIpcResult<PrivilegedPairingChallengeView>
-  >;
+  createPrivilegedPairingChallenge: (
+    targetAccountId: string,
+  ) => Promise<PrivilegedIpcResult<PrivilegedPairingChallengeView>>;
   completePrivilegedPairing: (
     input: PrivilegedPairingCompletionInput,
   ) => Promise<PrivilegedIpcResult<PrivilegedPairingCompletionView>>;

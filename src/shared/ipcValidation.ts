@@ -79,6 +79,13 @@ export const PrivilegedCredentialSetupSchema = z
     path: ['passwordConfirm'],
   });
 
+export const PrivilegedPairingTargetAccountSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_ID)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
 export const PrivilegedPairingCompletionSchema = z
   .object({
     challengeId: z

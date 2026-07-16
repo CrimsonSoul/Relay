@@ -171,11 +171,23 @@ describe('setupPrivilegedAccessHandlers', () => {
 
   it('creates pairing challenges only from the server renderer', async () => {
     setup(false);
-    await expect(invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE)).resolves.toEqual({
-      ok: false,
-      error: 'unauthorized',
-    });
+    await expect(
+      invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE, 'account-admin'),
+    ).resolves.toEqual({ ok: false, error: 'unauthorized' });
     expect(runtime.createPairingChallenge).not.toHaveBeenCalled();
+  });
+
+  it('validates and forwards the selected publisher account for local pairing', async () => {
+    setup();
+
+    await expect(
+      invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE, 'account-publisher'),
+    ).resolves.toMatchObject({ ok: true });
+    expect(runtime.createPairingChallenge).toHaveBeenCalledWith('account-publisher');
+
+    await expect(
+      invoke(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE, { accountId: '../publisher' }),
+    ).resolves.toEqual({ ok: false, error: 'invalid-input' });
   });
 
   it('allows first administrator setup only through trusted local server IPC', async () => {

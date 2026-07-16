@@ -5,6 +5,7 @@ import { canonicalPrivilegedSigningBytes } from '@shared/privilegedCommands';
 import {
   PrivilegedRuntime,
   installPrivilegedE2EControl,
+  resolveProductionPairingTarget,
   type PrivilegedClientTransport,
 } from '../privilegedRuntime';
 
@@ -199,6 +200,9 @@ describe('PrivilegedRuntime', () => {
       completePairing: vi.fn(),
       dispose: vi.fn(),
     };
+    const resolvePairingTarget = vi.fn(async (targetAccountId: string) =>
+      ['account-admin', 'account-publisher'].includes(targetAccountId),
+    );
     const runtime = new PrivilegedRuntime({
       authClient,
       commandProcessor: processor,
@@ -208,6 +212,7 @@ describe('PrivilegedRuntime', () => {
       mode: 'server',
       now: () => START_TIME,
       pairingService,
+      resolvePairingTarget,
       resolveAccountIdentity: vi.fn(async () => ({
         assigned: true,
         operatorName: 'Ryan Bledsoe',
@@ -220,7 +225,7 @@ describe('PrivilegedRuntime', () => {
       payload: { clientVersion: '1' },
       expectedRevision: null,
     });
-    const challenge = await runtime.createPairingChallenge();
+    const challenge = await runtime.createPairingChallenge('account-publisher');
 
     expect(processor.processLocal).toHaveBeenCalledWith(
       expect.objectContaining({ accountId: ACCOUNT_ID, operatorId: OPERATOR_ID }),
@@ -228,11 +233,44 @@ describe('PrivilegedRuntime', () => {
     );
     expect(processor.process).not.toHaveBeenCalled();
     expect(pairingService.createChallenge).toHaveBeenCalledWith(
-      { accountId: ACCOUNT_ID },
+      { accountId: 'account-publisher' },
       { isServerMode: true, trustedLocalSender: true },
     );
+    expect(resolvePairingTarget).toHaveBeenCalledWith('account-publisher');
     expect(challenge.code).toBe('ABCD2345');
   });
+
+  it.each(['account-ordinary', 'account-former-publisher'])(
+    'rejects an ineligible pairing target %s',
+    async (targetAccountId) => {
+      const pairingService = {
+        createChallenge: vi.fn(),
+        completePairing: vi.fn(),
+        dispose: vi.fn(),
+      };
+      const resolvePairingTarget = vi.fn(async () => false);
+      const runtime = new PrivilegedRuntime({
+        authClient,
+        commandProcessor: { process: vi.fn(), processLocal: vi.fn() },
+        deviceStore,
+        hostname: 'RELAY-SERVER',
+        mode: 'server',
+        now: () => START_TIME,
+        pairingService,
+        resolveAccountIdentity: vi.fn(async () => ({
+          assigned: true,
+          operatorName: 'Ryan Bledsoe',
+        })),
+        resolvePairingTarget,
+      } as never);
+      await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+
+      await expect(runtime.createPairingChallenge(targetAccountId)).rejects.toMatchObject({
+        code: 'unauthorized',
+      });
+      expect(pairingService.createChallenge).not.toHaveBeenCalled();
+    },
+  );
 
   it('requires device-management capability before creating a pairing challenge', async () => {
     authClient.authenticate.mockResolvedValueOnce({
@@ -260,7 +298,7 @@ describe('PrivilegedRuntime', () => {
     } as never);
     await runtime.login({ operatorId: 'operator-tristan-bowles', password: PASSWORD });
 
-    await expect(runtime.createPairingChallenge()).rejects.toMatchObject({
+    await expect(runtime.createPairingChallenge(ACCOUNT_ID)).rejects.toMatchObject({
       code: 'unauthorized',
     });
     expect(pairingService.createChallenge).not.toHaveBeenCalled();
@@ -279,6 +317,42 @@ describe('PrivilegedRuntime', () => {
     expect(authClient.clear).toHaveBeenCalled();
     expect(clientTransport.dispose).toHaveBeenCalled();
     expect(runtime.getView().state).toBe('signed-out');
+  });
+});
+
+describe('resolveProductionPairingTarget', () => {
+  const publisherAccount = {
+    ...account,
+    id: 'account-publisher',
+    operatorId: 'operator-tristan-bowles',
+    role: 'publisher' as const,
+  };
+
+  it('accepts only an active account holding the current administrator or publisher assignment', async () => {
+    const getFirstListItem = vi.fn(async () => ({
+      adminOperatorId: OPERATOR_ID,
+      publisherOperatorId: 'operator-tristan-bowles',
+    }));
+    const getOne = vi.fn(async () => publisherAccount);
+    const pb = {
+      collection: vi.fn((name: string) =>
+        name === 'relay_privileged_state' ? { getFirstListItem } : { getOne },
+      ),
+    };
+
+    await expect(resolveProductionPairingTarget(pb as never, 'account-publisher')).resolves.toBe(
+      true,
+    );
+
+    getOne.mockResolvedValueOnce({ ...publisherAccount, active: false });
+    await expect(resolveProductionPairingTarget(pb as never, 'account-publisher')).resolves.toBe(
+      false,
+    );
+
+    getOne.mockRejectedValueOnce(new Error('PocketBase unavailable'));
+    await expect(resolveProductionPairingTarget(pb as never, 'account-publisher')).resolves.toBe(
+      false,
+    );
   });
 });
 

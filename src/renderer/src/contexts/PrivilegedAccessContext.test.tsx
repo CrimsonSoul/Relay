@@ -59,6 +59,15 @@ describe('PrivilegedAccessProvider', () => {
       loginPrivileged: vi.fn().mockResolvedValue({ ok: true, value: active }),
       logoutPrivileged: vi.fn().mockResolvedValue(signedOut),
       lockPrivileged: vi.fn().mockResolvedValue({ ...active, state: 'locked' }),
+      createPrivilegedPairingChallenge: vi.fn().mockResolvedValue({
+        ok: true,
+        value: {
+          challengeId: 'challenge-1',
+          accountId: 'account-publisher',
+          code: 'ABCD2345',
+          expiresAt: '2026-07-15T20:10:00.000Z',
+        },
+      }),
       onPrivilegedSessionChanged: vi.fn((listener) => {
         eventListener = listener;
         return unsubscribe;
@@ -118,6 +127,16 @@ describe('PrivilegedAccessProvider', () => {
 
     await waitFor(() => expect(api.lockPrivileged).toHaveBeenCalledTimes(1));
     expect(result.current.session.state).toBe('locked');
+  });
+
+  it('forwards the selected privileged account when creating a pairing challenge', async () => {
+    const { result } = renderHook(() => usePrivilegedAccess(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    await act(() => result.current.createPairingChallenge('account-publisher'));
+
+    expect(api.createPrivilegedPairingChallenge).toHaveBeenCalledWith('account-publisher');
+    expect(result.current.pairingChallenge).toMatchObject({ accountId: 'account-publisher' });
   });
 
   it('unsubscribes from public session events on unmount', async () => {

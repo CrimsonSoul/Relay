@@ -1,6 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
 import { useOperator } from '../../contexts/OperatorContext';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
+import { useRelayAdministration } from '../../hooks/useRelayAdministration';
 import { TactileButton } from '../TactileButton';
 
 type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSubmit']>>[0];
@@ -13,8 +15,15 @@ const formatExpiry = (value: string | null) => {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(parsed);
 };
 
+const pairingTargetLabel = (target: PrivilegedPairingChallengeTarget | undefined) => {
+  if (!target) return 'Selected privileged account';
+  const role = target.role === 'admin' ? 'Administrator' : 'Knowledge publisher';
+  return `${target.operatorName} · ${role}`;
+};
+
 export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const { selectedOperator } = useOperator();
+  const administration = useRelayAdministration();
   const {
     session,
     loading,
@@ -36,7 +45,42 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const [challengeId, setChallengeId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
   const [deviceLabel, setDeviceLabel] = useState('');
+  const [pairingTargetAccountId, setPairingTargetAccountId] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
+  const pairingTargets = useMemo<PrivilegedPairingChallengeTarget[]>(() => {
+    const snapshot = administration.snapshot;
+    if (!snapshot) return [];
+    const operators = new Map(
+      snapshot.operators.map((operator) => [operator.id, operator] as const),
+    );
+    return snapshot.privilegedAccounts.flatMap((account) => {
+      const operator = operators.get(account.operatorId);
+      const assigned =
+        (account.role === 'admin' && account.operatorId === snapshot.adminOperatorId) ||
+        (account.role === 'publisher' && account.operatorId === snapshot.publisherOperatorId);
+      if (!account.active || !operator?.active || !assigned) return [];
+      return [
+        {
+          accountId: account.accountId,
+          operatorId: account.operatorId,
+          operatorName: operator.displayName,
+          role: account.role,
+        },
+      ];
+    });
+  }, [administration.snapshot]);
+
+  useEffect(() => {
+    setPairingTargetAccountId((current) => {
+      if (pairingTargets.some(({ accountId }) => accountId === current)) return current;
+      return pairingTargets.find(({ role }) => role === 'admin')?.accountId ?? '';
+    });
+  }, [pairingTargets]);
+
+  const challengeTarget = pairingTargets.find(
+    ({ accountId }) => accountId === pairingChallenge?.accountId,
+  );
+  const challengeOwnerLabel = pairingTargetLabel(challengeTarget);
 
   const handleLogin = async (event: FormSubmitEvent) => {
     event.preventDefault();
@@ -187,18 +231,45 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           {session.role === 'admin' && relayMode === 'server' && (
             <div className="privileged-access__pairing-console">
               <div>
-                <strong>Pair an administrator workstation</strong>
-                <span>Challenge codes expire after 10 minutes and work once.</span>
+                <strong>Pair a privileged workstation</strong>
+                <span>
+                  Choose its owner. Challenge codes expire after 10 minutes and work once.
+                </span>
               </div>
-              <TactileButton
-                type="button"
-                onClick={() => void createPairingChallenge()}
-                loading={busy === 'challenge'}
-              >
-                Create pairing code
-              </TactileButton>
+              <div className="privileged-access__pairing-actions">
+                <label className="privileged-access__field">
+                  <span>Workstation owner</span>
+                  <select
+                    className="input"
+                    value={pairingTargetAccountId}
+                    onChange={(event) => setPairingTargetAccountId(event.target.value)}
+                    disabled={administration.loading || pairingTargets.length === 0}
+                    required
+                  >
+                    {pairingTargets.length === 0 && <option value="">No eligible accounts</option>}
+                    {pairingTargets.map((target) => (
+                      <option key={target.accountId} value={target.accountId}>
+                        {target.operatorName} —{' '}
+                        {target.role === 'admin' ? 'Administrator' : 'Knowledge publisher'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <TactileButton
+                  type="button"
+                  onClick={() => void createPairingChallenge(pairingTargetAccountId)}
+                  loading={busy === 'challenge'}
+                  disabled={!pairingTargetAccountId}
+                >
+                  Create pairing code
+                </TactileButton>
+              </div>
               {pairingChallenge && (
                 <dl className="privileged-access__challenge" aria-label="Active pairing challenge">
+                  <div className="privileged-access__challenge-owner">
+                    <dt>Workstation owner</dt>
+                    <dd>{challengeOwnerLabel}</dd>
+                  </div>
                   <div>
                     <dt>Challenge ID</dt>
                     <dd>{pairingChallenge.challengeId}</dd>

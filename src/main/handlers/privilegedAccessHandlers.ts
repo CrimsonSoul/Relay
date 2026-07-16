@@ -12,6 +12,7 @@ import {
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
   PrivilegedPairingCompletionSchema,
+  PrivilegedPairingTargetAccountSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
 } from '@shared/ipcValidation';
@@ -42,7 +43,7 @@ export interface PrivilegedAccessRuntime {
   logout(): Promise<void>;
   lock(): void;
   reauthenticate(password: string): Promise<PrivilegedReauthenticationProof>;
-  createPairingChallenge(): Promise<PrivilegedPairingChallengeView>;
+  createPairingChallenge(targetAccountId: string): Promise<PrivilegedPairingChallengeView>;
   completePairing(input: {
     challengeId: string;
     code: string;
@@ -162,18 +163,23 @@ export function setupPrivilegedAccessHandlers(options: PrivilegedAccessHandlerOp
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE, async (event) => {
-    if (!trusted(event, IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE) || !isServer()) {
-      return failure('unauthorized');
-    }
-    const runtime = getRuntime();
-    if (!runtime) return failure('offline');
-    try {
-      return success(await runtime.createPairingChallenge());
-    } catch (error) {
-      return failure(mappedError(error, 'server-error'));
-    }
-  });
+  ipcMain.handle(
+    IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE,
+    async (event, input: unknown) => {
+      if (!trusted(event, IPC_CHANNELS.PRIVILEGED_CREATE_PAIRING_CHALLENGE) || !isServer()) {
+        return failure('unauthorized');
+      }
+      const parsed = PrivilegedPairingTargetAccountSchema.safeParse(input);
+      if (!parsed.success) return failure('invalid-input');
+      const runtime = getRuntime();
+      if (!runtime) return failure('offline');
+      try {
+        return success(await runtime.createPairingChallenge(parsed.data));
+      } catch (error) {
+        return failure(mappedError(error, 'server-error'));
+      }
+    },
+  );
 
   ipcMain.handle(IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING, async (event, input: unknown) => {
     if (!trusted(event, IPC_CHANNELS.PRIVILEGED_COMPLETE_PAIRING)) {

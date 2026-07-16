@@ -85,7 +85,7 @@ describe('preload Knowledge web link bridge', () => {
     await api.logoutPrivileged();
     await api.lockPrivileged();
     await api.reauthenticatePrivileged(reauthentication);
-    await api.createPrivilegedPairingChallenge();
+    await api.createPrivilegedPairingChallenge('account-publisher');
     await api.completePrivilegedPairing(pairing);
     await api.submitPrivilegedCommand(command);
     const credential = {
@@ -103,7 +103,7 @@ describe('preload Knowledge web link bridge', () => {
         ['privileged:logout'],
         ['privileged:lock'],
         ['privileged:reauthenticate', reauthentication],
-        ['privileged:createPairingChallenge'],
+        ['privileged:createPairingChallenge', 'account-publisher'],
         ['privileged:completePairing', pairing],
         ['privileged:submitCommand', command],
         ['privileged:setupInitialAdministrator', credential],

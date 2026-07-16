@@ -49,7 +49,9 @@ export type PrivilegedAccessContextValue = {
   logout: () => Promise<void>;
   lock: () => Promise<void>;
   reauthenticate: (password: string) => Promise<PrivilegedReauthenticationProof | null>;
-  createPairingChallenge: () => Promise<PrivilegedPairingChallengeView | null>;
+  createPairingChallenge: (
+    targetAccountId: string,
+  ) => Promise<PrivilegedPairingChallengeView | null>;
   completePairing: (input: PrivilegedPairingCompletionInput) => Promise<boolean>;
   submitCommand: (input: PublicPrivilegedCommandRequest) => Promise<PrivilegedCommandResult>;
 };
@@ -238,29 +240,32 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
     [showFailure],
   );
 
-  const createPairingChallenge = useCallback(async () => {
-    const api = globalThis.api;
-    if (!api) {
-      showFailure('offline');
-      return null;
-    }
-    setBusy('challenge');
-    setError(null);
-    try {
-      const result = await api.createPrivilegedPairingChallenge();
-      if (!result.ok) {
-        showFailure(result.error);
+  const createPairingChallenge = useCallback(
+    async (targetAccountId: string) => {
+      const api = globalThis.api;
+      if (!api) {
+        showFailure('offline');
         return null;
       }
-      setPairingChallenge(result.value);
-      return result.value;
-    } catch {
-      showFailure('server-error');
-      return null;
-    } finally {
-      setBusy(null);
-    }
-  }, [showFailure]);
+      setBusy('challenge');
+      setError(null);
+      try {
+        const result = await api.createPrivilegedPairingChallenge(targetAccountId);
+        if (!result.ok) {
+          showFailure(result.error);
+          return null;
+        }
+        setPairingChallenge(result.value);
+        return result.value;
+      } catch {
+        showFailure('server-error');
+        return null;
+      } finally {
+        setBusy(null);
+      }
+    },
+    [showFailure],
+  );
 
   const completePairing = useCallback(
     async (input: PrivilegedPairingCompletionInput) => {

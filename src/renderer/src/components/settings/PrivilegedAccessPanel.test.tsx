@@ -3,14 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
-const { mockUseOperator, mockUsePrivilegedAccess } = vi.hoisted(() => ({
+const { mockUseOperator, mockUsePrivilegedAccess, mockUseRelayAdministration } = vi.hoisted(() => ({
   mockUseOperator: vi.fn(),
   mockUsePrivilegedAccess: vi.fn(),
+  mockUseRelayAdministration: vi.fn(),
 }));
 
 vi.mock('../../contexts/OperatorContext', () => ({ useOperator: mockUseOperator }));
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: mockUsePrivilegedAccess,
+}));
+vi.mock('../../hooks/useRelayAdministration', () => ({
+  useRelayAdministration: mockUseRelayAdministration,
 }));
 
 import { PrivilegedAccessPanel } from './PrivilegedAccessPanel';
@@ -29,11 +33,32 @@ const session = (state: PrivilegedSessionView['state']): PrivilegedSessionView =
 describe('PrivilegedAccessPanel', () => {
   const login = vi.fn().mockResolvedValue(true);
   const completePairing = vi.fn().mockResolvedValue(true);
+  const createPairingChallenge = vi.fn().mockResolvedValue(null);
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseOperator.mockReturnValue({
       selectedOperator: { id: 'operator-1', displayName: 'Ryan Bledsoe' },
+    });
+    mockUseRelayAdministration.mockReturnValue({
+      snapshot: {
+        operators: [
+          { id: 'operator-1', displayName: 'Ryan Bledsoe', active: true, role: 'admin' },
+          { id: 'operator-2', displayName: 'Tristan Bowles', active: true, role: 'publisher' },
+        ],
+        privilegedAccounts: [
+          { accountId: 'account-admin', operatorId: 'operator-1', role: 'admin', active: true },
+          {
+            accountId: 'account-publisher',
+            operatorId: 'operator-2',
+            role: 'publisher',
+            active: true,
+          },
+        ],
+        adminOperatorId: 'operator-1',
+        publisherOperatorId: 'operator-2',
+      },
+      loading: false,
     });
     mockUsePrivilegedAccess.mockReturnValue({
       session: session('signed-out'),
@@ -43,7 +68,7 @@ describe('PrivilegedAccessPanel', () => {
       login,
       logout: vi.fn(),
       lock: vi.fn(),
-      createPairingChallenge: vi.fn(),
+      createPairingChallenge,
       completePairing,
       pairingChallenge: null,
       clearError: vi.fn(),
@@ -102,6 +127,9 @@ describe('PrivilegedAccessPanel', () => {
     expect(screen.getByText(label)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Lock' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    if (role === 'publisher') {
+      expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
+    }
   });
 
   it('offers unlock for a locked session', () => {
@@ -134,6 +162,25 @@ describe('PrivilegedAccessPanel', () => {
 
     expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
     expect(screen.getByText(/Pair additional workstations from the Relay server/)).toBeVisible();
+  });
+
+  it('creates a pairing challenge for the selected administrator or publisher account', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...mockUsePrivilegedAccess(),
+      session: session('active'),
+    });
+    render(<PrivilegedAccessPanel relayMode="server" />);
+
+    expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Administrator' })).toBeVisible();
+    expect(
+      screen.getByRole('option', { name: 'Tristan Bowles — Knowledge publisher' }),
+    ).toBeVisible();
+    fireEvent.change(screen.getByLabelText('Workstation owner'), {
+      target: { value: 'account-publisher' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create pairing code' }));
+
+    await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
 
   it('offers one-time administrator password setup only on the server PC', async () => {

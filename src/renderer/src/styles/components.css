@@ -2142,6 +2142,19 @@ body.modal-open {
 
 .privileged-access__pairing-console {
   align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.privileged-access__pairing-actions {
+  display: flex;
+  min-width: min(100%, 420px);
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.privileged-access__pairing-actions .privileged-access__field {
+  min-width: min(100%, 260px);
 }
 
 .privileged-access__challenge {
@@ -2157,6 +2170,10 @@ body.modal-open {
 
 .privileged-access__challenge div {
   min-width: 0;
+}
+
+.privileged-access__challenge-owner {
+  grid-column: 1 / -1;
 }
 
 .privileged-access__challenge dt {
@@ -2555,6 +2572,12 @@ body.modal-open {
 
   .privileged-access__identity,
   .privileged-access__pairing-console {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .privileged-access__pairing-actions {
+    min-width: 0;
     flex-direction: column;
     align-items: stretch;
   }

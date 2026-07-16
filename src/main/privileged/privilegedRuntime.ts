@@ -17,12 +17,14 @@ import {
   type PrivilegedCommandResult,
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
-import type {
-  PrivilegedPairingChallengeView,
-  PrivilegedSessionView,
-  RelayPrivilegedAccountRecord,
+import {
+  RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+  RELAY_PRIVILEGED_STATE_COLLECTION,
+  type PrivilegedPairingChallengeView,
+  type PrivilegedSessionView,
+  type RelayPrivilegedAccountRecord,
+  type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_PRIVILEGED_STATE_COLLECTION } from '@shared/privilegedAccess';
 import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import type { RelayConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
@@ -95,6 +97,7 @@ export type PrivilegedRuntimeOptions = {
   clientTransport?: PrivilegedClientTransport;
   commandProcessor?: CommandProcessorPort;
   pairingService?: PairingServicePort;
+  resolvePairingTarget?(targetAccountId: string): Promise<boolean>;
   now?: () => number;
   createId?: () => string;
   additionalDisposable?: { dispose(): void | Promise<void> };
@@ -155,6 +158,7 @@ export class PrivilegedRuntime {
   private readonly clientTransport?: PrivilegedClientTransport;
   private readonly commandProcessor?: CommandProcessorPort;
   private readonly pairingService?: PairingServicePort;
+  private readonly resolvePairingTarget?: PrivilegedRuntimeOptions['resolvePairingTarget'];
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly additionalDisposable?: { dispose(): void | Promise<void> };
@@ -172,6 +176,7 @@ export class PrivilegedRuntime {
     this.clientTransport = options.clientTransport;
     this.commandProcessor = options.commandProcessor;
     this.pairingService = options.pairingService;
+    this.resolvePairingTarget = options.resolvePairingTarget;
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? randomUUID;
     this.additionalDisposable = options.additionalDisposable;
@@ -232,7 +237,7 @@ export class PrivilegedRuntime {
     return this.sessionManager.reauthenticate(password);
   }
 
-  async createPairingChallenge(): Promise<PrivilegedPairingChallengeView> {
+  async createPairingChallenge(targetAccountId: string): Promise<PrivilegedPairingChallengeView> {
     this.assertAvailable();
     const view = this.getView();
     if (
@@ -243,8 +248,15 @@ export class PrivilegedRuntime {
     ) {
       throw runtimeError('unauthorized');
     }
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(targetAccountId)) {
+      throw runtimeError('unauthorized');
+    }
+    const eligible = this.resolvePairingTarget
+      ? await this.resolvePairingTarget(targetAccountId)
+      : targetAccountId === view.accountId;
+    if (!eligible) throw runtimeError('unauthorized');
     return this.pairingService!.createChallenge(
-      { accountId: view.accountId },
+      { accountId: targetAccountId },
       { isServerMode: true, trustedLocalSender: true },
     );
   }
@@ -504,6 +516,29 @@ async function resolveProductionIdentity(
   return { assigned, operatorName };
 }
 
+export async function resolveProductionPairingTarget(
+  pb: PocketBase,
+  targetAccountId: string,
+): Promise<boolean> {
+  try {
+    const [state, account] = await Promise.all([
+      pb
+        .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
+        .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null }),
+      pb
+        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+        .getOne<RelayPrivilegedAccountRecord>(targetAccountId, { requestKey: null }),
+    ]);
+    if (account.id !== targetAccountId || account.active !== true) return false;
+    return (
+      (account.role === 'admin' && account.operatorId === state.adminOperatorId) ||
+      (account.role === 'publisher' && account.operatorId === state.publisherOperatorId)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function createProductionPrivilegedRuntime(
   options: ProductionPrivilegedRuntimeOptions,
 ): Promise<PrivilegedRuntime> {
@@ -593,6 +628,8 @@ export async function createProductionPrivilegedRuntime(
     hostname: options.hostname ?? getHostname(),
     mode,
     pairingService,
+    resolvePairingTarget: (targetAccountId) =>
+      resolveProductionPairingTarget(options.serverClient!, targetAccountId),
     resolveAccountIdentity,
   });
 }

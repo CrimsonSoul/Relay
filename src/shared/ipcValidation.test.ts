@@ -6,6 +6,7 @@ import {
   KnowledgePdfRequestSchema,
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
+  PrivilegedPairingTargetAccountSchema,
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
@@ -162,6 +163,17 @@ describe('privileged IPC schemas', () => {
     ).toBe(false);
     expect(
       PrivilegedPairingCompletionSchema.safeParse({ ...valid, hostname: 'spoofed' }).success,
+    ).toBe(false);
+  });
+
+  it('accepts only bounded privileged account IDs for pairing targets', () => {
+    expect(PrivilegedPairingTargetAccountSchema.parse('account-publisher')).toBe(
+      'account-publisher',
+    );
+    expect(PrivilegedPairingTargetAccountSchema.safeParse('../publisher').success).toBe(false);
+    expect(PrivilegedPairingTargetAccountSchema.safeParse('a'.repeat(201)).success).toBe(false);
+    expect(
+      PrivilegedPairingTargetAccountSchema.safeParse({ accountId: 'account-admin' }).success,
     ).toBe(false);
   });
 
