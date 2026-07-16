@@ -14,6 +14,11 @@ import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
 } from './privilegedAccess';
+import type { PublicPrivilegedCommandRequest } from './ipc';
+import {
+  isPublicPrivilegedCommandName,
+  normalizePrivilegedCommandPayload,
+} from './privilegedCommands';
 
 // ==================== Size Limits ====================
 const MAX_NAME = 500;
@@ -88,11 +93,27 @@ export const PrivilegedPairingCompletionSchema = z
 
 export const PublicPrivilegedCommandRequestSchema = z
   .object({
-    command: z.literal('privileged.status.read'),
-    payload: z.object({ clientVersion: z.string().min(1).max(100) }).strict(),
+    command: z.string(),
+    payload: z.unknown(),
     expectedRevision: z.number().int().min(0).nullable(),
   })
-  .strict();
+  .strict()
+  .transform((input, context): PublicPrivilegedCommandRequest => {
+    if (!isPublicPrivilegedCommandName(input.command)) {
+      context.addIssue({ code: 'custom', message: 'Unsupported privileged command.' });
+      return z.NEVER;
+    }
+    const payload = normalizePrivilegedCommandPayload(input.command, input.payload);
+    if (!payload) {
+      context.addIssue({ code: 'custom', message: 'Invalid privileged command payload.' });
+      return z.NEVER;
+    }
+    return {
+      command: input.command,
+      payload,
+      expectedRevision: input.expectedRevision,
+    } as PublicPrivilegedCommandRequest;
+  });
 
 // ==================== Contact Schemas ====================
 export const ContactSchema = z.object({

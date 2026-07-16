@@ -135,4 +135,31 @@ describe('PrivilegedAccessPanel', () => {
     expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
     expect(screen.getByText(/Pair additional workstations from the Relay server/)).toBeVisible();
   });
+
+  it('offers one-time administrator password setup only on the server PC', async () => {
+    const setupInitialAdministratorCredential = vi.fn().mockResolvedValue({
+      ok: true,
+      value: { accountId: 'account-1' },
+    });
+    globalThis.api = { setupInitialAdministratorCredential } as never;
+    render(<PrivilegedAccessPanel relayMode="server" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Set initial administrator password' }));
+    fireEvent.change(screen.getByLabelText('New administrator password'), {
+      target: { value: 'a-new-admin-password' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm administrator password'), {
+      target: { value: 'a-new-admin-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create administrator password' }));
+
+    await waitFor(() =>
+      expect(setupInitialAdministratorCredential).toHaveBeenCalledWith({
+        operatorId: 'operator-1',
+        password: 'a-new-admin-password',
+        passwordConfirm: 'a-new-admin-password',
+      }),
+    );
+    expect(login).toHaveBeenCalledWith('a-new-admin-password');
+  });
 });

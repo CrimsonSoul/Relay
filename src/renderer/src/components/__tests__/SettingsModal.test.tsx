@@ -53,8 +53,22 @@ vi.mock('../../contexts/OperatorContext', () => ({
   }),
 }));
 
+vi.mock('../../hooks/useRelayAdministration', () => ({
+  useRelayAdministration: () => ({ snapshot: null, canAdminister: true }),
+}));
+
 vi.mock('../settings/PrivilegedAccessPanel', () => ({
   PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
+}));
+
+vi.mock('../../contexts/PrivilegedAccessContext', () => ({
+  usePrivilegedAccess: () => ({
+    session: { state: 'active', role: 'admin' },
+  }),
+}));
+
+vi.mock('../settings/AdministrationSettings', () => ({
+  AdministrationSettings: () => React.createElement('h2', null, 'Relay administration'),
 }));
 
 const defaultProps = {
@@ -132,6 +146,15 @@ describe('SettingsModal', () => {
 
     expect(screen.getByRole('tabpanel', { name: 'Access' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Privileged access' })).toBeVisible();
+  });
+
+  it('offers Administration to the authenticated Relay administrator', () => {
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
+
+    expect(screen.getByRole('tabpanel', { name: 'Administration' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
   });
 
   it('routes the Operators tab to the full roster section', async () => {

@@ -165,7 +165,7 @@ describe('privileged IPC schemas', () => {
     ).toBe(false);
   });
 
-  it('allows only public status commands and rejects internal reauthentication construction', () => {
+  it('allows strict public commands and rejects internal reauthentication construction', () => {
     expect(
       PublicPrivilegedCommandRequestSchema.parse({
         command: 'privileged.status.read',
@@ -181,6 +181,32 @@ describe('privileged IPC schemas', () => {
       PublicPrivilegedCommandRequestSchema.safeParse({
         command: 'privileged.reauth.confirm',
         payload: { authenticatedAt: new Date().toISOString() },
+        expectedRevision: null,
+      }).success,
+    ).toBe(false);
+    expect(
+      PublicPrivilegedCommandRequestSchema.parse({
+        command: 'operator.rename',
+        payload: {
+          operatorId: 'operator-2',
+          displayName: '  Morgan   Lee ',
+          expectedRevision: 3,
+        },
+        expectedRevision: null,
+      }),
+    ).toEqual({
+      command: 'operator.rename',
+      payload: {
+        operatorId: 'operator-2',
+        displayName: 'Morgan Lee',
+        expectedRevision: 3,
+      },
+      expectedRevision: null,
+    });
+    expect(
+      PublicPrivilegedCommandRequestSchema.safeParse({
+        command: 'administration.snapshot.read',
+        payload: { revealSecrets: true },
         expectedRevision: null,
       }).success,
     ).toBe(false);

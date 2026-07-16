@@ -21,6 +21,7 @@ import {
   RelaySettingConflictError,
   type RelayAdministrationService,
 } from './RelayAdministrationService';
+import type { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 
 type AdministrationRegistrar = {
   registerCommand<K extends RegisteredPrivilegedCommandName>(
@@ -38,6 +39,7 @@ type OperatorAdministrationManager = Pick<
 type PublisherAdministrationManager = Pick<PublisherAssignmentManager, 'assign'>;
 type DeviceAdministrationManager = Pick<PrivilegedDeviceManager, 'rename' | 'revoke'>;
 type AdministrationSettingService = Pick<RelayAdministrationService, 'replace'>;
+type AdministrationSnapshotReader = Pick<RelayAdministrationSnapshotReader, 'read'>;
 
 type ReauthenticationProofConsumer = (
   requestId: string,
@@ -50,6 +52,7 @@ export type RegisterAdministrationCommandsOptions = {
   publisherManager?: PublisherAdministrationManager;
   deviceManager?: DeviceAdministrationManager;
   administrationService?: AdministrationSettingService;
+  snapshotReader?: AdministrationSnapshotReader;
   consumeReauthenticationProof?: ReauthenticationProofConsumer;
 };
 
@@ -83,6 +86,7 @@ export function registerAdministrationCommands({
   publisherManager,
   deviceManager,
   administrationService,
+  snapshotReader,
   consumeReauthenticationProof,
 }: RegisterAdministrationCommandsOptions): void {
   registrar.registerCommand('operator.create', 'operators.manage', (_context, payload) =>
@@ -151,6 +155,11 @@ export function registerAdministrationCommands({
     );
   }
   if (administrationService) {
+    if (snapshotReader) {
+      registrar.registerCommand('administration.snapshot.read', 'settings.manage', (context) =>
+        snapshotReader.read({ accountId: context.account.id }),
+      );
+    }
     registrar.registerCommand(
       'administration.setting.replace',
       'settings.manage',

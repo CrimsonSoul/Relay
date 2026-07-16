@@ -57,6 +57,7 @@ import {
 import { registerAdministrationCommands } from './registerAdministrationCommands';
 import { PublisherAssignmentManager } from './PublisherAssignmentManager';
 import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
+import { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 import { RelayAdministrationService } from './RelayAdministrationService';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
@@ -514,13 +515,24 @@ export async function createProductionPrivilegedRuntime(
   );
   const pairingService = new PrivilegedPairingService({ repository });
   const commandProcessor = new PrivilegedCommandProcessor({ repository });
+  const operatorManager = new RelayOperatorManager(options.serverClient);
+  const publisherManager = new PublisherAssignmentManager({ pb: options.serverClient });
+  const deviceManager = new PrivilegedDeviceManager({ pb: options.serverClient });
+  const administrationService = options.dynatraceProblemsManager
+    ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
+    : undefined;
   registerAdministrationCommands({
     registrar: commandProcessor,
-    operatorManager: new RelayOperatorManager(options.serverClient),
-    publisherManager: new PublisherAssignmentManager({ pb: options.serverClient }),
-    deviceManager: new PrivilegedDeviceManager({ pb: options.serverClient }),
-    administrationService: options.dynatraceProblemsManager
-      ? new RelayAdministrationService({ dynatrace: options.dynatraceProblemsManager })
+    operatorManager,
+    publisherManager,
+    deviceManager,
+    administrationService,
+    snapshotReader: administrationService
+      ? new RelayAdministrationSnapshotReader({
+          pb: options.serverClient,
+          deviceManager,
+          administrationService,
+        })
       : undefined,
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),

@@ -29,6 +29,10 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     completePairing,
   } = usePrivilegedAccess();
   const [password, setPassword] = useState('');
+  const [initialSetupOpen, setInitialSetupOpen] = useState(false);
+  const [initialPassword, setInitialPassword] = useState('');
+  const [initialPasswordConfirm, setInitialPasswordConfirm] = useState('');
+  const [setupFeedback, setSetupFeedback] = useState<string | null>(null);
   const [challengeId, setChallengeId] = useState('');
   const [pairingCode, setPairingCode] = useState('');
   const [deviceLabel, setDeviceLabel] = useState('');
@@ -52,6 +56,39 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
       deviceLabel: deviceLabel.trim(),
     });
     if (paired) setPairingCode('');
+  };
+
+  const handleInitialSetup = async (event: FormSubmitEvent) => {
+    event.preventDefault();
+    setSetupFeedback(null);
+    if (!selectedOperator) {
+      setSetupFeedback('Choose the Ryan Bledsoe operator profile first.');
+      return;
+    }
+    if (initialPassword !== initialPasswordConfirm) {
+      setSetupFeedback('Passwords must match.');
+      return;
+    }
+    const passwordToUse = initialPassword;
+    try {
+      const result = await globalThis.api?.setupInitialAdministratorCredential({
+        operatorId: selectedOperator.id,
+        password: passwordToUse,
+        passwordConfirm: initialPasswordConfirm,
+      });
+      setInitialPassword('');
+      setInitialPasswordConfirm('');
+      if (!result?.ok) {
+        setSetupFeedback('Initial setup was not accepted. It may already be complete.');
+        return;
+      }
+      setInitialSetupOpen(false);
+      await login(passwordToUse);
+    } catch {
+      setInitialPassword('');
+      setInitialPasswordConfirm('');
+      setSetupFeedback('Initial setup could not be completed.');
+    }
   };
 
   const statusContent = (() => {
@@ -190,46 +227,113 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
 
     const locked = session.state === 'locked';
     return (
-      <form className="privileged-access__form" onSubmit={handleLogin}>
-        <div className="privileged-access__state">
-          <strong>
-            {locked ? 'Privileged access is locked' : 'Sign in for protected actions'}
-          </strong>
-          <span>
-            {selectedOperator
-              ? `Authenticating as ${selectedOperator.displayName}.`
-              : 'Choose your operator profile in the sidebar first.'}
-          </span>
-        </div>
-        <label className="privileged-access__field privileged-access__password">
-          <span>Privileged password</span>
-          <input
-            ref={passwordRef}
-            type="password"
-            className="input"
-            value={password}
-            onChange={(event) => {
-              setPassword(event.target.value);
-              if (error) clearError();
-            }}
-            autoComplete="current-password"
-            minLength={12}
-            maxLength={128}
-            disabled={!selectedOperator || busy !== null}
-            required
-          />
-        </label>
-        <div className="privileged-access__actions">
-          <TactileButton
-            type="submit"
-            variant="primary"
-            loading={busy === 'login'}
-            disabled={!selectedOperator}
-          >
-            {locked ? 'Unlock' : 'Sign in'}
-          </TactileButton>
-        </div>
-      </form>
+      <div className="privileged-access__form">
+        <form className="privileged-access__form" onSubmit={handleLogin}>
+          <div className="privileged-access__state">
+            <strong>
+              {locked ? 'Privileged access is locked' : 'Sign in for protected actions'}
+            </strong>
+            <span>
+              {selectedOperator
+                ? `Authenticating as ${selectedOperator.displayName}.`
+                : 'Choose your operator profile in the sidebar first.'}
+            </span>
+          </div>
+          <label className="privileged-access__field privileged-access__password">
+            <span>Privileged password</span>
+            <input
+              ref={passwordRef}
+              type="password"
+              className="input"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (error) clearError();
+              }}
+              autoComplete="current-password"
+              minLength={12}
+              maxLength={128}
+              disabled={!selectedOperator || busy !== null}
+              required
+            />
+          </label>
+          <div className="privileged-access__actions">
+            <TactileButton
+              type="submit"
+              variant="primary"
+              loading={busy === 'login'}
+              disabled={!selectedOperator}
+            >
+              {locked ? 'Unlock' : 'Sign in'}
+            </TactileButton>
+          </div>
+        </form>
+        {relayMode === 'server' && (
+          <div className="privileged-access__bootstrap">
+            <div className="privileged-access__state">
+              <strong>First-time administrator setup</strong>
+              <span>
+                Available only on this Relay server PC for Ryan Bledsoe. There is no default
+                password.
+              </span>
+            </div>
+            {!initialSetupOpen ? (
+              <TactileButton type="button" onClick={() => setInitialSetupOpen(true)}>
+                Set initial administrator password
+              </TactileButton>
+            ) : (
+              <form className="privileged-access__form" onSubmit={handleInitialSetup}>
+                <div className="privileged-access__field-grid">
+                  <label className="privileged-access__field">
+                    <span>New administrator password</span>
+                    <input
+                      type="password"
+                      className="input"
+                      value={initialPassword}
+                      onChange={(event) => setInitialPassword(event.target.value)}
+                      minLength={12}
+                      maxLength={128}
+                      required
+                    />
+                  </label>
+                  <label className="privileged-access__field">
+                    <span>Confirm administrator password</span>
+                    <input
+                      type="password"
+                      className="input"
+                      value={initialPasswordConfirm}
+                      onChange={(event) => setInitialPasswordConfirm(event.target.value)}
+                      minLength={12}
+                      maxLength={128}
+                      required
+                    />
+                  </label>
+                </div>
+                <div className="privileged-access__actions">
+                  <TactileButton type="submit" variant="primary">
+                    Create administrator password
+                  </TactileButton>
+                  <TactileButton
+                    type="button"
+                    onClick={() => {
+                      setInitialPassword('');
+                      setInitialPasswordConfirm('');
+                      setInitialSetupOpen(false);
+                    }}
+                  >
+                    Cancel
+                  </TactileButton>
+                </div>
+              </form>
+            )}
+            {setupFeedback && (
+              <div className="privileged-access__feedback" role="alert">
+                {setupFeedback}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     );
   })();
 

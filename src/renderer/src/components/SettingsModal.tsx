@@ -35,6 +35,8 @@ import {
 } from '../theme/accent';
 import { OperatorSettingsSection } from './settings/OperatorSettingsSection';
 import { PrivilegedAccessPanel } from './settings/PrivilegedAccessPanel';
+import { AdministrationSettings } from './settings/AdministrationSettings';
+import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 
 type DynatraceSettingsProps = {
   dashboards: DynatraceDashboardState[];
@@ -70,13 +72,20 @@ const DYNATRACE_STATE_LABELS: Record<DynatraceRuntimeState, string> = {
   closed: 'Closed',
 };
 
-type SettingsSectionId = 'appearance' | 'connection' | 'operators' | 'access' | 'dynatrace';
+type SettingsSectionId =
+  | 'appearance'
+  | 'connection'
+  | 'operators'
+  | 'access'
+  | 'administration'
+  | 'dynatrace';
 
 const SETTINGS_SECTIONS: { id: SettingsSectionId; label: string }[] = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'connection', label: 'Relay data' },
   { id: 'operators', label: 'Operators' },
   { id: 'access', label: 'Access' },
+  { id: 'administration', label: 'Administration' },
   { id: 'dynatrace', label: 'Dynatrace' },
 ];
 
@@ -85,6 +94,7 @@ type SettingsShellProps = {
   onClose: () => void;
   presentation: 'modal' | 'page';
   activeSection: SettingsSectionId;
+  sections: { id: SettingsSectionId; label: string }[];
   onSectionChange: (section: SettingsSectionId) => void;
   children: React.ReactNode;
 };
@@ -94,6 +104,7 @@ function SettingsShell({
   onClose,
   presentation,
   activeSection,
+  sections,
   onSectionChange,
   children,
 }: Readonly<SettingsShellProps>) {
@@ -122,7 +133,7 @@ function SettingsShell({
       </header>
 
       <div className="settings-page__tabs" aria-label="Settings sections" role="tablist">
-        {SETTINGS_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <button
             key={section.id}
             type="button"
@@ -141,7 +152,7 @@ function SettingsShell({
       <div
         className="settings-page__workspace"
         role="tabpanel"
-        aria-label={SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label}
+        aria-label={sections.find((section) => section.id === activeSection)?.label}
       >
         {children}
       </div>
@@ -613,6 +624,7 @@ export const SettingsModal: React.FC<Props> = ({
   dynatrace,
   presentation = 'modal',
 }) => {
+  const { session: privilegedSession } = usePrivilegedAccess();
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('appearance');
   const [pbConfig, setPbConfig] = useState<PbConfig>(null);
   const [connectionSecret, setConnectionSecret] = useState<string | null>(null);
@@ -627,6 +639,24 @@ export const SettingsModal: React.FC<Props> = ({
   );
   const [customAccentInput, setCustomAccentInput] = useState(() => getStoredCustomAccent() ?? '');
   const [accentSchedule, setAccentScheduleState] = useState(() => getStoredAccentSchedule());
+  const settingsSections = useMemo(
+    () =>
+      SETTINGS_SECTIONS.filter(
+        (section) =>
+          section.id !== 'administration' ||
+          (privilegedSession.state === 'active' && privilegedSession.role === 'admin'),
+      ),
+    [privilegedSession.role, privilegedSession.state],
+  );
+
+  useEffect(() => {
+    if (
+      activeSection === 'administration' &&
+      !(privilegedSession.state === 'active' && privilegedSession.role === 'admin')
+    ) {
+      setActiveSection('access');
+    }
+  }, [activeSection, privilegedSession.role, privilegedSession.state]);
 
   const handleAccentSelect = (id: AccentId) => {
     setAccent(id);
@@ -1047,6 +1077,7 @@ export const SettingsModal: React.FC<Props> = ({
   );
 
   const accessSection = <PrivilegedAccessPanel relayMode={pbConfig?.mode ?? null} />;
+  const administrationSection = <AdministrationSettings relayMode={pbConfig?.mode ?? null} />;
 
   const settingsContent = (
     <div
@@ -1058,6 +1089,7 @@ export const SettingsModal: React.FC<Props> = ({
       {(presentation === 'modal' || activeSection === 'connection') && connectionSections}
       {presentation === 'page' && activeSection === 'operators' && operatorSection}
       {presentation === 'page' && activeSection === 'access' && accessSection}
+      {presentation === 'page' && activeSection === 'administration' && administrationSection}
       {(presentation === 'modal' || activeSection === 'dynatrace') && dynatraceSections}
     </div>
   );
@@ -1068,6 +1100,7 @@ export const SettingsModal: React.FC<Props> = ({
       onClose={onClose}
       presentation={presentation}
       activeSection={activeSection}
+      sections={settingsSections}
       onSectionChange={setActiveSection}
     >
       {settingsContent}

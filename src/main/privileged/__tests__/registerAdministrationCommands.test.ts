@@ -54,6 +54,9 @@ describe('registerAdministrationCommands', () => {
       revision: payload.expectedRevision + 1,
     })),
   };
+  const snapshotReader = {
+    read: vi.fn(async () => ({ generatedAt: '2026-07-15T13:00:00.000Z' })),
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -65,6 +68,7 @@ describe('registerAdministrationCommands', () => {
       consumeReauthenticationProof,
       deviceManager: deviceManager as never,
       administrationService: administrationService as never,
+      snapshotReader: snapshotReader as never,
     });
   });
 
@@ -78,8 +82,15 @@ describe('registerAdministrationCommands', () => {
       ['publisher.assign', 'publisher.assign'],
       ['privileged.device.rename', 'devices.manage'],
       ['privileged.device.revoke', 'devices.manage'],
+      ['administration.snapshot.read', 'settings.manage'],
       ['administration.setting.replace', 'settings.manage'],
     ]);
+  });
+
+  it('reads the sanitized administration snapshot for the active account', async () => {
+    await handlers.get('administration.snapshot.read')!(context, {} as never);
+
+    expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-1' });
   });
 
   it('requires fresh reauthentication only for secret setting replacement', async () => {
