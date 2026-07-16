@@ -33,6 +33,7 @@ export function isAllowedDevRendererUrl(url: string, rendererUrl: string): boole
 
 const LOCKED_ZOOM_FACTOR = 1;
 const DEFAULT_MAIN_WINDOW_SIZE = { width: 960, height: 800 };
+const MAIN_WINDOW_REVEAL_FALLBACK_MS = 4_000;
 const ZOOM_SHORTCUT_KEYS = new Set(['+', '=', '-', '_', '0']);
 const ZOOM_SHORTCUT_CODES = new Set([
   'Equal',
@@ -85,6 +86,51 @@ function getDevTestWindowSize(): { width: number; height: number } | null {
   return { width, height };
 }
 
+/**
+ * Make an existing Relay window visible and foreground it. This is shared by
+ * startup and second-instance handling so a hidden window can never become an
+ * unreachable single-instance process.
+ */
+export function showAndFocusWindow(window: BrowserWindow | null, reason: string): boolean {
+  if (!window || window.isDestroyed()) return false;
+
+  if (window.isMinimized()) window.restore();
+  if (!window.isVisible()) window.show();
+  window.focus();
+
+  loggers.main.info('Main window presented', {
+    reason,
+    visible: window.isVisible(),
+    minimized: window.isMinimized(),
+  });
+  return true;
+}
+
+async function loadMainWindowRenderer(mainWindow: BrowserWindow, isDev: boolean): Promise<void> {
+  if (isDev) {
+    try {
+      await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
+    } catch (err) {
+      loggers.main.error('Failed to load development renderer', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    return;
+  }
+
+  const indexPath = join(mainDir, '../renderer/index.html');
+  try {
+    await mainWindow.loadFile(indexPath);
+  } catch (err) {
+    loggers.main.error('Failed to load local index.html', {
+      path: indexPath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
 export async function createWindow(): Promise<void> {
   const isDev = !app.isPackaged && process.env.ELECTRON_RENDERER_URL !== undefined;
   const devTestWindowSize = getDevTestWindowSize();
@@ -115,6 +161,31 @@ export async function createWindow(): Promise<void> {
     },
   });
   setMainWindow(mainWindow);
+  loggers.main.info('Main window created', {
+    width: devTestWindowSize?.width ?? DEFAULT_MAIN_WINDOW_SIZE.width,
+    height: devTestWindowSize?.height ?? DEFAULT_MAIN_WINDOW_SIZE.height,
+    initiallyVisible: mainWindow.isVisible(),
+  });
+
+  let windowPresented = false;
+  let revealFallback: NodeJS.Timeout | null = null;
+  const presentWindow = (reason: string) => {
+    if (windowPresented) return;
+    windowPresented = showAndFocusWindow(mainWindow, reason);
+    if (windowPresented && revealFallback) {
+      clearTimeout(revealFallback);
+      revealFallback = null;
+    }
+  };
+
+  revealFallback = setTimeout(() => {
+    loggers.main.warn('Main window reveal fallback elapsed', {
+      timeoutMs: MAIN_WINDOW_REVEAL_FALLBACK_MS,
+    });
+    presentWindow('startup-timeout');
+  }, MAIN_WINDOW_REVEAL_FALLBACK_MS);
+  revealFallback.unref();
+
   lockWindowZoom(mainWindow);
 
   setupWindowListeners(mainWindow);
@@ -133,24 +204,20 @@ export async function createWindow(): Promise<void> {
   setupSecurityHeaders(isDev);
 
   mainWindow.once('ready-to-show', () => {
-    getMainWindow()?.show();
-    getMainWindow()?.focus();
-    loggers.main.debug('ready-to-show fired');
+    loggers.main.info('Main window ready-to-show');
+    presentWindow('ready-to-show');
   });
 
-  if (isDev) {
-    await mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL!);
-  } else {
-    const indexPath = join(mainDir, '../renderer/index.html');
-    try {
-      await mainWindow.loadFile(indexPath);
-    } catch (err) {
-      loggers.main.error('Failed to load local index.html', {
-        path: indexPath,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      throw err;
+  try {
+    await loadMainWindowRenderer(mainWindow, isDev);
+    loggers.main.info('Main window renderer loaded');
+    presentWindow('renderer-loaded');
+  } catch (err) {
+    if (revealFallback) {
+      clearTimeout(revealFallback);
+      revealFallback = null;
     }
+    throw err;
   }
 
   // Prevent the main window from navigating away (H-1: navigation hijacking defense)
@@ -172,6 +239,7 @@ export async function createWindow(): Promise<void> {
   setupContextMenu(mainWindow);
 
   mainWindow.on('closed', () => {
+    if (revealFallback) clearTimeout(revealFallback);
     setMainWindow(null);
   });
 }

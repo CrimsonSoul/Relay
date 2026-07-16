@@ -36,7 +36,7 @@ import {
   subscribePrivilegedSessionChanged,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
-import { createWindow, createAuxWindow } from './app/windowFactory';
+import { createWindow, createAuxWindow, showAndFocusWindow } from './app/windowFactory';
 import { setupErrorHandlers } from './app/errorHandlers';
 import { configureHardwareAcceleration } from './app/hardwareAcceleration';
 import { requestAppQuit } from './app/relaunch';
@@ -105,12 +105,9 @@ if (gotLock) {
   startCrashWatchdog();
 
   app.on('second-instance', () => {
-    // Someone tried to run a second instance, we should focus our window.
-    const mainWindow = getMainWindow();
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
+    // Someone tried to run a second instance. Explicitly show the existing
+    // window as well as focusing it in case startup left it hidden.
+    showAndFocusWindow(getMainWindow(), 'second-instance');
   });
 
   loggers.main.info('Startup Info:', {
@@ -355,9 +352,9 @@ if (gotLock) {
         }
       }
 
-      // Open the client cache before the renderer asks for its bootstrap
-      // connection. Authentication continues in the background so an
-      // unreachable LAN server cannot delay a cache-backed cold start.
+      // Open the local client cache before the renderer asks for its bootstrap
+      // connection. Server authentication is deferred, so this step remains
+      // LAN/VPN independent and preserves a cache-backed cold start.
       if (relayConfig?.mode === 'client') {
         try {
           await initializeClientOfflineInfrastructure(configDataDir, relayConfig, {
@@ -370,11 +367,11 @@ if (gotLock) {
             { error: syncErr },
           );
         }
-        await startPrivilegedAccess(relayConfig);
       }
 
-      // Show the window as early as possible — the renderer has its own
-      // loading/connecting states and doesn't need the offline cache to be ready.
+      // Present the UI before optional privileged client initialization. A slow
+      // or unreachable LAN/VPN server must never prevent the Relay shell from
+      // appearing.
       await createWindow();
       startPeriodicCleanup();
       cleanupMaintenance = setupMaintenanceTasks(cleanupKnowledgePdfCache);
@@ -388,6 +385,10 @@ if (gotLock) {
           });
         }
       });
+
+      if (relayConfig?.mode === 'client') {
+        await startPrivilegedAccess(relayConfig);
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
       loggers.main.error('Failed to start application', { error: errorMessage });

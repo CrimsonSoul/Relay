@@ -5,7 +5,9 @@ import {
   MAX_PRIVILEGED_HOSTNAME_LENGTH,
   PRIVILEGED_SESSION_IDLE_MS,
   PUBLISHER_PRIVILEGED_CAPABILITIES,
+  getPrivilegedAdministratorOperatorIds,
   getPrivilegedCapabilities,
+  isPrivilegedAdministrator,
   isPrivilegedRole,
   normalizeRelayAdministrationSnapshot,
   normalizePrivilegedSessionView,
@@ -32,6 +34,27 @@ describe('privileged access contracts', () => {
       'privileged.status.read',
       'knowledge.manage',
     ]);
+  });
+
+  it('recognizes the permanent owner and additional administrators with legacy fallback', () => {
+    expect(
+      getPrivilegedAdministratorOperatorIds({
+        adminOperatorId: 'operator-owner',
+        adminOperatorIds: ['operator-owner', 'operator-charles', 'operator-charles', ''],
+      }),
+    ).toEqual(['operator-owner', 'operator-charles']);
+    expect(
+      isPrivilegedAdministrator(
+        { adminOperatorId: 'operator-owner', adminOperatorIds: ['operator-charles'] },
+        'operator-charles',
+      ),
+    ).toBe(true);
+    expect(isPrivilegedAdministrator({ adminOperatorId: 'operator-owner' }, 'operator-owner')).toBe(
+      true,
+    );
+    expect(isPrivilegedAdministrator({ adminOperatorId: 'operator-owner' }, 'operator-other')).toBe(
+      false,
+    );
   });
 
   it('grants no capabilities to inactive or stale role assignments', () => {

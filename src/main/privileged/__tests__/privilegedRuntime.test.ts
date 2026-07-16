@@ -401,6 +401,30 @@ describe('resolveProductionPairingTarget', () => {
       false,
     );
   });
+
+  it('accepts Charles as an active additional administrator pairing target', async () => {
+    const getFirstListItem = vi.fn(async () => ({
+      adminOperatorId: OPERATOR_ID,
+      adminOperatorIds: [OPERATOR_ID, 'operator-charles-gibbs'],
+      publisherOperatorId: null,
+    }));
+    const getOne = vi.fn(async () => ({
+      ...account,
+      id: 'account-charles',
+      operatorId: 'operator-charles-gibbs',
+      role: 'admin' as const,
+      active: true,
+    }));
+    const pb = {
+      collection: vi.fn((name: string) =>
+        name === 'relay_privileged_state' ? { getFirstListItem } : { getOne },
+      ),
+    };
+
+    await expect(resolveProductionPairingTarget(pb as never, 'account-charles')).resolves.toBe(
+      true,
+    );
+  });
 });
 
 describe('installPrivilegedE2EControl', () => {

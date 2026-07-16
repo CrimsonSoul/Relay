@@ -35,6 +35,15 @@ const snapshot = {
       updated: '2026-07-15T19:00:00.000Z',
     },
     {
+      id: 'operator-charles',
+      displayName: 'Charles Gibbs',
+      active: true,
+      revision: 1,
+      role: 'admin',
+      created: '2026-07-15T18:00:00.000Z',
+      updated: '2026-07-15T19:00:00.000Z',
+    },
+    {
       id: 'operator-publisher',
       displayName: 'Tristan Bowles',
       active: true,
@@ -53,7 +62,28 @@ const snapshot = {
       updated: '2026-07-15T19:00:00.000Z',
     },
   ],
-  privilegedAccounts: [],
+  privilegedAccounts: [
+    {
+      accountId: 'account-owner',
+      operatorId: 'operator-admin',
+      role: 'admin',
+      active: true,
+      credentialState: 'configured',
+      mustChangePassword: false,
+      credentialVersion: 1,
+      updatedAt: '2026-07-15T19:00:00.000Z',
+    },
+    {
+      accountId: 'account-charles',
+      operatorId: 'operator-charles',
+      role: 'admin',
+      active: false,
+      credentialState: 'not-configured',
+      mustChangePassword: true,
+      credentialVersion: 0,
+      updatedAt: null,
+    },
+  ],
   devices: [],
   settings: [
     {
@@ -100,8 +130,22 @@ describe('AdministrationSettings', () => {
     expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
     expect(screen.getByRole('tab', { name: 'Operators' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getAllByText('Ryan Bledsoe')).toHaveLength(2);
+    expect(screen.getByText('OWNER')).toBeVisible();
     expect(screen.getAllByText('ADMIN')).toHaveLength(2);
     expect(screen.getByText('PUBLISHER')).toBeVisible();
+    expect(screen.getByText('Charles Gibbs')).toBeVisible();
+  });
+
+  it('keeps every administrator out of the publisher picker and identifies account ownership', () => {
+    render(<AdministrationSettings relayMode="server" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Publisher' }));
+    expect(screen.queryByRole('option', { name: 'Ryan Bledsoe' })).toBeNull();
+    expect(screen.queryByRole('option', { name: 'Charles Gibbs' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Accounts' }));
+    expect(screen.getByText('Relay owner')).toBeVisible();
+    expect(screen.getByText('Relay administrator')).toBeVisible();
   });
 
   it('does not expose administrator controls to a publisher session', () => {

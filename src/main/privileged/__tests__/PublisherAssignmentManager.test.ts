@@ -20,6 +20,7 @@ function state(overrides: Partial<RelayPrivilegedStateRecord> = {}): RelayPrivil
     id: 'state-1',
     key: 'primary',
     adminOperatorId: 'operator-admin',
+    adminOperatorIds: ['operator-admin', 'operator-charles'],
     publisherOperatorId: null,
     assignmentVersion: 3,
     rosterMigrationVersion: 1,
@@ -159,6 +160,19 @@ describe('PublisherAssignmentManager', () => {
     );
   });
 
+  it('lets Charles perform the same publisher assignment as the owner', async () => {
+    await expect(
+      manager().assign({
+        operatorId: 'operator-publisher',
+        expectedStateRevision: 3,
+        actorOperatorId: 'operator-charles',
+      }),
+    ).resolves.toMatchObject({
+      publisherOperatorId: 'operator-publisher',
+      assignmentRevision: 4,
+    });
+  });
+
   it('creates a pending publisher account when the operator has never held the role', async () => {
     accountCollection.getFirstListItem.mockRejectedValue({ status: 404 });
     await manager().assign({
@@ -233,7 +247,7 @@ describe('PublisherAssignmentManager', () => {
     expect(operatorCollection.getOne).not.toHaveBeenCalled();
   });
 
-  it('rejects stale state, a disabled operator, and the administrator', async () => {
+  it('rejects stale state, a disabled operator, and any administrator', async () => {
     await expect(
       manager().assign({
         operatorId: 'operator-publisher',
@@ -255,6 +269,15 @@ describe('PublisherAssignmentManager', () => {
     await expect(
       manager().assign({
         operatorId: 'operator-admin',
+        expectedStateRevision: 3,
+        actorOperatorId: 'operator-admin',
+      }),
+    ).rejects.toThrow(/administrator/i);
+
+    operatorCollection.getOne.mockResolvedValue(operator({ id: 'operator-charles' }));
+    await expect(
+      manager().assign({
+        operatorId: 'operator-charles',
         expectedStateRevision: 3,
         actorOperatorId: 'operator-admin',
       }),

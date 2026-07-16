@@ -64,7 +64,7 @@ export function PublisherAssignmentPanel({
         <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
           <option value="">No publisher</option>
           {snapshot.operators
-            .filter((operator) => operator.active && operator.id !== snapshot.adminOperatorId)
+            .filter((operator) => operator.active && operator.role !== 'admin')
             .map((operator) => (
               <option key={operator.id} value={operator.id}>
                 {operator.displayName}

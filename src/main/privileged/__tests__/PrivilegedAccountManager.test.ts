@@ -35,6 +35,7 @@ function state(overrides: Partial<RelayPrivilegedStateRecord> = {}): RelayPrivil
     id: 'state-1',
     key: 'primary',
     adminOperatorId: 'operator-admin',
+    adminOperatorIds: ['operator-admin', 'operator-charles'],
     publisherOperatorId: 'operator-publisher',
     assignmentVersion: 2,
     rosterMigrationVersion: 1,
@@ -214,6 +215,58 @@ describe('PrivilegedAccountManager', () => {
       { requestKey: null },
     );
     expect(onCredentialChanged).toHaveBeenCalledWith('operator-publisher');
+  });
+
+  it('lets the owner configure Charles and lets Charles administer another privileged account', async () => {
+    accountCollection.getFirstListItem.mockResolvedValueOnce(
+      account({ id: 'account-charles', operatorId: 'operator-charles', role: 'admin' }),
+    );
+    accountCollection.update.mockResolvedValueOnce(
+      account({
+        id: 'account-charles',
+        operatorId: 'operator-charles',
+        role: 'admin',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 1,
+      }),
+    );
+
+    await expect(
+      manager().setupCredential({
+        actorOperatorId: 'operator-admin',
+        operatorId: 'operator-charles',
+        password: PASSWORD,
+        passwordConfirm: PASSWORD,
+      }),
+    ).resolves.toMatchObject({ operatorId: 'operator-charles', role: 'admin' });
+
+    accountCollection.getFirstListItem.mockResolvedValueOnce(
+      account({
+        id: 'account-publisher',
+        operatorId: 'operator-publisher',
+        role: 'publisher',
+      }),
+    );
+    accountCollection.update.mockResolvedValueOnce(
+      account({
+        id: 'account-publisher',
+        operatorId: 'operator-publisher',
+        role: 'publisher',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 1,
+      }),
+    );
+
+    await expect(
+      manager().setupCredential({
+        actorOperatorId: 'operator-charles',
+        operatorId: 'operator-publisher',
+        password: PASSWORD,
+        passwordConfirm: PASSWORD,
+      }),
+    ).resolves.toMatchObject({ operatorId: 'operator-publisher', role: 'publisher' });
   });
 
   it('rejects credential setup by a non-admin or for an unassigned target', async () => {

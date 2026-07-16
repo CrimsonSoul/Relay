@@ -107,6 +107,30 @@ describe('PrivilegedPocketBaseClientTransport', () => {
 });
 
 describe('PocketBasePrivilegedRepository', () => {
+  it('normalizes the permanent owner and additional administrator assignments', async () => {
+    const getFirstListItem = vi.fn(async () => ({
+      id: 'state-1',
+      key: 'primary',
+      adminOperatorId: 'operator-ryan',
+      adminOperatorIds: ['operator-ryan', 'operator-charles'],
+      publisherOperatorId: '',
+      assignmentVersion: 2,
+      rosterMigrationVersion: 2,
+      updatedByOperatorId: '',
+      updatedAt: '2026-07-16T12:00:00.000Z',
+      created: '2026-07-16T12:00:00.000Z',
+      updated: '2026-07-16T12:00:00.000Z',
+    }));
+    const repository = new PocketBasePrivilegedRepository({
+      collection: vi.fn(() => ({ getFirstListItem })),
+    } as never);
+
+    await expect(repository.getState()).resolves.toMatchObject({
+      adminOperatorId: 'operator-ryan',
+      adminOperatorIds: ['operator-ryan', 'operator-charles'],
+    });
+  });
+
   it('recognizes stored administration commands instead of recreating their request IDs', async () => {
     const getFirstListItem = vi.fn(async () => ({
       id: 'command-record',

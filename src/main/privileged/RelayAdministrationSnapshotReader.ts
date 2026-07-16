@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import {
+  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayAdministrationSnapshot,
@@ -37,7 +38,7 @@ function operatorView(
   state: RelayPrivilegedStateRecord,
 ): RelayOperatorAdminView {
   let role: RelayOperatorAdminView['role'] = null;
-  if (operator.id === state.adminOperatorId) role = 'admin';
+  if (isPrivilegedAdministrator(state, operator.id)) role = 'admin';
   else if (operator.id === state.publisherOperatorId) role = 'publisher';
   return {
     id: operator.id,

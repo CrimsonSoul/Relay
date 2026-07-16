@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
+  MAX_PRIVILEGED_ADMINISTRATORS,
+  getPrivilegedAdministratorOperatorIds,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
@@ -307,6 +309,7 @@ function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
     id,
     key,
     adminOperatorId,
+    adminOperatorIds,
     publisherOperatorId,
     assignmentVersion,
     rosterMigrationVersion,
@@ -319,6 +322,11 @@ function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
     !boundedString(id, 200) ||
     key !== 'primary' ||
     !boundedString(adminOperatorId, 200) ||
+    (adminOperatorIds !== undefined &&
+      adminOperatorIds !== null &&
+      (!Array.isArray(adminOperatorIds) ||
+        adminOperatorIds.length > MAX_PRIVILEGED_ADMINISTRATORS ||
+        adminOperatorIds.some((operatorId) => !boundedString(operatorId, 200)))) ||
     (publisherOperatorId !== null &&
       publisherOperatorId !== '' &&
       !boundedString(publisherOperatorId, 200)) ||
@@ -337,6 +345,10 @@ function normalizeState(value: unknown): RelayPrivilegedStateRecord | null {
     id,
     key: 'primary',
     adminOperatorId,
+    adminOperatorIds: getPrivilegedAdministratorOperatorIds({
+      adminOperatorId,
+      adminOperatorIds,
+    }),
     publisherOperatorId: publisherOperatorId || null,
     assignmentVersion: assignmentVersion as number,
     rosterMigrationVersion: rosterMigrationVersion as number,

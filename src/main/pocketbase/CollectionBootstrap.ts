@@ -22,6 +22,7 @@ import {
   type RelayOperatorRecord,
 } from '@shared/operators';
 import {
+  getPrivilegedAdministratorOperatorIds,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
@@ -172,8 +173,12 @@ const KNOWLEDGE_UPLOAD_CHUNK_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)';
 const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_library_state_key ON knowledge_library_state (key)';
-const PRIVILEGED_ROSTER_MIGRATION_VERSION = 1;
-const PRIVILEGED_MIGRATION_OPERATOR_NAMES = ['Ryan Bledsoe', 'Tristan Bowles'] as const;
+const PRIVILEGED_ROSTER_MIGRATION_VERSION = 2;
+const PRIVILEGED_MIGRATION_OPERATOR_NAMES = [
+  'Ryan Bledsoe',
+  'Tristan Bowles',
+  'Charles Gibbs',
+] as const;
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -521,6 +526,7 @@ const COLLECTIONS: CollectionDef[] = [
     fields: [
       { type: 'text', name: 'key', required: true, max: 40 },
       { type: 'text', name: 'adminOperatorId', required: true, max: 200 },
+      { type: 'json', name: 'adminOperatorIds' },
       { type: 'text', name: 'publisherOperatorId', max: 200 },
       { type: 'number', name: 'assignmentVersion', required: true },
       { type: 'number', name: 'rosterMigrationVersion', required: true },
@@ -1104,71 +1110,84 @@ async function patchCollectionDefinition(
   return true;
 }
 
-/** Create collections that don't exist yet. */
-async function createMissing(
+/**
+ * Create or patch managed collections in declaration order.
+ *
+ * PocketBase validates collection rules when they are saved. Processing each
+ * definition completely before moving to the next one ensures that rules on a
+ * new dependent collection can reference fields added to an older collection
+ * during the same startup migration.
+ */
+async function createManagedCollection(
   pb: PocketBase,
+  def: CollectionDef,
   existing: Set<string>,
   collectionIds: Map<string, string>,
-): Promise<number> {
-  let created = 0;
-  for (const def of COLLECTIONS) {
-    if (existing.has(def.name)) continue;
-    try {
-      const createdCollection = await pb.collections.create({
-        name: def.name,
-        type: def.type,
-        fields: serializeManagedFields(def, collectionIds),
-        ...(def.indexes ? { indexes: def.indexes } : {}),
-        ...(def.rules ?? DEFAULT_AUTH_RULES),
-        ...(def.auth ?? {}),
-      });
-      const createdId = (createdCollection as unknown as { id?: unknown }).id;
-      if (typeof createdId !== 'string' || !createdId) {
-        throw new Error(`PocketBase did not return an ID for collection: ${def.name}`);
-      }
-      collectionIds.set(def.name, createdId);
-      created++;
-      logger.info(`Created collection: ${def.name}`);
-    } catch (err) {
-      logger.error(`Failed to create collection: ${def.name}`, { error: err });
-      throw new Error(`Failed to create collection: ${def.name}`, { cause: err });
+): Promise<void> {
+  try {
+    const createdCollection = await pb.collections.create({
+      name: def.name,
+      type: def.type,
+      fields: serializeManagedFields(def, collectionIds),
+      ...(def.indexes ? { indexes: def.indexes } : {}),
+      ...(def.rules ?? DEFAULT_AUTH_RULES),
+      ...(def.auth ?? {}),
+    });
+    const createdId = (createdCollection as unknown as { id?: unknown }).id;
+    if (typeof createdId !== 'string' || !createdId) {
+      throw new Error(`PocketBase did not return an ID for collection: ${def.name}`);
     }
+    collectionIds.set(def.name, createdId);
+    existing.add(def.name);
+    logger.info(`Created collection: ${def.name}`);
+  } catch (err) {
+    logger.error(`Failed to create collection: ${def.name}`, { error: err });
+    throw new Error(`Failed to create collection: ${def.name}`, { cause: err });
   }
-  return created;
 }
 
-/** Patch existing collections that are missing schema or autodate fields. */
-async function patchExisting(
+async function patchManagedCollection(
+  pb: PocketBase,
+  def: CollectionDef,
+  allCols: Array<{ id: string; name: string }>,
+  collectionIds: ReadonlyMap<string, string>,
+): Promise<boolean> {
+  const col = allCols.find((candidate) => candidate.name === def.name);
+  if (!col) return false;
+  try {
+    return await patchCollectionDefinition(
+      pb,
+      col.id,
+      def.name,
+      serializeManagedFields(def, collectionIds),
+      def.indexes,
+      def.rules ?? DEFAULT_AUTH_RULES,
+      def.auth,
+    );
+  } catch (err) {
+    logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
+    throw new Error(`Failed to patch collection: ${def.name}`, { cause: err });
+  }
+}
+
+async function ensureManagedCollections(
   pb: PocketBase,
   existing: Set<string>,
   allCols: Array<{ id: string; name: string }>,
-  collectionIds: ReadonlyMap<string, string>,
-): Promise<number> {
+  collectionIds: Map<string, string>,
+): Promise<{ created: number; patched: number }> {
+  let created = 0;
   let patched = 0;
   for (const def of COLLECTIONS) {
-    if (!existing.has(def.name)) continue;
-    const col = allCols.find((c) => c.name === def.name);
-    if (!col) continue;
-    try {
-      if (
-        await patchCollectionDefinition(
-          pb,
-          col.id,
-          def.name,
-          serializeManagedFields(def, collectionIds),
-          def.indexes,
-          def.rules ?? DEFAULT_AUTH_RULES,
-          def.auth,
-        )
-      ) {
-        patched++;
-      }
-    } catch (err) {
-      logger.error(`Failed to patch fields on: ${def.name}`, { error: err });
-      throw new Error(`Failed to patch collection: ${def.name}`, { cause: err });
+    if (!existing.has(def.name)) {
+      await createManagedCollection(pb, def, existing, collectionIds);
+      created++;
+      continue;
     }
+
+    if (await patchManagedCollection(pb, def, allCols, collectionIds)) patched++;
   }
-  return patched;
+  return { created, patched };
 }
 
 type OperatorBootstrapRecord = Pick<
@@ -1180,6 +1199,7 @@ type PrivilegedStateBootstrapRecord = {
   id: string;
   key: string;
   adminOperatorId: string;
+  adminOperatorIds?: string[];
   publisherOperatorId?: string;
   assignmentVersion: number;
   rosterMigrationVersion: number;
@@ -1223,7 +1243,14 @@ function isFreshRosterSeedCandidate(records: OperatorBootstrapRecord[]): boolean
   return true;
 }
 
-async function migrateRelayOperatorRoster(pb: PocketBase): Promise<OperatorBootstrapRecord | null> {
+type PrivilegedAdministratorBootstrap = {
+  owner: OperatorBootstrapRecord;
+  administrators: OperatorBootstrapRecord[];
+};
+
+async function migrateRelayOperatorRoster(
+  pb: PocketBase,
+): Promise<PrivilegedAdministratorBootstrap | null> {
   const operators = pb.collection(RELAY_OPERATORS_COLLECTION);
   const existing = await operators.getList<OperatorBootstrapRecord>(1, 500, {
     requestKey: null,
@@ -1266,25 +1293,55 @@ async function migrateRelayOperatorRoster(pb: PocketBase): Promise<OperatorBoots
     logger.warn('Operator roster migration cannot identify one Ryan Bledsoe profile');
     return null;
   }
+  const managerCandidates = recordsByName.get('charles gibbs') ?? [];
+  if (managerCandidates.length !== 1) {
+    logger.warn('Operator roster migration cannot identify one Charles Gibbs profile');
+    return null;
+  }
   if (createdCount > 0) {
     logger.info(`Created ${createdCount} operator profile(s) during roster migration`);
   }
-  return adminCandidates[0] ?? null;
+  return {
+    owner: adminCandidates[0]!,
+    administrators: [adminCandidates[0]!, managerCandidates[0]!],
+  };
 }
 
-async function ensureInitialAdministratorAccount(
-  pb: PocketBase,
-  adminOperatorId: string,
-): Promise<void> {
+type PrivilegedAccountBootstrapRecord = {
+  id: string;
+  operatorId: string;
+  role: 'admin' | 'publisher';
+  active: boolean;
+  mustChangePassword: boolean;
+  credentialVersion: number;
+};
+
+async function ensureAdministratorAccount(pb: PocketBase, adminOperatorId: string): Promise<void> {
   if (!adminOperatorId) return;
   const accounts = pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION);
-  const existing = await accounts.getList(1, 2, {
+  const existing = await accounts.getList<PrivilegedAccountBootstrapRecord>(1, 2, {
     filter: `operatorId="${escapeFilterValue(adminOperatorId)}"`,
     requestKey: null,
   });
-  if (existing.totalItems > 0) return;
+  if (existing.totalItems > 1) {
+    throw new Error('Relay found multiple privileged accounts for one administrator');
+  }
+  const current = existing.items[0];
+  if (current?.role === 'admin') return;
 
   const unreachableCredential = randomBytes(48).toString('base64url');
+  if (current) {
+    await accounts.update(current.id, {
+      role: 'admin',
+      active: false,
+      mustChangePassword: true,
+      credentialVersion: Math.max(0, current.credentialVersion ?? 0) + 1,
+      password: unreachableCredential,
+      passwordConfirm: unreachableCredential,
+    });
+    logger.info('Reset an existing privileged account for Relay administrator setup');
+    return;
+  }
   const internalEmailIdentity = adminOperatorId
     .toLocaleLowerCase('en')
     .replaceAll(/[^a-z0-9._-]/g, '-')
@@ -1299,25 +1356,38 @@ async function ensureInitialAdministratorAccount(
     password: unreachableCredential,
     passwordConfirm: unreachableCredential,
   });
-  logger.info('Created inactive initial Relay administrator account');
+  logger.info('Created inactive Relay administrator account');
 }
 
 async function ensurePrivilegedBootstrap(pb: PocketBase): Promise<void> {
   const state = await getPrivilegedState(pb);
-  if (state?.rosterMigrationVersion >= PRIVILEGED_ROSTER_MIGRATION_VERSION) {
-    await ensureInitialAdministratorAccount(pb, state.adminOperatorId);
+  const currentAdministratorIds = state ? getPrivilegedAdministratorOperatorIds(state) : [];
+  if (
+    state?.rosterMigrationVersion >= PRIVILEGED_ROSTER_MIGRATION_VERSION &&
+    currentAdministratorIds.length >= 2
+  ) {
+    for (const operatorId of currentAdministratorIds) {
+      await ensureAdministratorAccount(pb, operatorId);
+    }
     return;
   }
 
-  const adminOperator = await migrateRelayOperatorRoster(pb);
-  if (!adminOperator) return;
-  await ensureInitialAdministratorAccount(pb, adminOperator.id);
+  const administratorBootstrap = await migrateRelayOperatorRoster(pb);
+  if (!administratorBootstrap) return;
+  const administratorIds = administratorBootstrap.administrators.map(({ id }) => id);
+  for (const operatorId of administratorIds) {
+    await ensureAdministratorAccount(pb, operatorId);
+  }
+  const publisherOperatorId = administratorIds.includes(state?.publisherOperatorId ?? '')
+    ? ''
+    : (state?.publisherOperatorId ?? '');
 
   const stateData = {
     key: 'primary',
-    adminOperatorId: adminOperator.id,
-    publisherOperatorId: '',
-    assignmentVersion: Math.max(1, state?.assignmentVersion ?? 0),
+    adminOperatorId: administratorBootstrap.owner.id,
+    adminOperatorIds: administratorIds,
+    publisherOperatorId,
+    assignmentVersion: state ? Math.max(1, state.assignmentVersion + 1) : 1,
     rosterMigrationVersion: PRIVILEGED_ROSTER_MIGRATION_VERSION,
     updatedByOperatorId: '',
     updatedAt: new Date().toISOString(),
@@ -1481,9 +1551,8 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
 
   const existing = new Set(allCols.map((c) => c.name));
   const collectionIds = new Map(allCols.map((collection) => [collection.name, collection.id]));
-  const created = await createMissing(pb, existing, collectionIds);
   await repairDuplicateBoardSettings(pb, existing);
-  const patched = await patchExisting(pb, existing, allCols, collectionIds);
+  const { created, patched } = await ensureManagedCollections(pb, existing, allCols, collectionIds);
   await ensurePrivilegedBootstrap(pb);
   await ensureKnowledgeLibraryBootstrap(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);

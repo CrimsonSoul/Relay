@@ -15,6 +15,7 @@ const mockPrivilegedStateCreate = vi.fn();
 const mockPrivilegedStateUpdate = vi.fn();
 const mockPrivilegedAccountGetList = vi.fn();
 const mockPrivilegedAccountCreate = vi.fn();
+const mockPrivilegedAccountUpdate = vi.fn();
 const mockKnowledgeStateGetList = vi.fn();
 const mockKnowledgeStateCreate = vi.fn();
 const mockKnowledgeStateUpdate = vi.fn();
@@ -37,6 +38,7 @@ const mockPbCollection = vi.fn((name: string) => {
     return {
       getList: mockPrivilegedAccountGetList,
       create: mockPrivilegedAccountCreate,
+      update: mockPrivilegedAccountUpdate,
     };
   }
   if (name === 'knowledge_library_state') {
@@ -78,6 +80,7 @@ beforeEach(() => {
   mockPrivilegedStateUpdate.mockReset();
   mockPrivilegedAccountGetList.mockReset();
   mockPrivilegedAccountCreate.mockReset();
+  mockPrivilegedAccountUpdate.mockReset();
   mockKnowledgeStateGetList.mockReset();
   mockKnowledgeStateCreate.mockReset();
   mockKnowledgeStateUpdate.mockReset();
@@ -98,9 +101,10 @@ beforeEach(() => {
         id: 'privileged-state',
         key: 'primary',
         adminOperatorId: 'operator-ryan-bledsoe',
+        adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
         publisherOperatorId: null,
         assignmentVersion: 1,
-        rosterMigrationVersion: 1,
+        rosterMigrationVersion: 2,
       },
     ],
   });
@@ -111,6 +115,7 @@ beforeEach(() => {
     items: [{ id: 'admin-account', operatorId: 'operator-ryan-bledsoe', role: 'admin' }],
   });
   mockPrivilegedAccountCreate.mockResolvedValue({});
+  mockPrivilegedAccountUpdate.mockResolvedValue({});
   mockKnowledgeStateGetList.mockResolvedValue({
     totalItems: 1,
     items: [{ id: 'knowledge-state', key: 'primary', mode: 'managed', revision: 1 }],
@@ -322,6 +327,7 @@ describe('ensureCollections', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'key', type: 'text', required: true }),
         expect.objectContaining({ name: 'adminOperatorId', type: 'text', required: true }),
+        expect.objectContaining({ name: 'adminOperatorIds', type: 'json' }),
         expect.objectContaining({ name: 'publisherOperatorId', type: 'text' }),
         expect.objectContaining({ name: 'assignmentVersion', type: 'number', required: true }),
         expect.objectContaining({ name: 'rosterMigrationVersion', type: 'number', required: true }),
@@ -636,6 +642,29 @@ describe('ensureCollections', () => {
     }
   });
 
+  it('patches an older upload schema before creating collections whose rules depend on it', async () => {
+    mockGetFullList.mockResolvedValue([{ id: 'upload-col-id', name: 'knowledge_uploads' }]);
+    mockGetOne.mockImplementation(async (id: string) => ({ id, fields: [], indexes: [] }));
+    let uploadSchemaPatched = false;
+    mockUpdate.mockImplementation(async (id: string) => {
+      if (id === 'upload-col-id') uploadSchemaPatched = true;
+      return {};
+    });
+    mockCreate.mockImplementation(async (value: { name: string }) => {
+      if (value.name === 'knowledge_upload_chunks' && !uploadSchemaPatched) {
+        throw new Error('chunk rules referenced the legacy upload schema');
+      }
+      return { id: `${value.name}-collection-id`, name: value.name };
+    });
+
+    await expect(ensureCollections(mockPb)).resolves.toBeUndefined();
+
+    expect(uploadSchemaPatched).toBe(true);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'knowledge_upload_chunks' }),
+    );
+  });
+
   it('patches existing upload manifests non-destructively with resolved relations and resumable states', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'batch-col-id', name: 'knowledge_upload_batches' },
@@ -812,30 +841,33 @@ describe('ensureCollections', () => {
       { displayName: 'Vlad McCarty', active: true, revision: 0 },
       { displayName: 'Weston Yokley', active: true, revision: 0 },
     ]);
-    expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        email: 'operator-ryan-bledsoe@relay.invalid',
-        operatorId: 'operator-ryan-bledsoe',
-        role: 'admin',
-        active: false,
-        mustChangePassword: true,
-        credentialVersion: 0,
-        password: expect.any(String),
-        passwordConfirm: expect.any(String),
-      }),
-    );
-    const credential = mockPrivilegedAccountCreate.mock.calls[0]?.[0] as {
-      password: string;
-      passwordConfirm: string;
-    };
-    expect(credential.password).toBe(credential.passwordConfirm);
-    expect(credential.password.length).toBeGreaterThanOrEqual(64);
+    expect(mockPrivilegedAccountCreate).toHaveBeenCalledTimes(2);
+    for (const operatorId of ['operator-ryan-bledsoe', 'operator-charles-gibbs']) {
+      expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          email: `${operatorId}@relay.invalid`,
+          operatorId,
+          role: 'admin',
+          active: false,
+          mustChangePassword: true,
+          credentialVersion: 0,
+          password: expect.any(String),
+          passwordConfirm: expect.any(String),
+        }),
+      );
+    }
+    for (const [createdAccount] of mockPrivilegedAccountCreate.mock.calls) {
+      const credential = createdAccount as { password: string; passwordConfirm: string };
+      expect(credential.password).toBe(credential.passwordConfirm);
+      expect(credential.password.length).toBeGreaterThanOrEqual(64);
+    }
     expect(mockPrivilegedStateCreate).toHaveBeenCalledWith({
       key: 'primary',
       adminOperatorId: 'operator-ryan-bledsoe',
+      adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
       publisherOperatorId: '',
       assignmentVersion: 1,
-      rosterMigrationVersion: 1,
+      rosterMigrationVersion: 2,
       updatedByOperatorId: '',
       updatedAt: expect.any(String),
     });
@@ -868,7 +900,7 @@ describe('ensureCollections', () => {
     expect(mockPrivilegedStateCreate).toHaveBeenCalledOnce();
   });
 
-  it('adds only the two approved new profiles to an established seven-person roster', async () => {
+  it('adds only the approved new profiles to an established seven-person roster', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
     beginRosterMigration();
@@ -910,6 +942,7 @@ describe('ensureCollections', () => {
     expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
       { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
       { displayName: 'Tristan Bowles', active: true, revision: 0 },
+      { displayName: 'Charles Gibbs', active: true, revision: 0 },
     ]);
     expect(mockCollectionUpdate).not.toHaveBeenCalled();
   });
@@ -929,6 +962,132 @@ describe('ensureCollections', () => {
 
     expect(mockCollectionCreate).not.toHaveBeenCalled();
     expect(mockCollectionGetList).not.toHaveBeenCalled();
+  });
+
+  it('upgrades an existing owner to owner plus Charles without losing the publisher', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockSuccessfulCollectionCreation();
+    beginRosterMigration([
+      {
+        id: 'privileged-state',
+        key: 'primary',
+        adminOperatorId: 'operator-ryan-bledsoe',
+        publisherOperatorId: 'operator-paris',
+        assignmentVersion: 4,
+        rosterMigrationVersion: 1,
+      },
+    ]);
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 3,
+      items: [
+        { id: 'operator-ryan-bledsoe', displayName: 'Ryan Bledsoe', active: true },
+        { id: 'operator-charles-gibbs', displayName: 'Charles Gibbs', active: true },
+        { id: 'operator-tristan-bowles', displayName: 'Tristan Bowles', active: true },
+      ],
+    });
+    mockPrivilegedAccountGetList.mockImplementation(
+      async (_page: number, _perPage: number, options: { filter?: string }) =>
+        options.filter?.includes('operator-charles-gibbs')
+          ? { totalItems: 0, items: [] }
+          : {
+              totalItems: 1,
+              items: [
+                {
+                  id: 'account-owner',
+                  operatorId: 'operator-ryan-bledsoe',
+                  role: 'admin',
+                },
+              ],
+            },
+    );
+
+    await ensureCollections(mockPb);
+
+    expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ operatorId: 'operator-charles-gibbs', role: 'admin' }),
+    );
+    expect(mockPrivilegedStateUpdate).toHaveBeenCalledWith(
+      'privileged-state',
+      expect.objectContaining({
+        adminOperatorId: 'operator-ryan-bledsoe',
+        adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
+        publisherOperatorId: 'operator-paris',
+        assignmentVersion: 5,
+        rosterMigrationVersion: 2,
+      }),
+    );
+  });
+
+  it('requires fresh setup when an existing Charles publisher account is elevated to administrator', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockSuccessfulCollectionCreation();
+    beginRosterMigration([
+      {
+        id: 'privileged-state',
+        key: 'primary',
+        adminOperatorId: 'operator-ryan-bledsoe',
+        publisherOperatorId: 'operator-charles-gibbs',
+        assignmentVersion: 7,
+        rosterMigrationVersion: 1,
+      },
+    ]);
+    mockCollectionGetList.mockResolvedValueOnce({
+      totalItems: 3,
+      items: [
+        { id: 'operator-ryan-bledsoe', displayName: 'Ryan Bledsoe', active: true },
+        { id: 'operator-charles-gibbs', displayName: 'Charles Gibbs', active: true },
+        { id: 'operator-tristan-bowles', displayName: 'Tristan Bowles', active: true },
+      ],
+    });
+    mockPrivilegedAccountGetList.mockImplementation(
+      async (_page: number, _perPage: number, options: { filter?: string }) =>
+        options.filter?.includes('operator-charles-gibbs')
+          ? {
+              totalItems: 1,
+              items: [
+                {
+                  id: 'account-charles',
+                  operatorId: 'operator-charles-gibbs',
+                  role: 'publisher',
+                  active: true,
+                  mustChangePassword: false,
+                  credentialVersion: 3,
+                },
+              ],
+            }
+          : {
+              totalItems: 1,
+              items: [
+                {
+                  id: 'account-owner',
+                  operatorId: 'operator-ryan-bledsoe',
+                  role: 'admin',
+                },
+              ],
+            },
+    );
+
+    await ensureCollections(mockPb);
+
+    expect(mockPrivilegedAccountUpdate).toHaveBeenCalledWith(
+      'account-charles',
+      expect.objectContaining({
+        role: 'admin',
+        active: false,
+        mustChangePassword: true,
+        credentialVersion: 4,
+        password: expect.any(String),
+        passwordConfirm: expect.any(String),
+      }),
+    );
+    expect(mockPrivilegedStateUpdate).toHaveBeenCalledWith(
+      'privileged-state',
+      expect.objectContaining({
+        adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
+        publisherOperatorId: '',
+        assignmentVersion: 8,
+      }),
+    );
   });
 
   it('leaves an incomplete operator roster page untouched and migration pending', async () => {

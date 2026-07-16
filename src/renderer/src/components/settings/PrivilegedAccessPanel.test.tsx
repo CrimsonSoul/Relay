@@ -44,10 +44,17 @@ describe('PrivilegedAccessPanel', () => {
       snapshot: {
         operators: [
           { id: 'operator-1', displayName: 'Ryan Bledsoe', active: true, role: 'admin' },
+          { id: 'operator-3', displayName: 'Charles Gibbs', active: true, role: 'admin' },
           { id: 'operator-2', displayName: 'Tristan Bowles', active: true, role: 'publisher' },
         ],
         privilegedAccounts: [
           { accountId: 'account-admin', operatorId: 'operator-1', role: 'admin', active: true },
+          {
+            accountId: 'account-charles',
+            operatorId: 'operator-3',
+            role: 'admin',
+            active: true,
+          },
           {
             accountId: 'account-publisher',
             operatorId: 'operator-2',
@@ -172,6 +179,7 @@ describe('PrivilegedAccessPanel', () => {
     render(<PrivilegedAccessPanel relayMode="server" />);
 
     expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Administrator' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Charles Gibbs — Administrator' })).toBeVisible();
     expect(
       screen.getByRole('option', { name: 'Tristan Bowles — Knowledge publisher' }),
     ).toBeVisible();

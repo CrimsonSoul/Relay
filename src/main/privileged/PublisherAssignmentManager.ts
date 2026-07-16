@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type PocketBase from 'pocketbase';
 import {
+  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -60,7 +61,7 @@ export class PublisherAssignmentManager {
 
   async assign(input: PublisherAssignmentInput): Promise<PublisherAssignmentResult> {
     const state = await this.getState();
-    if (input.actorOperatorId !== state.adminOperatorId) {
+    if (!isPrivilegedAdministrator(state, input.actorOperatorId)) {
       throw new Error('Unauthorized publisher assignment.');
     }
     if (input.expectedStateRevision !== state.assignmentVersion) {
@@ -73,7 +74,7 @@ export class PublisherAssignmentManager {
         credentialState: 'unchanged',
       };
     }
-    if (input.operatorId) await this.assertEligible(input.operatorId, state.adminOperatorId);
+    if (input.operatorId) await this.assertEligible(input.operatorId, state);
 
     if (input.operatorId)
       await this.preparePendingPublisher(input.operatorId, input.actorOperatorId);
@@ -108,12 +109,15 @@ export class PublisherAssignmentManager {
       .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null });
   }
 
-  private async assertEligible(operatorId: string, adminOperatorId: string): Promise<void> {
+  private async assertEligible(
+    operatorId: string,
+    state: RelayPrivilegedStateRecord,
+  ): Promise<void> {
     const operator = await this.pb
       .collection(RELAY_OPERATORS_COLLECTION)
       .getOne<RelayOperatorRecord>(operatorId, { requestKey: null });
     if (!operator.active) throw new Error('Select an active operator for Knowledge Publisher.');
-    if (operator.id === adminOperatorId) {
+    if (isPrivilegedAdministrator(state, operator.id)) {
       throw new Error('The Relay administrator cannot also be Knowledge Publisher.');
     }
   }

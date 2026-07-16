@@ -10,6 +10,7 @@ export const MAX_PRIVILEGED_DEVICE_LABEL_LENGTH = 80;
 export const MAX_PRIVILEGED_HOSTNAME_LENGTH = 255;
 export const MIN_PRIVILEGED_PASSWORD_LENGTH = 12;
 export const MAX_PRIVILEGED_PASSWORD_LENGTH = 128;
+export const MAX_PRIVILEGED_ADMINISTRATORS = 10;
 
 export type PrivilegedRole = 'admin' | 'publisher';
 
@@ -49,7 +50,10 @@ export type RelayPrivilegedAccountRecord = {
 export type RelayPrivilegedStateRecord = {
   id: string;
   key: 'primary';
+  /** Permanent application owner retained for backward compatibility and recovery. */
   adminOperatorId: string;
+  /** Full administrators, including the permanent owner. Missing on legacy records. */
+  adminOperatorIds?: string[];
   publisherOperatorId: string | null;
   assignmentVersion: number;
   rosterMigrationVersion: number;
@@ -215,6 +219,34 @@ export function isRelayAdministrableSetting(value: unknown): value is RelayAdmin
 
 export function isPrivilegedRole(value: unknown): value is PrivilegedRole {
   return value === 'admin' || value === 'publisher';
+}
+
+type PrivilegedAdministratorState = {
+  adminOperatorId?: unknown;
+  adminOperatorIds?: unknown;
+};
+
+export function getPrivilegedAdministratorOperatorIds(
+  state: PrivilegedAdministratorState,
+): string[] {
+  const candidates = [
+    state.adminOperatorId,
+    ...(Array.isArray(state.adminOperatorIds) ? state.adminOperatorIds : []),
+  ];
+  const administratorIds: string[] = [];
+  for (const candidate of candidates) {
+    if (!boundedString(candidate, 200) || administratorIds.includes(candidate)) continue;
+    administratorIds.push(candidate);
+    if (administratorIds.length === MAX_PRIVILEGED_ADMINISTRATORS) break;
+  }
+  return administratorIds;
+}
+
+export function isPrivilegedAdministrator(
+  state: PrivilegedAdministratorState,
+  operatorId: string,
+): boolean {
+  return getPrivilegedAdministratorOperatorIds(state).includes(operatorId);
 }
 
 export function isPrivilegedCapability(value: unknown): value is PrivilegedCapability {
@@ -492,6 +524,9 @@ export function normalizeRelayAdministrationSnapshot(
     !boundedString(adminOperatorId, 200) ||
     !nullableBoundedString(publisherOperatorId, 200) ||
     publisherOperatorId === adminOperatorId ||
+    normalizedOperators.some(
+      (operator) => operator.id === publisherOperatorId && operator.role === 'admin',
+    ) ||
     !nonNegativeInteger(assignmentRevision) ||
     !canonicalTimestamp(generatedAt)
   ) {

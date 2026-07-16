@@ -2,6 +2,7 @@ import { createHash, createPublicKey, randomUUID, verify as verifySignature } fr
 import type { JsonWebKey } from 'node:crypto';
 import {
   getPrivilegedCapabilities,
+  isPrivilegedAdministrator,
   type PrivilegedCapability,
   type PrivilegedRole,
   type PrivilegedSessionView,
@@ -194,7 +195,7 @@ function effectiveRole(
   account: RelayPrivilegedAccountRecord,
   state: RelayPrivilegedStateRecord,
 ): PrivilegedRole | null {
-  if (state.adminOperatorId === account.operatorId) return 'admin';
+  if (isPrivilegedAdministrator(state, account.operatorId)) return 'admin';
   if (state.publisherOperatorId === account.operatorId) return 'publisher';
   return null;
 }

@@ -68,7 +68,10 @@ export function OperatorAdministrationPanel({
         <div>
           <div className="settings-section-heading">People</div>
           <h3 id="admin-operators-title">Operators & roles</h3>
-          <p>Normal profiles remain passwordless. Roles only unlock protected administration.</p>
+          <p>
+            Normal profiles remain passwordless. Ryan remains the owner; administrators have full
+            protected access.
+          </p>
         </div>
         <span className="administration-panel__metric">{snapshot.operators.length} profiles</span>
       </header>
@@ -116,7 +119,7 @@ export function OperatorAdministrationPanel({
             <div className="administration-row__badges">
               {operator.role && (
                 <span className={`administration-chip administration-chip--${operator.role}`}>
-                  {operator.role.toUpperCase()}
+                  {operator.id === snapshot.adminOperatorId ? 'OWNER' : operator.role.toUpperCase()}
                 </span>
               )}
             </div>

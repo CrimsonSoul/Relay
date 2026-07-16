@@ -56,8 +56,8 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     return snapshot.privilegedAccounts.flatMap((account) => {
       const operator = operators.get(account.operatorId);
       const assigned =
-        (account.role === 'admin' && account.operatorId === snapshot.adminOperatorId) ||
-        (account.role === 'publisher' && account.operatorId === snapshot.publisherOperatorId);
+        operator?.role === account.role &&
+        (account.role === 'admin' || account.operatorId === snapshot.publisherOperatorId);
       if (!account.active || !operator?.active || !assigned) return [];
       return [
         {

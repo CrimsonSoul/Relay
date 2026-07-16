@@ -2,6 +2,7 @@ import type PocketBase from 'pocketbase';
 import {
   MAX_PRIVILEGED_PASSWORD_LENGTH,
   MIN_PRIVILEGED_PASSWORD_LENGTH,
+  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -75,7 +76,7 @@ export class PrivilegedAccountManager {
   ): Promise<PrivilegedCredentialSetupView> {
     validateCredential(input);
     const state = await this.getState();
-    if (input.actorOperatorId !== state.adminOperatorId) {
+    if (!isPrivilegedAdministrator(state, input.actorOperatorId)) {
       throw new Error('Unauthorized privileged credential setup.');
     }
     const expectedRole = this.assignedRole(state, input.operatorId);
@@ -91,7 +92,7 @@ export class PrivilegedAccountManager {
     state: RelayPrivilegedStateRecord,
     operatorId: string,
   ): PrivilegedRole | null {
-    if (state.adminOperatorId === operatorId) return 'admin';
+    if (isPrivilegedAdministrator(state, operatorId)) return 'admin';
     if (state.publisherOperatorId === operatorId) return 'publisher';
     return null;
   }

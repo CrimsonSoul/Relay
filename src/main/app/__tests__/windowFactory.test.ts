@@ -12,6 +12,9 @@ const mocks = vi.hoisted(() => {
   const mockLoadFile = vi.fn().mockResolvedValue(undefined);
   const mockShow = vi.fn();
   const mockFocus = vi.fn();
+  const mockRestore = vi.fn();
+  const mockIsVisible = vi.fn(() => false);
+  const mockIsMinimized = vi.fn(() => false);
   const mockOn = vi.fn();
   const mockOnce = vi.fn();
 
@@ -32,6 +35,9 @@ const mocks = vi.hoisted(() => {
       loadFile: mockLoadFile,
       show: mockShow,
       focus: mockFocus,
+      restore: mockRestore,
+      isVisible: mockIsVisible,
+      isMinimized: mockIsMinimized,
       on: mockOn,
       once: mockOnce,
       isDestroyed: vi.fn(() => false),
@@ -51,6 +57,10 @@ const mocks = vi.hoisted(() => {
     mockLoadURL,
     mockLoadFile,
     mockShow,
+    mockFocus,
+    mockRestore,
+    mockIsVisible,
+    mockIsMinimized,
     mockOn,
     mockOnce,
     MockBrowserWindow,
@@ -70,7 +80,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../logger', () => ({
   loggers: {
-    main: { debug: vi.fn(), info: vi.fn(), error: vi.fn() },
+    main: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     security: { warn: vi.fn() },
   },
 }));
@@ -106,6 +116,10 @@ describe('windowFactory', () => {
     vi.clearAllMocks();
     vi.resetModules();
     mocks.resetLastOptions();
+    mocks.mockLoadURL.mockReset().mockResolvedValue(undefined);
+    mocks.mockLoadFile.mockReset().mockResolvedValue(undefined);
+    mocks.mockIsVisible.mockReset().mockReturnValue(false);
+    mocks.mockIsMinimized.mockReset().mockReturnValue(false);
     mockState.mainWindow = null;
     delete process.env.ELECTRON_RENDERER_URL;
     delete process.env.RELAY_TEST_WINDOW_SIZE;
@@ -399,9 +413,29 @@ describe('windowFactory', () => {
   });
 
   describe('createWindow - ready-to-show and close handlers', () => {
-    it('shows and focuses the main window on ready-to-show', async () => {
+    it('shows and focuses the main window when the renderer finishes loading', async () => {
       const { createWindow } = await import('../windowFactory');
       await createWindow();
+
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
+      expect(loggers.main.info).toHaveBeenCalledWith(
+        'Main window presented',
+        expect.objectContaining({ reason: 'renderer-loaded' }),
+      );
+    });
+
+    it('shows and focuses the main window on ready-to-show before loading completes', async () => {
+      let resolveLoad!: () => void;
+      mocks.mockLoadFile.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+
+      const { createWindow } = await import('../windowFactory');
+      const createPromise = createWindow();
 
       // Find the once('ready-to-show') handler
       const readyCall = mocks.mockOnce.mock.calls.find(
@@ -409,11 +443,48 @@ describe('windowFactory', () => {
       );
       expect(readyCall).toBeDefined();
 
-      // Set up mockState so getMainWindow() returns a window-like object
-      mockState.mainWindow = { show: mocks.mockShow, focus: vi.fn() };
       readyCall![1]();
 
-      expect(mocks.mockShow).toHaveBeenCalled();
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
+      expect(loggers.main.info).toHaveBeenCalledWith(
+        'Main window presented',
+        expect.objectContaining({ reason: 'ready-to-show' }),
+      );
+
+      resolveLoad();
+      await createPromise;
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+    });
+
+    it('shows the main window on a timeout when renderer loading stalls', async () => {
+      vi.useFakeTimers();
+      let resolveLoad!: () => void;
+      mocks.mockLoadFile.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveLoad = resolve;
+          }),
+      );
+
+      try {
+        const { createWindow } = await import('../windowFactory');
+        const createPromise = createWindow();
+
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(mocks.mockShow).toHaveBeenCalledOnce();
+        expect(mocks.mockFocus).toHaveBeenCalledOnce();
+        expect(loggers.main.info).toHaveBeenCalledWith(
+          'Main window presented',
+          expect.objectContaining({ reason: 'startup-timeout' }),
+        );
+
+        resolveLoad();
+        await createPromise;
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('closes all other windows when main window closes', async () => {
@@ -442,6 +513,36 @@ describe('windowFactory', () => {
 
       closedCall![1]();
       expect(mockState.mainWindow).toBeNull();
+    });
+  });
+
+  describe('showAndFocusWindow', () => {
+    it('restores, shows, and focuses an existing minimized window', async () => {
+      mocks.mockIsMinimized.mockReturnValue(true);
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = mockState.mainWindow ?? new mocks.MockBrowserWindow({});
+
+      expect(showAndFocusWindow(window as never, 'second-instance')).toBe(true);
+      expect(mocks.mockRestore).toHaveBeenCalledOnce();
+      expect(mocks.mockShow).toHaveBeenCalledOnce();
+      expect(mocks.mockFocus).toHaveBeenCalledOnce();
+    });
+
+    it('does nothing when the existing window has already been destroyed', async () => {
+      const { showAndFocusWindow } = await import('../windowFactory');
+      const window = {
+        isDestroyed: vi.fn(() => true),
+        isMinimized: mocks.mockIsMinimized,
+        restore: mocks.mockRestore,
+        isVisible: mocks.mockIsVisible,
+        show: mocks.mockShow,
+        focus: mocks.mockFocus,
+      };
+
+      expect(showAndFocusWindow(window as never, 'second-instance')).toBe(false);
+      expect(mocks.mockRestore).not.toHaveBeenCalled();
+      expect(mocks.mockShow).not.toHaveBeenCalled();
+      expect(mocks.mockFocus).not.toHaveBeenCalled();
     });
   });
 

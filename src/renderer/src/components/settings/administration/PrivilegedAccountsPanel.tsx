@@ -6,6 +6,11 @@ type FormSubmitEvent = Parameters<NonNullable<React.ComponentProps<'form'>['onSu
 
 type Props = AdministrationPanelProps & { relayMode: 'server' | 'client' | null };
 
+function privilegedAccountRoleLabel(role: string, isOwner: boolean): string {
+  if (role !== 'admin') return 'Knowledge Publisher';
+  return isOwner ? 'Relay owner' : 'Relay administrator';
+}
+
 export function PrivilegedAccountsPanel({ snapshot, relayMode }: Readonly<Props>) {
   const [operatorId, setOperatorId] = useState('');
   const [password, setPassword] = useState('');
@@ -59,7 +64,10 @@ export function PrivilegedAccountsPanel({ snapshot, relayMode }: Readonly<Props>
             <div className="administration-row__identity">
               <strong>{operatorNames.get(account.operatorId) ?? 'Unknown operator'}</strong>
               <span>
-                {account.role === 'admin' ? 'Relay administrator' : 'Knowledge Publisher'}
+                {privilegedAccountRoleLabel(
+                  account.role,
+                  account.operatorId === snapshot.adminOperatorId,
+                )}
               </span>
             </div>
             <div className="administration-row__badges">

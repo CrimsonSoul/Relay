@@ -262,6 +262,24 @@ describe('PrivilegedCommandProcessor', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it('authorizes an additional assigned administrator with the full admin role', async () => {
+    vi.mocked(repository.getAccount).mockResolvedValueOnce(
+      accountRecord({ operatorId: 'operator-charles-gibbs' }),
+    );
+    vi.mocked(repository.getOperator).mockResolvedValueOnce(
+      operatorRecord({
+        id: 'operator-charles-gibbs',
+        displayName: 'Charles Gibbs',
+      }),
+    );
+    vi.mocked(repository.getState).mockResolvedValueOnce(
+      stateRecord({ adminOperatorIds: [OPERATOR_ID, 'operator-charles-gibbs'] }),
+    );
+
+    await expect(createProcessor().process(envelope())).resolves.toMatchObject({ ok: true });
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
   it('requires the command-specific capability for administration commands', async () => {
     const administrationHandler = vi.fn(async () => ({ operators: [] }));
     const processor = createProcessor();

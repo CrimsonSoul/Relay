@@ -37,6 +37,7 @@ describe('RelayOperatorManager', () => {
     collection.getOne.mockResolvedValue(operator());
     collection.getFirstListItem.mockResolvedValue({
       adminOperatorId: 'admin-operator',
+      adminOperatorIds: ['admin-operator', 'manager-operator'],
       publisherOperatorId: null,
     });
   });
@@ -195,12 +196,21 @@ describe('RelayOperatorManager', () => {
     const manager = new RelayOperatorManager(pb as never);
     const constraints = {
       adminOperatorId: 'operator-1',
+      adminOperatorIds: ['operator-1', 'operator-charles'],
       publisherOperatorId: 'operator-2',
     };
 
     await expect(
       manager.setActiveByRevision(
         { operatorId: 'operator-1', active: false, expectedRevision: 0 },
+        constraints,
+      ),
+    ).rejects.toThrow(/administrator/i);
+
+    collection.getOne.mockResolvedValue(operator({ id: 'operator-charles' }));
+    await expect(
+      manager.setActiveByRevision(
+        { operatorId: 'operator-charles', active: false, expectedRevision: 0 },
         constraints,
       ),
     ).rejects.toThrow(/administrator/i);
@@ -219,7 +229,7 @@ describe('RelayOperatorManager', () => {
     const manager = new RelayOperatorManager(pb as never);
     await manager.setActiveByRevision(
       { operatorId: 'operator-1', active: false, expectedRevision: 0 },
-      { adminOperatorId: 'admin-1', publisherOperatorId: null },
+      { adminOperatorId: 'admin-1', adminOperatorIds: ['admin-1'], publisherOperatorId: null },
     );
 
     expect(collection.update).toHaveBeenCalledWith(

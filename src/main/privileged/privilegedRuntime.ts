@@ -19,6 +19,7 @@ import {
   type SignedPrivilegedCommandEnvelope,
 } from '@shared/privilegedCommands';
 import {
+  isPrivilegedAdministrator,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type PrivilegedPairingChallengeView,
@@ -531,7 +532,7 @@ async function resolveProductionIdentity(
   const operatorIsCurrent = operator.id === account.operatorId && operator.active === true;
   const assigned =
     operatorIsCurrent &&
-    ((account.role === 'admin' && state.adminOperatorId === account.operatorId) ||
+    ((account.role === 'admin' && isPrivilegedAdministrator(state, account.operatorId)) ||
       (account.role === 'publisher' && state.publisherOperatorId === account.operatorId));
   return { assigned, operatorName };
 }
@@ -551,7 +552,7 @@ export async function resolveProductionPairingTarget(
     ]);
     if (account.id !== targetAccountId || account.active !== true) return false;
     return (
-      (account.role === 'admin' && account.operatorId === state.adminOperatorId) ||
+      (account.role === 'admin' && isPrivilegedAdministrator(state, account.operatorId)) ||
       (account.role === 'publisher' && account.operatorId === state.publisherOperatorId)
     );
   } catch {

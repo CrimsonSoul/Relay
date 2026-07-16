@@ -6,6 +6,7 @@ import {
   type RelayOperatorRecord,
 } from '@shared/operators';
 import {
+  getPrivilegedAdministratorOperatorIds,
   RELAY_PRIVILEGED_STATE_COLLECTION,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
@@ -20,7 +21,7 @@ const STALE_WRITE_ERROR = 'This operator changed since it was loaded. Refresh an
 
 export type OperatorRoleProtection = Pick<
   RelayPrivilegedStateRecord,
-  'adminOperatorId' | 'publisherOperatorId'
+  'adminOperatorId' | 'adminOperatorIds' | 'publisherOperatorId'
 >;
 
 export class RelayOperatorConflictError extends Error {
@@ -110,6 +111,7 @@ export class RelayOperatorManager {
       .getFirstListItem<RelayPrivilegedStateRecord>('key="primary"', { requestKey: null });
     return {
       adminOperatorId: state.adminOperatorId,
+      adminOperatorIds: getPrivilegedAdministratorOperatorIds(state),
       publisherOperatorId: state.publisherOperatorId,
     };
   }
@@ -143,7 +145,7 @@ export class RelayOperatorManager {
     active: boolean,
     protection: OperatorRoleProtection,
   ): Promise<RelayOperatorRecord> {
-    if (!active && current.id === protection.adminOperatorId) {
+    if (!active && getPrivilegedAdministratorOperatorIds(protection).includes(current.id)) {
       throw new Error('The active Relay administrator cannot be deactivated.');
     }
     if (!active && current.id === protection.publisherOperatorId) {
