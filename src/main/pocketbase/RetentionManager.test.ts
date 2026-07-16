@@ -58,6 +58,9 @@ describe('RetentionManager', () => {
       expect(collections).toContain('bridge_history');
       expect(collections).toContain('alert_history');
       expect(collections).toContain('conflict_log');
+      expect(collections).toContain('knowledge_uploads');
+      expect(collections).toContain('knowledge_audit_events');
+      expect(collections).not.toContain('knowledge_documents');
     });
 
     it('logs completion after cleanup', async () => {

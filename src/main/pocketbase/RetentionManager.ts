@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import { loggers } from '../logger';
+import { KnowledgeManagementCleanup } from '../knowledge/KnowledgeManagementCleanup';
 
 const logger = loggers.retention;
 
@@ -13,7 +14,19 @@ export class RetentionManager {
     await this.cleanAlertHistory();
     await this.cleanConflictLog();
     await this.cleanOncallDismissals();
+    await this.cleanKnowledgeManagement();
     logger.info('Retention cleanup complete');
+  }
+
+  private async cleanKnowledgeManagement(): Promise<void> {
+    try {
+      const result = await new KnowledgeManagementCleanup({ pb: this.pb }).run();
+      if (result.expiredUploads > 0 || result.expiredAuditEvents > 0) {
+        logger.info('Knowledge management cleanup complete', result);
+      }
+    } catch (err) {
+      logger.error('Knowledge management cleanup failed', { error: err });
+    }
   }
 
   startSchedule(intervalMs = 24 * 60 * 60 * 1000, beforeCleanup?: () => Promise<void>): void {
