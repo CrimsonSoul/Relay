@@ -99,6 +99,18 @@ export type KnowledgeUploadView = {
   revision: number;
 };
 
+export type KnowledgeUploadProgress = Pick<
+  KnowledgeUploadView,
+  'requestId' | 'fileName' | 'byteSize' | 'state' | 'progress' | 'safeError'
+>;
+
+export type KnowledgeUploadSelectionResult =
+  | { ok: true; uploads: KnowledgeUploadView[] }
+  | {
+      ok: false;
+      error: 'cancelled' | 'offline' | 'unauthorized' | 'invalid-file' | 'upload-failed';
+    };
+
 export type KnowledgeAuditAction =
   | 'upload-validated'
   | 'published'

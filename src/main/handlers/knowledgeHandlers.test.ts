@@ -36,6 +36,8 @@ describe('knowledgeHandlers', () => {
     lastIndexedAt: '2026-07-14T12:00:00.000Z',
   }));
   const manager = { getStatus };
+  const selectAndStage = vi.fn();
+  const uploadService = { selectAndStage };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -49,6 +51,7 @@ describe('knowledgeHandlers', () => {
     setupKnowledgeHandlers(
       () => service as never,
       () => manager as never,
+      () => uploadService as never,
     );
   });
 
@@ -125,6 +128,20 @@ describe('knowledgeHandlers', () => {
       documentCount: 0,
       categoryCount: 0,
       lastIndexedAt: null,
+    });
+  });
+
+  it('requires a trusted sender and forwards only the no-argument upload selection request', async () => {
+    selectAndStage.mockResolvedValue({ ok: false, error: 'cancelled' });
+    await expect(
+      handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, '/renderer/cannot/pass/a/path.pdf'),
+    ).resolves.toEqual({ ok: false, error: 'cancelled' });
+    expect(selectAndStage).toHaveBeenCalledWith();
+
+    trusted.mockReturnValueOnce(false);
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({})).resolves.toEqual({
+      ok: false,
+      error: 'unauthorized',
     });
   });
 

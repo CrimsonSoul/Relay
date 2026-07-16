@@ -43,6 +43,29 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
   });
 
+  it('exposes only selection and safe progress for Knowledge uploads', async () => {
+    const callback = vi.fn();
+    await api.selectAndStageKnowledgePdfs();
+    const unsubscribe = api.onKnowledgeUploadProgress(callback);
+    const handler = electronMocks.on.mock.calls.find(
+      ([channel]) => channel === 'knowledge:uploadProgress',
+    )?.[1] as (_event: unknown, progress: unknown) => void;
+    const progress = {
+      requestId: 'request-1',
+      fileName: 'Runbook.pdf',
+      byteSize: 100,
+      state: 'uploading',
+      progress: 20,
+      safeError: null,
+    };
+    handler({}, progress);
+    unsubscribe();
+
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage');
+    expect(callback).toHaveBeenCalledWith(progress);
+    expect(electronMocks.removeListener).toHaveBeenCalledWith('knowledge:uploadProgress', handler);
+  });
+
   it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {
     const login = { operatorId: 'operator-admin', password: 'Test-access-value-123!' };
     const reauthentication = { password: 'Test-access-value-123!' };

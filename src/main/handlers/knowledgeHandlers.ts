@@ -8,6 +8,7 @@ import type {
 } from '@shared/knowledge';
 import type { KnowledgeBaseManager } from '../knowledge/KnowledgeBaseManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
 import { loggers } from '../logger';
 import { rateLimiters } from '../rateLimiter';
@@ -23,6 +24,7 @@ const EMPTY_STATUS: KnowledgeIndexStatus = {
 export function setupKnowledgeHandlers(
   getService: () => KnowledgePdfService | null,
   getManager: () => KnowledgeBaseManager | null,
+  getUploadService: () => KnowledgeUploadService | null = () => null,
 ): void {
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_GET_PDF,
@@ -46,6 +48,19 @@ export function setupKnowledgeHandlers(
       return getManager()?.getStatus() ?? EMPTY_STATUS;
     },
   );
+
+  ipcMain.handle(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE, async (event) => {
+    if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE)) {
+      return { ok: false, error: 'unauthorized' } as const;
+    }
+    if (!rateLimiters.fsOperations.tryConsume().allowed) {
+      return { ok: false, error: 'upload-failed' } as const;
+    }
+    const uploadService = getUploadService();
+    return uploadService
+      ? uploadService.selectAndStage()
+      : ({ ok: false, error: 'offline' } as const);
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_OPEN_WEB_LINK,

@@ -31,7 +31,7 @@ type PrivilegedAuthCollection = {
     options: { requestKey: null },
   ): Promise<PrivilegedAuthResponse>;
   create<T = Record<string, unknown>>(
-    data: Record<string, unknown>,
+    data: Record<string, unknown> | FormData,
     options: { requestKey: null },
   ): Promise<T>;
   getOne<T = Record<string, unknown>>(id: string, options: { requestKey: null }): Promise<T>;
@@ -58,6 +58,10 @@ export interface PrivilegedAuthClient {
   authenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord>;
   reauthenticate(operatorId: string, password: string): Promise<RelayPrivilegedAccountRecord>;
   clear(): void;
+  createRecord?(
+    collection: string,
+    data: Record<string, unknown> | FormData,
+  ): Promise<Record<string, unknown> & { id: string }>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -168,7 +172,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
 
   async createRecord(
     collection: string,
-    data: Record<string, unknown>,
+    data: Record<string, unknown> | FormData,
   ): Promise<Record<string, unknown> & { id: string }> {
     this.assertAuthenticated();
     try {

@@ -16,6 +16,8 @@ import type {
   KnowledgeOpenWebLinkResult,
   KnowledgePdfRequest,
   KnowledgePdfResult,
+  KnowledgeUploadProgress,
+  KnowledgeUploadSelectionResult,
 } from './knowledge';
 
 /** Index signature is intentional: raw stores arbitrary provider-specific fields from upstream data sources. */
@@ -526,6 +528,8 @@ export type BridgeAPI = {
   getKnowledgeIndexStatus: () => Promise<KnowledgeIndexStatus>;
   onKnowledgeIndexStatusChanged: (callback: (status: KnowledgeIndexStatus) => void) => () => void;
   openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
+  selectAndStageKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
+  onKnowledgeUploadProgress: (callback: (progress: KnowledgeUploadProgress) => void) => () => void;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -657,6 +661,8 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_GET_INDEX_STATUS: 'knowledge:getIndexStatus',
   KNOWLEDGE_INDEX_STATUS_CHANGED: 'knowledge:indexStatusChanged',
   KNOWLEDGE_OPEN_WEB_LINK: 'knowledge:openWebLink',
+  KNOWLEDGE_SELECT_AND_STAGE: 'knowledge:selectAndStage',
+  KNOWLEDGE_UPLOAD_PROGRESS: 'knowledge:uploadProgress',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

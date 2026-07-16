@@ -60,6 +60,7 @@ import { PublisherAssignmentManager } from './PublisherAssignmentManager';
 import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
 import { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 import { RelayAdministrationService } from './RelayAdministrationService';
+import { registerKnowledgeManagementCommands } from '../knowledge/registerKnowledgeManagementCommands';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
 
@@ -146,6 +147,7 @@ function publicCopy(view: PrivilegedSessionView): PrivilegedSessionView {
 export class PrivilegedRuntime {
   private readonly mode: PrivilegedRuntimeMode;
   private readonly hostname: string;
+  private readonly authClient: PrivilegedAuthClient;
   private readonly deviceStore: PrivilegedDeviceKeyStore;
   private readonly resolveAccountIdentity: PrivilegedRuntimeOptions['resolveAccountIdentity'];
   private readonly clientTransport?: PrivilegedClientTransport;
@@ -162,6 +164,7 @@ export class PrivilegedRuntime {
   constructor(options: PrivilegedRuntimeOptions) {
     this.mode = options.mode;
     this.hostname = options.hostname;
+    this.authClient = options.authClient;
     this.deviceStore = options.deviceStore;
     this.resolveAccountIdentity = options.resolveAccountIdentity;
     this.clientTransport = options.clientTransport;
@@ -189,6 +192,24 @@ export class PrivilegedRuntime {
 
   getView(): PrivilegedSessionView {
     return this.sessionManager.getView();
+  }
+
+  async createPrivilegedRecord(
+    collection: string,
+    data: Record<string, unknown> | FormData,
+  ): Promise<Record<string, unknown> & { id: string }> {
+    this.assertAvailable();
+    const view = this.getView();
+    if (
+      view.state !== 'active' ||
+      !view.accountId ||
+      !view.operatorId ||
+      !view.capabilities.includes('knowledge.manage') ||
+      !this.authClient.createRecord
+    ) {
+      throw runtimeError('unauthorized');
+    }
+    return this.authClient.createRecord(collection, data);
   }
 
   login(input: { operatorId: string; password: string }): Promise<PrivilegedSessionView> {
@@ -542,6 +563,10 @@ export async function createProductionPrivilegedRuntime(
     consumeReauthenticationProof: (requestId, context) =>
       commandProcessor.consumeReauthenticationProof(requestId, context),
   });
+  const knowledgeCommands = registerKnowledgeManagementCommands({
+    registrar: commandProcessor,
+    pb: options.serverClient,
+  });
   const serverQueue = new PrivilegedServerQueue({
     pb: options.serverClient as unknown as PrivilegedServerPocketBase,
     commandProcessor,
@@ -549,7 +574,12 @@ export async function createProductionPrivilegedRuntime(
   });
   await serverQueue.start();
   return new PrivilegedRuntime({
-    additionalDisposable: serverQueue,
+    additionalDisposable: {
+      dispose: async () => {
+        await serverQueue.dispose();
+        await knowledgeCommands.dispose();
+      },
+    },
     authClient,
     commandProcessor,
     deviceStore,

@@ -23,11 +23,13 @@ import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager'
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import type { KnowledgeBaseManager } from './knowledge/KnowledgeBaseManager';
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
+import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -106,6 +108,17 @@ export function setupIpcHandlers(opts: {
     setupKnowledgeHandlers(
       getKnowledgePdfService ?? (() => null),
       getKnowledgeBaseManager ?? (() => null),
+      () =>
+        new KnowledgeUploadService({
+          getRuntime: () => (getPrivilegedRuntime?.() as never) ?? null,
+          emitProgress: (progress) => {
+            for (const window of BrowserWindow.getAllWindows()) {
+              if (!window.isDestroyed()) {
+                window.webContents.send(IPC_CHANNELS.KNOWLEDGE_UPLOAD_PROGRESS, progress);
+              }
+            }
+          },
+        }),
     ),
   );
 

@@ -14,6 +14,7 @@ import {
   normalizeDynatraceEnvironmentUrl,
 } from './dynatraceProblems';
 import { getOperatorDisplayNameError, normalizeOperatorDisplayName } from './operators';
+import { KNOWLEDGE_MAX_CATEGORY_LENGTH } from './knowledge';
 
 export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
 export const MAX_PRIVILEGED_REQUEST_ID_LENGTH = 128;
@@ -57,6 +58,39 @@ export type PrivilegedCommandPayloadMap = {
     reauthRequestId: string;
   };
   'administration.setting.replace': RelayAdministrationSettingReplacePayload;
+  'knowledge.upload.validate': { uploadId: string; preliminaryChecksum: string };
+  'knowledge.snapshot.read': { query: string; cursor: string | null; pageSize: number };
+  'knowledge.document.publish': { uploadId: string; title: string; category: string };
+  'knowledge.document.replace': {
+    uploadId: string;
+    documentId: string;
+    expectedRevision: number;
+    title: string;
+    category: string;
+  };
+  'knowledge.document.title.set': {
+    documentId: string;
+    title: string;
+    expectedRevision: number;
+  };
+  'knowledge.document.category.set': {
+    documentId: string;
+    category: string;
+    expectedRevision: number;
+  };
+  'knowledge.category.rename': {
+    from: string;
+    to: string;
+    expectedDocumentRevisions: Record<string, number>;
+  };
+  'knowledge.document.trash': { documentId: string; expectedRevision: number };
+  'knowledge.document.restore': { documentId: string; expectedRevision: number };
+  'knowledge.document.delete': {
+    documentId: string;
+    expectedRevision: number;
+    reauthRequestId: string;
+  };
+  'knowledge.audit.read': { cursor: string | null; pageSize: number; targetId: string | null };
 };
 
 export type PrivilegedCommandName = keyof PrivilegedCommandPayloadMap;
@@ -250,6 +284,17 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'privileged.device.rename',
   'privileged.device.revoke',
   'administration.setting.replace',
+  'knowledge.upload.validate',
+  'knowledge.snapshot.read',
+  'knowledge.document.publish',
+  'knowledge.document.replace',
+  'knowledge.document.title.set',
+  'knowledge.document.category.set',
+  'knowledge.category.rename',
+  'knowledge.document.trash',
+  'knowledge.document.restore',
+  'knowledge.document.delete',
+  'knowledge.audit.read',
 ]);
 
 function nonNegativeInteger(value: unknown): value is number {
@@ -260,6 +305,37 @@ function normalizeDeviceLabel(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\s+/g, ' ');
   return normalized && normalized.length <= MAX_PRIVILEGED_DEVICE_LABEL_LENGTH ? normalized : null;
+}
+
+function normalizedKnowledgeText(value: unknown, max: number): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  return normalized && normalized.length <= max ? normalized : null;
+}
+
+function normalizeKnowledgeCursor(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return boundedIdentifier(value, 200) ? value : undefined;
+}
+
+function normalizeKnowledgeDocumentRevision(
+  payload: Record<string, unknown>,
+): { documentId: string; expectedRevision: number } | null {
+  return boundedIdentifier(payload.documentId, 200) && nonNegativeInteger(payload.expectedRevision)
+    ? { documentId: payload.documentId, expectedRevision: payload.expectedRevision }
+    : null;
+}
+
+function normalizeKnowledgeRevisions(value: unknown): Record<string, number> | null {
+  if (!isRecord(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length > 500) return null;
+  const revisions: Record<string, number> = {};
+  for (const [id, revision] of entries) {
+    if (!boundedIdentifier(id, 200) || !nonNegativeInteger(revision)) return null;
+    revisions[id] = revision;
+  }
+  return revisions;
 }
 
 function normalizeAlertingProfiles(value: unknown): string[] | null {
@@ -471,6 +547,8 @@ function normalizeSettingReplacementPayload(
   } as PrivilegedCommandPayloadMap['administration.setting.replace'];
 }
 
+// Exact-key validation across the full signed command union is intentionally centralized.
+// eslint-disable-next-line sonarjs/cognitive-complexity
 function normalizePayload(
   command: PrivilegedCommandName,
   payload: unknown,
@@ -497,6 +575,92 @@ function normalizePayload(
       return normalizeDeviceRevokePayload(payload);
     case 'administration.setting.replace':
       return normalizeSettingReplacementPayload(payload);
+    case 'knowledge.upload.validate':
+      return hasExactKeys(payload, ['uploadId', 'preliminaryChecksum']) &&
+        boundedIdentifier(payload.uploadId, 200) &&
+        isPrivilegedSha256(payload.preliminaryChecksum)
+        ? { uploadId: payload.uploadId, preliminaryChecksum: payload.preliminaryChecksum }
+        : null;
+    case 'knowledge.snapshot.read': {
+      if (!hasExactKeys(payload, ['query', 'cursor', 'pageSize'])) return null;
+      const cursor = normalizeKnowledgeCursor(payload.cursor);
+      return typeof payload.query === 'string' &&
+        payload.query.length <= 200 &&
+        cursor !== undefined &&
+        Number.isInteger(payload.pageSize) &&
+        (payload.pageSize as number) >= 1 &&
+        (payload.pageSize as number) <= 100
+        ? { query: payload.query.trim(), cursor, pageSize: payload.pageSize as number }
+        : null;
+    }
+    case 'knowledge.document.publish': {
+      if (!hasExactKeys(payload, ['uploadId', 'title', 'category'])) return null;
+      const title = normalizedKnowledgeText(payload.title, 240);
+      const category = normalizedKnowledgeText(payload.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      return boundedIdentifier(payload.uploadId, 200) && title && category
+        ? { uploadId: payload.uploadId, title, category }
+        : null;
+    }
+    case 'knowledge.document.replace': {
+      if (
+        !hasExactKeys(payload, ['uploadId', 'documentId', 'expectedRevision', 'title', 'category'])
+      )
+        return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      const title = normalizedKnowledgeText(payload.title, 240);
+      const category = normalizedKnowledgeText(payload.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      return revision && boundedIdentifier(payload.uploadId, 200) && title && category
+        ? { uploadId: payload.uploadId, ...revision, title, category }
+        : null;
+    }
+    case 'knowledge.document.title.set':
+    case 'knowledge.document.category.set': {
+      const key = command === 'knowledge.document.title.set' ? 'title' : 'category';
+      if (!hasExactKeys(payload, ['documentId', key, 'expectedRevision'])) return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      const text = normalizedKnowledgeText(
+        payload[key],
+        key === 'title' ? 240 : KNOWLEDGE_MAX_CATEGORY_LENGTH,
+      );
+      return revision && text ? { ...revision, [key]: text } : null;
+    }
+    case 'knowledge.category.rename': {
+      if (!hasExactKeys(payload, ['from', 'to', 'expectedDocumentRevisions'])) return null;
+      const from = normalizedKnowledgeText(payload.from, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const to = normalizedKnowledgeText(payload.to, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+      const expectedDocumentRevisions = normalizeKnowledgeRevisions(
+        payload.expectedDocumentRevisions,
+      );
+      return from && to && expectedDocumentRevisions
+        ? { from, to, expectedDocumentRevisions }
+        : null;
+    }
+    case 'knowledge.document.trash':
+    case 'knowledge.document.restore':
+      return hasExactKeys(payload, ['documentId', 'expectedRevision'])
+        ? normalizeKnowledgeDocumentRevision(payload)
+        : null;
+    case 'knowledge.document.delete': {
+      if (!hasExactKeys(payload, ['documentId', 'expectedRevision', 'reauthRequestId']))
+        return null;
+      const revision = normalizeKnowledgeDocumentRevision(payload);
+      return revision &&
+        boundedIdentifier(payload.reauthRequestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH)
+        ? { ...revision, reauthRequestId: payload.reauthRequestId }
+        : null;
+    }
+    case 'knowledge.audit.read': {
+      if (!hasExactKeys(payload, ['cursor', 'pageSize', 'targetId'])) return null;
+      const cursor = normalizeKnowledgeCursor(payload.cursor);
+      const targetId = normalizeKnowledgeCursor(payload.targetId);
+      return cursor !== undefined &&
+        targetId !== undefined &&
+        Number.isInteger(payload.pageSize) &&
+        (payload.pageSize as number) >= 1 &&
+        (payload.pageSize as number) <= 100
+        ? { cursor, pageSize: payload.pageSize as number, targetId }
+        : null;
+    }
   }
 }
 
