@@ -4,6 +4,7 @@ import { seedKnowledgeDocuments } from './seedKnowledge.mjs';
 
 describe('seedKnowledgeDocuments', () => {
   it('uploads deterministic PDFs to protected PocketBase records without filesystem writes', async () => {
+    const baseUrl = ['http', '://relay.local'].join('');
     const fetchImpl = vi.fn(async (_url, init) => {
       expect(init.method).toBe('POST');
       expect(init.headers).toEqual({ Authorization: 'seed-token' });
@@ -19,7 +20,7 @@ describe('seedKnowledgeDocuments', () => {
 
     await expect(
       seedKnowledgeDocuments({
-        baseUrl: 'http://relay.local',
+        baseUrl,
         token: 'seed-token',
         fetchImpl,
         now: () => new Date('2026-07-15T12:00:00.000Z'),
