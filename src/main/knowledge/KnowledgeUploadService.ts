@@ -195,6 +195,7 @@ export class KnowledgeUploadService {
   private queue = createEmptyKnowledgeUploadQueue(false);
   private preparationTail: Promise<void> = Promise.resolve();
   private persistTail: Promise<void> = Promise.resolve();
+  private activeSessionKey: string | null | undefined;
   private started = false;
   private disposed = false;
 
@@ -217,6 +218,7 @@ export class KnowledgeUploadService {
     this.queue = await this.store.load();
     this.emit();
     const session = activeUploadSession(this.getRuntime());
+    this.activeSessionKey = session ? `${session.accountId}\u0000${session.deviceId}` : null;
     this.scheduler.setSessionActive(Boolean(session));
     if (!session) return;
     for (const entry of this.queue.entries) {
@@ -399,7 +401,7 @@ export class KnowledgeUploadService {
       await this.command({
         command: 'knowledge.upload.file.cancel',
         payload: { uploadId: entry.uploadId, expectedRevision: entry.uploadRevision },
-        expectedRevision: entry.uploadRevision,
+        expectedRevision: null,
       }).catch(() => undefined);
       this.scheduler.cancelUpload(entry.uploadId);
     }
@@ -416,7 +418,7 @@ export class KnowledgeUploadService {
       await this.command({
         command: 'knowledge.upload.batch.cancel',
         payload: { batchId: entry.batchId, expectedRevision: entry.batchRevision },
-        expectedRevision: entry.batchRevision,
+        expectedRevision: null,
       }).catch(() => undefined);
       this.scheduler.cancelBatch(entry.batchId);
     }
@@ -430,6 +432,9 @@ export class KnowledgeUploadService {
 
   handleSessionChanged(view: PrivilegedSessionView): void {
     const session = view.state === 'active' ? activeUploadSession(this.getRuntime()) : null;
+    const sessionKey = session ? `${session.accountId}\u0000${session.deviceId}` : null;
+    if (sessionKey === this.activeSessionKey) return;
+    this.activeSessionKey = sessionKey;
     this.scheduler.setSessionActive(Boolean(session));
     if (!session) return;
     for (const entry of this.queue.entries) {
@@ -571,11 +576,23 @@ export class KnowledgeUploadService {
   private schedulerTask(entry: KnowledgeUploadQueueEntry): KnowledgeUploadSchedulerTask {
     const uploadId = entry.uploadId!;
     const batchId = entry.batchId!;
+    let initialMissingChunkIndexes: number[] | null = Array.from(
+      { length: entry.source.chunkCount },
+      (_, index) => index,
+    ).filter((index) => !entry.acknowledgedChunkIndexes.includes(index));
     return {
       uploadId,
       batchId,
       byteSize: entry.source.byteSize,
       getMissingChunkIndexes: async () => {
+        // Preparation has just reconciled the authoritative server status.
+        // Reuse that result once instead of immediately issuing a duplicate
+        // signed status command; later scheduler runs still re-query PocketBase.
+        if (initialMissingChunkIndexes) {
+          const missing = initialMissingChunkIndexes;
+          initialMissingChunkIndexes = null;
+          return missing;
+        }
         const status = await this.status(batchId);
         const upload = this.matchManifest(status, entry);
         if (!upload) throw Object.assign(new Error('upload-not-found'), { status: 404 });
@@ -612,7 +629,7 @@ export class KnowledgeUploadService {
         const result = await this.command({
           command: 'knowledge.upload.file.finalize',
           payload: { uploadId, expectedRevision: entry.uploadRevision },
-          expectedRevision: entry.uploadRevision,
+          expectedRevision: null,
         });
         const upload = normalizeKnowledgeUploadManifestView(result.value);
         if (!upload) throw new Error('invalid-finalize-response');

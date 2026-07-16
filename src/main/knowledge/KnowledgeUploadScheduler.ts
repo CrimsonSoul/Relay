@@ -182,6 +182,7 @@ export class KnowledgeUploadScheduler {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
+    this.sessionActive = false;
     for (const uploadId of this.tasks.keys()) this.abort(uploadId);
     await this.whenIdle();
     this.tasks.clear();

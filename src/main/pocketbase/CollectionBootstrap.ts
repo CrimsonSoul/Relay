@@ -729,7 +729,8 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'createdAt', required: true },
       { type: 'date', name: 'lastActivityAt', required: true },
       { type: 'date', name: 'expiresAt', required: true },
-      { type: 'number', name: 'revision', required: true },
+      // New upload batches start at revision zero, which PocketBase treats as empty.
+      { type: 'number', name: 'revision', required: false },
     ],
     indexes: [KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX, KNOWLEDGE_UPLOAD_BATCH_ACTIVE_ACCOUNT_INDEX],
     rules: KNOWLEDGE_UPLOAD_BATCH_RULES,
@@ -802,7 +803,8 @@ const COLLECTIONS: CollectionDef[] = [
       relation('batchId', KNOWLEDGE_UPLOAD_BATCHES_COLLECTION, true),
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
-      { type: 'number', name: 'index', required: true },
+      // Chunk indexes are zero-based; PocketBase treats numeric zero as empty.
+      { type: 'number', name: 'index', required: false },
       { type: 'number', name: 'byteSize', required: true },
       { type: 'text', name: 'checksum', required: true, max: 64 },
       {
@@ -811,7 +813,6 @@ const COLLECTIONS: CollectionDef[] = [
         required: true,
         maxSelect: 1,
         maxSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
-        mimeTypes: ['application/octet-stream'],
         protected: true,
       },
     ],
@@ -1184,6 +1185,13 @@ type PrivilegedStateBootstrapRecord = {
   rosterMigrationVersion: number;
 };
 
+type KnowledgeLibraryStateBootstrapRecord = {
+  id: string;
+  key: string;
+  mode: 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
+  revision?: number;
+};
+
 function escapeFilterValue(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
@@ -1323,6 +1331,41 @@ async function ensurePrivilegedBootstrap(pb: PocketBase): Promise<void> {
   logger.info('Completed privileged operator roster migration');
 }
 
+async function ensureKnowledgeLibraryBootstrap(pb: PocketBase): Promise<void> {
+  const states = pb.collection(KNOWLEDGE_LIBRARY_STATE_COLLECTION);
+  const result = await states.getList<KnowledgeLibraryStateBootstrapRecord>(1, 2, {
+    filter: 'key="primary"',
+    requestKey: null,
+  });
+  if (result.totalItems > result.items.length || result.items.length > 1) {
+    throw new Error('Knowledge library state bootstrap found an ambiguous singleton record');
+  }
+
+  const current = result.items[0];
+  if (!current) {
+    await states.create({
+      key: 'primary',
+      mode: 'managed',
+      transitionedAt: new Date().toISOString(),
+      transitionedByOperatorId: '',
+      safeError: '',
+      revision: 1,
+    });
+    logger.info('Created managed Knowledge library state');
+    return;
+  }
+  if (current.mode !== 'legacy-watch' && current.mode !== 'migrating') return;
+
+  await states.update(current.id, {
+    mode: 'managed',
+    transitionedAt: new Date().toISOString(),
+    transitionedByOperatorId: '',
+    safeError: '',
+    revision: Math.max(1, current.revision ?? 0) + 1,
+  });
+  logger.info('Completed Knowledge library transition to PocketBase-only management');
+}
+
 async function repairDuplicateBoardSettings(pb: PocketBase, existing: Set<string>): Promise<void> {
   if (!existing.has(BOARD_SETTINGS_COLLECTION)) return;
 
@@ -1442,6 +1485,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   await repairDuplicateBoardSettings(pb, existing);
   const patched = await patchExisting(pb, existing, allCols, collectionIds);
   await ensurePrivilegedBootstrap(pb);
+  await ensureKnowledgeLibraryBootstrap(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
   if (created > 0 || unmanaged > 0 || patched > 0) {

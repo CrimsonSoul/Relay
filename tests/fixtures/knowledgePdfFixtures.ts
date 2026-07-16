@@ -136,10 +136,23 @@ export function buildKnowledgePdfFixture(input: {
   return new Uint8Array(Buffer.from(body));
 }
 
-export function writeKnowledgeLinkFixtures(knowledgeRoot: string): void {
-  const fixtures = [
+export type KnowledgePdfDocumentFixture = {
+  relativePath: string;
+  category: string;
+  fileName: string;
+  title: string;
+  pageCount: number;
+  data: Uint8Array;
+};
+
+export function createKnowledgeLinkFixtures(): KnowledgePdfDocumentFixture[] {
+  return [
     {
       relativePath: path.join('General', 'Link navigation test.pdf'),
+      category: 'General',
+      fileName: 'Link navigation test.pdf',
+      title: 'Link navigation test',
+      pageCount: 2,
       data: buildKnowledgePdfFixture({
         title: 'Link navigation test',
         pageCount: 2,
@@ -170,6 +183,10 @@ export function writeKnowledgeLinkFixtures(knowledgeRoot: string): void {
     },
     {
       relativePath: path.join('Platform operations', 'Payment API Degradation Guide.pdf'),
+      category: 'Platform operations',
+      fileName: 'Payment API Degradation Guide.pdf',
+      title: 'Payment API Degradation Guide',
+      pageCount: 2,
       data: buildKnowledgePdfFixture({
         title: 'Payment API Degradation Guide',
         pageCount: 2,
@@ -177,14 +194,20 @@ export function writeKnowledgeLinkFixtures(knowledgeRoot: string): void {
     },
     {
       relativePath: path.join('Checkout operations', 'Checkout Service Incident Runbook.pdf'),
+      category: 'Checkout operations',
+      fileName: 'Checkout Service Incident Runbook.pdf',
+      title: 'Checkout Service Incident Runbook',
+      pageCount: 1,
       data: buildKnowledgePdfFixture({
         title: 'Checkout Service Incident Runbook',
         pageCount: 1,
       }),
     },
   ];
+}
 
-  for (const fixture of fixtures) {
+export function writeKnowledgeLinkFixtures(knowledgeRoot: string): void {
+  for (const fixture of createKnowledgeLinkFixtures()) {
     const target = path.join(knowledgeRoot, fixture.relativePath);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, fixture.data);

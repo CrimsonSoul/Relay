@@ -27,6 +27,7 @@ import {
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
 import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
+import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import type { RelayConfig } from '../config/AppConfig';
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import { loggers } from '../logger';
@@ -72,6 +73,19 @@ import { KnowledgeExtractorWorker } from '../knowledge/KnowledgeExtractorWorker'
 import { PocketBaseKnowledgeUploadRepository } from '../knowledge/PocketBaseKnowledgeUploadRepository';
 
 export type PrivilegedRuntimeMode = 'server' | 'client';
+
+async function applyKnowledgeChunkE2EDelay(collection: string): Promise<void> {
+  if (
+    collection !== KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION ||
+    process.env.NODE_ENV !== 'test' ||
+    process.env.RELAY_E2E_PRIVILEGED_FIXTURES !== '1'
+  ) {
+    return;
+  }
+  const delayMs = Number(process.env.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS);
+  if (!Number.isSafeInteger(delayMs) || delayMs < 1 || delayMs > 1_000) return;
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
 
 export type PrivilegedAccountIdentity = Pick<PrivilegedAuthorization, 'assigned' | 'operatorName'>;
 
@@ -221,6 +235,7 @@ export class PrivilegedRuntime {
     ) {
       throw runtimeError('unauthorized');
     }
+    await applyKnowledgeChunkE2EDelay(collection);
     return this.authClient.createRecord(collection, data);
   }
 

@@ -5,6 +5,7 @@ import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_UPLOADS_COLLECTION,
+  normalizeKnowledgeManagementSnapshot,
 } from '@shared/knowledge';
 import { ManagedKnowledgeConflictError, ManagedKnowledgeService } from '../ManagedKnowledgeService';
 
@@ -127,6 +128,26 @@ describe('ManagedKnowledgeService', () => {
       readUploadPdf: vi.fn(async () => PDF),
     });
   }
+
+  it('normalizes PocketBase empty numeric upload metadata in management snapshots', async () => {
+    uploads.getFullList.mockResolvedValueOnce([
+      upload({ state: 'uploading', progress: 50, pageCount: 0, outlineSource: '' }),
+    ]);
+
+    const snapshot = await service().snapshot({
+      accountId: ACTOR.accountId,
+      query: '',
+      cursor: null,
+      pageSize: 25,
+    });
+
+    expect(snapshot.uploads.items[0]).toMatchObject({
+      state: 'uploading',
+      pageCount: null,
+      outlineSource: null,
+    });
+    expect(normalizeKnowledgeManagementSnapshot(snapshot)).not.toBeNull();
+  });
 
   it('publishes a ready upload with attribution and an audit event', async () => {
     await expect(

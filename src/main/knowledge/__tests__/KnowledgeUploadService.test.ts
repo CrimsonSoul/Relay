@@ -163,6 +163,7 @@ describe('KnowledgeUploadService', () => {
         .mockReturnValueOnce('local-1'),
     });
 
+    await service.start();
     const result = await service.selectAndQueue();
 
     expect(result).toMatchObject({
@@ -175,6 +176,9 @@ describe('KnowledgeUploadService', () => {
     expect(exposed).not.toContain('%PDF-');
     expect(store.current().entries[0]?.source.canonicalPath).toBe('/private/work/First.pdf');
 
+    service.handleSessionChanged({ ...view, expiresAt: '2026-07-16T02:15:00.000Z' });
+    service.handleSessionChanged({ ...view, expiresAt: '2026-07-16T02:30:00.000Z' });
+
     releasePlan();
     await service.whenIdle();
 
@@ -186,9 +190,16 @@ describe('KnowledgeUploadService', () => {
       'knowledge.upload.batch.begin',
       'knowledge.upload.status',
       'knowledge.upload.file.begin',
-      'knowledge.upload.status',
       'knowledge.upload.file.finalize',
     ]);
+    expect(
+      submitPublicCommand.mock.calls.find(
+        ([request]) => request.command === 'knowledge.upload.file.finalize',
+      )?.[0],
+    ).toMatchObject({
+      payload: { uploadId: 'upload-1', expectedRevision: 0 },
+      expectedRevision: null,
+    });
     expect(service.snapshot().items[0]).toMatchObject({
       uploadId: 'upload-1',
       acknowledgedBytes: 12,

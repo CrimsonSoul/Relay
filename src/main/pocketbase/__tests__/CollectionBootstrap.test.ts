@@ -15,6 +15,9 @@ const mockPrivilegedStateCreate = vi.fn();
 const mockPrivilegedStateUpdate = vi.fn();
 const mockPrivilegedAccountGetList = vi.fn();
 const mockPrivilegedAccountCreate = vi.fn();
+const mockKnowledgeStateGetList = vi.fn();
+const mockKnowledgeStateCreate = vi.fn();
+const mockKnowledgeStateUpdate = vi.fn();
 const mockBatchCreate = vi.fn();
 const mockBatchSend = vi.fn();
 const mockCreateBatch = vi.fn(() => ({
@@ -34,6 +37,13 @@ const mockPbCollection = vi.fn((name: string) => {
     return {
       getList: mockPrivilegedAccountGetList,
       create: mockPrivilegedAccountCreate,
+    };
+  }
+  if (name === 'knowledge_library_state') {
+    return {
+      getList: mockKnowledgeStateGetList,
+      create: mockKnowledgeStateCreate,
+      update: mockKnowledgeStateUpdate,
     };
   }
   return {
@@ -68,6 +78,9 @@ beforeEach(() => {
   mockPrivilegedStateUpdate.mockReset();
   mockPrivilegedAccountGetList.mockReset();
   mockPrivilegedAccountCreate.mockReset();
+  mockKnowledgeStateGetList.mockReset();
+  mockKnowledgeStateCreate.mockReset();
+  mockKnowledgeStateUpdate.mockReset();
   mockCollectionGetList.mockResolvedValue({
     totalItems: 1,
     items: [{ id: 'custom', displayName: 'Custom Operator', active: true }],
@@ -98,6 +111,12 @@ beforeEach(() => {
     items: [{ id: 'admin-account', operatorId: 'operator-ryan-bledsoe', role: 'admin' }],
   });
   mockPrivilegedAccountCreate.mockResolvedValue({});
+  mockKnowledgeStateGetList.mockResolvedValue({
+    totalItems: 1,
+    items: [{ id: 'knowledge-state', key: 'primary', mode: 'managed', revision: 1 }],
+  });
+  mockKnowledgeStateCreate.mockResolvedValue({});
+  mockKnowledgeStateUpdate.mockResolvedValue({});
   mockBatchSend.mockResolvedValue([]);
 });
 
@@ -114,6 +133,23 @@ function mockSuccessfulCollectionCreation(): void {
 }
 
 describe('ensureCollections', () => {
+  it('seeds a managed Knowledge library state on a clean PocketBase server', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockSuccessfulCollectionCreation();
+    mockKnowledgeStateGetList.mockResolvedValue({ totalItems: 0, items: [] });
+
+    await ensureCollections(mockPb);
+
+    expect(mockKnowledgeStateCreate).toHaveBeenCalledWith({
+      key: 'primary',
+      mode: 'managed',
+      transitionedAt: expect.any(String),
+      transitionedByOperatorId: '',
+      safeError: '',
+      revision: 1,
+    });
+  });
+
   it('leaves unknown collections untouched during startup bootstrap', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'col1', name: 'contacts' },
@@ -528,6 +564,7 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'fileCount', type: 'number', required: true }),
         expect.objectContaining({ name: 'totalBytes', type: 'number', required: true }),
         expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
+        expect.objectContaining({ name: 'revision', type: 'number', required: false }),
       ]),
     );
     expect(batchCall?.indexes).toContain(
@@ -569,9 +606,12 @@ describe('ensureCollections', () => {
           required: true,
           protected: true,
           maxSize: 4 * 1024 * 1024,
-          mimeTypes: ['application/octet-stream'],
         }),
+        expect.objectContaining({ name: 'index', type: 'number', required: false }),
       ]),
+    );
+    expect(chunkCall?.fields.find((field) => field.name === 'chunk')).not.toHaveProperty(
+      'mimeTypes',
     );
     expect(chunkCall?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)',

@@ -6,7 +6,10 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import PocketBase from 'pocketbase';
-import { writeKnowledgeLinkFixtures } from '../fixtures/knowledgePdfFixtures';
+import {
+  buildKnowledgePdfFixture,
+  createKnowledgeLinkFixtures,
+} from '../fixtures/knowledgePdfFixtures';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -51,13 +54,16 @@ const EXPECTED_OPERATOR_NAMES = [
 ];
 const RYAN_BELL = 'Ryan Bell';
 const RYAN_BLEDSOE = 'Ryan Bledsoe';
+const TRISTAN_BOWLES = 'Tristan Bowles';
 const CHECKOUT_PROBLEM_ID = 'RELAY-DEMO-1001';
 const CHECKOUT_PROBLEM_TITLE = 'Checkout service availability below SLO';
+const KNOWLEDGE_CHUNK_BYTES = 4 * 1024 * 1024;
 
 const CONFIG_SECRET_FIELD = ['sec', 'ret'].join('');
 const makeTestPassphrase = () => ['test', crypto.randomUUID()].join('-');
 const TEST_PASSPHRASE = makeTestPassphrase();
 const PRIVILEGED_TEST_PASSWORD = `e2e-privileged-${crypto.randomUUID()}`;
+const PUBLISHER_TEST_PASSWORD = `e2e-publisher-${crypto.randomUUID()}`;
 
 const rightClick = async (target: Locator) => {
   await target.scrollIntoViewIfNeeded();
@@ -127,6 +133,32 @@ const makeSuperuserPbClient = async (port: number) => {
     requestKey: null,
   });
   return pb;
+};
+
+const seedKnowledgeLinkFixtures = async (port: number) => {
+  const pb = await makeSuperuserPbClient(port);
+  const timestamp = new Date().toISOString();
+  for (const fixture of createKnowledgeLinkFixtures()) {
+    const bytes = Uint8Array.from(fixture.data);
+    const form = new FormData();
+    form.set('sourceKey', `${fixture.category}/${fixture.fileName}`);
+    form.set('category', fixture.category);
+    form.set('title', fixture.title);
+    form.set('displayTitle', fixture.title);
+    form.set('fileName', fixture.fileName);
+    form.set('pdf', new Blob([bytes.buffer], { type: 'application/pdf' }), fixture.fileName);
+    form.set('checksum', crypto.createHash('sha256').update(bytes).digest('hex'));
+    form.set('byteSize', String(bytes.byteLength));
+    form.set('pageCount', String(fixture.pageCount));
+    form.set('outline', JSON.stringify([]));
+    form.set('outlineSource', 'none');
+    form.set('sourceModifiedAt', timestamp);
+    form.set('indexedAt', timestamp);
+    form.set('lifecycleState', 'active');
+    form.set('revision', '1');
+    form.set('publishedAt', timestamp);
+    await pb.collection('knowledge_documents').create(form, { requestKey: null });
+  }
 };
 
 const waitForOperator = async (pb: PocketBase, displayName: string) => {
@@ -220,6 +252,69 @@ const activatePrivilegedAdministratorFixture = async (port: number) => {
   return operator.id;
 };
 
+const activatePrivilegedPublisherFixture = async (port: number) => {
+  const pb = await makeSuperuserPbClient(port);
+  const operator = await waitForOperator(pb, TRISTAN_BOWLES);
+  const state = await pb.collection('relay_privileged_state').getFirstListItem<{
+    id: string;
+    adminOperatorId: string;
+    assignmentVersion: number;
+  }>('key = "primary"', { requestKey: null });
+  await pb.collection('relay_privileged_state').update(
+    state.id,
+    {
+      publisherOperatorId: operator.id,
+      assignmentVersion: state.assignmentVersion + 1,
+      updatedByOperatorId: state.adminOperatorId,
+      updatedAt: new Date().toISOString(),
+    },
+    { requestKey: null },
+  );
+
+  const accounts = await pb
+    .collection('relay_privileged_accounts')
+    .getFullList<{ id: string; credentialVersion: number }>({
+      filter: `operatorId = "${operator.id}"`,
+      requestKey: null,
+    });
+  const account = accounts[0];
+  const values = {
+    email: `${operator.id}@relay.invalid`,
+    operatorId: operator.id,
+    role: 'publisher',
+    active: true,
+    mustChangePassword: false,
+    credentialVersion: (account?.credentialVersion ?? 0) + 1,
+    password: PUBLISHER_TEST_PASSWORD,
+    passwordConfirm: PUBLISHER_TEST_PASSWORD,
+  };
+  const updated = account
+    ? await pb.collection('relay_privileged_accounts').update(account.id, values, {
+        requestKey: null,
+      })
+    : await pb.collection('relay_privileged_accounts').create(values, { requestKey: null });
+
+  const authCheck = new PocketBase(`http://127.0.0.1:${port}`);
+  const authResult = await authCheck
+    .collection('relay_privileged_accounts')
+    .authWithPassword(operator.id, PUBLISHER_TEST_PASSWORD, { requestKey: null });
+  expect(authResult.record).toMatchObject({
+    id: updated.id,
+    operatorId: operator.id,
+    role: 'publisher',
+    active: true,
+  });
+  return { accountId: updated.id, operatorId: operator.id };
+};
+
+const writePaddedKnowledgePdfFixture = (target: string, title: string, byteSize: number): void => {
+  const pdf = buildKnowledgePdfFixture({ title, pageCount: 1 });
+  if (pdf.byteLength > byteSize) throw new Error('Knowledge E2E fixture size is too small.');
+  const bytes = Buffer.alloc(byteSize, 0x20);
+  bytes.set(pdf);
+  fs.writeFileSync(target, bytes, { mode: 0o600 });
+};
+
 const createContactDirect = async (port: number, name: string, email: string) => {
   const pb = await makePbClient(port);
   await pb.collection('contacts').create({
@@ -256,6 +351,7 @@ const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) =>
 const selectOperator = async (window: Page, operatorName: string) => {
   const selector = window.getByTestId('sidebar-operator-selector');
   await expect(selector).toBeEnabled();
+  if ((await selector.getAttribute('aria-label')) === `Selected operator: ${operatorName}`) return;
   await selector.click();
   await window.getByRole('menuitemradio', { name: operatorName, exact: true }).click();
   await expect(selector).toHaveAccessibleName(`Selected operator: ${operatorName}`);
@@ -427,6 +523,7 @@ test.describe('Vital Critical Path', () => {
       ...process.env,
       NODE_ENV: 'test',
       RELAY_E2E_PRIVILEGED_FIXTURES: '1',
+      RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS: '150',
     };
     delete (launchEnv as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
     if (!clientDataDir) {
@@ -453,6 +550,17 @@ test.describe('Vital Critical Path', () => {
     return connectedClient;
   };
 
+  const installKnowledgeDialogFixture = async (filePaths: string[]) => {
+    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+    await clientElectronApp.evaluate(({ dialog }, selectedPaths) => {
+      const scope = globalThis as typeof globalThis & {
+        __relayKnowledgeOriginalShowOpenDialog?: typeof dialog.showOpenDialog;
+      };
+      scope.__relayKnowledgeOriginalShowOpenDialog = dialog.showOpenDialog;
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: selectedPaths });
+    }, filePaths);
+  };
+
   test.beforeEach(async ({ browserName: _browserName }, testInfo) => {
     tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-e2e-critical-'));
     clientElectronApp = null;
@@ -460,29 +568,34 @@ test.describe('Vital Critical Path', () => {
     clientDataDir = '';
     pbPort = makePort();
     writeServerConfig(tempDataDir, pbPort);
+    await launchServer();
     if (
       testInfo.title.includes('Knowledge PDF links') ||
       testInfo.title.includes('remote operator administration')
     ) {
-      writeKnowledgeLinkFixtures(path.join(tempDataDir, 'data', 'knowledge-base'));
+      await seedKnowledgeLinkFixtures(pbPort);
     }
-    await launchServer();
   });
 
   test.afterEach(async () => {
     if (clientElectronApp) {
       const activeClientApp = clientElectronApp;
       try {
-        await activeClientApp.evaluate(({ shell }) => {
+        await activeClientApp.evaluate(({ dialog, shell }) => {
           const scope = globalThis as typeof globalThis & {
             __relayKnowledgeOriginalOpenExternal?: typeof shell.openExternal;
             __relayKnowledgeOpenExternalUrls?: string[];
+            __relayKnowledgeOriginalShowOpenDialog?: typeof dialog.showOpenDialog;
           };
           if (scope.__relayKnowledgeOriginalOpenExternal) {
             shell.openExternal = scope.__relayKnowledgeOriginalOpenExternal;
           }
+          if (scope.__relayKnowledgeOriginalShowOpenDialog) {
+            dialog.showOpenDialog = scope.__relayKnowledgeOriginalShowOpenDialog;
+          }
           delete scope.__relayKnowledgeOriginalOpenExternal;
           delete scope.__relayKnowledgeOpenExternalUrls;
+          delete scope.__relayKnowledgeOriginalShowOpenDialog;
         });
       } catch {
         // The client may already be closed; restoring a test-only spy is best effort.
@@ -572,8 +685,8 @@ test.describe('Vital Critical Path', () => {
     await serverAccess.getByRole('button', { name: 'Create pairing code' }).click();
     const challenge = serverAccess.getByLabel('Active pairing challenge');
     await expect(challenge).toBeVisible();
-    const challengeId = (await challenge.locator('dd').nth(0).textContent())?.trim();
-    const pairingCode = (await challenge.locator('dd').nth(1).textContent())?.trim();
+    const challengeId = (await challenge.locator('dd').nth(1).textContent())?.trim();
+    const pairingCode = (await challenge.locator('dd').nth(2).textContent())?.trim();
     expect(challengeId).toBeTruthy();
     expect(pairingCode).toMatch(/^[A-Z2-9]{8}$/);
 
@@ -650,7 +763,9 @@ test.describe('Vital Critical Path', () => {
     ).rejects.toBeTruthy();
 
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
-    await connectedClient.getByRole('button', { name: 'Manage library', exact: true }).click();
+    await connectedClient
+      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
+      .click();
     await expect(
       connectedClient.getByRole('heading', { name: 'Manage knowledge base', exact: true }),
     ).toBeVisible();
@@ -713,6 +828,181 @@ test.describe('Vital Critical Path', () => {
     await expect(
       connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
     ).toContainText('Page 1 of 2');
+  });
+
+  test('publisher resumes a Knowledge batch after interruption and publishes for ordinary operators', async () => {
+    test.setTimeout(240_000);
+    await activatePrivilegedAdministratorFixture(pbPort);
+    await activatePrivilegedPublisherFixture(pbPort);
+
+    let connectedClient = await launchConnectedClient();
+    await selectOperator(connectedClient, TRISTAN_BOWLES);
+    const publisherAccess = await openPrivilegedAccess(connectedClient);
+    await publisherAccess.getByLabel('Privileged password').fill(PUBLISHER_TEST_PASSWORD);
+    await publisherAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(publisherAccess.getByText('Pair this workstation')).toBeVisible();
+
+    await selectOperator(window, RYAN_BLEDSOE);
+    const serverAccess = await openPrivilegedAccess(window);
+    await serverAccess.getByLabel('Privileged password').fill(PRIVILEGED_TEST_PASSWORD);
+    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
+    const workstationOwner = serverAccess.getByLabel('Workstation owner');
+    await expect(
+      workstationOwner.getByRole('option', {
+        name: `${TRISTAN_BOWLES} — Knowledge publisher`,
+        exact: true,
+      }),
+    ).toBeAttached();
+    await workstationOwner.selectOption({
+      label: `${TRISTAN_BOWLES} — Knowledge publisher`,
+    });
+    await serverAccess.getByRole('button', { name: 'Create pairing code' }).click();
+    const challenge = serverAccess.getByLabel('Active pairing challenge');
+    await expect(challenge).toBeVisible();
+    await expect(challenge.locator('dd').nth(0)).toHaveText(
+      `${TRISTAN_BOWLES} · Knowledge publisher`,
+    );
+    const challengeId = (await challenge.locator('dd').nth(1).textContent())?.trim();
+    const pairingCode = (await challenge.locator('dd').nth(2).textContent())?.trim();
+    expect(challengeId).toBeTruthy();
+    expect(pairingCode).toMatch(/^[A-Z2-9]{8}$/);
+
+    await publisherAccess.getByLabel('Pairing challenge ID').fill(challengeId!);
+    await publisherAccess.getByLabel('One-time pairing code').fill(pairingCode!);
+    await publisherAccess.getByLabel('Device label').fill('E2E publisher laptop');
+    await publisherAccess.getByRole('button', { name: 'Pair device' }).click();
+    await expect(publisherAccess.getByText('Knowledge publisher', { exact: true })).toBeVisible();
+
+    const sourceDir = path.join(clientDataDir, 'knowledge-upload-fixtures');
+    fs.mkdirSync(sourceDir, { recursive: true });
+    const largeTitle = 'Publisher resume large';
+    const smallTitle = 'Publisher resume small';
+    const largeFileName = `${largeTitle}.pdf`;
+    const smallFileName = `${smallTitle}.pdf`;
+    const largePath = path.join(sourceDir, largeFileName);
+    const smallPath = path.join(sourceDir, smallFileName);
+    // Keep the end-to-end fixture multi-chunk but bounded; the dedicated soak
+    // harness exercises the full 50 MiB per-file ceiling.
+    writePaddedKnowledgePdfFixture(largePath, largeTitle, 20 * 1024 * 1024 - 8_192);
+    writePaddedKnowledgePdfFixture(smallPath, smallTitle, 64 * 1_024);
+    const largeChunkCount = Math.ceil(fs.statSync(largePath).size / KNOWLEDGE_CHUNK_BYTES);
+
+    await installKnowledgeDialogFixture([largePath, smallPath]);
+    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await connectedClient
+      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
+      .click();
+    await expect(
+      connectedClient.getByRole('heading', { name: 'Manage knowledge base', exact: true }),
+    ).toBeVisible();
+    await connectedClient.getByRole('button', { name: 'Add PDFs', exact: true }).click();
+    await expect(connectedClient.getByRole('button', { name: 'Uploads 2' })).toBeVisible();
+
+    let pb = await makeSuperuserPbClient(pbPort);
+    let observedChunkCount = 0;
+    await expect
+      .poll(
+        async () => {
+          observedChunkCount = (
+            await pb.collection('knowledge_upload_chunks').getFullList({ requestKey: null })
+          ).length;
+          return observedChunkCount > 0 && observedChunkCount < largeChunkCount - 1;
+        },
+        { intervals: [25, 50, 100], timeout: 5_000 },
+      )
+      .toBe(true);
+
+    // Stop the publisher first so its scheduler cannot finish queued chunks
+    // while the server performs a graceful shutdown.
+    await clientElectronApp?.close();
+    clientElectronApp = null;
+    clientWindow = null;
+    await electronApp?.close();
+    electronApp = null;
+    await expect
+      .poll(async () =>
+        fetch(`http://127.0.0.1:${pbPort}/api/health`).then(
+          () => false,
+          () => true,
+        ),
+      )
+      .toBe(true);
+    await launchServer();
+    pb = await makeSuperuserPbClient(pbPort);
+    const preservedChunks = await pb
+      .collection('knowledge_upload_chunks')
+      .getFullList<{ uploadId: string; index: number }>({ requestKey: null });
+    expect(preservedChunks.length).toBeGreaterThanOrEqual(observedChunkCount);
+    expect(preservedChunks.length).toBeLessThan(largeChunkCount);
+
+    connectedClient = await launchConnectedClient();
+    await selectOperator(connectedClient, TRISTAN_BOWLES);
+    const restartedAccess = await openPrivilegedAccess(connectedClient);
+    await restartedAccess.getByLabel('Privileged password').fill(PUBLISHER_TEST_PASSWORD);
+    await restartedAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(restartedAccess.getByText('Knowledge publisher', { exact: true })).toBeVisible();
+
+    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await connectedClient
+      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
+      .click();
+    await connectedClient.getByRole('button', { name: /Uploads \d+/ }).click();
+    await expect(
+      connectedClient.getByText('Restored after restart', { exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(
+        async () => {
+          const uploads = await pb
+            .collection('knowledge_uploads')
+            .getFullList<{ fileName: string; state: string }>({ requestKey: null });
+          return uploads
+            .filter(({ fileName }) => [largeFileName, smallFileName].includes(fileName))
+            .map(({ fileName, state }) => `${fileName}:${state}`)
+            .toSorted();
+        },
+        { timeout: 60_000 },
+      )
+      .toEqual([`${largeFileName}:ready`, `${smallFileName}:ready`].toSorted());
+
+    for (const fileName of [largeFileName, smallFileName]) {
+      const row = connectedClient.locator('.knowledge-management-row--upload', {
+        hasText: fileName,
+      });
+      await expect(row).toBeVisible();
+      const publish = row.getByRole('button', { name: 'Publish', exact: true });
+      await expect(publish).toBeEnabled();
+      await publish.click();
+      await expect(row).not.toBeVisible();
+    }
+
+    await expect
+      .poll(async () => {
+        const documents = await pb
+          .collection('knowledge_documents')
+          .getFullList<{ fileName: string; lifecycleState: string }>({ requestKey: null });
+        return documents
+          .filter(({ fileName }) => [largeFileName, smallFileName].includes(fileName))
+          .map(({ fileName, lifecycleState }) => `${fileName}:${lifecycleState}`)
+          .toSorted();
+      })
+      .toEqual([`${largeFileName}:active`, `${smallFileName}:active`].toSorted());
+    await expect
+      .poll(
+        async () =>
+          (await pb.collection('knowledge_upload_chunks').getFullList({ requestKey: null })).length,
+      )
+      .toBe(0);
+
+    const activePublisherAccess = await openPrivilegedAccess(connectedClient);
+    await activePublisherAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await selectOperator(connectedClient, RYAN_BELL);
+    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await connectedClient.getByRole('treeitem', { name: largeTitle, exact: true }).click();
+    await expect(
+      connectedClient.getByRole('region', { name: `${largeTitle} PDF viewer` }),
+    ).toContainText('Page 1 of 1');
   });
 
   test('Knowledge PDF links navigate within Relay and open HTTPS in the system browser', async () => {

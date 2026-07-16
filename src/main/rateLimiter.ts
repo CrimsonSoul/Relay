@@ -170,6 +170,15 @@ export function createPrivilegedRateLimiters() {
       idleTtlMs: 5 * 60 * 1_000,
       name: 'PrivilegedSignedCommand',
     }),
+    // A single bounded batch may declare 100 files. Its signed control plane
+    // (batch/status/manifest commands) is isolated from ordinary admin actions;
+    // PDF bytes remain separately constrained by the two-chunk upload scheduler.
+    knowledgeUploadCommand: new KeyedRateLimiter({
+      maxTokens: 250,
+      refillRate: 2,
+      idleTtlMs: 15 * 60 * 1_000,
+      name: 'KnowledgeUploadCommand',
+    }),
   };
 }
 

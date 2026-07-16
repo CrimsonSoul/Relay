@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PrivilegedCommandSafeError } from '../../privileged/PrivilegedCommandProcessor';
+import { KnowledgeUploadAdmissionError } from '../KnowledgeUploadCapacity';
 import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagementCommands';
 
 const context = {
@@ -245,6 +247,20 @@ describe('registerKnowledgeManagementCommands', () => {
       batchId: 'batch-1',
       expectedRevision: 3,
     });
+  });
+
+  it('translates asynchronous upload admission failures into bounded command errors', async () => {
+    uploadCoordinator.beginBatch.mockRejectedValueOnce(
+      new KnowledgeUploadAdmissionError('insufficient-storage'),
+    );
+
+    const result = handlers.get('knowledge.upload.batch.begin')!(
+      context as never,
+      { requestId: 'batch-client-1', fileCount: 2, totalBytes: 100 } as never,
+    );
+
+    await expect(result).rejects.toBeInstanceOf(PrivilegedCommandSafeError);
+    await expect(result).rejects.toMatchObject({ code: 'insufficient-storage' });
   });
 
   it('requires a bound reauthentication proof for permanent deletion', async () => {

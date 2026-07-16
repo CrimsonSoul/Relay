@@ -1,4 +1,4 @@
-import { statfs } from 'node:fs/promises';
+import { mkdir, statfs } from 'node:fs/promises';
 import { KNOWLEDGE_MAX_PDF_BYTES, KNOWLEDGE_UPLOAD_MAX_FILES } from '@shared/knowledge';
 
 const MINIMUM_FREE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -37,6 +37,7 @@ type KnowledgeUploadCapacityOptions = {
 
 const defaultProbe: KnowledgeUploadCapacityProbe = {
   async availableBytes(path) {
+    await mkdir(path, { recursive: true, mode: 0o700 });
     const stats = await statfs(path);
     return Number(stats.bavail) * Number(stats.bsize);
   },

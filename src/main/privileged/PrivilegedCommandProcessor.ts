@@ -120,6 +120,7 @@ export type PrivilegedCommandProcessorOptions = {
     payload: PrivilegedCommandPayloadMap['privileged.status.read'],
   ) => Promise<unknown>;
   commandLimiter?: KeyedRateLimiter;
+  knowledgeUploadCommandLimiter?: KeyedRateLimiter;
 };
 
 export type RegisteredPrivilegedCommandName = Exclude<
@@ -304,6 +305,7 @@ export class PrivilegedCommandProcessor {
   >;
   private readonly statusHandler: NonNullable<PrivilegedCommandProcessorOptions['statusHandler']>;
   private readonly commandLimiter: KeyedRateLimiter;
+  private readonly knowledgeUploadCommandLimiter: KeyedRateLimiter;
   private readonly registeredCommands = new Map<
     RegisteredPrivilegedCommandName,
     RegisteredPrivilegedCommand
@@ -324,7 +326,10 @@ export class PrivilegedCommandProcessor {
         role: context.role,
         status: 'ready',
       }));
-    this.commandLimiter = options.commandLimiter ?? createPrivilegedRateLimiters().signedCommand;
+    const rateLimiters = createPrivilegedRateLimiters();
+    this.commandLimiter = options.commandLimiter ?? rateLimiters.signedCommand;
+    this.knowledgeUploadCommandLimiter =
+      options.knowledgeUploadCommandLimiter ?? rateLimiters.knowledgeUploadCommand;
   }
 
   registerCommand<K extends RegisteredPrivilegedCommandName>(
@@ -471,7 +476,10 @@ export class PrivilegedCommandProcessor {
       return { ok: false, error: 'unauthorized' };
     }
     const limiterKey = command.deviceId ?? `local:${account.id}`;
-    if (!this.commandLimiter.tryConsume(limiterKey).allowed) {
+    const limiter = command.command.startsWith('knowledge.upload.')
+      ? this.knowledgeUploadCommandLimiter
+      : this.commandLimiter;
+    if (!limiter.tryConsume(limiterKey).allowed) {
       return { ok: false, error: 'conflict' };
     }
     return {

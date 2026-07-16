@@ -343,6 +343,25 @@ describe('PrivilegedCommandProcessor', () => {
     );
   });
 
+  it('isolates resumable upload control traffic from the administrative command limiter', async () => {
+    const commandLimiter = { tryConsume: vi.fn(() => ({ allowed: false })) };
+    const knowledgeUploadCommandLimiter = { tryConsume: vi.fn(() => ({ allowed: true })) };
+    const processor = createProcessor({
+      commandLimiter: commandLimiter as never,
+      knowledgeUploadCommandLimiter: knowledgeUploadCommandLimiter as never,
+    });
+    const uploadStatus = vi.fn(async () => ({ batch: {}, uploads: [] }));
+    processor.registerCommand('knowledge.upload.status', 'knowledge.manage', uploadStatus);
+
+    await expect(
+      processor.process(
+        envelope({ command: 'knowledge.upload.status', payload: { batchId: 'batch-1' } }),
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    expect(knowledgeUploadCommandLimiter.tryConsume).toHaveBeenCalledWith(DEVICE_ID);
+    expect(commandLimiter.tryConsume).not.toHaveBeenCalled();
+  });
+
   it('verifies the registered fingerprint and ECDSA signature before claiming the request', async () => {
     const processor = createProcessor();
     vi.mocked(repository.getDevice).mockResolvedValueOnce({

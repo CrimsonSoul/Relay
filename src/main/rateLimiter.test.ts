@@ -203,4 +203,18 @@ describe('privileged rate limiters', () => {
     expect(signedCommand.tryConsume('device-1').allowed).toBe(true);
     expect(signedCommand.tryConsume('device-1').allowed).toBe(false);
   });
+
+  it('provides a separate bounded burst for a full resumable Knowledge upload batch', () => {
+    const { knowledgeUploadCommand, signedCommand } = createPrivilegedRateLimiters();
+
+    for (let command = 0; command < 250; command += 1) {
+      expect(knowledgeUploadCommand.tryConsume('device-1').allowed).toBe(true);
+    }
+    expect(knowledgeUploadCommand.tryConsume('device-1').allowed).toBe(false);
+    expect(signedCommand.tryConsume('device-1').allowed).toBe(true);
+
+    vi.advanceTimersByTime(500);
+    expect(knowledgeUploadCommand.tryConsume('device-1').allowed).toBe(true);
+    expect(knowledgeUploadCommand.tryConsume('device-1').allowed).toBe(false);
+  });
 });

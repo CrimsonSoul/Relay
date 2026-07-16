@@ -161,4 +161,24 @@ describe('KnowledgeUploadScheduler', () => {
     await scheduler.whenIdle();
     expect(value.finalize).toHaveBeenCalledOnce();
   });
+
+  it('does not start semaphore-queued chunks while the client is shutting down', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const uploadChunk = vi.fn(async () => gate);
+    const value = task({ uploadChunk });
+    const scheduler = new KnowledgeUploadScheduler();
+
+    scheduler.enqueue(value);
+    await vi.waitFor(() => expect(uploadChunk).toHaveBeenCalledTimes(2));
+    const disposing = scheduler.dispose();
+    release();
+    await disposing;
+
+    expect(uploadChunk).toHaveBeenCalledTimes(2);
+    expect(value.finalize).not.toHaveBeenCalled();
+    expect(stateCalls(value)).toContainEqual(['paused', null, 0]);
+  });
 });

@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   KnowledgeUploadCapacity,
   type KnowledgeUploadCapacityProbe,
@@ -32,6 +36,21 @@ function createCapacity(
 }
 
 describe('KnowledgeUploadCapacity', () => {
+  it('creates the PocketBase storage directory before probing a clean server', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'relay-capacity-'));
+    const storagePath = join(root, 'pb_data', 'storage');
+    const capacity = new KnowledgeUploadCapacity({ storagePath });
+
+    try {
+      await expect(
+        capacity.assertBatch({ accountId: 'account-1', fileCount: 1, totalBytes: 10 }),
+      ).resolves.toBeUndefined();
+      expect(existsSync(storagePath)).toBe(true);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('accepts a bounded batch while preserving the two GiB floor and assembly allowance', async () => {
     const { capacity, probe, hasActiveBatch } = createCapacity({
       availableBytes: 2 * GiB + 50 * MiB + 4 * MiB,

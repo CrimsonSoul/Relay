@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayPrivilegedAccountRecord } from '@shared/privilegedAccess';
+import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import { canonicalPrivilegedSigningBytes } from '@shared/privilegedCommands';
 import {
   PrivilegedRuntime,
@@ -96,6 +97,8 @@ describe('PrivilegedRuntime', () => {
   });
 
   afterEach(() => {
+    delete process.env.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS;
+    delete process.env.RELAY_E2E_PRIVILEGED_FIXTURES;
     vi.useRealTimers();
   });
 
@@ -139,6 +142,23 @@ describe('PrivilegedRuntime', () => {
       keyPair.publicKey.asymmetricKeyType === 'ec' &&
         canonicalPrivilegedSigningBytes(envelope).byteLength > 0,
     ).toBe(true);
+  });
+
+  it('delays chunk creation only behind the explicit E2E fixture controls', async () => {
+    process.env.RELAY_E2E_PRIVILEGED_FIXTURES = '1';
+    process.env.RELAY_E2E_KNOWLEDGE_CHUNK_DELAY_MS = '150';
+    const createRecord = vi.fn(async () => ({ id: 'chunk-1' }));
+    Object.assign(authClient, { createRecord });
+    const runtime = createClientRuntime();
+    await runtime.login({ operatorId: OPERATOR_ID, password: PASSWORD });
+
+    const pending = runtime.createPrivilegedRecord(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION, {});
+    await Promise.resolve();
+    expect(createRecord).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+
+    await expect(pending).resolves.toEqual({ id: 'chunk-1' });
+    expect(createRecord).toHaveBeenCalledOnce();
   });
 
   it('returns pairing-required without a key, then binds and activates a paired device', async () => {

@@ -94,7 +94,10 @@ function uploadView(upload: StoredUploadRecord): KnowledgeManagementUploadView {
     progress,
     proposedTitle: upload.proposedTitle || upload.fileName.replace(/\.pdf$/i, ''),
     proposedCategory: upload.proposedCategory || 'General',
-    pageCount: Number.isInteger(upload.pageCount) ? (upload.pageCount ?? null) : null,
+    pageCount:
+      Number.isInteger(upload.pageCount) && Number(upload.pageCount) > 0
+        ? Number(upload.pageCount)
+        : null,
     outlineSource: upload.outlineSource || null,
     outlineCount: Array.isArray(upload.outline) ? upload.outline.length : 0,
     duplicateDocumentId: upload.duplicateDocumentId || null,
