@@ -122,7 +122,7 @@ export type KnowledgeUploadManifestView = {
   chunkSize: number;
   chunkCount: number;
   missingChunkIndexes: number[];
-  state: Exclude<KnowledgeUploadState, 'validating' | 'published'>;
+  state: Exclude<KnowledgeUploadState, 'validating'>;
   proposedTitle: string;
   proposedCategory: string;
   pageCount: number | null;
@@ -476,6 +476,7 @@ const KNOWLEDGE_UPLOAD_MANIFEST_STATES: KnowledgeUploadManifestView['state'][] =
   'ready',
   'failed',
   'cancelled',
+  'published',
 ];
 
 const KNOWLEDGE_UPLOAD_QUEUE_STATES: KnowledgeUploadQueueItemState[] = [

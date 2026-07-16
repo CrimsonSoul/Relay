@@ -666,6 +666,7 @@ describe('ensureCollections', () => {
             'ready',
             'failed',
             'cancelled',
+            'published',
           ],
         }),
         expect.objectContaining({

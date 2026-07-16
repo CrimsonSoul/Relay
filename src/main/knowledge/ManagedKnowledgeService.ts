@@ -602,7 +602,7 @@ export class ManagedKnowledgeService {
   private completeUpload(id: string): Promise<unknown> {
     return this.pb
       .collection(KNOWLEDGE_UPLOADS_COLLECTION)
-      .update(id, { state: 'published' }, { requestKey: null });
+      .update(id, { state: 'published', pdf: null }, { requestKey: null });
   }
 
   private async audit(

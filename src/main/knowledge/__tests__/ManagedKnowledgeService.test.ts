@@ -148,7 +148,7 @@ describe('ManagedKnowledgeService', () => {
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
     expect(uploads.update).toHaveBeenCalledWith(
       'upload-1',
-      { state: 'published' },
+      { state: 'published', pdf: null },
       { requestKey: null },
     );
     expect(audits.create).toHaveBeenCalledWith(
