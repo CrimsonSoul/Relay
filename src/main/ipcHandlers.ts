@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain, type BrowserWindow } from 'electron';
 import type PocketBase from 'pocketbase';
 import { setupCloudStatusHandlers } from './handlers/cloudStatus';
 import { setupWindowHandlers } from './handlers/windowHandlers';
@@ -23,13 +23,12 @@ import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager'
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
-import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
+import type { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
 import { assertTrustedIpcSender } from './utils/trustedSender';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import { PrivilegedAccountManager } from './privileged/PrivilegedAccountManager';
-import { IPC_CHANNELS } from '@shared/ipc';
 
 /**
  * Orchestrates all IPC handlers for the application.
@@ -49,6 +48,7 @@ export function setupIpcHandlers(opts: {
   getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
   getPbClient?: () => PocketBase | null;
   getKnowledgePdfService?: () => KnowledgePdfService | null;
+  getKnowledgeUploadService?: () => KnowledgeUploadService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   subscribePrivilegedSessionChanged?: (
     listener: (view: PrivilegedSessionView) => void,
@@ -68,6 +68,7 @@ export function setupIpcHandlers(opts: {
     getDynatraceProblemsManager,
     getPbClient,
     getKnowledgePdfService,
+    getKnowledgeUploadService,
     getPrivilegedRuntime,
     subscribePrivilegedSessionChanged,
     restartPb,
@@ -107,17 +108,7 @@ export function setupIpcHandlers(opts: {
     setupKnowledgeHandlers(
       getKnowledgePdfService ?? (() => null),
       () => knowledgeIndexStatusService,
-      () =>
-        new KnowledgeUploadService({
-          getRuntime: () => (getPrivilegedRuntime?.() as never) ?? null,
-          emitProgress: (progress) => {
-            for (const window of BrowserWindow.getAllWindows()) {
-              if (!window.isDestroyed()) {
-                window.webContents.send(IPC_CHANNELS.KNOWLEDGE_UPLOAD_PROGRESS, progress);
-              }
-            }
-          },
-        }),
+      getKnowledgeUploadService ?? (() => null),
     ),
   );
 

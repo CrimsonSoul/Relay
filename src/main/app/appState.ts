@@ -18,6 +18,7 @@ import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
@@ -37,6 +38,7 @@ export interface AppState {
   dynatraceProblemsManager: DynatraceProblemsManager | null;
   cloudStatusManager: CloudStatusManager | null;
   knowledgePdfService: KnowledgePdfService | null;
+  knowledgeUploadService: KnowledgeUploadService | null;
   privilegedRuntime: PrivilegedRuntime | null;
 }
 
@@ -55,6 +57,7 @@ const state: AppState = {
   dynatraceProblemsManager: null,
   cloudStatusManager: null,
   knowledgePdfService: null,
+  knowledgeUploadService: null,
   privilegedRuntime: null,
 };
 
@@ -105,6 +108,9 @@ export function getCloudStatusManager() {
 }
 export function getKnowledgePdfService() {
   return state.knowledgePdfService;
+}
+export function getKnowledgeUploadService() {
+  return state.knowledgeUploadService;
 }
 export function getPrivilegedRuntime() {
   return state.privilegedRuntime;
@@ -166,6 +172,10 @@ export function setCloudStatusManager(mgr: CloudStatusManager | null) {
 export function setKnowledgePdfService(service: KnowledgePdfService | null) {
   log.debug('appState.knowledgePdfService changed');
   state.knowledgePdfService = service;
+}
+export function setKnowledgeUploadService(service: KnowledgeUploadService | null) {
+  log.debug('appState.knowledgeUploadService changed');
+  state.knowledgeUploadService = service;
 }
 export function setPrivilegedRuntime(runtime: PrivilegedRuntime | null) {
   stopPrivilegedRuntimeSubscription?.();
@@ -264,6 +274,7 @@ export function setupIpc(
     getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
     getPbClient: () => state.pbClient,
     getKnowledgePdfService: () => state.knowledgePdfService,
+    getKnowledgeUploadService: () => state.knowledgeUploadService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
     subscribePrivilegedSessionChanged,
     restartPb,

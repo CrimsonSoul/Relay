@@ -43,27 +43,43 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
   });
 
-  it('exposes only selection and safe progress for Knowledge uploads', async () => {
+  it('exposes only selection, safe queue state, and identifier-based Knowledge controls', async () => {
     const callback = vi.fn();
-    await api.selectAndStageKnowledgePdfs();
-    const unsubscribe = api.onKnowledgeUploadProgress(callback);
+    await api.selectAndQueueKnowledgePdfs();
+    await api.getKnowledgeUploadQueue();
+    await api.pauseKnowledgeUploadBatch('batch-1');
+    await api.resumeKnowledgeUploadBatch('batch-1');
+    await api.retryKnowledgeUpload('upload-1');
+    await api.reselectKnowledgeUploadSource('upload-1');
+    await api.cancelKnowledgeUpload('upload-1');
+    await api.cancelKnowledgeUploadBatch('batch-1');
+    const unsubscribe = api.onKnowledgeUploadQueueChanged(callback);
     const handler = electronMocks.on.mock.calls.find(
-      ([channel]) => channel === 'knowledge:uploadProgress',
-    )?.[1] as (_event: unknown, progress: unknown) => void;
-    const progress = {
-      requestId: 'request-1',
-      fileName: 'Runbook.pdf',
-      byteSize: 100,
-      state: 'uploading',
-      progress: 20,
-      safeError: null,
+      ([channel]) => channel === 'knowledge:uploadQueueChanged',
+    )?.[1] as (_event: unknown, queue: unknown) => void;
+    const queue = {
+      restartRecovery: false,
+      activeBatchId: 'batch-1',
+      totalBytes: 100,
+      acknowledgedBytes: 20,
+      items: [],
     };
-    handler({}, progress);
+    handler({}, queue);
     unsubscribe();
 
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:selectAndStage');
-    expect(callback).toHaveBeenCalledWith(progress);
-    expect(electronMocks.removeListener).toHaveBeenCalledWith('knowledge:uploadProgress', handler);
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadQueue');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchPause', 'batch-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchResume', 'batch-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadRetry', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadReselect', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadFileCancel', 'upload-1');
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:uploadBatchCancel', 'batch-1');
+    expect(callback).toHaveBeenCalledWith(queue);
+    expect(electronMocks.removeListener).toHaveBeenCalledWith(
+      'knowledge:uploadQueueChanged',
+      handler,
+    );
   });
 
   it('exposes the narrow privileged bridge and forwards only its approved arguments', async () => {

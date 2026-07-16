@@ -1,5 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { KNOWLEDGE_UPLOADS_COLLECTION } from '@shared/knowledge';
+import { createHash } from 'node:crypto';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  type KnowledgeUploadBatchStatusView,
+  type KnowledgeUploadBatchView,
+  type KnowledgeUploadManifestView,
+} from '@shared/knowledge';
+import type { KnowledgeUploadQueueState } from '../KnowledgeUploadQueueStore';
 import { KnowledgeUploadService } from '../KnowledgeUploadService';
 
 vi.mock('electron', () => ({ dialog: { showOpenDialog: vi.fn() } }));
@@ -15,115 +24,323 @@ const view = {
   expiresAt: '2026-07-16T02:00:00.000Z',
 };
 
-describe('KnowledgeUploadService', () => {
-  const createPrivilegedRecord = vi.fn();
-  const submitPublicCommand = vi.fn();
-  const runtime = {
-    getView: vi.fn(() => view),
+const createdAt = '2026-07-16T01:00:00.000Z';
+const expiresAt = '2026-07-23T01:00:00.000Z';
+
+function batch(overrides: Partial<KnowledgeUploadBatchView> = {}): KnowledgeUploadBatchView {
+  return {
+    id: 'batch-1',
+    requestId: 'batch-request-1',
+    fileCount: 1,
+    totalBytes: 12,
+    state: 'active',
+    createdAt,
+    lastActivityAt: createdAt,
+    expiresAt,
+    revision: 0,
+    ...overrides,
+  };
+}
+
+function manifest(
+  overrides: Partial<KnowledgeUploadManifestView> = {},
+): KnowledgeUploadManifestView {
+  return {
+    id: 'upload-1',
+    batchId: 'batch-1',
+    fileName: 'First.pdf',
+    byteSize: 12,
+    checksum: createHash('sha256').update('%PDF-first!!').digest('hex'),
+    chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+    chunkCount: 1,
+    missingChunkIndexes: [0],
+    state: 'uploading',
+    proposedTitle: '',
+    proposedCategory: '',
+    pageCount: null,
+    outline: [],
+    outlineSource: null,
+    duplicateDocumentId: null,
+    safeError: null,
+    lastActivityAt: createdAt,
+    readyAt: null,
+    expiresAt,
+    revision: 0,
+    ...overrides,
+  };
+}
+
+function queueStore(initial?: KnowledgeUploadQueueState) {
+  let value: KnowledgeUploadQueueState = initial ?? {
+    version: 1,
+    restartRecovery: false,
+    entries: [],
+  };
+  return {
+    load: vi.fn(async () => structuredClone(value)),
+    save: vi.fn(async (next: KnowledgeUploadQueueState) => {
+      value = structuredClone(next);
+    }),
+    current: () => structuredClone(value),
+  };
+}
+
+function commandRuntime(statusUploads: KnowledgeUploadManifestView[] = []) {
+  const createPrivilegedRecord = vi.fn(async () => ({ id: 'chunk-1' }));
+  let beganUpload = statusUploads.length > 0;
+  const submitPublicCommand = vi.fn(async (request: { command: string }) => {
+    if (request.command === 'knowledge.upload.batch.begin') {
+      return { ok: true, requestId: 'request', value: batch() } as const;
+    }
+    if (request.command === 'knowledge.upload.status') {
+      let uploads: KnowledgeUploadManifestView[] = [];
+      if (beganUpload) uploads = statusUploads.length > 0 ? statusUploads : [manifest()];
+      const value: KnowledgeUploadBatchStatusView = {
+        batch: batch(),
+        uploads,
+      };
+      return { ok: true, requestId: 'request', value } as const;
+    }
+    if (request.command === 'knowledge.upload.file.begin') {
+      beganUpload = true;
+      return { ok: true, requestId: 'request', value: manifest() } as const;
+    }
+    if (request.command === 'knowledge.upload.file.finalize') {
+      return {
+        ok: true,
+        requestId: 'request',
+        value: manifest({ state: 'assembling', missingChunkIndexes: [], revision: 1 }),
+      } as const;
+    }
+    if (request.command.endsWith('.cancel')) {
+      return { ok: true, requestId: 'request', value: undefined } as const;
+    }
+    throw new Error(`Unexpected command ${request.command}`);
+  });
+  return {
+    runtime: { getView: vi.fn(() => view), createPrivilegedRecord, submitPublicCommand },
     createPrivilegedRecord,
     submitPublicCommand,
   };
-  const selectFiles = vi.fn();
-  const inspect = vi.fn();
-  const read = vi.fn();
-  const emitProgress = vi.fn();
+}
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    selectFiles.mockResolvedValue(['/private/work/First.pdf', '/private/work/Second.pdf']);
-    inspect.mockImplementation(async (path: string) => ({
-      symbolicLink: false,
-      size: path.includes('First') ? 12 : 13,
-      canonicalPath: path,
-    }));
-    read.mockImplementation(async (path: string) =>
-      Buffer.from(path.includes('First') ? '%PDF-first!!' : '%PDF-second!!'),
-    );
-    createPrivilegedRecord
-      .mockResolvedValueOnce({ id: 'upload-1' })
-      .mockResolvedValueOnce({ id: 'upload-2' });
-    submitPublicCommand.mockImplementation(async ({ payload }) => ({
-      ok: true,
-      requestId: 'validated',
-      value: {
-        id: payload.uploadId,
-        requestId: payload.uploadId === 'upload-1' ? 'request-1' : 'request-2',
-        state: 'ready',
-        progress: 100,
-      },
-    }));
-  });
+function candidate(path = '/private/work/First.pdf') {
+  return {
+    canonicalPath: path,
+    fileName: 'First.pdf',
+    byteSize: 12,
+    modifiedMs: 100,
+    device: 1,
+    inode: 2,
+  };
+}
 
-  function service(overrides: Record<string, unknown> = {}) {
-    const ids = ['request-1', 'request-2'];
-    return new KnowledgeUploadService({
+describe('KnowledgeUploadService', () => {
+  it('returns a safe queue immediately and hashes/uploads in the background', async () => {
+    let releasePlan!: () => void;
+    const planning = new Promise<void>((resolve) => {
+      releasePlan = resolve;
+    });
+    const store = queueStore();
+    const { runtime, createPrivilegedRecord, submitPublicCommand } = commandRuntime();
+    const emitSnapshot = vi.fn();
+    const checksum = manifest().checksum;
+    const service = new KnowledgeUploadService({
       getRuntime: () => runtime as never,
-      selectFiles,
-      inspect,
-      read,
-      emitProgress,
-      now: () => Date.parse('2026-07-16T01:00:00.000Z'),
-      createId: () => ids.shift() ?? 'request-extra',
-      ...overrides,
+      store,
+      selectFiles: vi.fn(async () => ['/private/work/First.pdf']),
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => {
+        await planning;
+        return { ...candidate(), checksum, chunkCount: 1 };
+      }),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      revalidateSource: vi.fn(async () => true),
+      emitSnapshot,
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
     });
-  }
 
-  it('stages selected PDFs sequentially through the privileged account and validates each', async () => {
-    const result = await service().selectAndStage();
+    const result = await service.selectAndQueue();
 
     expect(result).toMatchObject({
       ok: true,
-      uploads: [
-        { id: 'upload-1', fileName: 'First.pdf', state: 'ready' },
-        { id: 'upload-2', fileName: 'Second.pdf', state: 'ready' },
-      ],
+      uploads: [{ id: 'local-1', uploadId: null, fileName: 'First.pdf', state: 'planning' }],
     });
-    expect(createPrivilegedRecord).toHaveBeenCalledTimes(2);
-    expect(createPrivilegedRecord.mock.calls[0]?.[0]).toBe(KNOWLEDGE_UPLOADS_COLLECTION);
-    expect(submitPublicCommand).toHaveBeenNthCalledWith(1, {
-      command: 'knowledge.upload.validate',
-      payload: {
-        uploadId: 'upload-1',
-        preliminaryChecksum: expect.stringMatching(/^[0-9a-f]{64}$/),
-      },
-      expectedRevision: null,
+    expect(submitPublicCommand).not.toHaveBeenCalled();
+    const exposed = JSON.stringify({ result, snapshots: emitSnapshot.mock.calls });
+    expect(exposed).not.toContain('/private/work');
+    expect(exposed).not.toContain('%PDF-');
+    expect(store.current().entries[0]?.source.canonicalPath).toBe('/private/work/First.pdf');
+
+    releasePlan();
+    await service.whenIdle();
+
+    expect(createPrivilegedRecord).toHaveBeenCalledWith(
+      KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+      expect.any(FormData),
+    );
+    expect(submitPublicCommand.mock.calls.map(([request]) => request.command)).toEqual([
+      'knowledge.upload.batch.begin',
+      'knowledge.upload.status',
+      'knowledge.upload.file.begin',
+      'knowledge.upload.status',
+      'knowledge.upload.file.finalize',
+    ]);
+    expect(service.snapshot().items[0]).toMatchObject({
+      uploadId: 'upload-1',
+      acknowledgedBytes: 12,
+      state: 'assembling',
     });
   });
 
-  it('isolates invalid and symlinked files without uploading them', async () => {
-    inspect.mockResolvedValueOnce({
-      symbolicLink: true,
-      size: 12,
-      canonicalPath: '/private/work/First.pdf',
+  it('restores an encrypted queue and uploads only server-declared missing chunks', async () => {
+    const checksum = manifest({ byteSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES + 2 }).checksum;
+    const restoredManifest = manifest({
+      byteSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES + 2,
+      checksum,
+      chunkCount: 2,
+      missingChunkIndexes: [1],
     });
-    const result = await service().selectAndStage();
-
-    expect(result).toMatchObject({
-      ok: true,
-      uploads: [
-        { fileName: 'First.pdf', state: 'failed' },
-        { id: 'upload-1', state: 'ready' },
+    const store = queueStore({
+      version: 1,
+      restartRecovery: true,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 0,
+          uploadId: 'upload-1',
+          uploadRevision: 0,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: {
+            ...candidate(),
+            byteSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES + 2,
+            checksum,
+            chunkCount: 2,
+          },
+          acknowledgedChunkIndexes: [0],
+          state: 'paused-network',
+          safeError: 'offline',
+          retryCount: 8,
+        },
       ],
     });
+    const { runtime, createPrivilegedRecord } = commandRuntime([restoredManifest]);
+    const readChunk = vi.fn(async (plan: unknown, index: number) => {
+      expect(plan).toMatchObject({ checksum });
+      return new Uint8Array(index === 1 ? 2 : KNOWLEDGE_UPLOAD_CHUNK_BYTES);
+    });
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      revalidateSource: vi.fn(async () => true),
+      readChunk,
+    });
+
+    await service.start();
+    await service.whenIdle();
+
+    expect(readChunk).toHaveBeenCalledOnce();
+    expect(readChunk).toHaveBeenCalledWith(expect.any(Object), 1);
     expect(createPrivilegedRecord).toHaveBeenCalledOnce();
+    expect(service.snapshot().restartRecovery).toBe(true);
   });
 
-  it('returns bounded cancellation and authorization failures', async () => {
-    selectFiles.mockResolvedValueOnce([]);
-    await expect(service().selectAndStage()).resolves.toEqual({ ok: false, error: 'cancelled' });
+  it('requires the unchanged source after restart and never uploads stale bytes', async () => {
+    const checksum = manifest().checksum;
+    const store = queueStore({
+      version: 1,
+      restartRecovery: true,
+      entries: [
+        {
+          localId: 'local-1',
+          batchRequestId: 'batch-request-1',
+          batchId: 'batch-1',
+          batchRevision: 0,
+          uploadId: 'upload-1',
+          uploadRevision: 0,
+          accountId: view.accountId,
+          deviceId: view.deviceId,
+          source: { ...candidate(), checksum, chunkCount: 1 },
+          acknowledgedChunkIndexes: [],
+          state: 'paused-network',
+          safeError: 'offline',
+          retryCount: 8,
+        },
+      ],
+    });
+    const { runtime, createPrivilegedRecord } = commandRuntime([manifest()]);
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      revalidateSource: vi.fn(async () => false),
+    });
+
+    await service.start();
+    await service.whenIdle();
+
+    expect(createPrivilegedRecord).not.toHaveBeenCalled();
+    expect(service.snapshot().items[0]).toMatchObject({
+      state: 'source-required',
+      safeError: 'source-required',
+    });
+  });
+
+  it('bounds cancellation and authorization failures before queueing paths', async () => {
+    const store = queueStore();
+    const { runtime } = commandRuntime();
+    const selectFiles = vi.fn(async () => []);
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      selectFiles,
+    });
+    await expect(service.selectAndQueue()).resolves.toEqual({ ok: false, error: 'cancelled' });
 
     runtime.getView.mockReturnValueOnce({ ...view, capabilities: [] });
-    await expect(service().selectAndStage()).resolves.toEqual({
+    await expect(service.selectAndQueue()).resolves.toEqual({
       ok: false,
       error: 'unauthorized',
     });
+    expect(store.save).not.toHaveBeenCalled();
   });
 
-  it('never emits local paths or PDF bytes to progress or result state', async () => {
-    const result = await service().selectAndStage();
-    const exposed = JSON.stringify({ result, progress: emitProgress.mock.calls });
+  it('creates chunk records without placing the assembled PDF in an upload record', async () => {
+    const store = queueStore();
+    const { runtime, createPrivilegedRecord } = commandRuntime();
+    const service = new KnowledgeUploadService({
+      getRuntime: () => runtime as never,
+      store,
+      selectFiles: vi.fn(async () => ['/private/work/First.pdf']),
+      inspectCandidate: vi.fn(async () => candidate()),
+      planSource: vi.fn(async () => ({
+        ...candidate(),
+        checksum: manifest().checksum,
+        chunkCount: 1,
+      })),
+      readChunk: vi.fn(async () => new TextEncoder().encode('%PDF-first!!')),
+      createId: vi
+        .fn<() => string>()
+        .mockReturnValueOnce('batch-request-1')
+        .mockReturnValueOnce('local-1'),
+    });
 
-    expect(exposed).not.toContain('/private/work');
-    expect(exposed).not.toContain('%PDF-');
+    await service.selectAndQueue();
+    await service.whenIdle();
+
+    expect(createPrivilegedRecord).toHaveBeenCalledOnce();
+    expect(createPrivilegedRecord).toHaveBeenCalledWith(
+      KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+      expect.any(FormData),
+    );
+    expect(createPrivilegedRecord).not.toHaveBeenCalledWith(
+      KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
+      expect.anything(),
+    );
   });
 });

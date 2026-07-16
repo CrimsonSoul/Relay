@@ -174,6 +174,26 @@ const api: BridgeAPI = {
     ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_UPLOAD_PROGRESS, handler);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_UPLOAD_PROGRESS, handler);
   },
+  selectAndQueueKnowledgePdfs: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE),
+  getKnowledgeUploadQueue: () => ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET),
+  pauseKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE, batchId),
+  resumeKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_RESUME, batchId),
+  retryKnowledgeUpload: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY, uploadId),
+  reselectKnowledgeUploadSource: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT, uploadId),
+  cancelKnowledgeUpload: (uploadId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_FILE_CANCEL, uploadId),
+  cancelKnowledgeUploadBatch: (batchId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_CANCEL, batchId),
+  onKnowledgeUploadQueueChanged: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, queue: Parameters<typeof callback>[0]) =>
+      callback(queue);
+    ipcRenderer.on(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, handler);
+  },
   // Sync
   syncPending: () => ipcRenderer.invoke(IPC_CHANNELS.SYNC_PENDING),
   // PocketBase

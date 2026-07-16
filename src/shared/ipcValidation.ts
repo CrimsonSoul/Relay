@@ -41,6 +41,12 @@ export const KnowledgePdfRequestSchema = z
   })
   .strict();
 
+export const KnowledgeUploadControlIdSchema = z
+  .string()
+  .min(1)
+  .max(MAX_ID)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
+
 const privilegedPasswordSchema = z
   .string()
   .min(MIN_PRIVILEGED_PASSWORD_LENGTH)

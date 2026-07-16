@@ -1,16 +1,42 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
-import { basename, extname } from 'node:path';
+import { basename } from 'node:path';
 import { dialog, type BrowserWindow } from 'electron';
+import type { PublicPrivilegedCommandRequest } from '@shared/ipc';
 import {
-  KNOWLEDGE_MAX_PDF_BYTES,
-  KNOWLEDGE_UPLOADS_COLLECTION,
-  type KnowledgeUploadProgress,
+  KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  normalizeKnowledgeUploadBatchStatusView,
+  normalizeKnowledgeUploadBatchView,
+  normalizeKnowledgeUploadManifestView,
+  type KnowledgeManagementErrorCode,
+  type KnowledgeUploadBatchStatusView,
+  type KnowledgeUploadManifestView,
+  type KnowledgeUploadQueueItemState,
+  type KnowledgeUploadQueueItemView,
+  type KnowledgeUploadQueueView,
   type KnowledgeUploadSelectionResult,
-  type KnowledgeUploadView,
 } from '@shared/knowledge';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
+import {
+  KnowledgeSourceError,
+  inspectKnowledgePdfCandidate,
+  planKnowledgePdfSource,
+  readKnowledgePdfChunk,
+  revalidateKnowledgePdfSource,
+  type KnowledgePdfCandidate,
+  type KnowledgePdfSourcePlan,
+} from './knowledgeChunking';
+import {
+  createEmptyKnowledgeUploadQueue,
+  type KnowledgeUploadQueueEntry,
+  type KnowledgeUploadQueueStore,
+} from './KnowledgeUploadQueueStore';
+import {
+  KnowledgeUploadScheduler,
+  type KnowledgeUploadSchedulerTask,
+} from './KnowledgeUploadScheduler';
 
 type KnowledgeUploadRuntime = {
   getView(): PrivilegedSessionView;
@@ -18,28 +44,34 @@ type KnowledgeUploadRuntime = {
     collection: string,
     data: Record<string, unknown> | FormData,
   ): Promise<Record<string, unknown> & { id: string }>;
-  submitPublicCommand(input: {
-    command: 'knowledge.upload.validate';
-    payload: { uploadId: string; preliminaryChecksum: string };
-    expectedRevision: null;
-  }): Promise<PrivilegedCommandResult>;
+  submitPublicCommand(input: PublicPrivilegedCommandRequest): Promise<PrivilegedCommandResult>;
 };
+
+type QueueStorePort = Pick<KnowledgeUploadQueueStore, 'load' | 'save'>;
 
 type KnowledgeUploadServiceOptions = {
   getRuntime: () => KnowledgeUploadRuntime | null;
-  selectFiles?: (window?: BrowserWindow) => Promise<string[]>;
-  read?: (path: string) => Promise<Buffer>;
-  inspect?: (
-    path: string,
-  ) => Promise<{ symbolicLink: boolean; size: number; canonicalPath: string }>;
-  emitProgress?: (progress: KnowledgeUploadProgress) => void;
-  now?: () => number;
+  store: QueueStorePort;
+  scheduler?: KnowledgeUploadScheduler;
+  selectFiles?: (window?: BrowserWindow, single?: boolean) => Promise<string[]>;
+  inspectCandidate?: (path: string) => Promise<KnowledgePdfCandidate>;
+  planSource?: (candidate: KnowledgePdfCandidate) => Promise<KnowledgePdfSourcePlan>;
+  readChunk?: (plan: KnowledgePdfSourcePlan, index: number) => Promise<Uint8Array>;
+  revalidateSource?: (plan: KnowledgePdfSourcePlan) => Promise<boolean>;
+  emitSnapshot?: (snapshot: KnowledgeUploadQueueView) => void;
   createId?: () => string;
 };
 
-async function defaultSelectFiles(window?: BrowserWindow): Promise<string[]> {
+type ActiveUploadSession = PrivilegedSessionView & {
+  accountId: string;
+  operatorId: string;
+  operatorName: string;
+  deviceId: string;
+};
+
+async function defaultSelectFiles(window?: BrowserWindow, single = false): Promise<string[]> {
   const options: Electron.OpenDialogOptions = {
-    properties: ['openFile', 'multiSelections'],
+    properties: single ? ['openFile'] : ['openFile', 'multiSelections'],
     filters: [{ name: 'PDF documents', extensions: ['pdf'] }],
   };
   const result = window
@@ -48,210 +80,610 @@ async function defaultSelectFiles(window?: BrowserWindow): Promise<string[]> {
   return result.canceled ? [] : result.filePaths;
 }
 
-async function defaultInspect(path: string) {
-  const status = await lstat(path);
-  return {
-    symbolicLink: status.isSymbolicLink(),
-    size: status.size,
-    canonicalPath: await realpath(path),
-  };
-}
-
-function sha256(value: Uint8Array | string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
-
-function failedUpload(
-  requestId: string,
-  fileName: string,
-  byteSize: number,
-  error: KnowledgeUploadView['safeError'],
-  expiresAt: string,
-): KnowledgeUploadView {
-  return {
-    id: requestId,
-    requestId,
-    fileName,
-    byteSize,
-    checksum: '0'.repeat(64),
-    state: 'failed',
-    progress: 0,
-    proposedTitle: fileName.replace(/\.pdf$/i, ''),
-    proposedCategory: 'General',
-    pageCount: null,
-    outline: [],
-    outlineSource: null,
-    duplicateDocumentId: null,
-    safeError: error,
-    expiresAt,
-    revision: 0,
-  };
-}
-
-function safeUploadView(
-  value: unknown,
-  fallback: Omit<KnowledgeUploadView, 'state' | 'progress' | 'safeError'>,
-): KnowledgeUploadView {
-  if (value && typeof value === 'object') {
-    const record = value as Partial<KnowledgeUploadView>;
-    if (record.id === fallback.id && record.requestId === fallback.requestId) {
-      return {
-        ...fallback,
-        ...record,
-        state: record.state ?? 'ready',
-        progress: record.progress ?? 100,
-        safeError: record.safeError ?? null,
-      };
-    }
+function activeUploadSession(runtime: KnowledgeUploadRuntime | null): ActiveUploadSession | null {
+  const session = runtime?.getView();
+  if (
+    !runtime ||
+    session?.state !== 'active' ||
+    !session.accountId ||
+    !session.operatorId ||
+    !session.operatorName ||
+    !session.capabilities.includes('knowledge.manage')
+  ) {
+    return null;
   }
-  return { ...fallback, state: 'ready', progress: 100, safeError: null };
+  return {
+    ...session,
+    accountId: session.accountId,
+    operatorId: session.operatorId,
+    operatorName: session.operatorName,
+    deviceId: session.deviceId ?? 'server-local',
+  };
+}
+
+function sourcePlan(entry: KnowledgeUploadQueueEntry): KnowledgePdfSourcePlan | null {
+  return entry.source.checksum ? { ...entry.source, checksum: entry.source.checksum } : null;
+}
+
+function acknowledgedBytes(entry: KnowledgeUploadQueueEntry): number {
+  return entry.acknowledgedChunkIndexes.reduce((total, index) => {
+    const start = index * KNOWLEDGE_UPLOAD_CHUNK_BYTES;
+    return (
+      total + Math.max(0, Math.min(KNOWLEDGE_UPLOAD_CHUNK_BYTES, entry.source.byteSize - start))
+    );
+  }, 0);
+}
+
+function isTerminal(state: KnowledgeUploadQueueItemState): boolean {
+  return state === 'cancelled' || state === 'published' || state === 'ready';
+}
+
+function isRetryablePreparationError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return false;
+  const status = (error as { status?: unknown }).status;
+  return (
+    status === 0 ||
+    status === 408 ||
+    status === 429 ||
+    (typeof status === 'number' && status >= 500 && status <= 599)
+  );
+}
+
+function privilegedErrorStatus(error: string): number {
+  if (error === 'offline') return 0;
+  if (error === 'server-error') return 500;
+  return 400;
+}
+
+function resultError(error: string): never {
+  throw Object.assign(new Error(error), {
+    status: privilegedErrorStatus(error),
+    code: error,
+  });
+}
+
+function preparationFailure(error: unknown): {
+  state: KnowledgeUploadQueueItemState;
+  safeError: KnowledgeManagementErrorCode;
+} {
+  if (error instanceof KnowledgeSourceError && error.code === 'source-required') {
+    return { state: 'source-required', safeError: 'source-required' };
+  }
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+  if (code === 'unauthorized' || code === 'locked' || code === 'pairing-required') {
+    return { state: 'failed', safeError: 'unauthorized' };
+  }
+  if (code === 'insufficient-storage') {
+    return { state: 'failed', safeError: 'insufficient-storage' };
+  }
+  if (isRetryablePreparationError(error)) {
+    return { state: 'paused-network', safeError: 'offline' };
+  }
+  return { state: 'failed', safeError: 'upload-failed' };
 }
 
 export class KnowledgeUploadService {
   private readonly getRuntime: () => KnowledgeUploadRuntime | null;
+  private readonly store: QueueStorePort;
+  private readonly scheduler: KnowledgeUploadScheduler;
   private readonly selectFiles: NonNullable<KnowledgeUploadServiceOptions['selectFiles']>;
-  private readonly read: NonNullable<KnowledgeUploadServiceOptions['read']>;
-  private readonly inspect: NonNullable<KnowledgeUploadServiceOptions['inspect']>;
-  private readonly emitProgress: NonNullable<KnowledgeUploadServiceOptions['emitProgress']>;
-  private readonly now: () => number;
+  private readonly inspectCandidate: NonNullable<KnowledgeUploadServiceOptions['inspectCandidate']>;
+  private readonly planSource: NonNullable<KnowledgeUploadServiceOptions['planSource']>;
+  private readonly readChunk: NonNullable<KnowledgeUploadServiceOptions['readChunk']>;
+  private readonly revalidateSource: NonNullable<KnowledgeUploadServiceOptions['revalidateSource']>;
+  private readonly emitSnapshot: NonNullable<KnowledgeUploadServiceOptions['emitSnapshot']>;
   private readonly createId: () => string;
+  private queue = createEmptyKnowledgeUploadQueue(false);
+  private preparationTail: Promise<void> = Promise.resolve();
+  private persistTail: Promise<void> = Promise.resolve();
+  private started = false;
+  private disposed = false;
 
   constructor(options: KnowledgeUploadServiceOptions) {
     this.getRuntime = options.getRuntime;
+    this.store = options.store;
+    this.scheduler = options.scheduler ?? new KnowledgeUploadScheduler();
     this.selectFiles = options.selectFiles ?? defaultSelectFiles;
-    this.read = options.read ?? readFile;
-    this.inspect = options.inspect ?? defaultInspect;
-    this.emitProgress = options.emitProgress ?? (() => undefined);
-    this.now = options.now ?? Date.now;
+    this.inspectCandidate = options.inspectCandidate ?? inspectKnowledgePdfCandidate;
+    this.planSource = options.planSource ?? planKnowledgePdfSource;
+    this.readChunk = options.readChunk ?? readKnowledgePdfChunk;
+    this.revalidateSource = options.revalidateSource ?? revalidateKnowledgePdfSource;
+    this.emitSnapshot = options.emitSnapshot ?? (() => undefined);
     this.createId = options.createId ?? randomUUID;
   }
 
-  async selectAndStage(window?: BrowserWindow): Promise<KnowledgeUploadSelectionResult> {
+  async start(): Promise<void> {
+    if (this.started || this.disposed) return;
+    this.started = true;
+    this.queue = await this.store.load();
+    this.emit();
+    const session = activeUploadSession(this.getRuntime());
+    this.scheduler.setSessionActive(Boolean(session));
+    if (!session) return;
+    for (const entry of this.queue.entries) {
+      if (
+        entry.accountId === session.accountId &&
+        entry.deviceId === session.deviceId &&
+        !isTerminal(entry.state)
+      ) {
+        this.enqueuePreparation(entry.localId, true);
+      }
+    }
+  }
+
+  async selectAndQueue(window?: BrowserWindow): Promise<KnowledgeUploadSelectionResult> {
+    if (this.disposed) return { ok: false, error: 'offline' };
     const runtime = this.getRuntime();
-    const session = runtime?.getView();
-    if (
-      !runtime ||
-      session?.state !== 'active' ||
-      !session.accountId ||
-      !session.operatorId ||
-      !session.operatorName ||
-      !session.capabilities.includes('knowledge.manage')
-    ) {
+    const session = activeUploadSession(runtime);
+    if (!runtime || !session) {
       return { ok: false, error: runtime ? 'unauthorized' : 'offline' };
     }
-    const paths = await this.selectFiles(window);
+    const activeEntries = this.queue.entries.filter((entry) => !isTerminal(entry.state));
+    if (activeEntries.length > 0) return { ok: false, error: 'upload-failed' };
+
+    const paths = await this.selectFiles(window, false);
     if (paths.length === 0) return { ok: false, error: 'cancelled' };
+    if (paths.length > KNOWLEDGE_UPLOAD_MAX_FILES) return { ok: false, error: 'invalid-file' };
 
-    const uploads: KnowledgeUploadView[] = [];
-    for (const path of paths) {
-      uploads.push(await this.stageOne(runtime, session, path));
-    }
-    return { ok: true, uploads };
-  }
-
-  private async stageOne(
-    runtime: KnowledgeUploadRuntime,
-    session: PrivilegedSessionView & {
-      accountId: string;
-      operatorId: string;
-      operatorName: string;
-    },
-    path: string,
-  ): Promise<KnowledgeUploadView> {
-    const requestId = this.createId();
-    const fileName = basename(path);
-    const expiresAt = new Date(this.now() + 24 * 60 * 60 * 1_000).toISOString();
-    let byteSize = 0;
+    const candidates: KnowledgePdfCandidate[] = [];
+    const names = new Set<string>();
     try {
-      const info = await this.inspect(path);
-      byteSize = info.size;
-      if (
-        info.symbolicLink ||
-        extname(fileName).toLocaleLowerCase('en') !== '.pdf' ||
-        byteSize <= 0 ||
-        byteSize > KNOWLEDGE_MAX_PDF_BYTES
-      ) {
-        return this.fail(requestId, fileName, byteSize, 'invalid-file', expiresAt);
+      for (const path of paths) {
+        const candidate = await this.inspectCandidate(path);
+        const nameKey = candidate.fileName.toLocaleLowerCase('en');
+        if (names.has(nameKey)) return { ok: false, error: 'invalid-file' };
+        names.add(nameKey);
+        candidates.push(candidate);
       }
-      const data = await this.read(info.canonicalPath);
-      if (data.byteLength !== byteSize || data.subarray(0, 5).toString('ascii') !== '%PDF-') {
-        return this.fail(requestId, fileName, byteSize, 'invalid-file', expiresAt);
-      }
-      const checksum = sha256(data);
-      this.progress(requestId, fileName, byteSize, 'uploading', 20, null);
-      const descriptor = {
-        requestId,
-        fileName,
-        byteSize,
-        checksum,
-        accountId: session.accountId,
-        deviceId: session.deviceId ?? 'server-local',
-        operatorId: session.operatorId,
-      };
-      const form = new FormData();
-      for (const [key, value] of Object.entries(descriptor)) form.set(key, String(value));
-      form.set('operatorName', session.operatorName);
-      form.set('descriptorHash', sha256(JSON.stringify(descriptor)));
-      form.set('state', 'validating');
-      form.set('expiresAt', expiresAt);
-      form.set('revision', '0');
-      const bytes = Uint8Array.from(data);
-      form.set(
-        'pdf',
-        new Blob([bytes.buffer as ArrayBuffer], { type: 'application/pdf' }),
-        fileName,
-      );
-      const staged = await runtime.createPrivilegedRecord(KNOWLEDGE_UPLOADS_COLLECTION, form);
-      this.progress(requestId, fileName, byteSize, 'validating', 60, null);
-      const result = await runtime.submitPublicCommand({
-        command: 'knowledge.upload.validate',
-        payload: { uploadId: staged.id, preliminaryChecksum: checksum },
-        expectedRevision: null,
-      });
-      if (!result.ok)
-        return this.fail(requestId, fileName, byteSize, 'validation-failed', expiresAt);
-      const fallback = {
-        id: staged.id,
-        requestId,
-        fileName,
-        byteSize,
-        checksum,
-        proposedTitle: fileName.replace(/\.pdf$/i, ''),
-        proposedCategory: 'General',
-        pageCount: null,
-        outline: [],
-        outlineSource: null,
-        duplicateDocumentId: null,
-        expiresAt,
-        revision: 1,
-      } satisfies Omit<KnowledgeUploadView, 'state' | 'progress' | 'safeError'>;
-      const upload = safeUploadView(result.value, fallback);
-      this.progress(requestId, fileName, byteSize, upload.state, upload.progress, upload.safeError);
-      return upload;
     } catch {
-      return this.fail(requestId, fileName, byteSize, 'upload-failed', expiresAt);
+      return { ok: false, error: 'invalid-file' };
+    }
+
+    const batchRequestId = this.createId();
+    const entries = candidates.map<KnowledgeUploadQueueEntry>((candidate) => ({
+      localId: this.createId(),
+      batchRequestId,
+      batchId: null,
+      batchRevision: 0,
+      uploadId: null,
+      uploadRevision: 0,
+      accountId: session.accountId,
+      deviceId: session.deviceId,
+      source: {
+        ...candidate,
+        checksum: null,
+        chunkCount: Math.ceil(candidate.byteSize / KNOWLEDGE_UPLOAD_CHUNK_BYTES),
+      },
+      acknowledgedChunkIndexes: [],
+      state: 'planning',
+      safeError: null,
+      retryCount: 0,
+    }));
+    this.queue = { version: 1, restartRecovery: false, entries };
+    await this.persist();
+    this.emit();
+    for (const entry of entries) this.enqueuePreparation(entry.localId, false);
+    return { ok: true, uploads: entries.map((entry) => this.itemView(entry)) };
+  }
+
+  /** Compatibility alias while the renderer migrates to the queue terminology. */
+  selectAndStage(window?: BrowserWindow): Promise<KnowledgeUploadSelectionResult> {
+    return this.selectAndQueue(window);
+  }
+
+  snapshot(): KnowledgeUploadQueueView {
+    const items = this.queue.entries.map((entry) => this.itemView(entry));
+    return {
+      restartRecovery: this.queue.restartRecovery,
+      activeBatchId: this.queue.entries.find((entry) => !isTerminal(entry.state))?.batchId ?? null,
+      totalBytes: items.reduce((total, item) => total + item.byteSize, 0),
+      acknowledgedBytes: items.reduce((total, item) => total + item.acknowledgedBytes, 0),
+      items,
+    };
+  }
+
+  pauseBatch(batchId: string): void {
+    const entries = this.queue.entries.filter(
+      (entry) => entry.batchId === batchId || entry.batchRequestId === batchId,
+    );
+    for (const entry of entries) {
+      if (!isTerminal(entry.state)) this.updateEntry(entry, { state: 'paused', safeError: null });
+    }
+    const serverBatchId = entries[0]?.batchId;
+    if (serverBatchId) this.scheduler.pauseBatch(serverBatchId);
+    void this.persistAndEmit();
+  }
+
+  resumeBatch(batchId: string): void {
+    const entries = this.queue.entries.filter(
+      (entry) => entry.batchId === batchId || entry.batchRequestId === batchId,
+    );
+    const serverBatchId = entries[0]?.batchId;
+    if (serverBatchId) this.scheduler.resumeBatch(serverBatchId);
+    for (const entry of entries) {
+      if (!isTerminal(entry.state)) {
+        this.updateEntry(entry, { state: 'queued', safeError: null, retryCount: 0 });
+        this.enqueuePreparation(entry.localId, true);
+      }
+    }
+    void this.persistAndEmit();
+  }
+
+  retryUpload(id: string): void {
+    const entry = this.findEntry(id);
+    if (!entry || isTerminal(entry.state)) return;
+    this.updateEntry(entry, { state: 'queued', safeError: null, retryCount: 0 });
+    if (entry.uploadId) this.scheduler.retryUpload(entry.uploadId);
+    this.enqueuePreparation(entry.localId, true);
+    void this.persistAndEmit();
+  }
+
+  async reselectSource(id: string, window?: BrowserWindow): Promise<boolean> {
+    const entry = this.findEntry(id);
+    if (!entry || !entry.source.checksum) return false;
+    const paths = await this.selectFiles(window, true);
+    if (paths.length !== 1) return false;
+    try {
+      const candidate = await this.inspectCandidate(paths[0]!);
+      const plan = await this.planSource(candidate);
+      if (
+        plan.fileName !== entry.source.fileName ||
+        plan.byteSize !== entry.source.byteSize ||
+        plan.checksum !== entry.source.checksum
+      ) {
+        return false;
+      }
+      entry.source = plan;
+      this.updateEntry(entry, { state: 'queued', safeError: null, retryCount: 0 });
+      await this.persistAndEmit();
+      this.enqueuePreparation(entry.localId, false);
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  private fail(
-    requestId: string,
-    fileName: string,
-    byteSize: number,
-    error: KnowledgeUploadView['safeError'],
-    expiresAt: string,
-  ): KnowledgeUploadView {
-    this.progress(requestId, fileName, byteSize, 'failed', 0, error);
-    return failedUpload(requestId, fileName, byteSize, error, expiresAt);
+  async cancelUpload(id: string): Promise<void> {
+    const entry = this.findEntry(id);
+    if (!entry) return;
+    if (entry.uploadId) {
+      await this.command({
+        command: 'knowledge.upload.file.cancel',
+        payload: { uploadId: entry.uploadId, expectedRevision: entry.uploadRevision },
+        expectedRevision: entry.uploadRevision,
+      }).catch(() => undefined);
+      this.scheduler.cancelUpload(entry.uploadId);
+    }
+    this.updateEntry(entry, { state: 'cancelled', safeError: null });
+    await this.persistAndEmit();
   }
 
-  private progress(
-    requestId: string,
-    fileName: string,
-    byteSize: number,
-    state: KnowledgeUploadProgress['state'],
-    progress: number,
-    safeError: KnowledgeUploadProgress['safeError'],
+  async cancelBatch(id: string): Promise<void> {
+    const entry = this.queue.entries.find(
+      (candidate) => candidate.batchId === id || candidate.batchRequestId === id,
+    );
+    if (!entry) return;
+    if (entry.batchId) {
+      await this.command({
+        command: 'knowledge.upload.batch.cancel',
+        payload: { batchId: entry.batchId, expectedRevision: entry.batchRevision },
+        expectedRevision: entry.batchRevision,
+      }).catch(() => undefined);
+      this.scheduler.cancelBatch(entry.batchId);
+    }
+    for (const candidate of this.queue.entries) {
+      if (candidate.batchRequestId === entry.batchRequestId) {
+        this.updateEntry(candidate, { state: 'cancelled', safeError: null });
+      }
+    }
+    await this.persistAndEmit();
+  }
+
+  handleSessionChanged(view: PrivilegedSessionView): void {
+    const session = view.state === 'active' ? activeUploadSession(this.getRuntime()) : null;
+    this.scheduler.setSessionActive(Boolean(session));
+    if (!session) return;
+    for (const entry of this.queue.entries) {
+      if (
+        entry.accountId === session.accountId &&
+        entry.deviceId === session.deviceId &&
+        !isTerminal(entry.state)
+      ) {
+        this.enqueuePreparation(entry.localId, true);
+      }
+    }
+  }
+
+  async whenIdle(): Promise<void> {
+    while (true) {
+      const preparation = this.preparationTail;
+      await preparation;
+      await this.scheduler.whenIdle();
+      await this.persistTail;
+      if (preparation === this.preparationTail) return;
+    }
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    await this.preparationTail;
+    await this.scheduler.dispose();
+    await this.persistTail;
+  }
+
+  private enqueuePreparation(localId: string, restore: boolean): void {
+    if (this.disposed) return;
+    this.preparationTail = this.preparationTail
+      .then(() => this.prepare(localId, restore))
+      .catch(() => undefined);
+  }
+
+  private async prepare(localId: string, restore: boolean): Promise<void> {
+    const entry = this.findEntry(localId);
+    if (!entry || isTerminal(entry.state) || entry.state === 'paused') return;
+    const runtime = this.getRuntime();
+    const session = activeUploadSession(runtime);
+    if (!this.sessionMatchesEntry(session, entry)) {
+      const safeError = runtime ? 'unauthorized' : 'offline';
+      this.updateEntry(entry, { state: 'paused', safeError });
+      await this.persistAndEmit();
+      return;
+    }
+    try {
+      const plan = await this.ensureSourcePlan(entry, restore);
+      if (!plan) return;
+      const batchId = await this.ensureBatch(entry);
+      const { status, upload } = await this.ensureUpload(entry, batchId, plan);
+      this.reconcile(entry, status, upload);
+      await this.persistAndEmit();
+      this.scheduler.enqueue(this.schedulerTask(entry));
+    } catch (error) {
+      this.updateEntry(entry, preparationFailure(error));
+      await this.persistAndEmit();
+    }
+  }
+
+  private sessionMatchesEntry(
+    session: ActiveUploadSession | null,
+    entry: KnowledgeUploadQueueEntry,
+  ): session is ActiveUploadSession {
+    return Boolean(
+      session && session.accountId === entry.accountId && session.deviceId === entry.deviceId,
+    );
+  }
+
+  private async ensureSourcePlan(
+    entry: KnowledgeUploadQueueEntry,
+    restore: boolean,
+  ): Promise<KnowledgePdfSourcePlan | null> {
+    const existing = sourcePlan(entry);
+    if (existing) {
+      if (!restore || (await this.revalidateSource(existing))) return existing;
+      this.updateEntry(entry, { state: 'source-required', safeError: 'source-required' });
+      await this.persistAndEmit();
+      return null;
+    }
+    const created = await this.planSource(entry.source);
+    entry.source = created;
+    await this.persistAndEmit();
+    return created;
+  }
+
+  private async ensureBatch(entry: KnowledgeUploadQueueEntry): Promise<string> {
+    if (entry.batchId) return entry.batchId;
+    const entries = this.queue.entries.filter(
+      (candidate) => candidate.batchRequestId === entry.batchRequestId,
+    );
+    const result = await this.command({
+      command: 'knowledge.upload.batch.begin',
+      payload: {
+        requestId: entry.batchRequestId,
+        fileCount: entries.length,
+        totalBytes: entries.reduce((total, candidate) => total + candidate.source.byteSize, 0),
+      },
+      expectedRevision: null,
+    });
+    const batch = normalizeKnowledgeUploadBatchView(result.value);
+    if (!batch) throw new Error('invalid-batch-response');
+    for (const candidate of entries) {
+      candidate.batchId = batch.id;
+      candidate.batchRevision = batch.revision;
+      if (candidate.state === 'planning') candidate.state = 'queued';
+    }
+    await this.persistAndEmit();
+    return batch.id;
+  }
+
+  private async ensureUpload(
+    entry: KnowledgeUploadQueueEntry,
+    batchId: string,
+    plan: KnowledgePdfSourcePlan,
+  ): Promise<{ status: KnowledgeUploadBatchStatusView; upload: KnowledgeUploadManifestView }> {
+    const status = await this.status(batchId);
+    const existing = this.matchManifest(status, entry);
+    if (existing) return { status, upload: existing };
+    const result = await this.command({
+      command: 'knowledge.upload.file.begin',
+      payload: {
+        batchId,
+        fileName: plan.fileName,
+        byteSize: plan.byteSize,
+        checksum: plan.checksum,
+        chunkCount: plan.chunkCount,
+      },
+      expectedRevision: null,
+    });
+    const upload = normalizeKnowledgeUploadManifestView(result.value);
+    if (!upload) throw new Error('invalid-upload-response');
+    return { status, upload };
+  }
+
+  private schedulerTask(entry: KnowledgeUploadQueueEntry): KnowledgeUploadSchedulerTask {
+    const uploadId = entry.uploadId!;
+    const batchId = entry.batchId!;
+    return {
+      uploadId,
+      batchId,
+      byteSize: entry.source.byteSize,
+      getMissingChunkIndexes: async () => {
+        const status = await this.status(batchId);
+        const upload = this.matchManifest(status, entry);
+        if (!upload) throw Object.assign(new Error('upload-not-found'), { status: 404 });
+        this.reconcile(entry, status, upload);
+        await this.persistAndEmit();
+        return upload.missingChunkIndexes;
+      },
+      readChunk: async (index) => {
+        const plan = sourcePlan(entry);
+        if (!plan) throw new KnowledgeSourceError('source-required');
+        return this.readChunk(plan, index);
+      },
+      uploadChunk: async (index, bytes, signal) => {
+        if (signal.aborted) throw Object.assign(new Error('aborted'), { status: 0 });
+        const form = new FormData();
+        form.set('uploadId', uploadId);
+        form.set('batchId', batchId);
+        form.set('accountId', entry.accountId);
+        form.set('deviceId', entry.deviceId);
+        form.set('index', String(index));
+        form.set('byteSize', String(bytes.byteLength));
+        form.set('checksum', createHash('sha256').update(bytes).digest('hex'));
+        const buffer = Uint8Array.from(bytes).buffer;
+        form.set(
+          'chunk',
+          new Blob([buffer], { type: 'application/octet-stream' }),
+          `${basename(entry.source.fileName, '.pdf')}.part-${String(index + 1).padStart(3, '0')}`,
+        );
+        const runtime = this.getRuntime();
+        if (!runtime) throw Object.assign(new Error('offline'), { status: 0 });
+        await runtime.createPrivilegedRecord(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION, form);
+      },
+      finalize: async () => {
+        const result = await this.command({
+          command: 'knowledge.upload.file.finalize',
+          payload: { uploadId, expectedRevision: entry.uploadRevision },
+          expectedRevision: entry.uploadRevision,
+        });
+        const upload = normalizeKnowledgeUploadManifestView(result.value);
+        if (!upload) throw new Error('invalid-finalize-response');
+        entry.uploadRevision = upload.revision;
+        this.updateEntry(entry, { state: upload.state, safeError: upload.safeError });
+        await this.persistAndEmit();
+      },
+      onAcknowledged: (index) => {
+        if (!entry.acknowledgedChunkIndexes.includes(index)) {
+          entry.acknowledgedChunkIndexes.push(index);
+          entry.acknowledgedChunkIndexes.sort((left, right) => left - right);
+        }
+        this.updateEntry(entry, { state: 'uploading', safeError: null });
+        void this.persistAndEmit();
+      },
+      onState: (state, safeError, retryCount) => {
+        this.updateEntry(entry, { state, safeError, retryCount });
+        void this.persistAndEmit();
+      },
+    };
+  }
+
+  private async status(batchId: string): Promise<KnowledgeUploadBatchStatusView> {
+    const result = await this.command({
+      command: 'knowledge.upload.status',
+      payload: { batchId },
+      expectedRevision: null,
+    });
+    const status = normalizeKnowledgeUploadBatchStatusView(result.value);
+    if (!status) throw new Error('invalid-status-response');
+    return status;
+  }
+
+  private matchManifest(
+    status: KnowledgeUploadBatchStatusView,
+    entry: KnowledgeUploadQueueEntry,
+  ): KnowledgeUploadManifestView | null {
+    if (entry.uploadId) {
+      const byId = status.uploads.find((upload) => upload.id === entry.uploadId);
+      if (byId) return byId;
+    }
+    return (
+      status.uploads.find(
+        (upload) =>
+          upload.fileName === entry.source.fileName &&
+          upload.byteSize === entry.source.byteSize &&
+          upload.checksum === entry.source.checksum,
+      ) ?? null
+    );
+  }
+
+  private reconcile(
+    entry: KnowledgeUploadQueueEntry,
+    status: KnowledgeUploadBatchStatusView,
+    upload: KnowledgeUploadManifestView,
   ): void {
-    this.emitProgress({ requestId, fileName, byteSize, state, progress, safeError });
+    entry.batchId = status.batch.id;
+    entry.batchRevision = status.batch.revision;
+    entry.uploadId = upload.id;
+    entry.uploadRevision = upload.revision;
+    entry.acknowledgedChunkIndexes = Array.from(
+      { length: upload.chunkCount },
+      (_, index) => index,
+    ).filter((index) => !upload.missingChunkIndexes.includes(index));
+    this.updateEntry(entry, { state: upload.state, safeError: upload.safeError });
+  }
+
+  private async command(
+    request: PublicPrivilegedCommandRequest,
+  ): Promise<Extract<PrivilegedCommandResult, { ok: true }>> {
+    const runtime = this.getRuntime();
+    if (!runtime) resultError('offline');
+    const result = await runtime.submitPublicCommand(request);
+    if (!result.ok) resultError(result.error);
+    return result;
+  }
+
+  private findEntry(id: string): KnowledgeUploadQueueEntry | undefined {
+    return this.queue.entries.find((entry) => entry.localId === id || entry.uploadId === id);
+  }
+
+  private updateEntry(
+    entry: KnowledgeUploadQueueEntry,
+    patch: Partial<Pick<KnowledgeUploadQueueEntry, 'state' | 'safeError' | 'retryCount'>>,
+  ): void {
+    Object.assign(entry, patch);
+  }
+
+  private itemView(entry: KnowledgeUploadQueueEntry): KnowledgeUploadQueueItemView {
+    return {
+      id: entry.localId,
+      uploadId: entry.uploadId,
+      batchId: entry.batchId ?? entry.batchRequestId,
+      fileName: entry.source.fileName,
+      byteSize: entry.source.byteSize,
+      acknowledgedBytes: acknowledgedBytes(entry),
+      chunkCount: entry.source.chunkCount,
+      acknowledgedChunkCount: entry.acknowledgedChunkIndexes.length,
+      state: entry.state,
+      safeError: entry.safeError,
+      retryCount: entry.retryCount,
+      restartRecovery: this.queue.restartRecovery,
+    };
+  }
+
+  private async persist(): Promise<void> {
+    const snapshot = structuredClone(this.queue);
+    this.persistTail = this.persistTail.then(() => this.store.save(snapshot));
+    await this.persistTail;
+  }
+
+  private async persistAndEmit(): Promise<void> {
+    await this.persist();
+    this.emit();
+  }
+
+  private emit(): void {
+    this.emitSnapshot(this.snapshot());
   }
 }

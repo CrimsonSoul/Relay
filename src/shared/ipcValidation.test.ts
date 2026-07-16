@@ -3,6 +3,7 @@ import {
   SearchQuerySchema,
   LogEntrySchema,
   AlertHistoryEntrySchema,
+  KnowledgeUploadControlIdSchema,
   KnowledgePdfRequestSchema,
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
@@ -101,6 +102,19 @@ describe('KnowledgePdfRequestSchema', () => {
       KnowledgePdfRequestSchema.safeParse({ ...valid, path: 'outside-source-root' }).success,
     ).toBe(false);
   });
+});
+
+describe('KnowledgeUploadControlIdSchema', () => {
+  it('accepts bounded local, batch, and upload identifiers', () => {
+    expect(KnowledgeUploadControlIdSchema.parse('batch-request_1')).toBe('batch-request_1');
+  });
+
+  it.each(['', '../source.pdf', 'a'.repeat(201), { id: 'upload-1' }])(
+    'rejects unsafe upload control identifiers: %o',
+    (value) => {
+      expect(KnowledgeUploadControlIdSchema.safeParse(value).success).toBe(false);
+    },
+  );
 });
 
 describe('privileged IPC schemas', () => {

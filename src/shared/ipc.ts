@@ -17,6 +17,7 @@ import type {
   KnowledgePdfRequest,
   KnowledgePdfResult,
   KnowledgeUploadProgress,
+  KnowledgeUploadQueueView,
   KnowledgeUploadSelectionResult,
 } from './knowledge';
 
@@ -536,6 +537,17 @@ export type BridgeAPI = {
   openKnowledgeWebLink: (url: string) => Promise<KnowledgeOpenWebLinkResult>;
   selectAndStageKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
   onKnowledgeUploadProgress: (callback: (progress: KnowledgeUploadProgress) => void) => () => void;
+  selectAndQueueKnowledgePdfs: () => Promise<KnowledgeUploadSelectionResult>;
+  getKnowledgeUploadQueue: () => Promise<KnowledgeUploadQueueView>;
+  pauseKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;
+  resumeKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;
+  retryKnowledgeUpload: (uploadId: string) => Promise<boolean>;
+  reselectKnowledgeUploadSource: (uploadId: string) => Promise<boolean>;
+  cancelKnowledgeUpload: (uploadId: string) => Promise<boolean>;
+  cancelKnowledgeUploadBatch: (batchId: string) => Promise<boolean>;
+  onKnowledgeUploadQueueChanged: (
+    callback: (queue: KnowledgeUploadQueueView) => void,
+  ) => () => void;
   // Sync
   syncPending: () => Promise<{
     total: number;
@@ -669,6 +681,14 @@ export const IPC_CHANNELS = {
   KNOWLEDGE_OPEN_WEB_LINK: 'knowledge:openWebLink',
   KNOWLEDGE_SELECT_AND_STAGE: 'knowledge:selectAndStage',
   KNOWLEDGE_UPLOAD_PROGRESS: 'knowledge:uploadProgress',
+  KNOWLEDGE_UPLOAD_QUEUE_GET: 'knowledge:uploadQueue',
+  KNOWLEDGE_UPLOAD_BATCH_PAUSE: 'knowledge:uploadBatchPause',
+  KNOWLEDGE_UPLOAD_BATCH_RESUME: 'knowledge:uploadBatchResume',
+  KNOWLEDGE_UPLOAD_RETRY: 'knowledge:uploadRetry',
+  KNOWLEDGE_UPLOAD_RESELECT: 'knowledge:uploadReselect',
+  KNOWLEDGE_UPLOAD_FILE_CANCEL: 'knowledge:uploadFileCancel',
+  KNOWLEDGE_UPLOAD_BATCH_CANCEL: 'knowledge:uploadBatchCancel',
+  KNOWLEDGE_UPLOAD_QUEUE_CHANGED: 'knowledge:uploadQueueChanged',
   // PocketBase
   PB_GET_CONNECTION: 'pb:getConnection',
   PB_REFRESH_CONNECTION: 'pb:refreshConnection',

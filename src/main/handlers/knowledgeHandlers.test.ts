@@ -36,8 +36,30 @@ describe('knowledgeHandlers', () => {
     lastIndexedAt: '2026-07-14T12:00:00.000Z',
   }));
   const indexStatusService = { getStatus };
-  const selectAndStage = vi.fn();
-  const uploadService = { selectAndStage };
+  const selectAndQueue = vi.fn();
+  const snapshot = vi.fn(() => ({
+    restartRecovery: false,
+    activeBatchId: null,
+    totalBytes: 0,
+    acknowledgedBytes: 0,
+    items: [],
+  }));
+  const pauseBatch = vi.fn();
+  const resumeBatch = vi.fn();
+  const retryUpload = vi.fn();
+  const reselectSource = vi.fn();
+  const cancelUpload = vi.fn();
+  const cancelBatch = vi.fn();
+  const uploadService = {
+    selectAndQueue,
+    snapshot,
+    pauseBatch,
+    resumeBatch,
+    retryUpload,
+    reselectSource,
+    cancelUpload,
+    cancelBatch,
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -132,17 +154,39 @@ describe('knowledgeHandlers', () => {
   });
 
   it('requires a trusted sender and forwards only the no-argument upload selection request', async () => {
-    selectAndStage.mockResolvedValue({ ok: false, error: 'cancelled' });
+    selectAndQueue.mockResolvedValue({ ok: false, error: 'cancelled' });
     await expect(
       handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({}, '/renderer/cannot/pass/a/path.pdf'),
     ).resolves.toEqual({ ok: false, error: 'cancelled' });
-    expect(selectAndStage).toHaveBeenCalledWith();
+    expect(selectAndQueue).toHaveBeenCalledWith();
 
     trusted.mockReturnValueOnce(false);
     await expect(handlers[IPC_CHANNELS.KNOWLEDGE_SELECT_AND_STAGE]({})).resolves.toEqual({
       ok: false,
       error: 'unauthorized',
     });
+  });
+
+  it('exposes safe queue controls and never accepts renderer file paths', async () => {
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_GET]({})).resolves.toEqual(
+      snapshot(),
+    );
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_PAUSE]({}, 'batch-1');
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_RESUME]({}, 'batch-1');
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, 'upload-1');
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RESELECT]({}, 'upload-1', '/renderer/path.pdf');
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_FILE_CANCEL]({}, 'upload-1');
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_BATCH_CANCEL]({}, 'batch-1');
+
+    expect(pauseBatch).toHaveBeenCalledWith('batch-1');
+    expect(resumeBatch).toHaveBeenCalledWith('batch-1');
+    expect(retryUpload).toHaveBeenCalledWith('upload-1');
+    expect(reselectSource).toHaveBeenCalledWith('upload-1');
+    expect(cancelUpload).toHaveBeenCalledWith('upload-1');
+    expect(cancelBatch).toHaveBeenCalledWith('batch-1');
+
+    await handlers[IPC_CHANNELS.KNOWLEDGE_UPLOAD_RETRY]({}, '../outside.pdf');
+    expect(retryUpload).toHaveBeenCalledTimes(1);
   });
 
   describe('KNOWLEDGE_OPEN_WEB_LINK', () => {

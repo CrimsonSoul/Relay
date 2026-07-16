@@ -61,6 +61,8 @@ import {
   setSyncManager,
   getKnowledgePdfService,
   setKnowledgePdfService,
+  getKnowledgeUploadService,
+  setKnowledgeUploadService,
   getPrivilegedRuntime,
   setPrivilegedRuntime,
   subscribePrivilegedSessionChanged,
@@ -91,6 +93,7 @@ beforeEach(() => {
   setPendingChanges(null);
   setSyncManager(null);
   setKnowledgePdfService(null);
+  setKnowledgeUploadService(null);
   setPrivilegedRuntime(null);
   resetDataRootCache();
 });
@@ -98,10 +101,13 @@ beforeEach(() => {
 describe('appState getters/setters', () => {
   it('knowledge services getters/setters', () => {
     const pdfService = { getPdf: vi.fn() } as never;
+    const uploadService = { snapshot: vi.fn() } as never;
 
     setKnowledgePdfService(pdfService);
+    setKnowledgeUploadService(uploadService);
 
     expect(getKnowledgePdfService()).toBe(pdfService);
+    expect(getKnowledgeUploadService()).toBe(uploadService);
   });
 
   it('owns the privileged runtime and relays only public session views', () => {

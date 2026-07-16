@@ -128,6 +128,7 @@ describe('knowledge contracts', () => {
       acknowledgedBytes: 4_000,
       items: [
         {
+          id: 'local-1',
           uploadId: 'upload-1',
           batchId: 'batch-1',
           fileName: 'Runbook.pdf',

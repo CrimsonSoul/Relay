@@ -78,14 +78,15 @@ describe('setupIpcHandlers', () => {
 
   it('passes live PDF and PocketBase-backed status services to knowledge handlers', () => {
     const getKnowledgePdfService = vi.fn();
+    const getKnowledgeUploadService = vi.fn();
     const getPbClient = vi.fn(() => null);
 
-    setupIpcHandlers(makeOpts({ getKnowledgePdfService, getPbClient }));
+    setupIpcHandlers(makeOpts({ getKnowledgePdfService, getKnowledgeUploadService, getPbClient }));
 
     expect(mockSetupKnowledgeHandlers).toHaveBeenCalledWith(
       getKnowledgePdfService,
       expect.any(Function),
-      expect.any(Function),
+      getKnowledgeUploadService,
     );
     const getStatusService = mockSetupKnowledgeHandlers.mock.calls[0]?.[1];
     expect(getStatusService()).toEqual(

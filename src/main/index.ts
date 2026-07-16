@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, dialog, ipcMain, crashReporter } from 'electron';
+import { app, BrowserWindow, session, dialog, ipcMain, crashReporter, safeStorage } from 'electron';
 import { join } from 'node:path';
 import { loggers } from './logger';
 import { AppConfig } from './config/AppConfig';
@@ -29,8 +29,11 @@ import {
   getCloudStatusManager,
   setCloudStatusManager,
   setKnowledgePdfService,
+  getKnowledgeUploadService,
+  setKnowledgeUploadService,
   getPrivilegedRuntime,
   setPrivilegedRuntime,
+  subscribePrivilegedSessionChanged,
 } from './app/appState';
 import { setupMaintenanceTasks } from './app/maintenanceTasks';
 import { createWindow, createAuxWindow } from './app/windowFactory';
@@ -55,6 +58,8 @@ import {
   cleanupKnowledgePdfCache,
   initializeKnowledgePdfService,
 } from './knowledge/knowledgeRuntime';
+import { KnowledgeUploadQueueStore } from './knowledge/KnowledgeUploadQueueStore';
+import { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
 import {
   createProductionPrivilegedRuntime,
   installPrivilegedE2EControl,
@@ -136,6 +141,7 @@ if (gotLock) {
   const bootstrap = async () => {
     let cleanupMaintenance: (() => void) | null = null;
     let stopMemoryHeartbeat: (() => void) | null = null;
+    let stopKnowledgeUploadSession: (() => void) | null = null;
     let cleanupComplete = false;
     const cleanupPrivilegedE2EControl = installPrivilegedE2EControl(getPrivilegedRuntime);
 
@@ -150,8 +156,22 @@ if (gotLock) {
       stopMemoryHeartbeat?.();
       stopMemoryHeartbeat = null;
       cleanupPrivilegedE2EControl();
+      stopKnowledgeUploadSession?.();
+      stopKnowledgeUploadSession = null;
       getDynatraceProblemsManager()?.stop();
       getCloudStatusManager()?.stop();
+      getKnowledgeUploadService()?.handleSessionChanged({
+        state: 'signed-out',
+        accountId: null,
+        operatorId: null,
+        operatorName: null,
+        role: null,
+        capabilities: [],
+        deviceId: null,
+        expiresAt: null,
+      });
+      void getKnowledgeUploadService()?.dispose();
+      setKnowledgeUploadService(null);
       void getPrivilegedRuntime()?.dispose();
       setPrivilegedRuntime(null);
       setKnowledgePdfService(null);
@@ -197,6 +217,22 @@ if (gotLock) {
       // NOT in any custom dataRoot.
       setAppConfig(new AppConfig(configDataDir));
       initializeKnowledgePdfService(configDataDir);
+      const knowledgeUploadService = new KnowledgeUploadService({
+        getRuntime: getPrivilegedRuntime,
+        store: new KnowledgeUploadQueueStore({ dataDir: configDataDir, safeStorage }),
+        emitSnapshot: (snapshot) => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            if (!window.isDestroyed()) {
+              window.webContents.send(IPC_CHANNELS.KNOWLEDGE_UPLOAD_QUEUE_CHANGED, snapshot);
+            }
+          }
+        },
+      });
+      setKnowledgeUploadService(knowledgeUploadService);
+      stopKnowledgeUploadSession = subscribePrivilegedSessionChanged((view) =>
+        knowledgeUploadService.handleSessionChanged(view),
+      );
+      await knowledgeUploadService.start();
       const dynatraceStore = new DynatraceDashboardStore(configDataDir);
       setDynatraceWindowManager(new DynatraceWindowManager({ store: dynatraceStore }));
       setDynatraceProblemsManager(
@@ -212,6 +248,16 @@ if (gotLock) {
       const stopPrivilegedAccess = async () => {
         const runtime = getPrivilegedRuntime();
         setPrivilegedRuntime(null);
+        getKnowledgeUploadService()?.handleSessionChanged({
+          state: 'signed-out',
+          accountId: null,
+          operatorId: null,
+          operatorName: null,
+          role: null,
+          capabilities: [],
+          deviceId: null,
+          expiresAt: null,
+        });
         await runtime?.dispose();
       };
 
@@ -225,6 +271,7 @@ if (gotLock) {
             dynatraceProblemsManager: getDynatraceProblemsManager(),
           });
           setPrivilegedRuntime(runtime);
+          getKnowledgeUploadService()?.handleSessionChanged(runtime.getView());
         } catch (error) {
           loggers.security.warn('Could not initialize privileged access', { error });
         }

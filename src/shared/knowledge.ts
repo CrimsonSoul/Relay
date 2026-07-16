@@ -78,6 +78,7 @@ export type KnowledgeUploadBatchState = 'active' | 'ready' | 'cancelled' | 'expi
 
 export type KnowledgeUploadQueueItemState =
   | 'planning'
+  | 'paused'
   | KnowledgeUploadState
   | 'paused-network'
   | 'source-required';
@@ -141,6 +142,7 @@ export type KnowledgeUploadBatchStatusView = {
 };
 
 export type KnowledgeUploadQueueItemView = {
+  id: string;
   uploadId: string | null;
   batchId: string;
   fileName: string;
@@ -187,7 +189,7 @@ export type KnowledgeUploadProgress = Pick<
 >;
 
 export type KnowledgeUploadSelectionResult =
-  | { ok: true; uploads: KnowledgeUploadView[] }
+  | { ok: true; uploads: KnowledgeUploadQueueItemView[] }
   | {
       ok: false;
       error: 'cancelled' | 'offline' | 'unauthorized' | 'invalid-file' | 'upload-failed';
@@ -478,6 +480,7 @@ const KNOWLEDGE_UPLOAD_MANIFEST_STATES: KnowledgeUploadManifestView['state'][] =
 
 const KNOWLEDGE_UPLOAD_QUEUE_STATES: KnowledgeUploadQueueItemState[] = [
   'planning',
+  'paused',
   ...KNOWLEDGE_UPLOAD_MANIFEST_STATES,
   'validating',
   'published',
@@ -647,6 +650,7 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
   const state = value.state as KnowledgeUploadQueueItemState;
   const safeError = value.safeError as KnowledgeManagementErrorCode | null;
   if (
+    !boundedString(value.id, 200) ||
     !nullableBoundedString(value.uploadId, 200) ||
     !boundedString(value.batchId, 200) ||
     !boundedString(value.fileName, 240) ||
@@ -671,6 +675,7 @@ function normalizeKnowledgeUploadQueueItem(value: unknown): KnowledgeUploadQueue
     return null;
   }
   return {
+    id: value.id,
     uploadId: value.uploadId,
     batchId: value.batchId,
     fileName: value.fileName,
