@@ -36,6 +36,9 @@ import {
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_MAX_SOURCE_KEY_LENGTH,
+  KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
 } from '@shared/knowledge';
 import { loggers } from '../logger';
@@ -45,6 +48,7 @@ const logger = loggers.pocketbase;
 const AUTH_RULE = '@request.auth.id != ""';
 
 interface FieldDef {
+  id?: string;
   type: string;
   name: string;
   required?: boolean;
@@ -56,6 +60,10 @@ interface FieldDef {
   maxSize?: number;
   mimeTypes?: string[];
   protected?: boolean;
+  collectionId?: string;
+  cascadeDelete?: boolean;
+  /** Internal dependency name. It is resolved to collectionId before PocketBase sees the field. */
+  targetCollectionName?: string;
 }
 
 interface CollectionDef {
@@ -156,6 +164,10 @@ const KNOWLEDGE_DOCUMENT_LIFECYCLE_INDEX =
   'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)';
 const KNOWLEDGE_UPLOAD_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)';
+const KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_upload_batches_request_id ON knowledge_upload_batches (requestId)';
+const KNOWLEDGE_UPLOAD_CHUNK_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)';
 const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_library_state_key ON knowledge_library_state (key)';
 const PRIVILEGED_ROSTER_MIGRATION_VERSION = 1;
@@ -191,7 +203,25 @@ const KNOWLEDGE_UPLOAD_ACCOUNT_RULE =
 const KNOWLEDGE_UPLOAD_RULES: CollectionRules = {
   listRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
   viewRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
-  createRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
+  createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const KNOWLEDGE_UPLOAD_BATCH_RULES: CollectionRules = {
+  listRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
+  viewRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
+  createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
+const KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE =
+  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id && @collection.knowledge_uploads.id ?= uploadId && @collection.knowledge_uploads.accountId ?= @request.auth.id && @collection.knowledge_uploads.deviceId ?= deviceId && @collection.knowledge_uploads.batchId ?= batchId && @collection.knowledge_upload_batches.id ?= batchId && @collection.knowledge_upload_batches.accountId ?= @request.auth.id';
+const KNOWLEDGE_UPLOAD_CHUNK_RULES: CollectionRules = {
+  listRule: KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE,
+  viewRule: KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE,
+  createRule: KNOWLEDGE_UPLOAD_CHUNK_ACCOUNT_RULE,
   updateRule: null,
   deleteRule: null,
 };
@@ -241,6 +271,17 @@ const PRIVILEGED_PAIRING_REQUEST_RULES: CollectionRules = {
   updateRule: null,
   deleteRule: null,
 };
+
+function relation(name: string, targetCollectionName: string, required: boolean): FieldDef {
+  return {
+    type: 'relation',
+    name,
+    required,
+    maxSelect: 1,
+    cascadeDelete: false,
+    targetCollectionName,
+  };
+}
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -666,7 +707,7 @@ const COLLECTIONS: CollectionDef[] = [
     rules: ACTIVE_KNOWLEDGE_RULES,
   },
   {
-    name: KNOWLEDGE_UPLOADS_COLLECTION,
+    name: KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
     type: 'base',
     fields: [
       { type: 'text', name: 'requestId', required: true, max: 128 },
@@ -674,12 +715,38 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'deviceId', required: true, max: 200 },
       { type: 'text', name: 'operatorId', required: true, max: 200 },
       { type: 'text', name: 'operatorName', required: true, max: 120 },
-      { type: 'text', name: 'descriptorHash', required: true, max: 64 },
+      { type: 'number', name: 'fileCount', required: true },
+      { type: 'number', name: 'totalBytes', required: true },
+      {
+        type: 'select',
+        name: 'state',
+        required: true,
+        values: ['active', 'ready', 'cancelled', 'expired', 'completed'],
+        maxSelect: 1,
+      },
+      { type: 'date', name: 'createdAt', required: true },
+      { type: 'date', name: 'lastActivityAt', required: true },
+      { type: 'date', name: 'expiresAt', required: true },
+      { type: 'number', name: 'revision', required: true },
+    ],
+    indexes: [KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX],
+    rules: KNOWLEDGE_UPLOAD_BATCH_RULES,
+  },
+  {
+    name: KNOWLEDGE_UPLOADS_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'requestId', required: true, max: 128 },
+      relation('batchId', KNOWLEDGE_UPLOAD_BATCHES_COLLECTION, true),
+      { type: 'text', name: 'accountId', required: true, max: 200 },
+      { type: 'text', name: 'deviceId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorName', required: true, max: 120 },
       { type: 'text', name: 'fileName', required: true, max: 240 },
       {
         type: 'file',
         name: 'pdf',
-        required: true,
+        required: false,
         maxSelect: 1,
         maxSize: KNOWLEDGE_MAX_PDF_BYTES,
         mimeTypes: ['application/pdf'],
@@ -687,6 +754,8 @@ const COLLECTIONS: CollectionDef[] = [
       },
       { type: 'text', name: 'checksum', required: true, max: 64 },
       { type: 'number', name: 'byteSize', required: true },
+      { type: 'number', name: 'chunkSize', required: true },
+      { type: 'number', name: 'chunkCount', required: true },
       { type: 'number', name: 'pageCount' },
       { type: 'json', name: 'outline' },
       {
@@ -702,15 +771,41 @@ const COLLECTIONS: CollectionDef[] = [
         type: 'select',
         name: 'state',
         required: true,
-        values: ['queued', 'uploading', 'validating', 'extracting', 'ready', 'failed', 'published'],
+        values: ['queued', 'uploading', 'assembling', 'extracting', 'ready', 'failed', 'cancelled'],
         maxSelect: 1,
       },
       { type: 'text', name: 'safeError', max: 80 },
+      { type: 'date', name: 'lastActivityAt', required: true },
+      { type: 'date', name: 'readyAt' },
       { type: 'date', name: 'expiresAt', required: true },
       { type: 'number', name: 'revision', required: false },
     ],
     indexes: [KNOWLEDGE_UPLOAD_REQUEST_INDEX],
     rules: KNOWLEDGE_UPLOAD_RULES,
+  },
+  {
+    name: KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+    type: 'base',
+    fields: [
+      relation('uploadId', KNOWLEDGE_UPLOADS_COLLECTION, true),
+      relation('batchId', KNOWLEDGE_UPLOAD_BATCHES_COLLECTION, true),
+      { type: 'text', name: 'accountId', required: true, max: 200 },
+      { type: 'text', name: 'deviceId', required: true, max: 200 },
+      { type: 'number', name: 'index', required: true },
+      { type: 'number', name: 'byteSize', required: true },
+      { type: 'text', name: 'checksum', required: true, max: 64 },
+      {
+        type: 'file',
+        name: 'chunk',
+        required: true,
+        maxSelect: 1,
+        maxSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+        mimeTypes: ['application/octet-stream'],
+        protected: true,
+      },
+    ],
+    indexes: [KNOWLEDGE_UPLOAD_CHUNK_INDEX],
+    rules: KNOWLEDGE_UPLOAD_CHUNK_RULES,
   },
   {
     name: KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
@@ -856,6 +951,58 @@ function managedFieldsForDefinition(definition: CollectionDef): FieldDef[] {
     : [...definition.fields, ...AUTODATE_FIELDS];
 }
 
+function serializeManagedFields(
+  definition: CollectionDef,
+  collectionIds: ReadonlyMap<string, string>,
+): FieldDef[] {
+  return managedFieldsForDefinition(definition).map((field) => {
+    const { targetCollectionName, ...serialized } = field;
+    if (!targetCollectionName) return serialized;
+    const collectionId = collectionIds.get(targetCollectionName);
+    if (!collectionId) {
+      throw new Error(
+        `Cannot resolve relation ${definition.name}.${field.name} to ${targetCollectionName}`,
+      );
+    }
+    return { ...serialized, collectionId };
+  });
+}
+
+function fieldValueMatches(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) {
+    return (
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      actual.every((value, index) => value === expected[index])
+    );
+  }
+  if (expected === false && actual === undefined) return true;
+  return actual === expected;
+}
+
+function reconcileManagedFields(
+  fields: FieldDef[],
+  expectedSchemaFields: FieldDef[],
+): { fields: FieldDef[]; added: FieldDef[]; changed: FieldDef[] } {
+  const expectedByName = new Map(expectedSchemaFields.map((field) => [field.name, field]));
+  const added = expectedSchemaFields.filter(
+    (expected) => !fields.some((field) => field.name === expected.name),
+  );
+  const changed: FieldDef[] = [];
+  const reconciled = fields.map((field) => {
+    const expected = expectedByName.get(field.name);
+    if (!expected) return field;
+    const differs = Object.entries(expected).some(([key, expectedValue]) =>
+      fieldValueMatches(field[key as keyof FieldDef], expectedValue) ? false : true,
+    );
+    if (!differs) return field;
+    const replacement = { ...field, ...expected };
+    changed.push(replacement);
+    return replacement;
+  });
+  return { fields: [...reconciled, ...added], added, changed };
+}
+
 function passwordAuthMatches(
   actual: AuthCollectionOptions['passwordAuth'] | undefined,
   expected: AuthCollectionOptions['passwordAuth'],
@@ -865,6 +1012,21 @@ function passwordAuthMatches(
     actual.identityFields.length === expected.identityFields.length &&
     actual.identityFields.every((field, index) => field === expected.identityFields[index])
   );
+}
+
+function buildAuthPatch(
+  colFull: ExistingCollection,
+  expectedAuth?: AuthCollectionOptions,
+): Partial<AuthCollectionOptions> {
+  if (!expectedAuth) return {};
+  const authPatch: Partial<AuthCollectionOptions> = {};
+  if (colFull.authRule !== expectedAuth.authRule) authPatch.authRule = expectedAuth.authRule;
+  if (colFull.manageRule !== expectedAuth.manageRule)
+    authPatch.manageRule = expectedAuth.manageRule;
+  if (!passwordAuthMatches(colFull.passwordAuth, expectedAuth.passwordAuth)) {
+    authPatch.passwordAuth = expectedAuth.passwordAuth;
+  }
+  return authPatch;
 }
 
 /** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
@@ -879,8 +1041,7 @@ async function patchCollectionDefinition(
 ): Promise<boolean> {
   const colFull = (await pb.collections.getOne(colId)) as unknown as ExistingCollection;
   const fields = colFull.fields || [];
-  const fieldNames = new Set(fields.map((f) => f.name));
-  const missing = expectedSchemaFields.filter((f) => !fieldNames.has(f.name));
+  const reconciledFields = reconcileManagedFields(fields, expectedSchemaFields);
   const indexes = colFull.indexes || [];
   const missingIndexes = expectedIndexes.filter((index) => !indexes.includes(index));
   const rulesPatch = Object.fromEntries(
@@ -888,18 +1049,11 @@ async function patchCollectionDefinition(
       return colFull[key as keyof CollectionRules] !== value;
     }),
   );
-  const authPatch: Partial<AuthCollectionOptions> = {};
-  if (expectedAuth) {
-    if (colFull.authRule !== expectedAuth.authRule) authPatch.authRule = expectedAuth.authRule;
-    if (colFull.manageRule !== expectedAuth.manageRule)
-      authPatch.manageRule = expectedAuth.manageRule;
-    if (!passwordAuthMatches(colFull.passwordAuth, expectedAuth.passwordAuth)) {
-      authPatch.passwordAuth = expectedAuth.passwordAuth;
-    }
-  }
+  const authPatch = buildAuthPatch(colFull, expectedAuth);
 
   if (
-    missing.length === 0 &&
+    reconciledFields.added.length === 0 &&
+    reconciledFields.changed.length === 0 &&
     missingIndexes.length === 0 &&
     Object.keys(rulesPatch).length === 0 &&
     Object.keys(authPatch).length === 0
@@ -908,15 +1062,22 @@ async function patchCollectionDefinition(
   }
 
   await pb.collections.update(colId, {
-    ...(missing.length > 0 ? { fields: [...fields, ...missing] } : {}),
+    ...(reconciledFields.added.length > 0 || reconciledFields.changed.length > 0
+      ? { fields: reconciledFields.fields }
+      : {}),
     ...(missingIndexes.length > 0 ? { indexes: [...indexes, ...missingIndexes] } : {}),
     ...rulesPatch,
     ...authPatch,
   });
 
-  if (missing.length > 0) {
+  if (reconciledFields.added.length > 0) {
     logger.info(
-      `Patched fields on collection: ${colName} (+${missing.map((f) => f.name).join(', ')})`,
+      `Patched fields on collection: ${colName} (+${reconciledFields.added.map((f) => f.name).join(', ')})`,
+    );
+  }
+  if (reconciledFields.changed.length > 0) {
+    logger.info(
+      `Updated field definitions on collection: ${colName} (${reconciledFields.changed.map((f) => f.name).join(', ')})`,
     );
   }
   if (Object.keys(rulesPatch).length > 0) {
@@ -932,19 +1093,28 @@ async function patchCollectionDefinition(
 }
 
 /** Create collections that don't exist yet. */
-async function createMissing(pb: PocketBase, existing: Set<string>): Promise<number> {
+async function createMissing(
+  pb: PocketBase,
+  existing: Set<string>,
+  collectionIds: Map<string, string>,
+): Promise<number> {
   let created = 0;
   for (const def of COLLECTIONS) {
     if (existing.has(def.name)) continue;
     try {
-      await pb.collections.create({
+      const createdCollection = await pb.collections.create({
         name: def.name,
         type: def.type,
-        fields: managedFieldsForDefinition(def),
+        fields: serializeManagedFields(def, collectionIds),
         ...(def.indexes ? { indexes: def.indexes } : {}),
         ...(def.rules ?? DEFAULT_AUTH_RULES),
         ...(def.auth ?? {}),
       });
+      const createdId = (createdCollection as unknown as { id?: unknown }).id;
+      if (typeof createdId !== 'string' || !createdId) {
+        throw new Error(`PocketBase did not return an ID for collection: ${def.name}`);
+      }
+      collectionIds.set(def.name, createdId);
       created++;
       logger.info(`Created collection: ${def.name}`);
     } catch (err) {
@@ -960,6 +1130,7 @@ async function patchExisting(
   pb: PocketBase,
   existing: Set<string>,
   allCols: Array<{ id: string; name: string }>,
+  collectionIds: ReadonlyMap<string, string>,
 ): Promise<number> {
   let patched = 0;
   for (const def of COLLECTIONS) {
@@ -972,7 +1143,7 @@ async function patchExisting(
           pb,
           col.id,
           def.name,
-          managedFieldsForDefinition(def),
+          serializeManagedFields(def, collectionIds),
           def.indexes,
           def.rules ?? DEFAULT_AUTH_RULES,
           def.auth,
@@ -1255,9 +1426,10 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   }
 
   const existing = new Set(allCols.map((c) => c.name));
-  const created = await createMissing(pb, existing);
+  const collectionIds = new Map(allCols.map((collection) => [collection.name, collection.id]));
+  const created = await createMissing(pb, existing, collectionIds);
   await repairDuplicateBoardSettings(pb, existing);
-  const patched = await patchExisting(pb, existing, allCols);
+  const patched = await patchExisting(pb, existing, allCols, collectionIds);
   await ensurePrivilegedBootstrap(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 

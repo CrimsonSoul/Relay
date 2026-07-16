@@ -8,6 +8,7 @@ import {
   getRelayAdministrationSettingValueError,
   isPrivilegedSha256,
   isPublicPrivilegedCommandName,
+  normalizePrivilegedCommandPayload,
   validateSignedPrivilegedCommandEnvelope,
   type SignedPrivilegedCommandEnvelope,
 } from '../privilegedCommands';
@@ -131,7 +132,101 @@ describe('privileged command validation', () => {
     expect(isPublicPrivilegedCommandName('operator.create')).toBe(true);
     expect(isPublicPrivilegedCommandName('publisher.assign')).toBe(true);
     expect(isPublicPrivilegedCommandName('administration.setting.replace')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.batch.begin')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.file.begin')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.status')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.file.finalize')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.file.cancel')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.upload.batch.cancel')).toBe(true);
     expect(isPublicPrivilegedCommandName('privileged.reauth.confirm')).toBe(false);
+  });
+
+  it('normalizes every resumable upload command with exact bounded payloads', () => {
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.batch.begin', {
+        requestId: 'upload-request-1',
+        fileCount: 100,
+        totalBytes: 100 * 50 * 1024 * 1024,
+      }),
+    ).toEqual({
+      requestId: 'upload-request-1',
+      fileCount: 100,
+      totalBytes: 100 * 50 * 1024 * 1024,
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        batchId: 'batch1',
+        fileName: '  Checkout   Runbook.pdf ',
+        byteSize: 50 * 1024 * 1024,
+        checksum: 'a'.repeat(64),
+        chunkCount: 13,
+      }),
+    ).toEqual({
+      batchId: 'batch1',
+      fileName: 'Checkout Runbook.pdf',
+      byteSize: 50 * 1024 * 1024,
+      checksum: 'a'.repeat(64),
+      chunkCount: 13,
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.status', { batchId: 'batch1' }),
+    ).toEqual({
+      batchId: 'batch1',
+    });
+    for (const command of [
+      'knowledge.upload.file.finalize',
+      'knowledge.upload.file.cancel',
+    ] as const) {
+      expect(
+        normalizePrivilegedCommandPayload(command, { uploadId: 'upload1', expectedRevision: 2 }),
+      ).toEqual({ uploadId: 'upload1', expectedRevision: 2 });
+    }
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.batch.cancel', {
+        batchId: 'batch1',
+        expectedRevision: 3,
+      }),
+    ).toEqual({ batchId: 'batch1', expectedRevision: 3 });
+  });
+
+  it('rejects unsafe or inconsistent resumable upload payloads', () => {
+    const validFile = {
+      batchId: 'batch1',
+      fileName: 'Runbook.pdf',
+      byteSize: 4 * 1024 * 1024 + 1,
+      checksum: 'a'.repeat(64),
+      chunkCount: 2,
+    };
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        ...validFile,
+        fileName: '../Runbook.pdf',
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        ...validFile,
+        fileName: 'Runbook\u0000.pdf',
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        ...validFile,
+        checksum: 'A'.repeat(64),
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        ...validFile,
+        chunkCount: 1,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.upload.file.begin', {
+        ...validFile,
+        localSourcePath: '/private/runbook.pdf',
+      }),
+    ).toBeNull();
   });
 
   it.each([

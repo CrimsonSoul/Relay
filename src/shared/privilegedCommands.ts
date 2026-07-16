@@ -14,7 +14,13 @@ import {
   normalizeDynatraceEnvironmentUrl,
 } from './dynatraceProblems';
 import { getOperatorDisplayNameError, normalizeOperatorDisplayName } from './operators';
-import { KNOWLEDGE_MAX_CATEGORY_LENGTH } from './knowledge';
+import {
+  KNOWLEDGE_MAX_CATEGORY_LENGTH,
+  KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  isKnowledgeChecksum,
+} from './knowledge';
 
 export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
 export const MAX_PRIVILEGED_REQUEST_ID_LENGTH = 128;
@@ -58,6 +64,22 @@ export type PrivilegedCommandPayloadMap = {
     reauthRequestId: string;
   };
   'administration.setting.replace': RelayAdministrationSettingReplacePayload;
+  'knowledge.upload.batch.begin': {
+    requestId: string;
+    fileCount: number;
+    totalBytes: number;
+  };
+  'knowledge.upload.file.begin': {
+    batchId: string;
+    fileName: string;
+    byteSize: number;
+    checksum: string;
+    chunkCount: number;
+  };
+  'knowledge.upload.status': { batchId: string };
+  'knowledge.upload.file.finalize': { uploadId: string; expectedRevision: number };
+  'knowledge.upload.file.cancel': { uploadId: string; expectedRevision: number };
+  'knowledge.upload.batch.cancel': { batchId: string; expectedRevision: number };
   'knowledge.upload.validate': { uploadId: string; preliminaryChecksum: string };
   'knowledge.snapshot.read': { query: string; cursor: string | null; pageSize: number };
   'knowledge.document.publish': { uploadId: string; title: string; category: string };
@@ -284,6 +306,12 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'privileged.device.rename',
   'privileged.device.revoke',
   'administration.setting.replace',
+  'knowledge.upload.batch.begin',
+  'knowledge.upload.file.begin',
+  'knowledge.upload.status',
+  'knowledge.upload.file.finalize',
+  'knowledge.upload.file.cancel',
+  'knowledge.upload.batch.cancel',
   'knowledge.upload.validate',
   'knowledge.snapshot.read',
   'knowledge.document.publish',
@@ -311,6 +339,43 @@ function normalizedKnowledgeText(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().replace(/\s+/g, ' ');
   return normalized && normalized.length <= max ? normalized : null;
+}
+
+function normalizeKnowledgePdfFileName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  const hasControlCharacters = Array.from(normalized).some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+  if (
+    !normalized ||
+    normalized.length > 240 ||
+    !normalized.toLocaleLowerCase('en').endsWith('.pdf') ||
+    normalized.includes('/') ||
+    normalized.includes('\\') ||
+    hasControlCharacters ||
+    normalized === '.' ||
+    normalized === '..'
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function normalizeKnowledgeUploadRevision(
+  payload: Record<string, unknown>,
+  idKey: 'uploadId' | 'batchId',
+):
+  | { uploadId: string; expectedRevision: number }
+  | { batchId: string; expectedRevision: number }
+  | null {
+  if (!hasExactKeys(payload, [idKey, 'expectedRevision'])) return null;
+  const id = payload[idKey];
+  if (!boundedIdentifier(id, 200) || !nonNegativeInteger(payload.expectedRevision)) return null;
+  return { [idKey]: id, expectedRevision: payload.expectedRevision } as
+    | { uploadId: string; expectedRevision: number }
+    | { batchId: string; expectedRevision: number };
 }
 
 function normalizeKnowledgeCursor(value: unknown): string | null | undefined {
@@ -575,6 +640,57 @@ function normalizePayload(
       return normalizeDeviceRevokePayload(payload);
     case 'administration.setting.replace':
       return normalizeSettingReplacementPayload(payload);
+    case 'knowledge.upload.batch.begin': {
+      if (!hasExactKeys(payload, ['requestId', 'fileCount', 'totalBytes'])) return null;
+      const maxBatchBytes = KNOWLEDGE_UPLOAD_MAX_FILES * KNOWLEDGE_MAX_PDF_BYTES;
+      return boundedIdentifier(payload.requestId, MAX_PRIVILEGED_REQUEST_ID_LENGTH) &&
+        Number.isInteger(payload.fileCount) &&
+        (payload.fileCount as number) >= 1 &&
+        (payload.fileCount as number) <= KNOWLEDGE_UPLOAD_MAX_FILES &&
+        Number.isInteger(payload.totalBytes) &&
+        (payload.totalBytes as number) >= 1 &&
+        (payload.totalBytes as number) <= maxBatchBytes
+        ? {
+            requestId: payload.requestId,
+            fileCount: payload.fileCount as number,
+            totalBytes: payload.totalBytes as number,
+          }
+        : null;
+    }
+    case 'knowledge.upload.file.begin': {
+      if (
+        !hasExactKeys(payload, ['batchId', 'fileName', 'byteSize', 'checksum', 'chunkCount']) ||
+        !boundedIdentifier(payload.batchId, 200) ||
+        !Number.isInteger(payload.byteSize) ||
+        (payload.byteSize as number) < 1 ||
+        (payload.byteSize as number) > KNOWLEDGE_MAX_PDF_BYTES ||
+        !isKnowledgeChecksum(payload.checksum) ||
+        !Number.isInteger(payload.chunkCount) ||
+        payload.chunkCount !==
+          Math.ceil((payload.byteSize as number) / KNOWLEDGE_UPLOAD_CHUNK_BYTES)
+      ) {
+        return null;
+      }
+      const fileName = normalizeKnowledgePdfFileName(payload.fileName);
+      return fileName
+        ? {
+            batchId: payload.batchId,
+            fileName,
+            byteSize: payload.byteSize as number,
+            checksum: payload.checksum,
+            chunkCount: payload.chunkCount as number,
+          }
+        : null;
+    }
+    case 'knowledge.upload.status':
+      return hasExactKeys(payload, ['batchId']) && boundedIdentifier(payload.batchId, 200)
+        ? { batchId: payload.batchId }
+        : null;
+    case 'knowledge.upload.file.finalize':
+    case 'knowledge.upload.file.cancel':
+      return normalizeKnowledgeUploadRevision(payload, 'uploadId');
+    case 'knowledge.upload.batch.cancel':
+      return normalizeKnowledgeUploadRevision(payload, 'batchId');
     case 'knowledge.upload.validate':
       return hasExactKeys(payload, ['uploadId', 'preliminaryChecksum']) &&
         boundedIdentifier(payload.uploadId, 200) &&

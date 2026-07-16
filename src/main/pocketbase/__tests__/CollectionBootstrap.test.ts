@@ -106,6 +106,13 @@ function beginRosterMigration(state: Array<Record<string, unknown>> = []): void 
   mockPrivilegedAccountGetList.mockResolvedValue({ totalItems: 0, items: [] });
 }
 
+function mockSuccessfulCollectionCreation(): void {
+  mockCreate.mockImplementation(async (value: { name: string }) => ({
+    id: `${value.name}-collection-id`,
+    name: value.name,
+  }));
+}
+
 describe('ensureCollections', () => {
   it('leaves unknown collections untouched during startup bootstrap', async () => {
     mockGetFullList.mockResolvedValue([
@@ -113,7 +120,7 @@ describe('ensureCollections', () => {
       { id: 'col2', name: 'oncall_layout' },
       { id: 'col3', name: 'servers' },
     ]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockDelete.mockResolvedValue(undefined);
     mockGetOne.mockResolvedValue({ fields: [] });
     mockUpdate.mockResolvedValue({});
@@ -129,7 +136,7 @@ describe('ensureCollections', () => {
       { id: 'sys2', name: '_pb_users_auth_' },
       { id: 'col1', name: 'contacts' },
     ]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockGetOne.mockResolvedValue({ fields: [] });
     mockUpdate.mockResolvedValue({});
 
@@ -143,7 +150,7 @@ describe('ensureCollections', () => {
       { id: 'u1', name: 'users' },
       { id: 'col1', name: 'contacts' },
     ]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockGetOne.mockResolvedValue({ fields: [] });
     mockUpdate.mockResolvedValue({});
 
@@ -154,11 +161,14 @@ describe('ensureCollections', () => {
 
   it('creates missing collections including alert reminders, operators, and privileged access', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockCreate.mockImplementation(async (value: { name: string }) => ({
+      id: `${value.name}-collection-id`,
+      name: value.name,
+    }));
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(29);
+    expect(mockCreate).toHaveBeenCalledTimes(31);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -192,7 +202,7 @@ describe('ensureCollections', () => {
 
   it('creates a server-hidden password auth collection keyed by stable operator ID', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -247,7 +257,7 @@ describe('ensureCollections', () => {
 
   it('creates public role state with server-only writes and a roster migration marker', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -288,7 +298,7 @@ describe('ensureCollections', () => {
 
   it('keeps devices server-hidden and scopes command creation to its active privileged account', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -344,7 +354,7 @@ describe('ensureCollections', () => {
 
   it('keeps challenge secrets server-hidden and scopes one-time pairing requests to the account', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -383,7 +393,10 @@ describe('ensureCollections', () => {
 
   it('creates a protected server-owned knowledge document collection', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockCreate.mockImplementation(async (value: { name: string }) => ({
+      id: `${value.name}-collection-id`,
+      name: value.name,
+    }));
 
     await ensureCollections(mockPb);
 
@@ -462,28 +475,114 @@ describe('ensureCollections', () => {
         }
       | undefined;
     expect(uploadsCall).toMatchObject({
+      createRule: null,
       updateRule: null,
       deleteRule: null,
     });
     expect(uploadsCall?.listRule).toContain(
       '@request.auth.collectionName = "relay_privileged_accounts"',
     );
-    expect(uploadsCall?.createRule).toContain('accountId = @request.auth.id');
     expect(uploadsCall?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'requestId', required: true }),
         expect.objectContaining({
+          name: 'batchId',
+          type: 'relation',
+          collectionId: 'knowledge_upload_batches-collection-id',
+          required: true,
+        }),
+        expect.objectContaining({
           name: 'pdf',
           type: 'file',
+          required: false,
           protected: true,
           maxSize: 50 * 1024 * 1024,
         }),
+        expect.objectContaining({ name: 'chunkSize', type: 'number', required: true }),
+        expect.objectContaining({ name: 'chunkCount', type: 'number', required: true }),
+        expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
+        expect.objectContaining({ name: 'readyAt', type: 'date' }),
         expect.objectContaining({ name: 'expiresAt', type: 'date', required: true }),
       ]),
     );
     expect(uploadsCall?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)',
     );
+
+    const batchCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_upload_batches',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<Record<string, unknown>>;
+        }
+      | undefined;
+    expect(batchCall).toMatchObject({ createRule: null, updateRule: null, deleteRule: null });
+    expect(batchCall?.listRule).toContain('accountId = @request.auth.id');
+    expect(batchCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'fileCount', type: 'number', required: true }),
+        expect.objectContaining({ name: 'totalBytes', type: 'number', required: true }),
+        expect.objectContaining({ name: 'lastActivityAt', type: 'date', required: true }),
+      ]),
+    );
+
+    const chunkCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_upload_chunks',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<Record<string, unknown>>;
+          indexes: string[];
+        }
+      | undefined;
+    expect(chunkCall).toMatchObject({ updateRule: null, deleteRule: null });
+    expect(chunkCall?.listRule).toContain('accountId = @request.auth.id');
+    expect(chunkCall?.createRule).toContain('@collection.knowledge_uploads.accountId');
+    expect(chunkCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'uploadId',
+          type: 'relation',
+          collectionId: 'knowledge_uploads-collection-id',
+          required: true,
+        }),
+        expect.objectContaining({
+          name: 'batchId',
+          type: 'relation',
+          collectionId: 'knowledge_upload_batches-collection-id',
+          required: true,
+        }),
+        expect.objectContaining({
+          name: 'chunk',
+          type: 'file',
+          required: true,
+          protected: true,
+          maxSize: 4 * 1024 * 1024,
+          mimeTypes: ['application/octet-stream'],
+        }),
+      ]),
+    );
+    expect(chunkCall?.indexes).toContain(
+      'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)',
+    );
+
+    for (const call of mockCreate.mock.calls) {
+      for (const field of (call[0] as { fields?: Array<Record<string, unknown>> }).fields ?? []) {
+        if (field.type === 'relation') {
+          expect(field.collectionId).toMatch(/-collection-id$/);
+          expect(field.collectionId).not.toBe('knowledge_uploads');
+          expect(field.collectionId).not.toBe('knowledge_upload_batches');
+          expect(field).not.toHaveProperty('targetCollectionName');
+        }
+      }
+    }
 
     for (const collection of ['knowledge_audit_events', 'knowledge_library_state']) {
       const call = mockCreate.mock.calls.find(
@@ -493,9 +592,94 @@ describe('ensureCollections', () => {
     }
   });
 
+  it('patches existing upload manifests non-destructively with resolved relations and resumable states', async () => {
+    mockGetFullList.mockResolvedValue([
+      { id: 'batch-col-id', name: 'knowledge_upload_batches' },
+      { id: 'upload-col-id', name: 'knowledge_uploads' },
+      { id: 'chunk-col-id', name: 'knowledge_upload_chunks' },
+    ]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockImplementation(async (id: string) => {
+      if (id !== 'upload-col-id') return { id, fields: [], indexes: [] };
+      return {
+        id,
+        fields: [
+          {
+            id: 'pdf-field-id',
+            name: 'pdf',
+            type: 'file',
+            required: true,
+            maxSelect: 1,
+            maxSize: 50 * 1024 * 1024,
+            mimeTypes: ['application/pdf'],
+            protected: true,
+          },
+          {
+            id: 'state-field-id',
+            name: 'state',
+            type: 'select',
+            required: true,
+            values: [
+              'queued',
+              'uploading',
+              'validating',
+              'extracting',
+              'ready',
+              'failed',
+              'published',
+            ],
+            maxSelect: 1,
+          },
+        ],
+        indexes: [
+          'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)',
+        ],
+      };
+    });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    const uploadPatch = mockUpdate.mock.calls.find(([id]) => id === 'upload-col-id')?.[1] as
+      | { fields?: Array<Record<string, unknown>> }
+      | undefined;
+    expect(uploadPatch?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'pdf-field-id',
+          name: 'pdf',
+          required: false,
+          protected: true,
+        }),
+        expect.objectContaining({
+          id: 'state-field-id',
+          name: 'state',
+          values: [
+            'queued',
+            'uploading',
+            'assembling',
+            'extracting',
+            'ready',
+            'failed',
+            'cancelled',
+          ],
+        }),
+        expect.objectContaining({
+          name: 'batchId',
+          type: 'relation',
+          collectionId: 'batch-col-id',
+        }),
+      ]),
+    );
+    expect(uploadPatch?.fields?.find(({ name }) => name === 'pdf')).toHaveProperty(
+      'id',
+      'pdf-field-id',
+    );
+  });
+
   it('creates a server-owned operator collection with authenticated read and subscription access', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -564,7 +748,7 @@ describe('ensureCollections', () => {
 
   it('seeds the exact approved operator roster when the collection is empty', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     beginRosterMigration();
     mockCollectionGetList.mockResolvedValueOnce({ totalItems: 0, items: [] });
 
@@ -615,7 +799,7 @@ describe('ensureCollections', () => {
 
   it('recovers only missing initial operators before the migration marker is committed', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     beginRosterMigration();
     mockCollectionGetList.mockResolvedValueOnce({
       totalItems: 3,
@@ -641,7 +825,7 @@ describe('ensureCollections', () => {
 
   it('adds only the two approved new profiles to an established seven-person roster', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     beginRosterMigration();
     mockCollectionGetList.mockResolvedValueOnce({
       totalItems: 7,
@@ -666,7 +850,7 @@ describe('ensureCollections', () => {
 
   it('adds the privileged profiles without changing a customized roster', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     beginRosterMigration();
     mockCollectionGetList.mockResolvedValueOnce({
       totalItems: 2,
@@ -687,7 +871,7 @@ describe('ensureCollections', () => {
 
   it('does not recreate privileged profiles after the migration marker is committed', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockCollectionGetList.mockResolvedValueOnce({
       totalItems: 2,
       items: [
@@ -704,7 +888,7 @@ describe('ensureCollections', () => {
 
   it('leaves an incomplete operator roster page untouched and migration pending', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     beginRosterMigration();
     mockCollectionGetList.mockResolvedValueOnce({
       totalItems: 5,
@@ -724,7 +908,7 @@ describe('ensureCollections', () => {
 
   it('creates a read-only shared cloud status singleton collection', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -765,7 +949,7 @@ describe('ensureCollections', () => {
 
   it('creates server-owned Dynatrace problem records and append-only local notes', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -830,7 +1014,7 @@ describe('ensureCollections', () => {
       { id: 'states-col', name: 'dynatrace_problem_states' },
       { id: 'notes-col', name: 'dynatrace_problem_notes' },
     ]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockGetOne.mockImplementation(async (id: string) => ({
       fields:
         id === 'states-col'
@@ -870,7 +1054,7 @@ describe('ensureCollections', () => {
 
   it('creates alert_reminders with scheduling and status fields', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -917,7 +1101,7 @@ describe('ensureCollections', () => {
 
   it('patches alert reminder attribution fields onto an existing collection', async () => {
     mockGetFullList.mockResolvedValue([{ id: 'reminders-col', name: 'alert_reminders' }]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockGetOne.mockResolvedValue({
       fields: [
         { type: 'text', name: 'title', required: true },
@@ -949,7 +1133,7 @@ describe('ensureCollections', () => {
 
   it('includes teamId in the oncall collection schema', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -966,7 +1150,7 @@ describe('ensureCollections', () => {
 
   it('creates oncall_board_settings with correct schema', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -991,7 +1175,7 @@ describe('ensureCollections', () => {
 
   it('creates client_presence with client-only heartbeat fields', async () => {
     mockGetFullList.mockResolvedValue([]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
 
     await ensureCollections(mockPb);
 
@@ -1127,7 +1311,7 @@ describe('ensureCollections', () => {
   it('patches existing oncall collection to add missing teamId', async () => {
     // oncall exists but is missing teamId
     mockGetFullList.mockResolvedValue([{ id: 'oc-col', name: 'oncall' }]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockDelete.mockResolvedValue(undefined);
     mockGetOne.mockResolvedValue({
       fields: [
@@ -1156,7 +1340,7 @@ describe('ensureCollections', () => {
 
   it('patches authenticated API rules on existing collections', async () => {
     mockGetFullList.mockResolvedValue([{ id: 'contacts-col', name: 'contacts' }]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockDelete.mockResolvedValue(undefined);
     mockGetOne.mockResolvedValue({
       fields: [
@@ -1207,7 +1391,7 @@ describe('ensureCollections', () => {
 
   it('rejects when an existing required collection cannot be patched', async () => {
     mockGetFullList.mockResolvedValue([{ id: 'contacts-col', name: 'contacts' }]);
-    mockCreate.mockResolvedValue({});
+    mockSuccessfulCollectionCreation();
     mockGetOne.mockResolvedValue({
       fields: [{ type: 'text', name: 'name', required: true }],
     });

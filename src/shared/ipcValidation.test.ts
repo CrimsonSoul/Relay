@@ -222,5 +222,34 @@ describe('privileged IPC schemas', () => {
         expectedRevision: null,
       }).success,
     ).toBe(false);
+    expect(
+      PublicPrivilegedCommandRequestSchema.parse({
+        command: 'knowledge.upload.file.begin',
+        payload: {
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 4 * 1024 * 1024,
+          checksum: 'a'.repeat(64),
+          chunkCount: 1,
+        },
+        expectedRevision: null,
+      }),
+    ).toMatchObject({
+      command: 'knowledge.upload.file.begin',
+      payload: { fileName: 'Runbook.pdf', chunkCount: 1 },
+    });
+    expect(
+      PublicPrivilegedCommandRequestSchema.safeParse({
+        command: 'knowledge.upload.file.begin',
+        payload: {
+          batchId: 'batch-1',
+          fileName: '../Runbook.pdf',
+          byteSize: 1,
+          checksum: 'a'.repeat(64),
+          chunkCount: 1,
+        },
+        expectedRevision: null,
+      }).success,
+    ).toBe(false);
   });
 });

@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
+  KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+  KNOWLEDGE_UPLOAD_CONCURRENCY,
+  KNOWLEDGE_UPLOAD_MAX_FILES,
+  KNOWLEDGE_UPLOAD_MAX_RETRIES,
+  KNOWLEDGE_UPLOAD_RETENTION_MS,
   KNOWLEDGE_MAX_LINK_URL_LENGTH,
   KNOWLEDGE_MAX_OUTLINE_NODES,
   KNOWLEDGE_MAX_PAGES,
   KNOWLEDGE_MAX_PDF_BYTES,
   compareKnowledgeCategories,
   compareKnowledgeDocuments,
+  normalizeKnowledgeUploadBatchView,
+  normalizeKnowledgeUploadManifestView,
+  normalizeKnowledgeUploadQueueView,
   normalizeKnowledgeDocumentRecord,
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeSearchText,
@@ -37,11 +47,118 @@ const validRecord = {
 describe('knowledge contracts', () => {
   it('publishes the approved collection and safety limits', () => {
     expect(KNOWLEDGE_DOCUMENTS_COLLECTION).toBe('knowledge_documents');
+    expect(KNOWLEDGE_UPLOAD_BATCHES_COLLECTION).toBe('knowledge_upload_batches');
+    expect(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION).toBe('knowledge_upload_chunks');
+    expect(KNOWLEDGE_UPLOAD_CHUNK_BYTES).toBe(4 * 1024 * 1024);
+    expect(KNOWLEDGE_UPLOAD_MAX_FILES).toBe(100);
+    expect(KNOWLEDGE_UPLOAD_RETENTION_MS).toBe(7 * 24 * 60 * 60 * 1000);
+    expect(KNOWLEDGE_UPLOAD_MAX_RETRIES).toBe(8);
+    expect(KNOWLEDGE_UPLOAD_CONCURRENCY).toBe(2);
     expect(KNOWLEDGE_MAX_PDF_BYTES).toBe(50 * 1024 * 1024);
     expect(KNOWLEDGE_MAX_PAGES).toBe(1_000);
     expect(KNOWLEDGE_MAX_OUTLINE_NODES).toBe(500);
     expect(KNOWLEDGE_MAX_LINK_URL_LENGTH).toBe(4_096);
     expect(IPC_CHANNELS.KNOWLEDGE_INDEX_STATUS_CHANGED).toBe('knowledge:indexStatusChanged');
+  });
+
+  it('normalizes bounded resumable batch and manifest views', () => {
+    const batch = normalizeKnowledgeUploadBatchView({
+      id: 'batch-1',
+      requestId: 'request-1',
+      fileCount: 2,
+      totalBytes: 8_000,
+      state: 'active',
+      createdAt: '2026-07-15T20:00:00.000Z',
+      lastActivityAt: '2026-07-15T20:01:00.000Z',
+      expiresAt: '2026-07-22T20:00:00.000Z',
+      revision: 1,
+      accountId: 'must-not-cross-ipc',
+    });
+    expect(batch).toEqual({
+      id: 'batch-1',
+      requestId: 'request-1',
+      fileCount: 2,
+      totalBytes: 8_000,
+      state: 'active',
+      createdAt: '2026-07-15T20:00:00.000Z',
+      lastActivityAt: '2026-07-15T20:01:00.000Z',
+      expiresAt: '2026-07-22T20:00:00.000Z',
+      revision: 1,
+    });
+
+    const manifest = normalizeKnowledgeUploadManifestView({
+      id: 'upload-1',
+      batchId: 'batch-1',
+      fileName: 'Checkout Runbook.pdf',
+      byteSize: 8_000,
+      checksum: 'b'.repeat(64),
+      chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
+      chunkCount: 1,
+      missingChunkIndexes: [0],
+      state: 'uploading',
+      proposedTitle: '',
+      proposedCategory: '',
+      pageCount: null,
+      outline: [],
+      outlineSource: null,
+      duplicateDocumentId: null,
+      safeError: null,
+      lastActivityAt: '2026-07-15T20:01:00.000Z',
+      readyAt: null,
+      expiresAt: '2026-07-22T20:00:00.000Z',
+      revision: 2,
+      pdf: 'protected.pdf',
+      localSourcePath: '/Users/publisher/Documents/Checkout Runbook.pdf',
+    });
+    expect(manifest).not.toHaveProperty('pdf');
+    expect(manifest).not.toHaveProperty('localSourcePath');
+    expect(manifest).toMatchObject({
+      id: 'upload-1',
+      batchId: 'batch-1',
+      state: 'uploading',
+      missingChunkIndexes: [0],
+    });
+  });
+
+  it('normalizes queue state without exposing encrypted paths or private account metadata', () => {
+    const queue = normalizeKnowledgeUploadQueueView({
+      restartRecovery: true,
+      activeBatchId: 'batch-1',
+      totalBytes: 8_000,
+      acknowledgedBytes: 4_000,
+      items: [
+        {
+          uploadId: 'upload-1',
+          batchId: 'batch-1',
+          fileName: 'Runbook.pdf',
+          byteSize: 8_000,
+          acknowledgedBytes: 4_000,
+          chunkCount: 2,
+          acknowledgedChunkCount: 1,
+          state: 'paused-network',
+          safeError: 'offline',
+          retryCount: 8,
+          restartRecovery: true,
+          encryptedSourcePath: 'ciphertext',
+          accountId: 'account-1',
+          deviceId: 'device-1',
+          bytes: new Uint8Array([1, 2, 3]),
+        },
+      ],
+      encryptedSourcePath: 'ciphertext',
+    });
+
+    expect(queue).toMatchObject({
+      restartRecovery: true,
+      activeBatchId: 'batch-1',
+      acknowledgedBytes: 4_000,
+      items: [expect.objectContaining({ fileName: 'Runbook.pdf', state: 'paused-network' })],
+    });
+    expect(queue).not.toHaveProperty('encryptedSourcePath');
+    expect(queue?.items[0]).not.toHaveProperty('encryptedSourcePath');
+    expect(queue?.items[0]).not.toHaveProperty('accountId');
+    expect(queue?.items[0]).not.toHaveProperty('deviceId');
+    expect(queue?.items[0]).not.toHaveProperty('bytes');
   });
 
   it('normalizes a valid PocketBase record and discards unknown data', () => {
