@@ -128,8 +128,13 @@ async function ensureAppUser(localUrl: string, secret: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error('Failed to ensure app user');
 }
 
+export type PocketBaseStartResult =
+  | { status: 'failed' }
+  | { status: 'started'; privilegedRuntimeReady: true }
+  | { status: 'started'; privilegedRuntimeReady: false; reason: string };
+
 // Guard against concurrent invocations (e.g. rapid reconfigure clicks).
-let pbStartPromise: Promise<boolean> | null = null;
+let pbStartPromise: Promise<PocketBaseStartResult> | null = null;
 
 /**
  * Start (or restart) PocketBase in server mode.
@@ -138,7 +143,7 @@ let pbStartPromise: Promise<boolean> | null = null;
 export const startPocketBase = (
   serverConfig: ServerConfig,
   configDataDir: string,
-): Promise<boolean> => {
+): Promise<PocketBaseStartResult> => {
   if (pbStartPromise) return pbStartPromise;
   pbStartPromise = doStartPocketBase(serverConfig, configDataDir).finally(() => {
     pbStartPromise = null;
@@ -149,7 +154,7 @@ export const startPocketBase = (
 const doStartPocketBase = async (
   serverConfig: ServerConfig,
   configDataDir: string,
-): Promise<boolean> => {
+): Promise<PocketBaseStartResult> => {
   // Stop any previous mDNS advertisement before (re)starting the server.
   stopAdvertising();
 
@@ -228,7 +233,7 @@ const doStartPocketBase = async (
     const PocketBase = (await import('pocketbase')).default;
     const pb = new PocketBase(localUrl);
     await pb.collection('_superusers').authWithPassword('admin@relay.app', serverConfig.secret);
-    await ensureCollections(pb);
+    const collections = await ensureCollections(pb);
     setPbClient(pb);
 
     // Advertise on the LAN so client setup can discover this server (best-effort).
@@ -262,9 +267,15 @@ const doStartPocketBase = async (
       }
     })();
 
-    return true;
+    return collections.privilegedRuntimeReady
+      ? { status: 'started', privilegedRuntimeReady: true }
+      : {
+          status: 'started',
+          privilegedRuntimeReady: false,
+          reason: collections.reason,
+        };
   } catch (pbError) {
     loggers.pocketbase.error('Failed to start PocketBase', { error: pbError });
-    return false;
+    return { status: 'failed' };
   }
 };

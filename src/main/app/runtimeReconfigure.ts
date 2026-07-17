@@ -85,9 +85,16 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
   setSyncManager(null);
 
   const pbProcess = getPbProcess();
+  let privilegedRuntimeReady = config?.mode !== 'server';
   if (config?.mode === 'server') {
-    const started = await startPocketBase(config, configDataDir);
-    if (!started) throw new Error('Failed to start PocketBase server.');
+    const result = await startPocketBase(config, configDataDir);
+    if (result.status !== 'started') throw new Error('Failed to start PocketBase server.');
+    privilegedRuntimeReady = result.privilegedRuntimeReady;
+    if (!result.privilegedRuntimeReady) {
+      loggers.security.warn('Privileged runtime deferred until role account migration completes', {
+        reason: result.reason,
+      });
+    }
     dynatraceProblemsManager?.start();
     cloudStatusManager?.start();
   } else if (pbProcess) {
@@ -107,7 +114,7 @@ export async function reconfigureRuntime(configDataDir: string): Promise<void> {
     }
   }
 
-  if (config) {
+  if (config && privilegedRuntimeReady) {
     await rebuildPrivilegedRuntime(config, configDataDir);
   }
 

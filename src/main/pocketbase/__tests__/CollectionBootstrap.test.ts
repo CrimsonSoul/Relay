@@ -560,7 +560,7 @@ describe('ensureCollections', () => {
     expect(commands?.listRule).toContain('@request.auth.collectionName');
     expect(commands?.listRule).toContain('accountId = @request.auth.id');
     expect(commands?.createRule).toContain('state = "pending"');
-    expect(commands?.createRule).toContain('operatorId = @request.auth.operatorId');
+    expect(commands?.createRule).not.toContain('@request.auth.operatorId');
     expect(commands?.createRule).toContain('deviceId != ""');
     expect(commands?.createRule).toContain('signature != ""');
     expect(commands?.createRule).toContain('@collection.relay_privileged_devices.accountId');
@@ -586,6 +586,36 @@ describe('ensureCollections', () => {
     expect(commands?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_relay_privileged_commands_request_id ON relay_privileged_commands (requestId)',
     );
+  });
+
+  it('authorizes fresh role accounts by account ID without a legacy operator ID', async () => {
+    mockGetFullList.mockResolvedValue([]);
+    mockSuccessfulCollectionCreation();
+
+    await ensureCollections(mockPb);
+
+    const definitionFor = (name: string) =>
+      mockCreate.mock.calls.find(([value]) => (value as { name: string }).name === name)?.[0] as
+        | {
+            createRule?: string | null;
+            listRule?: string | null;
+            fields: Array<Record<string, unknown>>;
+          }
+        | undefined;
+    const commands = definitionFor('relay_privileged_commands');
+    const pairingRequests = definitionFor('relay_privileged_pairing_requests');
+    const uploadBatches = definitionFor('knowledge_upload_batches');
+    const uploads = definitionFor('knowledge_uploads');
+
+    for (const definition of [commands, pairingRequests, uploadBatches, uploads]) {
+      expect(definition?.fields).toContainEqual(
+        expect.objectContaining({ name: 'operatorId', required: false }),
+      );
+      expect(definition?.listRule ?? '').not.toContain('@request.auth.operatorId');
+      expect(definition?.createRule ?? '').not.toContain('@request.auth.operatorId');
+    }
+    expect(commands?.createRule).toContain('accountId = @request.auth.id');
+    expect(pairingRequests?.createRule).toContain('accountId = @request.auth.id');
   });
 
   it('keeps challenge secrets server-hidden and scopes one-time pairing requests to the account', async () => {
@@ -614,7 +644,7 @@ describe('ensureCollections', () => {
       ]),
     );
     expect(requests?.listRule).toContain('accountId = @request.auth.id');
-    expect(requests?.createRule).toContain('operatorId = @request.auth.operatorId');
+    expect(requests?.createRule).not.toContain('@request.auth.operatorId');
     expect(requests?.createRule).toContain('state = "pending"');
     expect(requests).toMatchObject({ updateRule: null, deleteRule: null });
     expect(requests?.fields).toEqual(
@@ -851,7 +881,7 @@ describe('ensureCollections', () => {
       return { id: `${value.name}-collection-id`, name: value.name };
     });
 
-    await expect(ensureCollections(mockPb)).resolves.toBeUndefined();
+    await expect(ensureCollections(mockPb)).resolves.toEqual({ privilegedRuntimeReady: true });
 
     expect(uploadSchemaPatched).toBe(true);
     expect(mockCreate).toHaveBeenCalledWith(

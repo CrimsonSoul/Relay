@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => {
     setPbClient: vi.fn(),
     execFileSync: vi.fn(),
     existsSync: vi.fn(() => false),
-    ensureCollections: vi.fn().mockResolvedValue(undefined),
+    ensureCollections: vi.fn().mockResolvedValue({ privilegedRuntimeReady: true }),
     startAdvertising: vi.fn(),
     stopAdvertising: vi.fn(),
     requestAppRelaunch: vi.fn(),
@@ -137,6 +137,7 @@ describe('pocketbaseBootstrap', () => {
     mocks.pbProcess.start.mockResolvedValue(undefined);
     mocks.backup.mockResolvedValue(undefined);
     mocks.backupIfDue.mockResolvedValue(null);
+    mocks.ensureCollections.mockResolvedValue({ privilegedRuntimeReady: true });
   });
 
   it('checks whether the daily automatic backup is due before retention cleanup', async () => {
@@ -152,7 +153,7 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
 
     await vi.waitFor(() => expect(mocks.startSchedule).toHaveBeenCalledOnce());
     const beforeCleanup = mocks.startSchedule.mock.calls[0]?.[1] as () => Promise<void>;
@@ -175,7 +176,7 @@ describe('pocketbaseBootstrap', () => {
         },
         'C:\\Users\\Relay\\data',
       ),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ status: 'started', privilegedRuntimeReady: true });
 
     expect(mocks.startAdvertising).toHaveBeenCalledWith(8090);
 
@@ -187,5 +188,30 @@ describe('pocketbaseBootstrap', () => {
     expect(mocks.requestAppRelaunch).toHaveBeenCalledWith('pocketbase-crash-loop', {
       exitCode: 1,
     });
+  });
+
+  it('reports server readiness but defers privileged runtime readiness when identity migration is deferred', async () => {
+    mocks.ensureCollections.mockResolvedValueOnce({
+      privilegedRuntimeReady: false,
+      reason: 'Ryan Bledsoe cannot be resolved uniquely.',
+    });
+    const { startPocketBase } = await import('../pocketbaseBootstrap');
+
+    await expect(
+      startPocketBase(
+        {
+          mode: 'server',
+          bindHost: '0.0.0.0',
+          port: 8090,
+          secret: 'super-secret-passphrase',
+        },
+        'C:\\Users\\Relay\\data',
+      ),
+    ).resolves.toEqual({
+      status: 'started',
+      privilegedRuntimeReady: false,
+      reason: 'Ryan Bledsoe cannot be resolved uniquely.',
+    });
+    expect(mocks.startAdvertising).toHaveBeenCalledWith(8090);
   });
 });

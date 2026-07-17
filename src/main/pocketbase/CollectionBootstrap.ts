@@ -69,6 +69,10 @@ interface CollectionDef {
   auth?: AuthCollectionOptions;
 }
 
+export type CollectionBootstrapResult =
+  | { privilegedRuntimeReady: true }
+  | { privilegedRuntimeReady: false; reason: string };
+
 type AuthCollectionOptions = {
   authRule: string | null;
   manageRule: string | null;
@@ -193,7 +197,7 @@ const ACTIVE_KNOWLEDGE_RULES: CollectionRules = {
 };
 
 const KNOWLEDGE_UPLOAD_ACCOUNT_RULE =
-  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id && operatorId = @request.auth.operatorId';
+  '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id';
 const KNOWLEDGE_UPLOAD_RULES: CollectionRules = {
   listRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
   viewRule: KNOWLEDGE_UPLOAD_ACCOUNT_RULE,
@@ -250,7 +254,7 @@ const PRIVILEGED_COMMAND_ACCOUNT_RULE =
 const PRIVILEGED_COMMAND_RULES: CollectionRules = {
   listRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
   viewRule: PRIVILEGED_COMMAND_ACCOUNT_RULE,
-  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && operatorId = @request.auth.operatorId && deviceId != "" && signature != "" && state = "pending" && @collection.relay_privileged_devices.accountId ?= accountId && @collection.relay_privileged_devices.deviceId ?= deviceId && @collection.relay_privileged_devices.state ?= "active"`,
+  createRule: `${PRIVILEGED_COMMAND_ACCOUNT_RULE} && deviceId != "" && signature != "" && state = "pending" && @collection.relay_privileged_devices.accountId ?= accountId && @collection.relay_privileged_devices.deviceId ?= deviceId && @collection.relay_privileged_devices.state ?= "active"`,
   updateRule: null,
   deleteRule: null,
 };
@@ -261,7 +265,7 @@ const PRIVILEGED_PAIRING_REQUEST_RULE =
 const PRIVILEGED_PAIRING_REQUEST_RULES: CollectionRules = {
   listRule: PRIVILEGED_PAIRING_REQUEST_RULE,
   viewRule: PRIVILEGED_PAIRING_REQUEST_RULE,
-  createRule: `${PRIVILEGED_PAIRING_REQUEST_RULE} && operatorId = @request.auth.operatorId && state = "pending"`,
+  createRule: `${PRIVILEGED_PAIRING_REQUEST_RULE} && state = "pending"`,
   updateRule: null,
   deleteRule: null,
 };
@@ -586,7 +590,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'requestId', required: true, max: 128 },
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: false, max: 200 },
-      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: false, max: 200 },
       { type: 'text', name: 'displayNameSnapshot', required: false, max: 120 },
       {
         type: 'select',
@@ -651,7 +655,7 @@ const COLLECTIONS: CollectionDef[] = [
     fields: [
       { type: 'text', name: 'requestId', required: true, max: 200 },
       { type: 'text', name: 'accountId', required: true, max: 200 },
-      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: false, max: 200 },
       { type: 'text', name: 'displayNameSnapshot', required: false, max: 120 },
       { type: 'text', name: 'challengeId', required: true, max: 200 },
       { type: 'text', name: 'code', required: true, max: 8 },
@@ -739,7 +743,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'requestId', required: true, max: 128 },
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
-      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: false, max: 200 },
       { type: 'text', name: 'operatorName', required: true, max: 120 },
       { type: 'number', name: 'fileCount', required: true },
       { type: 'number', name: 'totalBytes', required: true },
@@ -767,7 +771,7 @@ const COLLECTIONS: CollectionDef[] = [
       relation('batchId', KNOWLEDGE_UPLOAD_BATCHES_COLLECTION, true),
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: true, max: 200 },
-      { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'operatorId', required: false, max: 200 },
       { type: 'text', name: 'operatorName', required: true, max: 120 },
       { type: 'text', name: 'fileName', required: true, max: 240 },
       {
@@ -1373,7 +1377,7 @@ function warnAboutUnknownCollections(allCols: Array<{ id: string; name: string }
  * Creates missing collections, patches required fields and API rules, and warns about
  * unmanaged collections without deleting them.
  */
-export async function ensureCollections(pb: PocketBase): Promise<void> {
+export async function ensureCollections(pb: PocketBase): Promise<CollectionBootstrapResult> {
   let allCols: Array<{ id: string; name: string }>;
   try {
     allCols = await pb.collections.getFullList();
@@ -1411,8 +1415,10 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   );
   let { patched } = managed;
   const migration = await new RoleAccountMigration({ pb }).run();
+  let migrationDeferredReason: string | null = null;
   if (migration.status === 'deferred') {
     logger.warn(`Role account migration deferred: ${migration.reason}`);
+    migrationDeferredReason = migration.reason;
   } else {
     for (const definition of [
       PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
@@ -1434,4 +1440,7 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   } else {
     logger.info('Collection bootstrap: all collections up to date');
   }
+  return migrationDeferredReason
+    ? { privilegedRuntimeReady: false, reason: migrationDeferredReason }
+    : { privilegedRuntimeReady: true };
 }

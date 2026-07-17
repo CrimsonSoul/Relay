@@ -274,6 +274,25 @@ if (gotLock) {
         }
       };
 
+      const startServerServices = async (
+        config: NonNullable<ReturnType<AppConfig['load']>>,
+      ): Promise<boolean> => {
+        const result = await startPocketBase(config, configDataDir);
+        if (result.status !== 'started') return false;
+        if (result.privilegedRuntimeReady) {
+          await startPrivilegedAccess(config);
+        } else {
+          loggers.security.warn(
+            'Privileged runtime deferred until role account migration completes',
+            {
+              reason: result.reason,
+            },
+          );
+        }
+        startServerDataManagers();
+        return true;
+      };
+
       // Resolve data root before loading the renderer
       loggers.main.info('Starting data initialization...');
       try {
@@ -301,12 +320,7 @@ if (gotLock) {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await stopPrivilegedAccess();
-        const started = await startPocketBase(config, configDataDir);
-        if (started) {
-          await startPrivilegedAccess(config);
-          startServerDataManagers();
-        }
-        return started;
+        return startServerServices(config);
       });
 
       // Runtime reconfigure — used by the setup flow so the main process rebuilds
@@ -328,12 +342,7 @@ if (gotLock) {
         const config = getAppConfig()?.load();
         if (config?.mode !== 'server') return false;
         await stopPrivilegedAccess();
-        const started = await startPocketBase(config, configDataDir);
-        if (started) {
-          await startPrivilegedAccess(config);
-          startServerDataManagers();
-        }
-        return started;
+        return startServerServices(config);
       };
       setupIpc(createAuxWindow, restartPb);
 
@@ -345,11 +354,7 @@ if (gotLock) {
       // connection checks can succeed as soon as the renderer loads.
       const relayConfig = getAppConfig()?.load();
       if (relayConfig?.mode === 'server') {
-        const started = await startPocketBase(relayConfig, configDataDir);
-        if (started) {
-          await startPrivilegedAccess(relayConfig);
-          startServerDataManagers();
-        }
+        await startServerServices(relayConfig);
       }
 
       // Open the local client cache before the renderer asks for its bootstrap

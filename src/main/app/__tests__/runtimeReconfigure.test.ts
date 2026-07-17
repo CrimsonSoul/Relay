@@ -136,7 +136,7 @@ describe('reconfigureRuntime', () => {
     mocks.getPbClient.mockReturnValue(mocks.serverPbClient);
     mocks.createProductionPrivilegedRuntime.mockResolvedValue(mocks.nextPrivilegedRuntime);
     mocks.pbProcess.stop.mockResolvedValue(undefined);
-    mocks.startPocketBase.mockResolvedValue(true);
+    mocks.startPocketBase.mockResolvedValue({ status: 'started', privilegedRuntimeReady: true });
     mocks.offlineCacheInstance.close.mockClear();
     mocks.pendingChangesInstance.close.mockClear();
     mocks.authWithPassword.mockResolvedValue({});
@@ -236,6 +236,28 @@ describe('reconfigureRuntime', () => {
     expect(mocks.startPocketBase.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.createProductionPrivilegedRuntime.mock.invocationCallOrder[0] as number,
     );
+  });
+
+  it('keeps ordinary server services available but suppresses privileged runtime when migration is deferred', async () => {
+    mocks.appConfig.load.mockReturnValue({
+      mode: 'server',
+      port: 8090,
+      bindHost: '0.0.0.0',
+      secret: 'super-secret-passphrase',
+    });
+    mocks.startPocketBase.mockResolvedValue({
+      status: 'started',
+      privilegedRuntimeReady: false,
+      reason: 'Ryan Bledsoe cannot be resolved uniquely.',
+    });
+    const { reconfigureRuntime } = await import('../runtimeReconfigure');
+
+    await reconfigureRuntime('/Users/test/RelayData/data');
+
+    expect(mocks.dynatraceProblemsManager.start).toHaveBeenCalledOnce();
+    expect(mocks.cloudStatusManager.start).toHaveBeenCalledOnce();
+    expect(mocks.createProductionPrivilegedRuntime).not.toHaveBeenCalled();
+    expect(mocks.mainWindow.webContents.reloadIgnoringCache).toHaveBeenCalledOnce();
   });
 
   it('rebuilds client-mode offline infrastructure during runtime reconfigure', async () => {
