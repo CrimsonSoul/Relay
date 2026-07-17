@@ -3,18 +3,18 @@ import {
   ADMIN_PRIVILEGED_CAPABILITIES,
   MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
   MAX_PRIVILEGED_HOSTNAME_LENGTH,
+  OWNER_PRIVILEGED_CAPABILITIES,
   PRIVILEGED_SESSION_IDLE_MS,
   PUBLISHER_PRIVILEGED_CAPABILITIES,
-  getPrivilegedAdministratorOperatorIds,
   getPrivilegedCapabilities,
-  isPrivilegedAdministrator,
   isPrivilegedRole,
-  normalizeRelayAdministrationSnapshot,
   normalizePrivilegedSessionView,
+  normalizeRelayAdministrationSnapshot,
 } from '../privilegedAccess';
 
 describe('privileged access contracts', () => {
-  it('accepts only the two privileged roles', () => {
+  it('accepts only the three effective privileged roles', () => {
+    expect(isPrivilegedRole('owner')).toBe(true);
     expect(isPrivilegedRole('admin')).toBe(true);
     expect(isPrivilegedRole('publisher')).toBe(true);
     expect(isPrivilegedRole('operator')).toBe(false);
@@ -22,9 +22,17 @@ describe('privileged access contracts', () => {
   });
 
   it('publishes the approved role capability matrix', () => {
+    expect(OWNER_PRIVILEGED_CAPABILITIES).toEqual([
+      'privileged.status.read',
+      'accounts.manage',
+      'ownership.transfer',
+      'publisher.assign',
+      'devices.manage',
+      'settings.manage',
+      'knowledge.manage',
+    ]);
     expect(ADMIN_PRIVILEGED_CAPABILITIES).toEqual([
       'privileged.status.read',
-      'operators.manage',
       'publisher.assign',
       'devices.manage',
       'settings.manage',
@@ -36,34 +44,13 @@ describe('privileged access contracts', () => {
     ]);
   });
 
-  it('recognizes the permanent owner and additional administrators with legacy fallback', () => {
-    expect(
-      getPrivilegedAdministratorOperatorIds({
-        adminOperatorId: 'operator-owner',
-        adminOperatorIds: ['operator-owner', 'operator-charles', 'operator-charles', ''],
-      }),
-    ).toEqual(['operator-owner', 'operator-charles']);
-    expect(
-      isPrivilegedAdministrator(
-        { adminOperatorId: 'operator-owner', adminOperatorIds: ['operator-charles'] },
-        'operator-charles',
-      ),
-    ).toBe(true);
-    expect(isPrivilegedAdministrator({ adminOperatorId: 'operator-owner' }, 'operator-owner')).toBe(
-      true,
-    );
-    expect(isPrivilegedAdministrator({ adminOperatorId: 'operator-owner' }, 'operator-other')).toBe(
-      false,
-    );
-  });
-
   it('grants no capabilities to inactive or stale role assignments', () => {
-    expect(getPrivilegedCapabilities({ role: 'admin', active: false, assigned: true })).toEqual([]);
+    expect(getPrivilegedCapabilities({ role: 'owner', active: false, assigned: true })).toEqual([]);
     expect(getPrivilegedCapabilities({ role: 'publisher', active: true, assigned: false })).toEqual(
       [],
     );
-    expect(getPrivilegedCapabilities({ role: 'publisher', active: true, assigned: true })).toEqual(
-      PUBLISHER_PRIVILEGED_CAPABILITIES,
+    expect(getPrivilegedCapabilities({ role: 'admin', active: true, assigned: true })).toEqual(
+      ADMIN_PRIVILEGED_CAPABILITIES,
     );
   });
 
@@ -76,13 +63,14 @@ describe('privileged access contracts', () => {
   it('normalizes a public session without retaining secrets or unknown capabilities', () => {
     const normalized = normalizePrivilegedSessionView({
       state: 'active',
-      accountId: 'account-1',
-      operatorId: 'operator-1',
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
-      capabilities: ['settings.manage', 'settings.manage', 'arbitrary.manage', 'knowledge.manage'],
+      accountId: 'account-ryan',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
+      capabilities: ['accounts.manage', 'accounts.manage', 'arbitrary.manage', 'knowledge.manage'],
       deviceId: 'device-1',
       expiresAt: '2026-07-15T22:00:00.000Z',
+      email: 'account-ryan@relay.invalid',
       token: 'must-not-survive',
       privateKey: 'must-not-survive',
       passwordHash: 'must-not-survive',
@@ -90,26 +78,25 @@ describe('privileged access contracts', () => {
 
     expect(normalized).toEqual({
       state: 'active',
-      accountId: 'account-1',
-      operatorId: 'operator-1',
-      operatorName: 'Ryan Bledsoe',
-      role: 'admin',
-      capabilities: ['settings.manage', 'knowledge.manage'],
+      accountId: 'account-ryan',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      role: 'owner',
+      capabilities: ['accounts.manage', 'knowledge.manage'],
       deviceId: 'device-1',
       expiresAt: '2026-07-15T22:00:00.000Z',
     });
-    expect(normalized).not.toHaveProperty('token');
-    expect(normalized).not.toHaveProperty('privateKey');
-    expect(normalized).not.toHaveProperty('passwordHash');
+    expect(JSON.stringify(normalized)).not.toContain('relay.invalid');
+    expect(JSON.stringify(normalized)).not.toContain('must-not-survive');
   });
 
-  it('rejects inconsistent session projections', () => {
+  it('rejects inconsistent active session projections', () => {
     expect(
       normalizePrivilegedSessionView({
         state: 'active',
         accountId: null,
-        operatorId: null,
-        operatorName: null,
+        username: null,
+        displayName: null,
         role: null,
         capabilities: [],
         deviceId: null,
@@ -118,41 +105,48 @@ describe('privileged access contracts', () => {
     ).toBeNull();
   });
 
-  it('normalizes bounded administration views without retaining secret material', () => {
+  it('normalizes bounded account administration views without retaining secret material', () => {
     const normalized = normalizeRelayAdministrationSnapshot({
-      operators: [
+      accounts: [
         {
-          id: 'operator-1',
+          accountId: 'account-ryan',
+          username: 'ryan',
           displayName: 'Ryan Bledsoe',
-          active: true,
-          revision: 4,
-          role: 'admin',
-          created: '2026-07-15T20:00:00.000Z',
-          updated: '2026-07-15T21:00:00.000Z',
-          password: 'must-not-survive',
-        },
-      ],
-      privilegedAccounts: [
-        {
-          accountId: 'account-1',
-          operatorId: 'operator-1',
-          role: 'admin',
+          storedRole: 'administrator',
+          effectiveRole: 'owner',
           active: true,
           credentialState: 'configured',
           mustChangePassword: false,
           credentialVersion: 2,
+          revision: 4,
+          createdAt: '2026-07-15T20:00:00.000Z',
           updatedAt: '2026-07-15T21:00:00.000Z',
+          email: 'account-ryan@relay.invalid',
           passwordHash: 'must-not-survive',
           token: 'must-not-survive',
+        },
+        {
+          accountId: 'account-charles',
+          username: 'charles',
+          displayName: 'Charles Gibbs',
+          storedRole: 'administrator',
+          effectiveRole: 'admin',
+          active: true,
+          credentialState: 'configured',
+          mustChangePassword: false,
+          credentialVersion: 1,
+          revision: 1,
+          createdAt: '2026-07-15T20:00:00.000Z',
+          updatedAt: null,
         },
       ],
       devices: [
         {
           id: 'record-1',
           deviceId: 'device-1',
-          accountId: 'account-1',
-          operatorId: 'operator-1',
-          operatorName: 'Ryan Bledsoe',
+          accountId: 'account-ryan',
+          username: 'ryan',
+          displayName: 'Ryan Bledsoe',
           label: 'Ryan work laptop',
           hostname: 'NOC-LT-01',
           state: 'active',
@@ -171,44 +165,51 @@ describe('privileged access contracts', () => {
           value: 'must-not-survive',
         },
       ],
-      adminOperatorId: 'operator-1',
-      publisherOperatorId: null,
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: null,
       assignmentRevision: 5,
       generatedAt: '2026-07-15T21:00:00.000Z',
       commandEnvelope: { signature: 'must-not-survive' },
     });
 
     expect(normalized).toEqual({
-      operators: [
+      accounts: [
         {
-          id: 'operator-1',
+          accountId: 'account-ryan',
+          username: 'ryan',
           displayName: 'Ryan Bledsoe',
-          active: true,
-          revision: 4,
-          role: 'admin',
-          created: '2026-07-15T20:00:00.000Z',
-          updated: '2026-07-15T21:00:00.000Z',
-        },
-      ],
-      privilegedAccounts: [
-        {
-          accountId: 'account-1',
-          operatorId: 'operator-1',
-          role: 'admin',
+          storedRole: 'administrator',
+          effectiveRole: 'owner',
           active: true,
           credentialState: 'configured',
           mustChangePassword: false,
           credentialVersion: 2,
+          revision: 4,
+          createdAt: '2026-07-15T20:00:00.000Z',
           updatedAt: '2026-07-15T21:00:00.000Z',
+        },
+        {
+          accountId: 'account-charles',
+          username: 'charles',
+          displayName: 'Charles Gibbs',
+          storedRole: 'administrator',
+          effectiveRole: 'admin',
+          active: true,
+          credentialState: 'configured',
+          mustChangePassword: false,
+          credentialVersion: 1,
+          revision: 1,
+          createdAt: '2026-07-15T20:00:00.000Z',
+          updatedAt: null,
         },
       ],
       devices: [
         {
           id: 'record-1',
           deviceId: 'device-1',
-          accountId: 'account-1',
-          operatorId: 'operator-1',
-          operatorName: 'Ryan Bledsoe',
+          accountId: 'account-ryan',
+          username: 'ryan',
+          displayName: 'Ryan Bledsoe',
           label: 'Ryan work laptop',
           hostname: 'NOC-LT-01',
           state: 'active',
@@ -225,44 +226,23 @@ describe('privileged access contracts', () => {
           revision: 7,
         },
       ],
-      adminOperatorId: 'operator-1',
-      publisherOperatorId: null,
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: null,
       assignmentRevision: 5,
       generatedAt: '2026-07-15T21:00:00.000Z',
     });
     expect(JSON.stringify(normalized)).not.toContain('must-not-survive');
+    expect(JSON.stringify(normalized)).not.toContain('relay.invalid');
   });
 
-  it('rejects oversized or inconsistent administration snapshots', () => {
+  it('rejects inconsistent administration snapshots', () => {
     expect(
       normalizeRelayAdministrationSnapshot({
-        operators: [],
-        privilegedAccounts: [],
+        accounts: [],
         devices: [],
         settings: [],
-        adminOperatorId: 'operator-1',
-        publisherOperatorId: 'operator-1',
-        assignmentRevision: 0,
-        generatedAt: '2026-07-15T21:00:00.000Z',
-      }),
-    ).toBeNull();
-
-    expect(
-      normalizeRelayAdministrationSnapshot({
-        operators: Array.from({ length: 501 }, (_, index) => ({
-          id: `operator-${index}`,
-          displayName: `Operator ${index}`,
-          active: true,
-          revision: 0,
-          role: null,
-          created: '2026-07-15T20:00:00.000Z',
-          updated: '2026-07-15T20:00:00.000Z',
-        })),
-        privilegedAccounts: [],
-        devices: [],
-        settings: [],
-        adminOperatorId: 'operator-1',
-        publisherOperatorId: null,
+        ownerAccountId: 'account-ryan',
+        publisherAccountId: 'account-ryan',
         assignmentRevision: 0,
         generatedAt: '2026-07-15T21:00:00.000Z',
       }),

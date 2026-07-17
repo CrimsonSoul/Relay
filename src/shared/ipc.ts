@@ -6,6 +6,7 @@ import type {
 } from './dynatraceProblems';
 import type { RelayOperatorRecord } from './operators';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
+import type { EffectivePrivilegedRole, StoredRoleAccountRole } from './roleAccounts';
 import type {
   PrivilegedCommandResult,
   PrivilegedCommandPayloadMap,
@@ -88,26 +89,28 @@ export type PrivilegedIpcResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: PrivilegedIpcError };
 
-export type PrivilegedLoginInput = { operatorId: string; password: string };
+export type PrivilegedLoginInput = { username: string; password: string };
 export type PrivilegedReauthenticationInput = { password: string };
 export type PrivilegedCredentialSetupInput = {
-  operatorId: string;
+  accountId: string;
   password: string;
   passwordConfirm: string;
 };
 export type PrivilegedCredentialSetupView = {
   accountId: string;
-  operatorId: string;
-  role: 'admin' | 'publisher';
+  username: string;
+  displayName: string;
+  storedRole: StoredRoleAccountRole;
+  role: EffectivePrivilegedRole;
   credentialState: 'configured';
   credentialVersion: number;
 };
 export type PrivilegedReauthenticationProof = { proofId: string; expiresAt: string };
 export type PrivilegedPairingChallengeTarget = {
   accountId: string;
-  operatorId: string;
-  operatorName: string;
-  role: 'admin' | 'publisher';
+  username: string;
+  displayName: string;
+  role: EffectivePrivilegedRole;
 };
 export type PrivilegedPairingCompletionInput = {
   challengeId: string;

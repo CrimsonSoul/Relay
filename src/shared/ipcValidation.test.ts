@@ -122,28 +122,36 @@ describe('privileged IPC schemas', () => {
 
   it('accepts bounded login and reauthentication inputs without trimming passwords', () => {
     expect(
-      PrivilegedLoginSchema.parse({ operatorId: 'operator-admin', password: ` ${password} ` }),
-    ).toEqual({ operatorId: 'operator-admin', password: ` ${password} ` });
+      PrivilegedLoginSchema.parse({ username: '  Ryan.Admin ', password: ` ${password} ` }),
+    ).toEqual({ username: 'ryan.admin', password: ` ${password} ` });
     expect(PrivilegedReauthenticationSchema.parse({ password })).toEqual({ password });
   });
 
   it('strictly validates local credential setup and preserves password bytes', () => {
     expect(
       PrivilegedCredentialSetupSchema.parse({
-        operatorId: 'operator-admin',
+        accountId: 'account-admin',
         password: ` ${password} `,
         passwordConfirm: ` ${password} `,
       }),
     ).toEqual({
-      operatorId: 'operator-admin',
+      accountId: 'account-admin',
       password: ` ${password} `,
       passwordConfirm: ` ${password} `,
     });
     expect(
       PrivilegedCredentialSetupSchema.safeParse({
-        operatorId: 'operator-admin',
+        accountId: 'account-admin',
         password,
         passwordConfirm: `${password}-different`,
+      }).success,
+    ).toBe(false);
+    expect(
+      PrivilegedCredentialSetupSchema.safeParse({
+        accountId: 'account-admin',
+        password,
+        passwordConfirm: password,
+        remote: true,
       }).success,
     ).toBe(false);
     expect(
@@ -151,16 +159,17 @@ describe('privileged IPC schemas', () => {
         operatorId: 'operator-admin',
         password,
         passwordConfirm: password,
-        remote: true,
       }).success,
     ).toBe(false);
   });
 
   it.each([
-    { operatorId: '', password },
-    { operatorId: 'operator-admin', password: 'short' },
-    { operatorId: 'operator-admin', password: 'x'.repeat(129) },
-    { operatorId: 'operator-admin', password, token: 'unexpected' },
+    { username: '', password },
+    { username: 'ryan', password: 'short' },
+    { username: 'ryan', password: 'x'.repeat(129) },
+    { username: 'ryan admin', password },
+    { username: 'ryan', password, token: 'unexpected' },
+    { operatorId: 'operator-admin', password },
   ])('rejects malformed or unknown login fields: %o', (input) => {
     expect(PrivilegedLoginSchema.safeParse(input).success).toBe(false);
   });

@@ -19,6 +19,7 @@ import {
   isPublicPrivilegedCommandName,
   normalizePrivilegedCommandPayload,
 } from './privilegedCommands';
+import { getRoleUsernameError, normalizeRoleUsername } from './roleAccounts';
 
 // ==================== Size Limits ====================
 const MAX_NAME = 500;
@@ -54,12 +55,14 @@ const privilegedPasswordSchema = z
 
 export const PrivilegedLoginSchema = z
   .object({
-    operatorId: z
-      .string()
-      .trim()
-      .min(1)
-      .max(MAX_ID)
-      .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
+    username: z.string().transform((value, context) => {
+      const error = getRoleUsernameError(value);
+      if (error) {
+        context.addIssue({ code: 'custom', message: error });
+        return z.NEVER;
+      }
+      return normalizeRoleUsername(value);
+    }),
     password: privilegedPasswordSchema,
   })
   .strict();
@@ -70,7 +73,7 @@ export const PrivilegedReauthenticationSchema = z
 
 export const PrivilegedCredentialSetupSchema = z
   .object({
-    operatorId: z
+    accountId: z
       .string()
       .trim()
       .min(1)

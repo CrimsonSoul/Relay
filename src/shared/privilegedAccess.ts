@@ -1,3 +1,20 @@
+import {
+  getEffectiveRole,
+  getRoleDisplayNameError,
+  getRoleUsernameError,
+  normalizeRoleDisplayName,
+  normalizeRoleUsername,
+  type EffectivePrivilegedRole,
+  type RelayRoleAccountRecord,
+  type StoredRoleAccountRole,
+} from './roleAccounts';
+
+export type {
+  EffectivePrivilegedRole,
+  RelayRoleAccountRecord,
+  StoredRoleAccountRole,
+} from './roleAccounts';
+
 export const RELAY_PRIVILEGED_ACCOUNTS_COLLECTION = 'relay_privileged_accounts';
 export const RELAY_PRIVILEGED_STATE_COLLECTION = 'relay_privileged_state';
 export const RELAY_PRIVILEGED_DEVICES_COLLECTION = 'relay_privileged_devices';
@@ -12,19 +29,29 @@ export const MIN_PRIVILEGED_PASSWORD_LENGTH = 12;
 export const MAX_PRIVILEGED_PASSWORD_LENGTH = 128;
 export const MAX_PRIVILEGED_ADMINISTRATORS = 10;
 
-export type PrivilegedRole = 'admin' | 'publisher';
+export type PrivilegedRole = EffectivePrivilegedRole;
 
 export type PrivilegedCapability =
   | 'privileged.status.read'
-  | 'operators.manage'
+  | 'accounts.manage'
+  | 'ownership.transfer'
   | 'publisher.assign'
   | 'devices.manage'
   | 'settings.manage'
   | 'knowledge.manage';
 
+export const OWNER_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] = [
+  'privileged.status.read',
+  'accounts.manage',
+  'ownership.transfer',
+  'publisher.assign',
+  'devices.manage',
+  'settings.manage',
+  'knowledge.manage',
+];
+
 export const ADMIN_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] = [
   'privileged.status.read',
-  'operators.manage',
   'publisher.assign',
   'devices.manage',
   'settings.manage',
@@ -36,29 +63,17 @@ export const PUBLISHER_PRIVILEGED_CAPABILITIES: readonly PrivilegedCapability[] 
   'knowledge.manage',
 ];
 
-export type RelayPrivilegedAccountRecord = {
-  id: string;
-  operatorId: string;
-  role: PrivilegedRole;
-  active: boolean;
-  mustChangePassword: boolean;
-  credentialVersion: number;
-  created: string;
-  updated: string;
-};
+/** Retained as an import-compatible name while main-process call sites migrate. */
+export type RelayPrivilegedAccountRecord = RelayRoleAccountRecord;
 
 export type RelayPrivilegedStateRecord = {
   id: string;
   key: 'primary';
-  /** Permanent application owner retained for backward compatibility and recovery. */
-  adminOperatorId: string;
-  /** Full administrators, including the permanent owner. Missing on legacy records. */
-  adminOperatorIds?: string[];
-  publisherOperatorId: string | null;
+  ownerAccountId: string;
+  publisherAccountId: string | null;
   assignmentVersion: number;
-  rosterMigrationVersion: number;
-  updatedByOperatorId: string | null;
-  updatedAt: string;
+  identityMigrationVersion: number;
+  updatedByAccountId: string | null;
   created: string;
   updated: string;
 };
@@ -77,7 +92,7 @@ export type RelayPrivilegedDeviceRecord = {
   pairedAt: string;
   lastUsedAt: string | null;
   revokedAt: string | null;
-  revokedByOperatorId: string | null;
+  revokedByAccountId: string | null;
   revision: number;
   created: string;
   updated: string;
@@ -93,8 +108,8 @@ export type PrivilegedSessionState =
 export type PrivilegedSessionView = {
   state: PrivilegedSessionState;
   accountId: string | null;
-  operatorId: string | null;
-  operatorName: string | null;
+  username: string | null;
+  displayName: string | null;
   role: PrivilegedRole | null;
   capabilities: PrivilegedCapability[];
   deviceId: string | null;
@@ -122,24 +137,18 @@ export type RelayAdministrationSettingValueMap = {
   'dynatrace.alerting-profiles': { profiles: string[] };
 };
 
-export type RelayOperatorAdminView = {
-  id: string;
-  displayName: string;
-  active: boolean;
-  revision: number;
-  role: PrivilegedRole | null;
-  created: string;
-  updated: string;
-};
-
-export type RelayPrivilegedAccountAdminView = {
+export type RelayRoleAccountAdminView = {
   accountId: string;
-  operatorId: string;
-  role: PrivilegedRole;
+  username: string;
+  displayName: string;
+  storedRole: StoredRoleAccountRole;
+  effectiveRole: EffectivePrivilegedRole | null;
   active: boolean;
   credentialState: 'configured' | 'not-configured';
   mustChangePassword: boolean;
   credentialVersion: number;
+  revision: number;
+  createdAt: string;
   updatedAt: string | null;
 };
 
@@ -147,8 +156,8 @@ export type RelayPrivilegedDeviceAdminView = {
   id: string;
   deviceId: string;
   accountId: string;
-  operatorId: string;
-  operatorName: string;
+  username: string;
+  displayName: string;
   label: string;
   hostname: string;
   state: PrivilegedDeviceState;
@@ -166,21 +175,23 @@ export type RelayAdministrationSettingSummary = {
 };
 
 export type RelayAdministrationSnapshot = {
-  operators: RelayOperatorAdminView[];
-  privilegedAccounts: RelayPrivilegedAccountAdminView[];
+  accounts: RelayRoleAccountAdminView[];
   devices: RelayPrivilegedDeviceAdminView[];
   settings: RelayAdministrationSettingSummary[];
-  adminOperatorId: string;
-  publisherOperatorId: string | null;
+  ownerAccountId: string;
+  publisherAccountId: string | null;
   assignmentRevision: number;
   generatedAt: string;
 };
 
-const MAX_ADMINISTRATION_OPERATORS = 500;
-const MAX_ADMINISTRATION_ACCOUNTS = 10;
+const MAX_ADMINISTRATION_ACCOUNTS = MAX_PRIVILEGED_ADMINISTRATORS + 1;
 const MAX_ADMINISTRATION_DEVICES = 500;
 
-const CAPABILITY_SET = new Set<PrivilegedCapability>(ADMIN_PRIVILEGED_CAPABILITIES);
+const CAPABILITY_SET = new Set<PrivilegedCapability>([
+  ...OWNER_PRIVILEGED_CAPABILITIES,
+  ...ADMIN_PRIVILEGED_CAPABILITIES,
+  ...PUBLISHER_PRIVILEGED_CAPABILITIES,
+]);
 const SESSION_STATES = new Set<PrivilegedSessionState>([
   'signed-out',
   'pairing-required',
@@ -218,35 +229,7 @@ export function isRelayAdministrableSetting(value: unknown): value is RelayAdmin
 }
 
 export function isPrivilegedRole(value: unknown): value is PrivilegedRole {
-  return value === 'admin' || value === 'publisher';
-}
-
-type PrivilegedAdministratorState = {
-  adminOperatorId?: unknown;
-  adminOperatorIds?: unknown;
-};
-
-export function getPrivilegedAdministratorOperatorIds(
-  state: PrivilegedAdministratorState,
-): string[] {
-  const candidates = [
-    state.adminOperatorId,
-    ...(Array.isArray(state.adminOperatorIds) ? state.adminOperatorIds : []),
-  ];
-  const administratorIds: string[] = [];
-  for (const candidate of candidates) {
-    if (!boundedString(candidate, 200) || administratorIds.includes(candidate)) continue;
-    administratorIds.push(candidate);
-    if (administratorIds.length === MAX_PRIVILEGED_ADMINISTRATORS) break;
-  }
-  return administratorIds;
-}
-
-export function isPrivilegedAdministrator(
-  state: PrivilegedAdministratorState,
-  operatorId: string,
-): boolean {
-  return getPrivilegedAdministratorOperatorIds(state).includes(operatorId);
+  return value === 'owner' || value === 'admin' || value === 'publisher';
 }
 
 export function isPrivilegedCapability(value: unknown): value is PrivilegedCapability {
@@ -259,22 +242,22 @@ export function getPrivilegedCapabilities(input: {
   assigned: boolean;
 }): PrivilegedCapability[] {
   if (!input.active || !input.assigned) return [];
-  return [
-    ...(input.role === 'admin' ? ADMIN_PRIVILEGED_CAPABILITIES : PUBLISHER_PRIVILEGED_CAPABILITIES),
-  ];
+  if (input.role === 'owner') return [...OWNER_PRIVILEGED_CAPABILITIES];
+  if (input.role === 'admin') return [...ADMIN_PRIVILEGED_CAPABILITIES];
+  return [...PUBLISHER_PRIVILEGED_CAPABILITIES];
 }
 
 export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessionView | null {
   if (!isRecord(value)) return null;
-  const { state, accountId, operatorId, operatorName, role, capabilities, deviceId, expiresAt } =
+  const { state, accountId, username, displayName, role, capabilities, deviceId, expiresAt } =
     value;
 
   if (
     typeof state !== 'string' ||
     !SESSION_STATES.has(state as PrivilegedSessionState) ||
     !nullableBoundedString(accountId, 200) ||
-    !nullableBoundedString(operatorId, 200) ||
-    !nullableBoundedString(operatorName, 120) ||
+    !nullableBoundedString(username, 64) ||
+    !nullableBoundedString(displayName, 120) ||
     (role !== null && !isPrivilegedRole(role)) ||
     !Array.isArray(capabilities) ||
     !nullableBoundedString(deviceId, 200) ||
@@ -286,21 +269,23 @@ export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessio
   if (
     state === 'active' &&
     (accountId === null ||
-      operatorId === null ||
-      operatorName === null ||
+      username === null ||
+      displayName === null ||
       role === null ||
       expiresAt === null)
   ) {
     return null;
   }
-
-  let allowedCapabilities: readonly PrivilegedCapability[] = [];
-  if (role === 'admin') {
-    allowedCapabilities = ADMIN_PRIVILEGED_CAPABILITIES;
-  } else if (role === 'publisher') {
-    allowedCapabilities = PUBLISHER_PRIVILEGED_CAPABILITIES;
+  if (
+    (username !== null && getRoleUsernameError(username) !== null) ||
+    (displayName !== null && getRoleDisplayNameError(displayName) !== null)
+  ) {
+    return null;
   }
-  const allowed = new Set(allowedCapabilities);
+
+  const allowed = new Set(
+    role === null ? [] : getPrivilegedCapabilities({ role, active: true, assigned: true }),
+  );
   const normalizedCapabilities = capabilities
     .filter(isPrivilegedCapability)
     .filter((capability) => allowed.has(capability))
@@ -309,8 +294,8 @@ export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessio
   return {
     state: state as PrivilegedSessionState,
     accountId,
-    operatorId,
-    operatorName,
+    username: username === null ? null : normalizeRoleUsername(username),
+    displayName: displayName === null ? null : normalizeRoleDisplayName(displayName),
     role: role as PrivilegedRole | null,
     capabilities: normalizedCapabilities,
     deviceId,
@@ -318,65 +303,56 @@ export function normalizePrivilegedSessionView(value: unknown): PrivilegedSessio
   };
 }
 
-function normalizeOperatorAdminView(value: unknown): RelayOperatorAdminView | null {
-  if (!isRecord(value)) return null;
-  const { id, displayName, active, revision, role, created, updated } = value;
-  if (
-    !boundedString(id, 200) ||
-    !boundedString(displayName, 120) ||
-    typeof active !== 'boolean' ||
-    !nonNegativeInteger(revision) ||
-    (role !== null && !isPrivilegedRole(role)) ||
-    !canonicalTimestamp(created) ||
-    !canonicalTimestamp(updated)
-  ) {
-    return null;
-  }
-  return {
-    id,
-    displayName,
-    active,
-    revision,
-    role: role as PrivilegedRole | null,
-    created,
-    updated,
-  };
+function isStoredRole(value: unknown): value is StoredRoleAccountRole {
+  return value === 'administrator' || value === 'publisher';
 }
 
-function normalizePrivilegedAccountAdminView(
-  value: unknown,
-): RelayPrivilegedAccountAdminView | null {
+function normalizeRoleAccountAdminView(value: unknown): RelayRoleAccountAdminView | null {
   if (!isRecord(value)) return null;
   const {
     accountId,
-    operatorId,
-    role,
+    username,
+    displayName,
+    storedRole,
+    effectiveRole,
     active,
     credentialState,
     mustChangePassword,
     credentialVersion,
+    revision,
+    createdAt,
     updatedAt,
   } = value;
   if (
     !boundedString(accountId, 200) ||
-    !boundedString(operatorId, 200) ||
-    !isPrivilegedRole(role) ||
+    !boundedString(username, 64) ||
+    getRoleUsernameError(username) !== null ||
+    !boundedString(displayName, 120) ||
+    getRoleDisplayNameError(displayName) !== null ||
+    !isStoredRole(storedRole) ||
+    (effectiveRole !== null && !isPrivilegedRole(effectiveRole)) ||
     typeof active !== 'boolean' ||
     (credentialState !== 'configured' && credentialState !== 'not-configured') ||
     typeof mustChangePassword !== 'boolean' ||
     !nonNegativeInteger(credentialVersion) ||
+    !nonNegativeInteger(revision) ||
+    !canonicalTimestamp(createdAt) ||
     (updatedAt !== null && !canonicalTimestamp(updatedAt))
   ) {
     return null;
   }
   return {
     accountId,
-    operatorId,
-    role,
+    username: normalizeRoleUsername(username),
+    displayName: normalizeRoleDisplayName(displayName),
+    storedRole,
+    effectiveRole: effectiveRole as EffectivePrivilegedRole | null,
     active,
     credentialState,
     mustChangePassword,
     credentialVersion,
+    revision,
+    createdAt,
     updatedAt,
   };
 }
@@ -387,8 +363,8 @@ function normalizePrivilegedDeviceAdminView(value: unknown): RelayPrivilegedDevi
     id,
     deviceId,
     accountId,
-    operatorId,
-    operatorName,
+    username,
+    displayName,
     label,
     hostname,
     state,
@@ -400,8 +376,10 @@ function normalizePrivilegedDeviceAdminView(value: unknown): RelayPrivilegedDevi
     !boundedString(id, 200) ||
     !boundedString(deviceId, 200) ||
     !boundedString(accountId, 200) ||
-    !boundedString(operatorId, 200) ||
-    !boundedString(operatorName, 120) ||
+    !boundedString(username, 64) ||
+    getRoleUsernameError(username) !== null ||
+    !boundedString(displayName, 120) ||
+    getRoleDisplayNameError(displayName) !== null ||
     !boundedString(label, MAX_PRIVILEGED_DEVICE_LABEL_LENGTH) ||
     !boundedString(hostname, MAX_PRIVILEGED_HOSTNAME_LENGTH) ||
     (state !== 'active' && state !== 'revoked') ||
@@ -417,8 +395,8 @@ function normalizePrivilegedDeviceAdminView(value: unknown): RelayPrivilegedDevi
     id,
     deviceId,
     accountId,
-    operatorId,
-    operatorName,
+    username: normalizeRoleUsername(username),
+    displayName: normalizeRoleDisplayName(displayName),
     label,
     hostname,
     state,
@@ -479,30 +457,49 @@ function hasUniqueSettings(settings: RelayAdministrationSettingSummary[]): boole
   return new Set(settings.map(({ setting }) => setting)).size === settings.length;
 }
 
+function hasValidRoleAssignments(
+  accounts: RelayRoleAccountAdminView[],
+  ownerAccountId: string,
+  publisherAccountId: string | null,
+): boolean {
+  if (new Set(accounts.map(({ accountId }) => accountId)).size !== accounts.length) return false;
+  if (new Set(accounts.map(({ username }) => username)).size !== accounts.length) return false;
+
+  const state = { ownerAccountId, publisherAccountId };
+  for (const account of accounts) {
+    if (
+      account.effectiveRole !==
+      getEffectiveRole({ id: account.accountId, storedRole: account.storedRole }, state)
+    ) {
+      return false;
+    }
+  }
+  const owner = accounts.find(({ accountId }) => accountId === ownerAccountId);
+  if (!owner || owner.storedRole !== 'administrator' || !owner.active) return false;
+  if (publisherAccountId === null) return true;
+  return accounts.some(
+    ({ accountId, storedRole }) => accountId === publisherAccountId && storedRole === 'publisher',
+  );
+}
+
 export function normalizeRelayAdministrationSnapshot(
   value: unknown,
 ): RelayAdministrationSnapshot | null {
   if (!isRecord(value)) return null;
   const {
-    operators,
-    privilegedAccounts,
+    accounts,
     devices,
     settings,
-    adminOperatorId,
-    publisherOperatorId,
+    ownerAccountId,
+    publisherAccountId,
     assignmentRevision,
     generatedAt,
   } = value;
 
-  const normalizedOperators = normalizeBoundedList(
-    operators,
-    MAX_ADMINISTRATION_OPERATORS,
-    normalizeOperatorAdminView,
-  );
   const normalizedAccounts = normalizeBoundedList(
-    privilegedAccounts,
+    accounts,
     MAX_ADMINISTRATION_ACCOUNTS,
-    normalizePrivilegedAccountAdminView,
+    normalizeRoleAccountAdminView,
   );
   const normalizedDevices = normalizeBoundedList(
     devices,
@@ -516,17 +513,14 @@ export function normalizeRelayAdministrationSnapshot(
   );
 
   if (
-    !normalizedOperators ||
     !normalizedAccounts ||
     !normalizedDevices ||
     !normalizedSettings ||
     !hasUniqueSettings(normalizedSettings) ||
-    !boundedString(adminOperatorId, 200) ||
-    !nullableBoundedString(publisherOperatorId, 200) ||
-    publisherOperatorId === adminOperatorId ||
-    normalizedOperators.some(
-      (operator) => operator.id === publisherOperatorId && operator.role === 'admin',
-    ) ||
+    !boundedString(ownerAccountId, 200) ||
+    !nullableBoundedString(publisherAccountId, 200) ||
+    publisherAccountId === ownerAccountId ||
+    !hasValidRoleAssignments(normalizedAccounts, ownerAccountId, publisherAccountId) ||
     !nonNegativeInteger(assignmentRevision) ||
     !canonicalTimestamp(generatedAt)
   ) {
@@ -534,12 +528,11 @@ export function normalizeRelayAdministrationSnapshot(
   }
 
   return {
-    operators: normalizedOperators,
-    privilegedAccounts: normalizedAccounts,
+    accounts: normalizedAccounts,
     devices: normalizedDevices,
     settings: normalizedSettings,
-    adminOperatorId,
-    publisherOperatorId,
+    ownerAccountId,
+    publisherAccountId,
     assignmentRevision,
     generatedAt,
   };
