@@ -11,9 +11,11 @@ const mockCollectionCreate = vi.fn();
 const mockCollectionUpdate = vi.fn();
 const mockCollectionDelete = vi.fn();
 const mockPrivilegedStateGetList = vi.fn();
+const mockPrivilegedStateGetFullList = vi.fn();
 const mockPrivilegedStateCreate = vi.fn();
 const mockPrivilegedStateUpdate = vi.fn();
 const mockPrivilegedAccountGetList = vi.fn();
+const mockPrivilegedAccountGetFullList = vi.fn();
 const mockPrivilegedAccountCreate = vi.fn();
 const mockPrivilegedAccountUpdate = vi.fn();
 const mockKnowledgeStateGetList = vi.fn();
@@ -30,6 +32,7 @@ const mockPbCollection = vi.fn((name: string) => {
   if (name === 'relay_privileged_state') {
     return {
       getList: mockPrivilegedStateGetList,
+      getFullList: mockPrivilegedStateGetFullList,
       create: mockPrivilegedStateCreate,
       update: mockPrivilegedStateUpdate,
     };
@@ -37,6 +40,7 @@ const mockPbCollection = vi.fn((name: string) => {
   if (name === 'relay_privileged_accounts') {
     return {
       getList: mockPrivilegedAccountGetList,
+      getFullList: mockPrivilegedAccountGetFullList,
       create: mockPrivilegedAccountCreate,
       update: mockPrivilegedAccountUpdate,
     };
@@ -76,9 +80,11 @@ beforeEach(() => {
   mockCollectionGetList.mockReset();
   mockCollectionCreate.mockReset();
   mockPrivilegedStateGetList.mockReset();
+  mockPrivilegedStateGetFullList.mockReset();
   mockPrivilegedStateCreate.mockReset();
   mockPrivilegedStateUpdate.mockReset();
   mockPrivilegedAccountGetList.mockReset();
+  mockPrivilegedAccountGetFullList.mockReset();
   mockPrivilegedAccountCreate.mockReset();
   mockPrivilegedAccountUpdate.mockReset();
   mockKnowledgeStateGetList.mockReset();
@@ -108,13 +114,21 @@ beforeEach(() => {
       },
     ],
   });
-  mockPrivilegedStateCreate.mockResolvedValue({});
+  mockPrivilegedStateGetFullList.mockResolvedValue([]);
+  mockPrivilegedStateCreate.mockImplementation(async (record: Record<string, unknown>) => ({
+    id: 'privileged-state',
+    ...record,
+  }));
   mockPrivilegedStateUpdate.mockResolvedValue({});
   mockPrivilegedAccountGetList.mockResolvedValue({
     totalItems: 1,
     items: [{ id: 'admin-account', operatorId: 'operator-ryan-bledsoe', role: 'admin' }],
   });
-  mockPrivilegedAccountCreate.mockResolvedValue({});
+  mockPrivilegedAccountGetFullList.mockResolvedValue([]);
+  mockPrivilegedAccountCreate.mockImplementation(async (record: Record<string, unknown>) => ({
+    id: `account-${String(record.username ?? 'legacy')}`,
+    ...record,
+  }));
   mockPrivilegedAccountUpdate.mockResolvedValue({});
   mockKnowledgeStateGetList.mockResolvedValue({
     totalItems: 1,
@@ -124,11 +138,6 @@ beforeEach(() => {
   mockKnowledgeStateUpdate.mockResolvedValue({});
   mockBatchSend.mockResolvedValue([]);
 });
-
-function beginRosterMigration(state: Array<Record<string, unknown>> = []): void {
-  mockPrivilegedStateGetList.mockResolvedValue({ totalItems: state.length, items: state });
-  mockPrivilegedAccountGetList.mockResolvedValue({ totalItems: 0, items: [] });
-}
 
 function mockSuccessfulCollectionCreation(): void {
   mockCreate.mockImplementation(async (value: { name: string }) => ({
@@ -200,7 +209,7 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalled();
   });
 
-  it('creates missing collections including alert reminders, operators, and privileged access', async () => {
+  it('creates missing collections including alert reminders and privileged access without operators', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockCreate.mockImplementation(async (value: { name: string }) => ({
       id: `${value.name}-collection-id`,
@@ -209,7 +218,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(31);
+    expect(mockCreate).toHaveBeenCalledTimes(30);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -224,7 +233,7 @@ describe('ensureCollections', () => {
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'relay_operators',
       ),
-    ).toBe(true);
+    ).toBe(false);
     for (const name of [
       'relay_privileged_accounts',
       'relay_privileged_state',
@@ -241,7 +250,7 @@ describe('ensureCollections', () => {
     }
   });
 
-  it('creates a server-hidden password auth collection keyed by stable operator ID', async () => {
+  it('creates a server-hidden password auth collection keyed by normalized username', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
 
@@ -274,17 +283,21 @@ describe('ensureCollections', () => {
       deleteRule: null,
       authRule: 'active = true',
       manageRule: null,
-      passwordAuth: { enabled: true, identityFields: ['operatorId'] },
+      passwordAuth: { enabled: true, identityFields: ['username'] },
     });
     expect(definition?.fields).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: 'operatorId', type: 'text', required: true }),
+        expect.objectContaining({ name: 'username', type: 'text', required: true }),
+        expect.objectContaining({ name: 'displayName', type: 'text', required: true }),
+        expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'role', type: 'select', required: false }),
         expect.objectContaining({
-          name: 'role',
+          name: 'storedRole',
           type: 'select',
-          values: ['admin', 'publisher'],
+          values: ['administrator', 'publisher'],
           maxSelect: 1,
         }),
+        expect.objectContaining({ name: 'legacyOperatorId', type: 'text', required: false }),
         expect.objectContaining({ name: 'active', type: 'bool' }),
         expect.objectContaining({ name: 'mustChangePassword', type: 'bool' }),
         expect.objectContaining({ name: 'credentialVersion', type: 'number' }),
@@ -292,11 +305,11 @@ describe('ensureCollections', () => {
     );
     expect(definition?.fields.some((field) => field.name === 'created')).toBe(false);
     expect(definition?.indexes).toContain(
-      'CREATE UNIQUE INDEX idx_relay_privileged_accounts_operator_id ON relay_privileged_accounts (operatorId)',
+      'CREATE UNIQUE INDEX idx_relay_privileged_accounts_username_nocase ON relay_privileged_accounts (username COLLATE NOCASE)',
     );
   });
 
-  it('creates public role state with server-only writes and a roster migration marker', async () => {
+  it('creates public role state with account pointers and an identity migration marker', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
 
@@ -326,15 +339,196 @@ describe('ensureCollections', () => {
     expect(definition?.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'key', type: 'text', required: true }),
-        expect.objectContaining({ name: 'adminOperatorId', type: 'text', required: true }),
-        expect.objectContaining({ name: 'adminOperatorIds', type: 'json' }),
-        expect.objectContaining({ name: 'publisherOperatorId', type: 'text' }),
+        expect.objectContaining({ name: 'ownerAccountId', type: 'text', required: true }),
+        expect.objectContaining({ name: 'publisherAccountId', type: 'text' }),
         expect.objectContaining({ name: 'assignmentVersion', type: 'number', required: true }),
-        expect.objectContaining({ name: 'rosterMigrationVersion', type: 'number', required: true }),
+        expect.objectContaining({
+          name: 'identityMigrationVersion',
+          type: 'number',
+          required: true,
+        }),
+        expect.objectContaining({ name: 'updatedByAccountId', type: 'text' }),
+        expect.objectContaining({ name: 'adminOperatorId', type: 'text', required: false }),
+        expect.objectContaining({ name: 'publisherOperatorId', type: 'text', required: false }),
       ]),
     );
     expect(definition?.indexes).toContain(
       'CREATE UNIQUE INDEX idx_relay_privileged_state_key ON relay_privileged_state (key)',
+    );
+  });
+
+  it('patches populated legacy auth collections in compatibility and final phases', async () => {
+    const collections = [
+      { id: 'accounts-col', name: 'relay_privileged_accounts' },
+      { id: 'state-col', name: 'relay_privileged_state' },
+      { id: 'operators-col', name: 'relay_operators' },
+    ];
+    mockGetFullList.mockResolvedValue(collections);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockImplementation(async (id: string) =>
+      id === 'accounts-col'
+        ? {
+            fields: [
+              { type: 'text', name: 'operatorId', required: true, max: 200 },
+              {
+                type: 'select',
+                name: 'role',
+                required: true,
+                values: ['admin', 'publisher'],
+                maxSelect: 1,
+              },
+              { type: 'bool', name: 'active' },
+              { type: 'bool', name: 'mustChangePassword' },
+              { type: 'number', name: 'credentialVersion' },
+            ],
+            indexes: [
+              'CREATE UNIQUE INDEX idx_relay_privileged_accounts_operator_id ON relay_privileged_accounts (operatorId)',
+            ],
+            authRule: 'active = true',
+            manageRule: null,
+            passwordAuth: { enabled: true, identityFields: ['operatorId'] },
+          }
+        : {
+            fields: [
+              { type: 'text', name: 'key', required: true, max: 40 },
+              { type: 'text', name: 'adminOperatorId', required: true, max: 200 },
+              { type: 'json', name: 'adminOperatorIds' },
+              { type: 'text', name: 'publisherOperatorId', max: 200 },
+              { type: 'number', name: 'assignmentVersion', required: true },
+            ],
+            indexes: [
+              'CREATE UNIQUE INDEX idx_relay_privileged_state_key ON relay_privileged_state (key)',
+            ],
+            listRule: '@request.auth.id != ""',
+            viewRule: '@request.auth.id != ""',
+            createRule: null,
+            updateRule: null,
+            deleteRule: null,
+          },
+    );
+    mockUpdate.mockResolvedValue({});
+    mockDelete.mockResolvedValue(undefined);
+
+    const accounts = [
+      {
+        id: 'account-ryan',
+        operatorId: 'ryan-op',
+        role: 'admin',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 5,
+      },
+      {
+        id: 'account-charles',
+        operatorId: 'charles-op',
+        role: 'admin',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 3,
+      },
+    ];
+    const states = [
+      {
+        id: 'privileged-state',
+        key: 'primary',
+        adminOperatorId: 'ryan-op',
+        adminOperatorIds: ['ryan-op', 'charles-op'],
+        publisherOperatorId: '',
+        assignmentVersion: 2,
+      },
+    ];
+    mockPrivilegedAccountGetFullList.mockImplementation(async () => structuredClone(accounts));
+    mockPrivilegedStateGetFullList.mockImplementation(async () => structuredClone(states));
+    mockPrivilegedAccountUpdate.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const account = accounts.find((candidate) => candidate.id === id)!;
+        Object.assign(account, data);
+        return structuredClone(account);
+      },
+    );
+    mockPrivilegedStateUpdate.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const state = states.find((candidate) => candidate.id === id)!;
+        Object.assign(state, data);
+        return structuredClone(state);
+      },
+    );
+    mockCollectionGetFullList.mockResolvedValue([
+      { id: 'ryan-op', displayName: 'Ryan Bledsoe', active: true },
+      { id: 'charles-op', displayName: 'Charles Gibbs', active: true },
+    ]);
+
+    await ensureCollections(mockPb);
+
+    const accountSchemaPatches = mockUpdate.mock.calls
+      .filter(([id]) => id === 'accounts-col')
+      .map(([, update]) => update as Record<string, unknown>);
+    expect(accountSchemaPatches).toHaveLength(2);
+    expect(accountSchemaPatches[0]).not.toHaveProperty('passwordAuth');
+    expect(
+      (accountSchemaPatches[0]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'username',
+      ),
+    ).toMatchObject({ required: false });
+    expect(accountSchemaPatches[1]).toMatchObject({
+      passwordAuth: { enabled: true, identityFields: ['username'] },
+      indexes: [
+        'CREATE UNIQUE INDEX idx_relay_privileged_accounts_username_nocase ON relay_privileged_accounts (username COLLATE NOCASE)',
+      ],
+    });
+    expect(
+      (accountSchemaPatches[1]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'username',
+      ),
+    ).toMatchObject({ required: true });
+    expect(
+      (accountSchemaPatches[1]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'operatorId',
+      ),
+    ).toMatchObject({ required: false });
+    expect(mockDelete).toHaveBeenCalledWith('operators-col');
+  });
+
+  it('does not reapply the compatibility auth identity after the roster is retired', async () => {
+    mockGetFullList.mockResolvedValue([
+      { id: 'accounts-col', name: 'relay_privileged_accounts' },
+      { id: 'state-col', name: 'relay_privileged_state' },
+    ]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({ fields: [], indexes: [] });
+    mockPrivilegedAccountGetFullList.mockResolvedValue([
+      {
+        id: 'account-ryan',
+        username: 'ryan',
+        displayName: 'Ryan Bledsoe',
+        storedRole: 'administrator',
+      },
+      {
+        id: 'account-charles',
+        username: 'charles',
+        displayName: 'Charles Gibbs',
+        storedRole: 'administrator',
+      },
+    ]);
+    mockPrivilegedStateGetFullList.mockResolvedValue([
+      {
+        id: 'privileged-state',
+        key: 'primary',
+        ownerAccountId: 'account-ryan',
+        publisherAccountId: '',
+        identityMigrationVersion: 1,
+      },
+    ]);
+
+    await ensureCollections(mockPb);
+
+    const accountSchemaPatches = mockUpdate.mock.calls
+      .filter(([id]) => id === 'accounts-col')
+      .map(([, update]) => update as { passwordAuth?: { identityFields: string[] } });
+    expect(accountSchemaPatches).not.toContainEqual(
+      expect.objectContaining({
+        passwordAuth: expect.objectContaining({ identityFields: ['operatorId'] }),
+      }),
     );
   });
 
@@ -751,7 +945,7 @@ describe('ensureCollections', () => {
     );
   });
 
-  it('creates a server-owned operator collection with authenticated read and subscription access', async () => {
+  it('does not recreate the retired operator collection', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
 
@@ -778,40 +972,7 @@ describe('ensureCollections', () => {
         }
       | undefined;
 
-    expect(operatorsCall).toMatchObject({
-      listRule: '@request.auth.id != ""',
-      viewRule: '@request.auth.id != ""',
-      createRule: null,
-      updateRule: null,
-      deleteRule: null,
-    });
-    expect(operatorsCall?.fields).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: 'displayName',
-          type: 'text',
-          required: true,
-          max: 120,
-        }),
-        expect.objectContaining({ name: 'active', type: 'bool' }),
-        expect.objectContaining({ name: 'revision', type: 'number', required: false }),
-        expect.objectContaining({
-          name: 'created',
-          type: 'autodate',
-          onCreate: true,
-          onUpdate: false,
-        }),
-        expect.objectContaining({
-          name: 'updated',
-          type: 'autodate',
-          onCreate: true,
-          onUpdate: true,
-        }),
-      ]),
-    );
-    expect(operatorsCall?.indexes).toContain(
-      'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)',
-    );
+    expect(operatorsCall).toBeUndefined();
     const privilegedAccountsCall = mockCreate.mock.calls.find(
       ([value]) => (value as { name: string }).name === 'relay_privileged_accounts',
     )?.[0] as { fields: Array<{ name: string }> } | undefined;
@@ -820,34 +981,22 @@ describe('ensureCollections', () => {
     ).toHaveLength(1);
   });
 
-  it('seeds the exact approved operator roster when the collection is empty', async () => {
+  it('seeds pending Ryan and Charles role accounts without an operator roster', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
-    beginRosterMigration();
-    mockCollectionGetList.mockResolvedValueOnce({ totalItems: 0, items: [] });
 
     await ensureCollections(mockPb);
 
-    expect(mockPbCollection).toHaveBeenCalledWith('relay_operators');
-    expect(mockCollectionGetList).toHaveBeenCalledWith(1, 500, { requestKey: null });
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Charles Gibbs', active: true, revision: 0 },
-      { displayName: 'Connor McElroy', active: true, revision: 0 },
-      { displayName: 'Paris Carlson', active: true, revision: 0 },
-      { displayName: 'Ryan Bell', active: true, revision: 0 },
-      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
-      { displayName: 'Tristan Bowles', active: true, revision: 0 },
-      { displayName: 'Tristan Stillwell', active: true, revision: 0 },
-      { displayName: 'Vlad McCarty', active: true, revision: 0 },
-      { displayName: 'Weston Yokley', active: true, revision: 0 },
-    ]);
+    expect(mockPbCollection).not.toHaveBeenCalledWith('relay_operators');
+    expect(mockCollectionGetList).not.toHaveBeenCalled();
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([]);
     expect(mockPrivilegedAccountCreate).toHaveBeenCalledTimes(2);
-    for (const operatorId of ['operator-ryan-bledsoe', 'operator-charles-gibbs']) {
+    for (const username of ['ryan', 'charles']) {
       expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          email: `${operatorId}@relay.invalid`,
-          operatorId,
-          role: 'admin',
+          email: `${username}@relay.invalid`,
+          username,
+          storedRole: 'administrator',
           active: false,
           mustChangePassword: true,
           credentialVersion: 0,
@@ -863,251 +1012,13 @@ describe('ensureCollections', () => {
     }
     expect(mockPrivilegedStateCreate).toHaveBeenCalledWith({
       key: 'primary',
-      adminOperatorId: 'operator-ryan-bledsoe',
-      adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
-      publisherOperatorId: '',
+      ownerAccountId: 'account-ryan',
+      publisherAccountId: '',
       assignmentVersion: 1,
-      rosterMigrationVersion: 2,
-      updatedByOperatorId: '',
-      updatedAt: expect.any(String),
+      identityMigrationVersion: 1,
+      updatedByAccountId: '',
     });
     expect(mockCreateBatch).not.toHaveBeenCalled();
-  });
-
-  it('recovers only missing initial operators before the migration marker is committed', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration();
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 3,
-      items: [
-        { id: 'charles', displayName: 'Charles Gibbs', active: true },
-        { id: 'connor', displayName: 'Connor McElroy', active: true },
-        { id: 'paris', displayName: 'Paris Carlson', active: true },
-      ],
-    });
-
-    await ensureCollections(mockPb);
-
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bell', active: true, revision: 0 },
-      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
-      { displayName: 'Tristan Bowles', active: true, revision: 0 },
-      { displayName: 'Tristan Stillwell', active: true, revision: 0 },
-      { displayName: 'Vlad McCarty', active: true, revision: 0 },
-      { displayName: 'Weston Yokley', active: true, revision: 0 },
-    ]);
-    expect(mockPrivilegedStateCreate).toHaveBeenCalledOnce();
-  });
-
-  it('adds only the approved new profiles to an established seven-person roster', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration();
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 7,
-      items: [
-        { id: 'ryan', displayName: 'Ryan Bell', active: true },
-        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
-        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
-        { id: 'paris', displayName: 'Paris Carlson', active: true },
-        { id: 'connor', displayName: 'Connor McElroy', active: true },
-        { id: 'weston', displayName: 'Weston Yokley', active: true },
-        { id: 'charles', displayName: 'Charles Gibbs', active: true },
-      ],
-    });
-
-    await ensureCollections(mockPb);
-
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
-      { displayName: 'Tristan Bowles', active: true, revision: 0 },
-    ]);
-  });
-
-  it('adds the privileged profiles without changing a customized roster', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration();
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 2,
-      items: [
-        { id: 'custom', displayName: 'Taylor Example', active: true },
-        { id: 'ryan', displayName: 'Ryan B.', active: false },
-      ],
-    });
-
-    await ensureCollections(mockPb);
-
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
-      { displayName: 'Ryan Bledsoe', active: true, revision: 0 },
-      { displayName: 'Tristan Bowles', active: true, revision: 0 },
-      { displayName: 'Charles Gibbs', active: true, revision: 0 },
-    ]);
-    expect(mockCollectionUpdate).not.toHaveBeenCalled();
-  });
-
-  it('does not recreate privileged profiles after the migration marker is committed', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 2,
-      items: [
-        { id: 'admin', displayName: 'Ryan B.', active: false },
-        { id: 'publisher', displayName: 'Tristan B.', active: false },
-      ],
-    });
-
-    await ensureCollections(mockPb);
-
-    expect(mockCollectionCreate).not.toHaveBeenCalled();
-    expect(mockCollectionGetList).not.toHaveBeenCalled();
-  });
-
-  it('upgrades an existing owner to owner plus Charles without losing the publisher', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration([
-      {
-        id: 'privileged-state',
-        key: 'primary',
-        adminOperatorId: 'operator-ryan-bledsoe',
-        publisherOperatorId: 'operator-paris',
-        assignmentVersion: 4,
-        rosterMigrationVersion: 1,
-      },
-    ]);
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 3,
-      items: [
-        { id: 'operator-ryan-bledsoe', displayName: 'Ryan Bledsoe', active: true },
-        { id: 'operator-charles-gibbs', displayName: 'Charles Gibbs', active: true },
-        { id: 'operator-tristan-bowles', displayName: 'Tristan Bowles', active: true },
-      ],
-    });
-    mockPrivilegedAccountGetList.mockImplementation(
-      async (_page: number, _perPage: number, options: { filter?: string }) =>
-        options.filter?.includes('operator-charles-gibbs')
-          ? { totalItems: 0, items: [] }
-          : {
-              totalItems: 1,
-              items: [
-                {
-                  id: 'account-owner',
-                  operatorId: 'operator-ryan-bledsoe',
-                  role: 'admin',
-                },
-              ],
-            },
-    );
-
-    await ensureCollections(mockPb);
-
-    expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ operatorId: 'operator-charles-gibbs', role: 'admin' }),
-    );
-    expect(mockPrivilegedStateUpdate).toHaveBeenCalledWith(
-      'privileged-state',
-      expect.objectContaining({
-        adminOperatorId: 'operator-ryan-bledsoe',
-        adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
-        publisherOperatorId: 'operator-paris',
-        assignmentVersion: 5,
-        rosterMigrationVersion: 2,
-      }),
-    );
-  });
-
-  it('requires fresh setup when an existing Charles publisher account is elevated to administrator', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration([
-      {
-        id: 'privileged-state',
-        key: 'primary',
-        adminOperatorId: 'operator-ryan-bledsoe',
-        publisherOperatorId: 'operator-charles-gibbs',
-        assignmentVersion: 7,
-        rosterMigrationVersion: 1,
-      },
-    ]);
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 3,
-      items: [
-        { id: 'operator-ryan-bledsoe', displayName: 'Ryan Bledsoe', active: true },
-        { id: 'operator-charles-gibbs', displayName: 'Charles Gibbs', active: true },
-        { id: 'operator-tristan-bowles', displayName: 'Tristan Bowles', active: true },
-      ],
-    });
-    mockPrivilegedAccountGetList.mockImplementation(
-      async (_page: number, _perPage: number, options: { filter?: string }) =>
-        options.filter?.includes('operator-charles-gibbs')
-          ? {
-              totalItems: 1,
-              items: [
-                {
-                  id: 'account-charles',
-                  operatorId: 'operator-charles-gibbs',
-                  role: 'publisher',
-                  active: true,
-                  mustChangePassword: false,
-                  credentialVersion: 3,
-                },
-              ],
-            }
-          : {
-              totalItems: 1,
-              items: [
-                {
-                  id: 'account-owner',
-                  operatorId: 'operator-ryan-bledsoe',
-                  role: 'admin',
-                },
-              ],
-            },
-    );
-
-    await ensureCollections(mockPb);
-
-    expect(mockPrivilegedAccountUpdate).toHaveBeenCalledWith(
-      'account-charles',
-      expect.objectContaining({
-        role: 'admin',
-        active: false,
-        mustChangePassword: true,
-        credentialVersion: 4,
-        password: expect.any(String),
-        passwordConfirm: expect.any(String),
-      }),
-    );
-    expect(mockPrivilegedStateUpdate).toHaveBeenCalledWith(
-      'privileged-state',
-      expect.objectContaining({
-        adminOperatorIds: ['operator-ryan-bledsoe', 'operator-charles-gibbs'],
-        publisherOperatorId: '',
-        assignmentVersion: 8,
-      }),
-    );
-  });
-
-  it('leaves an incomplete operator roster page untouched and migration pending', async () => {
-    mockGetFullList.mockResolvedValue([]);
-    mockSuccessfulCollectionCreation();
-    beginRosterMigration();
-    mockCollectionGetList.mockResolvedValueOnce({
-      totalItems: 5,
-      items: [
-        { id: 'ryan', displayName: 'Ryan Bell', active: true },
-        { id: 'tristan', displayName: 'Tristan Stillwell', active: true },
-        { id: 'vlad', displayName: 'Vlad McCarty', active: true },
-      ],
-    });
-
-    await ensureCollections(mockPb);
-
-    expect(mockCollectionCreate).not.toHaveBeenCalled();
-    expect(mockPrivilegedStateCreate).not.toHaveBeenCalled();
-    expect(mockPrivilegedAccountCreate).not.toHaveBeenCalled();
   });
 
   it('creates a read-only shared cloud status singleton collection', async () => {

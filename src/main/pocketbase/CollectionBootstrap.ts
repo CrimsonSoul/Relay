@@ -6,7 +6,6 @@
  * collections are patched non-destructively; unmanaged collections are left untouched.
  */
 
-import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import {
   DYNATRACE_PROBLEMS_COLLECTION,
@@ -14,15 +13,8 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
+import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import {
-  INITIAL_RELAY_OPERATOR_NAMES,
-  MAX_OPERATOR_DISPLAY_NAME_LENGTH,
-  RELAY_OPERATORS_COLLECTION,
-  normalizeOperatorDisplayName,
-  type RelayOperatorRecord,
-} from '@shared/operators';
-import {
-  getPrivilegedAdministratorOperatorIds,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
@@ -43,6 +35,7 @@ import {
   KNOWLEDGE_UPLOADS_COLLECTION,
 } from '@shared/knowledge';
 import { loggers } from '../logger';
+import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
 
 const logger = loggers.pocketbase;
 
@@ -143,8 +136,8 @@ const DYNATRACE_PROBLEM_NOTES_ID_INDEX =
   'CREATE INDEX idx_dynatrace_problem_notes_id ON dynatrace_problem_notes (problemId)';
 const DYNATRACE_PROBLEM_SYNC_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_dynatrace_problem_sync_key ON dynatrace_problem_sync (key)';
-const RELAY_OPERATOR_DISPLAY_NAME_INDEX =
-  'CREATE UNIQUE INDEX idx_relay_operators_display_name_nocase ON relay_operators (displayName COLLATE NOCASE)';
+const PRIVILEGED_ACCOUNT_USERNAME_INDEX =
+  'CREATE UNIQUE INDEX idx_relay_privileged_accounts_username_nocase ON relay_privileged_accounts (username COLLATE NOCASE)';
 const PRIVILEGED_ACCOUNT_OPERATOR_INDEX =
   'CREATE UNIQUE INDEX idx_relay_privileged_accounts_operator_id ON relay_privileged_accounts (operatorId)';
 const PRIVILEGED_STATE_KEY_INDEX =
@@ -173,12 +166,6 @@ const KNOWLEDGE_UPLOAD_CHUNK_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_upload_chunk ON knowledge_upload_chunks (uploadId, `index`)';
 const KNOWLEDGE_LIBRARY_STATE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_library_state_key ON knowledge_library_state (key)';
-const PRIVILEGED_ROSTER_MIGRATION_VERSION = 2;
-const PRIVILEGED_MIGRATION_OPERATOR_NAMES = [
-  'Ryan Bledsoe',
-  'Tristan Bowles',
-  'Charles Gibbs',
-] as const;
 
 const DEFAULT_AUTH_RULES: CollectionRules = {
   listRule: AUTH_RULE,
@@ -289,6 +276,90 @@ function relation(name: string, targetCollectionName: string, required: boolean)
     targetCollectionName,
   };
 }
+
+const PRIVILEGED_ACCOUNT_FINAL_DEFINITION: CollectionDef = {
+  name: RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+  type: 'auth',
+  fields: [
+    { type: 'text', name: 'username', required: true, max: 64 },
+    { type: 'text', name: 'displayName', required: true, max: 120 },
+    {
+      type: 'select',
+      name: 'storedRole',
+      required: true,
+      values: ['administrator', 'publisher'],
+      maxSelect: 1,
+    },
+    { type: 'text', name: 'operatorId', required: false, max: 200 },
+    {
+      type: 'select',
+      name: 'role',
+      required: false,
+      values: ['admin', 'publisher'],
+      maxSelect: 1,
+    },
+    { type: 'text', name: 'legacyOperatorId', required: false, max: 200 },
+    { type: 'bool', name: 'active' },
+    { type: 'bool', name: 'mustChangePassword' },
+    { type: 'number', name: 'credentialVersion' },
+    { type: 'number', name: 'revision', required: false },
+  ],
+  indexes: [PRIVILEGED_ACCOUNT_USERNAME_INDEX],
+  rules: SERVER_HIDDEN_RULES,
+  auth: {
+    authRule: 'active = true',
+    manageRule: null,
+    passwordAuth: { enabled: true, identityFields: ['username'] },
+  },
+};
+
+const PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION: CollectionDef = {
+  ...PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
+  fields: PRIVILEGED_ACCOUNT_FINAL_DEFINITION.fields.map((field) => ({
+    ...field,
+    ...(field.name === 'username' || field.name === 'displayName' || field.name === 'storedRole'
+      ? { required: false }
+      : {}),
+    ...(field.name === 'operatorId' || field.name === 'role' ? { required: true } : {}),
+  })),
+  indexes: [],
+  auth: {
+    authRule: 'active = true',
+    manageRule: null,
+    passwordAuth: { enabled: true, identityFields: ['operatorId'] },
+  },
+};
+
+const PRIVILEGED_STATE_FINAL_DEFINITION: CollectionDef = {
+  name: RELAY_PRIVILEGED_STATE_COLLECTION,
+  type: 'base',
+  fields: [
+    { type: 'text', name: 'key', required: true, max: 40 },
+    { type: 'text', name: 'ownerAccountId', required: true, max: 200 },
+    { type: 'text', name: 'publisherAccountId', max: 200 },
+    { type: 'number', name: 'assignmentVersion', required: true },
+    { type: 'number', name: 'identityMigrationVersion', required: true },
+    { type: 'text', name: 'updatedByAccountId', max: 200 },
+    { type: 'text', name: 'adminOperatorId', required: false, max: 200 },
+    { type: 'json', name: 'adminOperatorIds', required: false },
+    { type: 'text', name: 'publisherOperatorId', required: false, max: 200 },
+    { type: 'number', name: 'rosterMigrationVersion', required: false },
+    { type: 'text', name: 'updatedByOperatorId', required: false, max: 200 },
+    { type: 'date', name: 'updatedAt', required: false },
+  ],
+  indexes: [PRIVILEGED_STATE_KEY_INDEX],
+  rules: SERVER_OWNED_RULES,
+};
+
+const PRIVILEGED_STATE_COMPATIBILITY_DEFINITION: CollectionDef = {
+  ...PRIVILEGED_STATE_FINAL_DEFINITION,
+  fields: PRIVILEGED_STATE_FINAL_DEFINITION.fields.map((field) => ({
+    ...field,
+    ...(field.name === 'ownerAccountId' || field.name === 'identityMigrationVersion'
+      ? { required: false }
+      : {}),
+  })),
+};
 
 /** All data collections Relay requires. */
 const COLLECTIONS: CollectionDef[] = [
@@ -479,63 +550,8 @@ const COLLECTIONS: CollectionDef[] = [
     indexes: [CLOUD_STATUS_SNAPSHOT_KEY_INDEX],
     rules: SERVER_OWNED_RULES,
   },
-  {
-    name: RELAY_OPERATORS_COLLECTION,
-    type: 'base',
-    fields: [
-      {
-        type: 'text',
-        name: 'displayName',
-        required: true,
-        max: MAX_OPERATOR_DISPLAY_NAME_LENGTH,
-      },
-      { type: 'bool', name: 'active' },
-      // PocketBase treats numeric zero as empty for required fields; new operators start at 0.
-      { type: 'number', name: 'revision', required: false },
-    ],
-    indexes: [RELAY_OPERATOR_DISPLAY_NAME_INDEX],
-    rules: SERVER_OWNED_RULES,
-  },
-  {
-    name: RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
-    type: 'auth',
-    fields: [
-      { type: 'text', name: 'operatorId', required: true, max: 200 },
-      {
-        type: 'select',
-        name: 'role',
-        required: true,
-        values: ['admin', 'publisher'],
-        maxSelect: 1,
-      },
-      { type: 'bool', name: 'active' },
-      { type: 'bool', name: 'mustChangePassword' },
-      { type: 'number', name: 'credentialVersion' },
-    ],
-    indexes: [PRIVILEGED_ACCOUNT_OPERATOR_INDEX],
-    rules: SERVER_HIDDEN_RULES,
-    auth: {
-      authRule: 'active = true',
-      manageRule: null,
-      passwordAuth: { enabled: true, identityFields: ['operatorId'] },
-    },
-  },
-  {
-    name: RELAY_PRIVILEGED_STATE_COLLECTION,
-    type: 'base',
-    fields: [
-      { type: 'text', name: 'key', required: true, max: 40 },
-      { type: 'text', name: 'adminOperatorId', required: true, max: 200 },
-      { type: 'json', name: 'adminOperatorIds' },
-      { type: 'text', name: 'publisherOperatorId', max: 200 },
-      { type: 'number', name: 'assignmentVersion', required: true },
-      { type: 'number', name: 'rosterMigrationVersion', required: true },
-      { type: 'text', name: 'updatedByOperatorId', max: 200 },
-      { type: 'date', name: 'updatedAt', required: true },
-    ],
-    indexes: [PRIVILEGED_STATE_KEY_INDEX],
-    rules: SERVER_OWNED_RULES,
-  },
+  PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
+  PRIVILEGED_STATE_FINAL_DEFINITION,
   {
     name: RELAY_PRIVILEGED_DEVICES_COLLECTION,
     type: 'base',
@@ -556,7 +572,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'date', name: 'pairedAt', required: true },
       { type: 'date', name: 'lastUsedAt' },
       { type: 'date', name: 'revokedAt' },
-      { type: 'text', name: 'revokedByOperatorId', max: 200 },
+      { type: 'text', name: 'revokedByAccountId', max: 200 },
       // Newly paired devices start at revision zero.
       { type: 'number', name: 'revision', required: false },
     ],
@@ -571,11 +587,12 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'deviceId', required: false, max: 200 },
       { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'displayNameSnapshot', required: false, max: 120 },
       {
         type: 'select',
         name: 'roleClaim',
         required: true,
-        values: ['admin', 'publisher'],
+        values: ['owner', 'admin', 'publisher'],
         maxSelect: 1,
       },
       { type: 'text', name: 'command', required: true, max: 120 },
@@ -635,6 +652,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'requestId', required: true, max: 200 },
       { type: 'text', name: 'accountId', required: true, max: 200 },
       { type: 'text', name: 'operatorId', required: true, max: 200 },
+      { type: 'text', name: 'displayNameSnapshot', required: false, max: 120 },
       { type: 'text', name: 'challengeId', required: true, max: 200 },
       { type: 'text', name: 'code', required: true, max: 8 },
       { type: 'json', name: 'publicKey', required: true },
@@ -1047,6 +1065,24 @@ function buildAuthPatch(
   return authPatch;
 }
 
+function reconcileManagedIndexes(
+  colName: string,
+  indexes: string[],
+  expectedIndexes: string[],
+): { indexes: string[]; changed: boolean; added: number } {
+  const retainedIndexes =
+    colName === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION &&
+    expectedIndexes.includes(PRIVILEGED_ACCOUNT_USERNAME_INDEX)
+      ? indexes.filter((index) => index !== PRIVILEGED_ACCOUNT_OPERATOR_INDEX)
+      : indexes;
+  const missingIndexes = expectedIndexes.filter((index) => !retainedIndexes.includes(index));
+  return {
+    indexes: [...retainedIndexes, ...missingIndexes],
+    changed: retainedIndexes.length !== indexes.length || missingIndexes.length > 0,
+    added: missingIndexes.length,
+  };
+}
+
 /** Patch a single collection to add missing fields and enforce API rules. Returns true if patched. */
 async function patchCollectionDefinition(
   pb: PocketBase,
@@ -1061,7 +1097,7 @@ async function patchCollectionDefinition(
   const fields = colFull.fields || [];
   const reconciledFields = reconcileManagedFields(fields, expectedSchemaFields);
   const indexes = colFull.indexes || [];
-  const missingIndexes = expectedIndexes.filter((index) => !indexes.includes(index));
+  const reconciledIndexes = reconcileManagedIndexes(colName, indexes, expectedIndexes);
   const rulesPatch = Object.fromEntries(
     Object.entries(expectedRules).filter(([key, value]) => {
       return colFull[key as keyof CollectionRules] !== value;
@@ -1072,7 +1108,7 @@ async function patchCollectionDefinition(
   if (
     reconciledFields.added.length === 0 &&
     reconciledFields.changed.length === 0 &&
-    missingIndexes.length === 0 &&
+    !reconciledIndexes.changed &&
     Object.keys(rulesPatch).length === 0 &&
     Object.keys(authPatch).length === 0
   ) {
@@ -1083,7 +1119,7 @@ async function patchCollectionDefinition(
     ...(reconciledFields.added.length > 0 || reconciledFields.changed.length > 0
       ? { fields: reconciledFields.fields }
       : {}),
-    ...(missingIndexes.length > 0 ? { indexes: [...indexes, ...missingIndexes] } : {}),
+    ...(reconciledIndexes.changed ? { indexes: reconciledIndexes.indexes } : {}),
     ...rulesPatch,
     ...authPatch,
   });
@@ -1101,8 +1137,8 @@ async function patchCollectionDefinition(
   if (Object.keys(rulesPatch).length > 0) {
     logger.info(`Patched API rules on collection: ${colName}`);
   }
-  if (missingIndexes.length > 0) {
-    logger.info(`Patched indexes on collection: ${colName} (+${missingIndexes.length})`);
+  if (reconciledIndexes.changed) {
+    logger.info(`Patched indexes on collection: ${colName} (+${reconciledIndexes.added})`);
   }
   if (Object.keys(authPatch).length > 0) {
     logger.info(`Patched authentication options on collection: ${colName}`);
@@ -1175,10 +1211,11 @@ async function ensureManagedCollections(
   existing: Set<string>,
   allCols: Array<{ id: string; name: string }>,
   collectionIds: Map<string, string>,
+  definitions: readonly CollectionDef[],
 ): Promise<{ created: number; patched: number }> {
   let created = 0;
   let patched = 0;
-  for (const def of COLLECTIONS) {
+  for (const def of definitions) {
     if (!existing.has(def.name)) {
       await createManagedCollection(pb, def, existing, collectionIds);
       created++;
@@ -1190,216 +1227,12 @@ async function ensureManagedCollections(
   return { created, patched };
 }
 
-type OperatorBootstrapRecord = Pick<
-  RelayOperatorRecord,
-  'id' | 'displayName' | 'active' | 'revision'
->;
-
-type PrivilegedStateBootstrapRecord = {
-  id: string;
-  key: string;
-  adminOperatorId: string;
-  adminOperatorIds?: string[];
-  publisherOperatorId?: string;
-  assignmentVersion: number;
-  rosterMigrationVersion: number;
-};
-
 type KnowledgeLibraryStateBootstrapRecord = {
   id: string;
   key: string;
   mode: 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
   revision?: number;
 };
-
-function escapeFilterValue(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-}
-
-async function getPrivilegedState(pb: PocketBase): Promise<PrivilegedStateBootstrapRecord | null> {
-  const result = await pb
-    .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
-    .getList<PrivilegedStateBootstrapRecord>(1, 2, {
-      filter: 'key="primary"',
-      requestKey: null,
-    });
-  if (result.totalItems > result.items.length || result.items.length > 1) {
-    logger.warn('Privileged state bootstrap found an ambiguous singleton record');
-    return null;
-  }
-  return result.items[0] ?? null;
-}
-
-function isFreshRosterSeedCandidate(records: OperatorBootstrapRecord[]): boolean {
-  if (records.length === 0) return true;
-  const initialNames = new Set<string>(INITIAL_RELAY_OPERATOR_NAMES);
-  const seen = new Set<string>();
-  for (const record of records) {
-    if (!record.active || !initialNames.has(record.displayName) || seen.has(record.displayName)) {
-      return false;
-    }
-    seen.add(record.displayName);
-  }
-  return true;
-}
-
-type PrivilegedAdministratorBootstrap = {
-  owner: OperatorBootstrapRecord;
-  administrators: OperatorBootstrapRecord[];
-};
-
-async function migrateRelayOperatorRoster(
-  pb: PocketBase,
-): Promise<PrivilegedAdministratorBootstrap | null> {
-  const operators = pb.collection(RELAY_OPERATORS_COLLECTION);
-  const existing = await operators.getList<OperatorBootstrapRecord>(1, 500, {
-    requestKey: null,
-  });
-  if (existing.totalItems !== existing.items.length) {
-    logger.warn('Operator roster migration deferred because the roster snapshot was incomplete');
-    return null;
-  }
-
-  const recordsByName = new Map<string, OperatorBootstrapRecord[]>();
-  for (const record of existing.items) {
-    if (!record || typeof record.displayName !== 'string') continue;
-    const normalized = normalizeOperatorDisplayName(record.displayName).toLocaleLowerCase('en');
-    const records = recordsByName.get(normalized) ?? [];
-    records.push(record);
-    recordsByName.set(normalized, records);
-  }
-
-  const desiredNames = isFreshRosterSeedCandidate(existing.items)
-    ? INITIAL_RELAY_OPERATOR_NAMES
-    : PRIVILEGED_MIGRATION_OPERATOR_NAMES;
-  let createdCount = 0;
-  for (const displayName of desiredNames) {
-    const normalized = displayName.toLocaleLowerCase('en');
-    if ((recordsByName.get(normalized)?.length ?? 0) > 0) continue;
-    const created = await operators.create<OperatorBootstrapRecord>({
-      displayName,
-      active: true,
-      revision: 0,
-    });
-    if (!created?.id || created.displayName !== displayName) {
-      throw new Error('Failed to create required Relay operator profile');
-    }
-    recordsByName.set(normalized, [created]);
-    createdCount += 1;
-  }
-
-  const adminCandidates = recordsByName.get('ryan bledsoe') ?? [];
-  if (adminCandidates.length !== 1) {
-    logger.warn('Operator roster migration cannot identify one Ryan Bledsoe profile');
-    return null;
-  }
-  const managerCandidates = recordsByName.get('charles gibbs') ?? [];
-  if (managerCandidates.length !== 1) {
-    logger.warn('Operator roster migration cannot identify one Charles Gibbs profile');
-    return null;
-  }
-  if (createdCount > 0) {
-    logger.info(`Created ${createdCount} operator profile(s) during roster migration`);
-  }
-  return {
-    owner: adminCandidates[0]!,
-    administrators: [adminCandidates[0]!, managerCandidates[0]!],
-  };
-}
-
-type PrivilegedAccountBootstrapRecord = {
-  id: string;
-  operatorId: string;
-  role: 'admin' | 'publisher';
-  active: boolean;
-  mustChangePassword: boolean;
-  credentialVersion: number;
-};
-
-async function ensureAdministratorAccount(pb: PocketBase, adminOperatorId: string): Promise<void> {
-  if (!adminOperatorId) return;
-  const accounts = pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION);
-  const existing = await accounts.getList<PrivilegedAccountBootstrapRecord>(1, 2, {
-    filter: `operatorId="${escapeFilterValue(adminOperatorId)}"`,
-    requestKey: null,
-  });
-  if (existing.totalItems > 1) {
-    throw new Error('Relay found multiple privileged accounts for one administrator');
-  }
-  const current = existing.items[0];
-  if (current?.role === 'admin') return;
-
-  const unreachableCredential = randomBytes(48).toString('base64url');
-  if (current) {
-    await accounts.update(current.id, {
-      role: 'admin',
-      active: false,
-      mustChangePassword: true,
-      credentialVersion: Math.max(0, current.credentialVersion ?? 0) + 1,
-      password: unreachableCredential,
-      passwordConfirm: unreachableCredential,
-    });
-    logger.info('Reset an existing privileged account for Relay administrator setup');
-    return;
-  }
-  const internalEmailIdentity = adminOperatorId
-    .toLocaleLowerCase('en')
-    .replaceAll(/[^a-z0-9._-]/g, '-')
-    .slice(0, 120);
-  await accounts.create({
-    email: `${internalEmailIdentity}@relay.invalid`,
-    operatorId: adminOperatorId,
-    role: 'admin',
-    active: false,
-    mustChangePassword: true,
-    credentialVersion: 0,
-    password: unreachableCredential,
-    passwordConfirm: unreachableCredential,
-  });
-  logger.info('Created inactive Relay administrator account');
-}
-
-async function ensurePrivilegedBootstrap(pb: PocketBase): Promise<void> {
-  const state = await getPrivilegedState(pb);
-  const currentAdministratorIds = state ? getPrivilegedAdministratorOperatorIds(state) : [];
-  if (
-    state?.rosterMigrationVersion >= PRIVILEGED_ROSTER_MIGRATION_VERSION &&
-    currentAdministratorIds.length >= 2
-  ) {
-    for (const operatorId of currentAdministratorIds) {
-      await ensureAdministratorAccount(pb, operatorId);
-    }
-    return;
-  }
-
-  const administratorBootstrap = await migrateRelayOperatorRoster(pb);
-  if (!administratorBootstrap) return;
-  const administratorIds = administratorBootstrap.administrators.map(({ id }) => id);
-  for (const operatorId of administratorIds) {
-    await ensureAdministratorAccount(pb, operatorId);
-  }
-  const publisherOperatorId = administratorIds.includes(state?.publisherOperatorId ?? '')
-    ? ''
-    : (state?.publisherOperatorId ?? '');
-
-  const stateData = {
-    key: 'primary',
-    adminOperatorId: administratorBootstrap.owner.id,
-    adminOperatorIds: administratorIds,
-    publisherOperatorId,
-    assignmentVersion: state ? Math.max(1, state.assignmentVersion + 1) : 1,
-    rosterMigrationVersion: PRIVILEGED_ROSTER_MIGRATION_VERSION,
-    updatedByOperatorId: '',
-    updatedAt: new Date().toISOString(),
-  };
-  const states = pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION);
-  if (state) {
-    await states.update(state.id, stateData);
-  } else {
-    await states.create(stateData);
-  }
-  logger.info('Completed privileged operator roster migration');
-}
 
 async function ensureKnowledgeLibraryBootstrap(pb: PocketBase): Promise<void> {
   const states = pb.collection(KNOWLEDGE_LIBRARY_STATE_COLLECTION);
@@ -1552,14 +1385,51 @@ export async function ensureCollections(pb: PocketBase): Promise<void> {
   const existing = new Set(allCols.map((c) => c.name));
   const collectionIds = new Map(allCols.map((collection) => [collection.name, collection.id]));
   await repairDuplicateBoardSettings(pb, existing);
-  const { created, patched } = await ensureManagedCollections(pb, existing, allCols, collectionIds);
-  await ensurePrivilegedBootstrap(pb);
+  const bootstrapDefinitions = COLLECTIONS.map((definition) => {
+    if (
+      definition.name === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION &&
+      existing.has(definition.name) &&
+      existing.has(RELAY_OPERATORS_COLLECTION)
+    ) {
+      return PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION;
+    }
+    if (
+      definition.name === RELAY_PRIVILEGED_STATE_COLLECTION &&
+      existing.has(definition.name) &&
+      existing.has(RELAY_OPERATORS_COLLECTION)
+    ) {
+      return PRIVILEGED_STATE_COMPATIBILITY_DEFINITION;
+    }
+    return definition;
+  });
+  const managed = await ensureManagedCollections(
+    pb,
+    existing,
+    allCols,
+    collectionIds,
+    bootstrapDefinitions,
+  );
+  let { patched } = managed;
+  const migration = await new RoleAccountMigration({ pb }).run();
+  if (migration.status === 'deferred') {
+    logger.warn(`Role account migration deferred: ${migration.reason}`);
+  } else {
+    for (const definition of [
+      PRIVILEGED_ACCOUNT_FINAL_DEFINITION,
+      PRIVILEGED_STATE_FINAL_DEFINITION,
+    ]) {
+      if (await patchManagedCollection(pb, definition, allCols, collectionIds)) patched += 1;
+    }
+    if (migration.status === 'migrated') {
+      allCols = allCols.filter(({ name }) => name !== 'relay_operators');
+    }
+  }
   await ensureKnowledgeLibraryBootstrap(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
-  if (created > 0 || unmanaged > 0 || patched > 0) {
+  if (managed.created > 0 || unmanaged > 0 || patched > 0) {
     logger.info(
-      `Collection bootstrap complete: ${created} created, ${patched} patched, ${unmanaged} unmanaged`,
+      `Collection bootstrap complete: ${managed.created} created, ${patched} patched, ${unmanaged} unmanaged`,
     );
   } else {
     logger.info('Collection bootstrap: all collections up to date');
