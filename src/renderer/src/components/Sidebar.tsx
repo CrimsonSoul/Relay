@@ -9,9 +9,6 @@ import {
   ComposeIcon,
   AlertsIcon,
   PersonnelIcon,
-  PeopleIcon,
-  ServersIcon,
-  NotesIcon,
   KnowledgeIcon,
   StatusIcon,
   ProblemsIcon,
@@ -38,12 +35,9 @@ const navItems: { label: string; tab: TabName; icon: React.ReactNode }[] = [
   { label: 'Compose', tab: 'Compose', icon: <ComposeIcon /> },
   { label: 'Alerts', tab: 'Alerts', icon: <AlertsIcon /> },
   { label: 'On-Call', tab: 'Personnel', icon: <PersonnelIcon /> },
-  { label: 'Notes', tab: 'Notes', icon: <NotesIcon /> },
   { label: 'Knowledge', tab: 'Knowledge', icon: <KnowledgeIcon /> },
   { label: 'Status', tab: 'Status', icon: <StatusIcon /> },
   { label: 'Problems', tab: 'Problems', icon: <ProblemsIcon /> },
-  { label: 'People', tab: 'People', icon: <PeopleIcon /> },
-  { label: 'Servers', tab: 'Servers', icon: <ServersIcon /> },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({

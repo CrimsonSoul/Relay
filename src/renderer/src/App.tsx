@@ -25,7 +25,7 @@ import { AddContactModal } from './components/AddContactModal';
 import { SetupScreen } from './components/SetupScreen';
 import { StartupErrorScreen } from './components/StartupErrorScreen';
 import { ConnectionManager } from './components/ConnectionManager';
-import { Contact, TabName, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
+import { Contact, type PbAuthSession, type PublicRelayConfig } from '@shared/ipc';
 import { loggers } from './utils/logger';
 import { addContact as pbAddContact } from './services/contactService';
 import { useAppData } from './hooks/useAppData';
@@ -46,6 +46,11 @@ import {
   setOnCallFontScale,
 } from './theme/onCallDisplay';
 import { requestKnowledgeDocumentOpen } from './features/knowledge/knowledgeNavigation';
+import {
+  normalizeLegacyTabRequest,
+  requestKnowledgeDestinationOpen,
+  type KnowledgeContentDestination,
+} from './features/knowledge/knowledgeWorkspaceNavigation';
 
 // Lazy-load helper for named exports
 function lazyTab<T extends Record<string, ComponentType>>(
@@ -166,6 +171,31 @@ export function MainApp({
   } = useAppAssembler();
   const handleOpenDynatraceProblems = useCallback(() => setActiveTab('Problems'), [setActiveTab]);
   const handleOpenSettings = useCallback(() => setActiveTab('Settings'), [setActiveTab]);
+  const handleTabRequest = useCallback(
+    (requestedTab: string) => {
+      const normalized = normalizeLegacyTabRequest(requestedTab);
+      if (normalized.knowledgeDestination) {
+        requestKnowledgeDestinationOpen(normalized.knowledgeDestination);
+      }
+      setActiveTab(normalized.tab);
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDestination = useCallback(
+    (destination: KnowledgeContentDestination) => {
+      requestKnowledgeDestinationOpen(destination);
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
+  const handleOpenKnowledgeDocument = useCallback(
+    (documentId: string, headingId?: string) => {
+      requestKnowledgeDocumentOpen(documentId, headingId);
+      requestKnowledgeDestinationOpen('wiki');
+      setActiveTab('Knowledge');
+    },
+    [setActiveTab],
+  );
 
   // Track which tabs have been mounted at least once
   const [mountedTabs, setMountedTabs] = useState<Set<string>>(new Set([activeTab]));
@@ -290,7 +320,7 @@ export function MainApp({
       <div className="app-container">
         <Sidebar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabRequest}
           onOpenSettings={handleOpenSettings}
           relayMode={relayConfig?.mode}
           relayConfig={relayConfig}
@@ -327,15 +357,13 @@ export function MainApp({
                     setActiveTab('Compose');
                   },
                   onToggleGroup: handleLoadGroupFromPalette,
-                  onNavigateToTab: (tab) => setActiveTab(tab as TabName),
+                  onNavigateToTab: handleTabRequest,
+                  onOpenKnowledgeDestination: handleOpenKnowledgeDestination,
                   onOpenAddContact: (email) => {
                     setInitialContactEmail(email || '');
                     addContactModal.open();
                   },
-                  onOpenKnowledgeDocument: (documentId, headingId) => {
-                    requestKnowledgeDocumentOpen(documentId, headingId);
-                    setActiveTab('Knowledge');
-                  },
+                  onOpenKnowledgeDocument: handleOpenKnowledgeDocument,
                 }}
               />
             </div>

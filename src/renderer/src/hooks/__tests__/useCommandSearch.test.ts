@@ -70,9 +70,18 @@ describe('useCommandSearch', () => {
       const ids = result.current.map((r) => r.id);
       expect(ids).toContain('action-compose');
       expect(ids).toContain('action-personnel');
-      expect(ids).toContain('action-people');
+      expect(ids).toContain('action-contacts');
       expect(ids).toContain('action-problems');
       expect(ids).toContain('action-create-contact');
+    });
+
+    it('routes the Contacts action through the Knowledge workspace', () => {
+      const { result } = renderHook(() => useCommandSearch('', [], [], []));
+
+      expect(result.current.find((item) => item.id === 'action-contacts')).toMatchObject({
+        title: 'Go to Contacts',
+        data: { action: 'open-knowledge', destination: 'contacts' },
+      });
     });
 
     it('returns empty results for whitespace-only query', () => {

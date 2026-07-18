@@ -3,6 +3,15 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { MainApp, RetainedTabPanel } from '../App';
 import type { DynatraceDashboardInput, DynatraceDashboardState } from '@shared/dynatrace';
+import {
+  acknowledgeKnowledgeDestinationOpen,
+  getPendingKnowledgeDestinationOpen,
+  OPEN_KNOWLEDGE_DESTINATION_EVENT,
+} from '../features/knowledge/knowledgeWorkspaceNavigation';
+import {
+  acknowledgeKnowledgeDocumentOpen,
+  OPEN_KNOWLEDGE_DOCUMENT_EVENT,
+} from '../features/knowledge/knowledgeNavigation';
 
 const mockIsConfigured = vi.fn();
 const mockGetConfig = vi.fn();
@@ -135,6 +144,7 @@ vi.mock('../components/Sidebar', () => ({
           <button onClick={() => onTabChange('Personnel')}>nav-personnel</button>
           <button onClick={() => onTabChange('People')}>nav-people</button>
           <button onClick={() => onTabChange('Servers')}>nav-servers</button>
+          <button onClick={() => onTabChange('Notes')}>nav-notes</button>
           <button onClick={onOpenSettings}>open-settings</button>
         </div>
       );
@@ -173,6 +183,7 @@ vi.mock('../components/HeaderSearch', () => ({
       onAddContactToBridge: (email: string) => void;
       onToggleGroup: (id: string) => void;
       onNavigateToTab: (tab: string) => void;
+      onOpenKnowledgeDestination: (destination: 'wiki' | 'contacts' | 'servers') => void;
       onOpenAddContact: (email?: string) => void;
       onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
     };
@@ -184,6 +195,8 @@ vi.mock('../components/HeaderSearch', () => ({
       </button>
       <button onClick={() => actions.onOpenAddContact('new@example.com')}>open-add-contact</button>
       <button onClick={() => actions.onOpenKnowledgeDocument('kb-1')}>open-knowledge</button>
+      <button onClick={() => actions.onOpenKnowledgeDestination('contacts')}>go-contacts</button>
+      <button onClick={() => actions.onOpenKnowledgeDestination('servers')}>go-servers</button>
     </div>
   ),
 }));
@@ -442,6 +455,10 @@ describe('MainApp', () => {
     lastPopoutBoardProps = null;
     localStorage.removeItem('relay-oncall-display-size');
     localStorage.removeItem('relay-oncall-font-scale');
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
+    acknowledgeKnowledgeDocumentOpen('kb-1');
     mockUseDynatraceDashboards.mockReturnValue(mockDynatraceHookState);
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
@@ -454,6 +471,10 @@ describe('MainApp', () => {
     mockActiveTab = 'Compose';
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
+    acknowledgeKnowledgeDocumentOpen('kb-1');
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -507,10 +528,23 @@ describe('MainApp', () => {
     expect(screen.getByTestId('header-search')).toBeInTheDocument();
   });
 
-  it('routes a global knowledge search result to the Knowledge tab', () => {
+  it('durably routes a global document result to Knowledge and Wiki before activation', () => {
+    const calls: string[] = [];
+    const onDocument = () => calls.push('document');
+    const onDestination = (event: Event) => {
+      calls.push(`destination:${(event as CustomEvent).detail}`);
+      expect(mockSetActiveTab).not.toHaveBeenCalled();
+    };
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, onDocument);
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
     renderApp();
     fireEvent.click(screen.getByText('open-knowledge'));
+
+    expect(calls).toEqual(['document', 'destination:wiki']);
+    expect(getPendingKnowledgeDestinationOpen()).toBe('wiki');
     expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, onDocument);
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
   });
 
   it('mounts global alert reminders', () => {
@@ -654,15 +688,15 @@ describe('MainApp', () => {
     act(() => {
       fireEvent.keyDown(globalThis, { key: '2', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
   });
 
-  it('navigates tab on Cmd+7 (Alerts)', () => {
+  it('does not assign Cmd+7', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+    expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
   it('opens shortcuts modal on Cmd+Shift+?', () => {
@@ -725,32 +759,48 @@ describe('MainApp', () => {
     });
   });
 
-  it('navigates to tabs via sidebar buttons', () => {
+  it('normalizes legacy sidebar tab requests through the retained workspace', () => {
+    const destinations: string[] = [];
+    const onDestination = (event: Event) => {
+      destinations.push((event as CustomEvent).detail);
+    };
+    globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
     renderApp();
     fireEvent.click(screen.getByText('nav-personnel'));
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
 
+    mockSetActiveTab.mockClear();
     fireEvent.click(screen.getByText('nav-people'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+    expect(destinations).toEqual(['contacts']);
+    expect(getPendingKnowledgeDestinationOpen()).toBe('contacts');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
 
+    mockSetActiveTab.mockClear();
     fireEvent.click(screen.getByText('nav-servers'));
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+    expect(destinations).toEqual(['contacts', 'servers']);
+    expect(getPendingKnowledgeDestinationOpen()).toBe('servers');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+
+    mockSetActiveTab.mockClear();
+    fireEvent.click(screen.getByText('nav-notes'));
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Compose');
+    globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
   });
 
-  it('navigates tab on Cmd+3 (People)', () => {
+  it('navigates tab on Cmd+3 (On-Call)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '3', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('People');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
 
-  it('navigates tab on Cmd+4 (Servers)', () => {
+  it('navigates tab on Cmd+4 (Knowledge)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '4', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Servers');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
   });
 
   it('navigates tab on Cmd+5 (Status)', () => {
@@ -761,28 +811,28 @@ describe('MainApp', () => {
     expect(mockSetActiveTab).toHaveBeenCalledWith('Status');
   });
 
-  it('navigates tab on Cmd+6 (Notes)', () => {
+  it('navigates tab on Cmd+6 (Problems)', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '6', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Notes');
+    expect(mockSetActiveTab).toHaveBeenCalledWith('Problems');
   });
 
-  it('navigates tab on Cmd+9 (Knowledge)', () => {
+  it('does not assign Cmd+9', () => {
     renderApp();
     act(() => {
       fireEvent.keyDown(globalThis, { key: '9', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+    expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
-  it('navigates tab on Cmd+7 (Alerts)', () => {
+  it('does not assign Cmd+8', () => {
     renderApp();
     act(() => {
-      fireEvent.keyDown(globalThis, { key: '7', metaKey: true });
+      fireEvent.keyDown(globalThis, { key: '8', metaKey: true });
     });
-    expect(mockSetActiveTab).toHaveBeenCalledWith('Alerts');
+    expect(mockSetActiveTab).not.toHaveBeenCalled();
   });
 
   it('focuses search on Cmd+K', () => {
@@ -800,6 +850,29 @@ describe('MainApp', () => {
     fireEvent.click(btn);
     expect(mockSetActiveTab).toHaveBeenCalledWith('Personnel');
   });
+
+  it.each([
+    ['go-contacts', 'contacts'],
+    ['go-servers', 'servers'],
+  ] as const)(
+    'opens %s inside Knowledge before activating the outer tab',
+    (button, destination) => {
+      const calls: string[] = [];
+      const onDestination = (event: Event) => {
+        calls.push((event as CustomEvent).detail);
+        expect(mockSetActiveTab).not.toHaveBeenCalled();
+      };
+      globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
+      renderApp();
+
+      fireEvent.click(screen.getByText(button));
+
+      expect(calls).toEqual([destination]);
+      expect(getPendingKnowledgeDestinationOpen()).toBe(destination);
+      expect(mockSetActiveTab).toHaveBeenCalledWith('Knowledge');
+      globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, onDestination);
+    },
+  );
 
   it('renders popout without board route', () => {
     renderApp('?popout=other');

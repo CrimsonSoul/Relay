@@ -13,19 +13,21 @@ import {
 } from './command-palette/CommandIcons';
 import { Tooltip } from './Tooltip';
 import { useKnowledgeLibrary } from '../features/knowledge/useKnowledgeLibrary';
+import {
+  isKnowledgeContentDestination,
+  type KnowledgeContentDestination,
+} from '../features/knowledge/knowledgeWorkspaceNavigation';
 
 const FILTERABLE_TABS: Record<string, ResultType[]> = {
   Compose: ['server'],
-  People: ['contact', 'group', 'server'],
-  Servers: ['contact', 'group', 'server'],
   Personnel: ['contact', 'group', 'server'],
-  Notes: ['contact', 'group', 'server'],
 };
 
 export type HeaderSearchActions = {
   onAddContactToBridge: (email: string) => void;
   onToggleGroup: (groupId: string) => void;
   onNavigateToTab: (tab: string) => void;
+  onOpenKnowledgeDestination: (destination: KnowledgeContentDestination) => void;
   onOpenAddContact: (email?: string) => void;
   onOpenKnowledgeDocument: (documentId: string, headingId?: string) => void;
 };
@@ -70,6 +72,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     onAddContactToBridge,
     onToggleGroup,
     onNavigateToTab,
+    onOpenKnowledgeDestination,
     onOpenAddContact,
     onOpenKnowledgeDocument,
   } = actions;
@@ -115,7 +118,6 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
     }
   }, [selectedIndex]);
 
-  const isListFilteringTab = activeTab === 'People' || activeTab === 'Servers';
   const showDropdown = isSearchFocused && dropdownResults.length > 0;
 
   const handleSelect = useCallback(
@@ -132,7 +134,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
         }
         case 'server': {
-          onNavigateToTab('Servers');
+          onOpenKnowledgeDestination('servers');
           break;
         }
         case 'knowledge': {
@@ -144,9 +146,19 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
           break;
         }
         case 'action': {
-          const action = result.data as { action: string; tab?: string; value?: string };
+          const action = result.data as {
+            action: string;
+            tab?: string;
+            value?: string;
+            destination?: unknown;
+          };
           if (action.action === 'navigate' && action.tab) {
             onNavigateToTab(action.tab);
+          } else if (
+            action.action === 'open-knowledge' &&
+            isKnowledgeContentDestination(action.destination)
+          ) {
+            onOpenKnowledgeDestination(action.destination);
           } else if (action.action === 'create-contact') {
             onOpenAddContact(action.value);
           } else if (action.action === 'add-manual' && action.value) {
@@ -162,6 +174,7 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       onAddContactToBridge,
       onToggleGroup,
       onNavigateToTab,
+      onOpenKnowledgeDestination,
       onOpenAddContact,
       onOpenKnowledgeDocument,
       clearSearch,
@@ -319,9 +332,6 @@ export const HeaderSearch: React.FC<HeaderSearchProps> = ({
       {showDropdown &&
         createPortal(
           <div className="search-dropdown" id="header-search-dropdown" style={dropdownStyle}>
-            {isListFilteringTab && query && (
-              <div className="search-dropdown-context">Filtering {activeTab} list</div>
-            )}
             {/* Custom combobox dropdown requires ARIA roles - no semantic HTML equivalent */}
             <ul ref={resultsRef} className="search-dropdown-results" role="listbox">
               {/* NOSONAR */}

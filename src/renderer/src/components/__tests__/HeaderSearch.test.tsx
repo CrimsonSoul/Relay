@@ -48,6 +48,7 @@ const defaultActions: HeaderSearchActions = {
   onAddContactToBridge: vi.fn(),
   onToggleGroup: vi.fn(),
   onNavigateToTab: vi.fn(),
+  onOpenKnowledgeDestination: vi.fn(),
   onOpenAddContact: vi.fn(),
   onOpenKnowledgeDocument: vi.fn(),
 };
@@ -184,13 +185,8 @@ describe('HeaderSearch', () => {
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
-  it('renders with People active tab (list filtering tab)', () => {
-    render(<HeaderSearch {...defaultProps} activeTab="People" />);
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
-  });
-
-  it('renders with Servers active tab', () => {
-    render(<HeaderSearch {...defaultProps} activeTab="Servers" />);
+  it('renders with Knowledge active tab', () => {
+    render(<HeaderSearch {...defaultProps} activeTab="Knowledge" />);
     expect(screen.getByRole('combobox')).toBeInTheDocument();
   });
 
@@ -352,22 +348,13 @@ describe('HeaderSearch', () => {
       expect(options[1]).toHaveAttribute('aria-selected', 'true');
     });
 
-    it('shows filtering context message on People tab', () => {
-      render(<HeaderSearch {...defaultProps} activeTab="People" />);
+    it('does not treat the outer Knowledge workspace as a filtered list', () => {
+      render(<HeaderSearch {...defaultProps} activeTab="Knowledge" />);
       act(() => {
         vi.advanceTimersByTime(250);
       });
-      expect(screen.getByText('Filtering People list')).toBeInTheDocument();
-    });
-
-    it('filters out tab-matching result types on filterable tabs', () => {
-      // On People tab, contact/group/server are filtered — only action remains
-      render(<HeaderSearch {...defaultProps} activeTab="People" />);
-      act(() => {
-        vi.advanceTimersByTime(250);
-      });
-      const options = screen.getAllByRole('option');
-      expect(options).toHaveLength(1); // only action remains
+      expect(screen.getAllByRole('option')).toHaveLength(4);
+      expect(screen.queryByText(/Filtering Knowledge list/)).not.toBeInTheDocument();
     });
 
     it('shows keyboard shortcut hints in dropdown footer', () => {
@@ -447,6 +434,24 @@ describe('HeaderSearch', () => {
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
       // add-manual without value does not call onAddContactToBridge
       expect(defaultActions.onAddContactToBridge).not.toHaveBeenCalled();
+    });
+
+    it('handles an explicit Contacts workspace action', () => {
+      mockSearchResults.push({
+        id: 'action-contacts',
+        title: 'Go to Contacts',
+        type: 'action',
+        data: { action: 'open-knowledge', destination: 'contacts' },
+        iconType: 'people',
+      });
+      render(<HeaderSearch {...defaultProps} />);
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+
+      expect(defaultActions.onOpenKnowledgeDestination).toHaveBeenCalledWith('contacts');
     });
 
     it('handles action with unknown action type (no-op)', () => {
@@ -539,7 +544,7 @@ describe('HeaderSearch', () => {
         vi.advanceTimersByTime(250);
       });
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-      expect(defaultActions.onNavigateToTab).toHaveBeenCalledWith('Servers');
+      expect(defaultActions.onOpenKnowledgeDestination).toHaveBeenCalledWith('servers');
     });
 
     it('renders server icon for server results on non-filterable tab', () => {
