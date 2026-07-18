@@ -1,4 +1,5 @@
-import { act, renderHook } from '@testing-library/react';
+import { useRef } from 'react';
+import { act, render, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useContinuousPdfPages } from '../useContinuousPdfPages';
 
@@ -154,5 +155,34 @@ describe('useContinuousPdfPages', () => {
     act(() => result.current.scrollToPage(1, 80));
 
     expect(root.scrollTo).toHaveBeenCalledWith({ top: 252, behavior: 'auto' });
+  });
+
+  it('keeps existing page refs observed across unrelated shell rerenders', () => {
+    function PageHarness({ scale }: Readonly<{ scale: number }>) {
+      const rootRef = useRef<HTMLDivElement>(null);
+      const { registerPage } = useContinuousPdfPages({
+        active: true,
+        pageCount: 3,
+        rootRef,
+        initialPageIndex: 0,
+        reducedMotion: true,
+      });
+      return (
+        <div ref={rootRef} data-scale={scale}>
+          {[0, 1, 2].map((pageIndex) => (
+            <div key={pageIndex} ref={registerPage(pageIndex)} data-page-index={pageIndex} />
+          ))}
+        </div>
+      );
+    }
+
+    const { rerender } = render(<PageHarness scale={1} />);
+    const observer = IntersectionObserverDouble.instances[0];
+    expect(observer.observe).toHaveBeenCalledTimes(3);
+
+    rerender(<PageHarness scale={1.25} />);
+
+    expect(observer.unobserve).not.toHaveBeenCalled();
+    expect(observer.observe).toHaveBeenCalledTimes(3);
   });
 });
