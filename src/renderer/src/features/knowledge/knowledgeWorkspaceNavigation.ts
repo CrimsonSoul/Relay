@@ -4,7 +4,7 @@ export type KnowledgeDestination = 'home' | 'wiki' | 'contacts' | 'servers';
 
 export const OPEN_KNOWLEDGE_DESTINATION_EVENT = 'relay:open-knowledge-destination';
 
-type KnowledgeContentDestination = Exclude<KnowledgeDestination, 'home'>;
+export type KnowledgeContentDestination = Exclude<KnowledgeDestination, 'home'>;
 
 const knowledgeContentDestinations = new Set<KnowledgeContentDestination>([
   'wiki',
@@ -12,13 +12,35 @@ const knowledgeContentDestinations = new Set<KnowledgeContentDestination>([
   'servers',
 ]);
 
+let pendingDestination: KnowledgeContentDestination | null = null;
+
+export function isKnowledgeContentDestination(
+  value: unknown,
+): value is KnowledgeContentDestination {
+  return (
+    typeof value === 'string' &&
+    knowledgeContentDestinations.has(value as KnowledgeContentDestination)
+  );
+}
+
 export function requestKnowledgeDestinationOpen(destination: KnowledgeContentDestination): void {
-  if (!knowledgeContentDestinations.has(destination)) return;
+  if (!isKnowledgeContentDestination(destination)) return;
+  pendingDestination = destination;
   globalThis.dispatchEvent(
     new CustomEvent<KnowledgeContentDestination>(OPEN_KNOWLEDGE_DESTINATION_EVENT, {
       detail: destination,
     }),
   );
+}
+
+export function getPendingKnowledgeDestinationOpen(): KnowledgeContentDestination | null {
+  return pendingDestination;
+}
+
+export function acknowledgeKnowledgeDestinationOpen(
+  destination: KnowledgeContentDestination,
+): void {
+  if (pendingDestination === destination) pendingDestination = null;
 }
 
 export function normalizeLegacyTabRequest(value: string): {

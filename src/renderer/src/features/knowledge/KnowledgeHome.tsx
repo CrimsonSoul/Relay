@@ -167,7 +167,7 @@ const DESTINATIONS: readonly DestinationDefinition[] = [
 
 function formatCount(count: number | null, noun: string): string {
   if (count === null) {
-    return `${noun[0].toUpperCase()}${noun.slice(1)} count unavailable`;
+    return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} count unavailable`;
   }
   const countNoun = count === 1 ? noun : `${noun}s`;
   return `${count} ${countNoun}`;

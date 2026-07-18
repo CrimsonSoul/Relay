@@ -2,7 +2,9 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import {
+  acknowledgeKnowledgeDestinationOpen,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
+  requestKnowledgeDestinationOpen,
   type KnowledgeDestination,
 } from '../knowledgeWorkspaceNavigation';
 import {
@@ -34,12 +36,30 @@ vi.mock('../KnowledgeHome', () => ({
   ),
 }));
 
+const surfaceMocks = vi.hoisted(() => ({ wikiShouldThrow: false }));
+
+vi.mock('../../../utils/logger', () => ({
+  loggers: { ui: { error: vi.fn() } },
+}));
+
 vi.mock('../KnowledgeTab', () => ({
-  KnowledgeTab: ({ active, relayMode }: { active: boolean; relayMode?: string }) => (
-    <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
-      Wiki surface
-    </div>
-  ),
+  KnowledgeTab: ({
+    active,
+    relayMode,
+    onLibraryCountChange,
+  }: {
+    active: boolean;
+    relayMode?: string;
+    onLibraryCountChange?: (count: number | null) => void;
+  }) => {
+    if (surfaceMocks.wikiShouldThrow) throw new Error('Wiki surface failed');
+    return (
+      <div data-testid="wiki-surface" data-active={active} data-relay-mode={relayMode}>
+        Wiki surface
+        <button onClick={() => onLibraryCountChange?.(3)}>Publish Wiki count</button>
+      </div>
+    );
+  },
 }));
 
 vi.mock('../../../tabs/DirectoryTab', async () => {
@@ -125,6 +145,10 @@ function visiblePanel() {
 describe('KnowledgeWorkspace', () => {
   afterEach(() => {
     acknowledgeKnowledgeDocumentOpen('pending-doc');
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
+    surfaceMocks.wikiShouldThrow = false;
     vi.restoreAllMocks();
   });
 
@@ -214,6 +238,58 @@ describe('KnowledgeWorkspace', () => {
 
     expect(visiblePanel()).toHaveAttribute('data-destination', 'wiki');
     acknowledgeKnowledgeDocumentOpen('pending-doc');
+  });
+
+  it.each(['contacts', 'servers'] as const)(
+    'opens a pending %s request once before lazy workspace render and consumes it',
+    (requestedDestination) => {
+      requestKnowledgeDestinationOpen(requestedDestination);
+
+      const firstWorkspace = renderWorkspace();
+      expect(visiblePanel()).toHaveAttribute('data-destination', requestedDestination);
+      firstWorkspace.unmount();
+
+      renderWorkspace();
+      expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
+    },
+  );
+
+  it('keeps a failed Wiki surface isolated and allows navigation and retry recovery', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    surfaceMocks.wikiShouldThrow = true;
+    renderWorkspace();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    expect(await screen.findByRole('heading', { name: 'Wiki unavailable' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Servers' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Knowledge' }));
+    expect(visiblePanel()).toHaveAttribute('data-destination', 'home');
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    expect(screen.getByRole('heading', { name: 'Wiki unavailable' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Servers' }));
+    expect(visiblePanel()).toHaveAttribute('data-destination', 'servers');
+    expect(await screen.findByTestId('servers-surface')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wiki' }));
+    expect(screen.getByRole('heading', { name: 'Wiki unavailable' })).toBeInTheDocument();
+    surfaceMocks.wikiShouldThrow = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Try Wiki again' }));
+    expect(await screen.findByTestId('wiki-surface')).toBeInTheDocument();
+
+    consoleError.mockRestore();
+  });
+
+  it('shows the live Wiki count on Home after the Wiki snapshot loads', async () => {
+    renderWorkspace();
+    expect(screen.getByText('null wiki documents')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Publish Wiki count' }));
+    fireEvent.click(screen.getByRole('button', { name: /Knowledge home/ }));
+
+    expect(screen.getByText('3 wiki documents')).toBeInTheDocument();
   });
 
   it('passes the live Contact and Server data through their explicit surfaces', () => {

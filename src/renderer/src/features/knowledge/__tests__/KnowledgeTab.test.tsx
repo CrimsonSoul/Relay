@@ -149,6 +149,52 @@ describe('KnowledgeTab', () => {
     delete globalThis.api;
   });
 
+  it('reports the document count after a usable Wiki snapshot loads', async () => {
+    const onLibraryCountChange = vi.fn();
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('guide', 'Operator guide', 'General'),
+        document('lane', 'Lane recovery', 'Store systems'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />);
+
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('reports an unavailable count before a usable snapshot and when loading fails', async () => {
+    const onLibraryCountChange = vi.fn();
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      loading: true,
+      error: null,
+      hasLoadedSnapshot: false,
+      refetch: vi.fn(async () => undefined),
+    });
+    const view = render(
+      <KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />,
+    );
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(null));
+
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [],
+      loading: false,
+      error: 'offline',
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+    view.rerender(
+      <KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />,
+    );
+
+    await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(null));
+  });
+
   it('renders the Wiki reader, filters by nested headings, and jumps to a selected heading', async () => {
     const laneGuide = document('lane', 'Lane recovery', 'Store systems');
     laneGuide.outline = [

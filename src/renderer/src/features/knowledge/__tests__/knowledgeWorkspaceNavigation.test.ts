@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  acknowledgeKnowledgeDestinationOpen,
+  getPendingKnowledgeDestinationOpen,
   normalizeLegacyTabRequest,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
   requestKnowledgeDestinationOpen,
@@ -7,7 +9,30 @@ import {
 
 describe('knowledge workspace navigation', () => {
   afterEach(() => {
+    acknowledgeKnowledgeDestinationOpen('wiki');
+    acknowledgeKnowledgeDestinationOpen('contacts');
+    acknowledgeKnowledgeDestinationOpen('servers');
     vi.restoreAllMocks();
+  });
+
+  it.each(['contacts', 'servers'] as const)(
+    'retains a %s request until the destination acknowledges it',
+    (destination) => {
+      requestKnowledgeDestinationOpen(destination);
+
+      expect(getPendingKnowledgeDestinationOpen()).toBe(destination);
+      acknowledgeKnowledgeDestinationOpen(destination === 'contacts' ? 'servers' : 'contacts');
+      expect(getPendingKnowledgeDestinationOpen()).toBe(destination);
+      acknowledgeKnowledgeDestinationOpen(destination);
+      expect(getPendingKnowledgeDestinationOpen()).toBeNull();
+    },
+  );
+
+  it('does not let an invalid request replace a valid pending destination', () => {
+    requestKnowledgeDestinationOpen('contacts');
+    requestKnowledgeDestinationOpen('stale-destination' as never);
+
+    expect(getPendingKnowledgeDestinationOpen()).toBe('contacts');
   });
 
   it.each([

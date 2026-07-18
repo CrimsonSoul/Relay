@@ -25,6 +25,7 @@ import {
 type Props = {
   active: boolean;
   relayMode?: PublicRelayConfig['mode'];
+  onLibraryCountChange?: (count: number | null) => void;
 };
 
 function freshnessLabel(indexedAt: string | null | undefined): string {
@@ -123,7 +124,7 @@ function KnowledgeEmptyState({
   );
 }
 
-export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
+export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readonly<Props>) {
   const { documents, loading, error, hasLoadedSnapshot, refetch } = useKnowledgeLibrary();
   const { session } = usePrivilegedAccess();
   const { showToast } = useToast();
@@ -147,6 +148,10 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     ? documents.some((document) => document.id === selectedDocumentId)
     : true;
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
+
+  useEffect(() => {
+    onLibraryCountChange?.(hasLoadedSnapshot && !error ? documents.length : null);
+  }, [documents.length, error, hasLoadedSnapshot, onLibraryCountChange]);
 
   useEffect(() => {
     if (selectedDocument) lastSelectedTitleRef.current = selectedDocument.title;
@@ -235,7 +240,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
       if (!selectedDocument) return;
       const heading = selectedDocument.outline
         .filter((node) => node.pageIndex <= pageIndex)
-        .toSorted((left, right) => left.pageIndex - right.pageIndex)
+        .sort((left, right) => left.pageIndex - right.pageIndex)
         .at(-1);
       setActiveHeadingId(heading?.id ?? null);
     },
@@ -354,7 +359,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
   const shownCategoryCount = hasQuery ? library.length : categoryCount;
   const latestDocumentIndex = documents
     .map((document) => document.indexedAt)
-    .toSorted((left, right) => right.localeCompare(left))[0];
+    .sort((left, right) => right.localeCompare(left))[0];
   const currentIndexLabel = indexLabel(indexStatus, latestDocumentIndex);
 
   return (

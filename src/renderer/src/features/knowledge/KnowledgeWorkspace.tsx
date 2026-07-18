@@ -1,8 +1,13 @@
 import { Activity, lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import type { BridgeGroup, Contact, PublicRelayConfig, Server } from '@shared/ipc';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { TabFallback } from '../../components/TabFallback';
+import { TactileButton } from '../../components/TactileButton';
 import { KnowledgeHome } from './KnowledgeHome';
 import {
+  acknowledgeKnowledgeDestinationOpen,
+  getPendingKnowledgeDestinationOpen,
+  isKnowledgeContentDestination,
   OPEN_KNOWLEDGE_DESTINATION_EVENT,
   type KnowledgeDestination,
 } from './knowledgeWorkspaceNavigation';
@@ -41,10 +46,6 @@ const CONTENT_DESTINATIONS: ReadonlyArray<{
   { id: 'contacts', label: 'Contacts' },
   { id: 'servers', label: 'Servers' },
 ];
-
-function isContentDestination(value: unknown): value is ContentDestination {
-  return CONTENT_DESTINATIONS.some(({ id }) => id === value);
-}
 
 function WorkspacePanel({
   destination,
@@ -105,6 +106,54 @@ function KnowledgeDestinationNav({
   );
 }
 
+function DestinationFailure({
+  label,
+  onHome,
+  onRetry,
+}: Readonly<{
+  label: string;
+  onHome: () => void;
+  onRetry: () => void;
+}>) {
+  return (
+    <div className="knowledge-workspace-shell__failure" role="alert">
+      <span className="knowledge-workspace-shell__failure-eyebrow">Workspace interrupted</span>
+      <h2>{label} unavailable</h2>
+      <p>
+        This destination hit an unexpected error. Other Knowledge destinations remain available.
+      </p>
+      <div className="knowledge-workspace-shell__failure-actions">
+        <TactileButton variant="primary" onClick={onRetry}>
+          Try {label} again
+        </TactileButton>
+        <TactileButton variant="secondary" onClick={onHome}>
+          Return to Knowledge
+        </TactileButton>
+      </div>
+    </div>
+  );
+}
+
+function DestinationBoundary({
+  label,
+  onHome,
+  children,
+}: Readonly<{
+  label: string;
+  onHome: () => void;
+  children: ReactNode;
+}>) {
+  return (
+    <ErrorBoundary
+      fallback={(resetErrorBoundary) => (
+        <DestinationFailure label={label} onHome={onHome} onRetry={resetErrorBoundary} />
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+
 export function KnowledgeWorkspace({
   active,
   contacts,
@@ -113,13 +162,13 @@ export function KnowledgeWorkspace({
   relayMode,
   onAddToAssembler,
 }: KnowledgeWorkspaceProps) {
-  const initialDestination: KnowledgeDestination = getPendingKnowledgeDocumentOpen()
-    ? 'wiki'
-    : 'home';
+  const initialDestination: KnowledgeDestination =
+    (getPendingKnowledgeDocumentOpen() && 'wiki') || getPendingKnowledgeDestinationOpen() || 'home';
   const [destination, setDestination] = useState<KnowledgeDestination>(initialDestination);
   const [mountedDestinations, setMountedDestinations] = useState(
     () => new Set<KnowledgeDestination>(['home', initialDestination]),
   );
+  const [wikiCount, setWikiCount] = useState<number | null>(null);
 
   const open = useCallback((next: KnowledgeDestination) => {
     setMountedDestinations((current) => {
@@ -130,16 +179,29 @@ export function KnowledgeWorkspace({
     });
     setDestination(next);
   }, []);
+  const openHome = useCallback(() => open('home'), [open]);
 
   useEffect(() => {
     const handleDestinationRequest = (event: Event) => {
       const requested = (event as CustomEvent<unknown>).detail;
-      if (isContentDestination(requested)) open(requested);
+      if (!isKnowledgeContentDestination(requested)) return;
+      open(requested);
+      acknowledgeKnowledgeDestinationOpen(requested);
     };
     const handleDocumentRequest = () => open('wiki');
 
     globalThis.addEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, handleDestinationRequest);
     globalThis.addEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleDocumentRequest);
+
+    const pendingDestination = getPendingKnowledgeDestinationOpen();
+    if (pendingDestination) {
+      if (getPendingKnowledgeDocumentOpen()) {
+        open('wiki');
+      } else {
+        open(pendingDestination);
+      }
+      acknowledgeKnowledgeDestinationOpen(pendingDestination);
+    }
     return () => {
       globalThis.removeEventListener(OPEN_KNOWLEDGE_DESTINATION_EVENT, handleDestinationRequest);
       globalThis.removeEventListener(OPEN_KNOWLEDGE_DOCUMENT_EVENT, handleDocumentRequest);
@@ -155,7 +217,7 @@ export function KnowledgeWorkspace({
       <div className="knowledge-workspace-shell__content">
         <WorkspacePanel destination="home" activeDestination={destination}>
           <KnowledgeHome
-            wikiCount={null}
+            wikiCount={wikiCount}
             contactCount={contacts.length}
             serverCount={servers.length}
             onOpen={open}
@@ -164,30 +226,40 @@ export function KnowledgeWorkspace({
 
         {mountedDestinations.has('wiki') && (
           <WorkspacePanel destination="wiki" activeDestination={destination}>
-            <Suspense fallback={<TabFallback />}>
-              <WikiSurface active={active && destination === 'wiki'} relayMode={relayMode} />
-            </Suspense>
+            <DestinationBoundary label="Wiki" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <WikiSurface
+                  active={active && destination === 'wiki'}
+                  relayMode={relayMode}
+                  onLibraryCountChange={setWikiCount}
+                />
+              </Suspense>
+            </DestinationBoundary>
           </WorkspacePanel>
         )}
 
         {mountedDestinations.has('contacts') && (
           <WorkspacePanel destination="contacts" activeDestination={destination}>
-            <Suspense fallback={<TabFallback />}>
-              <ContactsSurface
-                contacts={contacts}
-                groups={groups}
-                servers={servers}
-                onAddToAssembler={onAddToAssembler}
-              />
-            </Suspense>
+            <DestinationBoundary label="Contacts" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <ContactsSurface
+                  contacts={contacts}
+                  groups={groups}
+                  servers={servers}
+                  onAddToAssembler={onAddToAssembler}
+                />
+              </Suspense>
+            </DestinationBoundary>
           </WorkspacePanel>
         )}
 
         {mountedDestinations.has('servers') && (
           <WorkspacePanel destination="servers" activeDestination={destination}>
-            <Suspense fallback={<TabFallback />}>
-              <ServersSurface servers={servers} contacts={contacts} />
-            </Suspense>
+            <DestinationBoundary label="Servers" onHome={openHome}>
+              <Suspense fallback={<TabFallback />}>
+                <ServersSurface servers={servers} contacts={contacts} />
+              </Suspense>
+            </DestinationBoundary>
           </WorkspacePanel>
         )}
       </div>
