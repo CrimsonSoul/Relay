@@ -397,6 +397,7 @@ vi.mock('../../components/TactileButton', () => ({
     onClick,
     loading,
     variant,
+    className,
     icon,
     tooltip,
   }: {
@@ -404,12 +405,14 @@ vi.mock('../../components/TactileButton', () => ({
     onClick?: () => void;
     loading?: boolean;
     variant?: string;
+    className?: string;
     icon?: React.ReactNode;
     tooltip?: React.ReactNode;
   }) => (
     <button
       onClick={onClick}
       disabled={loading}
+      className={[`tactile-button--${variant ?? 'secondary'}`, className].filter(Boolean).join(' ')}
       data-variant={variant}
       data-has-icon={icon ? 'true' : 'false'}
       data-tooltip={typeof tooltip === 'string' ? tooltip : undefined}
@@ -507,6 +510,36 @@ describe('AlertsTab', () => {
     expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
     expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
     expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+  });
+
+  it('uses one primary Outlook action and outlined operational utility actions', () => {
+    render(<AlertsTab />);
+
+    for (const name of ['RESET', 'HISTORY', 'ALARMS', 'PIN TEMPLATE', 'SAVE IMAGE']) {
+      expect(screen.getByRole('button', { name })).toHaveClass(
+        'alerts-utility-action',
+        'tactile-button--secondary',
+      );
+    }
+    expect(screen.getByRole('button', { name: 'SCHEDULE ALARM' })).toHaveClass(
+      'tactile-button--secondary',
+    );
+    expect(screen.getByRole('button', { name: 'OPEN IN OUTLOOK' })).toHaveClass(
+      'tactile-button--primary',
+    );
+  });
+
+  it('matches the operational toolbar spacing and control geometry', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const commandBar = declarations(cssBlock(css, '.alerts-command-bar .collapsible-header') ?? '');
+    const utilityAction = declarations(
+      cssBlock(css, '.alerts-utility-action.tactile-button') ?? '',
+    );
+
+    expect(commandBar.get('padding')).toBe('0');
+    expect(commandBar.get('border-bottom')).toBe('0');
+    expect(utilityAction.get('height')).toBe('36px');
+    expect(utilityAction.get('padding')).toBe('0 var(--space-3)');
   });
 
   it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {

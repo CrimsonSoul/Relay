@@ -642,7 +642,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
         <CollapsibleHeader>
           <div className="alerts-command-group alerts-command-group--utility">
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="alerts-utility-action"
               onClick={handleClear}
               tooltip="Reset alert composer"
               icon={
@@ -665,7 +666,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               RESET
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="alerts-utility-action"
               onClick={historyModal.open}
               tooltip="Open alert history"
               icon={
@@ -687,7 +689,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               HISTORY
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="alerts-utility-action"
               onClick={reminderManagerModal.open}
               tooltip="View and manage alarms"
               icon={
@@ -713,7 +716,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               ALARMS
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="alerts-utility-action"
               onClick={handlePinTemplate}
               tooltip="Pin current alert as a template"
               icon={
@@ -735,7 +739,8 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
               PIN TEMPLATE
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="alerts-utility-action"
               onClick={handleSaveImage}
               loading={isCapturing}
               tooltip="Save a high-resolution PNG image"
