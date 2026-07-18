@@ -1,13 +1,19 @@
 import { ipcMain, shell } from 'electron';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { KnowledgePdfRequestSchema, KnowledgeUploadControlIdSchema } from '@shared/ipcValidation';
+import {
+  KnowledgeCoverRequestSchema,
+  KnowledgePdfRequestSchema,
+  KnowledgeUploadControlIdSchema,
+} from '@shared/ipcValidation';
 import type {
+  KnowledgeCoverResult,
   KnowledgeIndexStatus,
   KnowledgeOpenWebLinkResult,
   KnowledgePdfResult,
   KnowledgeUploadQueueView,
 } from '@shared/knowledge';
 import type { KnowledgeIndexStatusService } from '../knowledge/KnowledgeIndexStatusService';
+import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import { normalizeKnowledgeWebUrl } from '../knowledge/knowledgeWebLinks';
@@ -34,6 +40,7 @@ export function setupKnowledgeHandlers(
   getService: () => KnowledgePdfService | null,
   getIndexStatusService: () => KnowledgeIndexStatusService | null,
   getUploadService: () => KnowledgeUploadService | null = () => null,
+  getCoverService: () => KnowledgeCoverService | null = () => null,
 ): void {
   ipcMain.handle(
     IPC_CHANNELS.KNOWLEDGE_GET_PDF,
@@ -45,6 +52,19 @@ export function setupKnowledgeHandlers(
       if (!parsed.success) return { ok: false, error: 'invalid-document' };
       const service = getService();
       return service ? service.getPdf(parsed.data) : { ok: false, error: 'not-found' };
+    },
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.KNOWLEDGE_GET_COVER,
+    async (event, request: unknown): Promise<KnowledgeCoverResult> => {
+      if (!assertTrustedIpcSender(event, IPC_CHANNELS.KNOWLEDGE_GET_COVER)) {
+        return { ok: false, error: 'invalid-document' };
+      }
+      const parsed = KnowledgeCoverRequestSchema.safeParse(request);
+      if (!parsed.success) return { ok: false, error: 'invalid-document' };
+      const service = getCoverService();
+      return service ? service.getCover(parsed.data) : { ok: false, error: 'not-found' };
     },
   );
 

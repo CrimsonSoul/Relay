@@ -43,6 +43,12 @@ describe('preload Knowledge web link bridge', () => {
     expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:openWebLink', url);
   });
 
+  it('exposes cover bytes through the narrow Knowledge cover channel', async () => {
+    const request = { documentId: 'document1', checksum: 'a'.repeat(64) };
+    await api.getKnowledgeCover(request);
+    expect(electronMocks.invoke).toHaveBeenCalledWith('knowledge:getCover', request);
+  });
+
   it('exposes only selection, safe queue state, and identifier-based Knowledge controls', async () => {
     const callback = vi.fn();
     await api.selectAndQueueKnowledgePdfs();

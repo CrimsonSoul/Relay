@@ -5,6 +5,7 @@ import {
   AlertHistoryEntrySchema,
   KnowledgeUploadControlIdSchema,
   KnowledgePdfRequestSchema,
+  KnowledgeCoverRequestSchema,
   PrivilegedLoginSchema,
   PrivilegedCredentialSetupSchema,
   PrivilegedPairingTargetAccountSchema,
@@ -138,6 +139,17 @@ describe('KnowledgePdfRequestSchema', () => {
     expect(
       KnowledgePdfRequestSchema.safeParse({ ...valid, path: 'outside-source-root' }).success,
     ).toBe(false);
+  });
+});
+
+describe('KnowledgeCoverRequestSchema', () => {
+  it('accepts only a strict document id and lowercase checksum', () => {
+    const valid = { documentId: 'abc123', checksum: 'b'.repeat(64) };
+    expect(KnowledgeCoverRequestSchema.parse(valid)).toEqual(valid);
+    expect(
+      KnowledgeCoverRequestSchema.safeParse({ ...valid, documentId: '../escape' }).success,
+    ).toBe(false);
+    expect(KnowledgeCoverRequestSchema.safeParse({ ...valid, extra: true }).success).toBe(false);
   });
 });
 

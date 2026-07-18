@@ -44,6 +44,8 @@ export const KnowledgePdfRequestSchema = z
   })
   .strict();
 
+export const KnowledgeCoverRequestSchema = KnowledgePdfRequestSchema;
+
 export const KnowledgeUploadControlIdSchema = z
   .string()
   .min(1)

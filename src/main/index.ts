@@ -29,6 +29,7 @@ import {
   getCloudStatusManager,
   setCloudStatusManager,
   setKnowledgePdfService,
+  setKnowledgeCoverService,
   getKnowledgeUploadService,
   setKnowledgeUploadService,
   getPrivilegedRuntime,
@@ -172,6 +173,7 @@ if (gotLock) {
       void getPrivilegedRuntime()?.dispose();
       setPrivilegedRuntime(null);
       setKnowledgePdfService(null);
+      setKnowledgeCoverService(null);
       // PocketBase cleanup — synchronous kill to ensure process dies before app exits
       if (getRetentionManager()) {
         getRetentionManager()!.stop();

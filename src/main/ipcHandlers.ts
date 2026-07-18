@@ -22,6 +22,7 @@ import type { DynatraceWindowManager } from './dynatrace/DynatraceWindowManager'
 import type { DynatraceProblemsManager } from './dynatrace/DynatraceProblemsManager';
 import { KnowledgeIndexStatusService } from './knowledge/KnowledgeIndexStatusService';
 import type { KnowledgePdfService } from './knowledge/KnowledgePdfService';
+import type { KnowledgeCoverService } from './knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from './knowledge/KnowledgeUploadService';
 import { loggers } from './logger';
 import { getErrorMessage } from '@shared/types';
@@ -47,6 +48,7 @@ export function setupIpcHandlers(opts: {
   getDynatraceProblemsManager?: () => DynatraceProblemsManager | null;
   getPbClient?: () => PocketBase | null;
   getKnowledgePdfService?: () => KnowledgePdfService | null;
+  getKnowledgeCoverService?: () => KnowledgeCoverService | null;
   getKnowledgeUploadService?: () => KnowledgeUploadService | null;
   getPrivilegedRuntime?: () => PrivilegedAccessRuntime | null;
   subscribePrivilegedSessionChanged?: (
@@ -67,6 +69,7 @@ export function setupIpcHandlers(opts: {
     getDynatraceProblemsManager,
     getPbClient,
     getKnowledgePdfService,
+    getKnowledgeCoverService,
     getKnowledgeUploadService,
     getPrivilegedRuntime,
     subscribePrivilegedSessionChanged,
@@ -99,6 +102,7 @@ export function setupIpcHandlers(opts: {
       getKnowledgePdfService ?? (() => null),
       () => knowledgeIndexStatusService,
       getKnowledgeUploadService ?? (() => null),
+      getKnowledgeCoverService ?? (() => null),
     ),
   );
 

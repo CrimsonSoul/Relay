@@ -29,6 +29,8 @@ describe('knowledgeHandlers', () => {
   const handlers: Record<string, (...args: unknown[]) => unknown> = {};
   const getPdf = vi.fn();
   const service = { getPdf };
+  const getCover = vi.fn();
+  const coverService = { getCover };
   const getStatus = vi.fn(() => ({
     state: 'idle' as const,
     documentCount: 3,
@@ -76,6 +78,7 @@ describe('knowledgeHandlers', () => {
       () => service as never,
       () => indexStatusService as never,
       () => uploadService as never,
+      () => coverService as never,
     );
   });
 
@@ -99,6 +102,16 @@ describe('knowledgeHandlers', () => {
       source: 'cache',
     });
     expect(getPdf).toHaveBeenCalledWith(request);
+  });
+
+  it('validates and forwards a trusted cover request', async () => {
+    const request = { documentId: 'document123', checksum: 'a'.repeat(64) };
+    getCover.mockResolvedValue({ ok: true, data: new ArrayBuffer(8), ...request, source: 'cache' });
+    await expect(handlers[IPC_CHANNELS.KNOWLEDGE_GET_COVER]({}, request)).resolves.toMatchObject({
+      ok: true,
+      source: 'cache',
+    });
+    expect(getCover).toHaveBeenCalledWith(request);
   });
 
   it('rejects untrusted and malformed PDF requests before the service', async () => {

@@ -18,6 +18,7 @@ import type { DynatraceWindowManager } from '../dynatrace/DynatraceWindowManager
 import type { DynatraceProblemsManager } from '../dynatrace/DynatraceProblemsManager';
 import type { CloudStatusManager } from '../handlers/cloudStatus/CloudStatusManager';
 import type { KnowledgePdfService } from '../knowledge/KnowledgePdfService';
+import type { KnowledgeCoverService } from '../knowledge/KnowledgeCoverService';
 import type { KnowledgeUploadService } from '../knowledge/KnowledgeUploadService';
 import type { PrivilegedRuntime } from '../privileged/privilegedRuntime';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
@@ -38,6 +39,7 @@ export interface AppState {
   dynatraceProblemsManager: DynatraceProblemsManager | null;
   cloudStatusManager: CloudStatusManager | null;
   knowledgePdfService: KnowledgePdfService | null;
+  knowledgeCoverService: KnowledgeCoverService | null;
   knowledgeUploadService: KnowledgeUploadService | null;
   privilegedRuntime: PrivilegedRuntime | null;
 }
@@ -57,6 +59,7 @@ const state: AppState = {
   dynatraceProblemsManager: null,
   cloudStatusManager: null,
   knowledgePdfService: null,
+  knowledgeCoverService: null,
   knowledgeUploadService: null,
   privilegedRuntime: null,
 };
@@ -108,6 +111,9 @@ export function getCloudStatusManager() {
 }
 export function getKnowledgePdfService() {
   return state.knowledgePdfService;
+}
+export function getKnowledgeCoverService() {
+  return state.knowledgeCoverService;
 }
 export function getKnowledgeUploadService() {
   return state.knowledgeUploadService;
@@ -172,6 +178,10 @@ export function setCloudStatusManager(mgr: CloudStatusManager | null) {
 export function setKnowledgePdfService(service: KnowledgePdfService | null) {
   log.debug('appState.knowledgePdfService changed');
   state.knowledgePdfService = service;
+}
+export function setKnowledgeCoverService(service: KnowledgeCoverService | null) {
+  log.debug('appState.knowledgeCoverService changed');
+  state.knowledgeCoverService = service;
 }
 export function setKnowledgeUploadService(service: KnowledgeUploadService | null) {
   log.debug('appState.knowledgeUploadService changed');
@@ -274,6 +284,7 @@ export function setupIpc(
     getDynatraceProblemsManager: () => state.dynatraceProblemsManager,
     getPbClient: () => state.pbClient,
     getKnowledgePdfService: () => state.knowledgePdfService,
+    getKnowledgeCoverService: () => state.knowledgeCoverService,
     getKnowledgeUploadService: () => state.knowledgeUploadService,
     getPrivilegedRuntime: () => state.privilegedRuntime,
     subscribePrivilegedSessionChanged,

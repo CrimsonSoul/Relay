@@ -2,10 +2,13 @@ import { KNOWLEDGE_DOCUMENTS_COLLECTION, isKnowledgeChecksum } from '@shared/kno
 import {
   getAppConfig,
   getKnowledgePdfService,
+  getKnowledgeCoverService,
   getOfflineCache,
   getPbClient,
   setKnowledgePdfService,
+  setKnowledgeCoverService,
 } from '../app/appState';
+import { KnowledgeCoverService } from './KnowledgeCoverService';
 import { KnowledgePdfService } from './KnowledgePdfService';
 
 export function initializeKnowledgePdfService(configDataDir: string): KnowledgePdfService {
@@ -15,6 +18,14 @@ export function initializeKnowledgePdfService(configDataDir: string): KnowledgeP
     getPbClient,
   });
   setKnowledgePdfService(service);
+  setKnowledgeCoverService(
+    new KnowledgeCoverService({
+      configDataDir,
+      getConfig: () => getAppConfig()?.load() ?? null,
+      getPbClient,
+      getPdfService: getKnowledgePdfService,
+    }),
+  );
   return service;
 }
 
@@ -43,7 +54,9 @@ async function referencedKnowledgeChecksums(): Promise<Set<string>> {
 }
 
 export async function cleanupKnowledgePdfCache(): Promise<void> {
-  const service = getKnowledgePdfService();
-  if (!service) return;
-  await service.cleanup(await referencedKnowledgeChecksums());
+  const checksums = await referencedKnowledgeChecksums();
+  await Promise.all([
+    getKnowledgePdfService()?.cleanup(checksums),
+    getKnowledgeCoverService()?.cleanup(checksums),
+  ]);
 }
