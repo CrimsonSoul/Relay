@@ -200,6 +200,18 @@ describe('KnowledgePdfViewer', () => {
     expect(getAnnotations(2)).not.toHaveBeenCalled();
   });
 
+  it('prefetches only the adjacent pages around the active single page', async () => {
+    renderComponent();
+
+    await waitFor(() => expect(getPage).toHaveBeenCalledWith(2));
+    expect(getPage).not.toHaveBeenCalledWith(3);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+
+    await waitFor(() => expect(getPage).toHaveBeenCalledWith(3));
+    expect(getPage).toHaveBeenCalledWith(1);
+  });
+
   it('refreshes link geometry after zoom and page changes', async () => {
     resolveUrl.mockReturnValue({
       kind: 'web',
@@ -582,7 +594,8 @@ describe('KnowledgePdfViewer', () => {
     await Promise.resolve();
 
     await waitFor(() => expect(stalePage.cleanup).toHaveBeenCalledOnce());
-    expect(staleGetPage).toHaveBeenCalledOnce();
+    expect(staleGetPage).toHaveBeenCalledWith(1);
+    expect(staleGetPage).toHaveBeenCalledWith(2);
     expect(stalePage.getAnnotations).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Open stale.example in browser' })).toBeNull();
   });

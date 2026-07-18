@@ -500,6 +500,46 @@
   display: block;
 }
 
+.knowledge-page__error {
+  display: flex;
+  min-width: 320px;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-surface);
+  text-align: center;
+}
+
+.knowledge-page__error p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.knowledge-page__error button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--color-border-accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent-bright);
+  background: var(--accent-subtle);
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+
+.knowledge-page__error button:hover,
+.knowledge-page__error button:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
 .knowledge-page__text-layer {
   color-scheme: only light;
   position: absolute;

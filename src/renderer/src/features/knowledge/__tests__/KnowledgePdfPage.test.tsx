@@ -14,6 +14,16 @@ vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
 
 const TextLayerMock = vi.mocked(TextLayer);
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('KnowledgePdfPage', () => {
   const onActivateResolvedLink = vi.fn();
   const onActivateDestination = vi.fn();
@@ -125,6 +135,44 @@ describe('KnowledgePdfPage', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Retry page' }));
     await waitFor(() => expect(getPage).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(onStatus).toHaveBeenLastCalledWith({
+        state: 'ready',
+        pageIndex: 0,
+        width: 600,
+        height: 800,
+      }),
+    );
+  });
+
+  it('cancels in-flight canvas and text-layer work without reporting stale status', async () => {
+    const canvasRender = deferred<void>();
+    const textRender = deferred<void>();
+    const renderTask = { promise: canvasRender.promise, cancel: vi.fn() };
+    const textLayer = { render: vi.fn(() => textRender.promise), cancel: vi.fn() };
+    renderPage.mockReset().mockReturnValue(renderTask);
+    TextLayerMock.mockImplementationOnce(function DeferredTextLayer() {
+      return textLayer as never;
+    });
+
+    const { rerender } = render(<KnowledgePdfPage {...props()} />);
+    await waitFor(() => expect(textLayer.render).toHaveBeenCalledOnce());
+
+    rerender(<KnowledgePdfPage {...props({ render: false })} />);
+
+    expect(renderTask.cancel).toHaveBeenCalledOnce();
+    expect(textLayer.cancel).toHaveBeenCalledOnce();
+    expect(pageCleanup).not.toHaveBeenCalled();
+    expect(onStatus).not.toHaveBeenCalled();
+
+    canvasRender.resolve();
+    await canvasRender.promise;
+    expect(pageCleanup).not.toHaveBeenCalled();
+
+    textRender.resolve();
+    await textRender.promise;
+    await waitFor(() => expect(pageCleanup).toHaveBeenCalledOnce());
+    expect(onStatus).not.toHaveBeenCalled();
   });
 
   it('cancels stale render tasks when scale changes', async () => {

@@ -179,6 +179,14 @@ export function KnowledgePdfViewer({
   }, [pdf, target]);
 
   useEffect(() => {
+    if (!pdf) return;
+    const previousPageNumber = pageIndex;
+    const nextPageNumber = pageIndex + 2;
+    if (previousPageNumber >= 1) pdf.getPage(previousPageNumber).catch(() => undefined);
+    if (nextPageNumber <= pdf.numPages) pdf.getPage(nextPageNumber).catch(() => undefined);
+  }, [pageIndex, pdf]);
+
+  useEffect(() => {
     destinationRequestTokenRef.current += 1;
   }, [active, documentChecksum, documentId, pdf, retryKey, target?.pageIndex, target?.top]);
 
