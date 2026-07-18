@@ -13,7 +13,7 @@ import { AlertReminderModal } from './AlertReminderModal';
 import { AlertReminderManagerModal } from './AlertReminderManagerModal';
 import { AlertForm } from './AlertForm';
 import { AlertCard } from './AlertCard';
-import { sanitizeHtml } from './alertUtils';
+import { isAlertMessageComplete, sanitizeHtml } from './alertUtils';
 import type { Severity } from './alertUtils';
 import { buildAlertOutlookEml, sanitizeAlertClickUrl } from './alertLinks';
 import { localToIso } from './alertTimeUtils';
@@ -200,6 +200,7 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
     eventTimeEnd,
     eventTimeSourceTz,
   } = form;
+  const requiredStepsReady = isAlertMessageComplete(subject, bodyHtml) ? 2 : 1;
 
   const setSeverity = useCallback(
     (v: Severity) => dispatch({ type: 'SET_FIELD', field: 'severity', value: v }),
@@ -626,174 +627,191 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
 
   return (
     <div className="alerts-tab">
-      <CollapsibleHeader>
-        <TactileButton
-          variant="ghost"
-          onClick={handleClear}
-          tooltip="Reset alert composer"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      <header className="alerts-page-header">
+        <div>
+          <div className="alerts-page-context">Alerts</div>
+          <h2 className="alerts-page-title">Operational alert composer</h2>
+        </div>
+        <div className="alerts-page-meta" role="status" aria-live="polite">
+          <span className="alerts-page-state-dot" aria-hidden="true" />
+          <span>Draft · {severity}</span>
+        </div>
+      </header>
+
+      <div className="alerts-command-bar" role="toolbar" aria-label="Alert actions">
+        <CollapsibleHeader>
+          <div className="alerts-command-group alerts-command-group--utility">
+            <TactileButton
+              variant="ghost"
+              onClick={handleClear}
+              tooltip="Reset alert composer"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M23 4v6h-6" />
+                  <path d="M1 20v-6h6" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+              }
             >
-              <path d="M23 4v6h-6" />
-              <path d="M1 20v-6h6" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-          }
-        >
-          RESET
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={historyModal.open}
-          tooltip="Open alert history"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              RESET
+            </TactileButton>
+            <TactileButton
+              variant="ghost"
+              onClick={historyModal.open}
+              tooltip="Open alert history"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+              }
             >
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-          }
-        >
-          HISTORY
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={reminderManagerModal.open}
-          tooltip="View and manage alarms"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              HISTORY
+            </TactileButton>
+            <TactileButton
+              variant="ghost"
+              onClick={reminderManagerModal.open}
+              tooltip="View and manage alarms"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="13" r="7" />
+                  <path d="M12 10v3l2 2" />
+                  <path d="M5 3 2.5 5.5" />
+                  <path d="m19 3 2.5 2.5" />
+                  <path d="m6.5 19.5-1.5 2" />
+                  <path d="m17.5 19.5 1.5 2" />
+                </svg>
+              }
             >
-              <circle cx="12" cy="13" r="7" />
-              <path d="M12 10v3l2 2" />
-              <path d="M5 3 2.5 5.5" />
-              <path d="m19 3 2.5 2.5" />
-              <path d="m6.5 19.5-1.5 2" />
-              <path d="m17.5 19.5 1.5 2" />
-            </svg>
-          }
-        >
-          ALARMS
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handlePinTemplate}
-          tooltip="Pin current alert as a template"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              ALARMS
+            </TactileButton>
+            <TactileButton
+              variant="ghost"
+              onClick={handlePinTemplate}
+              tooltip="Pin current alert as a template"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 17v5" />
+                  <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
+                </svg>
+              }
             >
-              <path d="M12 17v5" />
-              <path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V7a1 1 0 011-1 1 1 0 001-1V4a1 1 0 00-1-1H8a1 1 0 00-1 1v1a1 1 0 001 1 1 1 0 011 1z" />
-            </svg>
-          }
-        >
-          PIN TEMPLATE
-        </TactileButton>
-        <TactileButton
-          variant="ghost"
-          onClick={handleSaveImage}
-          loading={isCapturing}
-          tooltip="Save a high-resolution PNG image"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              PIN TEMPLATE
+            </TactileButton>
+            <TactileButton
+              variant="ghost"
+              onClick={handleSaveImage}
+              loading={isCapturing}
+              tooltip="Save a high-resolution PNG image"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+              }
             >
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          }
-        >
-          SAVE IMAGE
-        </TactileButton>
-        <TactileButton
-          variant="secondary"
-          onClick={openNewReminderModal}
-          tooltip="Schedule an alarm for this alert"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              SAVE IMAGE
+            </TactileButton>
+          </div>
+          <div className="alerts-command-group alerts-command-group--primary">
+            <TactileButton
+              variant="secondary"
+              onClick={openNewReminderModal}
+              tooltip="Schedule an alarm for this alert"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="5" width="18" height="16" rx="2" />
+                  <path d="M8 3v4" />
+                  <path d="M16 3v4" />
+                  <path d="M3 10h18" />
+                  <path d="M12 13v5" />
+                  <path d="M9.5 15.5h5" />
+                </svg>
+              }
             >
-              <rect x="3" y="5" width="18" height="16" rx="2" />
-              <path d="M8 3v4" />
-              <path d="M16 3v4" />
-              <path d="M3 10h18" />
-              <path d="M12 13v5" />
-              <path d="M9.5 15.5h5" />
-            </svg>
-          }
-        >
-          SCHEDULE ALARM
-        </TactileButton>
-        <TactileButton
-          variant="primary"
-          onClick={() => void handleOpenOutlookDraft()}
-          loading={isCapturing}
-          tooltip="Open an editable Outlook draft with a crisp inline alert"
-          icon={
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+              SCHEDULE ALARM
+            </TactileButton>
+            <TactileButton
+              variant="primary"
+              onClick={() => void handleOpenOutlookDraft()}
+              loading={isCapturing}
+              tooltip="Open an editable Outlook draft with a crisp inline alert"
+              icon={
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="3" y="5" width="18" height="14" rx="1" />
+                  <path d="m3 7 9 6 9-6" />
+                </svg>
+              }
             >
-              <rect x="3" y="5" width="18" height="14" rx="1" />
-              <path d="m3 7 9 6 9-6" />
-            </svg>
-          }
-        >
-          OPEN IN OUTLOOK
-        </TactileButton>
-      </CollapsibleHeader>
+              OPEN IN OUTLOOK
+            </TactileButton>
+          </div>
+        </CollapsibleHeader>
+      </div>
 
       {nextReminder && (
         <button
@@ -819,50 +837,61 @@ export const AlertsTab: React.FC<AlertsTabProps> = ({
       )}
 
       <div className="alerts-layout">
-        {/* Left Panel — Composer */}
-        <AlertForm
-          ref={formRef}
-          severity={severity}
-          setSeverity={setSeverity}
-          subject={subject}
-          setSubject={setSubject}
-          bodyHtml={bodyHtml}
-          setBodyHtml={setBodyHtml}
-          sender={sender}
-          setSender={setSender}
-          recipient={recipient}
-          setRecipient={setRecipient}
-          clickThroughUrl={clickThroughUrl}
-          setClickThroughUrl={setClickThroughUrl}
-          updateNumber={updateNumber}
-          setUpdateNumber={setUpdateNumber}
-          eventTimeStart={eventTimeStart}
-          setEventTimeStart={setEventTimeStart}
-          eventTimeEnd={eventTimeEnd}
-          setEventTimeEnd={setEventTimeEnd}
-          eventTimeSourceTz={eventTimeSourceTz}
-          setEventTimeSourceTz={setEventTimeSourceTz}
-          logoDataUrl={logoDataUrl}
-          onSetLogo={handleSetLogo}
-          onRemoveLogo={handleRemoveLogo}
-          footerLogoDataUrl={footerLogoDataUrl}
-          onSetFooterLogo={handleSetFooterLogo}
-          onRemoveFooterLogo={handleRemoveFooterLogo}
-        />
-
-        {/* Right Panel — Preview */}
-        <AlertCard
-          cardRef={cardRef}
-          severity={severity}
-          displaySubject={displaySubject}
-          displaySender={displaySender}
-          displayRecipient={displayRecipient}
-          bodyHtml={bodyHtml}
-          logoDataUrl={logoDataUrl}
-          footerLogoDataUrl={footerLogoDataUrl}
-          eventTimeStart={eventTimeStartIso}
-          eventTimeEnd={eventTimeEndIso}
-        />
+        <section className="alerts-pane alerts-definition-pane" aria-label="Alert definition">
+          <div className="alerts-pane-header">
+            <span>Alert definition</span>
+            <span>{requiredStepsReady} of 2 required ready</span>
+          </div>
+          <AlertForm
+            ref={formRef}
+            severity={severity}
+            setSeverity={setSeverity}
+            subject={subject}
+            setSubject={setSubject}
+            bodyHtml={bodyHtml}
+            setBodyHtml={setBodyHtml}
+            sender={sender}
+            setSender={setSender}
+            recipient={recipient}
+            setRecipient={setRecipient}
+            clickThroughUrl={clickThroughUrl}
+            setClickThroughUrl={setClickThroughUrl}
+            updateNumber={updateNumber}
+            setUpdateNumber={setUpdateNumber}
+            eventTimeStart={eventTimeStart}
+            setEventTimeStart={setEventTimeStart}
+            eventTimeEnd={eventTimeEnd}
+            setEventTimeEnd={setEventTimeEnd}
+            eventTimeSourceTz={eventTimeSourceTz}
+            setEventTimeSourceTz={setEventTimeSourceTz}
+            logoDataUrl={logoDataUrl}
+            onSetLogo={handleSetLogo}
+            onRemoveLogo={handleRemoveLogo}
+            footerLogoDataUrl={footerLogoDataUrl}
+            onSetFooterLogo={handleSetFooterLogo}
+            onRemoveFooterLogo={handleRemoveFooterLogo}
+          />
+        </section>
+        <section className="alerts-pane alerts-preview-pane" aria-label="Live email preview">
+          <div className="alerts-pane-header">
+            <span>Live email preview</span>
+            <span>
+              {severity} · {ALERT_EXPORT_WIDTH_PX}px
+            </span>
+          </div>
+          <AlertCard
+            cardRef={cardRef}
+            severity={severity}
+            displaySubject={displaySubject}
+            displaySender={displaySender}
+            displayRecipient={displayRecipient}
+            bodyHtml={bodyHtml}
+            logoDataUrl={logoDataUrl}
+            footerLogoDataUrl={footerLogoDataUrl}
+            eventTimeStart={eventTimeStartIso}
+            eventTimeEnd={eventTimeEndIso}
+          />
+        </section>
       </div>
 
       <AlertHistoryModal

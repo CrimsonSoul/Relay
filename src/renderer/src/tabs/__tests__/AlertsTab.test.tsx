@@ -388,6 +388,15 @@ vi.mock('../../components/StatusBar', () => ({
 
 vi.mock('../alertUtils', () => ({
   sanitizeHtml: (html: string) => html,
+  isAlertMessageComplete: (subject: string, bodyHtml: string) =>
+    subject.trim().length > 0 &&
+    bodyHtml
+      // The mock deliberately mirrors alertUtils' HTML-stripping behavior.
+      // eslint-disable-next-line sonarjs/slow-regex
+      .replace(/<[^>]*>/g, '')
+      // eslint-disable-next-line no-misleading-character-class, sonarjs/no-misleading-character-class
+      .replace(/[\u200b\u200c\u200d\ufeff\u2060]/g, '')
+      .trim().length > 0,
 }));
 
 // Stub globalThis.api
@@ -435,10 +444,34 @@ describe('AlertsTab', () => {
     expect(screen.getByText('SCHEDULE ALARM')).toBeInTheDocument();
   });
 
+  it('renders the approved Alerts operational hierarchy', () => {
+    render(<AlertsTab />);
+
+    expect(screen.getByRole('heading', { name: 'Operational alert composer' })).toBeInTheDocument();
+    expect(screen.getByRole('toolbar', { name: 'Alert actions' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Alert definition' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
+    expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
+    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+  });
+
+  it('derives severity and required-step metadata from the existing draft', () => {
+    render(<AlertsTab />);
+
+    fireEvent.click(screen.getByTestId('set-severity-issue'));
+    expect(screen.getByText('Draft · ISSUE')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('set-subject'));
+    expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('set-body'));
+    expect(screen.getByText('2 of 2 required ready')).toBeInTheDocument();
+  });
+
   it('places the alarm action before the primary Outlook draft action', () => {
     render(<AlertsTab />);
-    const header = screen.getByTestId('collapsible-header');
-    const labels = Array.from(header.querySelectorAll('button')).map((button) =>
+    const toolbar = screen.getByRole('toolbar', { name: 'Alert actions' });
+    const labels = Array.from(toolbar.querySelectorAll('button')).map((button) =>
       button.textContent?.trim(),
     );
 
