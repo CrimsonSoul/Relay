@@ -153,7 +153,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
           <div className="assembler-sidebar-panel">
             <div className="assembler-sidebar-groups">
               <div className="assembler-sidebar-groups-header">
-                <span className="assembler-sidebar-groups-title">Groups</span>
+                <span className="assembler-sidebar-groups-title">Contact groups</span>
                 <Tooltip content="Create new group">
                   <button
                     onClick={() => setIsSaveGroupOpen(true)}
@@ -193,6 +193,7 @@ export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
                         onContextMenu={(e) => handleGroupContextMenu(e, group.id)}
                         title={group.name}
                         aria-label={`${group.name} group, ${group.contacts.length} contacts`}
+                        aria-pressed={isSelected}
                       >
                         <div className="sig-grp-check">
                           <svg viewBox="0 0 16 16" className="sig-grp-checkmark">

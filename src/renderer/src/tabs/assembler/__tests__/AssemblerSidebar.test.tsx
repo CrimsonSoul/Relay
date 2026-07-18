@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
@@ -57,6 +58,27 @@ describe('AssemblerSidebar', () => {
     expect(nightShift).toHaveAttribute('title', 'Night Shift');
     expect(screen.getByText('FD')).toBeInTheDocument();
     expect(screen.getByText('NS')).toBeInTheDocument();
+  });
+
+  it('labels the group pane and exposes selected state semantically', () => {
+    const groups = [makeGroup('g1', 'Team Alpha')];
+    render(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />);
+
+    expect(screen.getByText('Contact groups')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Team Alpha group, 0 contacts' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByText('TA')).toBeInTheDocument();
+  });
+
+  it('uses full-row selection instead of a colored side stripe', () => {
+    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+    const baseRule = /\.sig-grp\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const selectedRule = /\.sig-grp--on\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+
+    expect(baseRule).not.toContain('border-left');
+    expect(selectedRule).toContain('background: var(--accent-dim)');
   });
 
   it('sorts groups alphabetically', () => {
