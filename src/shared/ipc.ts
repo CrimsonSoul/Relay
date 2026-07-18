@@ -148,17 +148,17 @@ export type BackupEntry = {
   size: number;
 };
 
-export type TabName =
-  | 'Compose'
-  | 'Alerts'
-  | 'Personnel'
-  | 'People'
-  | 'Servers'
-  | 'Notes'
-  | 'Knowledge'
-  | 'Status'
-  | 'Problems'
-  | 'Settings';
+export const TAB_NAMES = [
+  'Compose',
+  'Alerts',
+  'Personnel',
+  'Knowledge',
+  'Status',
+  'Problems',
+  'Settings',
+] as const;
+
+export type TabName = (typeof TAB_NAMES)[number];
 
 // Cloud Status Types
 export type CloudStatusProvider =

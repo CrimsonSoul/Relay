@@ -11,7 +11,19 @@ import {
   PrivilegedPairingCompletionSchema,
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
+  TabNameSchema,
 } from './ipcValidation';
+
+describe('TabNameSchema', () => {
+  it('accepts only current outer navigation tabs', () => {
+    expect(TabNameSchema.safeParse('Knowledge').success).toBe(true);
+    expect(TabNameSchema.safeParse('Compose').success).toBe(true);
+  });
+
+  it.each(['People', 'Servers', 'Notes'])('rejects removed top-level tab %s', (tab) => {
+    expect(TabNameSchema.safeParse(tab).success).toBe(false);
+  });
+});
 
 describe('SearchQuerySchema', () => {
   it('accepts valid queries', () => {
