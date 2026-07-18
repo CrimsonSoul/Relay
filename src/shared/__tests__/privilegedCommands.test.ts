@@ -142,7 +142,110 @@ describe('privileged command validation', () => {
     expect(isPublicPrivilegedCommandName('knowledge.upload.file.finalize')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.file.cancel')).toBe(true);
     expect(isPublicPrivilegedCommandName('knowledge.upload.batch.cancel')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.category.create')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.category.name.set')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.category.order.set')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.category.delete')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.document.metadata.set')).toBe(true);
+    expect(isPublicPrivilegedCommandName('knowledge.documents.category.assign')).toBe(true);
     expect(isPublicPrivilegedCommandName('privileged.reauth.confirm')).toBe(false);
+  });
+
+  it('normalizes stable category and document metadata commands', () => {
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.create', {
+        name: '  Access   and Identity ',
+        afterCategoryId: null,
+      }),
+    ).toEqual({ name: 'Access and Identity', afterCategoryId: null });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.name.set', {
+        categoryId: 'cat_access',
+        name: ' Access ',
+        expectedRevision: 2,
+      }),
+    ).toEqual({ categoryId: 'cat_access', name: 'Access', expectedRevision: 2 });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.order.set', {
+        orderedCategoryIds: ['cat_access', 'cat_network'],
+        expectedRevisions: { cat_access: 2, cat_network: 4 },
+      }),
+    ).toEqual({
+      orderedCategoryIds: ['cat_access', 'cat_network'],
+      expectedRevisions: { cat_access: 2, cat_network: 4 },
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.delete', {
+        categoryId: 'cat_network',
+        replacementCategoryId: 'cat_access',
+        expectedRevision: 4,
+        expectedDocumentRevisions: { doc_1: 3 },
+      }),
+    ).toEqual({
+      categoryId: 'cat_network',
+      replacementCategoryId: 'cat_access',
+      expectedRevision: 4,
+      expectedDocumentRevisions: { doc_1: 3 },
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.metadata.set', {
+        documentId: 'doc_1',
+        title: ' Oracle SOP ',
+        categoryId: 'cat_access',
+        documentType: 'sop',
+        expectedRevision: 3,
+      }),
+    ).toEqual({
+      documentId: 'doc_1',
+      title: 'Oracle SOP',
+      categoryId: 'cat_access',
+      documentType: 'sop',
+      expectedRevision: 3,
+    });
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: [{ documentId: 'doc_1', expectedRevision: 3 }],
+      }),
+    ).toEqual({
+      categoryId: 'cat_access',
+      documents: [{ documentId: 'doc_1', expectedRevision: 3 }],
+    });
+  });
+
+  it('rejects unsafe category and document metadata commands', () => {
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.order.set', {
+        orderedCategoryIds: ['cat_access', 'cat_access'],
+        expectedRevisions: { cat_access: 2 },
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.category.delete', {
+        categoryId: 'cat_access',
+        replacementCategoryId: 'cat_access',
+        expectedRevision: 2,
+        expectedDocumentRevisions: {},
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.document.metadata.set', {
+        documentId: 'doc_1',
+        title: 'Oracle SOP',
+        categoryId: 'cat_access',
+        documentType: 'reference',
+        expectedRevision: 3,
+      }),
+    ).toBeNull();
+    expect(
+      normalizePrivilegedCommandPayload('knowledge.documents.category.assign', {
+        categoryId: 'cat_access',
+        documents: Array.from({ length: 101 }, (_, index) => ({
+          documentId: `doc_${index}`,
+          expectedRevision: 1,
+        })),
+      }),
+    ).toBeNull();
   });
 
   it('normalizes every resumable upload command with exact bounded payloads', () => {

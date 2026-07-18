@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  KNOWLEDGE_CATEGORIES_COLLECTION,
+  KNOWLEDGE_CATEGORY_MIGRATION_VERSION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_MAX_COVER_BYTES,
+  KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY,
   KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
   KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
@@ -18,6 +22,7 @@ import {
   normalizeKnowledgeUploadManifestView,
   normalizeKnowledgeUploadQueueView,
   normalizeKnowledgeDocumentRecord,
+  normalizeKnowledgeCategoryRecord,
   normalizeKnowledgeAuditEventView,
   normalizeKnowledgeManagementSnapshot,
   normalizeKnowledgeSearchText,
@@ -45,9 +50,26 @@ const validRecord = {
   updated: '2026-07-14T12:01:00.000Z',
 };
 
+function category(name: string, sortOrder: number) {
+  return {
+    id: `category-${name.toLocaleLowerCase('en')}`,
+    name,
+    normalizedName: name.toLocaleLowerCase('en'),
+    sortOrder,
+    systemKey: '' as const,
+    revision: 1,
+    created: '2026-07-18T12:00:00.000Z',
+    updated: '2026-07-18T12:00:00.000Z',
+  };
+}
+
 describe('knowledge contracts', () => {
   it('publishes the approved collection and safety limits', () => {
+    expect(KNOWLEDGE_CATEGORIES_COLLECTION).toBe('knowledge_categories');
+    expect(KNOWLEDGE_CATEGORY_MIGRATION_VERSION).toBe(1);
     expect(KNOWLEDGE_DOCUMENTS_COLLECTION).toBe('knowledge_documents');
+    expect(KNOWLEDGE_MAX_COVER_BYTES).toBe(2 * 1024 * 1024);
+    expect(KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY).toBe('uncategorized');
     expect(KNOWLEDGE_UPLOAD_BATCHES_COLLECTION).toBe('knowledge_upload_batches');
     expect(KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION).toBe('knowledge_upload_chunks');
     expect(KNOWLEDGE_UPLOAD_CHUNK_BYTES).toBe(4 * 1024 * 1024);
@@ -166,6 +188,9 @@ describe('knowledge contracts', () => {
   it('normalizes a valid PocketBase record and discards unknown data', () => {
     expect(normalizeKnowledgeDocumentRecord({ ...validRecord, ignored: 'value' })).toEqual({
       ...validRecord,
+      categoryId: null,
+      documentType: 'sop',
+      cover: null,
       lifecycleState: 'active',
       displayTitle: 'Runbook',
       revision: 1,
@@ -176,6 +201,52 @@ describe('knowledge contracts', () => {
       trashedByName: null,
       trashedAt: null,
     });
+  });
+
+  it('normalizes stable categories and document presentation metadata', () => {
+    expect(
+      normalizeKnowledgeCategoryRecord({
+        id: 'cat_operations',
+        name: 'Operations',
+        normalizedName: 'operations',
+        sortOrder: 200,
+        systemKey: '',
+        revision: 3,
+        created: '2026-07-18T12:00:00.000Z',
+        updated: '2026-07-18T12:00:00.000Z',
+      }),
+    ).toMatchObject({ id: 'cat_operations', name: 'Operations', sortOrder: 200 });
+
+    expect(
+      normalizeKnowledgeDocumentRecord({
+        ...validRecord,
+        categoryId: 'cat_operations',
+        documentType: 'cheatsheet',
+        cover: 'oracle-cover.png',
+      }),
+    ).toMatchObject({
+      categoryId: 'cat_operations',
+      documentType: 'cheatsheet',
+      cover: 'oracle-cover.png',
+    });
+  });
+
+  it('rejects malformed category and document presentation metadata', () => {
+    expect(
+      normalizeKnowledgeCategoryRecord({ ...category('Operations', 100), name: '' }),
+    ).toBeNull();
+    expect(
+      normalizeKnowledgeCategoryRecord({
+        ...category('Operations', 100),
+        systemKey: 'other-system-key',
+      }),
+    ).toBeNull();
+    expect(
+      normalizeKnowledgeDocumentRecord({ ...validRecord, documentType: 'reference' }),
+    ).toBeNull();
+    expect(
+      normalizeKnowledgeDocumentRecord({ ...validRecord, categoryId: '../category' }),
+    ).toBeNull();
   });
 
   it('normalizes managed active and trashed records while preserving the authored filename', () => {
@@ -286,6 +357,7 @@ describe('knowledge contracts', () => {
     delete safeDocument.outline;
     const snapshot = normalizeKnowledgeManagementSnapshot({
       mode: 'managed',
+      categories: [category('Operations', 100)],
       documents: { items: [safeDocument], nextCursor: null },
       trash: { items: [], nextCursor: null },
       uploads: { items: [], nextCursor: null },
@@ -297,6 +369,7 @@ describe('knowledge contracts', () => {
     });
     expect(snapshot?.documents.items[0]).not.toHaveProperty('pdf');
     expect(snapshot?.documents.items[0]).not.toHaveProperty('outline');
+    expect(snapshot?.categories).toEqual([category('Operations', 100)]);
   });
 
   it('sorts General before alphabetical categories', () => {
@@ -306,6 +379,14 @@ describe('knowledge contracts', () => {
       'Monitoring',
       'Zoo',
     ]);
+  });
+
+  it('orders stable category records by sort order and then name', () => {
+    expect(
+      [category('Network', 200), category('Zulu', 100), category('Access', 100)].toSorted(
+        compareKnowledgeCategories,
+      ),
+    ).toEqual([category('Access', 100), category('Zulu', 100), category('Network', 200)]);
   });
 
   it('sorts documents case-insensitively by title then filename', () => {

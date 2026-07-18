@@ -1,4 +1,5 @@
 export const KNOWLEDGE_DOCUMENTS_COLLECTION = 'knowledge_documents';
+export const KNOWLEDGE_CATEGORIES_COLLECTION = 'knowledge_categories';
 export const KNOWLEDGE_UPLOAD_BATCHES_COLLECTION = 'knowledge_upload_batches';
 export const KNOWLEDGE_UPLOADS_COLLECTION = 'knowledge_uploads';
 export const KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION = 'knowledge_upload_chunks';
@@ -16,8 +17,12 @@ export const KNOWLEDGE_MAX_OUTLINE_LABEL_LENGTH = 240;
 export const KNOWLEDGE_MAX_CATEGORY_LENGTH = 120;
 export const KNOWLEDGE_MAX_SOURCE_KEY_LENGTH = 512;
 export const KNOWLEDGE_MAX_LINK_URL_LENGTH = 4_096;
+export const KNOWLEDGE_MAX_COVER_BYTES = 2 * 1024 * 1024;
+export const KNOWLEDGE_CATEGORY_MIGRATION_VERSION = 1;
+export const KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY = 'uncategorized';
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true });
 
 export type KnowledgeOutlineNode = {
@@ -32,6 +37,18 @@ export type KnowledgeOutlineSource = 'native' | 'inferred' | 'none';
 
 export type KnowledgeLifecycleState = 'active' | 'trashed';
 export type KnowledgeLibraryMode = 'legacy-watch' | 'migrating' | 'managed' | 'recovery-required';
+export type KnowledgeDocumentType = 'sop' | 'cheatsheet';
+
+export type KnowledgeCategoryRecord = {
+  id: string;
+  name: string;
+  normalizedName: string;
+  sortOrder: number;
+  systemKey: '' | typeof KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY;
+  revision: number;
+  created: string;
+  updated: string;
+};
 
 export type ManagedKnowledgeFields = {
   lifecycleState: KnowledgeLifecycleState;
@@ -49,9 +66,12 @@ export type KnowledgeDocumentRecord = ManagedKnowledgeFields & {
   id: string;
   sourceKey: string;
   category: string;
+  categoryId: string | null;
+  documentType: KnowledgeDocumentType;
   title: string;
   fileName: string;
   pdf: string;
+  cover: string | null;
   checksum: string;
   byteSize: number;
   pageCount: number;
@@ -197,6 +217,11 @@ export type KnowledgeAuditAction =
   | 'title-changed'
   | 'category-changed'
   | 'category-renamed'
+  | 'category-created'
+  | 'category-reordered'
+  | 'category-deleted'
+  | 'document-type-changed'
+  | 'documents-reassigned'
   | 'trashed'
   | 'restored'
   | 'deleted'
@@ -221,6 +246,8 @@ export type KnowledgeManagementDocumentView = Pick<
   KnowledgeDocumentRecord,
   | 'id'
   | 'category'
+  | 'categoryId'
+  | 'documentType'
   | 'displayTitle'
   | 'fileName'
   | 'byteSize'
@@ -245,6 +272,7 @@ export type KnowledgePage<T> = {
 
 export type KnowledgeManagementSnapshot = {
   mode: KnowledgeLibraryMode;
+  categories: KnowledgeCategoryRecord[];
   documents: KnowledgePage<KnowledgeManagementDocumentView>;
   uploads: KnowledgePage<KnowledgeManagementUploadView>;
   trash: KnowledgePage<KnowledgeManagementDocumentView>;
@@ -268,6 +296,28 @@ export type KnowledgePdfRequest = {
   documentId: string;
   checksum: string;
 };
+
+export type KnowledgeCoverRequest = {
+  documentId: string;
+  checksum: string;
+};
+
+export type KnowledgeCoverResult =
+  | {
+      ok: true;
+      data: ArrayBuffer;
+      checksum: string;
+      source: 'server' | 'cache' | 'generated' | 'download';
+    }
+  | {
+      ok: false;
+      error:
+        | 'not-found'
+        | 'not-available-offline'
+        | 'invalid-document'
+        | 'download-failed'
+        | 'render-failed';
+    };
 
 export type KnowledgePdfErrorCode =
   | 'not-found'
@@ -293,6 +343,10 @@ function boundedString(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
 
+function boundedIdentifier(value: unknown, max: number): value is string {
+  return boundedString(value, max) && IDENTIFIER_PATTERN.test(value);
+}
+
 function normalizeOutlineNode(value: unknown): KnowledgeOutlineNode | null {
   if (!isRecord(value)) return null;
   const { id, label, level, pageIndex, top } = value;
@@ -305,15 +359,56 @@ function normalizeOutlineNode(value: unknown): KnowledgeOutlineNode | null {
   return { id, label, level, pageIndex: pageIndex as number, top };
 }
 
+export function normalizeKnowledgeCategoryName(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+export function knowledgeCategoryKey(value: string): string {
+  return normalizeKnowledgeCategoryName(value).toLocaleLowerCase('en-US');
+}
+
+export function normalizeKnowledgeCategoryRecord(value: unknown): KnowledgeCategoryRecord | null {
+  if (!isRecord(value)) return null;
+  const { id, name, normalizedName, sortOrder, systemKey, revision, created, updated } = value;
+  if (
+    !boundedIdentifier(id, 200) ||
+    !boundedString(name, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    !boundedString(normalizedName, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    normalizedName !== knowledgeCategoryKey(name) ||
+    !Number.isInteger(sortOrder) ||
+    (sortOrder as number) < 0 ||
+    (systemKey !== '' && systemKey !== KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY) ||
+    !Number.isInteger(revision) ||
+    (revision as number) < 1 ||
+    !boundedString(created, 100) ||
+    !boundedString(updated, 100)
+  ) {
+    return null;
+  }
+  return {
+    id,
+    name,
+    normalizedName,
+    sortOrder: sortOrder as number,
+    systemKey,
+    revision: revision as number,
+    created,
+    updated,
+  };
+}
+
 export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocumentRecord | null {
   if (!isRecord(value)) return null;
   const {
     id,
     sourceKey,
     category,
+    categoryId: rawCategoryId,
+    documentType: rawDocumentType,
     title,
     fileName,
     pdf,
+    cover: rawCover,
     checksum,
     byteSize,
     pageCount,
@@ -345,14 +440,20 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
   const trashedByAccountId = rawTrashedByAccountId || rawTrashedByOperatorId || null;
   const trashedByName = rawTrashedByName || null;
   const trashedAt = rawTrashedAt || null;
+  const categoryId = rawCategoryId || null;
+  const documentType = rawDocumentType ?? 'sop';
+  const cover = rawCover || null;
 
   if (
     !boundedString(id, 200) ||
     !boundedString(sourceKey, KNOWLEDGE_MAX_SOURCE_KEY_LENGTH) ||
     !boundedString(category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    (categoryId !== null && !boundedIdentifier(categoryId, 200)) ||
+    (documentType !== 'sop' && documentType !== 'cheatsheet') ||
     !boundedString(title, 240) ||
     !boundedString(fileName, 240) ||
     !boundedString(pdf, 500) ||
+    (cover !== null && !boundedString(cover, 500)) ||
     typeof checksum !== 'string' ||
     !SHA256_PATTERN.test(checksum) ||
     !Number.isInteger(byteSize) ||
@@ -401,9 +502,12 @@ export function normalizeKnowledgeDocumentRecord(value: unknown): KnowledgeDocum
     id,
     sourceKey,
     category,
+    categoryId,
+    documentType,
     title,
     fileName,
     pdf,
+    cover,
     checksum,
     byteSize: byteSize as number,
     pageCount: pageCount as number,
@@ -434,7 +538,14 @@ export function normalizeKnowledgeSearchText(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
-export function compareKnowledgeCategories(left: string, right: string): number {
+export function compareKnowledgeCategories(
+  left: string | KnowledgeCategoryRecord,
+  right: string | KnowledgeCategoryRecord,
+): number {
+  if (typeof left !== 'string' && typeof right !== 'string') {
+    return left.sortOrder - right.sortOrder || collator.compare(left.name, right.name);
+  }
+  if (typeof left !== 'string' || typeof right !== 'string') return 0;
   const leftGeneral = normalizeKnowledgeSearchText(left) === 'general';
   const rightGeneral = normalizeKnowledgeSearchText(right) === 'general';
   if (leftGeneral !== rightGeneral) return leftGeneral ? -1 : 1;
@@ -726,9 +837,13 @@ export function normalizeKnowledgeManagementDocumentView(
   const lifecycleState = value.lifecycleState as KnowledgeLifecycleState;
   const trashedByName = value.trashedByName || null;
   const trashedAt = value.trashedAt || null;
+  const categoryId = value.categoryId || null;
+  const documentType = value.documentType ?? 'sop';
   if (
     !boundedString(value.id, 200) ||
     !boundedString(value.category, KNOWLEDGE_MAX_CATEGORY_LENGTH) ||
+    (categoryId !== null && !boundedIdentifier(categoryId, 200)) ||
+    (documentType !== 'sop' && documentType !== 'cheatsheet') ||
     !boundedString(value.displayTitle, 240) ||
     !boundedString(value.fileName, 240) ||
     !Number.isInteger(value.byteSize) ||
@@ -752,6 +867,8 @@ export function normalizeKnowledgeManagementDocumentView(
   return {
     id: value.id,
     category: value.category,
+    categoryId,
+    documentType,
     displayTitle: value.displayTitle,
     fileName: value.fileName,
     byteSize: value.byteSize as number,
@@ -841,6 +958,11 @@ export function normalizeKnowledgeAuditEventView(value: unknown): KnowledgeAudit
     'title-changed',
     'category-changed',
     'category-renamed',
+    'category-created',
+    'category-reordered',
+    'category-deleted',
+    'document-type-changed',
+    'documents-reassigned',
     'trashed',
     'restored',
     'deleted',
@@ -901,7 +1023,17 @@ export function normalizeKnowledgeManagementSnapshot(
   );
   const uploads = normalizeKnowledgePage(value.uploads, normalizeKnowledgeManagementUploadView);
   const trash = normalizeKnowledgePage(value.trash, normalizeKnowledgeManagementDocumentView);
-  return documents && uploads && trash
-    ? { mode: value.mode as KnowledgeLibraryMode, documents, uploads, trash }
+  const rawCategories = value.categories ?? [];
+  const categories = Array.isArray(rawCategories)
+    ? rawCategories.map(normalizeKnowledgeCategoryRecord)
+    : [null];
+  return documents && uploads && trash && categories.every((category) => category !== null)
+    ? {
+        mode: value.mode as KnowledgeLibraryMode,
+        categories: categories as KnowledgeCategoryRecord[],
+        documents,
+        uploads,
+        trash,
+      }
     : null;
 }

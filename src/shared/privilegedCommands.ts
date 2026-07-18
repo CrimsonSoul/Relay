@@ -25,6 +25,7 @@ import {
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOAD_MAX_FILES,
   isKnowledgeChecksum,
+  type KnowledgeDocumentType,
 } from './knowledge';
 
 export const MAX_PRIVILEGED_COMMAND_BYTES = 64 * 1024;
@@ -123,6 +124,33 @@ export type PrivilegedCommandPayloadMap = {
     from: string;
     to: string;
     expectedDocumentRevisions: Record<string, number>;
+  };
+  'knowledge.category.create': { name: string; afterCategoryId: string | null };
+  'knowledge.category.name.set': {
+    categoryId: string;
+    name: string;
+    expectedRevision: number;
+  };
+  'knowledge.category.order.set': {
+    orderedCategoryIds: string[];
+    expectedRevisions: Record<string, number>;
+  };
+  'knowledge.category.delete': {
+    categoryId: string;
+    replacementCategoryId: string;
+    expectedRevision: number;
+    expectedDocumentRevisions: Record<string, number>;
+  };
+  'knowledge.document.metadata.set': {
+    documentId: string;
+    title: string;
+    categoryId: string;
+    documentType: KnowledgeDocumentType;
+    expectedRevision: number;
+  };
+  'knowledge.documents.category.assign': {
+    categoryId: string;
+    documents: Array<{ documentId: string; expectedRevision: number }>;
   };
   'knowledge.document.trash': { documentId: string; expectedRevision: number };
   'knowledge.document.restore': { documentId: string; expectedRevision: number };
@@ -343,6 +371,12 @@ const PUBLIC_PRIVILEGED_COMMANDS = new Set<string>([
   'knowledge.document.title.set',
   'knowledge.document.category.set',
   'knowledge.category.rename',
+  'knowledge.category.create',
+  'knowledge.category.name.set',
+  'knowledge.category.order.set',
+  'knowledge.category.delete',
+  'knowledge.document.metadata.set',
+  'knowledge.documents.category.assign',
   'knowledge.document.trash',
   'knowledge.document.restore',
   'knowledge.document.delete',
@@ -415,16 +449,168 @@ function normalizeKnowledgeDocumentRevision(
     : null;
 }
 
-function normalizeKnowledgeRevisions(value: unknown): Record<string, number> | null {
+function normalizeKnowledgeRevisions(
+  value: unknown,
+  maxEntries = 500,
+): Record<string, number> | null {
   if (!isRecord(value)) return null;
   const entries = Object.entries(value);
-  if (entries.length > 500) return null;
+  if (entries.length > maxEntries) return null;
   const revisions: Record<string, number> = {};
   for (const [id, revision] of entries) {
     if (!boundedIdentifier(id, 200) || !nonNegativeInteger(revision)) return null;
     revisions[id] = revision;
   }
   return revisions;
+}
+
+function normalizeKnowledgeDocumentAssignments(
+  value: unknown,
+): Array<{ documentId: string; expectedRevision: number }> | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 100) return null;
+  const seen = new Set<string>();
+  const documents: Array<{ documentId: string; expectedRevision: number }> = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !hasExactKeys(entry, ['documentId', 'expectedRevision'])) return null;
+    const document = normalizeKnowledgeDocumentRevision(entry);
+    if (!document || seen.has(document.documentId)) return null;
+    seen.add(document.documentId);
+    documents.push(document);
+  }
+  return documents;
+}
+
+type KnowledgeCatalogPayload = PrivilegedCommandPayloadMap[PrivilegedCommandName] | null;
+type KnowledgeCatalogNormalizer = (payload: Record<string, unknown>) => KnowledgeCatalogPayload;
+
+function normalizeKnowledgeCategoryCreate(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['name', 'afterCategoryId'])) return null;
+  const name = normalizedKnowledgeText(payload.name, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+  const afterCategoryId = payload.afterCategoryId;
+  return name && (afterCategoryId === null || boundedIdentifier(afterCategoryId, 200))
+    ? { name, afterCategoryId }
+    : null;
+}
+
+function normalizeKnowledgeCategoryNameSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['categoryId', 'name', 'expectedRevision'])) return null;
+  const name = normalizedKnowledgeText(payload.name, KNOWLEDGE_MAX_CATEGORY_LENGTH);
+  return boundedIdentifier(payload.categoryId, 200) &&
+    name &&
+    nonNegativeInteger(payload.expectedRevision)
+    ? { categoryId: payload.categoryId, name, expectedRevision: payload.expectedRevision }
+    : null;
+}
+
+function normalizeKnowledgeCategoryOrderSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['orderedCategoryIds', 'expectedRevisions'])) return null;
+  if (
+    !Array.isArray(payload.orderedCategoryIds) ||
+    payload.orderedCategoryIds.length < 1 ||
+    payload.orderedCategoryIds.length > 500 ||
+    payload.orderedCategoryIds.some((id) => !boundedIdentifier(id, 200))
+  ) {
+    return null;
+  }
+  const orderedCategoryIds = payload.orderedCategoryIds as string[];
+  if (new Set(orderedCategoryIds).size !== orderedCategoryIds.length) return null;
+  const expectedRevisions = normalizeKnowledgeRevisions(payload.expectedRevisions);
+  if (
+    !expectedRevisions ||
+    Object.keys(expectedRevisions).length !== orderedCategoryIds.length ||
+    orderedCategoryIds.some((id) => !(id in expectedRevisions))
+  ) {
+    return null;
+  }
+  return { orderedCategoryIds, expectedRevisions };
+}
+
+function normalizeKnowledgeCategoryDelete(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (
+    !hasExactKeys(payload, [
+      'categoryId',
+      'replacementCategoryId',
+      'expectedRevision',
+      'expectedDocumentRevisions',
+    ])
+  ) {
+    return null;
+  }
+  const expectedDocumentRevisions = normalizeKnowledgeRevisions(
+    payload.expectedDocumentRevisions,
+    100,
+  );
+  return boundedIdentifier(payload.categoryId, 200) &&
+    boundedIdentifier(payload.replacementCategoryId, 200) &&
+    payload.categoryId !== payload.replacementCategoryId &&
+    nonNegativeInteger(payload.expectedRevision) &&
+    expectedDocumentRevisions
+    ? {
+        categoryId: payload.categoryId,
+        replacementCategoryId: payload.replacementCategoryId,
+        expectedRevision: payload.expectedRevision,
+        expectedDocumentRevisions,
+      }
+    : null;
+}
+
+function normalizeKnowledgeDocumentMetadataSet(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (
+    !hasExactKeys(payload, [
+      'documentId',
+      'title',
+      'categoryId',
+      'documentType',
+      'expectedRevision',
+    ])
+  ) {
+    return null;
+  }
+  const revision = normalizeKnowledgeDocumentRevision(payload);
+  const title = normalizedKnowledgeText(payload.title, 240);
+  const documentType = payload.documentType;
+  return revision &&
+    title &&
+    boundedIdentifier(payload.categoryId, 200) &&
+    (documentType === 'sop' || documentType === 'cheatsheet')
+    ? { ...revision, title, categoryId: payload.categoryId, documentType }
+    : null;
+}
+
+function normalizeKnowledgeDocumentsCategoryAssign(
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload {
+  if (!hasExactKeys(payload, ['categoryId', 'documents'])) return null;
+  const documents = normalizeKnowledgeDocumentAssignments(payload.documents);
+  return boundedIdentifier(payload.categoryId, 200) && documents
+    ? { categoryId: payload.categoryId, documents }
+    : null;
+}
+
+const KNOWLEDGE_CATALOG_NORMALIZERS = new Map<string, KnowledgeCatalogNormalizer>([
+  ['knowledge.category.create', normalizeKnowledgeCategoryCreate],
+  ['knowledge.category.name.set', normalizeKnowledgeCategoryNameSet],
+  ['knowledge.category.order.set', normalizeKnowledgeCategoryOrderSet],
+  ['knowledge.category.delete', normalizeKnowledgeCategoryDelete],
+  ['knowledge.document.metadata.set', normalizeKnowledgeDocumentMetadataSet],
+  ['knowledge.documents.category.assign', normalizeKnowledgeDocumentsCategoryAssign],
+]);
+
+function normalizeKnowledgeCatalogPayload(
+  command: PrivilegedCommandName,
+  payload: Record<string, unknown>,
+): KnowledgeCatalogPayload | undefined {
+  return KNOWLEDGE_CATALOG_NORMALIZERS.get(command)?.(payload);
 }
 
 function normalizeAlertingProfiles(value: unknown): string[] | null {
@@ -662,6 +848,8 @@ function normalizePayload(
   payload: unknown,
 ): PrivilegedCommandPayloadMap[PrivilegedCommandName] | null {
   if (!isRecord(payload)) return null;
+  const catalogPayload = normalizeKnowledgeCatalogPayload(command, payload);
+  if (catalogPayload !== undefined) return catalogPayload;
   switch (command) {
     case 'privileged.status.read':
       return normalizeStatusPayload(payload);
