@@ -8,11 +8,12 @@ import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
 import { usePrivilegedAccess } from '../contexts/PrivilegedAccessContext';
 
 const SAFE_ERRORS = {
-  unauthorized: 'Administrator access is required.',
+  unauthorized: 'Owner or Administrator access is required.',
   locked: 'Privileged access is locked. Sign in again.',
   offline: 'Administration is unavailable while Relay is offline.',
   'pairing-required': 'Pair this workstation before using administration.',
   'invalid-request': 'Relay rejected the administration request.',
+  'insufficient-storage': 'Relay does not have enough storage to complete that action.',
   expired: 'The request expired. Try again.',
   replayed: 'Relay could not safely repeat that request.',
   conflict: 'The server state changed. Review the refreshed information and try again.',
@@ -29,7 +30,9 @@ export function useRelayAdministration() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canAdminister = session.state === 'active' && session.role === 'admin';
+  const canAdminister =
+    session.state === 'active' && (session.role === 'owner' || session.role === 'admin');
+  const clearError = useCallback(() => setError(null), []);
 
   const refresh = useCallback(async (): Promise<PrivilegedCommandResult> => {
     if (!canAdminister) {
@@ -98,6 +101,6 @@ export function useRelayAdministration() {
     canAdminister,
     refresh,
     execute,
-    clearError: () => setError(null),
+    clearError,
   };
 }

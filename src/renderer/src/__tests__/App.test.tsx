@@ -85,9 +85,6 @@ const mockUseDynatraceDashboards = vi.fn(() => mockDynatraceHookState);
 vi.mock('../contexts', () => ({
   NotesProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SearchProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  OperatorProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="operator-provider">{children}</div>
-  ),
   PrivilegedAccessProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="privileged-access-provider">{children}</div>
   ),
@@ -965,7 +962,7 @@ describe('App default export', () => {
     expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
   });
 
-  it('mounts operator and privileged-access providers inside the initialized connection', async () => {
+  it('mounts privileged access directly inside the initialized connection', async () => {
     Object.defineProperty(globalThis, 'location', {
       value: { search: '' },
       writable: true,
@@ -974,10 +971,9 @@ describe('App default export', () => {
     render(<App />);
 
     const connectionManager = await screen.findByTestId('connection-manager');
-    const operatorProvider = screen.getByTestId('operator-provider');
     const privilegedProvider = screen.getByTestId('privileged-access-provider');
-    expect(connectionManager).toContainElement(operatorProvider);
-    expect(operatorProvider).toContainElement(privilegedProvider);
+    expect(connectionManager).toContainElement(privilegedProvider);
+    expect(screen.queryByTestId('operator-provider')).toBeNull();
   });
 
   it('uses NoopToastProvider in popout mode', async () => {

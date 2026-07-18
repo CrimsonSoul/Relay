@@ -18,13 +18,12 @@ import {
   type PrivilegedSessionView,
 } from '@shared/privilegedAccess';
 import type { PrivilegedCommandResult } from '@shared/privilegedCommands';
-import { useOperator } from './OperatorContext';
 
 const SIGNED_OUT_SESSION: PrivilegedSessionView = {
   state: 'signed-out',
   accountId: null,
-  operatorId: null,
-  operatorName: null,
+  username: null,
+  displayName: null,
   role: null,
   capabilities: [],
   deviceId: null,
@@ -45,7 +44,7 @@ export type PrivilegedAccessContextValue = {
   error: string | null;
   pairingChallenge: PrivilegedPairingChallengeView | null;
   clearError: () => void;
-  login: (password: string) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   lock: () => Promise<void>;
   reauthenticate: (password: string) => Promise<PrivilegedReauthenticationProof | null>;
@@ -60,11 +59,15 @@ const PrivilegedAccessContext = createContext<PrivilegedAccessContextValue | nul
 
 const ERROR_MESSAGES = {
   'invalid-input': 'Check the information and try again.',
-  'invalid-credentials': 'The operator or password was not accepted.',
+  'invalid-credentials': 'The username or password was not accepted.',
   unauthorized: 'This account is not authorized for that action.',
   locked: 'Privileged access is locked. Sign in again.',
   offline: 'Privileged access is unavailable offline.',
   'pairing-required': 'This workstation must be paired before privileged access can continue.',
+  'invalid-request': 'Relay rejected the protected request.',
+  'insufficient-storage': 'Relay does not have enough storage to complete that action.',
+  expired: 'The protected request expired. Try again.',
+  replayed: 'Relay could not safely repeat that protected request.',
   conflict: 'The server state changed. Refresh and try again.',
   'server-error': 'Privileged access could not be completed.',
 } as const;
@@ -73,7 +76,6 @@ const normalizeOr = (value: unknown, fallback: PrivilegedSessionView) =>
   normalizePrivilegedSessionView(value) ?? fallback;
 
 export function PrivilegedAccessProvider({ children }: Readonly<{ children: ReactNode }>) {
-  const { selectedOperator, loading: operatorsLoading, setPickerOpen } = useOperator();
   const [session, setSession] = useState<PrivilegedSessionView>(SIGNED_OUT_SESSION);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<BusyAction | null>(null);
@@ -120,42 +122,8 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
     };
   }, []);
 
-  useEffect(() => {
-    if (
-      loading ||
-      operatorsLoading ||
-      (session.state !== 'active' && session.state !== 'pairing-required') ||
-      !session.operatorId ||
-      selectedOperator?.id === session.operatorId
-    ) {
-      return;
-    }
-
-    let cancelled = false;
-    setBusy('lock');
-    void globalThis.api
-      ?.lockPrivileged()
-      .then((nextView) => {
-        if (!cancelled) setSession(normalizeOr(nextView, SIGNED_OUT_SESSION));
-      })
-      .catch(() => {
-        if (!cancelled) setSession(SIGNED_OUT_SESSION);
-      })
-      .finally(() => {
-        if (!cancelled) setBusy(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, operatorsLoading, selectedOperator?.id, session.operatorId, session.state]);
-
   const login = useCallback(
-    async (password: string) => {
-      if (!selectedOperator) {
-        setPickerOpen(true);
-        setError('Choose your operator profile before signing in.');
-        return false;
-      }
+    async (username: string, password: string) => {
       const api = globalThis.api;
       if (!api) {
         setSession(OFFLINE_SESSION);
@@ -167,7 +135,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
       setError(null);
       try {
         const result = await api.loginPrivileged({
-          operatorId: selectedOperator.id,
+          username,
           password,
         });
         if (!result.ok) {
@@ -183,7 +151,7 @@ export function PrivilegedAccessProvider({ children }: Readonly<{ children: Reac
         setBusy(null);
       }
     },
-    [selectedOperator, setPickerOpen, showFailure],
+    [showFailure],
   );
 
   const logout = useCallback(async () => {

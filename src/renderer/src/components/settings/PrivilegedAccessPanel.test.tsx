@@ -3,13 +3,11 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrivilegedSessionView } from '@shared/privilegedAccess';
 
-const { mockUseOperator, mockUsePrivilegedAccess, mockUseRelayAdministration } = vi.hoisted(() => ({
-  mockUseOperator: vi.fn(),
+const { mockUsePrivilegedAccess, mockUseRelayAdministration } = vi.hoisted(() => ({
   mockUsePrivilegedAccess: vi.fn(),
   mockUseRelayAdministration: vi.fn(),
 }));
 
-vi.mock('../../contexts/OperatorContext', () => ({ useOperator: mockUseOperator }));
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
   usePrivilegedAccess: mockUsePrivilegedAccess,
 }));
@@ -19,13 +17,16 @@ vi.mock('../../hooks/useRelayAdministration', () => ({
 
 import { PrivilegedAccessPanel } from './PrivilegedAccessPanel';
 
-const session = (state: PrivilegedSessionView['state']): PrivilegedSessionView => ({
+const session = (
+  state: PrivilegedSessionView['state'],
+  role: PrivilegedSessionView['role'] = null,
+): PrivilegedSessionView => ({
   state,
-  accountId: state === 'active' ? 'account-1' : null,
-  operatorId: state === 'active' ? 'operator-1' : null,
-  operatorName: state === 'active' ? 'Ryan Bledsoe' : null,
-  role: state === 'active' ? 'admin' : null,
-  capabilities: state === 'active' ? ['privileged.status.read', 'operators.manage'] : [],
+  accountId: state === 'active' ? 'account-ryan' : null,
+  username: state === 'active' ? 'ryan' : null,
+  displayName: state === 'active' ? 'Ryan Bledsoe' : null,
+  role: state === 'active' ? role : null,
+  capabilities: state === 'active' ? ['privileged.status.read'] : [],
   deviceId: state === 'active' ? 'device-1' : null,
   expiresAt: state === 'active' ? '2026-07-15T20:15:00.000Z' : null,
 });
@@ -37,33 +38,34 @@ describe('PrivilegedAccessPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseOperator.mockReturnValue({
-      selectedOperator: { id: 'operator-1', displayName: 'Ryan Bledsoe' },
-    });
     mockUseRelayAdministration.mockReturnValue({
       snapshot: {
-        operators: [
-          { id: 'operator-1', displayName: 'Ryan Bledsoe', active: true, role: 'admin' },
-          { id: 'operator-3', displayName: 'Charles Gibbs', active: true, role: 'admin' },
-          { id: 'operator-2', displayName: 'Tristan Bowles', active: true, role: 'publisher' },
-        ],
-        privilegedAccounts: [
-          { accountId: 'account-admin', operatorId: 'operator-1', role: 'admin', active: true },
+        accounts: [
+          {
+            accountId: 'account-ryan',
+            username: 'ryan',
+            displayName: 'Ryan Bledsoe',
+            storedRole: 'administrator',
+            effectiveRole: 'owner',
+            active: true,
+          },
           {
             accountId: 'account-charles',
-            operatorId: 'operator-3',
-            role: 'admin',
+            username: 'charles',
+            displayName: 'Charles Gibbs',
+            storedRole: 'administrator',
+            effectiveRole: 'admin',
             active: true,
           },
           {
             accountId: 'account-publisher',
-            operatorId: 'operator-2',
-            role: 'publisher',
+            username: 'publisher',
+            displayName: 'Tristan Bowles',
+            storedRole: 'publisher',
+            effectiveRole: 'publisher',
             active: true,
           },
         ],
-        adminOperatorId: 'operator-1',
-        publisherOperatorId: 'operator-2',
       },
       loading: false,
     });
@@ -82,16 +84,19 @@ describe('PrivilegedAccessPanel', () => {
     });
   });
 
-  it('submits from the keyboard, clears the password, and returns focus', async () => {
+  it('signs in with username and password, clears the password, and returns focus', async () => {
     render(<PrivilegedAccessPanel relayMode="server" />);
-    const password = screen.getByLabelText('Privileged password') as HTMLInputElement;
+    const username = screen.getByLabelText('Username');
+    const password = screen.getByLabelText('Password') as HTMLInputElement;
 
+    fireEvent.change(username, { target: { value: 'ryan' } });
     fireEvent.change(password, { target: { value: 'a-long-private-password' } });
     fireEvent.submit(password.closest('form')!);
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith('a-long-private-password'));
+    await waitFor(() => expect(login).toHaveBeenCalledWith('ryan', 'a-long-private-password'));
     expect(password.value).toBe('');
     expect(password).toHaveFocus();
+    expect(screen.queryByText(/operator profile/i)).toBeNull();
   });
 
   it('shows paired-device guidance and submits the one-time challenge', async () => {
@@ -122,67 +127,34 @@ describe('PrivilegedAccessPanel', () => {
   });
 
   it.each([
+    ['owner', 'Owner'],
     ['admin', 'Administrator'],
-    ['publisher', 'Knowledge publisher'],
-  ] as const)('labels an active %s session', (role, label) => {
+    ['publisher', 'Publisher'],
+  ] as const)('labels an active %s session from its effective role', (role, label) => {
     mockUsePrivilegedAccess.mockReturnValue({
       ...mockUsePrivilegedAccess(),
-      session: { ...session('active'), role },
+      session: session('active', role),
     });
     render(<PrivilegedAccessPanel relayMode="server" />);
 
     expect(screen.getByText(label)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Lock' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    expect(screen.getByText('Ryan Bledsoe')).toBeVisible();
+    expect(screen.getByText('@ryan')).toBeVisible();
     if (role === 'publisher') {
       expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
     }
   });
 
-  it('offers unlock for a locked session', () => {
+  it('creates a pairing challenge for active role accounts by account ID', async () => {
     mockUsePrivilegedAccess.mockReturnValue({
       ...mockUsePrivilegedAccess(),
-      session: { ...session('locked'), operatorName: 'Ryan Bledsoe' },
+      session: session('active', 'admin'),
     });
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    expect(screen.getByRole('button', { name: 'Unlock' })).toBeVisible();
-  });
-
-  it('renders an explicit offline state without authentication controls', () => {
-    mockUsePrivilegedAccess.mockReturnValue({
-      ...mockUsePrivilegedAccess(),
-      session: session('offline'),
-    });
-    render(<PrivilegedAccessPanel relayMode="server" />);
-
-    expect(screen.getByText('Privileged access is unavailable offline.')).toBeVisible();
-    expect(screen.queryByLabelText('Privileged password')).toBeNull();
-  });
-
-  it('does not offer local-only challenge creation from a client workstation', () => {
-    mockUsePrivilegedAccess.mockReturnValue({
-      ...mockUsePrivilegedAccess(),
-      session: session('active'),
-    });
-    render(<PrivilegedAccessPanel relayMode="client" />);
-
-    expect(screen.queryByRole('button', { name: 'Create pairing code' })).toBeNull();
-    expect(screen.getByText(/Pair additional workstations from the Relay server/)).toBeVisible();
-  });
-
-  it('creates a pairing challenge for the selected administrator or publisher account', async () => {
-    mockUsePrivilegedAccess.mockReturnValue({
-      ...mockUsePrivilegedAccess(),
-      session: session('active'),
-    });
-    render(<PrivilegedAccessPanel relayMode="server" />);
-
-    expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Administrator' })).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Ryan Bledsoe — Owner' })).toBeVisible();
     expect(screen.getByRole('option', { name: 'Charles Gibbs — Administrator' })).toBeVisible();
-    expect(
-      screen.getByRole('option', { name: 'Tristan Bowles — Knowledge publisher' }),
-    ).toBeVisible();
+    expect(screen.getByRole('option', { name: 'Tristan Bowles — Publisher' })).toBeVisible();
     fireEvent.change(screen.getByLabelText('Workstation owner'), {
       target: { value: 'account-publisher' },
     });
@@ -191,30 +163,33 @@ describe('PrivilegedAccessPanel', () => {
     await waitFor(() => expect(createPairingChallenge).toHaveBeenCalledWith('account-publisher'));
   });
 
-  it('offers one-time administrator password setup only on the server PC', async () => {
+  it('offers server-local first-owner credential setup by account ID without operator selection', async () => {
     const setupInitialAdministratorCredential = vi.fn().mockResolvedValue({
       ok: true,
-      value: { accountId: 'account-1' },
+      value: { accountId: 'account-ryan', username: 'ryan' },
     });
     globalThis.api = { setupInitialAdministratorCredential } as never;
     render(<PrivilegedAccessPanel relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Set initial administrator password' }));
-    fireEvent.change(screen.getByLabelText('New administrator password'), {
-      target: { value: 'a-new-admin-password' },
+    fireEvent.click(screen.getByRole('button', { name: 'Set initial Owner password' }));
+    fireEvent.change(screen.getByLabelText('Owner account ID'), {
+      target: { value: 'account-ryan' },
     });
-    fireEvent.change(screen.getByLabelText('Confirm administrator password'), {
-      target: { value: 'a-new-admin-password' },
+    fireEvent.change(screen.getByLabelText('New Owner password'), {
+      target: { value: 'a-new-owner-password' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create administrator password' }));
+    fireEvent.change(screen.getByLabelText('Confirm Owner password'), {
+      target: { value: 'a-new-owner-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Owner password' }));
 
     await waitFor(() =>
       expect(setupInitialAdministratorCredential).toHaveBeenCalledWith({
-        operatorId: 'operator-1',
-        password: 'a-new-admin-password',
-        passwordConfirm: 'a-new-admin-password',
+        accountId: 'account-ryan',
+        password: 'a-new-owner-password',
+        passwordConfirm: 'a-new-owner-password',
       }),
     );
-    expect(login).toHaveBeenCalledWith('a-new-admin-password');
+    expect(login).toHaveBeenCalledWith('ryan', 'a-new-owner-password');
   });
 });

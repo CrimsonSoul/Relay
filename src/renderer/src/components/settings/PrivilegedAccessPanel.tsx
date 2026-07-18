@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { PrivilegedPairingChallengeTarget } from '@shared/ipc';
-import { useOperator } from '../../contexts/OperatorContext';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { useRelayAdministration } from '../../hooks/useRelayAdministration';
 import { TactileButton } from '../TactileButton';
@@ -15,14 +14,16 @@ const formatExpiry = (value: string | null) => {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(parsed);
 };
 
-const pairingTargetLabel = (target: PrivilegedPairingChallengeTarget | undefined) => {
-  if (!target) return 'Selected privileged account';
-  const role = target.role === 'admin' ? 'Administrator' : 'Knowledge publisher';
-  return `${target.operatorName} · ${role}`;
+const roleLabel = (role: 'owner' | 'admin' | 'publisher') => {
+  if (role === 'owner') return 'Owner';
+  if (role === 'admin') return 'Administrator';
+  return 'Publisher';
 };
 
+const pairingTargetLabel = (target: PrivilegedPairingChallengeTarget | undefined) =>
+  target ? `${target.displayName} · ${roleLabel(target.role)}` : 'Selected protected account';
+
 export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
-  const { selectedOperator } = useOperator();
   const administration = useRelayAdministration();
   const {
     session,
@@ -37,8 +38,10 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     createPairingChallenge,
     completePairing,
   } = usePrivilegedAccess();
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [initialSetupOpen, setInitialSetupOpen] = useState(false);
+  const [initialAccountId, setInitialAccountId] = useState('');
   const [initialPassword, setInitialPassword] = useState('');
   const [initialPasswordConfirm, setInitialPasswordConfirm] = useState('');
   const [setupFeedback, setSetupFeedback] = useState<string | null>(null);
@@ -47,45 +50,45 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
   const [deviceLabel, setDeviceLabel] = useState('');
   const [pairingTargetAccountId, setPairingTargetAccountId] = useState('');
   const passwordRef = useRef<HTMLInputElement>(null);
+
   const pairingTargets = useMemo<PrivilegedPairingChallengeTarget[]>(() => {
-    const snapshot = administration.snapshot;
-    if (!snapshot) return [];
-    const operators = new Map(
-      snapshot.operators.map((operator) => [operator.id, operator] as const),
+    const accounts = administration.snapshot?.accounts ?? [];
+    return accounts.flatMap((account) =>
+      account.active && account.effectiveRole
+        ? [
+            {
+              accountId: account.accountId,
+              username: account.username,
+              displayName: account.displayName,
+              role: account.effectiveRole,
+            },
+          ]
+        : [],
     );
-    return snapshot.privilegedAccounts.flatMap((account) => {
-      const operator = operators.get(account.operatorId);
-      const assigned =
-        operator?.role === account.role &&
-        (account.role === 'admin' || account.operatorId === snapshot.publisherOperatorId);
-      if (!account.active || !operator?.active || !assigned) return [];
-      return [
-        {
-          accountId: account.accountId,
-          operatorId: account.operatorId,
-          operatorName: operator.displayName,
-          role: account.role,
-        },
-      ];
-    });
-  }, [administration.snapshot]);
+  }, [administration.snapshot?.accounts]);
 
   useEffect(() => {
     setPairingTargetAccountId((current) => {
       if (pairingTargets.some(({ accountId }) => accountId === current)) return current;
-      return pairingTargets.find(({ role }) => role === 'admin')?.accountId ?? '';
+      return (
+        pairingTargets.find(({ role }) => role === 'owner' || role === 'admin')?.accountId ?? ''
+      );
     });
   }, [pairingTargets]);
 
-  const challengeTarget = pairingTargets.find(
-    ({ accountId }) => accountId === pairingChallenge?.accountId,
+  useEffect(
+    () => () => {
+      setPassword('');
+      setInitialPassword('');
+      setInitialPasswordConfirm('');
+    },
+    [],
   );
-  const challengeOwnerLabel = pairingTargetLabel(challengeTarget);
 
   const handleLogin = async (event: FormSubmitEvent) => {
     event.preventDefault();
     try {
-      await login(password);
+      await login(username.trim(), password);
     } finally {
       setPassword('');
       passwordRef.current?.focus();
@@ -102,13 +105,15 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     if (paired) setPairingCode('');
   };
 
+  const closeInitialSetup = () => {
+    setInitialPassword('');
+    setInitialPasswordConfirm('');
+    setInitialSetupOpen(false);
+  };
+
   const handleInitialSetup = async (event: FormSubmitEvent) => {
     event.preventDefault();
     setSetupFeedback(null);
-    if (!selectedOperator) {
-      setSetupFeedback('Choose the Ryan Bledsoe operator profile first.');
-      return;
-    }
     if (initialPassword !== initialPasswordConfirm) {
       setSetupFeedback('Passwords must match.');
       return;
@@ -116,29 +121,28 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
     const passwordToUse = initialPassword;
     try {
       const result = await globalThis.api?.setupInitialAdministratorCredential({
-        operatorId: selectedOperator.id,
+        accountId: initialAccountId.trim(),
         password: passwordToUse,
         passwordConfirm: initialPasswordConfirm,
       });
       setInitialPassword('');
       setInitialPasswordConfirm('');
       if (!result?.ok) {
-        setSetupFeedback('Initial setup was not accepted. It may already be complete.');
+        setSetupFeedback('Initial Owner setup was not accepted. It may already be complete.');
         return;
       }
       setInitialSetupOpen(false);
-      await login(passwordToUse);
+      setUsername(result.value.username);
+      await login(result.value.username, passwordToUse);
     } catch {
       setInitialPassword('');
       setInitialPasswordConfirm('');
-      setSetupFeedback('Initial setup could not be completed.');
+      setSetupFeedback('Initial Owner setup could not be completed.');
     }
   };
 
   const statusContent = (() => {
-    if (loading) {
-      return <div className="privileged-access__state">Checking privileged access…</div>;
-    }
+    if (loading) return <div className="privileged-access__state">Checking protected access…</div>;
 
     if (session.state === 'offline') {
       return (
@@ -203,17 +207,21 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
       );
     }
 
-    if (session.state === 'active') {
-      const roleLabel = session.role === 'admin' ? 'Administrator' : 'Knowledge publisher';
+    if (session.state === 'active' && session.role && session.displayName && session.username) {
+      const canPair = session.role === 'owner' || session.role === 'admin';
       const expiry = formatExpiry(session.expiresAt);
+      const challengeTarget = pairingTargets.find(
+        ({ accountId }) => accountId === pairingChallenge?.accountId,
+      );
       return (
         <div className="privileged-access__active">
           <div className="privileged-access__identity">
             <div>
               <span className={`privileged-access__role privileged-access__role--${session.role}`}>
-                {roleLabel}
+                {roleLabel(session.role)}
               </span>
-              <strong>{session.operatorName}</strong>
+              <strong>{session.displayName}</strong>
+              <span>@{session.username}</span>
               <span>
                 {expiry ? `Locks after inactivity · session expires ${expiry}` : 'Active session'}
               </span>
@@ -228,12 +236,12 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             </div>
           </div>
 
-          {session.role === 'admin' && relayMode === 'server' && (
+          {canPair && relayMode === 'server' && (
             <div className="privileged-access__pairing-console">
               <div>
-                <strong>Pair a privileged workstation</strong>
+                <strong>Pair a protected workstation</strong>
                 <span>
-                  Choose its owner. Challenge codes expire after 10 minutes and work once.
+                  Choose its account. Challenge codes expire after 10 minutes and work once.
                 </span>
               </div>
               <div className="privileged-access__pairing-actions">
@@ -249,8 +257,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                     {pairingTargets.length === 0 && <option value="">No eligible accounts</option>}
                     {pairingTargets.map((target) => (
                       <option key={target.accountId} value={target.accountId}>
-                        {target.operatorName} —{' '}
-                        {target.role === 'admin' ? 'Administrator' : 'Knowledge publisher'}
+                        {target.displayName} — {roleLabel(target.role)}
                       </option>
                     ))}
                   </select>
@@ -268,7 +275,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                 <dl className="privileged-access__challenge" aria-label="Active pairing challenge">
                   <div className="privileged-access__challenge-owner">
                     <dt>Workstation owner</dt>
-                    <dd>{challengeOwnerLabel}</dd>
+                    <dd>{pairingTargetLabel(challengeTarget)}</dd>
                   </div>
                   <div>
                     <dt>Challenge ID</dt>
@@ -286,7 +293,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
               )}
             </div>
           )}
-          {session.role === 'admin' && relayMode === 'client' && (
+          {canPair && relayMode === 'client' && (
             <div className="privileged-access__state">
               <strong>Pairing is controlled locally</strong>
               <span>Pair additional workstations from the Relay server PC.</span>
@@ -304,37 +311,45 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
             <strong>
               {locked ? 'Privileged access is locked' : 'Sign in for protected actions'}
             </strong>
-            <span>
-              {selectedOperator
-                ? `Authenticating as ${selectedOperator.displayName}.`
-                : 'Choose your operator profile in the sidebar first.'}
-            </span>
+            <span>Use your protected Relay account credentials.</span>
           </div>
-          <label className="privileged-access__field privileged-access__password">
-            <span>Privileged password</span>
-            <input
-              ref={passwordRef}
-              type="password"
-              className="input"
-              value={password}
-              onChange={(event) => {
-                setPassword(event.target.value);
-                if (error) clearError();
-              }}
-              autoComplete="current-password"
-              minLength={12}
-              maxLength={128}
-              disabled={!selectedOperator || busy !== null}
-              required
-            />
-          </label>
+          <div className="privileged-access__field-grid">
+            <label className="privileged-access__field">
+              <span>Username</span>
+              <input
+                className="input"
+                value={username}
+                onChange={(event) => {
+                  setUsername(event.target.value);
+                  if (error) clearError();
+                }}
+                autoComplete="username"
+                maxLength={64}
+                disabled={busy !== null}
+                required
+              />
+            </label>
+            <label className="privileged-access__field privileged-access__password">
+              <span>Password</span>
+              <input
+                ref={passwordRef}
+                type="password"
+                className="input"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  if (error) clearError();
+                }}
+                autoComplete="current-password"
+                minLength={12}
+                maxLength={128}
+                disabled={busy !== null}
+                required
+              />
+            </label>
+          </div>
           <div className="privileged-access__actions">
-            <TactileButton
-              type="submit"
-              variant="primary"
-              loading={busy === 'login'}
-              disabled={!selectedOperator}
-            >
+            <TactileButton type="submit" variant="primary" loading={busy === 'login'}>
               {locked ? 'Unlock' : 'Sign in'}
             </TactileButton>
           </div>
@@ -342,21 +357,28 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
         {relayMode === 'server' && (
           <div className="privileged-access__bootstrap">
             <div className="privileged-access__state">
-              <strong>First-time administrator setup</strong>
-              <span>
-                Available only on this Relay server PC for Ryan Bledsoe. There is no default
-                password.
-              </span>
+              <strong>First-time Owner setup</strong>
+              <span>Available only on this Relay server PC. Relay has no default password.</span>
             </div>
             {!initialSetupOpen ? (
               <TactileButton type="button" onClick={() => setInitialSetupOpen(true)}>
-                Set initial administrator password
+                Set initial Owner password
               </TactileButton>
             ) : (
               <form className="privileged-access__form" onSubmit={handleInitialSetup}>
                 <div className="privileged-access__field-grid">
                   <label className="privileged-access__field">
-                    <span>New administrator password</span>
+                    <span>Owner account ID</span>
+                    <input
+                      className="input"
+                      value={initialAccountId}
+                      onChange={(event) => setInitialAccountId(event.target.value)}
+                      autoComplete="off"
+                      required
+                    />
+                  </label>
+                  <label className="privileged-access__field">
+                    <span>New Owner password</span>
                     <input
                       type="password"
                       className="input"
@@ -368,7 +390,7 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                     />
                   </label>
                   <label className="privileged-access__field">
-                    <span>Confirm administrator password</span>
+                    <span>Confirm Owner password</span>
                     <input
                       type="password"
                       className="input"
@@ -382,16 +404,9 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
                 </div>
                 <div className="privileged-access__actions">
                   <TactileButton type="submit" variant="primary">
-                    Create administrator password
+                    Create Owner password
                   </TactileButton>
-                  <TactileButton
-                    type="button"
-                    onClick={() => {
-                      setInitialPassword('');
-                      setInitialPasswordConfirm('');
-                      setInitialSetupOpen(false);
-                    }}
-                  >
+                  <TactileButton type="button" onClick={closeInitialSetup}>
                     Cancel
                   </TactileButton>
                 </div>
@@ -419,8 +434,8 @@ export function PrivilegedAccessPanel({ relayMode }: Readonly<Props>) {
           Privileged access
         </h2>
         <p className="settings-description">
-          Unlock administration and Knowledge Base publishing. Normal operator attribution stays
-          passwordless.
+          Sign in to administer Relay or publish Knowledge Base documents with a protected role
+          account.
         </p>
       </header>
       {error && (

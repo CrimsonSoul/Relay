@@ -24,14 +24,6 @@ vi.mock('../sidebar/SidebarButton', () => ({
   ),
 }));
 
-vi.mock('../sidebar/SidebarOperatorSelector', () => ({
-  SidebarOperatorSelector: () => (
-    <button type="button" data-testid="sidebar-operator-selector">
-      Select operator
-    </button>
-  ),
-}));
-
 // Mock sidebar icons to simple spans
 vi.mock('../sidebar/SidebarIcons', () => ({
   ComposeIcon: () => <span>ComposeIcon</span>,
@@ -133,8 +125,8 @@ describe('Sidebar', () => {
     ).toBeTruthy();
   });
 
-  it('renders the operator selector directly below dashboard tools and above Settings', () => {
-    const { container } = render(
+  it('renders no operator selector between dashboard tools and Settings', () => {
+    render(
       <Sidebar
         {...defaultProps}
         dynatraceDashboards={[
@@ -148,20 +140,8 @@ describe('Sidebar', () => {
       />,
     );
 
-    const footer = container.querySelector('.sidebar-footer');
-    const dashboardButton = screen.getByRole('button', {
-      name: 'Open Dynatrace dashboard NOC',
-    });
-    const operatorSelector = screen.getByTestId('sidebar-operator-selector');
-    const settingsButton = screen.getByTestId('sidebar-btn-settings');
-
-    expect(footer).toContainElement(operatorSelector);
-    expect(
-      dashboardButton.compareDocumentPosition(operatorSelector) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      operatorSelector.compareDocumentPosition(settingsButton) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByText(/Select operator/i)).toBeNull();
+    expect(screen.getByTestId('sidebar-btn-settings')).toBeVisible();
   });
 
   it('hides client presence when Relay is running in client mode', () => {

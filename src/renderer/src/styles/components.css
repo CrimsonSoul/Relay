@@ -2439,6 +2439,11 @@ body.modal-open {
   color: var(--accent-bright);
 }
 
+.administration-chip--owner {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent-bright);
+}
+
 .administration-chip--publisher {
   background: color-mix(in srgb, #3b82f6 12%, transparent);
   color: #74b8ff;
@@ -2452,6 +2457,28 @@ body.modal-open {
 .administration-chip--pending {
   background: color-mix(in srgb, #f0ad4e 10%, transparent);
   color: #f3bf70;
+}
+
+.role-accounts__primary-actions,
+.role-accounts__credential-actions {
+  justify-content: flex-start;
+}
+
+.role-accounts__create {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+}
+
+.role-accounts__publisher {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 0.8fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.role-accounts__publisher > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .administration-callout,
@@ -2635,6 +2662,7 @@ body.modal-open {
   }
 
   .administration-create,
+  .role-accounts__publisher,
   .administration-field-grid,
   .administration-setting-grid {
     grid-template-columns: 1fr;

@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { useRelayAdministration } from '../../hooks/useRelayAdministration';
 import { TactileButton } from '../TactileButton';
-import { OperatorAdministrationPanel } from './administration/OperatorAdministrationPanel';
 import { PairedDevicesPanel } from './administration/PairedDevicesPanel';
-import { PrivilegedAccountsPanel } from './administration/PrivilegedAccountsPanel';
-import { PublisherAssignmentPanel } from './administration/PublisherAssignmentPanel';
 import { RelayServerPanel } from './administration/RelayServerPanel';
+import { RoleAccountsPanel } from './administration/RoleAccountsPanel';
 
-type SectionId = 'operators' | 'publisher' | 'accounts' | 'devices' | 'server';
+type SectionId = 'roles' | 'devices' | 'server';
 const SECTIONS: ReadonlyArray<{ id: SectionId; label: string; eyebrow: string }> = [
-  { id: 'operators', label: 'Operators', eyebrow: 'Roster' },
-  { id: 'publisher', label: 'Publisher', eyebrow: 'Knowledge Base' },
-  { id: 'accounts', label: 'Accounts', eyebrow: 'Credentials' },
+  { id: 'roles', label: 'Accounts & roles', eyebrow: 'Authority' },
   { id: 'devices', label: 'Devices', eyebrow: 'Trust' },
   { id: 'server', label: 'Relay server', eyebrow: 'Configuration' },
 ];
@@ -22,9 +18,13 @@ export function AdministrationSettings({
 }: Readonly<{ relayMode: 'server' | 'client' | null }>) {
   const { session } = usePrivilegedAccess();
   const administration = useRelayAdministration();
-  const [activeSection, setActiveSection] = useState<SectionId>('operators');
+  const [activeSection, setActiveSection] = useState<SectionId>('roles');
 
-  if (session.state !== 'active' || session.role !== 'admin' || !administration.canAdminister)
+  if (
+    session.state !== 'active' ||
+    (session.role !== 'owner' && session.role !== 'admin') ||
+    !administration.canAdminister
+  )
     return null;
 
   const snapshot = administration.snapshot;
@@ -43,8 +43,10 @@ export function AdministrationSettings({
           </p>
         </div>
         <div className="administration-settings__session">
-          <span className="administration-chip administration-chip--admin">ADMIN</span>
-          <strong>{session.operatorName}</strong>
+          <span className={`administration-chip administration-chip--${session.role}`}>
+            {session.role.toUpperCase()}
+          </span>
+          <strong>{session.displayName}</strong>
           <TactileButton
             size="sm"
             onClick={() => void administration.refresh()}
@@ -109,14 +111,8 @@ export function AdministrationSettings({
                 : 'Administration data is unavailable.'}
             </div>
           )}
-          {snapshot && activeSection === 'operators' && (
-            <OperatorAdministrationPanel snapshot={snapshot} execute={administration.execute} />
-          )}
-          {snapshot && activeSection === 'publisher' && (
-            <PublisherAssignmentPanel snapshot={snapshot} execute={administration.execute} />
-          )}
-          {snapshot && activeSection === 'accounts' && (
-            <PrivilegedAccountsPanel
+          {snapshot && activeSection === 'roles' && (
+            <RoleAccountsPanel
               snapshot={snapshot}
               execute={administration.execute}
               relayMode={relayMode}

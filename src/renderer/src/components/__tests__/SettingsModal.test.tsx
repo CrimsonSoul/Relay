@@ -45,14 +45,6 @@ vi.mock('../TactileButton', () => ({
   }) => React.createElement('button', { onClick, disabled, type }, children),
 }));
 
-vi.mock('../../contexts/OperatorContext', () => ({
-  useOperator: () => ({
-    operators: [],
-    loading: false,
-    error: null,
-  }),
-}));
-
 vi.mock('../../hooks/useRelayAdministration', () => ({
   useRelayAdministration: () => ({ snapshot: null, canAdminister: true }),
 }));
@@ -129,13 +121,10 @@ describe('SettingsModal', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Accent color' })).toBeNull();
   });
 
-  it('offers Operators as a peer Settings page section', () => {
+  it('removes the obsolete Operator roster section', () => {
     render(<SettingsModal {...defaultProps} presentation="page" />);
 
-    expect(screen.getByRole('tab', { name: 'Operators' })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    );
+    expect(screen.queryByRole('tab', { name: 'Operators' })).toBeNull();
   });
 
   it('offers Access as a peer Settings page section', () => {
@@ -155,15 +144,6 @@ describe('SettingsModal', () => {
 
     expect(screen.getByRole('tabpanel', { name: 'Administration' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
-  });
-
-  it('routes the Operators tab to the full roster section', async () => {
-    render(<SettingsModal {...defaultProps} presentation="page" />);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Operators' }));
-
-    expect(screen.getByRole('tabpanel', { name: 'Operators' })).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Operator roster' })).toBeVisible();
   });
 
   it('keeps the full-width operator roster out of the compact legacy modal', () => {

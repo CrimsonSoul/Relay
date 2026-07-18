@@ -15,31 +15,49 @@ import { useRelayAdministration } from './useRelayAdministration';
 const activeSession: PrivilegedSessionView = {
   state: 'active',
   accountId: 'account-admin',
-  operatorId: 'operator-admin',
-  operatorName: 'Ryan Bledsoe',
+  username: 'charles',
+  displayName: 'Charles Gibbs',
   role: 'admin',
-  capabilities: ['settings.manage', 'operators.manage'],
+  capabilities: ['settings.manage', 'publisher.assign'],
   deviceId: 'device-1',
   expiresAt: '2026-07-15T22:00:00.000Z',
 };
 
 const snapshot: RelayAdministrationSnapshot = {
-  operators: [
+  accounts: [
     {
-      id: 'operator-admin',
+      accountId: 'account-owner',
+      username: 'ryan',
       displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator',
+      effectiveRole: 'owner',
       active: true,
+      credentialState: 'configured',
+      mustChangePassword: false,
+      credentialVersion: 1,
       revision: 1,
-      role: 'admin',
-      created: '2026-07-15T18:00:00.000Z',
-      updated: '2026-07-15T19:00:00.000Z',
+      createdAt: '2026-07-15T18:00:00.000Z',
+      updatedAt: '2026-07-15T19:00:00.000Z',
+    },
+    {
+      accountId: 'account-admin',
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator',
+      effectiveRole: 'admin',
+      active: true,
+      credentialState: 'configured',
+      mustChangePassword: false,
+      credentialVersion: 1,
+      revision: 1,
+      createdAt: '2026-07-15T18:00:00.000Z',
+      updatedAt: '2026-07-15T19:00:00.000Z',
     },
   ],
-  privilegedAccounts: [],
   devices: [],
   settings: [],
-  adminOperatorId: 'operator-admin',
-  publisherOperatorId: null,
+  ownerAccountId: 'account-owner',
+  publisherAccountId: null,
   assignmentRevision: 1,
   generatedAt: '2026-07-15T20:00:00.000Z',
 };
@@ -87,10 +105,10 @@ describe('useRelayAdministration', () => {
 
     await act(async () => {
       await result.current.execute({
-        command: 'operator.rename',
+        command: 'account.display-name.update',
         payload: {
-          operatorId: 'operator-admin',
-          displayName: 'Ryan Bledsoe',
+          accountId: 'account-admin',
+          displayName: 'Charles Gibbs',
           expectedRevision: 1,
         },
         expectedRevision: null,
@@ -116,13 +134,31 @@ describe('useRelayAdministration', () => {
     let response: Awaited<ReturnType<typeof result.current.execute>> | undefined;
     await act(async () => {
       response = await result.current.execute({
-        command: 'operator.create',
-        payload: { displayName: 'Morgan Lee' },
+        command: 'account.publisher.create',
+        payload: { username: 'morgan', displayName: 'Morgan Lee', expectedStateRevision: 1 },
         expectedRevision: null,
       });
     });
 
     expect(response).toEqual({ ok: false, error: 'offline' });
     expect(submitCommand).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads administration for the Owner and rejects a Publisher session', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { ...activeSession, accountId: 'account-owner', role: 'owner' },
+      submitCommand,
+    });
+    const { result, rerender } = renderHook(() => useRelayAdministration());
+    await waitFor(() => expect(result.current.snapshot).toEqual(snapshot));
+
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { ...activeSession, accountId: 'account-publisher', role: 'publisher' },
+      submitCommand,
+    });
+    rerender();
+
+    await waitFor(() => expect(result.current.snapshot).toBeNull());
+    expect(result.current.canAdminister).toBe(false);
   });
 });

@@ -1,9 +1,4 @@
-import {
-  NotesProvider,
-  OperatorProvider,
-  PrivilegedAccessProvider,
-  SearchProvider,
-} from './contexts';
+import { NotesProvider, PrivilegedAccessProvider, SearchProvider } from './contexts';
 import {
   Activity,
   useEffect,
@@ -687,14 +682,12 @@ function AppWithSetup() {
       offlineMode={phase.offlineMode}
       onReconfigure={() => setPhase({ stage: 'setup' })}
     >
-      <OperatorProvider>
-        <PrivilegedAccessProvider>
-          <MainApp
-            onReconfigure={() => setPhase({ stage: 'setup' })}
-            relayConfig={phase.relayConfig}
-          />
-        </PrivilegedAccessProvider>
-      </OperatorProvider>
+      <PrivilegedAccessProvider>
+        <MainApp
+          onReconfigure={() => setPhase({ stage: 'setup' })}
+          relayConfig={phase.relayConfig}
+        />
+      </PrivilegedAccessProvider>
     </ConnectionManager>
   );
 }

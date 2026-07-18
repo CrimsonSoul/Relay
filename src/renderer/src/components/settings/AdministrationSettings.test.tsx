@@ -1,8 +1,9 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
 
 const { mockUseRelayAdministration, mockUsePrivilegedAccess } = vi.hoisted(() => ({
   mockUseRelayAdministration: vi.fn(),
@@ -23,89 +24,60 @@ const componentsCss = readFileSync(
   'utf8',
 );
 
-const snapshot = {
-  operators: [
-    {
-      id: 'operator-admin',
-      displayName: 'Ryan Bledsoe',
-      active: true,
-      revision: 2,
-      role: 'admin',
-      created: '2026-07-15T18:00:00.000Z',
-      updated: '2026-07-15T19:00:00.000Z',
-    },
-    {
-      id: 'operator-charles',
-      displayName: 'Charles Gibbs',
-      active: true,
-      revision: 1,
-      role: 'admin',
-      created: '2026-07-15T18:00:00.000Z',
-      updated: '2026-07-15T19:00:00.000Z',
-    },
-    {
-      id: 'operator-publisher',
-      displayName: 'Tristan Bowles',
-      active: true,
-      revision: 1,
-      role: 'publisher',
-      created: '2026-07-15T18:00:00.000Z',
-      updated: '2026-07-15T19:00:00.000Z',
-    },
-    {
-      id: 'operator-normal',
-      displayName: 'Ryan Bell',
-      active: true,
-      revision: 0,
-      role: null,
-      created: '2026-07-15T18:00:00.000Z',
-      updated: '2026-07-15T19:00:00.000Z',
-    },
-  ],
-  privilegedAccounts: [
+const snapshot: RelayAdministrationSnapshot = {
+  accounts: [
     {
       accountId: 'account-owner',
-      operatorId: 'operator-admin',
-      role: 'admin',
+      username: 'ryan',
+      displayName: 'Ryan Bledsoe',
+      storedRole: 'administrator',
+      effectiveRole: 'owner',
       active: true,
       credentialState: 'configured',
       mustChangePassword: false,
       credentialVersion: 1,
+      revision: 2,
+      createdAt: '2026-07-15T18:00:00.000Z',
       updatedAt: '2026-07-15T19:00:00.000Z',
     },
     {
       accountId: 'account-charles',
-      operatorId: 'operator-charles',
-      role: 'admin',
-      active: false,
-      credentialState: 'not-configured',
-      mustChangePassword: true,
-      credentialVersion: 0,
-      updatedAt: null,
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+      storedRole: 'administrator',
+      effectiveRole: 'admin',
+      active: true,
+      credentialState: 'configured',
+      mustChangePassword: false,
+      credentialVersion: 1,
+      revision: 1,
+      createdAt: '2026-07-15T18:00:00.000Z',
+      updatedAt: '2026-07-15T19:00:00.000Z',
+    },
+    {
+      accountId: 'account-publisher',
+      username: 'publisher',
+      displayName: 'Tristan Bowles',
+      storedRole: 'publisher',
+      effectiveRole: 'publisher',
+      active: true,
+      credentialState: 'configured',
+      mustChangePassword: false,
+      credentialVersion: 1,
+      revision: 1,
+      createdAt: '2026-07-15T18:00:00.000Z',
+      updatedAt: '2026-07-15T19:00:00.000Z',
     },
   ],
   devices: [],
-  settings: [
-    {
-      setting: 'dynatrace.platform-token',
-      configured: true,
-      summary: 'Configured',
-      revision: 1,
-    },
-  ],
-  adminOperatorId: 'operator-admin',
-  publisherOperatorId: 'operator-publisher',
+  settings: [],
+  ownerAccountId: 'account-owner',
+  publisherAccountId: 'account-publisher',
   assignmentRevision: 3,
   generatedAt: '2026-07-15T20:00:00.000Z',
 };
 
 describe('AdministrationSettings', () => {
-  const execute = vi.fn().mockResolvedValue({ ok: true, requestId: 'request-1', value: {} });
-  const reauthenticate = vi.fn().mockResolvedValue({
-    proofId: 'reauth-1',
-    expiresAt: '2026-07-15T20:05:00.000Z',
-  });
-
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseRelayAdministration.mockReturnValue({
@@ -114,81 +86,94 @@ describe('AdministrationSettings', () => {
       error: null,
       canAdminister: true,
       refresh: vi.fn(),
-      execute,
+      execute: vi.fn(),
       clearError: vi.fn(),
     });
     mockUsePrivilegedAccess.mockReturnValue({
-      session: { state: 'active', role: 'admin', operatorName: 'Ryan Bledsoe' },
-      busy: null,
-      reauthenticate,
+      session: {
+        state: 'active',
+        accountId: 'account-owner',
+        role: 'owner',
+        displayName: 'Ryan Bledsoe',
+      },
     });
   });
 
-  it('shows the authenticated administration workspace and role chips', () => {
+  it('replaces the former Operator, Publisher, and Accounts rails with one Accounts & roles surface', () => {
     render(<AdministrationSettings relayMode="client" />);
 
-    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'Operators' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getAllByText('Ryan Bledsoe')).toHaveLength(2);
-    expect(screen.getByText('OWNER')).toBeVisible();
-    expect(screen.getAllByText('ADMIN')).toHaveLength(2);
-    expect(screen.getByText('PUBLISHER')).toBeVisible();
-    expect(screen.getByText('Charles Gibbs')).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Accounts & roles' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.queryByRole('tab', { name: 'Operators' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Publisher' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Accounts' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Devices' })).toBeVisible();
+    expect(screen.getByRole('tab', { name: 'Relay server' })).toBeVisible();
   });
 
-  it('keeps every administrator out of the publisher picker and identifies account ownership', () => {
-    render(<AdministrationSettings relayMode="server" />);
+  it.each([
+    ['owner', 'OWNER'],
+    ['admin', 'ADMIN'],
+  ] as const)('shows the authenticated effective %s role in the header', (role, label) => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: {
+        state: 'active',
+        accountId: `account-${role}`,
+        role,
+        displayName: 'Authenticated',
+      },
+    });
+    const { container } = render(<AdministrationSettings relayMode="server" />);
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Publisher' }));
-    expect(screen.queryByRole('option', { name: 'Ryan Bledsoe' })).toBeNull();
-    expect(screen.queryByRole('option', { name: 'Charles Gibbs' })).toBeNull();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Accounts' }));
-    expect(screen.getByText('Relay owner')).toBeVisible();
-    expect(screen.getByText('Relay administrator')).toBeVisible();
+    expect(
+      within(container.querySelector('.administration-settings__session')!).getByText(label),
+    ).toBeVisible();
+    expect(screen.getByText('Authenticated')).toBeVisible();
   });
 
-  it('does not expose administrator controls to a publisher session', () => {
+  it('does not infer Owner from the display name', () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: {
+        state: 'active',
+        accountId: 'account-not-owner',
+        role: 'admin',
+        displayName: 'Ryan Bledsoe',
+      },
+    });
+    const { container } = render(<AdministrationSettings relayMode="server" />);
+
+    const sessionHeader = within(container.querySelector('.administration-settings__session')!);
+    expect(sessionHeader.getByText('ADMIN')).toBeVisible();
+    expect(sessionHeader.queryByText('OWNER')).toBeNull();
+  });
+
+  it('does not expose administration to a Publisher session', () => {
     mockUseRelayAdministration.mockReturnValue({
       ...mockUseRelayAdministration(),
       snapshot: null,
       canAdminister: false,
     });
     mockUsePrivilegedAccess.mockReturnValue({
-      ...mockUsePrivilegedAccess(),
-      session: { state: 'active', role: 'publisher', operatorName: 'Tristan Bowles' },
+      session: {
+        state: 'active',
+        accountId: 'account-publisher',
+        role: 'publisher',
+        displayName: 'Tristan Bowles',
+      },
     });
-
     render(<AdministrationSettings relayMode="client" />);
 
     expect(screen.queryByRole('heading', { name: 'Relay administration' })).toBeNull();
   });
 
-  it('requires a fresh password before changing the designated publisher', async () => {
+  it('switches between the three administration surfaces', () => {
     render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Publisher' }));
-    fireEvent.change(screen.getByLabelText('Designated Knowledge Publisher'), {
-      target: { value: 'operator-normal' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Review publisher change' }));
-
-    expect(screen.getByRole('dialog', { name: 'Confirm publisher change' })).toBeVisible();
-    fireEvent.change(screen.getByLabelText('Administrator password'), {
-      target: { value: 'a-long-private-password' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Assign publisher' }));
-
-    await waitFor(() => expect(reauthenticate).toHaveBeenCalledWith('a-long-private-password'));
-    expect(execute).toHaveBeenCalledWith({
-      command: 'publisher.assign',
-      payload: {
-        operatorId: 'operator-normal',
-        expectedStateRevision: 3,
-        reauthRequestId: 'reauth-1',
-      },
-      expectedRevision: null,
-    });
-    expect(screen.queryByRole('dialog', { name: 'Confirm publisher change' })).toBeNull();
+    fireEvent.click(screen.getByRole('tab', { name: 'Devices' }));
+    expect(screen.getByRole('heading', { name: 'Paired workstations' })).toBeVisible();
+    fireEvent.click(screen.getByRole('tab', { name: 'Relay server' }));
+    expect(screen.getByRole('heading', { name: 'Relay & Dynatrace' })).toBeVisible();
   });
 
   it('defines a compact selector and stacked rows below half-screen widths', () => {

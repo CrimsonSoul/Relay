@@ -73,7 +73,7 @@ export function PairedDevicesPanel({ snapshot, execute }: Readonly<Administratio
                 <strong>{device.label}</strong>
               )}
               <span>
-                {device.operatorName} · {device.hostname} · …{device.fingerprintSuffix}
+                {device.displayName} · {device.hostname} · …{device.fingerprintSuffix}
               </span>
             </div>
             <div className="administration-row__badges">
