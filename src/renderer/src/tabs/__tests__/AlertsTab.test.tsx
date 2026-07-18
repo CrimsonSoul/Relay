@@ -542,6 +542,20 @@ describe('AlertsTab', () => {
     expect(utilityAction.get('padding')).toBe('0 var(--space-3)');
   });
 
+  it('renders one divider between the Alert definition header and its first step', () => {
+    const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
+    const paneLayoutCss = css.slice(css.indexOf('.alerts-layout'));
+    const paneHeader = declarations(cssBlock(paneLayoutCss, '.alerts-pane-header') ?? '');
+    const step = declarations(cssBlock(css, '.alerts-step-section') ?? '');
+    const firstStep = declarations(
+      cssBlock(css, '.alerts-form-section > .alerts-step-section:first-child') ?? '',
+    );
+
+    expect(paneHeader.get('border-bottom')).toBe('1px solid var(--color-border)');
+    expect(step.get('border-top')).toBe('1px solid var(--color-border)');
+    expect(firstStep.get('border-top')).toBe('0');
+  });
+
   it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {
     const alertsCss = readFileSync(
       resolve(process.cwd(), 'src/renderer/src/tabs/alerts.css'),

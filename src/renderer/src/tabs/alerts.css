@@ -610,6 +610,10 @@
   background: transparent;
 }
 
+.alerts-form-section > .alerts-step-section:first-child {
+  border-top: 0;
+}
+
 .alerts-step-header {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) auto;
