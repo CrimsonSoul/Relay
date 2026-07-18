@@ -138,8 +138,10 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
   const [managementOpen, setManagementOpen] = useState(false);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
+  const [desktopLibraryCollapsed, setDesktopLibraryCollapsed] = useState(false);
   const lastSelectedTitleRef = useRef<string | null>(null);
-  const libraryToggleRef = useRef<HTMLButtonElement>(null);
+  const compactLibraryToggleRef = useRef<HTMLButtonElement>(null);
+  const desktopLibraryRestoreRef = useRef<HTMLButtonElement>(null);
   const librarySearchRef = useRef<HTMLInputElement>(null);
   const documentsRef = useRef(documents);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
@@ -156,8 +158,18 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const closeLibraryDrawer = useCallback((restoreFocus = false) => {
     setLibraryDrawerOpen(false);
     if (restoreFocus) {
-      globalThis.requestAnimationFrame(() => libraryToggleRef.current?.focus());
+      globalThis.requestAnimationFrame(() => compactLibraryToggleRef.current?.focus());
     }
+  }, []);
+
+  const collapseDesktopLibrary = useCallback(() => {
+    setDesktopLibraryCollapsed(true);
+    globalThis.requestAnimationFrame(() => desktopLibraryRestoreRef.current?.focus());
+  }, []);
+
+  const showDesktopLibrary = useCallback(() => {
+    setDesktopLibraryCollapsed(false);
+    globalThis.requestAnimationFrame(() => librarySearchRef.current?.focus());
   }, []);
 
   useEffect(() => {
@@ -397,11 +409,24 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
         role="region"
         aria-label="Wiki reader workspace"
         data-library-drawer={libraryDrawerOpen ? 'open' : 'closed'}
+        data-library-collapsed={String(desktopLibraryCollapsed)}
       >
         <button
-          ref={libraryToggleRef}
+          ref={desktopLibraryRestoreRef}
           type="button"
-          className="knowledge-library-toggle"
+          className="knowledge-library-toggle knowledge-library-toggle--desktop"
+          aria-label="Show Wiki library"
+          aria-controls="knowledge-library-drawer"
+          aria-expanded="false"
+          onClick={showDesktopLibrary}
+        >
+          <KnowledgeIcon />
+          <span>Library</span>
+        </button>
+        <button
+          ref={compactLibraryToggleRef}
+          type="button"
+          className="knowledge-library-toggle knowledge-library-toggle--compact"
           aria-label="Wiki library"
           aria-controls="knowledge-library-drawer"
           aria-expanded={libraryDrawerOpen}
@@ -438,6 +463,18 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
                   Manage
                 </TactileButton>
               )}
+              <button
+                type="button"
+                className="knowledge-drawer__collapse"
+                aria-label="Collapse Wiki library"
+                onClick={collapseDesktopLibrary}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+                  <rect x="3" y="4" width="18" height="16" rx="1" />
+                  <path d="M9 4v16" />
+                  <path d="m15 9-3 3 3 3" />
+                </svg>
+              </button>
               <button
                 type="button"
                 className="knowledge-drawer__close"

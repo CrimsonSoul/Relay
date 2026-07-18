@@ -163,22 +163,32 @@ test('mode control preserves keyboard focus, name, pressed state, and reduced mo
   await expect(continuousMode).toHaveCSS('transition-duration', /0s/);
 });
 
-test('compact Wiki library uses a container drawer without changing desktop layout', async ({
-  window,
-}) => {
+test('collapsible Wiki library preserves the compact container drawer', async ({ window }) => {
   await window.setViewportSize({ width: 1200, height: 800 });
   await window.setContent(`
     <style>
       ${knowledgeTokens}
       ${knowledgeCss}
       html, body { margin: 0; background: #09090b; }
-      .knowledge-tab { width: 880px; height: 700px; }
+      .knowledge-tab { width: 1040px; height: 700px; }
     </style>
     <div class="knowledge-tab" data-testid="knowledge-tab">
-      <div class="knowledge-workspace" data-testid="workspace" data-library-drawer="closed">
+      <div
+        class="knowledge-workspace"
+        data-testid="workspace"
+        data-library-drawer="closed"
+        data-library-collapsed="false"
+      >
         <button
           type="button"
-          class="knowledge-library-toggle"
+          class="knowledge-library-toggle knowledge-library-toggle--desktop"
+          aria-label="Show Wiki library"
+          aria-controls="knowledge-library-drawer"
+          aria-expanded="false"
+        >Library</button>
+        <button
+          type="button"
+          class="knowledge-library-toggle knowledge-library-toggle--compact"
           aria-label="Wiki library"
           aria-controls="knowledge-library-drawer"
           aria-expanded="false"
@@ -192,6 +202,7 @@ test('compact Wiki library uses a container drawer without changing desktop layo
         <aside id="knowledge-library-drawer" class="knowledge-drawer" aria-label="Wiki library">
           <div class="knowledge-drawer__heading">
             <div class="knowledge-drawer__title"><span>Operational reference</span><h1>Wiki</h1></div>
+            <button type="button" class="knowledge-drawer__collapse" aria-label="Collapse Wiki library">Collapse</button>
             <button type="button" class="knowledge-drawer__close" aria-label="Close Wiki library">×</button>
           </div>
         </aside>
@@ -202,17 +213,24 @@ test('compact Wiki library uses a container drawer without changing desktop layo
     </div>
     <script>
       const workspace = document.querySelector('.knowledge-workspace');
-      const toggle = document.querySelector('.knowledge-library-toggle');
-      const close = () => {
+      const compactToggle = document.querySelector('.knowledge-library-toggle--compact');
+      const desktopRestore = document.querySelector('.knowledge-library-toggle--desktop');
+      const closeCompact = () => {
         workspace.dataset.libraryDrawer = 'closed';
-        toggle.setAttribute('aria-expanded', 'false');
+        compactToggle.setAttribute('aria-expanded', 'false');
       };
-      toggle.addEventListener('click', () => {
+      compactToggle.addEventListener('click', () => {
         workspace.dataset.libraryDrawer = 'open';
-        toggle.setAttribute('aria-expanded', 'true');
+        compactToggle.setAttribute('aria-expanded', 'true');
       });
-      document.querySelector('.knowledge-drawer__close').addEventListener('click', close);
-      document.querySelector('.knowledge-drawer-backdrop').addEventListener('click', close);
+      desktopRestore.addEventListener('click', () => {
+        workspace.dataset.libraryCollapsed = 'false';
+      });
+      document.querySelector('.knowledge-drawer__collapse').addEventListener('click', () => {
+        workspace.dataset.libraryCollapsed = 'true';
+      });
+      document.querySelector('.knowledge-drawer__close').addEventListener('click', closeCompact);
+      document.querySelector('.knowledge-drawer-backdrop').addEventListener('click', closeCompact);
     </script>
   `);
 
@@ -220,29 +238,13 @@ test('compact Wiki library uses a container drawer without changing desktop layo
   const workspace = window.getByTestId('workspace');
   const reader = window.getByTestId('reader');
   const drawer = window.getByRole('complementary', { name: 'Wiki library' });
-  const toggle = window.getByRole('button', { name: 'Wiki library', exact: true });
+  const compactToggle = window.getByRole('button', { name: 'Wiki library', exact: true });
+  const desktopRestore = window.getByRole('button', { name: 'Show Wiki library' });
+  const desktopCollapse = window.getByRole('button', { name: 'Collapse Wiki library' });
 
-  await expect(toggle).toBeVisible();
-  await expect(drawer).toBeHidden();
-  await expect
-    .poll(async () => {
-      const [workspaceBox, readerBox] = await Promise.all([
-        workspace.boundingBox(),
-        reader.boundingBox(),
-      ]);
-      if (!workspaceBox || !readerBox) return null;
-      return Math.round(readerBox.width) === Math.round(workspaceBox.width);
-    })
-    .toBe(true);
-
-  await toggle.click();
-  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  await expect(drawer).toBeVisible();
-
-  await tab.evaluate((element) => {
-    element.style.width = '1040px';
-  });
-  await expect(toggle).toBeHidden();
+  await expect(compactToggle).toBeHidden();
+  await expect(desktopRestore).toBeHidden();
+  await expect(desktopCollapse).toBeVisible();
   await expect(drawer).toBeVisible();
   await expect
     .poll(async () => {
@@ -255,6 +257,46 @@ test('compact Wiki library uses a container drawer without changing desktop layo
       return Math.round(readerBox.width + drawerBox.width) === Math.round(workspaceBox.width);
     })
     .toBe(true);
+
+  await desktopCollapse.click();
+  await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+  await expect(desktopRestore).toBeVisible();
+  await expect(desktopCollapse).toBeHidden();
+  await expect(drawer).toBeHidden();
+  await expect
+    .poll(async () => {
+      const [workspaceBox, readerBox] = await Promise.all([
+        workspace.boundingBox(),
+        reader.boundingBox(),
+      ]);
+      if (!workspaceBox || !readerBox) return null;
+      return Math.round(readerBox.width) === Math.round(workspaceBox.width);
+    })
+    .toBe(true);
+
+  await tab.evaluate((element) => {
+    element.style.width = '880px';
+  });
+  await expect(compactToggle).toBeVisible();
+  await expect(desktopRestore).toBeHidden();
+  await expect(desktopCollapse).toBeHidden();
+  await expect(drawer).toBeHidden();
+
+  await compactToggle.click();
+  await expect(compactToggle).toHaveAttribute('aria-expanded', 'true');
+  await expect(drawer).toBeVisible();
+
+  await tab.evaluate((element) => {
+    element.style.width = '1040px';
+  });
+  await expect(desktopRestore).toBeVisible();
+  await expect(drawer).toBeHidden();
+
+  await desktopRestore.click();
+  await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+  await expect(desktopRestore).toBeHidden();
+  await expect(desktopCollapse).toBeVisible();
+  await expect(drawer).toBeVisible();
 });
 
 test('narrow reader controls and fitted page content stay contained and readable', async ({

@@ -289,6 +289,41 @@ describe('KnowledgeTab', () => {
     expect(screen.getByText(/Viewer: Lane recovery/)).toBeInTheDocument();
   });
 
+  it('collapses the wide Wiki library without changing compact drawer state', async () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" />);
+
+    const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
+    expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse Wiki library' }));
+
+    const desktopRestore = screen.getByRole('button', { name: 'Show Wiki library' });
+    expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+    await waitFor(() => expect(desktopRestore).toHaveFocus());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wiki library' }));
+    expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+    expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+
+    fireEvent.keyDown(globalThis.document, { key: 'Escape' });
+    expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+    expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+
+    fireEvent.click(desktopRestore);
+    expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+    await waitFor(() =>
+      expect(screen.getByRole('searchbox', { name: 'Search Wiki' })).toHaveFocus(),
+    );
+  });
+
   it('provides the viewer with pure URL resolution and accepts native destination targets', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],

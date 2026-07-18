@@ -1340,11 +1340,11 @@ test.describe('Vital Critical Path', () => {
     const connectedClient = await launchConnectedClient();
     if (!clientElectronApp) throw new Error('Connected Electron app not launched');
     await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(900, 900);
+      BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
     });
     await expect
       .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
-      .toBeLessThanOrEqual(900);
+      .toBeGreaterThan(900);
 
     await enterKnowledgeDestination(connectedClient, 'Wiki');
     const workspace = connectedClient.getByRole('region', { name: 'Wiki reader workspace' });
@@ -1353,14 +1353,15 @@ test.describe('Vital Critical Path', () => {
       name: 'Wiki library',
       exact: true,
     });
-    await expect(libraryToggle).toBeVisible();
-    await expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(drawer).toBeHidden();
-
-    await libraryToggle.click();
-    await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+    const desktopRestore = connectedClient.getByRole('button', { name: 'Show Wiki library' });
+    const desktopCollapse = connectedClient.getByRole('button', {
+      name: 'Collapse Wiki library',
+    });
+    await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
+    await expect(libraryToggle).toBeHidden();
+    await expect(desktopRestore).toBeHidden();
+    await expect(desktopCollapse).toBeVisible();
     await expect(drawer).toBeVisible();
-    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
 
     await connectedClient
       .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
@@ -1371,8 +1372,36 @@ test.describe('Vital Critical Path', () => {
     const viewer = connectedClient.getByRole('region', {
       name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
     });
-    await expect(drawer).toBeHidden();
+    await expect(drawer).toBeVisible();
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+    await desktopCollapse.click();
+    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+    await expect(drawer).toBeHidden();
+    await expect(desktopRestore).toBeVisible();
+    await expect(desktopRestore).toBeFocused();
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+    await clientElectronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(900, 900);
+    });
+    await expect
+      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+      .toBeLessThanOrEqual(900);
+    await expect(desktopRestore).toBeHidden();
+    await expect(libraryToggle).toBeVisible();
+    await expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(drawer).toBeHidden();
+
+    await libraryToggle.click();
+    await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+    await expect(drawer).toBeVisible();
+    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
+    await connectedClient
+      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
+      .click();
+    await expect(drawer).toBeHidden();
+    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
 
     await libraryToggle.click();
     await expect(drawer).toBeVisible();
@@ -1387,7 +1416,15 @@ test.describe('Vital Critical Path', () => {
       .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
       .toBeGreaterThan(900);
     await expect(libraryToggle).toBeHidden();
+    await expect(workspace).toHaveAttribute('data-library-collapsed', 'true');
+    await expect(desktopRestore).toBeVisible();
+    await expect(drawer).toBeHidden();
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+    await desktopRestore.click();
+    await expect(workspace).toHaveAttribute('data-library-collapsed', 'false');
     await expect(drawer).toBeVisible();
+    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
     await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
     await expect(
       connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
