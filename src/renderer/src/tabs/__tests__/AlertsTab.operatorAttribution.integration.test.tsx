@@ -111,17 +111,9 @@ vi.mock('../../components/StatusBar', () => ({
   StatusBarLive: () => null,
 }));
 
-vi.mock('../alertUtils', () => ({
+vi.mock('../alertUtils', async () => ({
+  ...(await vi.importActual<typeof import('../alertUtils')>('../alertUtils')),
   sanitizeHtml: (html: string) => html,
-  isAlertMessageComplete: (subject: string, bodyHtml: string) =>
-    subject.trim().length > 0 &&
-    bodyHtml
-      // The mock deliberately mirrors alertUtils' HTML-stripping behavior.
-      // eslint-disable-next-line sonarjs/slow-regex
-      .replace(/<[^>]*>/g, '')
-      // eslint-disable-next-line no-misleading-character-class, sonarjs/no-misleading-character-class
-      .replace(/[\u200b\u200c\u200d\ufeff\u2060]/g, '')
-      .trim().length > 0,
 }));
 
 import { AlertsTab } from '../AlertsTab';
