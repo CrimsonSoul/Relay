@@ -4,7 +4,6 @@ import {
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
 } from '@shared/dynatraceProblems';
-import type { OperatorAttribution } from '@shared/operators';
 import { useDynatraceProblems } from '../useDynatraceProblems';
 
 const mocks = vi.hoisted(() => ({
@@ -46,29 +45,23 @@ vi.mock('../../services/dynatraceProblemsService', () => ({
   setDynatraceProblemAddressed: mocks.setAddressed,
 }));
 
-const attribution: OperatorAttribution = {
-  operatorId: 'operator-ryan',
-  operatorName: 'Ryan Bell',
-};
-
 describe('useDynatraceProblems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('passes operator attribution and the existing state ID to mutations', async () => {
+  it('passes ordinary writes without attribution and retains the existing state ID', async () => {
     const { result } = renderHook(() => useDynatraceProblems());
 
     await act(async () => {
-      await result.current.addNote('problem-1', 'Investigating', attribution);
-      await result.current.setAddressed('problem-1', true, attribution, 'new-response-note');
+      await result.current.addNote('problem-1', 'Investigating');
+      await result.current.setAddressed('problem-1', true, 'new-response-note');
     });
 
-    expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Investigating', attribution);
+    expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Investigating');
     expect(mocks.setAddressed).toHaveBeenCalledWith(
       'problem-1',
       true,
-      attribution,
       'state-1',
       'new-response-note',
     );

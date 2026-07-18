@@ -29,7 +29,6 @@ import {
   type AlertReminderRecord,
 } from './alertReminderService';
 import { getConnectionState, handleApiError, requireOnline } from './pocketbase';
-import type { OperatorAttribution } from '@shared/operators';
 
 const mockHandleApiError = vi.mocked(handleApiError);
 const mockRequireOnline = vi.mocked(requireOnline);
@@ -64,11 +63,6 @@ const sampleInput: AlertReminderInput = {
   alertSender: 'IT',
 };
 
-const attribution: OperatorAttribution = {
-  operatorId: 'operator-ryan',
-  operatorName: 'Ryan Bell',
-};
-
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetConnectionState.mockReturnValue('online');
@@ -76,28 +70,29 @@ beforeEach(() => {
 });
 
 describe('addAlertReminder', () => {
-  it('creates a pending reminder with operator attribution separate from its cosmetic sender', async () => {
+  it('creates a pending reminder without an operator identity', async () => {
     mockCreate.mockResolvedValueOnce(sampleRecord);
 
-    const result = await addAlertReminder(sampleInput, attribution);
+    const result = await addAlertReminder(sampleInput);
 
     expect(mockRequireOnline).toHaveBeenCalledOnce();
     expect(mockCreate).toHaveBeenCalledWith({
       ...sampleInput,
       note: 'Use the prepared template',
       status: 'pending',
-      operatorId: 'operator-ryan',
-      createdBy: 'Ryan Bell',
     });
+    expect(mockCreate.mock.calls[0]![0]).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), createdBy: expect.anything() }),
+    );
     expect(result).toEqual(sampleRecord);
   });
 
   it('omits unset optional date fields so PocketBase does not reject empty dates', async () => {
     mockCreate.mockResolvedValueOnce(sampleRecord);
 
-    await addAlertReminder(sampleInput, attribution);
+    await addAlertReminder(sampleInput);
 
-    const payload = mockCreate.mock.calls[0][0] as Record<string, unknown>;
+    const payload = mockCreate.mock.calls[0]![0] as Record<string, unknown>;
     expect(payload).not.toHaveProperty('snoozeUntil');
     expect(payload).not.toHaveProperty('completedAt');
     expect(payload).not.toHaveProperty('dismissedAt');
@@ -107,11 +102,11 @@ describe('addAlertReminder', () => {
     const error = new Error('create failed');
     mockCreate.mockRejectedValueOnce(error);
 
-    await expect(addAlertReminder(sampleInput, attribution)).rejects.toThrow('create failed');
+    await expect(addAlertReminder(sampleInput)).rejects.toThrow('create failed');
     expect(mockHandleApiError).toHaveBeenCalledWith(error);
   });
 
-  it('queues operator attribution and the independent cosmetic sender while offline', async () => {
+  it('queues the independent cosmetic sender without operator attribution while offline', async () => {
     mockGetConnectionState.mockReturnValue('offline');
     const queuedRecord = {
       ...sampleRecord,
@@ -127,7 +122,7 @@ describe('addAlertReminder', () => {
     });
     globalThis.api = { mutateOffline } as never;
 
-    await addAlertReminder({ ...sampleInput, alertSender: '  Network Operations  ' }, attribution);
+    await addAlertReminder({ ...sampleInput, alertSender: '  Network Operations  ' });
 
     expect(mutateOffline).toHaveBeenCalledWith({
       collection: 'alert_reminders',
@@ -140,8 +135,6 @@ describe('addAlertReminder', () => {
         severity: 'ISSUE',
         alertSubject: 'POS outage',
         alertBodyHtml: '<p>Details</p>',
-        operatorId: 'operator-ryan',
-        createdBy: 'Ryan Bell',
         alertSender: 'Network Operations',
       },
     });

@@ -4,7 +4,6 @@ import { AutoSizer } from 'react-virtualized-auto-sizer';
 import { List } from 'react-window';
 import type { RowComponentProps } from 'react-window';
 import type { PublicRelayConfig } from '@shared/ipc';
-import type { OperatorAttribution } from '@shared/operators';
 import {
   buildDynatraceProblemUrl,
   type DynatraceEntityRef,
@@ -18,7 +17,6 @@ import { StatusBar, StatusBarLive } from '../components/StatusBar';
 import { TabFallback } from '../components/TabFallback';
 import { useToast } from '../components/Toast';
 import { useDynatraceProblems } from '../hooks/useDynatraceProblems';
-import { useOperator } from '../contexts/OperatorContext';
 import {
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
   formatDynatraceTicketReferenceNote,
@@ -377,7 +375,7 @@ function getDispositionDetail(
   resolved: boolean,
 ): string {
   if (addressed) {
-    return `${state?.addressedBy || 'Relay workstation'} · ${formatDateTime(state?.addressedAt)}`;
+    return `${state?.addressedBy || 'Unattributed'} · ${formatDateTime(state?.addressedAt)}`;
   }
   if (resolved) {
     return 'Dynatrace resolved this problem before Relay recorded a local addressed status.';
@@ -742,8 +740,7 @@ function ProblemDetail({
           <div className="dt-problem-notes" aria-live="polite">
             {notes.length === 0 ? (
               <div className="dt-problem-notes__empty">
-                No local response history yet. Add a ticket reference or context for the next
-                operator.
+                No local response history yet. Add a ticket reference or response context.
               </div>
             ) : (
               [...notes].reverse().map((note) => {
@@ -751,7 +748,7 @@ function ProblemDetail({
                 return (
                   <article className="dt-problem-note" key={note.id}>
                     <div className="dt-problem-note__meta">
-                      <strong>{note.author}</strong>
+                      <strong>{note.author || 'Unattributed'}</strong>
                       <span>{formatDateTime(note.created)}</span>
                     </div>
                     {ticketReference ? (
@@ -784,7 +781,6 @@ export const DynatraceProblemsTab: React.FC<{
   relayMode?: PublicRelayConfig['mode'];
 }> = ({ relayMode }) => {
   const { showToast } = useToast();
-  const { requireAttribution } = useOperator();
   const {
     problems,
     stateByProblemId,
@@ -889,11 +885,9 @@ export const DynatraceProblemsTab: React.FC<{
 
   const handleSaveNote = async () => {
     if (!selectedProblem || !noteDraft.trim() || savingAction) return;
-    const attribution = requireAttribution();
-    if (!attribution) return;
     setSavingAction('note');
     try {
-      await addNote(selectedProblem.problemId, noteDraft, attribution);
+      await addNote(selectedProblem.problemId, noteDraft);
       setNoteDraft('');
       showToast('NOC note added', 'success');
     } catch (saveError) {
@@ -905,15 +899,9 @@ export const DynatraceProblemsTab: React.FC<{
 
   const handleSaveTicketReference = async () => {
     if (!selectedProblem || !ticketDraft.trim() || savingAction) return;
-    const attribution = requireAttribution();
-    if (!attribution) return;
     setSavingAction('ticket');
     try {
-      await addNote(
-        selectedProblem.problemId,
-        formatDynatraceTicketReferenceNote(ticketDraft),
-        attribution,
-      );
+      await addNote(selectedProblem.problemId, formatDynatraceTicketReferenceNote(ticketDraft));
       setTicketDraft('');
       showToast('Service Desk ticket reference added', 'success');
     } catch (saveError) {
@@ -926,19 +914,15 @@ export const DynatraceProblemsTab: React.FC<{
     }
   };
 
-  const saveDraftedResponses = async (problemId: string, attribution: OperatorAttribution) => {
+  const saveDraftedResponses = async (problemId: string) => {
     let responseNoteId = '';
     if (ticketDraft.trim()) {
-      const ticketNote = await addNote(
-        problemId,
-        formatDynatraceTicketReferenceNote(ticketDraft),
-        attribution,
-      );
+      const ticketNote = await addNote(problemId, formatDynatraceTicketReferenceNote(ticketDraft));
       responseNoteId = ticketNote.id;
       setTicketDraft('');
     }
     if (noteDraft.trim()) {
-      const nocNote = await addNote(problemId, noteDraft, attribution);
+      const nocNote = await addNote(problemId, noteDraft);
       responseNoteId ||= nocNote.id;
       setNoteDraft('');
     }
@@ -960,14 +944,12 @@ export const DynatraceProblemsTab: React.FC<{
       );
       return;
     }
-    const attribution = nextAddressed ? requireAttribution() : null;
-    if (nextAddressed && !attribution) return;
     setSavingAction('address');
     try {
       const responseNoteId = nextAddressed
-        ? await saveDraftedResponses(selectedProblem.problemId, attribution!)
+        ? await saveDraftedResponses(selectedProblem.problemId)
         : undefined;
-      await setAddressed(selectedProblem.problemId, nextAddressed, attribution, responseNoteId);
+      await setAddressed(selectedProblem.problemId, nextAddressed, responseNoteId);
       showToast(
         nextAddressed ? 'Problem marked addressed locally' : 'Problem returned to queue',
         'success',

@@ -1,6 +1,5 @@
 import { useCallback, useMemo } from 'react';
 import type { RecordModel } from 'pocketbase';
-import type { OperatorAttribution } from '@shared/operators';
 import { useToast } from '../components/Toast';
 import { useCollection } from './useCollection';
 import {
@@ -58,9 +57,9 @@ export function useAlertReminders() {
   }, [pendingReminders]);
 
   const scheduleReminder = useCallback(
-    async (input: AlertReminderInput, attribution: OperatorAttribution): Promise<boolean> => {
+    async (input: AlertReminderInput): Promise<boolean> => {
       try {
-        await addAlertReminder(input, attribution);
+        await addAlertReminder(input);
         showToast('Alarm scheduled', 'success');
         return true;
       } catch {

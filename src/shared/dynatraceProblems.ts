@@ -70,7 +70,7 @@ export type DynatraceProblemNoteRecord = {
   problemId: string;
   note: string;
   operatorId?: string;
-  author: string;
+  author?: string;
   created: string;
   updated?: string;
 };

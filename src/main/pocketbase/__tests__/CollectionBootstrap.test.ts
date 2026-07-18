@@ -1146,17 +1146,20 @@ describe('ensureCollections', () => {
       deleteRule: null,
     });
     expect(notesCall?.fields).toContainEqual(
-      expect.objectContaining({ name: 'operatorId', type: 'text' }),
+      expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
+    );
+    expect(notesCall?.fields).toContainEqual(
+      expect.objectContaining({ name: 'author', type: 'text', required: false }),
     );
     expect(statesCall?.fields).toContainEqual(
-      expect.objectContaining({ name: 'operatorId', type: 'text' }),
+      expect.objectContaining({ name: 'operatorId', type: 'text', required: false }),
     );
     expect(syncCall?.fields).toContainEqual(
       expect.objectContaining({ name: 'lastReconciledAt', type: 'date' }),
     );
   });
 
-  it('patches operator attribution onto existing Dynatrace records without rebuilding them', async () => {
+  it('makes legacy Dynatrace attribution fields optional without rebuilding records', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'states-col', name: 'dynatrace_problem_states' },
       { id: 'notes-col', name: 'dynatrace_problem_notes' },
@@ -1189,6 +1192,10 @@ describe('ensureCollections', () => {
         expect.objectContaining({ name: 'operatorId' }),
       );
     }
+    const notesUpdate = mockUpdate.mock.calls.find(([id]) => id === 'notes-col');
+    expect(
+      (notesUpdate?.[1] as { fields: Array<{ name: string; required?: boolean }> }).fields,
+    ).toContainEqual(expect.objectContaining({ name: 'author', required: false }));
     expect(
       mockCreate.mock.calls.some(
         ([definition]) =>
@@ -1242,7 +1249,14 @@ describe('ensureCollections', () => {
       maxSelect: 1,
     });
     expect(schema.find((f) => f.name === 'alertBodyHtml')).toMatchObject({ type: 'text' });
-    expect(schema.find((f) => f.name === 'operatorId')).toMatchObject({ type: 'text' });
+    expect(schema.find((f) => f.name === 'operatorId')).toMatchObject({
+      type: 'text',
+      required: false,
+    });
+    expect(schema.find((f) => f.name === 'createdBy')).toMatchObject({
+      type: 'text',
+      required: false,
+    });
     expect(schema.find((f) => f.name === 'alertSender')).toMatchObject({ type: 'text' });
   });
 
@@ -1252,7 +1266,7 @@ describe('ensureCollections', () => {
     mockGetOne.mockResolvedValue({
       fields: [
         { type: 'text', name: 'title', required: true },
-        { type: 'text', name: 'createdBy' },
+        { type: 'text', name: 'createdBy', required: true },
         { type: 'autodate', name: 'created', onCreate: true, onUpdate: false },
         { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true },
       ],
@@ -1272,6 +1286,7 @@ describe('ensureCollections', () => {
     expect((update?.[1] as { fields: Array<{ name: string; type: string }> }).fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: 'operatorId', type: 'text' }),
+        expect.objectContaining({ name: 'createdBy', type: 'text', required: false }),
         expect.objectContaining({ name: 'alertSender', type: 'text' }),
       ]),
     );

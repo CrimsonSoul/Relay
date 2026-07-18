@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   addNote: vi.fn(async () => ({ id: 'new-response-note' })),
   refetch: vi.fn(async () => undefined),
   saveProfileFilter: vi.fn(async () => ({ success: true, data: { count: 1 } })),
-  requireAttribution: vi.fn(),
   connectionState: 'online',
   hookValue: {} as Record<string, unknown>,
 }));
@@ -20,10 +19,6 @@ vi.mock('../../components/Toast', () => ({
 
 vi.mock('../../hooks/useDynatraceProblems', () => ({
   useDynatraceProblems: () => mocks.hookValue,
-}));
-
-vi.mock('../../contexts/OperatorContext', () => ({
-  useOperator: () => ({ requireAttribution: mocks.requireAttribution }),
 }));
 
 vi.mock('../../services/pocketbase', () => ({
@@ -62,10 +57,6 @@ describe('DynatraceProblemsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.connectionState = 'online';
-    mocks.requireAttribution.mockReturnValue({
-      operatorId: 'operator-ryan',
-      operatorName: 'Ryan Bell',
-    });
     mocks.hookValue = {
       problems: [openProblem],
       stateByProblemId: new Map(),
@@ -259,7 +250,7 @@ describe('DynatraceProblemsTab', () => {
     });
   });
 
-  it('uses the selected operator and awaits a drafted note before marking addressed', async () => {
+  it('awaits an unattributed drafted note before marking addressed', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
@@ -272,19 +263,9 @@ describe('DynatraceProblemsTab', () => {
       expect(mocks.addNote).toHaveBeenCalledWith(
         'problem-1',
         'Mitigated by shifting traffic to the secondary pool.',
-        { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
       );
-      expect(mocks.setAddressed).toHaveBeenCalledWith(
-        'problem-1',
-        true,
-        {
-          operatorId: 'operator-ryan',
-          operatorName: 'Ryan Bell',
-        },
-        'new-response-note',
-      );
+      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
     });
-    expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setAddressed.mock.invocationCallOrder[0],
@@ -303,19 +284,8 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(address);
 
     await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: INC0012345', {
-        operatorId: 'operator-ryan',
-        operatorName: 'Ryan Bell',
-      });
-      expect(mocks.setAddressed).toHaveBeenCalledWith(
-        'problem-1',
-        true,
-        {
-          operatorId: 'operator-ryan',
-          operatorName: 'Ryan Bell',
-        },
-        'new-response-note',
-      );
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: INC0012345');
+      expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
     });
     expect(mocks.addNote.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.setAddressed.mock.invocationCallOrder[0],
@@ -347,7 +317,7 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('adds a standalone ticket reference with selected-operator attribution', async () => {
+  it('adds a standalone ticket reference without operator attribution', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
     fireEvent.change(screen.getByLabelText('Service Desk ticket number'), {
@@ -356,10 +326,7 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add ticket reference' }));
 
     await waitFor(() =>
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: REQ0042000', {
-        operatorId: 'operator-ryan',
-        operatorName: 'Ryan Bell',
-      }),
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Ticket: REQ0042000'),
     );
   });
 
@@ -420,7 +387,7 @@ describe('DynatraceProblemsTab', () => {
     );
   });
 
-  it('uses the selected operator when saving a standalone note', async () => {
+  it('saves a standalone note without requiring an operator provider', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
@@ -430,16 +397,12 @@ describe('DynatraceProblemsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add note' }));
 
     await waitFor(() => {
-      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Escalated to the payments team.', {
-        operatorId: 'operator-ryan',
-        operatorName: 'Ryan Bell',
-      });
+      expect(mocks.addNote).toHaveBeenCalledWith('problem-1', 'Escalated to the payments team.');
     });
     expect(globalThis.api?.getClientHostname).not.toHaveBeenCalled();
   });
 
-  it('opens the operator picker and performs no address mutation when selection is missing', async () => {
-    mocks.requireAttribution.mockReturnValue(null);
+  it('marks addressed without an operator selection', async () => {
     render(<DynatraceProblemsTab relayMode="client" />);
     await screen.findByRole('heading', { name: openProblem.title });
 
@@ -448,9 +411,8 @@ describe('DynatraceProblemsTab', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Mark addressed locally' }));
 
-    expect(mocks.requireAttribution).toHaveBeenCalledTimes(1);
-    expect(mocks.setAddressed).not.toHaveBeenCalled();
-    expect(mocks.addNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.addNote).toHaveBeenCalledOnce());
+    expect(mocks.setAddressed).toHaveBeenCalledWith('problem-1', true, 'new-response-note');
   });
 
   it('queues an offline drafted note before queuing the addressed state', async () => {
@@ -638,5 +600,42 @@ describe('DynatraceProblemsTab', () => {
       screen.getByText('Mitigation completed before Dynatrace confirmed recovery.'),
     ).toBeInTheDocument();
     expect(screen.getByText(/noc-laptop-07 · Jul/)).toBeInTheDocument();
+  });
+
+  it('labels new records without stored author snapshots as Unattributed', async () => {
+    mocks.hookValue = {
+      ...mocks.hookValue,
+      stateByProblemId: new Map([
+        [
+          openProblem.problemId,
+          {
+            id: 'state-unattributed',
+            problemId: openProblem.problemId,
+            addressed: true,
+            addressedAt: '2026-07-17T18:00:00.000Z',
+          },
+        ],
+      ]),
+      notesByProblemId: new Map([
+        [
+          openProblem.problemId,
+          [
+            {
+              id: 'note-unattributed',
+              problemId: openProblem.problemId,
+              note: 'Response recorded without a protected account.',
+              created: '2026-07-17T18:01:00.000Z',
+            },
+          ],
+        ],
+      ]),
+    };
+
+    render(<DynatraceProblemsTab relayMode="client" />);
+    fireEvent.click(screen.getByRole('tab', { name: /Addressed locally\s*1/i }));
+    await screen.findByRole('heading', { name: openProblem.title });
+
+    expect(screen.getAllByText(/Unattributed/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/Relay workstation/)).not.toBeInTheDocument();
   });
 });

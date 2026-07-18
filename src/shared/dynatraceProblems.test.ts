@@ -4,7 +4,19 @@ import {
   getDynatraceApiTokenError,
   getDynatraceEnvironmentUrlError,
   normalizeDynatraceEnvironmentUrl,
+  type DynatraceProblemNoteRecord,
 } from './dynatraceProblems';
+
+it('allows new problem notes to omit an author snapshot', () => {
+  const note: DynatraceProblemNoteRecord = {
+    id: 'note-unattributed',
+    problemId: 'problem-1',
+    note: 'Mitigation is in progress.',
+    created: '2026-07-17T18:00:00.000Z',
+  };
+
+  expect(note).not.toHaveProperty('author');
+});
 
 describe('Dynatrace Problems validation', () => {
   it('accepts and normalizes a Dynatrace SaaS environment origin', () => {

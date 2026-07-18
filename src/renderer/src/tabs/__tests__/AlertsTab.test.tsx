@@ -63,15 +63,12 @@ const mockPendingReminders = {
     note?: string;
     status?: string;
     snoozeUntil?: string;
+    operatorId?: string;
+    createdBy?: string;
   }>,
 };
 const mockCompletedReminders = { current: [] as unknown[] };
-const mockRequireAttribution = vi.fn();
 const mockReminderSubmitResult = { current: null as boolean | null };
-
-vi.mock('../../contexts/OperatorContext', () => ({
-  useOperator: () => ({ requireAttribution: mockRequireAttribution }),
-}));
 
 vi.mock('../../hooks/useAlertReminders', () => ({
   useAlertReminders: () => ({
@@ -396,10 +393,6 @@ vi.mock('../alertUtils', () => ({
 // Stub globalThis.api
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRequireAttribution.mockReturnValue({
-    operatorId: 'operator-ryan',
-    operatorName: 'Ryan Bell',
-  });
   mockReminderSubmitResult.current = null;
   mockPendingReminders.current = [];
   mockCompletedReminders.current = [];
@@ -805,12 +798,11 @@ describe('AlertsTab', () => {
     expect(screen.getByTestId('reminder-draft-sender')).toHaveTextContent('Ops');
   });
 
-  it('requires and forwards operator attribution when scheduling a new reminder', async () => {
+  it('schedules a new reminder without operator attribution', async () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('ALARMS'));
     fireEvent.click(screen.getByTestId('manager-schedule'));
 
-    expect(mockRequireAttribution).toHaveBeenCalledOnce();
     expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('reminder-schedule'));
@@ -818,63 +810,15 @@ describe('AlertsTab', () => {
     await waitFor(() => {
       expect(mockScheduleReminder).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Scheduled reminder' }),
-        { operatorId: 'operator-ryan', operatorName: 'Ryan Bell' },
       );
     });
   });
 
-  it('opens the shared operator picker without opening the schedule modal when none is selected', () => {
-    mockRequireAttribution.mockReturnValue(null);
+  it('opens the schedule modal without an operator provider', () => {
     render(<AlertsTab />);
     fireEvent.click(screen.getByText('SCHEDULE ALARM'));
 
-    expect(mockRequireAttribution).toHaveBeenCalledOnce();
-    expect(screen.queryByTestId('reminder-modal')).not.toBeInTheDocument();
-    expect(mockScheduleReminder).not.toHaveBeenCalled();
-    expect(mockUpdateReminder).not.toHaveBeenCalled();
-  });
-
-  it('uses the attribution snapshot captured when the creation modal opened', async () => {
-    mockRequireAttribution.mockReturnValueOnce({
-      operatorId: 'operator-opening',
-      operatorName: 'Opening Operator',
-    });
-    render(<AlertsTab />);
-
-    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
-    mockRequireAttribution.mockReturnValue({
-      operatorId: 'operator-later',
-      operatorName: 'Later Operator',
-    });
-    fireEvent.click(screen.getByTestId('reminder-schedule'));
-
-    await waitFor(() => {
-      expect(mockScheduleReminder).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Scheduled reminder' }),
-        { operatorId: 'operator-opening', operatorName: 'Opening Operator' },
-      );
-    });
-    expect(mockRequireAttribution).toHaveBeenCalledOnce();
-  });
-
-  it('captures a fresh attribution snapshot after a creation session closes', async () => {
-    mockRequireAttribution
-      .mockReturnValueOnce({ operatorId: 'operator-first', operatorName: 'First Operator' })
-      .mockReturnValueOnce({ operatorId: 'operator-second', operatorName: 'Second Operator' });
-    render(<AlertsTab />);
-
-    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
-    fireEvent.click(screen.getByTestId('reminder-close'));
-    fireEvent.click(screen.getByText('SCHEDULE ALARM'));
-    fireEvent.click(screen.getByTestId('reminder-schedule'));
-
-    await waitFor(() => {
-      expect(mockScheduleReminder).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'Scheduled reminder' }),
-        { operatorId: 'operator-second', operatorName: 'Second Operator' },
-      );
-    });
-    expect(mockRequireAttribution).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('reminder-modal')).toBeInTheDocument();
   });
 
   it('shows the next upcoming reminder compactly', () => {
@@ -955,7 +899,6 @@ describe('AlertsTab', () => {
         dueAt: '2026-05-28T20:00:00.000Z',
       });
     });
-    expect(mockRequireAttribution).not.toHaveBeenCalled();
     expect(mockScheduleReminder).not.toHaveBeenCalled();
   });
 

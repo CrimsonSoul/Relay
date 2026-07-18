@@ -3,7 +3,6 @@ import {
   DYNATRACE_PROBLEM_NOTES_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
 } from '@shared/dynatraceProblems';
-import type { OperatorAttribution } from '@shared/operators';
 import {
   DYNATRACE_TICKET_NOTE_PREFIX,
   MAX_DYNATRACE_TICKET_REFERENCE_LENGTH,
@@ -56,11 +55,6 @@ vi.mock('../stores/collectionStoreRegistry', () => ({
 }));
 
 const notFound = Object.assign(new Error('Not found'), { status: 404 });
-const attribution: OperatorAttribution = {
-  operatorId: 'operator-ryan',
-  operatorName: 'Ryan Bell',
-};
-
 describe('Dynatrace problem mutations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -73,25 +67,22 @@ describe('Dynatrace problem mutations', () => {
     (globalThis as Record<string, unknown>).api = undefined;
   });
 
-  it('stores the stable operator ID and immutable author snapshot on a note', async () => {
-    await addDynatraceProblemNote(
-      'problem-1',
-      '  Investigating the failed checkout.  ',
-      attribution,
-    );
+  it('adds a response note without an operator identity', async () => {
+    await addDynatraceProblemNote('problem-1', '  Investigating the failed checkout.  ');
 
     expect(mocks.notesCreate).toHaveBeenCalledWith({
       problemId: 'problem-1',
       note: 'Investigating the failed checkout.',
-      operatorId: 'operator-ryan',
-      author: 'Ryan Bell',
     });
+    expect(mocks.notesCreate.mock.calls[0]![0]).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), author: expect.anything() }),
+    );
   });
 
   it('rejects an addressed state when the problem has no ticket reference or NOC note', async () => {
     mocks.notesGetFirst.mockRejectedValue(notFound);
 
-    await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
+    await expect(setDynatraceProblemAddressed('problem-1', true)).rejects.toThrow(
       'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
     );
     expect(mocks.statesCreate).not.toHaveBeenCalled();
@@ -101,7 +92,7 @@ describe('Dynatrace problem mutations', () => {
   it('does not let a historical note satisfy a new address action', async () => {
     mocks.notesGetFirst.mockResolvedValue({ id: 'note-1', problemId: 'problem-1' });
 
-    await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
+    await expect(setDynatraceProblemAddressed('problem-1', true)).rejects.toThrow(
       'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
     );
 
@@ -109,16 +100,17 @@ describe('Dynatrace problem mutations', () => {
   });
 
   it('marks a problem addressed after validating the newly persisted response note', async () => {
-    await setDynatraceProblemAddressed('problem-1', true, attribution, undefined, 'note-1');
+    await setDynatraceProblemAddressed('problem-1', true, undefined, 'note-1');
 
     expect(mocks.notesGetOne).toHaveBeenCalledWith('note-1', { requestKey: null });
     expect(mocks.statesCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         problemId: 'problem-1',
         addressed: true,
-        operatorId: 'operator-ryan',
-        addressedBy: 'Ryan Bell',
       }),
+    );
+    expect(mocks.statesCreate.mock.calls[0]![0]).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), addressedBy: expect.anything() }),
     );
   });
 
@@ -126,7 +118,7 @@ describe('Dynatrace problem mutations', () => {
     mocks.notesGetOne.mockResolvedValue({ id: 'note-1', problemId: 'problem-2' });
 
     await expect(
-      setDynatraceProblemAddressed('problem-1', true, attribution, undefined, 'note-1'),
+      setDynatraceProblemAddressed('problem-1', true, undefined, 'note-1'),
     ).rejects.toThrow(
       'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
     );
@@ -137,21 +129,19 @@ describe('Dynatrace problem mutations', () => {
   it('allows returning a problem to the queue without requiring another note', async () => {
     mocks.statesGetFirst.mockResolvedValue({ id: 'state-1', problemId: 'problem-1' });
 
-    await setDynatraceProblemAddressed('problem-1', false, null);
+    await setDynatraceProblemAddressed('problem-1', false);
 
     expect(mocks.notesGetFirst).not.toHaveBeenCalled();
     expect(mocks.statesUpdate).toHaveBeenCalledWith(
       'state-1',
-      expect.objectContaining({
-        addressed: false,
-        addressedAt: '',
-        operatorId: '',
-        addressedBy: '',
-      }),
+      expect.objectContaining({ addressed: false, addressedAt: '' }),
+    );
+    expect(mocks.statesUpdate.mock.calls[0]![1]).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), addressedBy: expect.anything() }),
     );
   });
 
-  it('queues stable operator IDs and display snapshots together while offline', async () => {
+  it('queues unattributed notes and addressed states while offline', async () => {
     mocks.getConnectionState.mockReturnValue('offline');
     const mutateOffline = vi.fn(
       async (input: { collection: string; action: string; data: object }) => ({
@@ -165,14 +155,8 @@ describe('Dynatrace problem mutations', () => {
     );
     (globalThis as Record<string, unknown>).api = { mutateOffline };
 
-    await addDynatraceProblemNote('problem-1', 'Queued note', attribution);
-    await setDynatraceProblemAddressed(
-      'problem-1',
-      true,
-      attribution,
-      undefined,
-      'dynatrace_probl',
-    );
+    await addDynatraceProblemNote('problem-1', 'Queued note');
+    await setDynatraceProblemAddressed('problem-1', true, undefined, 'dynatrace_probl');
 
     expect(mutateOffline).toHaveBeenNthCalledWith(1, {
       collection: DYNATRACE_PROBLEM_NOTES_COLLECTION,
@@ -180,20 +164,16 @@ describe('Dynatrace problem mutations', () => {
       data: {
         problemId: 'problem-1',
         note: 'Queued note',
-        operatorId: 'operator-ryan',
-        author: 'Ryan Bell',
       },
     });
     expect(mutateOffline).toHaveBeenNthCalledWith(2, {
       collection: DYNATRACE_PROBLEM_STATES_COLLECTION,
       action: 'create',
-      data: expect.objectContaining({
-        problemId: 'problem-1',
-        addressed: true,
-        operatorId: 'operator-ryan',
-        addressedBy: 'Ryan Bell',
-      }),
+      data: expect.objectContaining({ problemId: 'problem-1', addressed: true }),
     });
+    expect(mutateOffline.mock.calls[1]![0].data).not.toEqual(
+      expect.objectContaining({ operatorId: expect.anything(), addressedBy: expect.anything() }),
+    );
   });
 
   it('requires newly persisted response evidence while offline', async () => {
@@ -201,7 +181,7 @@ describe('Dynatrace problem mutations', () => {
     const mutateOffline = vi.fn();
     (globalThis as Record<string, unknown>).api = { mutateOffline };
 
-    await expect(setDynatraceProblemAddressed('problem-1', true, attribution)).rejects.toThrow(
+    await expect(setDynatraceProblemAddressed('problem-1', true)).rejects.toThrow(
       'Add a Service Desk ticket number or NOC note before marking this problem addressed locally.',
     );
 

@@ -1,16 +1,10 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RelayOperatorRecord } from '@shared/operators';
 
 const mocks = vi.hoisted(() => ({
-  useCollection: vi.fn(),
   showToast: vi.fn(),
   scheduleReminder: vi.fn(async () => true),
-}));
-
-vi.mock('../../hooks/useCollection', () => ({
-  useCollection: mocks.useCollection,
 }));
 
 vi.mock('../../components/Toast', () => ({
@@ -121,52 +115,20 @@ vi.mock('../alertUtils', () => ({
   sanitizeHtml: (html: string) => html,
 }));
 
-import { OperatorProvider } from '../../contexts/OperatorContext';
-import { SidebarOperatorSelector } from '../../components/sidebar/SidebarOperatorSelector';
 import { AlertsTab } from '../AlertsTab';
 
-const operator: RelayOperatorRecord = {
-  id: 'operator-alpha',
-  displayName: 'Alpha Operator',
-  active: true,
-  created: '2026-07-13 12:00:00.000Z',
-  updated: '2026-07-13 12:00:00.000Z',
-};
-
-describe('AlertsTab operator attribution integration', () => {
+describe('AlertsTab ordinary reminder integration', () => {
   beforeEach(() => {
     localStorage.clear();
     vi.clearAllMocks();
-    mocks.useCollection.mockReturnValue({
-      data: [operator],
-      loading: false,
-      error: null,
-      hasLoadedSnapshot: true,
-      refetch: vi.fn(),
-    });
     globalThis.api = {
       getCompanyLogo: vi.fn(async () => null),
       getFooterLogo: vi.fn(async () => null),
     } as never;
   });
 
-  it('opens the real shared picker before a new alarm and creates from the retry snapshot', async () => {
-    render(
-      <OperatorProvider>
-        <SidebarOperatorSelector />
-        <AlertsTab />
-      </OperatorProvider>,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'SCHEDULE ALARM' }));
-
-    const picker = await screen.findByRole('menu', { name: 'Select operator' });
-    const alpha = within(picker).getByRole('menuitemradio', { name: 'Alpha Operator' });
-    expect(alpha).toHaveFocus();
-    expect(screen.queryByRole('dialog', { name: 'Schedule Alarm' })).not.toBeInTheDocument();
-
-    fireEvent.click(alpha);
-    expect(screen.queryByRole('menu', { name: 'Select operator' })).not.toBeInTheDocument();
+  it('opens and creates an alarm without an operator provider', async () => {
+    render(<AlertsTab />);
 
     fireEvent.click(screen.getByRole('button', { name: 'SCHEDULE ALARM' }));
     expect(screen.getByRole('dialog', { name: 'Schedule Alarm' })).toBeVisible();
@@ -176,7 +138,6 @@ describe('AlertsTab operator attribution integration', () => {
     await waitFor(() => {
       expect(mocks.scheduleReminder).toHaveBeenCalledWith(
         expect.objectContaining({ title: 'Provider-backed alarm', alertSender: '' }),
-        { operatorId: 'operator-alpha', operatorName: 'Alpha Operator' },
       );
     });
   });

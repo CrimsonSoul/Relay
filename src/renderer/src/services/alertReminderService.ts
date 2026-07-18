@@ -1,7 +1,6 @@
 import { getPb, handleApiError, escapeFilter } from './pocketbase';
 import type { Severity } from '../tabs/alertUtils';
 import { mutateCollection } from './mutationGateway';
-import type { OperatorAttribution } from '@shared/operators';
 
 export type AlertReminderStatus = 'pending' | 'done' | 'dismissed';
 
@@ -16,7 +15,7 @@ export interface AlertReminderRecord {
   alertSubject: string;
   alertBodyHtml: string;
   operatorId?: string;
-  createdBy: string;
+  createdBy?: string;
   alertSender?: string;
   completedAt: string;
   dismissedAt: string;
@@ -49,10 +48,7 @@ type AlertReminderCreatePayload = Omit<
 
 const COLLECTION = 'alert_reminders';
 
-function normalizeCreatePayload(
-  input: AlertReminderInput,
-  attribution: OperatorAttribution,
-): AlertReminderCreatePayload {
+function normalizeCreatePayload(input: AlertReminderInput): AlertReminderCreatePayload {
   return {
     title: input.title.trim() || 'Send alert',
     note: input.note?.trim() || '',
@@ -61,21 +57,16 @@ function normalizeCreatePayload(
     severity: input.severity || '',
     alertSubject: input.alertSubject?.trim() || '',
     alertBodyHtml: input.alertBodyHtml || '',
-    operatorId: attribution.operatorId,
-    createdBy: attribution.operatorName,
     alertSender: input.alertSender?.trim() || '',
   };
 }
 
-export async function addAlertReminder(
-  input: AlertReminderInput,
-  attribution: OperatorAttribution,
-): Promise<AlertReminderRecord> {
+export async function addAlertReminder(input: AlertReminderInput): Promise<AlertReminderRecord> {
   return (await mutateCollection<AlertReminderRecord>(
     COLLECTION,
     'create',
     undefined,
-    normalizeCreatePayload(input, attribution),
+    normalizeCreatePayload(input),
   )) as AlertReminderRecord;
 }
 

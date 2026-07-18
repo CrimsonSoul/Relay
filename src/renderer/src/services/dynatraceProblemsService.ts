@@ -4,7 +4,6 @@ import {
   type DynatraceProblemNoteRecord,
   type DynatraceProblemStateRecord,
 } from '@shared/dynatraceProblems';
-import type { OperatorAttribution } from '@shared/operators';
 import { escapeFilter, getConnectionState, getPb, handleApiError } from './pocketbase';
 import { isPbNotFoundError } from './pbErrors';
 import { mutateCollection } from './mutationGateway';
@@ -81,21 +80,15 @@ async function requireProblemResponseWhenAddressing(
 export async function setDynatraceProblemAddressed(
   problemId: string,
   addressed: boolean,
-  attribution: OperatorAttribution | null,
   existingRecordId?: string,
   responseNoteId?: string,
 ): Promise<DynatraceProblemStateRecord> {
-  if (addressed && !attribution) {
-    throw new Error('Choose an operator before marking this problem addressed locally.');
-  }
   const online = getConnectionState() === 'online';
   await requireProblemResponseWhenAddressing(problemId, addressed, online, responseNoteId);
   const payload = {
     problemId,
     addressed,
     addressedAt: addressed ? new Date().toISOString() : '',
-    operatorId: addressed ? attribution!.operatorId : '',
-    addressedBy: addressed ? attribution!.operatorName : '',
   };
   try {
     const recordId = existingRecordId || (online ? (await findState(problemId))?.id : undefined);
@@ -124,7 +117,6 @@ export async function setDynatraceProblemAddressed(
 export async function addDynatraceProblemNote(
   problemId: string,
   note: string,
-  attribution: OperatorAttribution,
 ): Promise<DynatraceProblemNoteRecord> {
   const normalizedNote = note.trim();
   if (!normalizedNote) throw new Error('Enter a note before saving.');
@@ -140,8 +132,6 @@ export async function addDynatraceProblemNote(
       {
         problemId,
         note: normalizedNote,
-        operatorId: attribution.operatorId,
-        author: attribution.operatorName,
       },
     )) as DynatraceProblemNoteRecord;
   } catch (error) {
