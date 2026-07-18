@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import {
   buildKnowledgeLibrary,
+  buildKnowledgeCatalog,
   findKnowledgeDocument,
   knowledgeDocumentMatches,
 } from '../knowledgeModel';
@@ -13,6 +14,8 @@ function document(
     id: overrides.id,
     sourceKey: `${overrides.id}.pdf`,
     category: 'General',
+    categoryId: null,
+    documentType: 'sop',
     title: overrides.title,
     displayTitle: overrides.title,
     lifecycleState: 'active',
@@ -25,6 +28,7 @@ function document(
     trashedAt: null,
     fileName: `${overrides.title}.pdf`,
     pdf: `${overrides.title}.pdf`,
+    cover: null,
     checksum: 'a'.repeat(64),
     byteSize: 1024,
     pageCount: 2,
@@ -102,5 +106,64 @@ describe('knowledgeModel', () => {
     const library = buildKnowledgeLibrary([trashed, active], 'current');
     expect(library[0]?.documents.map(({ id }) => id)).toEqual(['active']);
     expect(knowledgeDocumentMatches(active, 'legacy')).toBe(false);
+  });
+
+  it('builds the M3 catalog with automatic recent, ordered SOP groups, and cheatsheets', () => {
+    const categories = [
+      {
+        id: 'cat-network',
+        name: 'Network',
+        normalizedName: 'network',
+        sortOrder: 200,
+        systemKey: '' as const,
+        revision: 1,
+        created: '2026-07-14T12:00:00.000Z',
+        updated: '2026-07-14T12:00:00.000Z',
+      },
+      {
+        id: 'cat-access',
+        name: 'Access',
+        normalizedName: 'access',
+        sortOrder: 100,
+        systemKey: '' as const,
+        revision: 1,
+        created: '2026-07-14T12:00:00.000Z',
+        updated: '2026-07-14T12:00:00.000Z',
+      },
+    ];
+    const catalog = buildKnowledgeCatalog({
+      documents: [
+        document({
+          id: 'network-sop',
+          title: 'Router recovery',
+          category: 'Network',
+          categoryId: 'cat-network',
+        }),
+        document({
+          id: 'access-sop',
+          title: 'Oracle access',
+          category: 'Access',
+          categoryId: 'cat-access',
+        }),
+        document({
+          id: 'quick',
+          title: 'Escalation numbers',
+          category: 'Access',
+          categoryId: 'cat-access',
+          documentType: 'cheatsheet',
+          updated: '2026-07-18T12:00:00.000Z',
+        }),
+      ],
+      categories,
+      query: '',
+      categoryId: 'all',
+      documentType: 'all',
+      sort: 'recent',
+    });
+
+    expect(catalog.recent[0]?.id).toBe('quick');
+    expect(catalog.sopGroups.map(({ category }) => category.name)).toEqual(['Access', 'Network']);
+    expect(catalog.cheatsheets.map(({ id }) => id)).toEqual(['quick']);
+    expect(catalog.total).toBe(3);
   });
 });

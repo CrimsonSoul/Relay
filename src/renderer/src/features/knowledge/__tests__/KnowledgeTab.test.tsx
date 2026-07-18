@@ -101,9 +101,12 @@ function document(id: string, title: string, category: string): KnowledgeDocumen
     id,
     sourceKey: `${category}/${title}.pdf`,
     category,
+    categoryId: null,
+    documentType: 'sop',
     title,
     fileName: `${title}.pdf`,
     pdf: `${title}.pdf`,
+    cover: null,
     checksum: 'a'.repeat(64),
     byteSize: 1024,
     pageCount: 3,
@@ -167,6 +170,36 @@ describe('KnowledgeTab', () => {
     render(<KnowledgeTab active relayMode="client" onLibraryCountChange={onLibraryCountChange} />);
 
     await waitFor(() => expect(onLibraryCountChange).toHaveBeenLastCalledWith(2));
+  });
+
+  it('opens on the M3 Wiki catalog and enters the existing reader from a guide', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      categories: [
+        {
+          id: 'category-general',
+          name: 'General',
+          normalizedName: 'general',
+          sortOrder: 100,
+          systemKey: '',
+          revision: 1,
+          created: '2026-07-14T12:00:00.000Z',
+          updated: '2026-07-14T12:00:00.000Z',
+        },
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="server" />);
+    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
+    expect(screen.queryByText(/Viewer:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open Operator guide' })[0]!);
+    expect(screen.getByText(/Viewer: Operator guide/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Wiki' }));
+    expect(screen.getByRole('heading', { name: 'SOP guides' })).toBeInTheDocument();
   });
 
   it('reports an unavailable count before a usable snapshot and when loading fails', async () => {

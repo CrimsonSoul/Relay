@@ -34,21 +34,39 @@ describe('useKnowledgeLibrary', () => {
   });
 
   it('uses the protected collection with deterministic sorting and discards invalid cache data', () => {
-    const refetch = vi.fn(async () => undefined);
-    useCollectionMock.mockReturnValue({
-      data: [validRecord(), { ...validRecord(), id: 'bad', checksum: 'not-a-checksum' }] as never,
+    const documentRefetch = vi.fn(async () => undefined);
+    const categoryRefetch = vi.fn(async () => undefined);
+    useCollectionMock.mockImplementation((name) => ({
+      data:
+        name === 'knowledge_documents'
+          ? ([validRecord(), { ...validRecord(), id: 'bad', checksum: 'not-a-checksum' }] as never)
+          : ([
+              {
+                id: 'category-general',
+                name: 'General',
+                normalizedName: 'general',
+                sortOrder: 100,
+                systemKey: '',
+                revision: 1,
+                created: '2026-07-14T12:00:00.000Z',
+                updated: '2026-07-14T12:00:00.000Z',
+              },
+            ] as never),
       loading: false,
       error: null,
       hasLoadedSnapshot: true,
-      refetch,
-    });
+      refetch: name === 'knowledge_documents' ? documentRefetch : categoryRefetch,
+    }));
 
     const { result } = renderHook(() => useKnowledgeLibrary());
 
     expect(useCollectionMock).toHaveBeenCalledWith('knowledge_documents', {
       sort: 'category,title,fileName',
     });
+    expect(useCollectionMock).toHaveBeenCalledWith('knowledge_categories', {
+      sort: 'sortOrder,name',
+    });
     expect(result.current.documents.map((document) => document.id)).toEqual(['doc-1']);
-    expect(result.current.refetch).toBe(refetch);
+    expect(result.current.categories.map((category) => category.id)).toEqual(['category-general']);
   });
 });

@@ -14,6 +14,7 @@ import { useKnowledgeLibrary } from './useKnowledgeLibrary';
 import { KnowledgeTree } from './KnowledgeTree';
 import { KnowledgePdfViewer } from './KnowledgePdfViewer';
 import { KnowledgeManagementWorkspace } from './KnowledgeManagementWorkspace';
+import { KnowledgeLibrary } from './KnowledgeLibrary';
 import type { KnowledgeViewerTarget } from './knowledgePdfDestination';
 import { resolveKnowledgeLink, type KnowledgeResolvedLink } from './knowledgeLinkResolver';
 import {
@@ -85,6 +86,32 @@ function emptyLibraryDescription(isServer: boolean, canManage: boolean): string 
   return 'A designated Wiki publisher can add PDF guides from their signed-in Relay workstation.';
 }
 
+function initialKnowledgeView(categories: unknown): 'catalog' | 'reader' {
+  return Array.isArray(categories) ? 'catalog' : 'reader';
+}
+
+function initialKnowledgeDocumentId(
+  categories: unknown,
+  documents: KnowledgeDocumentRecord[],
+): string | null {
+  if (Array.isArray(categories)) return null;
+  return buildKnowledgeLibrary(documents)[0]?.documents[0]?.id ?? null;
+}
+
+function showsKnowledgeCatalog(
+  view: 'catalog' | 'reader',
+  selectedDocument: KnowledgeDocumentRecord | null,
+): boolean {
+  return view === 'catalog' || !selectedDocument;
+}
+
+function knowledgeSelectionExists(
+  selectedDocumentId: string | null,
+  documents: KnowledgeDocumentRecord[],
+): boolean {
+  return !selectedDocumentId || documents.some((document) => document.id === selectedDocumentId);
+}
+
 function KnowledgeEmptyState({
   relayMode,
   canManage,
@@ -126,11 +153,15 @@ function KnowledgeEmptyState({
 }
 
 export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readonly<Props>) {
-  const { documents, loading, error, hasLoadedSnapshot, refetch } = useKnowledgeLibrary();
+  const libraryData = useKnowledgeLibrary();
+  const { documents, loading, error, hasLoadedSnapshot, refetch } = libraryData;
+  const categories = libraryData.categories ?? [];
   const { session } = usePrivilegedAccess();
   const { showToast } = useToast();
   const [query, setQuery] = useState('');
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(() =>
+    initialKnowledgeDocumentId(libraryData.categories, documents),
+  );
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const [target, setTarget] = useState<KnowledgeViewerTarget | null>(null);
   const [focusRequestKey, setFocusRequestKey] = useState(0);
@@ -139,6 +170,9 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const [managementOpen, setManagementOpen] = useState(false);
   const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
   const [desktopLibraryCollapsed, setDesktopLibraryCollapsed] = useState(false);
+  const [view, setView] = useState<'catalog' | 'reader'>(() =>
+    initialKnowledgeView(libraryData.categories),
+  );
   const lastSelectedTitleRef = useRef<string | null>(null);
   const compactLibraryToggleRef = useRef<HTMLButtonElement>(null);
   const desktopLibraryRestoreRef = useRef<HTMLButtonElement>(null);
@@ -150,9 +184,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const library = useMemo(() => buildKnowledgeLibrary(documents, query), [documents, query]);
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId) ?? null;
   const activeHeading = selectedDocument?.outline.find((node) => node.id === activeHeadingId);
-  const selectedExistsInLibrary = selectedDocumentId
-    ? documents.some((document) => document.id === selectedDocumentId)
-    : true;
+  const selectedExistsInLibrary = knowledgeSelectionExists(selectedDocumentId, documents);
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
 
   const closeLibraryDrawer = useCallback((restoreFocus = false) => {
@@ -201,21 +233,9 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       setSelectedDocumentId(null);
       setActiveHeadingId(null);
       setTarget(null);
-      return;
+      setView('catalog');
     }
-    if (removedDocumentTitle || selectedDocument) return;
-    const firstDocument = library[0]?.documents[0];
-    if (!firstDocument) return;
-    setSelectedDocumentId(firstDocument.id);
-    setActiveHeadingId(null);
-    setTarget(null);
-  }, [
-    library,
-    removedDocumentTitle,
-    selectedDocument,
-    selectedDocumentId,
-    selectedExistsInLibrary,
-  ]);
+  }, [selectedDocumentId, selectedExistsInLibrary]);
 
   useEffect(() => {
     let disposed = false;
@@ -250,6 +270,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       setRemovedDocumentTitle(null);
       setActiveHeadingId(heading?.id ?? null);
       setTarget(heading ? { ...heading } : null);
+      setView('reader');
       setLibraryDrawerOpen(false);
       acknowledgeKnowledgeDocumentOpen(documentId);
       return true;
@@ -347,6 +368,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       setTarget(nextTarget);
       setRemovedDocumentTitle(null);
       setFocusRequestKey((current) => current + 1);
+      setView('reader');
     },
     [selectedDocument, showToast],
   );
@@ -393,6 +415,32 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     );
   }
 
+  if (showsKnowledgeCatalog(view, selectedDocument)) {
+    return (
+      <div className="knowledge-tab knowledge-tab--catalog">
+        {removedDocumentTitle && (
+          <div className="knowledge-catalog-notice" role="status">
+            <strong>{removedDocumentTitle} was removed.</strong>
+            <span>The Wiki catalog has been refreshed.</span>
+          </div>
+        )}
+        <KnowledgeLibrary
+          documents={documents}
+          categories={categories}
+          canManage={canManage}
+          onManage={() => setManagementOpen(true)}
+          onOpenDocument={(documentId) => {
+            setSelectedDocumentId(documentId);
+            setActiveHeadingId(null);
+            setTarget(null);
+            setRemovedDocumentTitle(null);
+            setView('reader');
+          }}
+        />
+      </div>
+    );
+  }
+
   const categoryCount = new Set(documents.map((document) => document.category)).size;
   const shownCount = library.reduce((count, group) => count + group.documents.length, 0);
   const hasQuery = query.trim().length > 0;
@@ -404,6 +452,19 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   return (
     <div className="knowledge-tab">
+      <div className="knowledge-reader-nav">
+        <button
+          type="button"
+          onClick={() => {
+            setView('catalog');
+            setLibraryDrawerOpen(false);
+          }}
+        >
+          <span aria-hidden="true">←</span>
+          Back to Wiki
+        </button>
+        <span>{selectedDocument.displayTitle}</span>
+      </div>
       <div
         className="knowledge-workspace"
         role="region"
@@ -516,6 +577,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
                 activeHeadingId={activeHeadingId}
                 onSelectDocument={(document) => {
                   setSelectedDocumentId(document.id);
+                  setView('reader');
                   setRemovedDocumentTitle(null);
                   setActiveHeadingId(null);
                   setTarget(null);
