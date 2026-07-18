@@ -434,7 +434,6 @@ async function seed() {
     'bridge_history',
     'alert_history',
     'notes',
-    'standalone_notes',
     'oncall_dismissals',
     'conflict_log',
     'oncall_board_settings',
@@ -930,59 +929,6 @@ async function seed() {
     },
   ];
   for (const n of attachedNotes) await create('notes', n);
-
-  console.log('Seeding standalone_notes...');
-  const notes = [
-    {
-      title: 'Runbook — API Failover',
-      content:
-        '1. Verify health check failures on prod-api-01\n2. Confirm prod-api-02 is healthy\n3. Update Route53 to point to secondary\n4. Notify #incidents channel\n5. Begin root cause analysis on primary',
-      color: 'red',
-      tags: ['runbook', 'api', 'failover'],
-      sortOrder: 1,
-    },
-    {
-      title: 'Q2 Capacity Planning',
-      content:
-        'Current utilization:\n- API: 68% peak\n- DB: 45% peak (read replicas at 30%)\n- Workers: 82% peak — need 2 more\n- Cache: 55% memory usage\n\nAction items:\n- Scale worker pool by 2 nodes\n- Evaluate DB vertical scale vs horizontal',
-      color: 'blue',
-      tags: ['planning', 'capacity', 'q2'],
-      sortOrder: 2,
-    },
-    {
-      title: 'Incident Postmortem — 3/15 Outage',
-      content:
-        'Duration: 47 minutes\nImpact: 100% API failures\nRoot cause: Certificate expiration on load balancer\nContributing: No monitoring on cert expiry dates\n\nAction items:\n- Add cert expiry monitoring (Carlos)\n- Document renewal process (Diana)\n- Set up auto-renewal where possible (Alex)',
-      color: 'amber',
-      tags: ['postmortem', 'incident', 'certs'],
-      sortOrder: 3,
-    },
-    {
-      title: 'New Hire Onboarding Checklist',
-      content:
-        '- [ ] VPN access setup\n- [ ] GitHub org invite\n- [ ] PagerDuty account\n- [ ] Slack channels (#ops, #incidents, #platform)\n- [ ] AWS IAM role assignment\n- [ ] Runbook review session\n- [ ] Shadow on-call shift',
-      color: 'green',
-      tags: ['onboarding', 'hr', 'checklist'],
-      sortOrder: 4,
-    },
-    {
-      title: 'Vendor Contacts',
-      content:
-        'AWS TAM: Jennifer Liu — jliu@aws.amazon.com — (206) 555-0190\nCloudflare SE: Mike Torres — mtorres@cloudflare.com\nPagerDuty CSM: Alisha Grant — agrant@pagerduty.com\nDatadog AE: Chris Nguyen — cnguyen@datadoghq.com',
-      color: 'purple',
-      tags: ['vendors', 'contacts'],
-      sortOrder: 5,
-    },
-    {
-      title: 'Weekend Maintenance Window',
-      content:
-        'Saturday 2:00 AM–6:00 AM ET\n\n1. PostgreSQL minor version upgrade (prod-db-primary)\n2. Kernel patches on all Ubuntu hosts\n3. Redis cluster rebalance\n4. Rotate TLS certificates on LB\n\nRollback plan: snapshot before each step, 15-min checkpoint',
-      color: 'slate',
-      tags: ['maintenance', 'weekend', 'planned'],
-      sortOrder: 6,
-    },
-  ];
-  for (const n of notes) await create('standalone_notes', n);
 
   console.log('Seeding alert_history...');
   const alerts = [

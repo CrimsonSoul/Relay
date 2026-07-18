@@ -109,36 +109,6 @@
   justify-content: center;
 }
 
-/* Notes variant */
-.relay-grid--notes {
-  overflow-y: overlay;
-  flex: 1;
-  padding: 8px;
-}
-
-.notes-masonry-columns {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.notes-masonry-column {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* Wider gaps for large font mode (10ft viewing) */
-.relay-grid--notes[data-font-size='lg'] .notes-masonry-columns {
-  gap: 20px;
-}
-
-.relay-grid--notes[data-font-size='lg'] .notes-masonry-column {
-  gap: 20px;
-}
-
 /* Fixed 2-Column Grid for Pop-out (View Only) */
 .relay-grid--masonry {
   --grid-gap: 24px;
@@ -161,10 +131,6 @@
   .relay-grid--oncall {
     grid-template-columns: 1fr;
     --grid-gap: 12px;
-  }
-
-  .notes-masonry-columns {
-    flex-direction: column;
   }
 }
 
