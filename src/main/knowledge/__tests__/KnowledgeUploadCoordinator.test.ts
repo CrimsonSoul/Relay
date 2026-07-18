@@ -40,6 +40,7 @@ class MemoryRepository implements KnowledgeUploadRepository {
   uploads = new Map<string, KnowledgeUploadManifestRecord>();
   chunks = new Map<string, KnowledgeUploadChunkRecord[]>();
   staged = new Map<string, Uint8Array>();
+  stagedCovers = new Map<string, Uint8Array>();
   events: string[] = [];
   nextBatch = 1;
   nextUpload = 1;
@@ -135,9 +136,24 @@ class MemoryRepository implements KnowledgeUploadRepository {
     return bytes.slice();
   }
 
+  async storeStagedCover(upload: KnowledgeUploadManifestRecord, bytes: Uint8Array) {
+    this.events.push(`store-cover:${upload.id}`);
+    this.stagedCovers.set(upload.id, bytes.slice());
+    const updated = { ...upload, cover: `${upload.id}.png` };
+    this.uploads.set(upload.id, updated);
+    return updated;
+  }
+
+  async readStagedCover(upload: KnowledgeUploadManifestRecord) {
+    const bytes = this.stagedCovers.get(upload.id);
+    if (!bytes) throw new Error('missing-staged-cover');
+    return bytes.slice();
+  }
+
   async clearStagedPdf(uploadId: string) {
     this.events.push(`clear:${uploadId}`);
     this.staged.delete(uploadId);
+    this.stagedCovers.delete(uploadId);
   }
 
   async findDuplicateDocumentId(fileName: string) {
@@ -152,6 +168,7 @@ function createCoordinator(repository = new MemoryRepository()) {
     pageCount: 2,
     outline: [],
     outlineSource: 'none' as KnowledgeOutlineSource,
+    coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
   }));
   const stop = vi.fn(async () => undefined);
   const coordinator = new KnowledgeUploadCoordinator({
@@ -324,6 +341,10 @@ describe('KnowledgeUploadCoordinator', () => {
     });
     expect(extract).toHaveBeenCalledOnce();
     expect(repository.staged.get(upload.id)).toEqual(bytes);
+    expect(repository.stagedCovers.get(upload.id)).toEqual(
+      new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    );
+    expect(repository.uploads.get(upload.id)?.cover).toBe(`${upload.id}.png`);
     expect(repository.events).toEqual(
       expect.arrayContaining([`read:${upload.id}:0`, `read:${upload.id}:1`]),
     );

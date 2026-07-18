@@ -26,6 +26,7 @@ function document(overrides: Record<string, unknown> = {}) {
     displayTitle: 'Runbook',
     fileName: 'Runbook.pdf',
     pdf: 'stored.pdf',
+    cover: 'stored.png',
     checksum: CHECKSUM,
     byteSize: PDF.byteLength,
     pageCount: 2,
@@ -57,6 +58,7 @@ function upload(overrides: Record<string, unknown> = {}) {
     operatorName: ACTOR.displayName,
     fileName: 'Replacement.pdf',
     pdf: 'upload.pdf',
+    cover: 'upload.png',
     checksum: CHECKSUM,
     byteSize: PDF.byteLength,
     state: 'ready',
@@ -125,6 +127,7 @@ describe('ManagedKnowledgeService', () => {
       pb: pb as never,
       now: () => Date.parse(NOW),
       readUploadPdf: vi.fn(async () => PDF),
+      readUploadCover: vi.fn(async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47])),
     });
   }
 
@@ -168,12 +171,13 @@ describe('ManagedKnowledgeService', () => {
     expect(documents.create).toHaveBeenCalledWith(expect.any(FormData), { requestKey: null });
     const publishForm = documents.create.mock.calls[0]?.[0] as FormData;
     expect(publishForm.get('publishedByAccountId')).toBe(ACTOR.accountId);
+    expect(publishForm.get('cover')).toMatchObject({ type: 'image/png' });
     expect(publishForm.get('publishedByOperatorId')).toBe('');
     expect(publishForm.get('trashedByAccountId')).toBe('');
     expect(publishForm.get('trashedByOperatorId')).toBe('');
     expect(uploads.update).toHaveBeenCalledWith(
       'upload-1',
-      { state: 'published', pdf: null },
+      { state: 'published', pdf: null, cover: null },
       { requestKey: null },
     );
     expect(audits.create).toHaveBeenCalledWith(

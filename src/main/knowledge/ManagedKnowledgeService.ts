@@ -6,6 +6,7 @@ import {
   KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_MAX_COVER_BYTES,
   KNOWLEDGE_UPLOADS_COLLECTION,
   compareKnowledgeDocuments,
   normalizeKnowledgeAuditEventView,
@@ -23,7 +24,7 @@ import {
 } from '@shared/knowledge';
 
 type Actor = { accountId: string; displayName: string };
-type UploadRecord = KnowledgeUploadView & { pdf: string; accountId: string };
+type UploadRecord = KnowledgeUploadView & { pdf: string; cover: string; accountId: string };
 type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   id: string;
   requestId: string;
@@ -39,6 +40,7 @@ type ManagedKnowledgeServiceOptions = {
   pb: PocketBase;
   now?: () => number;
   readUploadPdf?: (record: UploadRecord) => Promise<Uint8Array>;
+  readUploadCover?: (record: UploadRecord) => Promise<Uint8Array>;
   fetch?: typeof globalThis.fetch;
 };
 
@@ -132,6 +134,7 @@ export class ManagedKnowledgeService {
   private readonly pb: PocketBase;
   private readonly now: () => number;
   private readonly readUploadPdf: (record: UploadRecord) => Promise<Uint8Array>;
+  private readonly readUploadCover: (record: UploadRecord) => Promise<Uint8Array>;
 
   constructor(options: ManagedKnowledgeServiceOptions) {
     this.pb = options.pb;
@@ -147,6 +150,19 @@ export class ManagedKnowledgeService {
         const bytes = new Uint8Array(await response.arrayBuffer());
         if (bytes.byteLength > KNOWLEDGE_MAX_PDF_BYTES)
           throw new Error('Knowledge upload is invalid.');
+        return bytes;
+      });
+    this.readUploadCover =
+      options.readUploadCover ??
+      (async (record) => {
+        const token = await this.pb.files.getToken({ requestKey: null });
+        const url = this.pb.files.getURL(record as never, record.cover, { token });
+        const response = await fetchImpl(url, { redirect: 'error' });
+        if (!response.ok) throw new Error('Knowledge upload cover is unavailable.');
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength < 1 || bytes.byteLength > KNOWLEDGE_MAX_COVER_BYTES) {
+          throw new Error('Knowledge upload cover is invalid.');
+        }
         return bytes;
       });
   }
@@ -211,9 +227,12 @@ export class ManagedKnowledgeService {
     await this.assertUniqueFilename(upload.fileName);
     const title = normalizedText(input.title, 240);
     const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-    const bytes = await this.readAndVerifyUpload(upload);
+    const [bytes, coverBytes] = await Promise.all([
+      this.readAndVerifyUpload(upload),
+      this.readAndVerifyCover(upload),
+    ]);
     const publishedAt = this.timestamp();
-    const form = this.documentForm(upload, bytes, {
+    const form = this.documentForm(upload, bytes, coverBytes, {
       category,
       title,
       fileName: upload.fileName,
@@ -253,7 +272,10 @@ export class ManagedKnowledgeService {
     this.assertRevision(current, input.expectedRevision);
     const title = normalizedText(input.title, 240);
     const category = normalizedText(input.category, KNOWLEDGE_MAX_CATEGORY_LENGTH);
-    const bytes = await this.readAndVerifyUpload(upload);
+    const [bytes, coverBytes] = await Promise.all([
+      this.readAndVerifyUpload(upload),
+      this.readAndVerifyCover(upload),
+    ]);
     const publishedAt = this.timestamp();
     const metadata = {
       category,
@@ -265,7 +287,9 @@ export class ManagedKnowledgeService {
     };
     const saved = await this.pb
       .collection(KNOWLEDGE_DOCUMENTS_COLLECTION)
-      .update(current.id, this.documentForm(upload, bytes, metadata), { requestKey: null });
+      .update(current.id, this.documentForm(upload, bytes, coverBytes, metadata), {
+        requestKey: null,
+      });
     const document = this.documentFromSaved(saved, upload, metadata, current);
     await this.completeUpload(upload.id);
     await this.audit(input.requestId, 'replaced', document, input.actor);
@@ -464,9 +488,23 @@ export class ManagedKnowledgeService {
     return bytes;
   }
 
+  private async readAndVerifyCover(upload: UploadRecord): Promise<Uint8Array> {
+    const bytes = await this.readUploadCover(upload);
+    const signature = [0x89, 0x50, 0x4e, 0x47];
+    if (
+      bytes.byteLength < signature.length ||
+      bytes.byteLength > KNOWLEDGE_MAX_COVER_BYTES ||
+      signature.some((value, index) => bytes[index] !== value)
+    ) {
+      throw new Error('Knowledge upload cover failed final validation.');
+    }
+    return bytes;
+  }
+
   private documentForm(
     upload: UploadRecord,
     bytes: Uint8Array,
+    coverBytes: Uint8Array,
     metadata: {
       category: string;
       title: string;
@@ -480,6 +518,8 @@ export class ManagedKnowledgeService {
     const values = {
       sourceKey: sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
+      categoryId: '',
+      documentType: 'sop',
       title: metadata.title,
       displayTitle: metadata.title,
       fileName: metadata.fileName,
@@ -508,6 +548,12 @@ export class ManagedKnowledgeService {
       new Blob([copy.buffer as ArrayBuffer], { type: 'application/pdf' }),
       metadata.fileName,
     );
+    const coverCopy = coverBytes.slice();
+    form.set(
+      'cover',
+      new Blob([coverCopy.buffer as ArrayBuffer], { type: 'image/png' }),
+      `${upload.checksum}.png`,
+    );
     return form;
   }
 
@@ -528,10 +574,13 @@ export class ManagedKnowledgeService {
       id: String(saved.id),
       sourceKey: sourceKey(metadata.category, metadata.fileName),
       category: metadata.category,
+      categoryId: null,
+      documentType: 'sop',
       title: metadata.title,
       displayTitle: metadata.title,
       fileName: metadata.fileName,
       pdf: String(saved.pdf || metadata.fileName),
+      cover: String(saved.cover || upload.cover || '') || null,
       checksum: upload.checksum,
       byteSize: upload.byteSize,
       pageCount: upload.pageCount ?? 1,
@@ -612,7 +661,7 @@ export class ManagedKnowledgeService {
   private completeUpload(id: string): Promise<unknown> {
     return this.pb
       .collection(KNOWLEDGE_UPLOADS_COLLECTION)
-      .update(id, { state: 'published', pdf: null }, { requestKey: null });
+      .update(id, { state: 'published', pdf: null, cover: null }, { requestKey: null });
   }
 
   private async audit(

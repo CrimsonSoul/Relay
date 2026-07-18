@@ -22,6 +22,7 @@ const upload: KnowledgeUploadManifestRecord = {
   chunkCount: 1,
   state: 'assembling',
   pdf: null,
+  cover: null,
   pageCount: null,
   outline: [],
   outlineSource: null,
@@ -125,6 +126,29 @@ describe('PocketBaseKnowledgeUploadRepository', () => {
     expect(file).toMatchObject({ size: bytes.byteLength, type: 'application/pdf' });
     expect(form?.has('path')).toBe(false);
     expect(form?.has('accountId')).toBe(false);
+  });
+
+  it('stores the rendered cover as a bounded protected PNG form', async () => {
+    const update = vi.fn(async (_id: string, data: FormData) => ({
+      ...upload,
+      cover: 'cover.png',
+      revision: 2,
+      received: data,
+    }));
+    const pb = {
+      collection: vi.fn(() => ({ update })),
+      files: { getToken: vi.fn(), getURL: vi.fn() },
+    };
+    const repository = new PocketBaseKnowledgeUploadRepository({ pb: pb as never });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+    await expect(repository.storeStagedCover(upload, bytes)).resolves.toMatchObject({
+      id: 'upload-1',
+      cover: 'cover.png',
+    });
+    const file = update.mock.calls[0]?.[1].get('cover');
+    expect(file).toBeInstanceOf(Blob);
+    expect(file).toMatchObject({ size: bytes.byteLength, type: 'image/png' });
   });
 
   it('downloads a protected chunk through a short-lived PocketBase file token', async () => {

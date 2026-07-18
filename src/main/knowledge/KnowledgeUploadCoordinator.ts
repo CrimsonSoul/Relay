@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   KNOWLEDGE_MAX_PDF_BYTES,
+  KNOWLEDGE_MAX_COVER_BYTES,
   KNOWLEDGE_MAX_PAGES,
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
   KNOWLEDGE_UPLOAD_RETENTION_MS,
@@ -55,6 +56,7 @@ export type KnowledgeUploadManifestRecord = {
   chunkCount: number;
   state: KnowledgeUploadManifestView['state'];
   pdf: string | null;
+  cover: string | null;
   pageCount: number | null;
   outline: KnowledgeOutlineNode[];
   outlineSource: KnowledgeOutlineSource | null;
@@ -114,6 +116,11 @@ export type KnowledgeUploadRepository = {
     bytes: Uint8Array,
   ): Promise<KnowledgeUploadManifestRecord>;
   readStagedPdf(upload: KnowledgeUploadManifestRecord): Promise<Uint8Array>;
+  storeStagedCover(
+    upload: KnowledgeUploadManifestRecord,
+    bytes: Uint8Array,
+  ): Promise<KnowledgeUploadManifestRecord>;
+  readStagedCover(upload: KnowledgeUploadManifestRecord): Promise<Uint8Array>;
   clearStagedPdf(uploadId: string): Promise<void>;
   findDuplicateDocumentId(fileName: string): Promise<string | null>;
 };
@@ -339,6 +346,7 @@ export class KnowledgeUploadCoordinator {
       chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
       state: 'uploading',
       pdf: null,
+      cover: null,
       pageCount: null,
       outline: [],
       outlineSource: null,
@@ -556,11 +564,17 @@ export class KnowledgeUploadCoordinator {
       const extraction = await this.extractor.extract(bytes);
       if (await this.wasCancelled(upload.id)) return;
       this.validateExtraction(extraction);
+      upload = await this.repository.storeStagedCover(upload, extraction.coverPng);
+      if (await this.wasCancelled(upload.id)) {
+        await this.repository.clearStagedPdf(upload.id);
+        return;
+      }
       const duplicateDocumentId = await this.repository.findDuplicateDocumentId(upload.fileName);
       const now = isoDate(this.now());
       await this.repository.updateUpload(upload.id, {
         state: 'ready',
         pdf: upload.pdf,
+        cover: upload.cover,
         pageCount: extraction.pageCount,
         outline: extraction.outline,
         outlineSource: extraction.outlineSource,
@@ -646,6 +660,12 @@ export class KnowledgeUploadCoordinator {
   private validateExtraction(extraction: KnowledgeExtractionResult): void {
     if (extraction.pageCount < 1 || extraction.pageCount > KNOWLEDGE_MAX_PAGES) {
       throw new KnowledgeUploadProcessingError('too-many-pages');
+    }
+    if (
+      extraction.coverPng.byteLength < 1 ||
+      extraction.coverPng.byteLength > KNOWLEDGE_MAX_COVER_BYTES
+    ) {
+      throw new KnowledgeUploadProcessingError('validation-failed');
     }
   }
 

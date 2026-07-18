@@ -1,6 +1,7 @@
 import type PocketBase from 'pocketbase';
 import {
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_MAX_COVER_BYTES,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
   KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
@@ -43,6 +44,7 @@ function uploadRecord(value: KnowledgeUploadManifestRecord): KnowledgeUploadMani
     chunkSize: Number(value.chunkSize),
     chunkCount: Number(value.chunkCount),
     pdf: value.pdf || null,
+    cover: value.cover || null,
     pageCount:
       Number.isInteger(value.pageCount) && Number(value.pageCount) > 0
         ? Number(value.pageCount)
@@ -243,10 +245,36 @@ export class PocketBaseKnowledgeUploadRepository implements KnowledgeUploadRepos
     );
   }
 
+  async storeStagedCover(
+    upload: KnowledgeUploadManifestRecord,
+    bytes: Uint8Array,
+  ): Promise<KnowledgeUploadManifestRecord> {
+    if (bytes.byteLength < 1 || bytes.byteLength > KNOWLEDGE_MAX_COVER_BYTES) {
+      throw new Error('invalid-staged-cover');
+    }
+    const form = new FormData();
+    const buffer = Uint8Array.from(bytes).buffer;
+    form.set('cover', new Blob([buffer], { type: 'image/png' }), `${upload.checksum}.png`);
+    const updated = await this.pb
+      .collection(KNOWLEDGE_UPLOADS_COLLECTION)
+      .update<KnowledgeUploadManifestRecord>(upload.id, form, { requestKey: null });
+    return uploadRecord(updated);
+  }
+
+  readStagedCover(upload: KnowledgeUploadManifestRecord): Promise<Uint8Array> {
+    if (!upload.cover) return Promise.reject(new Error('missing-staged-cover'));
+    return this.downloadProtectedFile(
+      KNOWLEDGE_UPLOADS_COLLECTION,
+      upload,
+      upload.cover,
+      KNOWLEDGE_MAX_COVER_BYTES,
+    );
+  }
+
   async clearStagedPdf(uploadId: string): Promise<void> {
     await this.pb
       .collection(KNOWLEDGE_UPLOADS_COLLECTION)
-      .update(uploadId, { pdf: null }, { requestKey: null });
+      .update(uploadId, { pdf: null, cover: null }, { requestKey: null });
   }
 
   async findDuplicateDocumentId(fileName: string): Promise<string | null> {
