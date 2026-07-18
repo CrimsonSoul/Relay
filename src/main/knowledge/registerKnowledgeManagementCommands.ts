@@ -85,28 +85,25 @@ type KnowledgeManagementCommandOptions = {
   fetch?: typeof globalThis.fetch;
 };
 
-function actor(context: {
-  account: { id: string };
-  operator: { id: string; displayName: string };
-}) {
+function actor(context: { account: { id: string; displayName: string } }) {
   return {
     accountId: context.account.id,
-    operatorId: context.operator.id,
-    operatorName: context.operator.displayName,
+    operatorId: context.account.id,
+    operatorName: context.account.displayName,
   };
 }
 
 function uploadActor(context: {
-  account: { id: string; role: 'admin' | 'publisher' };
-  operator: { id: string; displayName: string };
+  account: { id: string; displayName: string };
   device: { deviceId: string } | null;
+  role: 'owner' | 'admin' | 'publisher';
 }): KnowledgeUploadActor {
   return {
     accountId: context.account.id,
     deviceId: context.device?.deviceId ?? 'server-local',
-    operatorId: context.operator.id,
-    operatorName: context.operator.displayName,
-    role: context.account.role,
+    operatorId: context.account.id,
+    operatorName: context.account.displayName,
+    role: context.role,
   };
 }
 
@@ -269,7 +266,7 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
       const expectedDeviceId = context.device?.deviceId ?? 'server-local';
       if (
         record.accountId !== context.account.id ||
-        record.operatorId !== context.operator.id ||
+        record.operatorId !== context.account.id ||
         record.deviceId !== expectedDeviceId ||
         record.checksum !== payload.preliminaryChecksum ||
         !['validating', 'failed'].includes(record.state)

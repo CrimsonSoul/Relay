@@ -4,7 +4,7 @@ import { registerAdministrationCommands } from '../registerAdministrationCommand
 import { RoleAccountConflictError } from '../RoleAccountManager';
 
 const context = {
-  account: { id: 'account-charles' },
+  account: { id: 'account-charles', displayName: 'Charles Gibbs' },
   device: null,
   role: 'admin',
 } as unknown as PrivilegedCommandHandlerContext;
@@ -132,6 +132,21 @@ describe('registerAdministrationCommands', () => {
   it('returns only manager snapshots and reads administration by active account', async () => {
     await handlers.get('administration.snapshot.read')!(context, {} as never);
     expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: 'account-charles' });
+  });
+
+  it('invokes device revoke with the authenticated account and effective role', async () => {
+    await handlers.get('privileged.device.revoke')!(context, {
+      deviceId: 'device-1',
+      expectedRevision: 3,
+      reauthRequestId: 'reauth-device',
+    } as never);
+
+    expect(deviceManager.revoke).toHaveBeenCalledWith({
+      actorRole: 'admin',
+      actorOperatorId: 'account-charles',
+      deviceId: 'device-1',
+      expectedRevision: 3,
+    });
   });
 
   it('translates stale account writes to the existing command conflict shape', async () => {

@@ -5,9 +5,9 @@ import { registerKnowledgeManagementCommands } from '../registerKnowledgeManagem
 
 const context = {
   requestId: 'command-request-1',
-  account: { id: 'account-admin', role: 'admin' as const },
-  operator: { id: 'operator-admin', displayName: 'Ryan Bledsoe' },
+  account: { id: 'account-admin', displayName: 'Ryan Bledsoe' },
   device: { deviceId: 'device-1' },
+  role: 'admin' as const,
 };
 
 describe('registerKnowledgeManagementCommands', () => {
@@ -17,7 +17,7 @@ describe('registerKnowledgeManagementCommands', () => {
     requestId: 'request-1',
     accountId: 'account-admin',
     deviceId: 'device-1',
-    operatorId: 'operator-admin',
+    operatorId: 'account-admin',
     operatorName: 'Ryan Bledsoe',
     fileName: 'Runbook.pdf',
     pdf: 'runbook.pdf',
@@ -171,7 +171,7 @@ describe('registerKnowledgeManagementCommands', () => {
     expect(service.publish).toHaveBeenCalledWith({
       actor: {
         accountId: 'account-admin',
-        operatorId: 'operator-admin',
+        operatorId: 'account-admin',
         operatorName: 'Ryan Bledsoe',
       },
       requestId: 'command-request-1',
@@ -185,7 +185,7 @@ describe('registerKnowledgeManagementCommands', () => {
     const actor = {
       accountId: 'account-admin',
       deviceId: 'device-1',
-      operatorId: 'operator-admin',
+      operatorId: 'account-admin',
       operatorName: 'Ryan Bledsoe',
       role: 'admin',
     };

@@ -6,7 +6,9 @@ import {
   type PrivilegedRole,
   type PrivilegedSessionView,
   type RelayPrivilegedAccountRecord,
+  type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
+import { getEffectiveRole } from '@shared/roleAccounts';
 import type { PrivilegedAuthClient } from './PrivilegedPocketBaseClient';
 
 export const PRIVILEGED_REAUTH_PROOF_MS = 5 * 60 * 1_000;
@@ -346,6 +348,17 @@ export class PrivilegedSessionManager implements PrivilegedSessionManagerService
 
   handleAuthorityChanged(accountIds: readonly string[]): void {
     if (this.account && accountIds.includes(this.account.id)) this.lock();
+  }
+
+  handleAuthoritySnapshot(
+    changedAccount: RelayPrivilegedAccountRecord,
+    state: RelayPrivilegedStateRecord,
+  ): void {
+    if (!this.account || this.view.state === 'signed-out') return;
+    this.handleAccountChanged(changedAccount);
+    if (!this.account || this.view.state === 'locked') return;
+    const role = getEffectiveRole(this.account, state);
+    if (!this.account.active || !role || role !== this.view.role) this.lock();
   }
 
   handleDisconnect(): void {

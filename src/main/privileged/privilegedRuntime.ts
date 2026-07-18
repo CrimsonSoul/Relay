@@ -34,6 +34,7 @@ import { loggers } from '../logger';
 import {
   PrivilegedPocketBaseClient,
   type PrivilegedAuthClient,
+  type PrivilegedAuthoritySnapshot,
 } from './PrivilegedPocketBaseClient';
 import {
   PrivilegedDeviceStore,
@@ -185,6 +186,7 @@ export class PrivilegedRuntime {
   private readonly listeners = new Set<SessionListener>();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
+  private authorityStop: (() => Promise<void>) | null = null;
 
   constructor(options: PrivilegedRuntimeOptions) {
     this.mode = options.mode;
@@ -211,7 +213,12 @@ export class PrivilegedRuntime {
       authClient: options.authClient,
       confirmReauthentication: (input) => this.confirmReauthentication(input),
       now: this.now,
-      onViewChanged: (view) => this.emit(view),
+      onViewChanged: (view) => {
+        if (view.state !== 'active' && view.state !== 'pairing-required') {
+          void this.stopAuthorityMonitoring();
+        }
+        this.emit(view);
+      },
       resolveAuthorization: (account) => this.resolveAuthorization(account),
     });
   }
@@ -238,22 +245,48 @@ export class PrivilegedRuntime {
     return this.authClient.createRecord(collection, data);
   }
 
-  login(input: { username: string; password: string }): Promise<PrivilegedSessionView> {
+  async login(input: { username: string; password: string }): Promise<PrivilegedSessionView> {
     this.assertAvailable();
-    return this.sessionManager.login(input);
+    await this.stopAuthorityMonitoring();
+    const view = await this.sessionManager.login(input);
+    if (this.mode === 'client' && (view.state === 'active' || view.state === 'pairing-required')) {
+      try {
+        await this.startAuthorityMonitoring(view.accountId!);
+      } catch (error) {
+        this.sessionManager.lock();
+        throw error;
+      }
+    }
+    const current = this.getView();
+    if (current.state === 'locked') throw runtimeError('unauthorized');
+    if (current.state === 'offline') throw runtimeError('offline');
+    return current;
   }
 
-  logout(): Promise<void> {
-    return this.sessionManager.logout();
+  async logout(): Promise<void> {
+    await this.stopAuthorityMonitoring();
+    await this.sessionManager.logout();
   }
 
   lock(): void {
+    void this.stopAuthorityMonitoring();
     this.sessionManager.lock();
   }
 
-  reauthenticate(password: string): Promise<PrivilegedReauthenticationProof> {
+  async reauthenticate(password: string): Promise<PrivilegedReauthenticationProof> {
     this.assertAvailable();
-    return this.sessionManager.reauthenticate(password);
+    await this.stopAuthorityMonitoring();
+    const proof = await this.sessionManager.reauthenticate(password);
+    const view = this.getView();
+    if (this.mode === 'client' && view.state === 'active' && view.accountId) {
+      try {
+        await this.startAuthorityMonitoring(view.accountId);
+      } catch (error) {
+        this.sessionManager.lock();
+        throw error;
+      }
+    }
+    return proof;
   }
 
   async createPairingChallenge(targetAccountId: string): Promise<PrivilegedPairingChallengeView> {
@@ -346,10 +379,12 @@ export class PrivilegedRuntime {
   dispose(): Promise<void> {
     if (this.disposePromise) return this.disposePromise;
     this.disposed = true;
+    const authorityDisposal = this.stopAuthorityMonitoring();
     const clientDisposal = this.clientTransport?.dispose();
     this.sessionManager.dispose();
     this.listeners.clear();
     this.disposePromise = (async () => {
+      await authorityDisposal;
       await clientDisposal;
       await this.additionalDisposable?.dispose();
       this.pairingService?.dispose();
@@ -469,8 +504,36 @@ export class PrivilegedRuntime {
     const bytes = canonicalPrivilegedSigningBytes(envelope);
     envelope.signature = await this.deviceStore.sign(identity.accountId, deviceId, bytes);
     const result = await this.clientTransport!.submitCommand(envelope, sha256(bytes));
-    if (result.ok && recordActivity) this.sessionManager.recordPrivilegedActivity();
+    if (result.ok && recordActivity) {
+      this.sessionManager.recordPrivilegedActivity();
+    } else if (
+      recordActivity &&
+      !result.ok &&
+      result.error === 'unauthorized' &&
+      this.getView().state === 'active'
+    ) {
+      this.lock();
+    }
     return result;
+  }
+
+  private handleAuthoritySnapshot(snapshot: PrivilegedAuthoritySnapshot): void {
+    this.sessionManager.handleAuthoritySnapshot(snapshot.account, snapshot.state);
+  }
+
+  private async startAuthorityMonitoring(accountId: string): Promise<void> {
+    if (!this.authClient.monitorAuthority) return;
+    await this.stopAuthorityMonitoring();
+    this.authorityStop = await this.authClient.monitorAuthority(accountId, {
+      onDisconnect: () => this.sessionManager.handleDisconnect(),
+      onSnapshot: (snapshot) => this.handleAuthoritySnapshot(snapshot),
+    });
+  }
+
+  private async stopAuthorityMonitoring(): Promise<void> {
+    const stop = this.authorityStop;
+    this.authorityStop = null;
+    await stop?.();
   }
 
   private toPairingRequest(

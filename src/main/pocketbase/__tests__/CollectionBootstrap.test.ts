@@ -250,7 +250,7 @@ describe('ensureCollections', () => {
     }
   });
 
-  it('creates a server-hidden password auth collection keyed by normalized username', async () => {
+  it('creates a self-readable password auth collection keyed by normalized username', async () => {
     mockGetFullList.mockResolvedValue([]);
     mockSuccessfulCollectionCreation();
 
@@ -276,8 +276,10 @@ describe('ensureCollections', () => {
 
     expect(definition).toMatchObject({
       type: 'auth',
-      listRule: null,
-      viewRule: null,
+      listRule:
+        '@request.auth.collectionName = "relay_privileged_accounts" && id = @request.auth.id',
+      viewRule:
+        '@request.auth.collectionName = "relay_privileged_accounts" && id = @request.auth.id',
       createRule: null,
       updateRule: null,
       deleteRule: null,

@@ -66,6 +66,20 @@ describe('PrivilegedPocketBaseClientTransport', () => {
     expect(JSON.stringify(createRecord.mock.calls)).not.toContain('token');
   });
 
+  it('preserves a bounded authorization failure when stale account authority rejects submission', async () => {
+    createRecord.mockRejectedValueOnce({ code: 'invalid-credentials' });
+    const transport = new PrivilegedPocketBaseClientTransport({
+      client: { createRecord, getRecord },
+      wait: vi.fn(async () => undefined),
+    });
+
+    await expect(transport.submitCommand(envelope, 'b'.repeat(64))).resolves.toEqual({
+      ok: false,
+      requestId: 'request-1',
+      error: 'unauthorized',
+    });
+  });
+
   it('submits and normalizes a one-time pairing request', async () => {
     getRecord.mockReset();
     getRecord.mockResolvedValueOnce({

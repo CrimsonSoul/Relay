@@ -1,6 +1,9 @@
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RelayPrivilegedAccountRecord } from '@shared/privilegedAccess';
+import type {
+  RelayPrivilegedAccountRecord,
+  RelayPrivilegedStateRecord,
+} from '@shared/privilegedAccess';
 import { KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION } from '@shared/knowledge';
 import { canonicalPrivilegedSigningBytes } from '@shared/privilegedCommands';
 import {
@@ -29,6 +32,18 @@ const account: RelayPrivilegedAccountRecord = {
   updated: '2026-07-15T11:00:00.000Z',
 };
 
+const state: RelayPrivilegedStateRecord = {
+  id: 'privileged-state',
+  key: 'primary',
+  ownerAccountId: ACCOUNT_ID,
+  publisherAccountId: 'account-publisher',
+  assignmentVersion: 1,
+  identityMigrationVersion: 1,
+  updatedByAccountId: ACCOUNT_ID,
+  created: '2026-07-15T11:00:00.000Z',
+  updated: '2026-07-15T11:00:00.000Z',
+};
+
 describe('PrivilegedRuntime', () => {
   let keyPair: ReturnType<typeof generateKeyPairSync>;
   let authClient: {
@@ -48,6 +63,13 @@ describe('PrivilegedRuntime', () => {
   let clientTransport: PrivilegedClientTransport;
   let submitCommand: ReturnType<typeof vi.fn>;
   let completePairing: ReturnType<typeof vi.fn>;
+  let authorityChanged:
+    | ((snapshot: {
+        account: RelayPrivilegedAccountRecord;
+        state: RelayPrivilegedStateRecord;
+      }) => void)
+    | null;
+  let stopAuthorityMonitor: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -58,6 +80,14 @@ describe('PrivilegedRuntime', () => {
       reauthenticate: vi.fn(async () => account),
       clear: vi.fn(),
     };
+    authorityChanged = null;
+    stopAuthorityMonitor = vi.fn(async () => undefined);
+    Object.assign(authClient, {
+      monitorAuthority: vi.fn(async (_accountId, listener) => {
+        authorityChanged = listener.onSnapshot;
+        return stopAuthorityMonitor;
+      }),
+    });
     submitCommand = vi.fn(async (envelope) => ({
       ok: true as const,
       requestId: envelope.requestId,
@@ -145,6 +175,92 @@ describe('PrivilegedRuntime', () => {
       keyPair.publicKey.asymmetricKeyType === 'ec' &&
         canonicalPrivilegedSigningBytes(envelope).byteLength > 0,
     ).toBe(true);
+  });
+
+  it('locks a remote owner promptly when ownership transfers', async () => {
+    const runtime = createClientRuntime({
+      resolveAccountIdentity: vi.fn(async () => ({ assigned: true, role: 'owner' })),
+    });
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+
+    authorityChanged?.({
+      account,
+      state: { ...state, ownerAccountId: 'account-charles', assignmentVersion: 2 },
+    });
+
+    expect(runtime.getView()).toMatchObject({ state: 'locked', role: 'owner' });
+  });
+
+  it('locks a replaced remote Publisher while leaving an unrelated administrator usable', async () => {
+    const publisherAccount = {
+      ...account,
+      id: 'account-publisher',
+      username: 'tristan',
+      displayName: 'Tristan Bowles',
+      storedRole: 'publisher' as const,
+    };
+    authClient.authenticate.mockResolvedValueOnce(publisherAccount);
+    const publisherRuntime = createClientRuntime({
+      resolveAccountIdentity: vi.fn(async () => ({ assigned: true, role: 'publisher' })),
+    });
+    await publisherRuntime.login({ username: 'tristan', password: PASSWORD });
+    authorityChanged?.({
+      account: publisherAccount,
+      state: { ...state, publisherAccountId: 'account-new-publisher', assignmentVersion: 2 },
+    });
+    expect(publisherRuntime.getView()).toMatchObject({ state: 'locked', role: 'publisher' });
+
+    const unrelatedAdmin = {
+      ...account,
+      id: 'account-charles',
+      username: 'charles',
+      displayName: 'Charles Gibbs',
+    };
+    authClient.authenticate.mockResolvedValueOnce(unrelatedAdmin);
+    const adminRuntime = createClientRuntime();
+    await adminRuntime.login({ username: 'charles', password: PASSWORD });
+    authorityChanged?.({
+      account: unrelatedAdmin,
+      state: { ...state, publisherAccountId: 'account-new-publisher', assignmentVersion: 2 },
+    });
+    expect(adminRuntime.getView()).toMatchObject({ state: 'active', role: 'admin' });
+  });
+
+  it('locks after a remote authorization failure proves the projected authority is stale', async () => {
+    const runtime = createClientRuntime();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+    submitCommand.mockResolvedValueOnce({
+      ok: false as const,
+      requestId: 'request-1',
+      error: 'unauthorized' as const,
+    });
+
+    await expect(
+      runtime.submitPublicCommand({
+        command: 'privileged.status.read',
+        payload: { clientVersion: '1' },
+        expectedRevision: null,
+      }),
+    ).resolves.toMatchObject({ ok: false, error: 'unauthorized' });
+    expect(runtime.getView().state).toBe('locked');
+    expect(stopAuthorityMonitor).toHaveBeenCalledOnce();
+  });
+
+  it('does not clear fresh authentication when a login pairing probe is unauthorized', async () => {
+    const runtime = createClientRuntime();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+    authClient.clear.mockClear();
+    submitCommand.mockResolvedValueOnce({
+      ok: false as const,
+      requestId: 'request-1',
+      error: 'unauthorized' as const,
+    });
+
+    await expect(runtime.login({ username: USERNAME, password: PASSWORD })).resolves.toMatchObject({
+      state: 'pairing-required',
+      accountId: ACCOUNT_ID,
+    });
+    expect(authClient.clear).not.toHaveBeenCalled();
   });
 
   it('delays chunk creation only behind the explicit E2E fixture controls', async () => {

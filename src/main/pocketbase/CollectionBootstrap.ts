@@ -248,6 +248,17 @@ const SERVER_HIDDEN_RULES: CollectionRules = {
   deleteRule: null,
 };
 
+const PRIVILEGED_ACCOUNT_SELF_RULE =
+  '@request.auth.collectionName = "relay_privileged_accounts" && id = @request.auth.id';
+
+const PRIVILEGED_ACCOUNT_RULES: CollectionRules = {
+  listRule: PRIVILEGED_ACCOUNT_SELF_RULE,
+  viewRule: PRIVILEGED_ACCOUNT_SELF_RULE,
+  createRule: null,
+  updateRule: null,
+  deleteRule: null,
+};
+
 const PRIVILEGED_COMMAND_ACCOUNT_RULE =
   '@request.auth.collectionName = "relay_privileged_accounts" && @request.auth.active = true && accountId = @request.auth.id';
 
@@ -309,7 +320,7 @@ const PRIVILEGED_ACCOUNT_FINAL_DEFINITION: CollectionDef = {
     { type: 'number', name: 'revision', required: false },
   ],
   indexes: [PRIVILEGED_ACCOUNT_USERNAME_INDEX],
-  rules: SERVER_HIDDEN_RULES,
+  rules: PRIVILEGED_ACCOUNT_RULES,
   auth: {
     authRule: 'active = true',
     manageRule: null,

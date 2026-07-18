@@ -36,6 +36,9 @@ describe('PrivilegedPocketBaseClient', () => {
   let createRecord: ReturnType<typeof vi.fn>;
   let getOne: ReturnType<typeof vi.fn>;
   let getFirstListItem: ReturnType<typeof vi.fn>;
+  let subscribe: ReturnType<typeof vi.fn>;
+  let subscriptionCallbacks: Map<string, (event: unknown) => void>;
+  let subscriptionDisposers: ReturnType<typeof vi.fn>[];
   let createClient: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -50,17 +53,29 @@ describe('PrivilegedPocketBaseClient', () => {
     createRecord = vi.fn(async (data) => ({ id: 'created-record', ...data }));
     getOne = vi.fn(async (id) => ({ id, value: 'safe' }));
     getFirstListItem = vi.fn(async () => ({ id: 'first-record', value: 'safe' }));
+    subscriptionCallbacks = new Map();
+    subscriptionDisposers = [];
+    subscribe = vi.fn(
+      async (collection: string, topic: string, callback: (event: unknown) => void) => {
+        subscriptionCallbacks.set(`${collection}/${topic}`, callback);
+        const dispose = vi.fn(async () => undefined);
+        subscriptionDisposers.push(dispose);
+        return dispose;
+      },
+    );
     createClient = vi.fn((serverUrl: string, authStore: BaseAuthStore) => {
       authStores.push(authStore);
       const adapter: PrivilegedPocketBaseClientAdapter = {
         baseURL: serverUrl,
         authStore,
         cancelAllRequests: vi.fn(),
-        collection: vi.fn(() => ({
+        realtime: { onDisconnect: undefined },
+        collection: vi.fn((collectionName: string) => ({
           authWithPassword,
           create: createRecord,
           getOne,
           getFirstListItem,
+          subscribe: (topic, callback) => subscribe(collectionName, topic, callback),
         })),
       };
       adapters.push(adapter);
@@ -137,6 +152,119 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(authStores).toHaveLength(2);
     expect(authStores[1]).not.toBe(originalStore);
     expect(adapters[1]?.baseURL).toBe('https://relay-two.example.com');
+  });
+
+  it('monitors only the authenticated account and authority state with deterministic cleanup', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    getOne.mockResolvedValueOnce(accountRecord());
+    getFirstListItem.mockResolvedValueOnce({
+      id: 'privileged-state',
+      key: 'primary',
+      ownerAccountId: 'account-admin',
+      publisherAccountId: null,
+      assignmentVersion: 1,
+      identityMigrationVersion: 1,
+      updatedByAccountId: 'account-admin',
+      created: '2026-07-15T12:00:00.000Z',
+      updated: '2026-07-15T12:00:00.000Z',
+    });
+    const onSnapshot = vi.fn();
+    const onDisconnect = vi.fn();
+
+    const stop = await client.monitorAuthority('account-admin', {
+      onDisconnect,
+      onSnapshot,
+    });
+
+    expect(subscribe).toHaveBeenCalledWith(
+      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+      'account-admin',
+      expect.any(Function),
+    );
+    expect(subscribe).toHaveBeenCalledWith('relay_privileged_state', '*', expect.any(Function));
+    expect(onSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account: expect.objectContaining({ id: 'account-admin', displayName: 'Ryan Bledsoe' }),
+        state: expect.objectContaining({ ownerAccountId: 'account-admin' }),
+      }),
+    );
+
+    onSnapshot.mockClear();
+    getOne.mockResolvedValueOnce(accountRecord({ displayName: 'Ryan Updated' }));
+    getFirstListItem.mockResolvedValueOnce({
+      id: 'privileged-state',
+      key: 'primary',
+      ownerAccountId: 'account-charles',
+      publisherAccountId: null,
+      assignmentVersion: 2,
+      identityMigrationVersion: 1,
+      updatedByAccountId: 'account-charles',
+      created: '2026-07-15T12:00:00.000Z',
+      updated: '2026-07-15T12:01:00.000Z',
+    });
+    subscriptionCallbacks.get('relay_privileged_state/*')?.({ action: 'update', record: {} });
+    await vi.waitFor(() =>
+      expect(onSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          account: expect.objectContaining({ displayName: 'Ryan Updated' }),
+          state: expect.objectContaining({ ownerAccountId: 'account-charles' }),
+        }),
+      ),
+    );
+
+    adapters[0]!.realtime.onDisconnect?.([
+      'relay_privileged_accounts/account-admin',
+      'relay_privileged_state/*',
+    ]);
+    expect(onDisconnect).toHaveBeenCalledOnce();
+
+    client.reconfigure('https://relay-two.example.com', false);
+    await vi.waitFor(() =>
+      expect(subscriptionDisposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true),
+    );
+    await stop();
+    expect(subscriptionDisposers).toHaveLength(2);
+    expect(subscriptionDisposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true);
+    expect(adapters[0]!.realtime.onDisconnect).toBeUndefined();
+  });
+
+  it('awaits an in-flight authority teardown when clear and the scoped disposer overlap', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    getOne.mockResolvedValueOnce(accountRecord());
+    getFirstListItem.mockResolvedValueOnce({
+      id: 'privileged-state',
+      key: 'primary',
+      ownerAccountId: 'account-admin',
+      publisherAccountId: null,
+      assignmentVersion: 1,
+      identityMigrationVersion: 1,
+      updatedByAccountId: 'account-admin',
+    });
+    const stop = await client.monitorAuthority('account-admin', {
+      onDisconnect: vi.fn(),
+      onSnapshot: vi.fn(),
+    });
+    let releaseCleanup!: () => void;
+    const cleanupBlocked = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
+    for (const dispose of subscriptionDisposers) {
+      dispose.mockImplementationOnce(() => cleanupBlocked);
+    }
+
+    client.clear();
+    let stopped = false;
+    const stopPromise = stop().then(() => {
+      stopped = true;
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+
+    releaseCleanup();
+    await stopPromise;
+    expect(stopped).toBe(true);
   });
 
   it('maps invalid credentials to a generic error without retaining server details', async () => {

@@ -126,6 +126,15 @@ function safeCommandError(value: unknown): PrivilegedCommandError {
     : 'server-error';
 }
 
+function isStaleAuthorityError(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === 'object' &&
+    'code' in error &&
+    (error as { code?: unknown }).code === 'invalid-credentials'
+  );
+}
+
 function completedCommandResult(record: Record<string, unknown>): PrivilegedCommandResult | null {
   if (!boundedString(record.requestId, 128)) return null;
   if (record.state === 'succeeded') {
@@ -199,8 +208,12 @@ export class PrivilegedPocketBaseClientTransport implements PrivilegedClientTran
         state: 'pending',
       });
       return await this.waitForCommand(created.id, envelope.requestId);
-    } catch {
-      return { ok: false, requestId: envelope.requestId, error: 'offline' };
+    } catch (error) {
+      return {
+        ok: false,
+        requestId: envelope.requestId,
+        error: isStaleAuthorityError(error) ? 'unauthorized' : 'offline',
+      };
     }
   }
 
