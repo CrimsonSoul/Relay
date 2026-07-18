@@ -133,6 +133,21 @@ describe('offlineMutationHandlers', () => {
     expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
   });
 
+  it('never queues retired roster mutations', () => {
+    const result = handlers[IPC_CHANNELS.OFFLINE_MUTATE](
+      {},
+      {
+        collection: ['relay', 'operators'].join('_'),
+        action: 'create',
+        data: { displayName: 'Retired user' },
+      },
+    );
+
+    expect(result).toMatchObject({ ok: false });
+    expect(cache.applyOfflineMutationAtomically).not.toHaveBeenCalled();
+    expect(pending.enqueueCoalesced).not.toHaveBeenCalled();
+  });
+
   it('rejects offline queue writes in server mode', () => {
     appConfig.load.mockReturnValueOnce({ mode: 'server' } as never);
 

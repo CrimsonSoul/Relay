@@ -21,7 +21,7 @@ import {
   type KnowledgeUploadView,
 } from '@shared/knowledge';
 
-type Actor = { operatorId: string; operatorName: string; accountId: string };
+type Actor = { accountId: string; displayName: string };
 type UploadRecord = KnowledgeUploadView & { pdf: string; accountId: string; operatorId: string };
 type StoredUploadRecord = Partial<KnowledgeUploadView> & {
   id: string;
@@ -340,8 +340,8 @@ export class ManagedKnowledgeService {
   }): Promise<KnowledgeManagementDocumentView> {
     return this.patchDocument(input, 'trashed', {
       lifecycleState: 'trashed',
-      trashedByOperatorId: input.actor.operatorId,
-      trashedByName: input.actor.operatorName,
+      trashedByOperatorId: input.actor.accountId,
+      trashedByName: input.actor.displayName,
       trashedAt: this.timestamp(),
     });
   }
@@ -438,7 +438,6 @@ export class ManagedKnowledgeService {
     if (
       upload.state !== 'ready' ||
       upload.accountId !== actor.accountId ||
-      upload.operatorId !== actor.operatorId ||
       Date.parse(upload.expiresAt) <= this.now()
     ) {
       throw new Error('Knowledge upload is not ready.');
@@ -487,8 +486,8 @@ export class ManagedKnowledgeService {
       indexedAt: metadata.publishedAt,
       lifecycleState: 'active',
       revision: metadata.revision,
-      publishedByOperatorId: metadata.actor.operatorId,
-      publishedByName: metadata.actor.operatorName,
+      publishedByOperatorId: metadata.actor.accountId,
+      publishedByName: metadata.actor.displayName,
       publishedAt: metadata.publishedAt,
       trashedByOperatorId: '',
       trashedByName: '',
@@ -534,8 +533,8 @@ export class ManagedKnowledgeService {
       indexedAt: metadata.publishedAt,
       lifecycleState: 'active',
       revision: metadata.revision,
-      publishedByOperatorId: metadata.actor.operatorId,
-      publishedByName: metadata.actor.operatorName,
+      publishedByOperatorId: metadata.actor.accountId,
+      publishedByName: metadata.actor.displayName,
       publishedAt: metadata.publishedAt,
       trashedByOperatorId: null,
       trashedByName: null,
@@ -623,8 +622,8 @@ export class ManagedKnowledgeService {
         fileName: document?.fileName ?? '',
         title: document?.displayTitle ?? '',
         category: document?.category ?? '',
-        operatorId: actor.operatorId,
-        operatorName: actor.operatorName,
+        operatorId: actor.accountId,
+        operatorName: actor.displayName,
         occurredAt: this.timestamp(),
         details,
       },

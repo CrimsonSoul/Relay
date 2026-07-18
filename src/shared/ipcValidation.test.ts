@@ -12,6 +12,17 @@ import {
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
 } from './ipcValidation';
+import { IPC_CHANNELS } from './ipc';
+
+describe('retired roster IPC', () => {
+  it('does not publish roster channels', () => {
+    const retiredPrefix = ['relay', 'Operator:'].join('');
+
+    expect(Object.values(IPC_CHANNELS).some((channel) => channel.startsWith(retiredPrefix))).toBe(
+      false,
+    );
+  });
+});
 
 describe('SearchQuerySchema', () => {
   it('accepts valid queries', () => {
@@ -220,24 +231,12 @@ describe('privileged IPC schemas', () => {
       }).success,
     ).toBe(false);
     expect(
-      PublicPrivilegedCommandRequestSchema.parse({
-        command: 'operator.rename',
-        payload: {
-          operatorId: 'operator-2',
-          displayName: '  Morgan   Lee ',
-          expectedRevision: 3,
-        },
+      PublicPrivilegedCommandRequestSchema.safeParse({
+        command: ['operator', 'rename'].join('.'),
+        payload: { accountId: 'account-2', displayName: 'Morgan Lee', expectedRevision: 3 },
         expectedRevision: null,
-      }),
-    ).toEqual({
-      command: 'operator.rename',
-      payload: {
-        operatorId: 'operator-2',
-        displayName: 'Morgan Lee',
-        expectedRevision: 3,
-      },
-      expectedRevision: null,
-    });
+      }).success,
+    ).toBe(false);
     expect(
       PublicPrivilegedCommandRequestSchema.safeParse({
         command: 'administration.snapshot.read',

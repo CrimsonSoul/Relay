@@ -92,7 +92,11 @@ describe('registerKnowledgeManagementCommands', () => {
     const checksum = await import('node:crypto').then(({ createHash }) =>
       createHash('sha256').update(bytes).digest('hex'),
     );
-    getUpload.mockResolvedValueOnce({ ...upload, checksum });
+    getUpload.mockResolvedValueOnce({
+      ...upload,
+      checksum,
+      operatorId: 'historical-roster-id',
+    });
 
     await expect(
       handlers.get('knowledge.upload.validate')!(
@@ -171,8 +175,7 @@ describe('registerKnowledgeManagementCommands', () => {
     expect(service.publish).toHaveBeenCalledWith({
       actor: {
         accountId: 'account-admin',
-        operatorId: 'account-admin',
-        operatorName: 'Ryan Bledsoe',
+        displayName: 'Ryan Bledsoe',
       },
       requestId: 'command-request-1',
       uploadId: 'upload-1',
@@ -181,12 +184,11 @@ describe('registerKnowledgeManagementCommands', () => {
     });
   });
 
-  it('registers all resumable commands with the current account, device, operator, and request ID', async () => {
+  it('registers all resumable commands with the current account, device, and request ID', async () => {
     const actor = {
       accountId: 'account-admin',
       deviceId: 'device-1',
-      operatorId: 'account-admin',
-      operatorName: 'Ryan Bledsoe',
+      displayName: 'Ryan Bledsoe',
       role: 'admin',
     };
     await handlers.get('knowledge.upload.batch.begin')!(

@@ -88,8 +88,7 @@ type KnowledgeManagementCommandOptions = {
 function actor(context: { account: { id: string; displayName: string } }) {
   return {
     accountId: context.account.id,
-    operatorId: context.account.id,
-    operatorName: context.account.displayName,
+    displayName: context.account.displayName,
   };
 }
 
@@ -101,8 +100,7 @@ function uploadActor(context: {
   return {
     accountId: context.account.id,
     deviceId: context.device?.deviceId ?? 'server-local',
-    operatorId: context.account.id,
-    operatorName: context.account.displayName,
+    displayName: context.account.displayName,
     role: context.role,
   };
 }
@@ -266,7 +264,6 @@ export function registerKnowledgeManagementCommands(options: KnowledgeManagement
       const expectedDeviceId = context.device?.deviceId ?? 'server-local';
       if (
         record.accountId !== context.account.id ||
-        record.operatorId !== context.account.id ||
         record.deviceId !== expectedDeviceId ||
         record.checksum !== payload.preliminaryChecksum ||
         !['validating', 'failed'].includes(record.state)

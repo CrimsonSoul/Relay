@@ -126,10 +126,10 @@ describe('appState getters/setters', () => {
 
     setPrivilegedRuntime(runtime);
     expect(getPrivilegedRuntime()).toBe(runtime);
-    runtimeListener?.({ state: 'active', capabilities: ['operators.manage'] });
+    runtimeListener?.({ state: 'active', capabilities: ['settings.manage'] });
     expect(listener).toHaveBeenCalledWith({
       state: 'active',
-      capabilities: ['operators.manage'],
+      capabilities: ['settings.manage'],
     });
 
     setPrivilegedRuntime(null);

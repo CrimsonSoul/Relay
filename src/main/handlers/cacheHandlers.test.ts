@@ -94,14 +94,11 @@ describe('cacheHandlers', () => {
       expect(result).toEqual(snapshot);
     });
 
-    it('reads the shared operator roster for authenticated offline clients', () => {
-      const operators = [{ id: 'operator-1', displayName: 'Ryan Bell', active: true }];
-      mockCache.readCollection.mockReturnValue(operators);
+    it('does not expose the retired roster cache', () => {
+      const retiredCollection = ['relay', 'operators'].join('_');
 
-      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'relay_operators');
-
-      expect(mockCache.readCollection).toHaveBeenCalledWith('relay_operators');
-      expect(result).toEqual(operators);
+      expect(handlers[IPC_CHANNELS.CACHE_READ]({}, retiredCollection)).toEqual([]);
+      expect(mockCache.readCollection).not.toHaveBeenCalled();
     });
 
     it('reads knowledge metadata for offline clients', () => {
@@ -205,17 +202,14 @@ describe('cacheHandlers', () => {
       );
     });
 
-    it('ingests operator realtime updates into cache without queueing a server mutation', () => {
-      const record = {
-        id: 'operator-1',
-        displayName: 'Changed Name',
-      };
+    it('does not ingest retired roster realtime updates', () => {
+      const retiredCollection = ['relay', 'operators'].join('_');
 
-      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'relay_operators', 'update', record);
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, retiredCollection, 'update', {
+        id: 'retired-record',
+      });
 
-      expect(mockCache.updateRecord).toHaveBeenCalledWith('relay_operators', 'update', record);
-      expect(mockPending.getAll).not.toHaveBeenCalled();
-      expect(mockSync.syncAll).not.toHaveBeenCalled();
+      expect(mockCache.updateRecord).not.toHaveBeenCalled();
     });
 
     it('ingests knowledge metadata without queueing a server mutation', () => {

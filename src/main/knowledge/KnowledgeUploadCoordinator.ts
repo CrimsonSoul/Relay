@@ -18,8 +18,7 @@ import type { KnowledgeExtractionResult } from './knowledgeExtractor';
 export type KnowledgeUploadActor = {
   accountId: string;
   deviceId: string;
-  operatorId: string;
-  operatorName: string;
+  displayName: string;
   role: PrivilegedRole;
 };
 
@@ -296,8 +295,8 @@ export class KnowledgeUploadCoordinator {
       ...input,
       accountId: actor.accountId,
       deviceId: actor.deviceId,
-      operatorId: actor.operatorId,
-      operatorName: actor.operatorName,
+      operatorId: actor.accountId,
+      operatorName: actor.displayName,
       state: 'active',
       createdAt: now,
       lastActivityAt: now,
@@ -331,8 +330,8 @@ export class KnowledgeUploadCoordinator {
       ...input,
       accountId: actor.accountId,
       deviceId: actor.deviceId,
-      operatorId: actor.operatorId,
-      operatorName: actor.operatorName,
+      operatorId: actor.accountId,
+      operatorName: actor.displayName,
       chunkSize: KNOWLEDGE_UPLOAD_CHUNK_BYTES,
       state: 'uploading',
       pdf: null,

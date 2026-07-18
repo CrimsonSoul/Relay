@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { ipcMain } from 'electron';
 import { setupIpcHandlers } from '../ipcHandlers';
 
 vi.mock('electron', () => ({
@@ -19,7 +20,6 @@ const mockSetupWindowHandlers = vi.fn();
 const mockSetupSetupHandlers = vi.fn();
 const mockSetupCacheHandlers = vi.fn();
 const mockSetupBackupHandlers = vi.fn();
-const mockSetupRelayOperatorHandlers = vi.fn();
 const mockSetupKnowledgeHandlers = vi.fn();
 const mockSetupPrivilegedAccessHandlers = vi.fn();
 
@@ -37,9 +37,6 @@ vi.mock('../handlers/cacheHandlers', () => ({
 }));
 vi.mock('../handlers/backupHandlers', () => ({
   setupBackupHandlers: (...args: unknown[]) => mockSetupBackupHandlers(...args),
-}));
-vi.mock('../handlers/relayOperatorHandlers', () => ({
-  setupRelayOperatorHandlers: (...args: unknown[]) => mockSetupRelayOperatorHandlers(...args),
 }));
 vi.mock('../handlers/knowledgeHandlers', () => ({
   setupKnowledgeHandlers: (...args: unknown[]) => mockSetupKnowledgeHandlers(...args),
@@ -71,7 +68,6 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupSetupHandlers).toHaveBeenCalled();
     expect(mockSetupCacheHandlers).toHaveBeenCalled();
     expect(mockSetupBackupHandlers).toHaveBeenCalled();
-    expect(mockSetupRelayOperatorHandlers).toHaveBeenCalled();
     expect(mockSetupKnowledgeHandlers).toHaveBeenCalled();
     expect(mockSetupPrivilegedAccessHandlers).toHaveBeenCalled();
   });
@@ -140,23 +136,15 @@ describe('setupIpcHandlers', () => {
     expect(mockSetupBackupHandlers).toHaveBeenCalledWith(getBackupManager, restartPb, getCache);
   });
 
-  it('passes server mode, PocketBase, and trust dependencies to operator handlers', () => {
-    const appConfig = { load: vi.fn(() => ({ mode: 'server' })) };
-    const getAppConfig = vi.fn(() => appConfig);
-    const getPbClient = vi.fn(() => ({ authStore: { isValid: true } }));
+  it('does not register retired roster handlers', () => {
+    setupIpcHandlers(makeOpts());
 
-    setupIpcHandlers(makeOpts({ getAppConfig, getPbClient }));
-
-    expect(mockSetupRelayOperatorHandlers).toHaveBeenCalledWith({
-      ipcMain: expect.any(Object),
-      isServer: expect.any(Function),
-      getPbClient,
-      assertTrustedIpcSender: expect.any(Function),
-    });
-    const options = mockSetupRelayOperatorHandlers.mock.calls[0]?.[0];
-    expect(options.isServer()).toBe(true);
-    appConfig.load.mockReturnValue({ mode: 'client' });
-    expect(options.isServer()).toBe(false);
+    const retiredPrefix = ['relay', 'Operator:'].join('');
+    expect(
+      vi
+        .mocked(ipcMain.handle)
+        .mock.calls.some(([channel]) => String(channel).startsWith(retiredPrefix)),
+    ).toBe(false);
   });
 
   it('passes live runtime and public session subscription to privileged handlers', () => {

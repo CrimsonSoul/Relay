@@ -128,6 +128,14 @@ describe('preload Knowledge web link bridge', () => {
     );
   });
 
+  it('does not expose retired roster management methods', () => {
+    const bridge = api as unknown as Record<string, unknown>;
+
+    expect(bridge.createRelayOperator).toBeUndefined();
+    expect(bridge.renameRelayOperator).toBeUndefined();
+    expect(bridge.setRelayOperatorActive).toBeUndefined();
+  });
+
   it('subscribes and unsubscribes from public privileged session changes', () => {
     const callback = vi.fn();
     const unsubscribe = api.onPrivilegedSessionChanged(callback);

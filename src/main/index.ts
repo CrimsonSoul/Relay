@@ -160,8 +160,8 @@ if (gotLock) {
       getKnowledgeUploadService()?.handleSessionChanged({
         state: 'signed-out',
         accountId: null,
-        operatorId: null,
-        operatorName: null,
+        username: null,
+        displayName: null,
         role: null,
         capabilities: [],
         deviceId: null,
@@ -248,8 +248,8 @@ if (gotLock) {
         getKnowledgeUploadService()?.handleSessionChanged({
           state: 'signed-out',
           accountId: null,
-          operatorId: null,
-          operatorName: null,
+          username: null,
+          displayName: null,
           role: null,
           capabilities: [],
           deviceId: null,

@@ -16,8 +16,8 @@ vi.mock('electron', () => ({ dialog: { showOpenDialog: vi.fn() } }));
 const view = {
   state: 'active' as const,
   accountId: 'account-admin',
-  operatorId: 'operator-admin',
-  operatorName: 'Ryan Bledsoe',
+  username: 'ryan',
+  displayName: 'Ryan Bledsoe',
   role: 'admin' as const,
   capabilities: ['knowledge.manage' as const],
   deviceId: 'device-1',

@@ -64,8 +64,6 @@ type KnowledgeUploadServiceOptions = {
 
 type ActiveUploadSession = PrivilegedSessionView & {
   accountId: string;
-  operatorId: string;
-  operatorName: string;
   deviceId: string;
 };
 
@@ -86,8 +84,6 @@ function activeUploadSession(runtime: KnowledgeUploadRuntime | null): ActiveUplo
     !runtime ||
     session?.state !== 'active' ||
     !session.accountId ||
-    !session.operatorId ||
-    !session.operatorName ||
     !session.capabilities.includes('knowledge.manage')
   ) {
     return null;
@@ -95,8 +91,6 @@ function activeUploadSession(runtime: KnowledgeUploadRuntime | null): ActiveUplo
   return {
     ...session,
     accountId: session.accountId,
-    operatorId: session.operatorId,
-    operatorName: session.operatorName,
     deviceId: session.deviceId ?? 'server-local',
   };
 }

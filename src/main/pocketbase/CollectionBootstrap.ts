@@ -13,7 +13,6 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
-import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_COMMANDS_COLLECTION,
@@ -37,6 +36,7 @@ import {
 import { loggers } from '../logger';
 import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
 
+const LEGACY_ROSTER_COLLECTION = 'relay_operators';
 const logger = loggers.pocketbase;
 
 const AUTH_RULE = '@request.auth.id != ""';
@@ -1404,14 +1404,14 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
     if (
       definition.name === RELAY_PRIVILEGED_ACCOUNTS_COLLECTION &&
       existing.has(definition.name) &&
-      existing.has(RELAY_OPERATORS_COLLECTION)
+      existing.has(LEGACY_ROSTER_COLLECTION)
     ) {
       return PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION;
     }
     if (
       definition.name === RELAY_PRIVILEGED_STATE_COLLECTION &&
       existing.has(definition.name) &&
-      existing.has(RELAY_OPERATORS_COLLECTION)
+      existing.has(LEGACY_ROSTER_COLLECTION)
     ) {
       return PRIVILEGED_STATE_COMPATIBILITY_DEFINITION;
     }
@@ -1438,7 +1438,7 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
       if (await patchManagedCollection(pb, definition, allCols, collectionIds)) patched += 1;
     }
     if (migration.status === 'migrated') {
-      allCols = allCols.filter(({ name }) => name !== 'relay_operators');
+      allCols = allCols.filter(({ name }) => name !== LEGACY_ROSTER_COLLECTION);
     }
   }
   await ensureKnowledgeLibraryBootstrap(pb);

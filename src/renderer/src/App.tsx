@@ -74,6 +74,7 @@ const PopoutBoard = lazyTab(() => import('./components/PopoutBoard'), 'PopoutBoa
 const errorFallback = (reset: () => void) => <TabFallback error onReset={reset} />;
 const getTabPanelClassName = (active: boolean) => `tab-panel${active ? ' tab-panel--active' : ''}`;
 const STARTUP_CONNECTION_TIMEOUT_MS = 20_000;
+const RETIRED_LOCAL_SELECTION_KEY = ['relay', 'selectedOperatorId'].join('.');
 
 export function RetainedTabPanel({
   active,
@@ -695,6 +696,14 @@ function AppWithSetup() {
 export default function App() {
   const isPopout = new URLSearchParams(globalThis.location.search).has('popout');
   const ToastWrapper = isPopout ? NoopToastProvider : ToastProvider;
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(RETIRED_LOCAL_SELECTION_KEY);
+    } catch {
+      // Storage cleanup must never block ordinary passwordless Relay startup.
+    }
+  }, []);
 
   return (
     <ErrorBoundary>

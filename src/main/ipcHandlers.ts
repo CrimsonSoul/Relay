@@ -8,7 +8,6 @@ import { setupOfflineMutationHandlers } from './handlers/offlineMutationHandlers
 import { setupBackupHandlers } from './handlers/backupHandlers';
 import { setupDynatraceHandlers } from './handlers/dynatraceHandlers';
 import { setupDynatraceProblemsHandlers } from './handlers/dynatraceProblemsHandlers';
-import { setupRelayOperatorHandlers } from './handlers/relayOperatorHandlers';
 import { setupKnowledgeHandlers } from './handlers/knowledgeHandlers';
 import {
   setupPrivilegedAccessHandlers,
@@ -93,15 +92,6 @@ export function setupIpcHandlers(opts: {
       getDynatraceProblemsManager ?? (() => null),
       getAppConfig ?? (() => null),
     ),
-  );
-
-  safeSetup('relayOperators', () =>
-    setupRelayOperatorHandlers({
-      ipcMain,
-      isServer: () => getAppConfig?.()?.load()?.mode === 'server',
-      getPbClient: getPbClient ?? (() => null),
-      assertTrustedIpcSender,
-    }),
   );
 
   safeSetup('knowledge', () =>

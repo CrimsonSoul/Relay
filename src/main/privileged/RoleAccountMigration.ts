@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import type PocketBase from 'pocketbase';
-import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -14,6 +13,7 @@ import {
 } from '@shared/roleAccounts';
 
 export const ROLE_ACCOUNT_MIGRATION_VERSION = 1;
+const LEGACY_ROSTER_COLLECTION = 'relay_operators';
 
 export type RoleAccountMigrationResult =
   | { status: 'already-complete' }
@@ -475,12 +475,12 @@ export class RoleAccountMigration {
       return this.finishConvertedMigration(collectionByName, accounts, state);
     }
 
-    const roster = collectionByName.get(RELAY_OPERATORS_COLLECTION);
+    const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
     if (!roster) {
       return this.bootstrapFreshInstall(accounts, states);
     }
 
-    const operators = await this.listRecords<LegacyOperatorRecord>(RELAY_OPERATORS_COLLECTION);
+    const operators = await this.listRecords<LegacyOperatorRecord>(LEGACY_ROSTER_COLLECTION);
     const planned = await this.planExistingMigration(collectionByName, operators, accounts, states);
     if ('reason' in planned) return { status: 'deferred', reason: planned.reason };
     return this.commitExistingMigration(roster, planned);
@@ -493,9 +493,9 @@ export class RoleAccountMigration {
   ): Promise<RoleAccountMigrationResult> {
     const converted = this.validateConvertedState(accounts, state);
     if ('reason' in converted) return { status: 'deferred', reason: converted.reason };
-    const roster = collectionByName.get(RELAY_OPERATORS_COLLECTION);
+    const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
     if (!roster) return { status: 'already-complete' };
-    const operators = await this.listRecords<LegacyOperatorRecord>(RELAY_OPERATORS_COLLECTION);
+    const operators = await this.listRecords<LegacyOperatorRecord>(LEGACY_ROSTER_COLLECTION);
     const historical = await this.planHistoricalUpdates(collectionByName, operators);
     if ('reason' in historical) return { status: 'deferred', reason: historical.reason };
     if (historical.updates.length > 0) {

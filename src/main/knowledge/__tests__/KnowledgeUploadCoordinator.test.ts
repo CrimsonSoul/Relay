@@ -15,21 +15,19 @@ const NOW = Date.parse('2026-07-15T20:00:00.000Z');
 const publisher: KnowledgeUploadActor = {
   accountId: 'account-publisher',
   deviceId: 'device-publisher',
-  operatorId: 'operator-publisher',
-  operatorName: 'Tristan Bowles',
+  displayName: 'Tristan Bowles',
   role: 'publisher',
 };
 const admin: KnowledgeUploadActor = {
   accountId: 'account-admin',
   deviceId: 'server-local',
-  operatorId: 'operator-admin',
-  operatorName: 'Ryan Bledsoe',
+  displayName: 'Ryan Bledsoe',
   role: 'admin',
 };
 const owner: KnowledgeUploadActor = {
   ...admin,
   accountId: 'account-owner',
-  operatorId: 'account-owner',
+  displayName: 'Ryan Bledsoe',
   role: 'owner',
 };
 

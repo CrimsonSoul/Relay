@@ -4,7 +4,6 @@ import type {
   DynatraceProblemsSettingsInput,
   DynatraceProblemsTestResult,
 } from './dynatraceProblems';
-import type { RelayOperatorRecord } from './operators';
 import type { PrivilegedPairingChallengeView, PrivilegedSessionView } from './privilegedAccess';
 import type { EffectivePrivilegedRole, StoredRoleAccountRole } from './roleAccounts';
 import type {
@@ -128,18 +127,6 @@ export type PublicPrivilegedCommandRequest<
   command: K;
   payload: PrivilegedCommandPayloadMap[K];
   expectedRevision: number | null;
-};
-
-export type RelayOperatorCreateInput = { displayName: string };
-export type RelayOperatorRenameInput = {
-  id: string;
-  displayName: string;
-  expectedUpdated: string;
-};
-export type RelayOperatorActiveInput = {
-  id: string;
-  active: boolean;
-  expectedUpdated: string;
 };
 
 export type BackupEntry = {
@@ -442,12 +429,6 @@ export type BridgeAPI = {
   saveDynatraceProblemProfileFilter: (
     alertingProfiles: string[],
   ) => Promise<IpcResult<{ count: number }>>;
-  // Relay operators — server management only; roster reads flow through PocketBase.
-  createRelayOperator: (input: RelayOperatorCreateInput) => Promise<IpcResult<RelayOperatorRecord>>;
-  renameRelayOperator: (input: RelayOperatorRenameInput) => Promise<IpcResult<RelayOperatorRecord>>;
-  setRelayOperatorActive: (
-    input: RelayOperatorActiveInput,
-  ) => Promise<IpcResult<RelayOperatorRecord>>;
   // Privileged access — public session metadata only; secrets remain in main.
   getPrivilegedSession: () => Promise<PrivilegedSessionView>;
   loginPrivileged: (
@@ -619,10 +600,6 @@ export const IPC_CHANNELS = {
   DYNATRACE_PROBLEMS_CLEAR_SETTINGS: 'dynatraceProblems:clearSettings',
   DYNATRACE_PROBLEMS_SYNC: 'dynatraceProblems:sync',
   DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER: 'dynatraceProblems:saveProfileFilter',
-  // Relay operators
-  RELAY_OPERATOR_CREATE: 'relayOperator:create',
-  RELAY_OPERATOR_RENAME: 'relayOperator:rename',
-  RELAY_OPERATOR_SET_ACTIVE: 'relayOperator:setActive',
   // Privileged access
   PRIVILEGED_GET_SESSION: 'privileged:getSession',
   PRIVILEGED_LOGIN: 'privileged:login',

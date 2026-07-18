@@ -14,8 +14,7 @@ const PDF = Buffer.from('%PDF-test');
 const CHECKSUM = createHash('sha256').update(PDF).digest('hex');
 const ACTOR = {
   accountId: 'account-admin',
-  operatorId: 'operator-admin',
-  operatorName: 'Ryan Bledsoe',
+  displayName: 'Ryan Bledsoe',
 };
 
 function document(overrides: Record<string, unknown> = {}) {
@@ -36,8 +35,8 @@ function document(overrides: Record<string, unknown> = {}) {
     indexedAt: NOW,
     lifecycleState: 'active',
     revision: 3,
-    publishedByOperatorId: ACTOR.operatorId,
-    publishedByName: ACTOR.operatorName,
+    publishedByOperatorId: ACTOR.accountId,
+    publishedByName: ACTOR.displayName,
     publishedAt: NOW,
     trashedByOperatorId: '',
     trashedByName: '',
@@ -54,8 +53,8 @@ function upload(overrides: Record<string, unknown> = {}) {
     requestId: 'upload-request-1',
     accountId: ACTOR.accountId,
     deviceId: 'device-1',
-    operatorId: ACTOR.operatorId,
-    operatorName: ACTOR.operatorName,
+    operatorId: 'historical-roster-id',
+    operatorName: ACTOR.displayName,
     fileName: 'Replacement.pdf',
     pdf: 'upload.pdf',
     checksum: CHECKSUM,
@@ -242,8 +241,8 @@ describe('ManagedKnowledgeService', () => {
     documents.getOne.mockResolvedValueOnce(
       document({
         lifecycleState: 'trashed',
-        trashedByOperatorId: ACTOR.operatorId,
-        trashedByName: ACTOR.operatorName,
+        trashedByOperatorId: ACTOR.accountId,
+        trashedByName: ACTOR.displayName,
         trashedAt: NOW,
       }),
     );

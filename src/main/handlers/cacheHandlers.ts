@@ -12,7 +12,6 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
-import { RELAY_OPERATORS_COLLECTION } from '@shared/operators';
 import { KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import type { PendingMutationOverlay, OfflineWritableCollection } from '@shared/ipc';
@@ -31,7 +30,6 @@ const VALID_COLLECTIONS = new Set([
   'conflict_log',
   'oncall_board_settings',
   'cloud_status_snapshot',
-  RELAY_OPERATORS_COLLECTION,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,

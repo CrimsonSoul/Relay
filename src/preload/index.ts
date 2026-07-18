@@ -56,11 +56,6 @@ const api: BridgeAPI = {
   syncDynatraceProblems: () => ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SYNC),
   saveDynatraceProblemProfileFilter: (alertingProfiles) =>
     ipcRenderer.invoke(IPC_CHANNELS.DYNATRACE_PROBLEMS_SAVE_PROFILE_FILTER, alertingProfiles),
-  // Relay operators
-  createRelayOperator: (input) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPERATOR_CREATE, input),
-  renameRelayOperator: (input) => ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPERATOR_RENAME, input),
-  setRelayOperatorActive: (input) =>
-    ipcRenderer.invoke(IPC_CHANNELS.RELAY_OPERATOR_SET_ACTIVE, input),
   // Privileged access
   getPrivilegedSession: () => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_GET_SESSION),
   loginPrivileged: (input) => ipcRenderer.invoke(IPC_CHANNELS.PRIVILEGED_LOGIN, input),

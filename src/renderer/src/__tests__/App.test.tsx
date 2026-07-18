@@ -919,6 +919,7 @@ describe('App default export', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
+    localStorage.clear();
     lastConnectionManagerProps = null;
     mockIsConfigured.mockResolvedValue(true);
     mockGetConfig.mockResolvedValue({
@@ -960,6 +961,21 @@ describe('App default export', () => {
     const { default: App } = await import('../App');
     render(<App />);
     expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+  });
+
+  it('clears the retired local selection during startup without blocking Relay', async () => {
+    const retiredSelectionKey = ['relay', 'selectedOperatorId'].join('.');
+    localStorage.setItem(retiredSelectionKey, 'retired-record');
+    Object.defineProperty(globalThis, 'location', {
+      value: { search: '' },
+      writable: true,
+    });
+
+    const { default: App } = await import('../App');
+    render(<App />);
+
+    expect(await screen.findByTestId('connection-manager')).toBeInTheDocument();
+    expect(localStorage.getItem(retiredSelectionKey)).toBeNull();
   });
 
   it('mounts privileged access directly inside the initialized connection', async () => {

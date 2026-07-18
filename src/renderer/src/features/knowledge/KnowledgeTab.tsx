@@ -361,7 +361,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     <div className="knowledge-tab">
       <header className="knowledge-tab__header">
         <div>
-          <span className="knowledge-tab__kicker">Operator reference</span>
+          <span className="knowledge-tab__kicker">Operations reference</span>
           <h1>Knowledge base</h1>
           <p>Find the guide, jump to the procedure, and stay in the flow.</p>
         </div>
