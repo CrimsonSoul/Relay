@@ -60,6 +60,23 @@ describe('AssemblerSidebar', () => {
     expect(screen.getByText('NS')).toBeInTheDocument();
   });
 
+  it('ignores punctuation separators when deriving group identity tokens', () => {
+    const groups = [
+      makeGroup('1', 'Data — Engineering'),
+      makeGroup('2', 'Field – Network'),
+      makeGroup('3', 'HQ - Security'),
+      makeGroup('4', 'OPS_Core SRE'),
+      makeGroup('5', 'Leadership'),
+      makeGroup('6', '—'),
+    ];
+
+    render(<AssemblerSidebar {...defaultProps} groups={groups} />);
+
+    for (const token of ['DE', 'FN', 'HS', 'OC', 'LE', '?']) {
+      expect(screen.getByText(token)).toBeInTheDocument();
+    }
+  });
+
   it('labels the group pane and exposes selected state semantically', () => {
     const groups = [makeGroup('g1', 'Team Alpha')];
     render(<AssemblerSidebar {...defaultProps} groups={groups} selectedGroupIds={['g1']} />);

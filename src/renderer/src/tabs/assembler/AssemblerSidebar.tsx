@@ -26,21 +26,13 @@ type AssemblerSidebarProps = {
 };
 
 const getGroupToken = (name: string): string => {
-  const parts = name
-    .trim()
-    .split(/[\s_-]+/)
-    .filter(Boolean);
+  const words = name.match(/[a-zA-Z0-9]+/g) ?? [];
 
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  if (words.length >= 2) {
+    return `${words[0][0]}${words[1][0]}`.toUpperCase();
   }
 
-  return (
-    name
-      .replace(/[^a-zA-Z0-9]/g, '')
-      .slice(0, 2)
-      .toUpperCase() || '?'
-  );
+  return words[0]?.slice(0, 2).toUpperCase() || '?';
 };
 
 export const AssemblerSidebar: React.FC<AssemblerSidebarProps> = ({
