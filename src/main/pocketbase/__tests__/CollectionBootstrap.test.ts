@@ -78,6 +78,7 @@ import { ensureCollections } from '../CollectionBootstrap';
 beforeEach(() => {
   vi.clearAllMocks();
   mockCollectionGetList.mockReset();
+  mockCollectionGetFullList.mockReset();
   mockCollectionCreate.mockReset();
   mockPrivilegedStateGetList.mockReset();
   mockPrivilegedStateGetFullList.mockReset();
@@ -94,6 +95,7 @@ beforeEach(() => {
     totalItems: 1,
     items: [{ id: 'custom', displayName: 'Custom Operator', active: true }],
   });
+  mockCollectionGetFullList.mockResolvedValue([]);
   mockCollectionCreate.mockImplementation(async (record: { displayName?: string }) => ({
     id: record.displayName
       ? `operator-${record.displayName.toLocaleLowerCase('en').replace(/[^a-z]+/g, '-')}`
@@ -239,7 +241,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(29);
+    expect(mockCreate).toHaveBeenCalledTimes(30);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -710,6 +712,41 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
+    const categoriesCall = mockCreate.mock.calls.find(
+      (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_categories',
+    )?.[0] as
+      | {
+          listRule: string | null;
+          viewRule: string | null;
+          createRule: string | null;
+          updateRule: string | null;
+          deleteRule: string | null;
+          fields: Array<Record<string, unknown>>;
+          indexes: string[];
+        }
+      | undefined;
+
+    expect(categoriesCall).toMatchObject({
+      listRule: '@request.auth.id != ""',
+      viewRule: '@request.auth.id != ""',
+      createRule: null,
+      updateRule: null,
+      deleteRule: null,
+    });
+    expect(categoriesCall?.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'name', type: 'text', required: true, max: 120 }),
+        expect.objectContaining({ name: 'normalizedName', type: 'text', required: true }),
+        expect.objectContaining({ name: 'sortOrder', type: 'number', required: true }),
+        expect.objectContaining({
+          name: 'systemKey',
+          type: 'select',
+          values: ['uncategorized'],
+        }),
+        expect.objectContaining({ name: 'revision', type: 'number', required: true }),
+      ]),
+    );
+
     const knowledgeCall = mockCreate.mock.calls.find(
       (call: unknown[]) => (call[0] as { name: string }).name === 'knowledge_documents',
     )?.[0] as
@@ -735,6 +772,17 @@ describe('ensureCollections', () => {
       expect.arrayContaining([
         expect.objectContaining({ name: 'sourceKey', type: 'text', required: true, max: 512 }),
         expect.objectContaining({ name: 'category', type: 'text', required: true, max: 120 }),
+        expect.objectContaining({
+          name: 'categoryId',
+          type: 'relation',
+          collectionId: 'knowledge_categories-collection-id',
+          required: false,
+        }),
+        expect.objectContaining({
+          name: 'documentType',
+          type: 'select',
+          values: ['sop', 'cheatsheet'],
+        }),
         expect.objectContaining({ name: 'title', type: 'text', required: true, max: 240 }),
         expect.objectContaining({ name: 'displayTitle', type: 'text', required: false, max: 240 }),
         expect.objectContaining({
@@ -763,6 +811,14 @@ describe('ensureCollections', () => {
           maxSelect: 1,
           maxSize: 50 * 1024 * 1024,
           mimeTypes: ['application/pdf'],
+          protected: true,
+        }),
+        expect.objectContaining({
+          name: 'cover',
+          type: 'file',
+          required: false,
+          maxSize: 2 * 1024 * 1024,
+          mimeTypes: ['image/png'],
           protected: true,
         }),
       ]),
@@ -810,6 +866,24 @@ describe('ensureCollections', () => {
           required: false,
           protected: true,
           maxSize: 50 * 1024 * 1024,
+        }),
+        expect.objectContaining({
+          name: 'cover',
+          type: 'file',
+          required: false,
+          protected: true,
+          maxSize: 2 * 1024 * 1024,
+        }),
+        expect.objectContaining({
+          name: 'proposedCategoryId',
+          type: 'relation',
+          collectionId: 'knowledge_categories-collection-id',
+          required: false,
+        }),
+        expect.objectContaining({
+          name: 'proposedDocumentType',
+          type: 'select',
+          values: ['sop', 'cheatsheet'],
         }),
         expect.objectContaining({ name: 'chunkSize', type: 'number', required: true }),
         expect.objectContaining({ name: 'chunkCount', type: 'number', required: true }),
@@ -1083,7 +1157,15 @@ describe('ensureCollections', () => {
 
     expect(mockPbCollection).not.toHaveBeenCalledWith('relay_operators');
     expect(mockCollectionGetList).not.toHaveBeenCalled();
-    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([]);
+    expect(mockCollectionCreate.mock.calls.map(([record]) => record)).toEqual([
+      {
+        name: 'Uncategorized',
+        normalizedName: 'uncategorized',
+        sortOrder: 100,
+        systemKey: 'uncategorized',
+        revision: 1,
+      },
+    ]);
     expect(mockPrivilegedAccountCreate).toHaveBeenCalledTimes(2);
     for (const username of ['ryan', 'charles']) {
       expect(mockPrivilegedAccountCreate).toHaveBeenCalledWith(

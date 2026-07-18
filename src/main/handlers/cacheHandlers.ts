@@ -12,7 +12,7 @@ import {
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_SYNC_COLLECTION,
 } from '@shared/dynatraceProblems';
-import { KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
+import { KNOWLEDGE_CATEGORIES_COLLECTION, KNOWLEDGE_DOCUMENTS_COLLECTION } from '@shared/knowledge';
 import { broadcastToAllWindows } from '../utils/broadcastToAllWindows';
 import type { PendingMutationOverlay, OfflineWritableCollection } from '@shared/ipc';
 
@@ -30,6 +30,7 @@ const VALID_COLLECTIONS = new Set([
   'oncall_board_settings',
   'cloud_status_snapshot',
   KNOWLEDGE_DOCUMENTS_COLLECTION,
+  KNOWLEDGE_CATEGORIES_COLLECTION,
   DYNATRACE_PROBLEMS_COLLECTION,
   DYNATRACE_PROBLEM_STATES_COLLECTION,
   DYNATRACE_PROBLEM_NOTES_COLLECTION,

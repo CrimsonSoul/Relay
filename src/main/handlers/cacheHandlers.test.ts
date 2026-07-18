@@ -114,6 +114,16 @@ describe('cacheHandlers', () => {
       expect(result).toEqual([documents[0]]);
     });
 
+    it('reads category metadata for offline clients', () => {
+      const categories = [{ id: 'category1', name: 'Operations', sortOrder: 100 }];
+      mockCache.readCollection.mockReturnValue(categories);
+
+      const result = handlers[IPC_CHANNELS.CACHE_READ]({}, 'knowledge_categories');
+
+      expect(mockCache.readCollection).toHaveBeenCalledWith('knowledge_categories');
+      expect(result).toEqual(categories);
+    });
+
     it.each([
       'knowledge_uploads',
       'knowledge_audit_events',
@@ -232,6 +242,15 @@ describe('cacheHandlers', () => {
       expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_documents', 'update', record);
       expect(mockPending.getAll).not.toHaveBeenCalled();
       expect(mockSync.syncAll).not.toHaveBeenCalled();
+    });
+
+    it('ingests category metadata without making it offline writable', () => {
+      const record = { id: 'category1', name: 'Operations', sortOrder: 100 };
+
+      handlers[IPC_CHANNELS.CACHE_WRITE]({}, 'knowledge_categories', 'update', record);
+
+      expect(mockCache.updateRecord).toHaveBeenCalledWith('knowledge_categories', 'update', record);
+      expect(mockPending.getAll).not.toHaveBeenCalled();
     });
 
     it('removes trashed knowledge metadata instead of caching it', () => {

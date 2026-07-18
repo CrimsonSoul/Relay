@@ -23,11 +23,14 @@ import {
 } from '@shared/privilegedAccess';
 import {
   KNOWLEDGE_AUDIT_EVENTS_COLLECTION,
+  KNOWLEDGE_CATEGORIES_COLLECTION,
+  KNOWLEDGE_MAX_COVER_BYTES,
   KNOWLEDGE_DOCUMENTS_COLLECTION,
   KNOWLEDGE_LIBRARY_STATE_COLLECTION,
   KNOWLEDGE_MAX_CATEGORY_LENGTH,
   KNOWLEDGE_MAX_PDF_BYTES,
   KNOWLEDGE_MAX_SOURCE_KEY_LENGTH,
+  KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY,
   KNOWLEDGE_UPLOAD_BATCHES_COLLECTION,
   KNOWLEDGE_UPLOAD_CHUNKS_COLLECTION,
   KNOWLEDGE_UPLOAD_CHUNK_BYTES,
@@ -35,6 +38,7 @@ import {
 } from '@shared/knowledge';
 import { loggers } from '../logger';
 import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
+import { migrateKnowledgeCategories } from '../knowledge/KnowledgeCategoryMigration';
 
 const LEGACY_ROSTER_COLLECTION = 'relay_operators';
 const LEGACY_LOGIN_ROSTER_VIEW = 'relay_login_roster';
@@ -161,6 +165,10 @@ const KNOWLEDGE_DOCUMENT_SOURCE_KEY_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_documents_source_key ON knowledge_documents (sourceKey)';
 const KNOWLEDGE_DOCUMENT_LIFECYCLE_INDEX =
   'CREATE INDEX idx_knowledge_documents_lifecycle ON knowledge_documents (lifecycleState)';
+const KNOWLEDGE_CATEGORY_NAME_INDEX =
+  'CREATE UNIQUE INDEX idx_knowledge_categories_name_nocase ON knowledge_categories (normalizedName COLLATE NOCASE)';
+const KNOWLEDGE_CATEGORY_ORDER_INDEX =
+  'CREATE INDEX idx_knowledge_categories_order ON knowledge_categories (sortOrder, name)';
 const KNOWLEDGE_UPLOAD_REQUEST_INDEX =
   'CREATE UNIQUE INDEX idx_knowledge_uploads_request_id ON knowledge_uploads (requestId)';
 const KNOWLEDGE_UPLOAD_BATCH_REQUEST_INDEX =
@@ -680,6 +688,29 @@ const COLLECTIONS: CollectionDef[] = [
     rules: PRIVILEGED_PAIRING_REQUEST_RULES,
   },
   {
+    name: KNOWLEDGE_CATEGORIES_COLLECTION,
+    type: 'base',
+    fields: [
+      { type: 'text', name: 'name', required: true, max: KNOWLEDGE_MAX_CATEGORY_LENGTH },
+      {
+        type: 'text',
+        name: 'normalizedName',
+        required: true,
+        max: KNOWLEDGE_MAX_CATEGORY_LENGTH,
+      },
+      { type: 'number', name: 'sortOrder', required: true },
+      {
+        type: 'select',
+        name: 'systemKey',
+        values: [KNOWLEDGE_UNCATEGORIZED_SYSTEM_KEY],
+        maxSelect: 1,
+      },
+      { type: 'number', name: 'revision', required: true },
+    ],
+    indexes: [KNOWLEDGE_CATEGORY_NAME_INDEX, KNOWLEDGE_CATEGORY_ORDER_INDEX],
+    rules: SERVER_OWNED_RULES,
+  },
+  {
     name: KNOWLEDGE_DOCUMENTS_COLLECTION,
     type: 'base',
     fields: [
@@ -695,6 +726,14 @@ const COLLECTIONS: CollectionDef[] = [
         required: true,
         max: KNOWLEDGE_MAX_CATEGORY_LENGTH,
       },
+      relation('categoryId', KNOWLEDGE_CATEGORIES_COLLECTION, false),
+      {
+        type: 'select',
+        name: 'documentType',
+        required: false,
+        values: ['sop', 'cheatsheet'],
+        maxSelect: 1,
+      },
       { type: 'text', name: 'title', required: true, max: 240 },
       { type: 'text', name: 'fileName', required: true, max: 240 },
       {
@@ -704,6 +743,15 @@ const COLLECTIONS: CollectionDef[] = [
         maxSelect: 1,
         maxSize: KNOWLEDGE_MAX_PDF_BYTES,
         mimeTypes: ['application/pdf'],
+        protected: true,
+      },
+      {
+        type: 'file',
+        name: 'cover',
+        required: false,
+        maxSelect: 1,
+        maxSize: KNOWLEDGE_MAX_COVER_BYTES,
+        mimeTypes: ['image/png'],
         protected: true,
       },
       { type: 'text', name: 'checksum', required: true, max: 64 },
@@ -789,6 +837,15 @@ const COLLECTIONS: CollectionDef[] = [
         mimeTypes: ['application/pdf'],
         protected: true,
       },
+      {
+        type: 'file',
+        name: 'cover',
+        required: false,
+        maxSelect: 1,
+        maxSize: KNOWLEDGE_MAX_COVER_BYTES,
+        mimeTypes: ['image/png'],
+        protected: true,
+      },
       { type: 'text', name: 'checksum', required: true, max: 64 },
       { type: 'number', name: 'byteSize', required: true },
       { type: 'number', name: 'chunkSize', required: true },
@@ -803,6 +860,14 @@ const COLLECTIONS: CollectionDef[] = [
       },
       { type: 'text', name: 'proposedTitle', max: 240 },
       { type: 'text', name: 'proposedCategory', max: KNOWLEDGE_MAX_CATEGORY_LENGTH },
+      relation('proposedCategoryId', KNOWLEDGE_CATEGORIES_COLLECTION, false),
+      {
+        type: 'select',
+        name: 'proposedDocumentType',
+        required: false,
+        values: ['sop', 'cheatsheet'],
+        maxSelect: 1,
+      },
       { type: 'text', name: 'duplicateDocumentId', max: 200 },
       {
         type: 'select',
@@ -888,6 +953,7 @@ const COLLECTIONS: CollectionDef[] = [
       { type: 'text', name: 'transitionedByOperatorId', max: 200 },
       { type: 'text', name: 'safeError', max: 200 },
       { type: 'number', name: 'revision', required: false },
+      { type: 'number', name: 'categoryMigrationVersion', required: false },
     ],
     indexes: [KNOWLEDGE_LIBRARY_STATE_KEY_INDEX],
     rules: SERVER_HIDDEN_RULES,
@@ -1441,6 +1507,7 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
     }
   }
   await ensureKnowledgeLibraryBootstrap(pb);
+  await migrateKnowledgeCategories(pb);
   const unmanaged = warnAboutUnknownCollections(allCols);
 
   if (managed.created > 0 || unmanaged > 0 || patched > 0) {
