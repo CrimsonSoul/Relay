@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveKnowledgePdfDestination } from '../knowledgePdfDestination';
+import {
+  clampKnowledgePdfPageIndex,
+  resolveKnowledgePdfDestination,
+} from '../knowledgePdfDestination';
 
 function pdf(options?: { numPages?: number; destination?: unknown[] | null; pageIndex?: number }) {
   return {
@@ -10,6 +13,15 @@ function pdf(options?: { numPages?: number; destination?: unknown[] | null; page
 }
 
 describe('resolveKnowledgePdfDestination', () => {
+  it.each([
+    ['negative', -2, 5, 0],
+    ['fractional', 2.8, 5, 2],
+    ['past the end', 8, 5, 4],
+    ['empty document', 3, 0, 0],
+  ])('clamps a %s current-page request', (_label, pageIndex, pageCount, expected) => {
+    expect(clampKnowledgePdfPageIndex(pageIndex, pageCount)).toBe(expected);
+  });
+
   it('resolves a named destination before reading its page and XYZ top coordinate', async () => {
     const document = pdf({ destination: [2, { name: 'XYZ' }, 0, 640] });
 
