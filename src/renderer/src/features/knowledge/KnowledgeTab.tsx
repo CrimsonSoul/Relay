@@ -7,6 +7,7 @@ import type {
 } from '@shared/knowledge';
 import { useToast } from '../../components/Toast';
 import { TactileButton } from '../../components/TactileButton';
+import { KnowledgeIcon } from '../../components/sidebar/SidebarIcons';
 import { usePrivilegedAccess } from '../../contexts/PrivilegedAccessContext';
 import { buildKnowledgeLibrary } from './knowledgeModel';
 import { useKnowledgeLibrary } from './useKnowledgeLibrary';
@@ -136,7 +137,10 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const [indexStatus, setIndexStatus] = useState<KnowledgeIndexStatus | null>(null);
   const [removedDocumentTitle, setRemovedDocumentTitle] = useState<string | null>(null);
   const [managementOpen, setManagementOpen] = useState(false);
+  const [libraryDrawerOpen, setLibraryDrawerOpen] = useState(false);
   const lastSelectedTitleRef = useRef<string | null>(null);
+  const libraryToggleRef = useRef<HTMLButtonElement>(null);
+  const librarySearchRef = useRef<HTMLInputElement>(null);
   const documentsRef = useRef(documents);
   const selectedDocumentIdRef = useRef(selectedDocumentId);
   documentsRef.current = documents;
@@ -148,6 +152,28 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
     ? documents.some((document) => document.id === selectedDocumentId)
     : true;
   const canManage = session.state === 'active' && session.capabilities.includes('knowledge.manage');
+
+  const closeLibraryDrawer = useCallback((restoreFocus = false) => {
+    setLibraryDrawerOpen(false);
+    if (restoreFocus) {
+      globalThis.requestAnimationFrame(() => libraryToggleRef.current?.focus());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!libraryDrawerOpen) return;
+    const frame = globalThis.requestAnimationFrame(() => librarySearchRef.current?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeLibraryDrawer(true);
+    };
+    globalThis.addEventListener('keydown', handleKeyDown);
+    return () => {
+      globalThis.cancelAnimationFrame(frame);
+      globalThis.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeLibraryDrawer, libraryDrawerOpen]);
 
   useEffect(() => {
     onLibraryCountChange?.(hasLoadedSnapshot && !error ? documents.length : null);
@@ -212,6 +238,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
       setRemovedDocumentTitle(null);
       setActiveHeadingId(heading?.id ?? null);
       setTarget(heading ? { ...heading } : null);
+      setLibraryDrawerOpen(false);
       acknowledgeKnowledgeDocumentOpen(documentId);
       return true;
     };
@@ -233,6 +260,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
   const handleSelectHeading = (heading: KnowledgeOutlineNode) => {
     setActiveHeadingId(heading.id);
     setTarget({ ...heading });
+    setLibraryDrawerOpen(false);
   };
 
   const handlePageChange = useCallback(
@@ -364,24 +392,61 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   return (
     <div className="knowledge-tab">
-      <div className="knowledge-workspace">
-        <aside className="knowledge-drawer" aria-label="Wiki library">
+      <div
+        className="knowledge-workspace"
+        role="region"
+        aria-label="Wiki reader workspace"
+        data-library-drawer={libraryDrawerOpen ? 'open' : 'closed'}
+      >
+        <button
+          ref={libraryToggleRef}
+          type="button"
+          className="knowledge-library-toggle"
+          aria-label="Wiki library"
+          aria-controls="knowledge-library-drawer"
+          aria-expanded={libraryDrawerOpen}
+          onClick={() => setLibraryDrawerOpen(true)}
+        >
+          <KnowledgeIcon />
+          <span>Library</span>
+        </button>
+        <button
+          type="button"
+          className="knowledge-drawer-backdrop"
+          aria-label="Close Wiki library backdrop"
+          tabIndex={-1}
+          onClick={() => closeLibraryDrawer()}
+        />
+        <aside id="knowledge-library-drawer" className="knowledge-drawer" aria-label="Wiki library">
           <div className="knowledge-drawer__heading">
             <div className="knowledge-drawer__title">
               <span>Operational reference</span>
               <h1>Wiki</h1>
             </div>
-            {canManage && (
-              <TactileButton
-                className="knowledge-drawer__manage"
-                size="sm"
-                variant="secondary"
-                aria-label="Manage Wiki"
-                onClick={() => setManagementOpen(true)}
+            <div className="knowledge-drawer__actions">
+              {canManage && (
+                <TactileButton
+                  className="knowledge-drawer__manage"
+                  size="sm"
+                  variant="secondary"
+                  aria-label="Manage Wiki"
+                  onClick={() => {
+                    setLibraryDrawerOpen(false);
+                    setManagementOpen(true);
+                  }}
+                >
+                  Manage
+                </TactileButton>
+              )}
+              <button
+                type="button"
+                className="knowledge-drawer__close"
+                aria-label="Close Wiki library"
+                onClick={() => closeLibraryDrawer(true)}
               >
-                Manage
-              </TactileButton>
-            )}
+                ×
+              </button>
+            </div>
           </div>
           <label className="knowledge-search">
             <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
@@ -389,6 +454,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
               <path d="m20 20-4-4" />
             </svg>
             <input
+              ref={librarySearchRef}
               type="search"
               aria-label="Search Wiki"
               value={query}
@@ -416,6 +482,7 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
                   setRemovedDocumentTitle(null);
                   setActiveHeadingId(null);
                   setTarget(null);
+                  setLibraryDrawerOpen(false);
                 }}
                 onSelectHeading={handleSelectHeading}
               />

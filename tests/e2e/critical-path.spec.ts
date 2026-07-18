@@ -1335,6 +1335,65 @@ test.describe('Vital Critical Path', () => {
     expect(lifecycleErrors).toEqual([]);
   });
 
+  test('Knowledge PDF links use the compact Wiki Library drawer without losing reader state', async () => {
+    test.setTimeout(120_000);
+    const connectedClient = await launchConnectedClient();
+    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
+    await clientElectronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(900, 900);
+    });
+    await expect
+      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+      .toBeLessThanOrEqual(900);
+
+    await enterKnowledgeDestination(connectedClient, 'Wiki');
+    const workspace = connectedClient.getByRole('region', { name: 'Wiki reader workspace' });
+    const drawer = connectedClient.getByRole('complementary', { name: 'Wiki library' });
+    const libraryToggle = connectedClient.getByRole('button', {
+      name: 'Wiki library',
+      exact: true,
+    });
+    await expect(libraryToggle).toBeVisible();
+    await expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(drawer).toBeHidden();
+
+    await libraryToggle.click();
+    await expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+    await expect(drawer).toBeVisible();
+    await expect(connectedClient.getByRole('searchbox', { name: 'Search Wiki' })).toBeFocused();
+
+    await connectedClient
+      .getByRole('treeitem', { name: 'Reader validation, 1 document', exact: true })
+      .click();
+    await connectedClient
+      .getByRole('treeitem', { name: CONTINUOUS_READER_TITLE, exact: true })
+      .click();
+    const viewer = connectedClient.getByRole('region', {
+      name: `${CONTINUOUS_READER_TITLE} PDF viewer`,
+    });
+    await expect(drawer).toBeHidden();
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+
+    await libraryToggle.click();
+    await expect(drawer).toBeVisible();
+    await connectedClient.keyboard.press('Escape');
+    await expect(drawer).toBeHidden();
+    await expect(libraryToggle).toBeFocused();
+
+    await clientElectronApp.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0]?.setSize(1200, 900);
+    });
+    await expect
+      .poll(() => connectedClient.evaluate(() => globalThis.innerWidth))
+      .toBeGreaterThan(900);
+    await expect(libraryToggle).toBeHidden();
+    await expect(drawer).toBeVisible();
+    await expect(viewer).toContainText(`Page 1 of ${CONTINUOUS_READER_PAGE_COUNT}`);
+    await expect(
+      connectedClient.getByRole('heading', { name: 'Wiki unavailable', exact: true }),
+    ).toHaveCount(0);
+  });
+
   test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
     test.setTimeout(180_000);
     await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);

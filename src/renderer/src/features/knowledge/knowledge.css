@@ -5,6 +5,8 @@
   flex-direction: column;
   color: var(--color-text-primary);
   background: var(--color-bg-app);
+  container-name: knowledge-reader;
+  container-type: inline-size;
 }
 
 .knowledge-tab__kicker,
@@ -22,12 +24,19 @@
 }
 
 .knowledge-workspace {
+  position: relative;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   overflow: hidden;
   background: var(--color-bg-surface);
+}
+
+.knowledge-library-toggle,
+.knowledge-drawer-backdrop,
+.knowledge-drawer__close {
+  display: none;
 }
 
 .knowledge-drawer {
@@ -45,6 +54,12 @@
   justify-content: space-between;
   gap: 10px;
   padding: 17px 19px 13px;
+}
+
+.knowledge-drawer__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .knowledge-drawer__title > span {
@@ -1527,6 +1542,138 @@
   }
 }
 
+@container knowledge-reader (max-width: 900px) {
+  .knowledge-workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .knowledge-library-toggle {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    left: 10px;
+    display: inline-flex;
+    height: 31px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 10px;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface-2);
+    font-family: var(--font-family-mono);
+    font-size: 10px;
+    font-weight: var(--weight-bold);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition:
+      border-color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      color 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .knowledge-library-toggle svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .knowledge-library-toggle:hover,
+  .knowledge-library-toggle:focus-visible,
+  .knowledge-library-toggle[aria-expanded='true'] {
+    border-color: var(--accent);
+    outline: none;
+    color: var(--accent-bright);
+    background: var(--accent-subtle);
+  }
+
+  .knowledge-library-toggle:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+
+  .knowledge-drawer-backdrop {
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    display: block;
+    border: 0;
+    visibility: hidden;
+    opacity: 0;
+    background: rgb(0 0 0 / 58%);
+    cursor: default;
+    pointer-events: none;
+    transition:
+      opacity 180ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 180ms;
+  }
+
+  .knowledge-drawer {
+    position: absolute;
+    z-index: 5;
+    inset: 0 auto 0 0;
+    width: min(320px, calc(100% - 52px));
+    border-right: 1px solid var(--color-border-strong);
+    border-bottom: 0;
+    visibility: hidden;
+    transform: translateX(-100%);
+    pointer-events: none;
+    transition:
+      transform 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 200ms;
+  }
+
+  .knowledge-workspace[data-library-drawer='open'] .knowledge-drawer-backdrop {
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .knowledge-workspace[data-library-drawer='open'] .knowledge-drawer {
+    visibility: visible;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 0s;
+  }
+
+  .knowledge-drawer__close {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-surface-2);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .knowledge-drawer__close:hover,
+  .knowledge-drawer__close:focus-visible {
+    border-color: var(--accent);
+    outline: none;
+    color: var(--accent-bright);
+    background: var(--accent-subtle);
+  }
+
+  .knowledge-drawer__close:focus-visible {
+    box-shadow: 0 0 0 2px var(--accent-dim);
+  }
+
+  .knowledge-viewer__toolbar {
+    padding-left: 105px;
+  }
+}
+
+@container knowledge-reader (max-width: 620px) {
+  .knowledge-viewer__toolbar {
+    padding-top: 46px;
+    padding-left: 8px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .knowledge-viewer__controls button {
     transition-duration: 0s;
@@ -1534,6 +1681,12 @@
 
   .knowledge-viewer__viewport {
     scroll-behavior: auto;
+  }
+
+  .knowledge-library-toggle,
+  .knowledge-drawer-backdrop,
+  .knowledge-drawer {
+    transition-duration: 0s;
   }
 
   .knowledge-skeleton,

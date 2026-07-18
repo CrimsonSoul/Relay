@@ -248,6 +248,47 @@ describe('KnowledgeTab', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('controls the compact Library drawer with focus-safe dismissal and selection', async () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [
+        document('guide', 'Operator guide', 'General'),
+        document('lane', 'Lane recovery', 'Store systems'),
+      ],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" />);
+
+    const workspace = screen.getByRole('region', { name: 'Wiki reader workspace' });
+    const libraryToggle = screen.getByRole('button', { name: 'Wiki library' });
+    expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+    expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(libraryToggle);
+
+    expect(workspace).toHaveAttribute('data-library-drawer', 'open');
+    expect(libraryToggle).toHaveAttribute('aria-expanded', 'true');
+    await waitFor(() =>
+      expect(screen.getByRole('searchbox', { name: 'Search Wiki' })).toHaveFocus(),
+    );
+
+    fireEvent.keyDown(globalThis.document, { key: 'Escape' });
+
+    expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+    expect(libraryToggle).toHaveAttribute('aria-expanded', 'false');
+    await waitFor(() => expect(libraryToggle).toHaveFocus());
+
+    fireEvent.click(libraryToggle);
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Store systems, 1 document' }));
+    fireEvent.click(screen.getByRole('treeitem', { name: 'Lane recovery' }));
+
+    expect(workspace).toHaveAttribute('data-library-drawer', 'closed');
+    expect(screen.getByText(/Viewer: Lane recovery/)).toBeInTheDocument();
+  });
+
   it('provides the viewer with pure URL resolution and accepts native destination targets', async () => {
     useKnowledgeLibraryMock.mockReturnValue({
       documents: [document('guide', 'Operator guide', 'General')],
