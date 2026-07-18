@@ -37,6 +37,7 @@ import { loggers } from '../logger';
 import { RoleAccountMigration } from '../privileged/RoleAccountMigration';
 
 const LEGACY_ROSTER_COLLECTION = 'relay_operators';
+const LEGACY_LOGIN_ROSTER_VIEW = 'relay_login_roster';
 const logger = loggers.pocketbase;
 
 const AUTH_RULE = '@request.auth.id != ""';
@@ -336,6 +337,7 @@ const PRIVILEGED_ACCOUNT_COMPATIBILITY_DEFINITION: CollectionDef = {
       ? { required: false }
       : {}),
     ...(field.name === 'operatorId' || field.name === 'role' ? { required: true } : {}),
+    ...(field.name === 'role' ? { values: ['admin', 'publisher', 'operator'] } : {}),
   })),
   indexes: [],
   auth: {
@@ -1438,7 +1440,9 @@ export async function ensureCollections(pb: PocketBase): Promise<CollectionBoots
       if (await patchManagedCollection(pb, definition, allCols, collectionIds)) patched += 1;
     }
     if (migration.status === 'migrated') {
-      allCols = allCols.filter(({ name }) => name !== LEGACY_ROSTER_COLLECTION);
+      allCols = allCols.filter(
+        ({ name }) => name !== LEGACY_ROSTER_COLLECTION && name !== LEGACY_LOGIN_ROSTER_VIEW,
+      );
     }
   }
   await ensureKnowledgeLibraryBootstrap(pb);

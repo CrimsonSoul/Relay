@@ -14,13 +14,15 @@ import {
 
 export const ROLE_ACCOUNT_MIGRATION_VERSION = 1;
 const LEGACY_ROSTER_COLLECTION = 'relay_operators';
+const LEGACY_LOGIN_ROSTER_VIEW = 'relay_login_roster';
+const LEGACY_LOGIN_ROSTER_QUERY = 'select id, displayname from relay_operators where active = true';
 
 export type RoleAccountMigrationResult =
   | { status: 'already-complete' }
   | { status: 'migrated'; ownerAccountId: string; administratorAccountIds: string[] }
   | { status: 'deferred'; reason: string };
 
-type CollectionInfo = { id: string; name: string };
+type CollectionInfo = { id: string; name: string; type?: unknown; viewQuery?: unknown };
 type PocketBaseRecord = { id: string; [key: string]: unknown };
 
 type LegacyOperatorRecord = PocketBaseRecord & {
@@ -51,6 +53,10 @@ type MigrationStateRecord = PocketBaseRecord & {
   identityMigrationVersion?: unknown;
 };
 
+type MigrationDeviceRecord = PocketBaseRecord & {
+  accountId?: unknown;
+};
+
 type PlannedAccount = {
   record: MigrationAccountRecord;
   operatorId: string;
@@ -71,7 +77,9 @@ type ExistingMigrationPlan = {
   publisherAccountId: string | null;
   administratorAccountIds: string[];
   accounts: PlannedAccount[];
+  retiredAccountIds: string[];
   historicalUpdates: PlannedUpdate[];
+  loginRosterView: CollectionInfo | null;
 };
 
 const HISTORICAL_SNAPSHOT_FIELDS: ReadonlyArray<{
@@ -138,6 +146,23 @@ function nonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 0;
 }
 
+function normalizedViewQuery(value: unknown): string | null {
+  return typeof value === 'string'
+    ? value.trim().replace(/;$/, '').replace(/\s+/g, ' ').toLocaleLowerCase('en')
+    : null;
+}
+
+function validatedLegacyLoginRosterView(
+  collectionByName: ReadonlyMap<string, CollectionInfo>,
+): CollectionInfo | null | { reason: string } {
+  const view = collectionByName.get(LEGACY_LOGIN_ROSTER_VIEW);
+  if (!view) return null;
+  if (view.type !== 'view' || normalizedViewQuery(view.viewQuery) !== LEGACY_LOGIN_ROSTER_QUERY) {
+    return { reason: 'The legacy login roster view has an unexpected definition.' };
+  }
+  return view;
+}
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((entry): entry is string => nonEmptyString(entry))
@@ -157,6 +182,27 @@ function storedRoleForAccount(account: MigrationAccountRecord): StoredRoleAccoun
   if (account.role === 'admin') return 'administrator';
   if (account.role === 'publisher') return 'publisher';
   return null;
+}
+
+function partitionExistingAccounts(
+  accounts: MigrationAccountRecord[],
+):
+  | { protectedAccounts: MigrationAccountRecord[]; retiredAccounts: MigrationAccountRecord[] }
+  | { reason: string } {
+  const protectedAccounts: MigrationAccountRecord[] = [];
+  const retiredAccounts: MigrationAccountRecord[] = [];
+  for (const account of accounts) {
+    if (storedRoleForAccount(account)) {
+      protectedAccounts.push(account);
+      continue;
+    }
+    if (account.role === 'operator' && !nonEmptyString(account.storedRole)) {
+      retiredAccounts.push(account);
+      continue;
+    }
+    return { reason: `Auth account ${account.id} has an invalid role.` };
+  }
+  return { protectedAccounts, retiredAccounts };
 }
 
 function accountLegacyOperatorId(account: MigrationAccountRecord): string | null {
@@ -491,10 +537,28 @@ export class RoleAccountMigration {
     accounts: MigrationAccountRecord[],
     state: MigrationStateRecord,
   ): Promise<RoleAccountMigrationResult> {
-    const converted = this.validateConvertedState(accounts, state);
+    const partitioned = partitionExistingAccounts(accounts);
+    if ('reason' in partitioned) return { status: 'deferred', reason: partitioned.reason };
+    const converted = this.validateConvertedState(partitioned.protectedAccounts, state);
     if ('reason' in converted) return { status: 'deferred', reason: converted.reason };
     const roster = collectionByName.get(LEGACY_ROSTER_COLLECTION);
-    if (!roster) return { status: 'already-complete' };
+    const loginRosterView = validatedLegacyLoginRosterView(collectionByName);
+    if (loginRosterView && 'reason' in loginRosterView) {
+      return { status: 'deferred', reason: loginRosterView.reason };
+    }
+    if (!roster) {
+      return partitioned.retiredAccounts.length === 0 && loginRosterView === null
+        ? { status: 'already-complete' }
+        : {
+            status: 'deferred',
+            reason: 'Converted state retains legacy identity data without its operator roster.',
+          };
+    }
+    const retirementBlock = await this.retirementBlockReason(
+      collectionByName,
+      partitioned.retiredAccounts,
+    );
+    if (retirementBlock) return { status: 'deferred', reason: retirementBlock };
     const operators = await this.listRecords<LegacyOperatorRecord>(LEGACY_ROSTER_COLLECTION);
     const historical = await this.planHistoricalUpdates(collectionByName, operators);
     if ('reason' in historical) return { status: 'deferred', reason: historical.reason };
@@ -504,11 +568,19 @@ export class RoleAccountMigration {
         reason: 'Converted state still has incomplete historical display-name snapshots.',
       };
     }
-    await this.pb.collections.delete(roster.id);
+    await this.retireAccounts(partitioned.retiredAccounts);
+    const finalAccounts = await this.listRecords<MigrationAccountRecord>(
+      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+    );
+    const finalConverted = this.validateConvertedState(finalAccounts, state);
+    if ('reason' in finalConverted) {
+      throw new Error(`Role account migration validation failed: ${finalConverted.reason}`);
+    }
+    await this.retireLegacyCollections(loginRosterView, roster);
     return {
       status: 'migrated',
-      ownerAccountId: converted.ownerAccountId,
-      administratorAccountIds: converted.administratorAccountIds,
+      ownerAccountId: finalConverted.ownerAccountId,
+      administratorAccountIds: finalConverted.administratorAccountIds,
     };
   }
 
@@ -548,15 +620,28 @@ export class RoleAccountMigration {
     );
     if (!committedState)
       throw new Error('Role account migration could not re-read singleton state.');
-    const converted = this.validateConvertedState(committedAccounts, committedState);
+    const retainedAccounts = committedAccounts.filter(
+      ({ id }) => !planned.retiredAccountIds.includes(id),
+    );
+    const converted = this.validateConvertedState(retainedAccounts, committedState);
     if ('reason' in converted) {
       throw new Error(`Role account migration validation failed: ${converted.reason}`);
     }
-    await this.pb.collections.delete(roster.id);
+    await this.retireAccounts(
+      committedAccounts.filter(({ id }) => planned.retiredAccountIds.includes(id)),
+    );
+    const finalAccounts = await this.listRecords<MigrationAccountRecord>(
+      RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
+    );
+    const finalConverted = this.validateConvertedState(finalAccounts, committedState);
+    if ('reason' in finalConverted) {
+      throw new Error(`Role account migration validation failed: ${finalConverted.reason}`);
+    }
+    await this.retireLegacyCollections(planned.loginRosterView, roster);
     return {
       status: 'migrated',
-      ownerAccountId: converted.ownerAccountId,
-      administratorAccountIds: converted.administratorAccountIds,
+      ownerAccountId: finalConverted.ownerAccountId,
+      administratorAccountIds: finalConverted.administratorAccountIds,
     };
   }
 
@@ -566,11 +651,20 @@ export class RoleAccountMigration {
     accounts: MigrationAccountRecord[],
     states: MigrationStateRecord[],
   ): Promise<ExistingMigrationPlan | { reason: string }> {
+    const loginRosterView = validatedLegacyLoginRosterView(collectionByName);
+    if (loginRosterView && 'reason' in loginRosterView) return loginRosterView;
     const authorityOperators = resolveAuthorityOperators(operators, states);
     if ('reason' in authorityOperators) return authorityOperators;
     const authorityAccounts = resolveAuthorityAccounts(accounts, operators, authorityOperators);
     if ('reason' in authorityAccounts) return authorityAccounts;
-    const plannedAccounts = planAccountUpdates(accounts, authorityAccounts);
+    const partitioned = partitionExistingAccounts(accounts);
+    if ('reason' in partitioned) return partitioned;
+    const retirementBlock = await this.retirementBlockReason(
+      collectionByName,
+      partitioned.retiredAccounts,
+    );
+    if (retirementBlock) return { reason: retirementBlock };
+    const plannedAccounts = planAccountUpdates(partitioned.protectedAccounts, authorityAccounts);
     if ('reason' in plannedAccounts) return plannedAccounts;
     const historical = await this.planHistoricalUpdates(collectionByName, operators);
     if ('reason' in historical) return historical;
@@ -581,8 +675,41 @@ export class RoleAccountMigration {
       publisherAccountId: authorityAccounts.publisher?.id ?? null,
       administratorAccountIds: authorityAccounts.administrators.map(({ id }) => id),
       accounts: plannedAccounts.planned,
+      retiredAccountIds: partitioned.retiredAccounts.map(({ id }) => id),
       historicalUpdates: historical.updates,
+      loginRosterView,
     };
+  }
+
+  private async retireLegacyCollections(
+    loginRosterView: CollectionInfo | null,
+    roster: CollectionInfo,
+  ): Promise<void> {
+    if (loginRosterView) await this.pb.collections.delete(loginRosterView.id);
+    await this.pb.collections.delete(roster.id);
+  }
+
+  private async retirementBlockReason(
+    collectionByName: ReadonlyMap<string, CollectionInfo>,
+    retiredAccounts: MigrationAccountRecord[],
+  ): Promise<string | null> {
+    if (retiredAccounts.length === 0 || !collectionByName.has('relay_privileged_devices')) {
+      return null;
+    }
+    const retiredIds = new Set(retiredAccounts.map(({ id }) => id));
+    const devices = await this.listRecords<MigrationDeviceRecord>('relay_privileged_devices');
+    const boundDevice = devices.find(
+      ({ accountId }) => nonEmptyString(accountId) && retiredIds.has(accountId),
+    );
+    return boundDevice
+      ? `Legacy ordinary account ${String(boundDevice.accountId)} still owns a paired device.`
+      : null;
+  }
+
+  private async retireAccounts(accounts: MigrationAccountRecord[]): Promise<void> {
+    for (const account of accounts) {
+      await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).delete(account.id);
+    }
   }
   private async planHistoricalUpdates(
     collectionByName: ReadonlyMap<string, CollectionInfo>,

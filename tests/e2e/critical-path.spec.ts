@@ -19,10 +19,24 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 type RelayContact = { email: string };
 
-type RelayOperator = {
+type RelayRoleAccount = {
   id: string;
+  username: string;
   displayName: string;
+  storedRole: 'administrator' | 'publisher';
   active: boolean;
+  mustChangePassword: boolean;
+  credentialVersion: number;
+  revision: number;
+};
+
+type RelayPrivilegedState = {
+  id: string;
+  ownerAccountId: string;
+  publisherAccountId?: string;
+  assignmentVersion: number;
+  identityMigrationVersion: number;
+  updatedByAccountId?: string;
 };
 
 type DynatraceProblemNote = {
@@ -41,19 +55,8 @@ type DynatraceProblemState = {
   addressedBy?: string;
 };
 
-const EXPECTED_OPERATOR_NAMES = [
-  'Charles Gibbs',
-  'Connor McElroy',
-  'Paris Carlson',
-  'Ryan Bell',
-  'Ryan Bledsoe',
-  'Tristan Bowles',
-  'Tristan Stillwell',
-  'Vlad McCarty',
-  'Weston Yokley',
-];
-const RYAN_BELL = 'Ryan Bell';
 const RYAN_BLEDSOE = 'Ryan Bledsoe';
+const CHARLES_GIBBS = 'Charles Gibbs';
 const TRISTAN_BOWLES = 'Tristan Bowles';
 const CHECKOUT_PROBLEM_ID = 'RELAY-DEMO-1001';
 const CHECKOUT_PROBLEM_TITLE = 'Checkout service availability below SLO';
@@ -161,13 +164,13 @@ const seedKnowledgeLinkFixtures = async (port: number) => {
   }
 };
 
-const waitForOperator = async (pb: PocketBase, displayName: string) => {
+const waitForRoleAccount = async (pb: PocketBase, username: string) => {
   let lastError: unknown;
   for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
       return await pb
-        .collection('relay_operators')
-        .getFirstListItem<RelayOperator>(`displayName = "${displayName}"`, {
+        .collection('relay_privileged_accounts')
+        .getFirstListItem<RelayRoleAccount>(`username = "${username}"`, {
           requestKey: null,
         });
     } catch (error) {
@@ -178,113 +181,68 @@ const waitForOperator = async (pb: PocketBase, displayName: string) => {
   throw lastError;
 };
 
-const activatePrivilegedAdministratorFixture = async (port: number) => {
+const activateRoleAccountFixture = async (
+  port: number,
+  username: 'ryan' | 'charles',
+  password: string,
+) => {
   const pb = await makeSuperuserPbClient(port);
-  const operator = await waitForOperator(pb, RYAN_BLEDSOE);
-  const accounts = await pb
-    .collection('relay_privileged_accounts')
-    .getFullList<{ id: string; credentialVersion: number }>({
-      filter: `operatorId = "${operator.id}"`,
-      requestKey: null,
-    });
-  const account = accounts[0];
-  const values = {
-    email: `${operator.id}@relay.invalid`,
-    operatorId: operator.id,
-    role: 'admin',
-    active: true,
-    mustChangePassword: false,
-    credentialVersion: (account?.credentialVersion ?? 0) + 1,
-    password: PRIVILEGED_TEST_PASSWORD,
-    passwordConfirm: PRIVILEGED_TEST_PASSWORD,
-  };
-  if (account) {
-    await pb
-      .collection('relay_privileged_accounts')
-      .update(account.id, values, { requestKey: null });
-  } else {
-    try {
-      await pb.collection('relay_privileged_accounts').create(values, { requestKey: null });
-    } catch (error) {
-      const detail =
-        error && typeof error === 'object' && 'response' in error
-          ? JSON.stringify((error as { response: unknown }).response)
-          : 'unknown';
-      throw new Error(`Could not create privileged E2E account: ${detail}`);
-    }
-  }
+  const account = await waitForRoleAccount(pb, username);
+  const updated = await pb.collection('relay_privileged_accounts').update<RelayRoleAccount>(
+    account.id,
+    {
+      active: true,
+      mustChangePassword: false,
+      credentialVersion: account.credentialVersion + 1,
+      password,
+      passwordConfirm: password,
+    },
+    { requestKey: null },
+  );
   const authCheck = new PocketBase(`http://127.0.0.1:${port}`);
-  try {
-    const authResult = await authCheck
-      .collection('relay_privileged_accounts')
-      .authWithPassword(operator.id, PRIVILEGED_TEST_PASSWORD, { requestKey: null });
-    const authenticated = authResult.record as unknown as Record<string, unknown>;
-    if (
-      authenticated.collectionName !== 'relay_privileged_accounts' ||
-      authenticated.operatorId !== operator.id ||
-      authenticated.active !== true ||
-      authenticated.role !== 'admin' ||
-      authenticated.mustChangePassword !== false ||
-      !Number.isSafeInteger(authenticated.credentialVersion)
-    ) {
-      throw new Error(`Unexpected privileged auth record: ${JSON.stringify(authenticated)}`);
-    }
-    const [state, resolvedOperator] = await Promise.all([
-      authCheck
-        .collection('relay_privileged_state')
-        .getFirstListItem<{ adminOperatorId: string }>('key = "primary"', {
-          requestKey: null,
-        }),
-      authCheck.collection('relay_operators').getOne<RelayOperator>(operator.id, {
-        requestKey: null,
-      }),
-    ]);
-    if (state.adminOperatorId !== operator.id || resolvedOperator.displayName !== RYAN_BLEDSOE) {
-      throw new Error('Privileged fixture assignment is inconsistent.');
-    }
-  } catch (error) {
-    const detail =
-      error && typeof error === 'object' && 'response' in error
-        ? JSON.stringify((error as { response: unknown }).response)
-        : 'unknown';
-    throw new Error(`Could not authenticate privileged E2E account: ${detail}`);
+  const authResult = await authCheck
+    .collection('relay_privileged_accounts')
+    .authWithPassword(username, password, { requestKey: null });
+  const authenticated = authResult.record as unknown as RelayRoleAccount;
+  const state = await authCheck
+    .collection('relay_privileged_state')
+    .getFirstListItem<RelayPrivilegedState>('key = "primary"', { requestKey: null });
+  if (
+    authenticated.id !== updated.id ||
+    authenticated.username !== username ||
+    authenticated.active !== true ||
+    authenticated.mustChangePassword !== false ||
+    authenticated.storedRole !== 'administrator' ||
+    !Number.isSafeInteger(authenticated.revision) ||
+    (username === 'ryan' && state.ownerAccountId !== authenticated.id) ||
+    (username === 'charles' && state.ownerAccountId === authenticated.id)
+  ) {
+    throw new Error(`Role account fixture is inconsistent for @${username}.`);
   }
-  return operator.id;
+  return updated;
 };
 
 const activatePrivilegedPublisherFixture = async (port: number) => {
   const pb = await makeSuperuserPbClient(port);
-  const operator = await waitForOperator(pb, TRISTAN_BOWLES);
   const state = await pb.collection('relay_privileged_state').getFirstListItem<{
     id: string;
-    adminOperatorId: string;
+    ownerAccountId: string;
     assignmentVersion: number;
   }>('key = "primary"', { requestKey: null });
-  await pb.collection('relay_privileged_state').update(
-    state.id,
-    {
-      publisherOperatorId: operator.id,
-      assignmentVersion: state.assignmentVersion + 1,
-      updatedByOperatorId: state.adminOperatorId,
-      updatedAt: new Date().toISOString(),
-    },
-    { requestKey: null },
-  );
-
-  const accounts = await pb
-    .collection('relay_privileged_accounts')
-    .getFullList<{ id: string; credentialVersion: number }>({
-      filter: `operatorId = "${operator.id}"`,
-      requestKey: null,
-    });
+  const accounts = await pb.collection('relay_privileged_accounts').getFullList<RelayRoleAccount>({
+    filter: 'username = "tristan"',
+    requestKey: null,
+  });
   const account = accounts[0];
   const values = {
-    email: `${operator.id}@relay.invalid`,
-    operatorId: operator.id,
-    role: 'publisher',
+    email: 'tristan@relay.invalid',
+    username: 'tristan',
+    displayName: TRISTAN_BOWLES,
+    storedRole: 'publisher',
     active: true,
     mustChangePassword: false,
     credentialVersion: (account?.credentialVersion ?? 0) + 1,
+    revision: account ? undefined : 0,
     password: PUBLISHER_TEST_PASSWORD,
     passwordConfirm: PUBLISHER_TEST_PASSWORD,
   };
@@ -294,17 +252,72 @@ const activatePrivilegedPublisherFixture = async (port: number) => {
       })
     : await pb.collection('relay_privileged_accounts').create(values, { requestKey: null });
 
+  await pb.collection('relay_privileged_state').update(
+    state.id,
+    {
+      publisherAccountId: updated.id,
+      assignmentVersion: state.assignmentVersion + 1,
+      updatedByAccountId: state.ownerAccountId,
+    },
+    { requestKey: null },
+  );
+
   const authCheck = new PocketBase(`http://127.0.0.1:${port}`);
   const authResult = await authCheck
     .collection('relay_privileged_accounts')
-    .authWithPassword(operator.id, PUBLISHER_TEST_PASSWORD, { requestKey: null });
+    .authWithPassword('tristan', PUBLISHER_TEST_PASSWORD, { requestKey: null });
+  const authenticatedPublisher = authResult.record as unknown as RelayRoleAccount & {
+    collectionName?: string;
+  };
   expect(authResult.record).toMatchObject({
     id: updated.id,
-    operatorId: operator.id,
-    role: 'publisher',
+    username: 'tristan',
+    displayName: TRISTAN_BOWLES,
+    storedRole: 'publisher',
     active: true,
   });
-  return { accountId: updated.id, operatorId: operator.id };
+  expect(authenticatedPublisher).toMatchObject({
+    collectionName: 'relay_privileged_accounts',
+    mustChangePassword: false,
+    credentialVersion: expect.any(Number),
+    revision: expect.any(Number),
+  });
+  const authenticatedState = await authCheck
+    .collection('relay_privileged_state')
+    .getFirstListItem<RelayPrivilegedState>('key = "primary"', { requestKey: null });
+  expect(authenticatedState.publisherAccountId).toBe(updated.id);
+  return { accountId: updated.id };
+};
+
+const readRoleAccountSnapshot = async (port: number) => {
+  const pb = await makeSuperuserPbClient(port);
+  const [accounts, state] = await Promise.all([
+    pb.collection('relay_privileged_accounts').getFullList<RelayRoleAccount>({ requestKey: null }),
+    pb
+      .collection('relay_privileged_state')
+      .getFirstListItem<RelayPrivilegedState>('key = "primary"', { requestKey: null }),
+  ]);
+  let legacyRosterPresent = true;
+  try {
+    await pb.collections.getOne('relay_operators', { requestKey: null });
+  } catch (error) {
+    if ((error as { status?: number }).status !== 404) throw error;
+    legacyRosterPresent = false;
+  }
+  const owner = accounts.find(({ id }) => id === state.ownerAccountId);
+  const administrator = accounts.find(({ username }) => username === 'charles');
+  const publisherCount = accounts.filter(
+    ({ id, storedRole }) => id === state.publisherAccountId && storedRole === 'publisher',
+  ).length;
+  return {
+    ownerUsername: owner?.username,
+    ownerDisplayName: owner?.displayName,
+    administratorUsername: administrator?.username,
+    administratorDisplayName: administrator?.displayName,
+    ownerCount: accounts.filter(({ id }) => id === state.ownerAccountId).length,
+    publisherCount,
+    legacyRosterPresent,
+  };
 };
 
 const writePaddedKnowledgePdfFixture = (target: string, title: string, byteSize: number): void => {
@@ -348,15 +361,6 @@ const goToTab = async (window: Page, testId: string, breadcrumbLabel: string) =>
   await expect(window.locator('.header-breadcrumb')).toContainText(`Relay / ${breadcrumbLabel}`);
 };
 
-const selectOperator = async (window: Page, operatorName: string) => {
-  const selector = window.getByTestId('sidebar-operator-selector');
-  await expect(selector).toBeEnabled();
-  if ((await selector.getAttribute('aria-label')) === `Selected operator: ${operatorName}`) return;
-  await selector.click();
-  await window.getByRole('menuitemradio', { name: operatorName, exact: true }).click();
-  await expect(selector).toHaveAccessibleName(`Selected operator: ${operatorName}`);
-};
-
 const openPrivilegedAccess = async (targetWindow: Page) => {
   await goToTab(targetWindow, 'sidebar-settings', 'Settings');
   await targetWindow.getByRole('tab', { name: 'Access', exact: true }).click();
@@ -368,14 +372,6 @@ const openPrivilegedAccess = async (targetWindow: Page) => {
 const expectNewestProblem = async (window: Page, title: string) => {
   const queue = window.getByRole('region', { name: 'Dynatrace problem queue' });
   await expect(queue.locator('.dt-problem-row').first()).toContainText(title);
-};
-
-const getOperatorRoster = async (port: number) => {
-  const pb = await makePbClient(port);
-  return pb.collection('relay_operators').getFullList<RelayOperator>({
-    sort: 'displayName',
-    requestKey: null,
-  });
 };
 
 const getDynatraceAttribution = async (port: number, problemId: string, noteText: string) => {
@@ -571,7 +567,7 @@ test.describe('Vital Critical Path', () => {
     await launchServer();
     if (
       testInfo.title.includes('Knowledge PDF links') ||
-      testInfo.title.includes('remote operator administration')
+      testInfo.title.includes('role accounts preserve')
     ) {
       await seedKnowledgeLinkFixtures(pbPort);
     }
@@ -637,153 +633,18 @@ test.describe('Vital Critical Path', () => {
     await expect(window.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
   });
 
-  test('remote operator administration preserves passwordless operation and offline reading', async () => {
-    test.setTimeout(150_000);
-    try {
-      await activatePrivilegedAdministratorFixture(pbPort);
-    } catch (error) {
-      const logPath = path.join(tempDataDir, 'logs', 'relay.log');
-      const logTail = fs.existsSync(logPath)
-        ? fs
-            .readFileSync(logPath, 'utf8')
-            .split('\n')
-            .filter((line) => /Privileged|Security|administration|command/i.test(line))
-            .slice(-100)
-            .join('\n')
-        : '';
-      throw new Error(`Privileged fixture failed after server startup.\n${logTail}`, {
-        cause: error,
-      });
-    }
+  test('role accounts preserve username sign-in, owner boundaries, passwordless use, and offline reading', async () => {
+    test.setTimeout(180_000);
+    await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
+    await activateRoleAccountFixture(pbPort, 'charles', PRIVILEGED_TEST_PASSWORD);
+
     let connectedClient = await launchConnectedClient();
     let connectionStatus = connectedClient.locator('[data-connection-state]').first();
 
-    await selectOperator(connectedClient, RYAN_BELL);
-    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveAccessibleName(
-      `Selected operator: ${RYAN_BELL}`,
-    );
-    await selectOperator(connectedClient, RYAN_BLEDSOE);
-    const clientAccess = await openPrivilegedAccess(connectedClient);
-    await clientAccess.getByLabel('Privileged password').fill(PRIVILEGED_TEST_PASSWORD);
-    await clientAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect
-      .poll(
-        async () =>
-          (await clientAccess.getByRole('alert').isVisible()) ||
-          (await clientAccess.getByText('Pair this workstation').isVisible()),
-      )
-      .toBe(true);
-    await expect(clientAccess.getByRole('alert')).not.toBeVisible();
-    await expect(clientAccess.getByText('Pair this workstation')).toBeVisible();
-    await expect(connectionStatus).toHaveAttribute('data-connection-state', 'online');
-
-    await selectOperator(window, RYAN_BLEDSOE);
-    const serverAccess = await openPrivilegedAccess(window);
-    await serverAccess.getByLabel('Privileged password').fill(PRIVILEGED_TEST_PASSWORD);
-    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
-    await serverAccess.getByRole('button', { name: 'Create pairing code' }).click();
-    const challenge = serverAccess.getByLabel('Active pairing challenge');
-    await expect(challenge).toBeVisible();
-    const challengeId = (await challenge.locator('dd').nth(1).textContent())?.trim();
-    const pairingCode = (await challenge.locator('dd').nth(2).textContent())?.trim();
-    expect(challengeId).toBeTruthy();
-    expect(pairingCode).toMatch(/^[A-Z2-9]{8}$/);
-
-    await clientAccess.getByLabel('Pairing challenge ID').fill(challengeId!);
-    await clientAccess.getByLabel('One-time pairing code').fill(pairingCode!);
-    await clientAccess.getByLabel('Device label').fill('E2E work laptop');
-    await clientAccess.getByRole('button', { name: 'Pair device' }).click();
-    await expect(clientAccess.getByText('Administrator', { exact: true })).toBeVisible();
-
-    await clientAccess.getByRole('button', { name: 'Lock', exact: true }).click();
-    await expect(clientAccess.getByText('Privileged access is locked')).toBeVisible();
-    await clientAccess.getByLabel('Privileged password').fill(PRIVILEGED_TEST_PASSWORD);
-    await clientAccess.getByRole('button', { name: 'Unlock', exact: true }).click();
-    await expect(clientAccess.getByText('Administrator', { exact: true })).toBeVisible();
-    await expect(connectionStatus).toHaveAttribute('data-connection-state', 'online');
-
-    await connectedClient.getByRole('tab', { name: 'Administration', exact: true }).click();
-    const clientAdministration = connectedClient.getByRole('region', {
-      name: 'Relay administration',
-    });
-    await expect(clientAdministration).toBeVisible();
-    await expect(clientAdministration.getByText('ADMIN', { exact: true }).first()).toBeVisible();
-    await connectedClient.waitForTimeout(1_000);
-    const administrationAlert = clientAdministration.getByRole('alert');
-    if (await administrationAlert.isVisible()) {
-      const logPath = path.join(tempDataDir, 'logs', 'relay.log');
-      const logTail = fs.existsSync(logPath)
-        ? fs
-            .readFileSync(logPath, 'utf8')
-            .split('\n')
-            .filter((line) => /Privileged|Security|administration|command/i.test(line))
-            .slice(-100)
-            .join('\n')
-        : '';
-      throw new Error(
-        `Administration snapshot failed: ${await administrationAlert.textContent()}\n${logTail}`,
-      );
-    }
-    await clientAdministration.getByLabel('New operator').fill('E2E Operator');
-    await clientAdministration.getByRole('button', { name: 'Add operator' }).click();
-    await expect(clientAdministration.getByText('E2E Operator', { exact: true })).toBeVisible();
-
-    const createdRow = clientAdministration.locator('.administration-row', {
-      hasText: 'E2E Operator',
-    });
-    await createdRow.getByRole('button', { name: 'Rename' }).click();
-    await createdRow.getByLabel('Rename E2E Operator').fill('E2E Operator Renamed');
-    await createdRow.getByRole('button', { name: 'Save' }).click();
-    await expect(
-      clientAdministration.getByText('E2E Operator Renamed', { exact: true }),
-    ).toBeVisible();
-    const renamedRow = clientAdministration.locator('.administration-row', {
-      hasText: 'E2E Operator Renamed',
-    });
-    await renamedRow.getByRole('button', { name: 'Deactivate' }).click();
-    await expect(renamedRow.getByText('Inactive operator', { exact: true })).toBeVisible();
-    await renamedRow.getByRole('button', { name: 'Reactivate' }).click();
-    await expect(renamedRow.getByText('Active operator', { exact: true })).toBeVisible();
-
-    await window.getByRole('tab', { name: 'Operators', exact: true }).click();
-    const serverRoster = window.getByRole('region', { name: 'Operator roster' });
-    await expect(serverRoster.getByText('E2E Operator Renamed', { exact: true })).toBeVisible();
-
-    const ordinaryPb = await makePbClient(pbPort);
-    const managedOperator = await ordinaryPb
-      .collection('relay_operators')
-      .getFirstListItem<RelayOperator>('displayName = "E2E Operator Renamed"', {
-        requestKey: null,
-      });
-    await expect(
-      ordinaryPb
-        .collection('relay_operators')
-        .update(managedOperator.id, { displayName: 'Unauthorized rename' }, { requestKey: null }),
-    ).rejects.toBeTruthy();
-
+    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
+    await goToTab(connectedClient, 'sidebar-compose', 'Compose');
+    await expect(connectedClient.getByRole('button', { name: 'START BRIDGE' })).toBeVisible();
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
-    await connectedClient
-      .getByRole('button', { name: /Manage (?:library|knowledge base)/ })
-      .click();
-    await expect(
-      connectedClient.getByRole('heading', { name: 'Manage knowledge base', exact: true }),
-    ).toBeVisible();
-    await expect(connectedClient.getByRole('button', { name: /Documents \d+/ })).toBeVisible();
-    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
-    await clientElectronApp.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setSize(920, 900);
-    });
-    await expect
-      .poll(() =>
-        connectedClient
-          .locator('.knowledge-management__workspace')
-          .evaluate((element) =>
-            globalThis.getComputedStyle(element).getPropertyValue('grid-template-columns'),
-          ),
-      )
-      .toMatch(/^\d+(?:\.\d+)?px$/);
-    await connectedClient.getByRole('button', { name: 'Return to library', exact: true }).click();
     await connectedClient
       .getByRole('treeitem', { name: 'Link navigation test', exact: true })
       .click();
@@ -791,19 +652,81 @@ test.describe('Vital Critical Path', () => {
       connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
     ).toContainText('Page 1 of 2');
 
-    if (!clientElectronApp) throw new Error('Connected Electron app not launched');
-    const lockedView = await clientElectronApp.evaluate(() => {
-      const fixture = (
-        globalThis as typeof globalThis & {
-          __relayE2EPrivileged?: { simulateInactivity(): { state: string } | null };
-        }
-      ).__relayE2EPrivileged;
-      if (!fixture) throw new Error('Privileged E2E fixture is unavailable.');
-      return fixture.simulateInactivity();
+    const serverAccess = await openPrivilegedAccess(window);
+    await serverAccess.getByLabel('Username').fill('ryan');
+    await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
+    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
+    await expect(serverAccess.getByText(RYAN_BLEDSOE, { exact: true })).toBeVisible();
+    await expect(serverAccess.getByText('@ryan', { exact: true })).toBeVisible();
+    await window.getByRole('tab', { name: 'Administration', exact: true }).click();
+    const ownerAdministration = window.getByRole('region', { name: 'Relay administration' });
+    await expect(ownerAdministration).toBeVisible();
+    const ownerRow = ownerAdministration.locator('.administration-row', {
+      hasText: RYAN_BLEDSOE,
     });
-    expect(lockedView?.state).toBe('locked');
-    await openPrivilegedAccess(connectedClient);
-    await expect(connectedClient.getByText('Privileged access is locked')).toBeVisible();
+    await expect(ownerRow).toBeVisible();
+    const administratorRow = ownerAdministration.locator('.administration-row', {
+      hasText: CHARLES_GIBBS,
+    });
+    await expect(ownerRow).toContainText('@ryan');
+    await expect(ownerRow).toContainText('OWNER');
+    await expect(administratorRow).toContainText('@charles');
+    await expect(administratorRow).toContainText('ADMIN');
+    await expect(
+      ownerAdministration.getByRole('button', { name: 'Add Administrator' }),
+    ).toBeVisible();
+
+    await window.getByRole('tab', { name: 'Access', exact: true }).click();
+    await serverAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
+    await serverAccess.getByLabel('Username').fill('charles');
+    await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
+    await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
+    await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
+    await expect(serverAccess.getByText('Charles Gibbs', { exact: true })).toBeVisible();
+    await expect(serverAccess.getByText('@charles', { exact: true })).toBeVisible();
+
+    await window.getByRole('tab', { name: 'Administration', exact: true }).click();
+    const administratorWorkspace = window.getByRole('region', { name: 'Relay administration' });
+    await expect(administratorWorkspace).toBeVisible();
+    await expect(
+      administratorWorkspace.getByRole('button', { name: 'Add Administrator' }),
+    ).toHaveCount(0);
+    await expect(
+      administratorWorkspace.getByRole('button', { name: /Transfer ownership/ }),
+    ).toHaveCount(0);
+
+    await administratorWorkspace.getByRole('button', { name: 'Add Publisher' }).click();
+    await administratorWorkspace.getByLabel('Publisher username').fill('tristan');
+    await administratorWorkspace.getByLabel('Publisher display name').fill(TRISTAN_BOWLES);
+    await administratorWorkspace.getByRole('button', { name: 'Create Publisher' }).click();
+    await expect(administratorWorkspace.getByText(TRISTAN_BOWLES, { exact: true })).toBeVisible();
+    await expect(
+      administratorWorkspace.getByText('Publisher account created.', { exact: false }),
+    ).toBeVisible();
+    const publisherRow = administratorWorkspace.locator('.administration-row', {
+      hasText: TRISTAN_BOWLES,
+    });
+    await expect(publisherRow).toContainText('PUBLISHER');
+
+    const privilegedSnapshot = await readRoleAccountSnapshot(pbPort);
+    expect(privilegedSnapshot).toMatchObject({
+      ownerUsername: 'ryan',
+      ownerDisplayName: RYAN_BLEDSOE,
+      administratorUsername: 'charles',
+      administratorDisplayName: 'Charles Gibbs',
+      ownerCount: 1,
+      publisherCount: 1,
+      legacyRosterPresent: false,
+    });
+
+    await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
+    await connectedClient
+      .getByRole('treeitem', { name: 'Link navigation test', exact: true })
+      .click();
+    await expect(
+      connectedClient.getByRole('region', { name: 'Link navigation test PDF viewer' }),
+    ).toContainText('Page 1 of 2');
 
     await electronApp?.close();
     electronApp = null;
@@ -830,39 +753,41 @@ test.describe('Vital Critical Path', () => {
     ).toContainText('Page 1 of 2');
   });
 
-  test('publisher resumes a Knowledge batch after interruption and publishes for ordinary operators', async () => {
+  test('publisher resumes a Knowledge batch after interruption and publishes for passwordless readers', async () => {
     test.setTimeout(240_000);
-    await activatePrivilegedAdministratorFixture(pbPort);
+    await activateRoleAccountFixture(pbPort, 'ryan', PRIVILEGED_TEST_PASSWORD);
     await activatePrivilegedPublisherFixture(pbPort);
 
     let connectedClient = await launchConnectedClient();
-    await selectOperator(connectedClient, TRISTAN_BOWLES);
     const publisherAccess = await openPrivilegedAccess(connectedClient);
-    await publisherAccess.getByLabel('Privileged password').fill(PUBLISHER_TEST_PASSWORD);
+    const publisherUsername = publisherAccess.getByLabel('Username');
+    const publisherPassword = publisherAccess.getByLabel('Password');
+    await publisherPassword.fill(PUBLISHER_TEST_PASSWORD);
+    await publisherUsername.fill('tristan');
+    await expect(publisherUsername).toHaveValue('tristan');
+    await expect(publisherPassword).toHaveValue(PUBLISHER_TEST_PASSWORD);
     await publisherAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
     await expect(publisherAccess.getByText('Pair this workstation')).toBeVisible();
 
-    await selectOperator(window, RYAN_BLEDSOE);
     const serverAccess = await openPrivilegedAccess(window);
-    await serverAccess.getByLabel('Privileged password').fill(PRIVILEGED_TEST_PASSWORD);
+    await serverAccess.getByLabel('Username').fill('ryan');
+    await serverAccess.getByLabel('Password').fill(PRIVILEGED_TEST_PASSWORD);
     await serverAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(serverAccess.getByText('Administrator', { exact: true })).toBeVisible();
+    await expect(serverAccess.getByText('Owner', { exact: true })).toBeVisible();
     const workstationOwner = serverAccess.getByLabel('Workstation owner');
     await expect(
       workstationOwner.getByRole('option', {
-        name: `${TRISTAN_BOWLES} — Knowledge publisher`,
+        name: `${TRISTAN_BOWLES} — Publisher`,
         exact: true,
       }),
     ).toBeAttached();
     await workstationOwner.selectOption({
-      label: `${TRISTAN_BOWLES} — Knowledge publisher`,
+      label: `${TRISTAN_BOWLES} — Publisher`,
     });
     await serverAccess.getByRole('button', { name: 'Create pairing code' }).click();
     const challenge = serverAccess.getByLabel('Active pairing challenge');
     await expect(challenge).toBeVisible();
-    await expect(challenge.locator('dd').nth(0)).toHaveText(
-      `${TRISTAN_BOWLES} · Knowledge publisher`,
-    );
+    await expect(challenge.locator('dd').nth(0)).toHaveText(`${TRISTAN_BOWLES} · Publisher`);
     const challengeId = (await challenge.locator('dd').nth(1).textContent())?.trim();
     const pairingCode = (await challenge.locator('dd').nth(2).textContent())?.trim();
     expect(challengeId).toBeTruthy();
@@ -872,7 +797,7 @@ test.describe('Vital Critical Path', () => {
     await publisherAccess.getByLabel('One-time pairing code').fill(pairingCode!);
     await publisherAccess.getByLabel('Device label').fill('E2E publisher laptop');
     await publisherAccess.getByRole('button', { name: 'Pair device' }).click();
-    await expect(publisherAccess.getByText('Knowledge publisher', { exact: true })).toBeVisible();
+    await expect(publisherAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
     const sourceDir = path.join(clientDataDir, 'knowledge-upload-fixtures');
     fs.mkdirSync(sourceDir, { recursive: true });
@@ -937,11 +862,15 @@ test.describe('Vital Critical Path', () => {
     expect(preservedChunks.length).toBeLessThan(largeChunkCount);
 
     connectedClient = await launchConnectedClient();
-    await selectOperator(connectedClient, TRISTAN_BOWLES);
     const restartedAccess = await openPrivilegedAccess(connectedClient);
-    await restartedAccess.getByLabel('Privileged password').fill(PUBLISHER_TEST_PASSWORD);
+    const restartedUsername = restartedAccess.getByLabel('Username');
+    const restartedPassword = restartedAccess.getByLabel('Password');
+    await restartedPassword.fill(PUBLISHER_TEST_PASSWORD);
+    await restartedUsername.fill('tristan');
+    await expect(restartedUsername).toHaveValue('tristan');
+    await expect(restartedPassword).toHaveValue(PUBLISHER_TEST_PASSWORD);
     await restartedAccess.getByRole('button', { name: 'Sign in', exact: true }).click();
-    await expect(restartedAccess.getByText('Knowledge publisher', { exact: true })).toBeVisible();
+    await expect(restartedAccess.getByText('Publisher', { exact: true })).toBeVisible();
 
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
     await connectedClient
@@ -997,7 +926,6 @@ test.describe('Vital Critical Path', () => {
 
     const activePublisherAccess = await openPrivilegedAccess(connectedClient);
     await activePublisherAccess.getByRole('button', { name: 'Sign out', exact: true }).click();
-    await selectOperator(connectedClient, RYAN_BELL);
     await goToTab(connectedClient, 'sidebar-knowledge', 'Knowledge Base');
     await connectedClient.getByRole('treeitem', { name: largeTitle, exact: true }).click();
     await expect(
@@ -1147,7 +1075,7 @@ test.describe('Vital Critical Path', () => {
     expect(remainingDemoProblems).toHaveLength(0);
   });
 
-  test('new Dynatrace Problems sync Ryan Bell attribution to a connected client', async () => {
+  test('ordinary Dynatrace actions stay passwordless while historical snapshots remain visible', async () => {
     test.setTimeout(90_000);
     const ticketNumber = `INC${crypto.randomInt(1_000_000, 9_999_999)}`;
     const ticketNote = `Ticket: ${ticketNumber}`;
@@ -1157,15 +1085,22 @@ test.describe('Vital Critical Path', () => {
     await goToTab(window, 'sidebar-compose', 'Compose');
 
     runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
-
-    const operators = await getOperatorRoster(pbPort);
-    expect(operators.map(({ displayName }) => displayName)).toEqual(EXPECTED_OPERATOR_NAMES);
-    expect(operators).toHaveLength(EXPECTED_OPERATOR_NAMES.length);
-    const ryan = operators.find(({ displayName }) => displayName === RYAN_BELL);
-    expect(ryan).toMatchObject({ displayName: RYAN_BELL, active: true });
-    expect(ryan?.id).toMatch(/^[a-z0-9]{15}$/);
+    const historicalPb = await makePbClient(pbPort);
+    const [historicalNotes, historicalStates] = await Promise.all([
+      historicalPb.collection('dynatrace_problem_notes').getFullList<DynatraceProblemNote>({
+        filter: 'problemId = "RELAY-DEMO-1006"',
+        requestKey: null,
+      }),
+      historicalPb.collection('dynatrace_problem_states').getFullList<DynatraceProblemState>({
+        filter: 'problemId = "RELAY-DEMO-1006"',
+        requestKey: null,
+      }),
+    ]);
+    expect(historicalNotes.map(({ author }) => author)).toContain('noc-demo-east-01');
+    expect(historicalStates.map(({ addressedBy }) => addressedBy)).toContain('noc-demo-east-01');
 
     const connectedClient = await launchConnectedClient();
+    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
     await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
@@ -1177,7 +1112,6 @@ test.describe('Vital Critical Path', () => {
     await window.getByRole('button', { name: 'Open Problems' }).click();
     await expect(window.locator('.header-breadcrumb')).toContainText('Relay / Dynatrace Problems');
     await expectNewestProblem(window, CHECKOUT_PROBLEM_TITLE);
-    await selectOperator(window, RYAN_BELL);
 
     const addressedAction = window.getByRole('button', { name: 'Mark addressed locally' });
     await expect(addressedAction).toBeDisabled();
@@ -1194,18 +1128,18 @@ test.describe('Vital Critical Path', () => {
           ticketNote,
         );
         return {
-          noteOperatorId: note?.operatorId,
-          author: note?.author,
-          stateOperatorId: state?.operatorId,
-          addressedBy: state?.addressedBy,
+          noteOperatorId: note?.operatorId ?? '',
+          author: note?.author ?? '',
+          stateOperatorId: state?.operatorId ?? '',
+          addressedBy: state?.addressedBy ?? '',
           addressed: state?.addressed,
         };
       })
       .toEqual({
-        noteOperatorId: ryan!.id,
-        author: RYAN_BELL,
-        stateOperatorId: ryan!.id,
-        addressedBy: RYAN_BELL,
+        noteOperatorId: '',
+        author: '',
+        stateOperatorId: '',
+        addressedBy: '',
         addressed: true,
       });
 
@@ -1220,42 +1154,39 @@ test.describe('Vital Critical Path', () => {
     });
     await expect(clientDetail.getByRole('heading', { name: CHECKOUT_PROBLEM_TITLE })).toBeVisible();
     await expect(clientDetail.locator('.dt-problem-detail__response-copy')).toContainText(
-      RYAN_BELL,
+      'Unattributed',
     );
     const syncedTicket = clientDetail.locator('.dt-problem-note', { hasText: ticketNumber });
     await expect(syncedTicket).toContainText('Service Desk ticket');
     await expect(syncedTicket).toContainText(ticketNumber);
-    await expect(syncedTicket).toContainText(RYAN_BELL);
+    await expect(syncedTicket).toContainText('Unattributed');
+
+    await connectedClient.getByRole('tab', { name: 'History 2' }).click();
+    const historicalDetail = connectedClient.getByRole('region', {
+      name: 'Selected problem details',
+    });
+    await expect(
+      historicalDetail.getByRole('heading', { name: 'Elevated login failure rate' }),
+    ).toBeVisible();
+    await expect(historicalDetail.locator('.dt-problem-detail__response-copy')).toContainText(
+      'noc-demo-east-01',
+    );
+    await expect(
+      historicalDetail.locator('.dt-problem-note', { hasText: 'Identity team rolled back' }),
+    ).toContainText('noc-demo-east-01');
   });
 
-  test('connected client retains Ryan Bell attribution through offline queue sync', async () => {
+  test('connected client queues ordinary unattributed Dynatrace actions offline', async () => {
     test.setTimeout(90_000);
     const noteText = `Offline NOC follow-up ${uniqueSuffix()}`;
 
     runDynatraceSeed(tempDataDir, pbPort, '--dynatrace-only');
-    const operators = await getOperatorRoster(pbPort);
-    expect(operators.map(({ displayName }) => displayName)).toEqual(EXPECTED_OPERATOR_NAMES);
-    expect(operators).toHaveLength(EXPECTED_OPERATOR_NAMES.length);
-    const ryan = operators.find(({ displayName }) => displayName === RYAN_BELL);
-    expect(ryan).toMatchObject({ displayName: RYAN_BELL, active: true });
 
     let connectedClient = await launchConnectedClient();
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
     await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
-    await selectOperator(connectedClient, RYAN_BELL);
-
-    await expect
-      .poll(() =>
-        connectedClient.evaluate(async () => {
-          const [problems, operators] = await Promise.all([
-            globalThis.api?.cacheRead?.('dynatrace_problems'),
-            globalThis.api?.cacheRead?.('relay_operators'),
-          ]);
-          return { problems: problems?.length ?? 0, operators: operators?.length ?? 0 };
-        }),
-      )
-      .toEqual({ problems: 7, operators: EXPECTED_OPERATOR_NAMES.length });
+    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
 
     await electronApp?.close();
     electronApp = null;
@@ -1279,9 +1210,7 @@ test.describe('Vital Critical Path', () => {
     await goToTab(connectedClient, 'sidebar-problems', 'Dynatrace Problems');
     await expect(connectedClient.getByRole('tab', { name: 'Unaddressed 4' })).toBeVisible();
     await expectNewestProblem(connectedClient, CHECKOUT_PROBLEM_TITLE);
-    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveAccessibleName(
-      `Selected operator: ${RYAN_BELL}`,
-    );
+    await expect(connectedClient.getByTestId('sidebar-operator-selector')).toHaveCount(0);
     await expect(
       connectedClient.getByText('You are offline. Changes will sync when Relay reconnects.'),
     ).toBeVisible();
@@ -1317,18 +1246,18 @@ test.describe('Vital Critical Path', () => {
           noteText,
         );
         return {
-          noteOperatorId: note?.operatorId,
-          author: note?.author,
-          stateOperatorId: state?.operatorId,
-          addressedBy: state?.addressedBy,
+          noteOperatorId: note?.operatorId ?? '',
+          author: note?.author ?? '',
+          stateOperatorId: state?.operatorId ?? '',
+          addressedBy: state?.addressedBy ?? '',
           addressed: state?.addressed,
         };
       })
       .toEqual({
-        noteOperatorId: ryan!.id,
-        author: RYAN_BELL,
-        stateOperatorId: ryan!.id,
-        addressedBy: RYAN_BELL,
+        noteOperatorId: '',
+        author: '',
+        stateOperatorId: '',
+        addressedBy: '',
         addressed: true,
       });
     await expect

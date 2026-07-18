@@ -124,6 +124,29 @@ PocketBase binaries are downloaded into architecture-specific resource folders:
 
 Use `npm run download:pocketbase -- --platform=<platform> --arch=<arch>` to fetch a specific target. Packaged builds resolve the binary by `process.platform` and `process.arch`, while local development can still fall back to the legacy `resources/pocketbase/pocketbase` path if an older checkout already has it.
 
+### Role Accounts And Existing-Install Migration
+
+Ordinary Relay workflows do not require an identity selection or protected sign-in. Protected authentication is username-only and main-process-owned. Effective roles are derived from account IDs plus the singleton authority state:
+
+- `ryan` / Ryan Bledsoe is the initial Owner referenced by `ownerAccountId`.
+- `charles` / Charles Gibbs is an Administrator.
+- Zero or one stored Publisher account is effective when its ID equals `publisherAccountId`.
+- Owner-only Administrator lifecycle and ownership commands must remain denied to Administrators; Owner and Administrators may manage the Publisher.
+
+Fresh installs create Ryan and Charles inactive with generated unusable credentials and `mustChangePassword`; a real password is set only on the Relay server PC. Password setup and recovery are server-local. Do not add email login, email reset, remote activation, a default password, or renderer access to the protected auth store. `scripts/seed.mjs` seeds ordinary demo/application data only and must not manufacture role accounts or a legacy operator roster.
+
+`src/main/privileged/RoleAccountMigration.ts` owns the one-time legacy conversion. Migration work must preserve existing protected-account IDs, paired-device `accountId` bindings, and every non-empty historical display-name snapshot. Legacy `role=operator` auth rows are retired because ordinary Relay use is passwordless; migration defers instead if one of those rows still owns a paired device. The exact legacy `relay_login_roster` view is validated and deleted before `relay_operators`, and both retirements happen only after converted accounts and singleton pointers have been re-read and validated. A deferred result is a startup safety stop, not permission to improvise or delete legacy identity data.
+
+Before testing an existing installation:
+
+1. Leave the live `pb_data` path read-only. Determine whether PocketBase is running and whether `data.db-wal` is active.
+2. Prefer a PocketBase backup for a consistent full snapshot. Otherwise use SQLite's online backup operation from a read-only source connection for each SQLite database and copy non-database files into a new explicit temporary directory. Never copy a live `data.db` alone while WAL activity is possible.
+3. Record the pre-migration account IDs, paired-device `accountId` values, Publisher pointer/count, legacy-roster presence, and all non-empty `author`, `addressedBy`, `createdBy`, and `displayNameSnapshot` values.
+4. Run the candidate build only against the temporary copy. Never point a development build or migration harness at the live path.
+5. Verify exactly one Owner (`ryan`, Ryan Bledsoe), Charles as Administrator (`charles`, Charles Gibbs), zero or one Publisher, neither legacy roster collection/view after success, identical paired-device account IDs, and byte-for-byte identical pre-existing non-empty historical snapshots.
+
+Keep the consistent pre-migration backup through deployment verification. If planning defers, leave live data untouched. If conversion fails after writes begin, stop Relay and restore the complete backup before starting the prior build. Do not repair authority pointers by hand, restore only selected tables, or run an old build against a partially converted database.
+
 ### Connection State
 
 `src/renderer/src/services/pocketbase.ts` owns the renderer connection lifecycle.
@@ -261,6 +284,8 @@ RELAY_SEED_SUPERUSER_PASSWORD='<server passphrase>' npm run seed:dynatrace:clear
 The default PocketBase endpoint is `http://localhost:8090`. Set `RELAY_SEED_PB_URL` when the Relay
 server uses another port. `RELAY_SEED_PB_DATA_DIR` can override the PocketBase data directory used
 to create the temporary seed superuser.
+
+The demo seed intentionally writes historical `author` and `addressedBy` snapshots but does not create a current operator identity. New ordinary Problem notes and addressed-state changes are unattributed. Keep the historical strings non-empty in fixtures so migration and rendering regressions remain visible.
 
 ### Test Suites
 

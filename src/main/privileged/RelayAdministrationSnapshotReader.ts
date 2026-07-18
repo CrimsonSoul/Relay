@@ -21,6 +21,7 @@ type SnapshotReaderOptions = {
 };
 
 const silentLogger = { warn: () => undefined };
+const UNKNOWN_ACCOUNT_CREATED_AT = '1970-01-01T00:00:00.000Z';
 
 function canonicalTimestamp(value: string): string {
   const timestamp = Date.parse(value);
@@ -28,7 +29,7 @@ function canonicalTimestamp(value: string): string {
   return new Date(timestamp).toISOString();
 }
 
-function canonicalTimestampOrNull(value: string | undefined): string | null {
+function canonicalTimestampOrNull(value: string | null | undefined): string | null {
   return value ? canonicalTimestamp(value) : null;
 }
 
@@ -36,6 +37,7 @@ function accountView(
   account: RelayPrivilegedAccountRecord,
   state: RelayPrivilegedStateRecord,
 ): RelayRoleAccountAdminView {
+  const updatedAt = canonicalTimestampOrNull(account.updated);
   return {
     accountId: account.id,
     username: account.username,
@@ -48,8 +50,8 @@ function accountView(
     mustChangePassword: account.mustChangePassword,
     credentialVersion: account.credentialVersion,
     revision: account.revision,
-    createdAt: canonicalTimestamp(account.created),
-    updatedAt: canonicalTimestampOrNull(account.updated),
+    createdAt: canonicalTimestampOrNull(account.created) ?? updatedAt ?? UNKNOWN_ACCOUNT_CREATED_AT,
+    updatedAt,
   };
 }
 

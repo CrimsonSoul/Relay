@@ -252,6 +252,55 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(adapters[0]!.realtime.onDisconnect).toBeUndefined();
   });
 
+  it('installs EventSource for main-process PocketBase realtime without replacing a host value', async () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
+    try {
+      Object.defineProperty(globalThis, 'EventSource', {
+        configurable: true,
+        value: undefined,
+        writable: true,
+      });
+      const client = createPrivilegedClient();
+      await client.authenticate(USERNAME, PASSWORD);
+      getOne.mockResolvedValueOnce(accountRecord());
+      getFirstListItem.mockResolvedValueOnce(authorityState());
+
+      const stop = await client.monitorAuthority('account-admin', {
+        onDisconnect: vi.fn(),
+        onSnapshot: vi.fn(),
+      });
+
+      expect(globalThis.EventSource).toEqual(expect.any(Function));
+      const installed = globalThis.EventSource;
+      await stop();
+
+      const hostEventSource = vi.fn();
+      Object.defineProperty(globalThis, 'EventSource', {
+        configurable: true,
+        value: hostEventSource,
+        writable: true,
+      });
+      const secondClient = createPrivilegedClient();
+      await secondClient.authenticate(USERNAME, PASSWORD);
+      getOne.mockResolvedValueOnce(accountRecord());
+      getFirstListItem.mockResolvedValueOnce(authorityState());
+      const stopSecond = await secondClient.monitorAuthority('account-admin', {
+        onDisconnect: vi.fn(),
+        onSnapshot: vi.fn(),
+      });
+
+      expect(installed).not.toBe(hostEventSource);
+      expect(globalThis.EventSource).toBe(hostEventSource);
+      await stopSecond();
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, 'EventSource', originalDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, 'EventSource');
+      }
+    }
+  });
+
   it('awaits an in-flight authority teardown when clear and the scoped disposer overlap', async () => {
     const client = createPrivilegedClient();
     await client.authenticate(USERNAME, PASSWORD);

@@ -1,4 +1,5 @@
 import PocketBase, { BaseAuthStore, ClientResponseError } from 'pocketbase';
+import { EventSource as MainProcessEventSource } from 'eventsource';
 import {
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_STATE_COLLECTION,
@@ -216,6 +217,12 @@ function defaultCreateClient(
   return new PocketBase(serverUrl, authStore) as PrivilegedPocketBaseClientAdapter;
 }
 
+function installMainProcessEventSource(): void {
+  if (typeof globalThis.EventSource === 'undefined') {
+    globalThis.EventSource = MainProcessEventSource as unknown as typeof globalThis.EventSource;
+  }
+}
+
 export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
   private serverUrl: string;
   private allowInsecureHttp: boolean;
@@ -247,6 +254,7 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     accountId: string,
     listener: PrivilegedAuthorityMonitorListener,
   ): Promise<() => Promise<void>> {
+    installMainProcessEventSource();
     await this.stopAuthorityMonitor();
     const authenticatedAccount = this.getAccount();
     if (!authenticatedAccount || authenticatedAccount.id !== accountId) {

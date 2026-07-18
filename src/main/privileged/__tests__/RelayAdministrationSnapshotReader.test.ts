@@ -150,4 +150,54 @@ describe('RelayAdministrationSnapshotReader', () => {
     );
     expect(snapshot.accounts.some(({ accountId }) => accountId.includes('retired'))).toBe(false);
   });
+
+  it('keeps legacy accounts readable when auth autodates were previously absent', async () => {
+    const accounts = [
+      {
+        id: 'account-ryan',
+        username: 'ryan',
+        displayName: 'Ryan Bledsoe',
+        storedRole: 'administrator',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 1,
+        revision: 0,
+      },
+      {
+        id: 'account-charles',
+        username: 'charles',
+        displayName: 'Charles Gibbs',
+        storedRole: 'administrator',
+        active: true,
+        mustChangePassword: false,
+        credentialVersion: 1,
+        revision: 0,
+      },
+    ];
+    const collections = {
+      [RELAY_PRIVILEGED_STATE_COLLECTION]: {
+        getFirstListItem: vi.fn(async () => ({
+          id: 'state-1',
+          key: 'primary',
+          ownerAccountId: 'account-ryan',
+          publisherAccountId: '',
+          assignmentVersion: 1,
+        })),
+      },
+      [RELAY_PRIVILEGED_ACCOUNTS_COLLECTION]: { getFullList: vi.fn(async () => accounts) },
+    };
+    const reader = new RelayAdministrationSnapshotReader({
+      pb: { collection: vi.fn((name: keyof typeof collections) => collections[name]) } as never,
+      deviceManager: { list: vi.fn(async () => []) } as never,
+      administrationService: { getSettingSummaries: vi.fn(() => []) } as never,
+      now: () => Date.parse('2026-07-17T15:00:00.000Z'),
+    });
+
+    await expect(reader.read({ accountId: 'account-ryan' })).resolves.toMatchObject({
+      accounts: [
+        { username: 'ryan', createdAt: '1970-01-01T00:00:00.000Z', updatedAt: null },
+        { username: 'charles', createdAt: '1970-01-01T00:00:00.000Z', updatedAt: null },
+      ],
+    });
+  });
 });

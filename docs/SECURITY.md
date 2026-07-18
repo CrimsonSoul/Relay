@@ -201,46 +201,52 @@ Unknown collections are left in place and logged as unmanaged. Startup must not 
 
 ### Privileged Access Boundary
 
-Relay's sidebar operator selector is attribution, not authentication. It remains passwordless for every operator, including the names assigned as administrator or Knowledge Base publisher. Protected actions require a separate password sign-in through trusted IPC.
+Ordinary Relay use has no account selector and requires no role-account sign-in. Reading shared data, composing bridges, and making ordinary operational updates remain available through the shared app session. New ordinary records are unattributed; a protected role account is required only for administration and Knowledge Base publishing.
+
+Protected identity is username-based. `relay_privileged_accounts.username` is the sign-in identity; display names are presentation-only and email is not an accepted login or recovery identity. PocketBase may retain an internal `@relay.invalid` email value because the collection is an auth collection, but Relay enables password authentication only for normalized usernames.
+
+Relay has three effective roles. The singleton `relay_privileged_state.ownerAccountId` makes exactly one Administrator record the **Owner**. Other active Administrator records have the **Administrator** role. The optional `publisherAccountId` makes zero or one Publisher record the effective **Publisher**. Account IDs—not usernames, display names, legacy operator IDs, or renderer role claims—bind sessions, commands, pairing records, authority pointers, and revocation.
 
 The privileged PocketBase client is created in the main process with an independent in-memory auth store. The privileged token never replaces the ordinary Relay app-user token and is not exposed to preload consumers, renderer state, local storage, logs, exports, cache snapshots, or the offline mutation queue. Password values are bounded, passed only for the awaited authentication request, cleared from the form, and not retained by Relay.
 
-Privileged sessions lock after 15 minutes without privileged activity. Switching the selected operator, disconnecting, reconfiguring, explicitly locking, signing out, or closing Relay clears the privileged auth state. Normal browsing and note-taking do not keep an administrator session alive. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
+Privileged sessions lock after 15 minutes without privileged activity. Disconnecting, reconfiguring, explicitly locking, signing out, or closing Relay clears privileged auth state. Normal browsing and note-taking do not keep a role session alive. Sensitive mutations can require a fresh password reauthentication proof; proofs are account/device-bound, expire after five minutes, and can be consumed once.
 
 Client workstations use a P-256 signing key generated in the main process. The private PKCS#8 material is stored only as Electron `safeStorage` ciphertext with owner-only file permissions where supported. If OS encryption is unavailable or the registry is corrupt, Relay requires pairing again instead of falling back to plaintext. The server stores only the public JWK, fingerprint, device label, hostname snapshot, state, and revision.
 
-Pairing is initiated from the Relay server PC by an authenticated operator with `devices.manage`. The server creates an eight-character human code backed by a high-entropy secret; the challenge expires after 10 minutes, is account-bound and single-use, and locks after repeated failures. A successfully paired client keeps its private key locally. Revoking a device on the authoritative server record causes subsequent signed probes and commands to fail without needing access to that laptop.
+Pairing is initiated from the Relay server PC by an authenticated Owner or Administrator with `devices.manage`. The server creates an eight-character human code backed by a high-entropy secret; the challenge expires after 10 minutes, is account-bound and single-use, and locks after repeated failures. A successfully paired client keeps its private key locally. Revoking a device on the authoritative server record causes subsequent signed probes and commands to fail without needing access to that laptop.
 
 Every remote privileged request is a canonical, typed envelope containing the command name, payload hash, request ID, account, device, role claim, optional expected revision, issuance time, expiry, and signature. The server:
 
 1. validates shape, size, clock skew, and the 90-second maximum lifetime;
-2. loads the current account, operator, role assignment, and device records;
+2. loads the current account, singleton authority state, and device records;
 3. derives effective capabilities from those records instead of trusting the claimed role;
 4. verifies the device fingerprint and ECDSA signature;
 5. claims the unique request ID before running an allowlisted handler; and
 6. stores only a bounded safe result or generic error.
 
-Matching retries are idempotent. Conflicting request-ID reuse, expired requests, stale revisions, disabled accounts/operators, role changes, and revoked or unknown devices are rejected. Privileged commands are online-only; they never use Relay's offline write queue. The server PC may execute the same typed handlers without a device signature only after server-mode, trusted-sender, and active-session checks.
+Matching retries are idempotent. Conflicting request-ID reuse, expired requests, stale revisions, disabled accounts, role changes, and revoked or unknown devices are rejected. Privileged commands are online-only; they never use Relay's offline write queue. The server PC may execute the same typed handlers without a device signature only after server-mode, trusted-sender, and active-session checks.
 
-The server PC is the recovery trust boundary. Bootstrap creates Ryan Bledsoe's administrator account inactive with no usable default credential. The foundation does not permit remote activation or remote recovery; the local first-password and recovery controls are implemented as server-only administrator workflows.
+The server PC is the recovery trust boundary. Fresh bootstrap creates inactive `ryan` / Ryan Bledsoe and `charles` / Charles Gibbs Administrator records, points ownership to Ryan's account ID, and gives neither account a usable default credential. Initial password setup, activation, password reset, and recovery are server-local workflows. Relay has no email reset, remote recovery, or recoverable default password. Password replacement increments credential state and revokes paired sessions for that account.
 
 ### Administration Authorization Matrix
 
-Normal operator selection is never an authentication shortcut. Only an active administrator session may invoke roster, role, device, account-summary, or server-setting commands. A Knowledge Publisher session can invoke Knowledge Base management commands only. Ordinary app-user credentials can read the active roster but collection rules prevent them from creating, updating, or deleting server-owned operator records.
+Only an active Owner or Administrator may load the administration snapshot. Owner-only account commands are enforced again in the main-process handler: an Administrator cannot create, rename, activate/deactivate, or transfer ownership among Administrator accounts. Administrators may manage the Publisher account and assignment. A Publisher session can invoke Knowledge Base management commands only. Ordinary app-user credentials cannot list or mutate protected accounts.
 
-| Protected action                  | Required capability | Additional requirement                                            |
-| --------------------------------- | ------------------- | ----------------------------------------------------------------- |
-| Administration snapshot           | `settings.manage`   | Active administrator session                                      |
-| Operator create/rename/status     | `operators.manage`  | Current operator revision for mutations                           |
-| Publisher assign/remove           | `publisher.assign`  | Current assignment revision and single-use reauthentication proof |
-| Device rename                     | `devices.manage`    | Current device revision                                           |
-| Device revoke                     | `devices.manage`    | Current device revision and single-use reauthentication proof     |
-| Dynatrace URL/profile replacement | `settings.manage`   | Current setting revision                                          |
-| Dynatrace token replacement       | `settings.manage`   | Current setting revision and single-use reauthentication proof    |
+| Protected action                      | Effective role                     | Additional requirement                                         |
+| ------------------------------------- | ---------------------------------- | -------------------------------------------------------------- |
+| Administration snapshot               | Owner or Administrator             | Active account session                                         |
+| Administrator create/rename/status    | Owner                              | Current account/state revision                                 |
+| Ownership transfer                    | Owner                              | Current state revision and single-use reauthentication proof   |
+| Publisher create/rename/status/assign | Owner or Administrator             | Current account/state revision; assignment may require reauth  |
+| Device rename                         | Owner or Administrator             | Current device revision                                        |
+| Device revoke                         | Owner or Administrator             | Current device revision and single-use reauthentication proof  |
+| Dynatrace URL/profile replacement     | Owner or Administrator             | Current setting revision                                       |
+| Dynatrace token replacement           | Owner or Administrator             | Current setting revision and single-use reauthentication proof |
+| Knowledge Base document management    | Owner, Administrator, or Publisher | Active protected session                                       |
 
 The administration snapshot exposes only `Configured` or `Not configured` for secrets. Replacement fields start blank and are cleared on submit, cancellation, failure, session lock, and unmount. No endpoint reveals an existing password or token. Device views expose only a short fingerprint suffix; public keys and signing metadata remain server-side.
 
-Publisher reassignment is exclusive: the singleton privileged-state record authoritatively contains zero or one publisher operator. Reassignment first validates the active non-admin target, reserves the next assignment revision, revokes the previous publisher's devices/sessions, and leaves the new publisher pending local credential setup. The administrator account cannot be assigned as publisher, and active administrator/publisher operators cannot be deactivated until the protected role condition is resolved.
+Publisher assignment is exclusive: the singleton authority record contains zero or one Publisher account ID. Assignment never converts an Owner or Administrator into a Publisher. Reassignment validates the Publisher record, reserves the next assignment revision, revokes the previous Publisher's devices/sessions, and leaves the incoming Publisher pending server-local credential setup.
 
 Revoking a paired device changes the authoritative server record immediately. The next signed probe or command is rejected even if the laptop retains its encrypted local key. Credential changes likewise revoke all paired devices for that account. Files on another workstation are never remotely deleted.
 
@@ -248,9 +254,17 @@ Server configuration remains an exhaustive allowlist. Dynatrace environment URL,
 
 Privileged requests reuse the configured PocketBase endpoint, authentication, and realtime channel; Relay opens no additional inbound port. On a trusted HTTP LAN, signatures provide request authenticity, integrity, authorization, and replay resistance, but they do not encrypt passwords, pairing codes, metadata, or responses. HTTP therefore does not provide confidentiality. Keep this deployment on the managed trusted LAN and use HTTPS if traffic crosses that boundary.
 
+### Operator-Roster Migration, Preflight, And Rollback
+
+The legacy `relay_operators` roster is a migration input, not a runtime identity source. Startup first plans the complete conversion and defers privileged runtime if Ryan, Charles, authority pointers, usernames, roles, or referenced historical names are ambiguous. The conversion keeps existing protected-account IDs, writes normalized account identity and account-ID authority pointers, fills only empty historical name snapshots, and re-reads and validates the converted state. Legacy ordinary `role=operator` auth rows are retired because ordinary use no longer authenticates; a row that still owns a paired device causes migration to defer rather than break that binding. The known `relay_login_roster` view must match its exact legacy query, is removed before `relay_operators`, and both collections remain until post-conversion validation succeeds. Existing non-empty `author`, `addressedBy`, `createdBy`, and `displayNameSnapshot` values are never overwritten. Paired-device `accountId` values are not remapped.
+
+Before upgrading an existing installation, create a consistent copy with the PocketBase backup API or SQLite's online backup operation. Do not copy a live `data.db` alone while WAL activity is possible. Run the new build only against the copy and verify: `ryan` / Ryan Bledsoe is the one Owner; `charles` / Charles Gibbs is an Administrator; Publisher count is zero or one; `relay_login_roster` and `relay_operators` are absent only after success; every paired-device account ID matches the preflight baseline; and every pre-existing non-empty historical name snapshot is byte-for-byte unchanged.
+
+Keep the consistent pre-migration backup until the upgraded installation has passed the same checks. If planning defers, do not touch the live installation. If a commit or post-commit check fails, stop Relay and restore the whole pre-migration PocketBase backup before starting the previous build; do not hand-edit collections or run an older build against a partially converted database. A retry with the new build is safe only after the copied database has been inspected and the migration's converted-state validation succeeds.
+
 ### Knowledge Base Documents
 
-The Knowledge Base is read-only for ordinary operators. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
+The Knowledge Base is read-only during ordinary use. `knowledge_documents` has authenticated list/view rules and no direct client create, update, or delete rules. Its PDF field is protected, limited to one `application/pdf` file, and capped at 50 MiB. Only allowlisted, capability-checked server commands publish or mutate managed documents.
 
 Publisher uploads use account- and device-bound `knowledge_upload_batches`, `knowledge_uploads`, and `knowledge_upload_chunks` records. A batch contains at most 100 files; files are split into fixed 4 MiB chunks and limited to two concurrent transfers. Every chunk is bound to its batch, upload, account, device, index, size, and SHA-256. The server reassembles chunks in order, verifies each checksum and the declared whole-file checksum, validates the PDF signature and size, then performs bounded extraction. Temporary upload records expire after seven days. Cancelling removes chunks and staged bytes; successful publication copies the protected PDF into `knowledge_documents` and clears the staged upload file immediately.
 

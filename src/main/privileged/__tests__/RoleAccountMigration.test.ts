@@ -7,8 +7,10 @@ type FakeRecord = { id: string; [key: string]: unknown };
 class MigrationFixture {
   readonly records = new Map<string, FakeRecord[]>();
   readonly collectionIds = new Map<string, string>();
+  readonly collectionMetadata = new Map<string, Record<string, unknown>>();
   readonly writes: Array<{ collection: string; operation: string; id?: string }> = [];
   failNextUpdateFor: string | null = null;
+  failNextCollectionDeleteFor: string | null = null;
 
   readonly pb: PocketBase;
 
@@ -16,14 +18,25 @@ class MigrationFixture {
     for (const [name, records] of Object.entries(seed)) {
       this.records.set(name, structuredClone(records));
       this.collectionIds.set(name, `${name}-collection`);
+      this.collectionMetadata.set(name, {});
     }
 
     const collections = {
-      getFullList: async () => [...this.collectionIds].map(([name, id]) => ({ id, name })),
+      getFullList: async () =>
+        [...this.collectionIds].map(([name, id]) => ({
+          id,
+          name,
+          ...this.collectionMetadata.get(name),
+        })),
       delete: async (id: string) => {
         const name = [...this.collectionIds].find(([, collectionId]) => collectionId === id)?.[0];
         if (!name) throw new Error(`Unknown collection ${id}`);
+        if (this.failNextCollectionDeleteFor === name) {
+          this.failNextCollectionDeleteFor = null;
+          throw new Error(`Injected ${name} collection deletion failure`);
+        }
         this.collectionIds.delete(name);
+        this.collectionMetadata.delete(name);
         this.records.delete(name);
         this.writes.push({ collection: name, operation: 'delete-collection' });
       },
@@ -57,6 +70,13 @@ class MigrationFixture {
         this.writes.push({ collection: name, operation: 'update', id });
         return structuredClone(records[index]);
       },
+      delete: async (id: string) => {
+        const records = this.records.get(name) ?? [];
+        const index = records.findIndex((record) => record.id === id);
+        if (index < 0) throw new Error(`Unknown ${name} record ${id}`);
+        records.splice(index, 1);
+        this.writes.push({ collection: name, operation: 'delete', id });
+      },
     });
 
     this.pb = { collections, collection } as unknown as PocketBase;
@@ -70,6 +90,11 @@ class MigrationFixture {
 
   hasCollection(name: string): boolean {
     return this.collectionIds.has(name);
+  }
+
+  setCollectionMetadata(name: string, metadata: Record<string, unknown>): void {
+    if (!this.collectionIds.has(name)) throw new Error(`Unknown collection ${name}`);
+    this.collectionMetadata.set(name, structuredClone(metadata));
   }
 
   private createdId(name: string, data: Record<string, unknown>): string {
@@ -164,6 +189,134 @@ describe('RoleAccountMigration', () => {
       identityMigrationVersion: ROLE_ACCOUNT_MIGRATION_VERSION,
     });
     expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('retires legacy ordinary auth accounts without changing protected IDs or history', async () => {
+    const fixture = legacyFixture({
+      relay_privileged_accounts: [
+        ...legacyFixture().records.get('relay_privileged_accounts')!,
+        {
+          id: 'account-ordinary',
+          operatorId: 'ordinary-op',
+          role: 'operator',
+          active: false,
+          mustChangePassword: true,
+          credentialVersion: 0,
+        },
+      ],
+      relay_operators: [
+        ...legacyFixture().records.get('relay_operators')!,
+        { id: 'ordinary-op', displayName: 'Ordinary Reader', active: true },
+      ],
+      alert_reminders: [
+        {
+          id: 'historical-reminder',
+          operatorId: 'ordinary-op',
+          createdBy: 'Preserved Reader Snapshot',
+        },
+      ],
+    });
+    const deviceBindings = structuredClone(fixture.records.get('relay_privileged_devices'));
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+
+    expect(
+      fixture.records
+        .get('relay_privileged_accounts')
+        ?.map(({ id }) => id)
+        .sort(),
+    ).toEqual(['account-charles', 'account-ryan']);
+    expect(fixture.record('relay_privileged_accounts', 'account-ryan')).toMatchObject({
+      username: 'ryan',
+      storedRole: 'administrator',
+    });
+    expect(fixture.record('relay_privileged_accounts', 'account-charles')).toMatchObject({
+      username: 'charles',
+      storedRole: 'administrator',
+    });
+    expect(fixture.records.get('relay_privileged_devices')).toEqual(deviceBindings);
+    expect(fixture.record('alert_reminders', 'historical-reminder').createdBy).toBe(
+      'Preserved Reader Snapshot',
+    );
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('retires the validated legacy login view before deleting its operator roster', async () => {
+    const fixture = legacyFixture({ relay_login_roster: [] });
+    fixture.setCollectionMetadata('relay_login_roster', {
+      type: 'view',
+      viewQuery: 'SELECT id, displayName FROM relay_operators WHERE active = TRUE',
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+
+    expect(fixture.hasCollection('relay_login_roster')).toBe(false);
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+    expect(fixture.writes.filter(({ operation }) => operation === 'delete-collection')).toEqual([
+      { collection: 'relay_login_roster', operation: 'delete-collection' },
+      { collection: 'relay_operators', operation: 'delete-collection' },
+    ]);
+  });
+
+  it('defers without writes when the legacy login view definition is unexpected', async () => {
+    const fixture = legacyFixture({ relay_login_roster: [] });
+    fixture.setCollectionMetadata('relay_login_roster', {
+      type: 'view',
+      viewQuery: 'SELECT id FROM relay_privileged_accounts',
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('login roster view'),
+    });
+    expect(fixture.writes).toEqual([]);
+  });
+
+  it('resumes view and roster retirement after the roster deletion fails', async () => {
+    const fixture = legacyFixture({ relay_login_roster: [] });
+    fixture.setCollectionMetadata('relay_login_roster', {
+      type: 'view',
+      viewQuery: 'SELECT id, displayName FROM relay_operators WHERE active = TRUE',
+    });
+    fixture.failNextCollectionDeleteFor = 'relay_operators';
+
+    await expect(migration(fixture).run()).rejects.toThrow('Injected');
+    expect(fixture.hasCollection('relay_login_roster')).toBe(false);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
+    expect(fixture.hasCollection('relay_operators')).toBe(false);
+  });
+
+  it('defers without writes when a retired ordinary account still owns a paired device', async () => {
+    const fixture = legacyFixture({
+      relay_privileged_accounts: [
+        ...legacyFixture().records.get('relay_privileged_accounts')!,
+        {
+          id: 'account-ordinary',
+          operatorId: 'ordinary-op',
+          role: 'operator',
+          active: false,
+          mustChangePassword: true,
+          credentialVersion: 0,
+        },
+      ],
+      relay_operators: [
+        ...legacyFixture().records.get('relay_operators')!,
+        { id: 'ordinary-op', displayName: 'Ordinary Reader', active: true },
+      ],
+      relay_privileged_devices: [
+        ...legacyFixture().records.get('relay_privileged_devices')!,
+        { id: 'device-ordinary', accountId: 'account-ordinary', deviceId: 'ordinary-device' },
+      ],
+    });
+
+    await expect(migration(fixture).run()).resolves.toMatchObject({
+      status: 'deferred',
+      reason: expect.stringContaining('paired device'),
+    });
+    expect(fixture.writes).toEqual([]);
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
   });
 
   it('preserves an existing publisher with a deterministic unique username', async () => {

@@ -364,6 +364,12 @@ describe('ensureCollections', () => {
       { id: 'accounts-col', name: 'relay_privileged_accounts' },
       { id: 'state-col', name: 'relay_privileged_state' },
       { id: 'operators-col', name: 'relay_operators' },
+      {
+        id: 'login-roster-view',
+        name: 'relay_login_roster',
+        type: 'view',
+        viewQuery: 'SELECT id, displayName FROM relay_operators WHERE active = TRUE',
+      },
     ];
     mockGetFullList.mockResolvedValue(collections);
     mockSuccessfulCollectionCreation();
@@ -376,7 +382,7 @@ describe('ensureCollections', () => {
                 type: 'select',
                 name: 'role',
                 required: true,
-                values: ['admin', 'publisher'],
+                values: ['admin', 'publisher', 'operator'],
                 maxSelect: 1,
               },
               { type: 'bool', name: 'active' },
@@ -472,6 +478,11 @@ describe('ensureCollections', () => {
         ({ name }) => name === 'username',
       ),
     ).toMatchObject({ required: false });
+    expect(
+      (accountSchemaPatches[0]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'role',
+      ),
+    ).toMatchObject({ values: ['admin', 'publisher', 'operator'] });
     expect(accountSchemaPatches[1]).toMatchObject({
       passwordAuth: { enabled: true, identityFields: ['username'] },
       indexes: [
@@ -488,7 +499,12 @@ describe('ensureCollections', () => {
         ({ name }) => name === 'operatorId',
       ),
     ).toMatchObject({ required: false });
-    expect(mockDelete).toHaveBeenCalledWith('operators-col');
+    expect(
+      (accountSchemaPatches[1]?.fields as Array<Record<string, unknown>>).find(
+        ({ name }) => name === 'role',
+      ),
+    ).toMatchObject({ values: ['admin', 'publisher'] });
+    expect(mockDelete.mock.calls).toEqual([['login-roster-view'], ['operators-col']]);
   });
 
   it('does not reapply the compatibility auth identity after the roster is retired', async () => {

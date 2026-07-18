@@ -126,19 +126,21 @@ Responsibilities:
 
 ### Privileged Identity And Commands
 
-Relay keeps ordinary operator attribution and privileged authorization as separate identities. Selecting a name in the sidebar remains passwordless and only controls attribution. It never signs that operator into an administrator or publisher account.
+Ordinary Relay activity is passwordless and accountless. There is no current-operator selector, and new ordinary mutations carry no role-account attribution. Historical records keep their stored display-name snapshots so old activity remains intelligible without a live identity roster.
+
+Protected identity is account-centric. Role accounts authenticate by normalized `username`; `displayName` is presentation-only, and the auth collection's internal email field is not an accepted identity or recovery channel. `relay_privileged_state` contains the singleton `ownerAccountId` and optional singleton `publisherAccountId`. Effective role is derived on demand: the Owner is the Administrator record referenced by `ownerAccountId`, other Administrator records are Administrators, and only the Publisher record referenced by `publisherAccountId` is the effective Publisher.
 
 Privileged authentication uses a dedicated main-process PocketBase client backed by its own in-memory `BaseAuthStore`. Its token does not replace the shared Relay app-user session and is never returned through preload, written to renderer state, placed in local storage, copied into the offline cache, or queued for offline replay. A privileged session locks after 15 minutes without a privileged action; ordinary Relay activity does not extend it.
 
 Remote privileged actions use the existing PocketBase connection and port:
 
 ```text
-operator password
+role-account username + password
   -> trusted IPC -> main-only privileged auth store
   -> paired P-256 key in Electron safeStorage
   -> canonical command + 90-second expiry + unique request ID
   -> existing PocketBase command collection / realtime signal
-  -> server validates current account, operator, assignment, device, and signature
+  -> server validates current account ID, authority pointers, device, and signature
   -> allowlisted handler -> bounded safe result
 ```
 
@@ -146,30 +148,33 @@ The server PC is the local trust and recovery boundary. It does not need a paire
 
 Command request IDs are unique and results are idempotent. A repeated matching request returns its stored safe result, while conflicting reuse is rejected. The server derives capabilities from current records for every command rather than trusting the role claimed by the renderer or client. Privileged commands are online-only and are absent from both the cache allowlists and pending-mutation queue.
 
-The public command catalog is an explicit allowlist rather than a general-purpose data bridge. Administrator commands cover the operator roster, the single Knowledge Publisher assignment, paired devices, sanitized administration snapshots, and three typed Dynatrace settings. The server resolves current account, operator, role, assignment, device, and revision records again for every command. Publisher sessions retain only `privileged.status.read` and `knowledge.manage`.
+The public command catalog is an explicit allowlist rather than a general-purpose data bridge. Owner commands cover Administrator lifecycle and ownership transfer. Owner and Administrator commands cover the single Publisher assignment, paired devices, sanitized administration snapshots, and three typed Dynatrace settings. The server resolves current account, authority pointers, device, and revision records again for every command. Publisher sessions retain only `privileged.status.read` and `knowledge.manage`.
 
 ### Remote Relay Administration
 
-Settings exposes the ordinary operator roster as a synchronized read-only surface. An `Administration` area appears only while Ryan Bledsoe's administrator session is active. The same signed command path works from the Relay server PC and a paired work laptop:
+An `Administration` area appears only during an Owner or Administrator session. The same signed command path works from the Relay server PC and a paired work laptop:
 
-| Area                                           | Administrator                            | Publisher | Ordinary operator |
-| ---------------------------------------------- | ---------------------------------------- | --------- | ----------------- |
-| Read synchronized roster                       | Yes                                      | Yes       | Yes               |
-| Add, rename, activate, or deactivate operators | Yes                                      | No        | No                |
-| Assign the single Knowledge Publisher          | Yes, fresh reauthentication              | No        | No                |
-| Rename or revoke paired devices                | Yes; revoke needs fresh reauthentication | No        | No                |
-| Replace approved Dynatrace settings            | Yes; token needs fresh reauthentication  | No        | No                |
-| Manage Knowledge Base documents                | Yes                                      | Yes       | No                |
+| Area                                       | Owner                                    | Administrator                            | Publisher | Ordinary use |
+| ------------------------------------------ | ---------------------------------------- | ---------------------------------------- | --------- | ------------ |
+| Read account/role administration snapshot  | Yes                                      | Yes                                      | No        | No           |
+| Manage Administrator accounts              | Yes                                      | No                                       | No        | No           |
+| Transfer ownership                         | Yes, fresh reauthentication              | No                                       | No        | No           |
+| Manage/assign the single Publisher account | Yes                                      | Yes                                      | No        | No           |
+| Rename or revoke paired devices            | Yes; revoke needs fresh reauthentication | Yes; revoke needs fresh reauthentication | No        | No           |
+| Replace approved Dynatrace settings        | Yes; token needs fresh reauthentication  | Yes; token needs fresh reauthentication  | No        | No           |
+| Manage Knowledge Base documents            | Yes                                      | Yes                                      | Yes       | No           |
 
-`administration.snapshot.read` returns only bounded public views: operator status and revisions, role assignment IDs, configured/not-configured credential state, device labels and fingerprint suffixes, and redacted setting summaries. Passwords, hashes, tokens, public keys, private-key state, command envelopes, filesystem paths, and raw PocketBase errors are excluded.
+`administration.snapshot.read` returns only bounded public views: account IDs, usernames, display names, effective roles, account revisions, configured/not-configured credential state, device labels and fingerprint suffixes, and redacted setting summaries. Passwords, hashes, tokens, internal email values, public keys, private-key state, command envelopes, filesystem paths, and raw PocketBase errors are excluded.
 
-The initial administrator password and later privileged credential recovery stay on the server PC. Bootstrap leaves the Ryan Bledsoe administrator account unusable until that local first-password step succeeds; Relay ships no default credential. Publisher reassignment creates a pending inactive account, revokes the prior publisher's sessions/devices, and requires local credential setup before the new publisher can sign in.
+Initial password setup and later protected-account recovery stay on the server PC. Fresh bootstrap creates pending `ryan` / Ryan Bledsoe and `charles` / Charles Gibbs Administrator records, points ownership to Ryan's account ID, and ships no usable default credential. There is no email or remote recovery. Publisher assignment is a singleton account-ID pointer; an incoming Publisher remains pending until its password is configured locally, and reassignment revokes the prior Publisher's sessions/devices.
+
+The legacy roster migration is plan-before-commit and fail-closed. It preserves protected account IDs (and therefore paired-device `accountId` bindings), normalizes Ryan and Charles to usernames `ryan` and `charles`, copies a legacy display name only into an empty historical snapshot, and verifies the converted Owner/Administrator/Publisher invariants. Obsolete ordinary auth rows are retired only when no paired device references them. The exact legacy `relay_login_roster` view is validated and deleted before `relay_operators`; an unexpected view or device binding defers migration. Existing non-empty historical snapshots are immutable migration inputs. Operational preflight uses a PocketBase backup or SQLite online backup—not a raw copy of a potentially live WAL database—and rollback restores the complete pre-migration backup before an older build is started.
 
 Remote settings are intentionally limited to the Dynatrace environment URL, platform-token replacement, and alerting-profile filter. Relay connection paths, backup/restore selection, folder pickers, executables, and other filesystem-dependent operations remain local to the server PC.
 
 ### Managed Knowledge Base
 
-PocketBase on the Relay server is the sole Knowledge Base document authority. There is no administrator-managed source folder, watcher, or filesystem reconciliation path. Ordinary operators have read-only access. An administrator or the single designated publisher can choose PDFs on the server PC or a paired work laptop and manage them through capability-checked privileged commands. Source files are limited to 50 MiB and 1,000 pages; batches are limited to 100 files.
+PocketBase on the Relay server is the sole Knowledge Base document authority. There is no administrator-managed source folder, watcher, or filesystem reconciliation path. Ordinary use is read-only. An Owner, Administrator, or the single designated Publisher can choose PDFs on the server PC or a paired work laptop and manage them through capability-checked privileged commands. Source files are limited to 50 MiB and 1,000 pages; batches are limited to 100 files.
 
 The client main process inspects each selected regular PDF without exposing its path or bytes to the renderer. It builds a persistent upload queue, hashes and reads the file in bounded 4 MiB chunks, and revalidates the canonical path, file identity, size, modification time, signature, and checksum before transfer. At most two chunks are in flight. Retryable network failures use bounded exponential backoff; after eight attempts the item pauses for network recovery. The encrypted queue survives restart when Electron `safeStorage` is available. If the source moved or changed, the publisher must reselect the same unchanged PDF.
 
@@ -254,19 +259,18 @@ Relay bootstraps the PocketBase collections it needs at runtime. The core collec
 | `client_presence`                     | Active client heartbeat records                     |
 | `conflict_log`                        | Offline sync conflict records                       |
 | `knowledge_documents`                 | Read-only PDF metadata and protected mirror         |
-| `relay_operators`                     | Passwordless operator attribution profiles          |
-| `relay_privileged_accounts`           | Main-only administrator/publisher authentication    |
-| `relay_privileged_state`              | Current administrator/publisher assignments         |
+| `relay_privileged_accounts`           | Main-only username authentication for role accounts |
+| `relay_privileged_state`              | Singleton Owner and Publisher account-ID pointers   |
 | `relay_privileged_devices`            | Paired workstation public keys and revocation state |
 | `relay_privileged_commands`           | Signed request IDs and bounded safe results         |
 | `relay_privileged_pairing_challenges` | Server-only one-time pairing challenges             |
 | `relay_privileged_pairing_requests`   | Account-scoped client pairing submissions           |
 
-Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local operator convenience and contains external URLs rather than shared operational data.
+Dynatrace dashboard definitions are not stored in PocketBase. They are local app configuration in `dynatrace-dashboards.json` under Relay's app data directory because the dashboard list is a local workstation convenience and contains external URLs rather than shared operational data.
 
 `knowledge_documents` is server-owned: authenticated users can list/view records, but API create/update/delete rules are disabled. It is readable through Relay's metadata cache allowlist and deliberately excluded from writable-cache and offline-mutation allowlists.
 
-Privileged account, device, command, and pairing collections are not part of the ordinary Relay cache. The nonsecret assignment singleton is readable by authenticated Relay clients for role labels, but only the server can mutate it.
+Privileged account, device, command, and pairing collections are not part of the ordinary Relay cache. The nonsecret authority singleton is readable by authenticated Relay clients for role labels, but only the server can mutate it. `relay_operators` is not a managed runtime collection; it may exist only as a legacy migration input and is deleted after successful account conversion.
 
 ## Windowing
 
