@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KnowledgeWorkspace } from '../KnowledgeWorkspace';
 import {
@@ -207,6 +207,18 @@ describe('KnowledgeWorkspace', () => {
     expect(
       screen.queryByRole('navigation', { name: 'Knowledge destinations' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('uses the approved destination navigation order', () => {
+    renderWorkspace();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Wiki' }));
+
+    const navigation = screen.getByRole('navigation', { name: 'Knowledge destinations' });
+    expect(
+      within(navigation)
+        .getAllByRole('button')
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(['←Knowledge home', 'Contacts', 'Servers', 'Wiki']);
   });
 
   it('retains Contacts selection after visiting Wiki', () => {

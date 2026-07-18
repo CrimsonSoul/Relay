@@ -46,6 +46,20 @@ describe('ListFilters', () => {
     expect(screen.getByText('#dev')).toBeInTheDocument();
   });
 
+  it('can keep optional note and tag filters out of a compact directory toolbar', () => {
+    render(
+      <ListFilters
+        {...defaultProps}
+        availableTags={['ops']}
+        showNotesFilter={false}
+        showTagFilters={false}
+      />,
+    );
+
+    expect(screen.queryByText('Has Notes')).not.toBeInTheDocument();
+    expect(screen.queryByText('#ops')).not.toBeInTheDocument();
+  });
+
   it('calls onToggleTag when a tag is clicked', () => {
     const onToggleTag = vi.fn();
     render(<ListFilters {...defaultProps} availableTags={['ops']} onToggleTag={onToggleTag} />);

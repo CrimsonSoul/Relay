@@ -30,7 +30,7 @@ type Props = {
 };
 
 // Define constant for row height to avoid magic numbers and allow easy updates
-const ROW_HEIGHT = 72;
+const ROW_HEIGHT = 67;
 
 const normalizeRelationshipEmail = (value: string | undefined) => {
   const trimmed = value?.trim().toLowerCase();
@@ -318,6 +318,8 @@ export const DirectoryTab: React.FC<Props> = ({
               onToggleTag={filters.toggleTag}
               onToggleExtra={filters.toggleExtra}
               onClearAll={filters.clearAll}
+              showNotesFilter={false}
+              showTagFilters={false}
             />
           )}
 

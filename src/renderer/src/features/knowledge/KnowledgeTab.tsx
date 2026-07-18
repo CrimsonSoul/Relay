@@ -364,33 +364,24 @@ export function KnowledgeTab({ active, relayMode, onLibraryCountChange }: Readon
 
   return (
     <div className="knowledge-tab">
-      <header className="knowledge-tab__header">
-        <div>
-          <span className="knowledge-tab__kicker">Operations reference</span>
-          <h1>Wiki</h1>
-          <p>Find the guide, jump to the procedure, and stay in the flow.</p>
-        </div>
-        <div className="knowledge-tab__header-actions">
-          <div className="knowledge-tab__mode" aria-label="Library permissions">
-            <span className="knowledge-tab__mode-dot" aria-hidden="true" />
-            Read only
-          </div>
-          {canManage && (
-            <TactileButton size="sm" variant="primary" onClick={() => setManagementOpen(true)}>
-              Manage Wiki
-            </TactileButton>
-          )}
-        </div>
-      </header>
-
       <div className="knowledge-workspace">
         <aside className="knowledge-drawer" aria-label="Wiki library">
           <div className="knowledge-drawer__heading">
-            <div>
-              <span>Library</span>
-              <strong>{documents.length}</strong>
+            <div className="knowledge-drawer__title">
+              <span>Operational reference</span>
+              <h1>Wiki</h1>
             </div>
-            <span>{categoryCount} categories</span>
+            {canManage && (
+              <TactileButton
+                className="knowledge-drawer__manage"
+                size="sm"
+                variant="secondary"
+                aria-label="Manage Wiki"
+                onClick={() => setManagementOpen(true)}
+              >
+                Manage
+              </TactileButton>
+            )}
           </div>
           <label className="knowledge-search">
             <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">

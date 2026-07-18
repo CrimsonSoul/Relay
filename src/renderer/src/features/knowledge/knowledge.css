@@ -3,26 +3,8 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  padding: clamp(18px, 2vw, 30px);
   color: var(--color-text-primary);
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent) 3%, transparent), transparent 34%),
-    var(--color-bg-app);
-}
-
-.knowledge-tab__header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: var(--space-6);
-  padding: 0 2px clamp(18px, 1.8vw, 28px);
-}
-
-.knowledge-tab__header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
+  background: var(--color-bg-app);
 }
 
 .knowledge-tab__kicker,
@@ -39,53 +21,13 @@
   text-transform: uppercase;
 }
 
-.knowledge-tab__header h1 {
-  margin: 0;
-  font-size: clamp(26px, 2.2vw, 38px);
-  letter-spacing: var(--tracking-tight);
-  line-height: 1.05;
-}
-
-.knowledge-tab__header p {
-  margin: 7px 0 0;
-  color: var(--color-text-tertiary);
-  font-size: var(--text-sm);
-}
-
-.knowledge-tab__mode {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  color: var(--color-text-secondary);
-  background: var(--color-bg-surface);
-  font-family: var(--font-family-mono);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.knowledge-tab__mode-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 14%, transparent);
-}
-
 .knowledge-workspace {
   display: grid;
-  grid-template-columns: clamp(300px, 27vw, 390px) minmax(0, 1fr);
+  grid-template-columns: 292px minmax(0, 1fr);
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--color-border);
   background: var(--color-bg-surface);
-  box-shadow: var(--shadow-sm);
 }
 
 .knowledge-drawer {
@@ -99,38 +41,41 @@
 
 .knowledge-drawer__heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 20px 13px;
-  color: var(--color-text-tertiary);
+  gap: 10px;
+  padding: 17px 19px 13px;
+}
+
+.knowledge-drawer__title > span {
+  color: var(--accent-bright);
   font-family: var(--font-family-mono);
-  font-size: 11px;
-  letter-spacing: var(--tracking-wide);
+  font-size: 9px;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.11em;
   text-transform: uppercase;
 }
 
-.knowledge-drawer__heading > div {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+.knowledge-drawer__title h1 {
+  margin: 5px 0 0;
+  color: var(--color-text-primary);
+  font-size: 19px;
+  line-height: 1.1;
 }
 
-.knowledge-drawer__heading strong {
-  min-width: 24px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--color-text-primary);
-  background: var(--color-bg-surface-3);
-  text-align: center;
+.knowledge-drawer__manage.tactile-button {
+  height: 30px;
+  padding-inline: 9px;
+  font-size: 10px;
 }
 
 .knowledge-search {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 42px;
-  margin: 0 14px 13px;
-  padding: 0 11px;
+  min-height: 36px;
+  margin: 0 15px 12px;
+  padding: 0 10px;
   border: 1px solid var(--color-border);
   background: var(--color-bg-app);
   transition:
@@ -157,7 +102,7 @@
   padding: 0 10px;
   color: var(--color-text-primary);
   background: transparent;
-  font-size: 13px;
+  font-size: 10px;
 }
 
 .knowledge-search input::placeholder {
@@ -183,7 +128,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 8px 16px;
+  padding: 4px 11px 12px;
 }
 
 .knowledge-category + .knowledge-category {
@@ -205,12 +150,12 @@
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr) auto;
   align-items: center;
-  min-height: 38px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--color-border-subtle);
   color: var(--color-text-secondary);
   font-family: var(--font-family-mono);
-  font-size: 11px;
+  font-size: 9px;
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-wider);
   text-transform: uppercase;
@@ -242,10 +187,10 @@
   grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  min-height: 42px;
+  min-height: 36px;
   padding: 7px 10px;
   color: var(--color-text-secondary);
-  font-size: 13px;
+  font-size: 11px;
 }
 
 .knowledge-document-node__button:hover,
@@ -300,10 +245,10 @@
   grid-template-columns: 7px minmax(0, 1fr) auto;
   align-items: center;
   gap: 7px;
-  min-height: 34px;
+  min-height: 30px;
   padding: 5px 10px 5px 13px;
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  font-size: 10px;
   line-height: 1.3;
 }
 
@@ -327,11 +272,11 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 12px 18px 14px;
+  padding: 11px 15px;
   border-top: 1px solid var(--color-border);
   color: var(--color-text-quaternary);
   font-family: var(--font-family-mono);
-  font-size: 10px;
+  font-size: 9px;
   letter-spacing: 0.02em;
 }
 
@@ -375,8 +320,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  min-height: 68px;
-  padding: 10px 18px 10px 22px;
+  min-height: 47px;
+  padding: 5px 15px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-surface);
 }
@@ -388,7 +333,7 @@
 .knowledge-viewer__identity h2 {
   overflow: hidden;
   margin: 0;
-  font-size: 16px;
+  font-size: 11px;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -397,17 +342,16 @@
 .knowledge-viewer__section {
   display: block;
   overflow: hidden;
-  margin-top: 4px;
+  margin-top: 1px;
   color: var(--color-text-quaternary);
   font-family: var(--font-family-mono);
-  font-size: 9px;
+  font-size: 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .knowledge-viewer__eyebrow {
-  margin-bottom: 3px;
-  font-size: 9px;
+  display: none;
 }
 
 .knowledge-viewer__controls {
@@ -421,7 +365,7 @@
 
 .knowledge-viewer__controls button {
   min-width: 30px;
-  height: 30px;
+  height: 27px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-secondary);
@@ -486,7 +430,7 @@
 
 .knowledge-viewer__controls .knowledge-viewer__mode {
   width: auto;
-  min-width: 112px;
+  min-width: 108px;
   padding: 0 10px;
   color: var(--color-text-tertiary);
   font-size: 10px;
@@ -507,7 +451,7 @@
   align-items: flex-start;
   justify-content: center;
   overflow: auto;
-  padding: clamp(22px, 3vw, 44px);
+  padding: 22px;
   background:
     radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.035), transparent 35%), #0b0b0e;
 }

@@ -8,7 +8,17 @@ describe('KnowledgeHome', () => {
     render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={onOpen} />);
 
     expect(screen.getAllByRole('heading')).toHaveLength(1);
-    expect(screen.getByRole('heading', { name: 'Knowledge' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', {
+        name: 'Find the people, systems, and guidance behind every response.',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Knowledge workspace')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Open a directory below. Each workspace stays focused while sharing one dependable place in Relay.',
+      ),
+    ).toBeInTheDocument();
 
     const buttons = screen.getAllByRole('button');
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -20,6 +30,14 @@ describe('KnowledgeHome', () => {
     buttons.forEach((button) => expect(button).toHaveClass('knowledge-home__destination'));
     buttons[0].focus();
     expect(buttons[0]).toHaveFocus();
+  });
+
+  it('keeps full destination interfaces out of the splash launchers', () => {
+    render(<KnowledgeHome wikiCount={24} contactCount={6} serverCount={3} onOpen={vi.fn()} />);
+
+    expect(screen.queryByText('Checkout recovery')).not.toBeInTheDocument();
+    expect(screen.queryByText('A. Rivera')).not.toBeInTheDocument();
+    expect(screen.queryByText('api-prod-01')).not.toBeInTheDocument();
   });
 
   it.each([

@@ -34,7 +34,7 @@ interface ServerVirtualRowData {
 }
 
 // Matches DirectoryTab's ROW_HEIGHT so People and Servers rows are identical.
-const ROW_HEIGHT = 72;
+const ROW_HEIGHT = 67;
 
 const normalizeServerField = (value: string | undefined) => {
   const trimmed = value?.trim();
@@ -275,6 +275,8 @@ export const ServersTab: React.FC<ServersTabProps> = ({ servers, contacts }) => 
               onToggleTag={filters.toggleTag}
               onToggleExtra={filters.toggleExtra}
               onClearAll={filters.clearAll}
+              showNotesFilter={false}
+              showTagFilters={false}
             />
           )}
 

@@ -204,8 +204,8 @@ vi.mock('react-virtualized-auto-sizer', () => ({
 
 // Mock react-window
 vi.mock('react-window', () => ({
-  List: ({ rowCount }: { rowCount: number }) => (
-    <div data-testid="virtual-list" data-row-count={rowCount} />
+  List: ({ rowCount, rowHeight }: { rowCount: number; rowHeight: number }) => (
+    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight} />
   ),
   useListRef: () => ({ current: null }),
 }));
@@ -303,6 +303,11 @@ describe('DirectoryTab', () => {
   it('shows the virtual list', () => {
     render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
     expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+  });
+
+  it('uses the approved compact record height', () => {
+    render(<DirectoryTab contacts={[]} groups={[]} onAddToAssembler={vi.fn()} />);
+    expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 
   it('shows contact detail panel when a contact is selected', () => {

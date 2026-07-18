@@ -101,8 +101,8 @@ vi.mock('react-virtualized-auto-sizer', () => ({
 
 // Mock react-window
 vi.mock('react-window', () => ({
-  List: ({ rowCount }: { rowCount: number }) => (
-    <div data-testid="virtual-list" data-row-count={rowCount} />
+  List: ({ rowCount, rowHeight }: { rowCount: number; rowHeight: number }) => (
+    <div data-testid="virtual-list" data-row-count={rowCount} data-row-height={rowHeight} />
   ),
   useListRef: () => ({ current: null }),
 }));
@@ -181,6 +181,11 @@ describe('ServersTab', () => {
   it('shows virtual list', () => {
     render(<ServersTab servers={[]} contacts={[]} />);
     expect(screen.getByTestId('virtual-list')).toBeInTheDocument();
+  });
+
+  it('uses the approved compact record height', () => {
+    render(<ServersTab servers={[]} contacts={[]} />);
+    expect(screen.getByTestId('virtual-list')).toHaveAttribute('data-row-height', '67');
   });
 
   it('does not show add server modal by default', () => {

@@ -1,5 +1,4 @@
-import { useCallback, type ComponentType, type MouseEvent } from 'react';
-import { KnowledgeIcon, PeopleIcon, ServersIcon } from '../../components/sidebar/SidebarIcons';
+import { useCallback, type MouseEvent } from 'react';
 import './knowledgeWorkspace.css';
 
 export type KnowledgeHomeDestination = 'wiki' | 'contacts' | 'servers';
@@ -16,8 +15,8 @@ type DestinationDefinition = {
   title: string;
   noun: string;
   description: string;
-  Icon: ComponentType;
-  Preview: ComponentType;
+  openLabel: string;
+  mark: string;
 };
 
 type DestinationPanelProps = Readonly<
@@ -27,141 +26,33 @@ type DestinationPanelProps = Readonly<
   }
 >;
 
-function WikiPreview() {
-  return (
-    <span className="knowledge-preview knowledge-preview--wiki" aria-hidden="true">
-      <span className="knowledge-preview__rail">
-        <span className="knowledge-preview__toolbar">
-          <span>Documents</span>
-          <span className="knowledge-preview__toolbar-mark">+</span>
-        </span>
-        <span className="knowledge-preview__section-label">Operations</span>
-        <span className="knowledge-preview__document-row">Incident response</span>
-        <span className="knowledge-preview__document-row knowledge-preview__document-row--active">
-          Checkout runbook
-        </span>
-        <span className="knowledge-preview__document-row">Service recovery</span>
-      </span>
-      <span className="knowledge-preview__reader">
-        <span className="knowledge-preview__reader-meta">Operations / Runbook</span>
-        <span className="knowledge-preview__reader-title">Checkout recovery</span>
-        <span className="knowledge-preview__rule knowledge-preview__rule--long" />
-        <span className="knowledge-preview__rule" />
-        <span className="knowledge-preview__rule knowledge-preview__rule--short" />
-        <span className="knowledge-preview__reader-heading">Restore service</span>
-        <span className="knowledge-preview__rule knowledge-preview__rule--long" />
-        <span className="knowledge-preview__rule" />
-      </span>
-    </span>
-  );
-}
-
-function ContactsPreview() {
-  return (
-    <span className="knowledge-preview knowledge-preview--contacts" aria-hidden="true">
-      <span className="knowledge-preview__toolbar">
-        <span>Directory</span>
-        <span className="knowledge-preview__toolbar-action">Add contact</span>
-      </span>
-      <span className="knowledge-preview__filter-row">
-        <span>Search contacts</span>
-        <span>All groups</span>
-      </span>
-      <span className="knowledge-preview__contact-row">
-        <span className="knowledge-preview__avatar">AR</span>
-        <span className="knowledge-preview__identity">
-          <strong>A. Rivera</strong>
-          <small>Network Operations</small>
-        </span>
-        <span className="knowledge-preview__row-code">Primary</span>
-      </span>
-      <span className="knowledge-preview__contact-row knowledge-preview__contact-row--selected">
-        <span className="knowledge-preview__avatar">MC</span>
-        <span className="knowledge-preview__identity">
-          <strong>M. Chen</strong>
-          <small>Platform Support</small>
-        </span>
-        <span className="knowledge-preview__row-code">On-call</span>
-      </span>
-      <span className="knowledge-preview__contact-row">
-        <span className="knowledge-preview__avatar">TS</span>
-        <span className="knowledge-preview__identity">
-          <strong>T. Singh</strong>
-          <small>Service Delivery</small>
-        </span>
-        <span className="knowledge-preview__row-code">Support</span>
-      </span>
-    </span>
-  );
-}
-
-function ServersPreview() {
-  return (
-    <span className="knowledge-preview knowledge-preview--servers" aria-hidden="true">
-      <span className="knowledge-preview__server-list">
-        <span className="knowledge-preview__toolbar">
-          <span>Infrastructure</span>
-          <span>3 online</span>
-        </span>
-        <span className="knowledge-preview__server-row knowledge-preview__server-row--selected">
-          <span className="knowledge-preview__status-dot" />
-          <span>
-            <strong>api-prod-01</strong>
-            <small>Production</small>
-          </span>
-        </span>
-        <span className="knowledge-preview__server-row">
-          <span className="knowledge-preview__status-dot" />
-          <span>
-            <strong>db-primary</strong>
-            <small>Data Services</small>
-          </span>
-        </span>
-        <span className="knowledge-preview__server-row">
-          <span className="knowledge-preview__status-dot" />
-          <span>
-            <strong>edge-gateway</strong>
-            <small>Network</small>
-          </span>
-        </span>
-      </span>
-      <span className="knowledge-preview__server-detail">
-        <span className="knowledge-preview__server-glyph">AP</span>
-        <strong>api-prod-01</strong>
-        <span className="knowledge-preview__server-os">Linux</span>
-        <span className="knowledge-preview__field-label">Owner</span>
-        <span className="knowledge-preview__field-value">Platform Operations</span>
-        <span className="knowledge-preview__field-label">Environment</span>
-        <span className="knowledge-preview__field-value">Production</span>
-      </span>
-    </span>
-  );
-}
-
 const DESTINATIONS: readonly DestinationDefinition[] = [
   {
     id: 'wiki',
     title: 'Wiki',
     noun: 'document',
-    description: 'Browse operational guides and runbooks.',
-    Icon: KnowledgeIcon,
-    Preview: WikiPreview,
+    description:
+      'Read operational runbooks, incident guidance, recovery procedures, and reference PDFs.',
+    openLabel: 'Open wiki',
+    mark: 'WK',
   },
   {
     id: 'contacts',
     title: 'Contacts',
     noun: 'contact',
-    description: 'Find people, groups, and support details.',
-    Icon: PeopleIcon,
-    Preview: ContactsPreview,
+    description:
+      'Find contact details, ownership relationships, and the right person to add to a bridge.',
+    openLabel: 'Open directory',
+    mark: 'CT',
   },
   {
     id: 'servers',
     title: 'Servers',
     noun: 'server',
-    description: 'Inspect infrastructure ownership and status.',
-    Icon: ServersIcon,
-    Preview: ServersPreview,
+    description:
+      'Look up platform ownership, support contacts, operating systems, and business context.',
+    openLabel: 'Open inventory',
+    mark: 'SV',
   },
 ];
 
@@ -189,9 +80,9 @@ function DestinationPanel({
   title,
   noun,
   description,
+  openLabel,
   count,
-  Icon,
-  Preview,
+  mark,
   onOpen,
 }: DestinationPanelProps) {
   const countLabel = formatCount(count, noun);
@@ -206,19 +97,15 @@ function DestinationPanel({
     >
       <span className="knowledge-home__destination-header">
         <span className="knowledge-home__destination-icon" aria-hidden="true">
-          <Icon />
+          {mark}
         </span>
         <span className="knowledge-home__destination-title">{title}</span>
-        <span className="knowledge-home__destination-arrow" aria-hidden="true">
-          →
-        </span>
       </span>
-      <span className="knowledge-home__destination-copy">
-        <span>{description}</span>
-        <strong>{countLabel}</strong>
+      <span className="knowledge-home__destination-description">{description}</span>
+      <span className="knowledge-home__destination-meta">
+        <span>{countLabel}</span>
+        <span>{openLabel} →</span>
       </span>
-      <Preview />
-      <span className="knowledge-home__open-label">Open {title}</span>
     </button>
   );
 }
@@ -242,8 +129,14 @@ export function KnowledgeHome({
   return (
     <section className="knowledge-home" aria-labelledby="knowledge-home-title">
       <header className="knowledge-home__header">
-        <h1 id="knowledge-home-title">Knowledge</h1>
-        <p>Select a destination.</p>
+        <span className="knowledge-home__kicker">Knowledge workspace</span>
+        <h1 id="knowledge-home-title">
+          Find the people, systems, and guidance behind every response.
+        </h1>
+        <p>
+          Open a directory below. Each workspace stays focused while sharing one dependable place in
+          Relay.
+        </p>
       </header>
 
       <div className="knowledge-home__destinations">

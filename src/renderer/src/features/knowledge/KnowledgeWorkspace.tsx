@@ -42,9 +42,9 @@ const CONTENT_DESTINATIONS: ReadonlyArray<{
   id: ContentDestination;
   label: string;
 }> = [
-  { id: 'wiki', label: 'Wiki' },
   { id: 'contacts', label: 'Contacts' },
   { id: 'servers', label: 'Servers' },
+  { id: 'wiki', label: 'Wiki' },
 ];
 
 function WorkspacePanel({
@@ -92,7 +92,7 @@ function KnowledgeDestinationNav({
         aria-label="Knowledge home"
       >
         <span aria-hidden="true">←</span>
-        Knowledge
+        Knowledge home
       </button>
       <span className="knowledge-workspace-shell__navigation-divider" aria-hidden="true" />
       {CONTENT_DESTINATIONS.map(({ id, label }) => (

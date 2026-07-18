@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { KnowledgeDocumentRecord } from '@shared/knowledge';
 import { useKnowledgeLibrary } from '../useKnowledgeLibrary';
@@ -228,6 +228,24 @@ describe('KnowledgeTab', () => {
     );
     expect(screen.getByText(/at Restart the lane service/)).toBeInTheDocument();
     await waitFor(() => expect(globalThis.api?.getKnowledgeIndexStatus).toHaveBeenCalled());
+  });
+
+  it('starts the approved Wiki layout directly with its drawer and viewer', () => {
+    useKnowledgeLibraryMock.mockReturnValue({
+      documents: [document('guide', 'Operator guide', 'General')],
+      loading: false,
+      error: null,
+      hasLoadedSnapshot: true,
+      refetch: vi.fn(async () => undefined),
+    });
+
+    render(<KnowledgeTab active relayMode="client" />);
+
+    const drawer = screen.getByRole('complementary', { name: 'Wiki library' });
+    expect(within(drawer).getByRole('heading', { name: 'Wiki' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('Find the guide, jump to the procedure, and stay in the flow.'),
+    ).not.toBeInTheDocument();
   });
 
   it('provides the viewer with pure URL resolution and accepts native destination targets', async () => {
