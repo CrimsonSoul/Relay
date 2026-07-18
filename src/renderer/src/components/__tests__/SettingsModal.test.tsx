@@ -53,10 +53,12 @@ vi.mock('../settings/PrivilegedAccessPanel', () => ({
   PrivilegedAccessPanel: () => React.createElement('h2', null, 'Privileged access'),
 }));
 
+const { mockUsePrivilegedAccess } = vi.hoisted(() => ({
+  mockUsePrivilegedAccess: vi.fn(),
+}));
+
 vi.mock('../../contexts/PrivilegedAccessContext', () => ({
-  usePrivilegedAccess: () => ({
-    session: { state: 'active', role: 'admin' },
-  }),
+  usePrivilegedAccess: mockUsePrivilegedAccess,
 }));
 
 vi.mock('../settings/AdministrationSettings', () => ({
@@ -83,6 +85,9 @@ function createDeferred<T>() {
 describe('SettingsModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'admin' },
+    });
     const mockApi = {
       getConfig: vi.fn().mockResolvedValue({
         mode: 'server',
@@ -143,6 +148,17 @@ describe('SettingsModal', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
 
     expect(screen.getByRole('tabpanel', { name: 'Administration' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
+  });
+
+  it('offers Administration to the authenticated Relay owner', () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      session: { state: 'active', role: 'owner', accountId: 'account-owner' },
+    });
+    render(<SettingsModal {...defaultProps} presentation="page" />);
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Administration' }));
+
     expect(screen.getByRole('heading', { name: 'Relay administration' })).toBeVisible();
   });
 

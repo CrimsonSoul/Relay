@@ -78,31 +78,29 @@ export function AdministrationSettings({
       </label>
 
       <div className="administration-settings__workspace">
-        <div
-          className="administration-settings__rail"
-          aria-label="Administration sections"
-          role="tablist"
-          aria-orientation="vertical"
-        >
+        <nav className="administration-settings__rail" aria-label="Administration sections">
           {SECTIONS.map((section) => (
-            <button
+            <a
               key={section.id}
-              type="button"
-              role="tab"
+              id={`administration-nav-${section.id}`}
+              href={`#administration-panel-${section.id}`}
               aria-label={section.label}
-              aria-selected={activeSection === section.id}
+              aria-current={activeSection === section.id ? 'page' : undefined}
               className={activeSection === section.id ? 'is-active' : ''}
-              onClick={() => setActiveSection(section.id)}
+              onClick={(event) => {
+                event.preventDefault();
+                setActiveSection(section.id);
+              }}
             >
               <span>{section.eyebrow}</span>
               <strong>{section.label}</strong>
-            </button>
+            </a>
           ))}
-        </div>
+        </nav>
         <div
+          id={`administration-panel-${activeSection}`}
           className="administration-settings__content"
-          role="tabpanel"
-          aria-label={SECTIONS.find((section) => section.id === activeSection)?.label}
+          aria-labelledby={`administration-nav-${activeSection}`}
         >
           {!snapshot && (
             <div className="administration-empty">

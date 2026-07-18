@@ -636,7 +636,8 @@ export const SettingsModal: React.FC<Props> = ({
       SETTINGS_SECTIONS.filter(
         (section) =>
           section.id !== 'administration' ||
-          (privilegedSession.state === 'active' && privilegedSession.role === 'admin'),
+          (privilegedSession.state === 'active' &&
+            (privilegedSession.role === 'owner' || privilegedSession.role === 'admin')),
       ),
     [privilegedSession.role, privilegedSession.state],
   );
@@ -644,7 +645,10 @@ export const SettingsModal: React.FC<Props> = ({
   useEffect(() => {
     if (
       activeSection === 'administration' &&
-      !(privilegedSession.state === 'active' && privilegedSession.role === 'admin')
+      !(
+        privilegedSession.state === 'active' &&
+        (privilegedSession.role === 'owner' || privilegedSession.role === 'admin')
+      )
     ) {
       setActiveSection('access');
     }

@@ -2266,7 +2266,7 @@ body.modal-open {
   background: color-mix(in srgb, var(--color-bg-surface) 75%, var(--color-bg-base));
 }
 
-.administration-settings__rail button {
+.administration-settings__rail a {
   display: flex;
   min-height: 64px;
   flex-direction: column;
@@ -2280,10 +2280,11 @@ body.modal-open {
   color: var(--color-text-secondary);
   cursor: pointer;
   font: inherit;
+  text-decoration: none;
   text-align: left;
 }
 
-.administration-settings__rail button > span {
+.administration-settings__rail a > span {
   color: var(--color-text-tertiary);
   font-size: 10px;
   font-weight: 800;
@@ -2291,19 +2292,19 @@ body.modal-open {
   text-transform: uppercase;
 }
 
-.administration-settings__rail button > strong {
+.administration-settings__rail a > strong {
   font-size: var(--text-sm);
 }
 
-.administration-settings__rail button:hover,
-.administration-settings__rail button:focus-visible,
-.administration-settings__rail button.is-active {
+.administration-settings__rail a:hover,
+.administration-settings__rail a:focus-visible,
+.administration-settings__rail a.is-active {
   background: var(--color-bg-card-hover);
   color: var(--color-text-primary);
   outline: none;
 }
 
-.administration-settings__rail button.is-active {
+.administration-settings__rail a.is-active {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RelayAdministrationSnapshot } from '@shared/privilegedAccess';
 
@@ -68,6 +68,8 @@ describe('RoleAccountsPanel', () => {
       },
       reauthenticate,
       busy: null,
+      error: null,
+      clearError: vi.fn(),
     });
   });
 
@@ -167,6 +169,53 @@ describe('RoleAccountsPanel', () => {
     expect(screen.getByLabelText('Password')).toHaveValue('');
   });
 
+  it('keeps reauthentication failures inside the active dialog with actionable text', async () => {
+    mockUsePrivilegedAccess.mockReturnValue({
+      ...mockUsePrivilegedAccess(),
+      error: 'The password was not accepted. Try again.',
+    });
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+    fireEvent.change(screen.getByLabelText('Publisher account'), {
+      target: { value: 'account-old-publisher' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Confirm Publisher change' });
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'The password was not accepted. Try again.',
+    );
+  });
+
+  it('keeps command failures inside the active reauthentication dialog', async () => {
+    execute.mockResolvedValueOnce({ ok: false, error: 'conflict' });
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+    fireEvent.change(screen.getByLabelText('Publisher account'), {
+      target: { value: 'account-old-publisher' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Replace Publisher' }));
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'a-long-private-password' },
+    });
+    fireEvent.submit(
+      screen.getByRole('dialog').querySelector('form') ?? screen.getByRole('dialog'),
+    );
+
+    await waitFor(() =>
+      expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
+        /server state changed.*try again/i,
+      ),
+    );
+  });
+
+  it('identifies both accounts in the ownership transfer warning', () => {
+    render(<RoleAccountsPanel snapshot={snapshot} execute={execute} relayMode="client" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Transfer ownership to Charles Gibbs' }));
+
+    expect(screen.getByRole('dialog')).toHaveTextContent(
+      /ownership will move from Ryan Bledsoe to Charles Gibbs/i,
+    );
+  });
+
   it('keeps credential setup server-local and explains that reset revokes paired sessions', async () => {
     const setupPrivilegedCredential = vi.fn().mockResolvedValue({ ok: true, value: {} });
     globalThis.api = { setupPrivilegedCredential } as never;
@@ -174,6 +223,9 @@ describe('RoleAccountsPanel', () => {
 
     expect(screen.getByText(/resets stay on this Relay server PC/i)).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Set credential for Charles Gibbs' }));
+    const target = screen.getByRole('group', { name: 'Credential target' });
+    expect(within(target).getByText('Charles Gibbs')).toBeVisible();
+    expect(within(target).getByText('@charles')).toBeVisible();
     fireEvent.change(screen.getByLabelText('New password'), {
       target: { value: 'a-new-admin-password' },
     });

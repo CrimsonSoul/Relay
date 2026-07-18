@@ -102,15 +102,15 @@ describe('AdministrationSettings', () => {
   it('replaces the former Operator, Publisher, and Accounts rails with one Accounts & roles surface', () => {
     render(<AdministrationSettings relayMode="client" />);
 
-    expect(screen.getByRole('tab', { name: 'Accounts & roles' })).toHaveAttribute(
-      'aria-selected',
-      'true',
+    expect(screen.getByRole('link', { name: 'Accounts & roles' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
-    expect(screen.queryByRole('tab', { name: 'Operators' })).toBeNull();
-    expect(screen.queryByRole('tab', { name: 'Publisher' })).toBeNull();
-    expect(screen.queryByRole('tab', { name: 'Accounts' })).toBeNull();
-    expect(screen.getByRole('tab', { name: 'Devices' })).toBeVisible();
-    expect(screen.getByRole('tab', { name: 'Relay server' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Operators' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Publisher' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Accounts' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Devices' })).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Relay server' })).toBeVisible();
   });
 
   it.each([
@@ -170,10 +170,20 @@ describe('AdministrationSettings', () => {
 
   it('switches between the three administration surfaces', () => {
     render(<AdministrationSettings relayMode="client" />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Devices' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Devices' }));
     expect(screen.getByRole('heading', { name: 'Paired workstations' })).toBeVisible();
-    fireEvent.click(screen.getByRole('tab', { name: 'Relay server' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Relay server' }));
     expect(screen.getByRole('heading', { name: 'Relay & Dynatrace' })).toBeVisible();
+  });
+
+  it('labels the navigation and current panel with matching accessible identities', () => {
+    const { container } = render(<AdministrationSettings relayMode="client" />);
+
+    expect(screen.getByRole('navigation', { name: 'Administration sections' })).toBeVisible();
+    expect(container.querySelector('#administration-panel-roles')).toHaveAttribute(
+      'aria-labelledby',
+      'administration-nav-roles',
+    );
   });
 
   it('defines a compact selector and stacked rows below half-screen widths', () => {

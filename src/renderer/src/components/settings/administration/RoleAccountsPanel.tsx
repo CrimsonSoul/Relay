@@ -19,6 +19,20 @@ type ReauthenticationAction =
   | { kind: 'ownership'; account: RelayRoleAccountAdminView }
   | { kind: 'publisher'; accountId: string | null };
 
+const COMMAND_ERRORS = {
+  unauthorized: 'Your account is not authorized for this change. Sign in with the required role.',
+  locked: 'Protected access locked before the change completed. Sign in again and retry.',
+  offline: 'Relay is offline. Restore the connection and retry this change.',
+  'pairing-required': 'Pair this workstation before retrying this protected change.',
+  'invalid-request': 'Relay rejected this protected change. Close the dialog, refresh, and retry.',
+  'insufficient-storage': 'Relay needs more free storage before it can apply this change.',
+  expired: 'This confirmation expired. Enter your password and try again.',
+  replayed: 'Relay could not safely repeat this change. Close the dialog, refresh, and retry.',
+  conflict:
+    'The server state changed. Close the dialog, review the refreshed accounts, and try again.',
+  'server-error': 'Relay could not apply this protected change. Try again.',
+} as const;
+
 const ROLE_LABELS: Record<EffectivePrivilegedRole, string> = {
   owner: 'OWNER',
   admin: 'ADMIN',
@@ -33,11 +47,15 @@ function accountRoleLabel(account: RelayRoleAccountAdminView): string {
 function ReauthenticationDialog({
   action,
   busy,
+  error,
+  currentAccountName,
   onConfirm,
   onClose,
 }: Readonly<{
   action: ReauthenticationAction;
   busy: boolean;
+  error: string | null;
+  currentAccountName: string;
   onConfirm: (password: string) => Promise<void>;
   onClose: () => void;
 }>) {
@@ -76,7 +94,7 @@ function ReauthenticationDialog({
         <p>
           {publisherChange
             ? 'Publisher sessions and paired devices may be revoked when this assignment changes.'
-            : `Ownership will move to ${action.account.displayName} and both Owner sessions will lock.`}
+            : `Ownership will move from ${currentAccountName} to ${action.account.displayName}. Sessions for the current and incoming Owner accounts will lock.`}
         </p>
         <label className="administration-field">
           <span>Password</span>
@@ -91,6 +109,11 @@ function ReauthenticationDialog({
             required
           />
         </label>
+        {error && (
+          <div className="administration-feedback administration-feedback--error" role="alert">
+            {error}
+          </div>
+        )}
         <div className="administration-actions">
           <TactileButton type="submit" variant="primary" loading={busy}>
             {publisherChange ? 'Confirm Publisher change' : 'Transfer ownership'}
@@ -105,7 +128,7 @@ function ReauthenticationDialog({
 }
 
 export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Props>) {
-  const { session, reauthenticate, busy } = usePrivilegedAccess();
+  const { session, reauthenticate, busy, error: accessError, clearError } = usePrivilegedAccess();
   const [createRole, setCreateRole] = useState<CreateRole | null>(null);
   const [newUsername, setNewUsername] = useState('');
   const [newDisplayName, setNewDisplayName] = useState('');
@@ -116,12 +139,16 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
   const [credentialPassword, setCredentialPassword] = useState('');
   const [credentialConfirm, setCredentialConfirm] = useState('');
   const [reauthAction, setReauthAction] = useState<ReauthenticationAction | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const publisherPointer = snapshot.publisherAccountId;
   const sessionRole = session.state === 'active' ? session.role : null;
   const isOwner = sessionRole === 'owner';
   const canManagePublisher = isOwner || sessionRole === 'admin';
+  const credentialAccount = snapshot.accounts.find(
+    ({ accountId }) => accountId === credentialAccountId,
+  );
 
   useEffect(() => setPublisherAccountId(publisherPointer ?? ''), [publisherPointer]);
   useEffect(
@@ -213,6 +240,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
 
   const confirmReauthentication = async (password: string) => {
     if (!reauthAction) return;
+    setDialogError(null);
     const proof = await reauthenticate(password);
     if (!proof) return;
     const request =
@@ -243,7 +271,22 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
           : 'Publisher assignment updated. Set the assigned password on the Relay server PC.',
       );
       setReauthAction(null);
+      clearError();
+    } else {
+      setDialogError(COMMAND_ERRORS[result.error]);
     }
+  };
+
+  const openReauthentication = (action: ReauthenticationAction) => {
+    clearError();
+    setDialogError(null);
+    setReauthAction(action);
+  };
+
+  const closeReauthentication = () => {
+    clearError();
+    setDialogError(null);
+    setReauthAction(null);
   };
 
   const closeCredential = () => {
@@ -431,7 +474,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
                       {isOwner && account.effectiveRole === 'admin' && account.active && (
                         <TactileButton
                           size="sm"
-                          onClick={() => setReauthAction({ kind: 'ownership', account })}
+                          onClick={() => openReauthentication({ kind: 'ownership', account })}
                           aria-label={`Transfer ownership to ${account.displayName}`}
                         >
                           Transfer ownership
@@ -470,7 +513,7 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
           variant="primary"
           disabled={publisherAccountId === (publisherPointer ?? '')}
           onClick={() =>
-            setReauthAction({ kind: 'publisher', accountId: publisherAccountId || null })
+            openReauthentication({ kind: 'publisher', accountId: publisherAccountId || null })
           }
         >
           {publisherPointer ? 'Replace Publisher' : 'Assign Publisher'}
@@ -501,6 +544,16 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
               className="administration-field-grid"
               onSubmit={(event) => void saveCredential(event)}
             >
+              {credentialAccount && (
+                <div
+                  className="administration-callout role-accounts__credential-target"
+                  role="group"
+                  aria-label="Credential target"
+                >
+                  <strong>{credentialAccount.displayName}</strong>
+                  <span>@{credentialAccount.username}</span>
+                </div>
+              )}
               <label className="administration-field">
                 <span>New password</span>
                 <input
@@ -557,8 +610,12 @@ export function RoleAccountsPanel({ snapshot, execute, relayMode }: Readonly<Pro
         <ReauthenticationDialog
           action={reauthAction}
           busy={busy === 'reauthenticate'}
+          error={dialogError ?? accessError}
+          currentAccountName={
+            session.state === 'active' ? session.displayName : 'the current Owner'
+          }
           onConfirm={confirmReauthentication}
-          onClose={() => setReauthAction(null)}
+          onClose={closeReauthentication}
         />
       )}
     </section>
