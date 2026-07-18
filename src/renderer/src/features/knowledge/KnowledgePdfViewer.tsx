@@ -38,6 +38,7 @@ type Props = {
 type PendingFocusRequest = {
   key: number | undefined;
   documentId: string;
+  targetRequestKey: string;
   target: KnowledgeViewerTarget;
 };
 
@@ -68,7 +69,19 @@ function viewerTargetsMatch(
   left: KnowledgeViewerTarget | null,
   right: KnowledgeViewerTarget | null,
 ): boolean {
+  if (!left || !right) return left === right;
   return left?.pageIndex === right?.pageIndex && left?.top === right?.top;
+}
+
+function normalizedViewerTarget(
+  target: KnowledgeViewerTarget | null,
+  pageCount: number,
+): KnowledgeViewerTarget | null {
+  if (!target) return null;
+  return {
+    pageIndex: clampKnowledgePdfPageIndex(target.pageIndex, pageCount),
+    top: target.top,
+  };
 }
 
 export function KnowledgePdfViewer({
@@ -82,11 +95,18 @@ export function KnowledgePdfViewer({
   onDestinationChange,
   onPageChange,
 }: Readonly<Props>) {
+  const documentId = knowledgeDocument?.id;
+  const documentChecksum = knowledgeDocument?.checksum;
+  const targetPageIndex = target?.pageIndex;
+  const targetTop = target?.top;
+  const initialNavigationTarget = normalizedViewerTarget(target, knowledgeDocument?.pageCount ?? 0);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [scale, setScale] = useState(1.05);
   const [viewMode, setViewMode] = useState(loadKnowledgePdfViewMode);
-  const [navigationTarget, setNavigationTarget] = useState<KnowledgeViewerTarget | null>(target);
+  const [navigationTarget, setNavigationTarget] = useState<KnowledgeViewerTarget | null>(
+    initialNavigationTarget,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<KnowledgeViewerError | null>(null);
   const [retryKey, setRetryKey] = useState(0);
@@ -95,7 +115,7 @@ export function KnowledgePdfViewer({
   const continuousPdfRef = useRef<KnowledgeContinuousPdfHandle>(null);
   const pageIndexRef = useRef(0);
   const observedPageIndexRef = useRef(0);
-  const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(target);
+  const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(initialNavigationTarget);
   const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
   const pdfIdentityRef = useRef<{
@@ -108,22 +128,32 @@ export function KnowledgePdfViewer({
   const destinationRequestTokenRef = useRef(0);
   const focusRequestRef = useRef({ initialized: false, value: focusRequestKey });
   const pendingFocusRequestRef = useRef<PendingFocusRequest | undefined>(undefined);
-  const documentId = knowledgeDocument?.id;
-  const documentChecksum = knowledgeDocument?.checksum;
-  const targetPageIndex = target?.pageIndex;
-  const targetTop = target?.top;
+  const normalizedTargetPageIndex =
+    targetPageIndex === undefined
+      ? undefined
+      : clampKnowledgePdfPageIndex(
+          targetPageIndex,
+          pdf?.numPages ?? knowledgeDocument?.pageCount ?? 0,
+        );
   const targetRequestKey = `${documentId ?? ''}:${focusRequestKey ?? ''}:${targetPageIndex ?? ''}:${targetTop ?? ''}`;
   const previousTargetRequestKeyRef = useRef(targetRequestKey);
   const previousViewModeRef = useRef(viewMode);
+  const viewModeRef = useRef(viewMode);
   const activeDocumentRef = useRef({ active, documentId, checksum: documentChecksum });
   const focusContextRef = useRef({
     documentId,
     focusRequestKey,
-    targetPageIndex,
+    targetPageIndex: normalizedTargetPageIndex,
     targetTop,
   });
   activeDocumentRef.current = { active, documentId, checksum: documentChecksum };
-  focusContextRef.current = { documentId, focusRequestKey, targetPageIndex, targetTop };
+  focusContextRef.current = {
+    documentId,
+    focusRequestKey,
+    targetPageIndex: normalizedTargetPageIndex,
+    targetTop,
+  };
+  viewModeRef.current = viewMode;
 
   useEffect(() => {
     if (!active || !documentId || !documentChecksum || !globalThis.api?.getKnowledgePdf) {
@@ -209,21 +239,26 @@ export function KnowledgePdfViewer({
   }, [active, documentChecksum, documentId, retryKey]);
 
   useEffect(() => {
-    if (previousTargetRequestKeyRef.current === targetRequestKey) return;
-    previousTargetRequestKeyRef.current = targetRequestKey;
+    const isNewTargetRequest = previousTargetRequestKeyRef.current !== targetRequestKey;
     const nextTarget =
-      targetPageIndex === undefined ? null : { pageIndex: targetPageIndex, top: targetTop ?? null };
+      normalizedTargetPageIndex === undefined
+        ? null
+        : { pageIndex: normalizedTargetPageIndex, top: targetTop ?? null };
+    if (!isNewTargetRequest) {
+      const pendingTarget = navigationTargetRef.current;
+      if (!pendingTarget || viewerTargetsMatch(pendingTarget, nextTarget)) return;
+    }
+    previousTargetRequestKeyRef.current = targetRequestKey;
     navigationTargetRef.current = nextTarget;
     issuedNavigationTargetRef.current = null;
     setNavigationTarget(nextTarget);
-  }, [targetPageIndex, targetRequestKey, targetTop]);
+  }, [normalizedTargetPageIndex, targetRequestKey, targetTop]);
 
   useEffect(() => {
-    if (!pdf || targetPageIndex === undefined) return;
-    const nextPage = clampKnowledgePdfPageIndex(targetPageIndex, pdf.numPages);
-    pageIndexRef.current = nextPage;
-    setPageIndex(nextPage);
-  }, [pdf, targetPageIndex]);
+    if (!pdf || normalizedTargetPageIndex === undefined) return;
+    pageIndexRef.current = normalizedTargetPageIndex;
+    setPageIndex(normalizedTargetPageIndex);
+  }, [normalizedTargetPageIndex, pdf]);
 
   useEffect(() => {
     const previousViewMode = previousViewModeRef.current;
@@ -261,11 +296,12 @@ export function KnowledgePdfViewer({
     if (request.value !== focusRequestKey) {
       request.value = focusRequestKey;
       pendingFocusRequestRef.current =
-        documentId && target
+        documentId && normalizedTargetPageIndex !== undefined
           ? {
               key: focusRequestKey,
               documentId,
-              target: { pageIndex: target.pageIndex, top: target.top },
+              targetRequestKey,
+              target: { pageIndex: normalizedTargetPageIndex, top: targetTop ?? null },
             }
           : undefined;
       return;
@@ -275,13 +311,23 @@ export function KnowledgePdfViewer({
     if (
       pendingRequest &&
       (pendingRequest.documentId !== documentId ||
-        !target ||
-        pendingRequest.target.pageIndex !== target.pageIndex ||
-        pendingRequest.target.top !== target.top)
+        pendingRequest.targetRequestKey !== targetRequestKey ||
+        normalizedTargetPageIndex === undefined)
     ) {
       pendingFocusRequestRef.current = undefined;
+      return;
     }
-  }, [documentId, focusRequestKey, target]);
+    if (
+      pendingRequest &&
+      (pendingRequest.target.pageIndex !== normalizedTargetPageIndex ||
+        pendingRequest.target.top !== (targetTop ?? null))
+    ) {
+      pendingRequest.target = {
+        pageIndex: normalizedTargetPageIndex,
+        top: targetTop ?? null,
+      };
+    }
+  }, [documentId, focusRequestKey, normalizedTargetPageIndex, targetRequestKey, targetTop]);
 
   useEffect(() => {
     const pendingRequest = pendingFocusRequestRef.current;
@@ -292,13 +338,13 @@ export function KnowledgePdfViewer({
       pendingRequest !== undefined &&
       pendingRequest.key === focusRequestKey &&
       pendingRequest.documentId === documentId &&
-      target?.pageIndex === pendingRequest.target.pageIndex &&
-      target.top === pendingRequest.target.top
+      normalizedTargetPageIndex === pendingRequest.target.pageIndex &&
+      (targetTop ?? null) === pendingRequest.target.top
     ) {
       viewportRef.current?.focus();
       pendingFocusRequestRef.current = undefined;
     }
-  }, [documentChecksum, documentId, error, focusRequestKey, target]);
+  }, [documentChecksum, documentId, error, focusRequestKey, normalizedTargetPageIndex, targetTop]);
 
   const activateDestination = useCallback(
     async (destination: KnowledgePdfDestination) => {
@@ -377,6 +423,13 @@ export function KnowledgePdfViewer({
     (status: KnowledgePdfPageStatus) => {
       if (status.state !== 'ready') return;
       readyPageIndicesRef.current.add(status.pageIndex);
+      if (viewModeRef.current === 'single') {
+        observedPageIndexRef.current = status.pageIndex;
+        const pendingTarget = navigationTargetRef.current;
+        if (pendingTarget?.pageIndex === status.pageIndex) {
+          issuedNavigationTargetRef.current = pendingTarget;
+        }
+      }
       focusPendingRequest(status.pageIndex);
       consumeNavigationTarget(status.pageIndex);
     },
@@ -417,6 +470,11 @@ export function KnowledgePdfViewer({
     if (!pdf) return;
     destinationRequestTokenRef.current += 1;
     const boundedPage = clampKnowledgePdfPageIndex(nextPage, pdf.numPages);
+    if (navigationTargetRef.current) {
+      navigationTargetRef.current = null;
+      issuedNavigationTargetRef.current = null;
+      setNavigationTarget(null);
+    }
     if (viewMode === 'continuous') {
       continuousPdfRef.current?.scrollToPage(boundedPage);
       return;

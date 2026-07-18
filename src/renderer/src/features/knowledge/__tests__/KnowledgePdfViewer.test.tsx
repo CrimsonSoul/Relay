@@ -275,6 +275,33 @@ describe('KnowledgePdfViewer', () => {
     expect(destroy).not.toHaveBeenCalled();
   });
 
+  it('consumes a saved Single target before manual navigation and restores the manual page', async () => {
+    const offsetTop = vi
+      .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+      .mockImplementation(function mockPageOffset(this: HTMLElement) {
+        const pageShellIndex = this.dataset.pageIndex;
+        return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+      });
+    const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+    renderComponent({ target: { pageIndex: 1, top: null }, currentSection: 'Saved target' });
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(2)).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalled());
+
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole('button', { name: 'View: Single page' }));
+
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo.mock.calls).toEqual([[{ top: 1972, behavior: 'smooth' }]]));
+    expect(onPageChange).toHaveBeenCalledTimes(1);
+    expect(onPageChange).toHaveBeenCalledWith(2);
+    expect(getKnowledgePdf).toHaveBeenCalledOnce();
+    offsetTop.mockRestore();
+  });
+
   it('uses continuous previous and next controls without feeding observer updates back into scroll', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const { container } = renderComponent();
@@ -326,6 +353,7 @@ describe('KnowledgePdfViewer', () => {
     });
 
     expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenCalledTimes(1);
     expect(onPageChange).toHaveBeenLastCalledWith(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
@@ -374,10 +402,58 @@ describe('KnowledgePdfViewer', () => {
     });
 
     expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenCalledTimes(1);
     expect(onPageChange).toHaveBeenLastCalledWith(2);
     fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
     expect(await screen.findByLabelText('Page 3')).toBeVisible();
   });
+
+  it.each([
+    ['fractional', 1.8, 1, 972],
+    ['out-of-range', 8.7, 2, 1972],
+  ])(
+    'normalizes a %s target before Continuous consumption',
+    async (_label, requestedPageIndex, expectedPageIndex, expectedScrollTop) => {
+      localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+      const offsetTop = vi
+        .spyOn(HTMLElement.prototype, 'offsetTop', 'get')
+        .mockImplementation(function mockPageOffset(this: HTMLElement) {
+          const pageShellIndex = this.dataset.pageIndex;
+          return pageShellIndex === undefined ? 0 : Number(pageShellIndex) * 1000;
+        });
+      const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
+      const { container } = renderComponent({
+        target: { pageIndex: requestedPageIndex, top: null },
+        currentSection: 'Normalized target',
+      });
+      expect(await screen.findByText(`Page ${expectedPageIndex + 1} of 3`)).toBeInTheDocument();
+      await waitFor(() =>
+        expect(scrollTo).toHaveBeenCalledWith({
+          top: expectedScrollTop,
+          behavior: 'smooth',
+        }),
+      );
+      const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+
+      act(() => {
+        IntersectionObserverDouble.instances[0].showPage(pages[expectedPageIndex]);
+      });
+      const nextPageIndex = expectedPageIndex === 2 ? 1 : 2;
+      act(() => {
+        IntersectionObserverDouble.instances[0].emit([
+          { target: pages[expectedPageIndex], intersectionRatio: 0 },
+          { target: pages[nextPageIndex], intersectionRatio: 1 },
+        ]);
+      });
+
+      expect(screen.getByText(`Page ${nextPageIndex + 1} of 3`)).toBeInTheDocument();
+      expect(onPageChange).toHaveBeenCalledTimes(1);
+      expect(onPageChange).toHaveBeenLastCalledWith(nextPageIndex);
+      fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+      expect(await screen.findByLabelText(`Page ${nextPageIndex + 1}`)).toBeVisible();
+      offsetTop.mockRestore();
+    },
+  );
 
   it('keeps outline offsets, shared zoom, and fit width without a second PDF fetch', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
@@ -956,6 +1032,27 @@ describe('KnowledgePdfViewer', () => {
     const viewport = container.querySelector('.knowledge-viewer__viewport');
     await waitFor(() => expect(viewport).toHaveFocus());
     expect(viewport).toHaveAttribute('tabindex', '-1');
+    externalFocus.remove();
+  });
+
+  it('restores focus using the bounded page for an out-of-range target', async () => {
+    const externalFocus = document.createElement('button');
+    document.body.append(externalFocus);
+    externalFocus.focus();
+    const { container, rerender } = renderComponent({ focusRequestKey: 0 });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    expect(externalFocus).toHaveFocus();
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 8.7, top: null }, focusRequestKey: 1 })}
+      />,
+    );
+
+    await waitFor(() => expect(getAnnotations(3)).toHaveBeenCalled());
+    const viewport = container.querySelector('.knowledge-viewer__viewport');
+    await waitFor(() => expect(viewport).toHaveFocus());
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
     externalFocus.remove();
   });
 
