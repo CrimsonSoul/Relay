@@ -100,13 +100,13 @@ describe('AlertCard', () => {
     expect(css).not.toContain('.alerts-email-body--font-large');
   });
 
-  it('keeps the preview card at actual export size with scrolling', () => {
+  it('keeps the export-size preview card scrollable in its responsive pane', () => {
     const css = readFileSync('src/renderer/src/tabs/alerts.css', 'utf8');
     const layoutRule = /\.alerts-layout\s*\{[^}]*\}/m.exec(css)?.[0];
     const scrollRule = /\.alerts-preview-scroll\s*\{[^}]*\}/m.exec(css)?.[0];
     const cardRule = /\.alerts-email-card\s*\{[^}]*\}/m.exec(css)?.[0];
 
-    expect(layoutRule).toContain('minmax(500px, 704px)');
+    expect(layoutRule).toContain('minmax(480px, 704px)');
     expect(scrollRule).toContain('overflow: auto');
     expect(cardRule).toContain('width: 640px');
     expect(cardRule).toContain('min-width: 640px');

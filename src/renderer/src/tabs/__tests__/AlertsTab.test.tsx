@@ -1,6 +1,68 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import React from 'react';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+function cssBlock(css: string, selector: string): string | undefined {
+  const selectorStart = css.indexOf(selector);
+  if (selectorStart === -1) return undefined;
+
+  const openingBrace = css.indexOf('{', selectorStart);
+  let depth = 0;
+  for (let index = openingBrace; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}') depth -= 1;
+    if (depth === 0) return css.slice(openingBrace + 1, index);
+  }
+
+  return undefined;
+}
+
+function mediaBlock(css: string, query: string): string | undefined {
+  const mediaStart = css.indexOf(`@media (${query})`);
+  if (mediaStart === -1) return undefined;
+
+  const openingBrace = css.indexOf('{', mediaStart);
+  let depth = 0;
+  for (let index = openingBrace; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1;
+    if (css[index] === '}') depth -= 1;
+    if (depth === 0) return css.slice(openingBrace + 1, index);
+  }
+
+  return undefined;
+}
+
+function declarations(css: string): Map<string, string> {
+  return new Map(
+    css
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split(';')
+      .map((declaration) => {
+        const separator = declaration.indexOf(':');
+        return separator === -1
+          ? undefined
+          : [declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim()];
+      })
+      .filter((declaration): declaration is [string, string] => declaration !== undefined),
+  );
+}
+
+function px(value: string | undefined): number {
+  const parsed = /^(\d+)px$/.exec(value?.trim() ?? '');
+  if (!parsed) throw new Error(`Expected a pixel value, received ${value ?? 'undefined'}`);
+  return Number(parsed[1]);
+}
+
+function gridMinimums(template: string | undefined): number[] {
+  if (!template) throw new Error('Missing grid-template-columns');
+
+  return template
+    .split('minmax(')
+    .slice(1)
+    .map((column) => px(`${column.trim().split('px', 1)[0]}px`));
+}
 
 // --- Mocks ---
 
@@ -445,6 +507,50 @@ describe('AlertsTab', () => {
     expect(screen.getByRole('region', { name: 'Live email preview' })).toBeInTheDocument();
     expect(screen.getByText('Draft · INFO')).toBeInTheDocument();
     expect(screen.getByText('1 of 2 required ready')).toBeInTheDocument();
+  });
+
+  it('keeps the two-pane Alerts grid within the shell content width above its 1100px stack breakpoint', () => {
+    const alertsCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/tabs/alerts.css'),
+      'utf8',
+    );
+    const responsiveCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/styles/responsive.css'),
+      'utf8',
+    );
+    const themeCss = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/styles/theme.css'),
+      'utf8',
+    );
+
+    const alertsTab = declarations(cssBlock(alertsCss, '.alerts-tab') ?? '');
+    const desktopGrid = declarations(cssBlock(alertsCss, '.alerts-layout') ?? '');
+    const stackGrid = declarations(
+      cssBlock(mediaBlock(alertsCss, 'max-width: 1100px') ?? '', '.alerts-layout') ?? '',
+    );
+    const theme = declarations(cssBlock(themeCss, ':root') ?? '');
+    const compactShell = declarations(
+      cssBlock(mediaBlock(responsiveCss, 'max-width: 1200px') ?? '', ':root') ?? '',
+    );
+
+    const horizontalPadding = px(theme.get('--space-5')) * 2;
+    const gridMinimumsPx = gridMinimums(desktopGrid.get('grid-template-columns'));
+    const gridMinimumTotal = gridMinimumsPx.reduce((total, minimum) => total + minimum, 0);
+    const compactSidebarWidth = px(compactShell.get('--sidebar-width-collapsed'));
+    const expandedSidebarWidth = px(theme.get('--sidebar-width-collapsed'));
+
+    expect(alertsTab.get('padding')).toBe('var(--space-4) var(--space-5) 0');
+    expect(gridMinimumsPx).toHaveLength(2);
+    expect(stackGrid.get('grid-template-columns')).toBe('1fr');
+
+    for (const { viewport, sidebarWidth } of [
+      { viewport: 1101, sidebarWidth: compactSidebarWidth },
+      { viewport: 1200, sidebarWidth: compactSidebarWidth },
+      { viewport: 1201, sidebarWidth: expandedSidebarWidth },
+    ]) {
+      const twoPaneContentWidth = viewport - sidebarWidth - horizontalPadding;
+      expect(gridMinimumTotal).toBeLessThanOrEqual(twoPaneContentWidth);
+    }
   });
 
   it('derives severity and required-step metadata from the existing draft', () => {

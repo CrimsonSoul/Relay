@@ -541,7 +541,7 @@
 
 .alerts-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(500px, 704px);
+  grid-template-columns: minmax(480px, 1fr) minmax(480px, 704px);
   grid-template-rows: minmax(0, 1fr);
   flex: 1;
   min-height: 0;
