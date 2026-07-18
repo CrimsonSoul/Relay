@@ -415,6 +415,7 @@ export function KnowledgeManagementWorkspace({
                           <TactileButton
                             size="sm"
                             variant="danger"
+                            className="knowledge-management__danger-outline"
                             onClick={() =>
                               void management.trash({
                                 documentId: document.id,
@@ -483,7 +484,10 @@ export function KnowledgeManagementWorkspace({
                           )}
                           <TactileButton
                             size="sm"
-                            variant={cancelBatchConfirmation ? 'danger' : 'secondary'}
+                            variant="danger"
+                            className={
+                              cancelBatchConfirmation ? '' : 'knowledge-management__danger-outline'
+                            }
                             onClick={() => {
                               if (!cancelBatchConfirmation) {
                                 setCancelBatchConfirmation(true);
@@ -557,6 +561,8 @@ export function KnowledgeManagementWorkspace({
                             {!['ready', 'published', 'cancelled'].includes(state) && (
                               <TactileButton
                                 size="sm"
+                                variant="danger"
+                                className="knowledge-management__danger-outline"
                                 aria-label={`Cancel ${item.fileName}`}
                                 loading={management.busy === `cancel:${id}`}
                                 onClick={() => void management.cancelUpload(id)}
@@ -745,6 +751,7 @@ export function KnowledgeManagementWorkspace({
                       <TactileButton
                         size="sm"
                         variant="danger"
+                        className="knowledge-management__danger-outline"
                         onClick={() => setDeleteId(document.id)}
                       >
                         Delete permanently

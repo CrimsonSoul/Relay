@@ -1023,6 +1023,24 @@
   flex-wrap: wrap;
 }
 
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline {
+  border-color: var(--alarm);
+  color: var(--alarm-bright);
+  background: transparent;
+}
+
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:hover {
+  border-color: var(--alarm-bright);
+  color: var(--alarm-bright);
+  background: var(--alarm-dim);
+}
+
+.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:disabled:hover {
+  border-color: var(--alarm);
+  color: var(--alarm-bright);
+  background: transparent;
+}
+
 .knowledge-management-row__editor {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) minmax(110px, 0.8fr) auto;

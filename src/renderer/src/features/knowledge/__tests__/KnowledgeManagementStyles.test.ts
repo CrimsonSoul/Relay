@@ -80,6 +80,27 @@ describe('Knowledge Management visual system', () => {
     expect(summary).not.toContain('linear-gradient');
   });
 
+  it('uses outlined danger for entry actions without weakening confirmation danger', () => {
+    const outline = ruleBody(
+      css,
+      '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline',
+    );
+    const outlineHover = ruleBody(
+      css,
+      '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:hover',
+    );
+    const outlineDisabledHover = ruleBody(
+      css,
+      '.knowledge-management .tactile-button--danger.knowledge-management__danger-outline:disabled:hover',
+    );
+
+    expect(outline).toContain('border-color: var(--alarm);');
+    expect(outline).toContain('color: var(--alarm-bright);');
+    expect(outline).toContain('background: transparent;');
+    expect(outlineHover).toContain('background: var(--alarm-dim);');
+    expect(outlineDisabledHover).toContain('background: transparent;');
+  });
+
   it('preserves readable section labels and stacked tools at each breakpoint', () => {
     const rail1100 = ruleBody(mediaBody(1100), '.knowledge-management__rail');
     const railButton1100 = ruleBody(mediaBody(1100), '.knowledge-management__rail button');

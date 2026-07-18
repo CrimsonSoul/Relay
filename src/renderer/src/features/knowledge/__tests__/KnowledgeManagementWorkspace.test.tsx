@@ -89,6 +89,9 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByRole('button', { name: /Uploads 0/ })).toBeInTheDocument();
     expect(screen.getByText('Checkout runbook')).toBeInTheDocument();
     expect(screen.getByText('Runbook.pdf')).toBeInTheDocument();
+    const trashButton = screen.getByRole('button', { name: 'Trash' });
+    expect(trashButton).toHaveClass('tactile-button--danger');
+    expect(trashButton).toHaveClass('knowledge-management__danger-outline');
   });
 
   it('stages PDFs and loads audit history on demand', () => {
@@ -140,9 +143,23 @@ describe('KnowledgeManagementWorkspace', () => {
     expect(screen.getByText('Restored after restart')).toBeInTheDocument();
     expect(screen.getByText('Waiting for network')).toBeInTheDocument();
     expect(screen.getByText('Network unavailable')).toBeInTheDocument();
+    const cancelFile = screen.getByRole('button', { name: 'Cancel Runbook.pdf' });
+    const cancelBatch = screen.getByRole('button', { name: 'Cancel batch' });
+
+    expect(cancelFile).toHaveClass('tactile-button--danger');
+    expect(cancelFile).toHaveClass('knowledge-management__danger-outline');
+    expect(cancelBatch).toHaveClass('tactile-button--danger');
+    expect(cancelBatch).toHaveClass('knowledge-management__danger-outline');
+
+    fireEvent.click(cancelBatch);
+
+    const confirmCancel = screen.getByRole('button', { name: 'Confirm cancel' });
+    expect(confirmCancel).toHaveClass('tactile-button--danger');
+    expect(confirmCancel).not.toHaveClass('knowledge-management__danger-outline');
+
     fireEvent.click(screen.getByRole('button', { name: 'Resume all' }));
     fireEvent.click(screen.getByRole('button', { name: 'Retry Runbook.pdf' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel Runbook.pdf' }));
+    fireEvent.click(cancelFile);
 
     expect(resumeUploadBatch).toHaveBeenCalledWith('batch-1');
     expect(retryUpload).toHaveBeenCalledWith('upload-1');
