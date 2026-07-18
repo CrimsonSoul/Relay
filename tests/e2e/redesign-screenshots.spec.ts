@@ -126,8 +126,7 @@ const COMPACT_TABS = [
     breadcrumb: 'Dynatrace Problems',
     shot: 'dynatrace-problems-compact.png',
   },
-  { id: 'sidebar-people', breadcrumb: 'People', shot: 'people-compact.png' },
-  { id: 'sidebar-servers', breadcrumb: 'Servers', shot: 'servers-compact.png' },
+  { id: 'sidebar-knowledge', breadcrumb: 'Knowledge', shot: 'knowledge-compact.png' },
   { id: 'sidebar-settings', breadcrumb: 'Settings', shot: 'settings-compact.png' },
 ] as const;
 
@@ -474,14 +473,28 @@ test.describe('Redesign screenshot harness', () => {
         await window.screenshot({ path: path.join(SHOTS_DIR, 'toast.png'), fullPage: false });
       }
 
-      // --- People ---
-      await goToTab(window, 'sidebar-people', 'People');
+      // --- Knowledge workspace ---
+      await goToTab(window, 'sidebar-knowledge', 'Knowledge');
+      await expect(window.getByRole('button', { name: /Open Wiki/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Contacts/ })).toBeVisible();
+      await expect(window.getByRole('button', { name: /Open Servers/ })).toBeVisible();
+      await shoot(window, 'knowledge.png');
+
+      // --- Wiki ---
+      await window.getByRole('button', { name: /Open Wiki/ }).click();
+      await expect(window.getByRole('heading', { name: 'Wiki' })).toBeVisible();
+      await shoot(window, 'wiki.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
+
+      // --- Contacts ---
+      await window.getByRole('button', { name: /Open Contacts/ }).click();
       await expect(window.getByRole('button', { name: 'ADD CONTACT' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('Grace Hopper');
-      await shoot(window, 'people.png');
+      await shoot(window, 'contacts.png');
+      await window.getByRole('button', { name: 'Knowledge home' }).click();
 
       // --- Servers ---
-      await goToTab(window, 'sidebar-servers', 'Servers');
+      await window.getByRole('button', { name: /Open Servers/ }).click();
       await expect(window.getByRole('button', { name: 'ADD SERVER' })).toBeVisible();
       await expect(window.locator('.tab-panel--active')).toContainText('prod-db-01');
       await shoot(window, 'servers.png');
