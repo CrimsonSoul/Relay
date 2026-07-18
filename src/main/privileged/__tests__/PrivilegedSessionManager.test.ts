@@ -99,6 +99,15 @@ describe('PrivilegedSessionManager', () => {
     expect(JSON.stringify(view)).not.toContain('operator');
   });
 
+  it('normalizes username casing and whitespace before authentication', async () => {
+    const manager = createManager();
+
+    await manager.login({ username: '  RyAn  ', password: PASSWORD });
+
+    expect(authClient.authenticate).toHaveBeenCalledWith('ryan', PASSWORD);
+    expect(manager.getView()).toMatchObject({ state: 'active', username: 'ryan' });
+  });
+
   it('locks exactly after 15 minutes of privileged inactivity', async () => {
     const manager = createManager();
     await manager.login({ username: USERNAME, password: PASSWORD });

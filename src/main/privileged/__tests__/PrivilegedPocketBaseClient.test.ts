@@ -141,6 +141,14 @@ describe('PrivilegedPocketBaseClient', () => {
     expect(Object.keys(account)).not.toContain('token');
   });
 
+  it('canonicalizes mixed-case usernames before PocketBase authentication', async () => {
+    const client = createPrivilegedClient();
+
+    await client.authenticate('  RyAn  ', PASSWORD);
+
+    expect(authWithPassword).toHaveBeenCalledWith('ryan', PASSWORD, { requestKey: null });
+  });
+
   it('accepts PocketBase auth responses that omit non-authorizing timestamps', async () => {
     authWithPassword.mockImplementationOnce(async () => {
       const authStore = authStores.at(-1) as BaseAuthStore;
