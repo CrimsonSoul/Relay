@@ -295,10 +295,6 @@ vi.mock('../tabs/PersonnelTab', () => ({
   },
 }));
 
-vi.mock('../tabs/NotesTab', () => ({
-  NotesTab: () => <div data-testid="notes-tab" />,
-}));
-
 vi.mock('../features/knowledge/KnowledgeWorkspace', () => ({
   KnowledgeWorkspace: (props: NonNullable<typeof lastKnowledgeWorkspaceProps>) => {
     lastKnowledgeWorkspaceProps = props;

@@ -308,7 +308,6 @@ export const ExportOptionsSchema = z.object({
     'bridge_history',
     'alert_history',
     'notes',
-    'standalone_notes',
     'all',
   ]),
   includeMetadata: z.boolean().optional(),
@@ -322,7 +321,6 @@ export const DataCategorySchema = z.enum([
   'bridge_history',
   'alert_history',
   'notes',
-  'standalone_notes',
   'all',
 ]);
 

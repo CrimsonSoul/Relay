@@ -180,6 +180,27 @@ describe('ensureCollections', () => {
     expect(mockDelete).not.toHaveBeenCalledWith('col2');
   });
 
+  it('leaves an existing standalone_notes collection untouched but unmanaged', async () => {
+    mockGetFullList.mockResolvedValue([
+      { id: 'contacts-col', name: 'contacts' },
+      { id: 'standalone-archive-col', name: 'standalone_notes' },
+    ]);
+    mockSuccessfulCollectionCreation();
+    mockGetOne.mockResolvedValue({ fields: [] });
+    mockUpdate.mockResolvedValue({});
+
+    await ensureCollections(mockPb);
+
+    expect(mockGetOne).not.toHaveBeenCalledWith('standalone-archive-col');
+    expect(mockUpdate).not.toHaveBeenCalledWith('standalone-archive-col', expect.anything());
+    expect(mockDelete).not.toHaveBeenCalledWith('standalone-archive-col');
+    expect(
+      mockCreate.mock.calls.some(
+        ([definition]) => (definition as { name?: string }).name === 'standalone_notes',
+      ),
+    ).toBe(false);
+  });
+
   it('skips system collections starting with underscore', async () => {
     mockGetFullList.mockResolvedValue([
       { id: 'sys1', name: '_superusers' },
@@ -218,7 +239,7 @@ describe('ensureCollections', () => {
 
     await ensureCollections(mockPb);
 
-    expect(mockCreate).toHaveBeenCalledTimes(30);
+    expect(mockCreate).toHaveBeenCalledTimes(29);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'alert_reminders',
@@ -229,6 +250,11 @@ describe('ensureCollections', () => {
         (call: unknown[]) => (call[0] as { name: string }).name === 'client_presence',
       ),
     ).toBe(true);
+    expect(
+      mockCreate.mock.calls.some(
+        (call: unknown[]) => (call[0] as { name: string }).name === 'standalone_notes',
+      ),
+    ).toBe(false);
     expect(
       mockCreate.mock.calls.some(
         (call: unknown[]) => (call[0] as { name: string }).name === 'relay_operators',

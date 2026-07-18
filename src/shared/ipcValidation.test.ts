@@ -12,6 +12,8 @@ import {
   PrivilegedReauthenticationSchema,
   PublicPrivilegedCommandRequestSchema,
   TabNameSchema,
+  DataCategorySchema,
+  ExportOptionsSchema,
 } from './ipcValidation';
 
 describe('TabNameSchema', () => {
@@ -22,6 +24,18 @@ describe('TabNameSchema', () => {
 
   it.each(['People', 'Servers', 'Notes'])('rejects removed top-level tab %s', (tab) => {
     expect(TabNameSchema.safeParse(tab).success).toBe(false);
+  });
+});
+
+describe('standalone notes retirement', () => {
+  it('rejects standalone_notes as a Data Manager category', () => {
+    expect(DataCategorySchema.safeParse('standalone_notes').success).toBe(false);
+  });
+
+  it('rejects standalone_notes export requests', () => {
+    expect(
+      ExportOptionsSchema.safeParse({ format: 'json', category: 'standalone_notes' }).success,
+    ).toBe(false);
   });
 });
 

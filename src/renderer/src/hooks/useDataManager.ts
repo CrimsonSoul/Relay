@@ -24,7 +24,6 @@ const CATEGORY_TO_COLLECTION: Record<Exclude<DataCategory, 'all'>, CollectionNam
   bridge_history: 'bridge_history',
   alert_history: 'alert_history',
   notes: 'notes',
-  standalone_notes: 'standalone_notes',
 };
 
 /** Trigger a browser file download from in-memory data. */

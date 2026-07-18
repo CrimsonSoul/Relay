@@ -290,18 +290,6 @@ export function downdetectorUrl(slug: string): string {
   return `https://downdetector.com/status/${slug}/`;
 }
 
-export type NoteColor = 'amber' | 'blue' | 'green' | 'red' | 'purple' | 'slate';
-
-export type StandaloneNote = {
-  id: string;
-  title: string;
-  content: string;
-  color: NoteColor;
-  tags: string[];
-  createdAt: number;
-  updatedAt: number;
-};
-
 export type AppData = {
   groups: BridgeGroup[];
   contacts: Contact[];
@@ -361,7 +349,6 @@ export type OfflineWritableCollection =
   | 'alert_history'
   | 'alert_reminders'
   | 'notes'
-  | 'standalone_notes'
   | 'oncall_dismissals'
   | 'oncall_board_settings'
   | 'dynatrace_problem_states'
@@ -806,7 +793,6 @@ export type DataCategory =
   | 'bridge_history'
   | 'alert_history'
   | 'notes'
-  | 'standalone_notes'
   | 'all';
 
 export type ExportOptions = {

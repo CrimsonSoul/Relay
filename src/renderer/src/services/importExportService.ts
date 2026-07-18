@@ -15,7 +15,6 @@ export const ALL_COLLECTIONS = [
   'bridge_history',
   'alert_history',
   'notes',
-  'standalone_notes',
 ] as const;
 
 export type CollectionName = (typeof ALL_COLLECTIONS)[number];
