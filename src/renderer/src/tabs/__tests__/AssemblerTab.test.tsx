@@ -1,4 +1,5 @@
 import React from 'react';
+import { readFileSync } from 'node:fs';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AssemblerTab } from '../AssemblerTab';
@@ -328,6 +329,38 @@ describe('AssemblerTab', () => {
     expect(screen.getByRole('region', { name: 'Contact groups' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Recipients' })).toBeInTheDocument();
     expect(screen.getByText('Ready · 0 selected')).toBeInTheDocument();
+  });
+
+  it('uses one primary bridge action and outlined operational utility actions', () => {
+    render(<AssemblerTab {...defaultProps} />);
+
+    expect(screen.getByRole('button', { name: 'History' })).toHaveClass(
+      'assembler-utility-action',
+      'tactile-button--secondary',
+    );
+    expect(screen.getByRole('button', { name: 'Start Bridge' })).toHaveClass(
+      'tactile-button--primary',
+    );
+    expect(screen.getByRole('button', { name: 'Schedule' })).toHaveClass(
+      'tactile-button--secondary',
+    );
+  });
+
+  it('matches the operational toolbar spacing and control geometry', () => {
+    const css = readFileSync('src/renderer/src/tabs/assembler/assembler.css', 'utf8');
+    const commandBarRule =
+      /\.assembler-command-bar \.collapsible-header\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const utilityRule =
+      /\.assembler-utility-action\.tactile-button\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const workflowRule = /\.assembler-command-group--workflow\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+    const bridgeRule = /\.assembler-bridge-actions\s*\{[^}]*\}/m.exec(css)?.[0] ?? '';
+
+    expect(commandBarRule).toContain('padding: 0;');
+    expect(commandBarRule).toContain('border-bottom: 0;');
+    expect(utilityRule).toContain('height: 36px;');
+    expect(utilityRule).toContain('padding: 0 var(--space-3);');
+    expect(workflowRule).toContain('gap: var(--space-4);');
+    expect(bridgeRule).toContain('gap: var(--space-2);');
   });
 
   it('renders one Sort By label in the Compose actions toolbar', () => {

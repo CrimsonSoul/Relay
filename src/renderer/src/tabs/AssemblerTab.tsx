@@ -196,7 +196,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
           <div className="assembler-command-group assembler-command-group--utility">
             {manualRemoves.length > 0 && (
               <TactileButton
-                variant="ghost"
+                variant="secondary"
+                className="assembler-utility-action"
                 onClick={onUndoRemove}
                 tooltip="Undo last removed recipient"
                 icon={
@@ -219,7 +220,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               </TactileButton>
             )}
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="assembler-utility-action"
               onClick={onResetManual}
               disabled={!canReset}
               tooltip="Reset manual recipient changes"
@@ -243,7 +245,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               Reset
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="assembler-utility-action"
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
@@ -269,7 +272,8 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               History
             </TactileButton>
             <TactileButton
-              variant="ghost"
+              variant="secondary"
+              className="assembler-utility-action"
               onClick={handleCopyWithHistory}
               disabled={!hasRecipients}
               tooltip="Copy all recipients"
@@ -343,7 +347,7 @@ export const AssemblerTab: React.FC<AssemblerTabProps> = (props) => {
               </TactileButton>
               <TactileButton
                 onClick={scheduleBridgeModal.open}
-                variant="primary"
+                variant="secondary"
                 className="btn-collapsible"
                 disabled={!hasRecipients}
                 tooltip="Schedule a bridge calendar invite"
