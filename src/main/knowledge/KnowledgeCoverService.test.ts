@@ -19,6 +19,70 @@ afterEach(async () => {
 });
 
 describe('KnowledgeCoverService', () => {
+  it('cancels a cover download as soon as a response exceeds the hard byte limit', async () => {
+    const checksum = CHECKSUMS[0]!;
+    let pulls = 0;
+    let cancelled = false;
+    const first = new Uint8Array(2 * 1024 * 1024);
+    first.set(PNG);
+    const response = new Response(
+      new ReadableStream({
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) controller.enqueue(first);
+          else if (pulls === 2) controller.enqueue(new Uint8Array([1]));
+          else if (pulls <= 10) {
+            controller.enqueue(new Uint8Array([2]));
+          } else {
+            controller.close();
+          }
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+      { status: 200 },
+    );
+    const record = {
+      id: 'document1',
+      sourceKey: 'operations/document.pdf',
+      category: 'Operations',
+      title: 'Document',
+      fileName: 'document.pdf',
+      pdf: 'document.pdf',
+      cover: 'document.png',
+      checksum,
+      byteSize: 1,
+      pageCount: 1,
+      outline: [],
+      outlineSource: 'none',
+      sourceModifiedAt: '2026-07-18T12:00:00.000Z',
+      indexedAt: '2026-07-18T12:00:00.000Z',
+      created: '2026-07-18T12:00:00.000Z',
+      updated: '2026-07-18T12:00:00.000Z',
+    };
+    const pb = {
+      collection: () => ({ getOne: vi.fn(async () => record) }),
+      files: {
+        getToken: vi.fn(async () => 'token'),
+        getURL: vi.fn(() => 'https://relay.local/api/files/cover'),
+      },
+    };
+    const service = new KnowledgeCoverService({
+      configDataDir: await dataRoot(),
+      getConfig: () => ({ mode: 'server', secret: 'secret' }) as never,
+      getPbClient: () => pb as never,
+      getPdfService: () => ({ getPdf: vi.fn(async () => ({ ok: false })) }) as never,
+      fetch: vi.fn(async () => response),
+    });
+
+    await expect(service.getCover({ documentId: 'document1', checksum })).resolves.toMatchObject({
+      ok: false,
+    });
+    expect(cancelled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(3);
+  });
+
   it('generates a missing cover once and then serves the checksum-addressed cache', async () => {
     const renderCover = vi.fn(async () => PNG);
     const getPdf = vi.fn(async () => ({

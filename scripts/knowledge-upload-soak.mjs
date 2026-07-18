@@ -12,6 +12,7 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const DEFAULT_FILE_BYTES = 16 * 1024;
 const CHUNK_BYTES = 4 * 1024 * 1024;
 const CONCURRENCY = 2;
+const MAX_COVER_BYTES = 2 * 1024 * 1024;
 
 function integerArgument(value, label) {
   const parsed = Number(value);
@@ -56,6 +57,20 @@ export function createKnowledgeUploadSoakManifest({ fileCount, fileBytes }) {
     byteSize: fileBytes,
     seed: index + 1,
   }));
+}
+
+export function createKnowledgeCatalogSoakFixture() {
+  const categories = Array.from({ length: 10 }, (_, index) => ({
+    id: `category_${index + 1}`,
+    name: `Category ${String(index + 1).padStart(2, '0')}`,
+    sortOrder: (index + 1) * 100,
+  }));
+  const documents = Array.from({ length: 100 }, (_, index) => ({
+    id: `doc_${String(index + 1).padStart(3, '0')}`,
+    categoryId: `category_${(index % 10) + 1}`,
+    documentType: index < 70 ? 'sop' : 'cheatsheet',
+  }));
+  return { categories, documents };
 }
 
 function pdfBytes(seed) {
@@ -134,6 +149,70 @@ async function runBounded(tasks, concurrency) {
     }
   });
   await Promise.all(workers);
+}
+
+async function exerciseKnowledgeCatalogSoak() {
+  const fixture = createKnowledgeCatalogSoakFixture();
+  const coverCache = new Map();
+  let activeCoverJobs = 0;
+  let peakCoverConcurrency = 0;
+  let coverCacheHits = 0;
+  let maxCoverBytes = 0;
+
+  const loadCover = async (document, index) => {
+    if (coverCache.has(document.id)) {
+      coverCacheHits += 1;
+      return;
+    }
+    activeCoverJobs += 1;
+    peakCoverConcurrency = Math.max(peakCoverConcurrency, activeCoverJobs);
+    try {
+      await Promise.resolve();
+      const byteLength = 96 * 1024 + index * 1024;
+      if (byteLength > MAX_COVER_BYTES) throw new Error('Catalog cover exceeds 2 MiB');
+      coverCache.set(document.id, byteLength);
+      maxCoverBytes = Math.max(maxCoverBytes, byteLength);
+    } finally {
+      activeCoverJobs -= 1;
+    }
+  };
+
+  await runBounded(
+    fixture.documents.map((document, index) => () => loadCover(document, index)),
+    CONCURRENCY,
+  );
+  await runBounded(
+    fixture.documents.map((document, index) => () => loadCover(document, index)),
+    CONCURRENCY,
+  );
+
+  const deletedCategoryId = 'category_10';
+  const replacementCategoryId = 'category_1';
+  const remainingCategories = fixture.categories
+    .filter(({ id }) => id !== deletedCategoryId)
+    .toReversed()
+    .map((category, index) => ({ ...category, sortOrder: (index + 1) * 100 }));
+  const reassignedDocuments = fixture.documents.map((document) =>
+    document.categoryId === deletedCategoryId
+      ? { ...document, categoryId: replacementCategoryId }
+      : document,
+  );
+  const remainingCategoryIds = new Set(remainingCategories.map(({ id }) => id));
+
+  return {
+    documentCount: fixture.documents.length,
+    categoryCount: fixture.categories.length,
+    categoriesAfterDelete: remainingCategories.length,
+    sopCount: fixture.documents.filter(({ documentType }) => documentType === 'sop').length,
+    cheatsheetCount: fixture.documents.filter(({ documentType }) => documentType === 'cheatsheet')
+      .length,
+    peakCoverConcurrency,
+    coverCacheHits,
+    maxCoverBytes,
+    orphanedCategoryIds: reassignedDocuments.filter(
+      ({ categoryId }) => !remainingCategoryIds.has(categoryId),
+    ).length,
+  };
 }
 
 async function combinedChunkChecksum(chunkPaths) {
@@ -235,6 +314,7 @@ export async function runKnowledgeUploadSoak(options, dependencies = {}) {
     );
 
     const { stagedFiles, checksumFailures } = await verifyStagedFiles(runtimeManifest, serverRoot);
+    const catalog = await exerciseKnowledgeCatalogSoak();
     result = {
       fileCount: manifest.length,
       stagedFiles,
@@ -244,6 +324,7 @@ export async function runKnowledgeUploadSoak(options, dependencies = {}) {
       checksumFailures,
       peakMainProcessBytes: metrics.peakMainProcessBytes,
       serverStorageHighWaterBytes: metrics.serverStorageHighWaterBytes,
+      catalog,
     };
   } finally {
     await rm(artifactRoot, { recursive: true, force: true });

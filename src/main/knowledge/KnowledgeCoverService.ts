@@ -42,6 +42,41 @@ function arrayBuffer(data: Uint8Array): ArrayBuffer {
   return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
 }
 
+async function readBoundedResponse(
+  response: Response,
+  maximumBytes: number,
+): Promise<Uint8Array | null> {
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return bytes.byteLength <= maximumBytes ? bytes : null;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > maximumBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
 export class KnowledgeCoverService {
   private readonly cacheDir: string;
   private readonly getConfig: () => RelayConfig | null;
@@ -175,8 +210,7 @@ export class KnowledgeCoverService {
       if (!response.ok) return null;
       const declared = Number(response.headers.get('content-length'));
       if (Number.isFinite(declared) && declared > KNOWLEDGE_MAX_COVER_BYTES) return null;
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      return bytes.byteLength <= KNOWLEDGE_MAX_COVER_BYTES ? bytes : null;
+      return await readBoundedResponse(response, KNOWLEDGE_MAX_COVER_BYTES);
     } catch {
       return null;
     }

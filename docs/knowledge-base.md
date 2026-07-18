@@ -18,7 +18,13 @@ The publisher receives access to **Manage library** in the Knowledge tab. Changi
 3. Leave Relay open while the upload queue transfers, validates, and indexes the files.
 4. Review the title and category, then publish each ready file.
 
-Categories are created and assigned in Relay. They are not pulled from the PDF header or from an author's local folder path. A published document's display title and category can be changed later without replacing its PDF.
+Categories are created and assigned in Relay. They are not pulled from the PDF header or from an author's local folder path. A published document's display title, category, and type (SOP or cheatsheet) can be changed later without replacing its PDF.
+
+## Organize the Wiki
+
+The Wiki landing page automatically spotlights recently updated material, presents SOPs as cover-led category shelves, and keeps cheatsheets in compact rows. Recently Updated is derived from document timestamps and needs no manual featured-list maintenance.
+
+Owner, Administrator, and Publisher accounts can open **Manage library**, then **Categories**, to add, rename, or reorder categories. Deleting a category requires choosing where all of its documents will move. The built-in fallback category can be renamed or reordered but cannot be deleted. In **Documents**, managers can edit a document's title, category, and type together or select multiple documents for one bulk category move.
 
 Relay accepts PDFs no larger than 50 MiB or 1,000 pages. Upload batches are transferred in 4 MiB chunks with at most two chunks in flight at once. Relay retries temporary VPN or server failures with bounded backoff, then leaves the batch in **Waiting for network** so the publisher can resume it. Already acknowledged chunks are not sent again.
 

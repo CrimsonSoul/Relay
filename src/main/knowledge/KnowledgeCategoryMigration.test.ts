@@ -5,11 +5,12 @@ describe('migrateKnowledgeCategories', () => {
   it('creates stable case-insensitive categories and backfills legacy documents once', async () => {
     const categories: Array<Record<string, unknown>> = [];
     const documents: Array<Record<string, unknown>> = [
-      { id: 'doc-access-a', category: 'Access', title: 'A', fileName: 'a.pdf' },
-      { id: 'doc-access-b', category: ' access ', title: 'B', fileName: 'b.pdf' },
-      { id: 'doc-network', category: 'Network', title: 'C', fileName: 'c.pdf' },
-      { id: 'doc-empty', category: '', title: 'D', fileName: 'd.pdf' },
+      { id: 'doc-access-a', category: 'Access', title: 'A', fileName: 'a.pdf', checksum: 'a' },
+      { id: 'doc-access-b', category: ' access ', title: 'B', fileName: 'b.pdf', checksum: 'b' },
+      { id: 'doc-network', category: 'Network', title: 'C', fileName: 'c.pdf', checksum: 'c' },
+      { id: 'doc-empty', category: '', title: 'D', fileName: 'd.pdf', checksum: 'd' },
     ];
+    const originalChecksums = documents.map(({ checksum }) => checksum);
     const state = {
       id: 'state-primary',
       key: 'primary',
@@ -60,6 +61,10 @@ describe('migrateKnowledgeCategories', () => {
     });
     expect(documents.every(({ categoryId }) => typeof categoryId === 'string')).toBe(true);
     expect(documents.every(({ documentType }) => documentType === 'sop')).toBe(true);
+    expect(new Set(categories.map(({ normalizedName }) => normalizedName)).size).toBe(
+      categories.length,
+    );
+    expect(documents.map(({ checksum }) => checksum)).toEqual(originalChecksums);
     expect(state.categoryMigrationVersion).toBe(1);
 
     categoryCreate.mockClear();
