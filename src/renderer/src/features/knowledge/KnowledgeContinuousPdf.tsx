@@ -173,6 +173,9 @@ export const KnowledgeContinuousPdf = forwardRef<
     const targetChanged =
       previousRequest?.targetPageIndex !== targetPageIndex ||
       previousRequest?.targetTop !== targetTop;
+    const targetRemoved =
+      previousRequest?.targetPageIndex !== undefined && targetPageIndex === undefined;
+    const targetRequestChanged = targetPageIndex !== undefined && targetChanged;
     const focusRequestChanged = previousRequest?.focusRequestKey !== focusRequestKey;
     const observerFeedback =
       previousRequest !== null &&
@@ -183,9 +186,9 @@ export const KnowledgeContinuousPdf = forwardRef<
     const isExternalRequest =
       previousRequest === null ||
       documentChanged ||
-      targetChanged ||
+      targetRequestChanged ||
       focusRequestChanged ||
-      (activePageChanged && !observerFeedback);
+      (activePageChanged && !observerFeedback && !targetRemoved);
 
     if (pageCount === 0 || !isExternalRequest) return;
 

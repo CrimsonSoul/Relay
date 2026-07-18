@@ -273,7 +273,7 @@ describe('KnowledgeContinuousPdf', () => {
     );
   });
 
-  it('uses the PDF viewport transform for rotated or cropped destination offsets', async () => {
+  it('uses the PDF viewport transform once and consumes target removal without scrolling', async () => {
     const convertToViewportPoint = vi.fn(
       (_pageNumber: number, _x: number, _y: number, scale: number) => [412 * scale, 137 * scale],
     );
@@ -289,6 +289,7 @@ describe('KnowledgeContinuousPdf', () => {
       <KnowledgeContinuousPdf
         {...props(pdf, {
           scale: 1.5,
+          activePageIndex: 4,
           target: { pageIndex: 4, top: 700 },
           focusRequestKey: 1,
         })}
@@ -297,6 +298,20 @@ describe('KnowledgeContinuousPdf', () => {
 
     await waitFor(() => expect(convertToViewportPoint).toHaveBeenCalledWith(5, 0, 700, 1.5));
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1177.5, behavior: 'smooth' });
+    expect(scrollTo).toHaveBeenCalledOnce();
+
+    rerender(
+      <KnowledgeContinuousPdf
+        {...props(pdf, {
+          scale: 1.5,
+          activePageIndex: 4,
+          target: null,
+          focusRequestKey: 1,
+        })}
+      />,
+    );
+
+    expect(scrollTo).toHaveBeenCalledOnce();
   });
 
   it('recomputes shell dimensions at scale without reloading metadata or churning observers', async () => {
