@@ -64,7 +64,7 @@ function viewerError(error: string): string {
     case 'not-available-offline':
       return 'This document is not cached on this laptop. Reconnect to the Relay server to open it.';
     case 'not-found':
-      return 'This document is no longer available in the knowledge base.';
+      return 'This document is no longer available in the Wiki.';
     case 'checksum-mismatch':
       return 'Relay could not verify this document. Refresh the library and try again.';
     default:
@@ -439,7 +439,7 @@ export function KnowledgePdfViewer({
   if (!knowledgeDocument) {
     return (
       <div className="knowledge-viewer-state">
-        <span className="knowledge-viewer-state__eyebrow">Focus reader</span>
+        <span className="knowledge-viewer-state__eyebrow">Wiki reader</span>
         <h2>Select a document</h2>
         <p>Choose a guide from the library to read it here.</p>
       </div>

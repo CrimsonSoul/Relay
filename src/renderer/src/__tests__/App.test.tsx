@@ -54,6 +54,14 @@ let lastPopoutBoardProps: {
   onCallFontScale?: number;
   onOnCallFontScaleChange?: (scale: number) => void;
 } | null = null;
+let lastKnowledgeWorkspaceProps: {
+  active: boolean;
+  relayMode?: string;
+  contacts: unknown[];
+  groups: unknown[];
+  servers: unknown[];
+  onAddToAssembler: (contact: never) => void;
+} | null = null;
 const mockDynatraceDashboards: DynatraceDashboardState[] = [
   {
     id: 'dt_1',
@@ -278,10 +286,17 @@ vi.mock('../tabs/NotesTab', () => ({
   NotesTab: () => <div data-testid="notes-tab" />,
 }));
 
-vi.mock('../features/knowledge/KnowledgeTab', () => ({
-  KnowledgeTab: ({ active, relayMode }: { active: boolean; relayMode?: string }) => (
-    <div data-testid="knowledge-tab" data-active={active} data-relay-mode={relayMode} />
-  ),
+vi.mock('../features/knowledge/KnowledgeWorkspace', () => ({
+  KnowledgeWorkspace: (props: NonNullable<typeof lastKnowledgeWorkspaceProps>) => {
+    lastKnowledgeWorkspaceProps = props;
+    return (
+      <div
+        data-testid="knowledge-workspace"
+        data-active={props.active}
+        data-relay-mode={props.relayMode}
+      />
+    );
+  },
 }));
 
 vi.mock('../tabs/CloudStatusTab', () => ({
@@ -422,6 +437,7 @@ describe('MainApp', () => {
     mockSettingsOpen = false;
     lastSidebarProps = null;
     lastSettingsModalProps = null;
+    lastKnowledgeWorkspaceProps = null;
     lastPersonnelTabProps = null;
     lastPopoutBoardProps = null;
     localStorage.removeItem('relay-oncall-display-size');
@@ -470,10 +486,14 @@ describe('MainApp', () => {
     mockActiveTab = 'Knowledge';
     renderApp('', { relayConfig: { mode: 'server', port: 8090 } as never });
 
-    await vi.waitFor(() => expect(screen.getByTestId('knowledge-tab')).toBeInTheDocument());
-    expect(screen.getByTestId('knowledge-tab')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('knowledge-tab')).toHaveAttribute('data-relay-mode', 'server');
-    expect(screen.getByText('Relay / Knowledge Base')).toBeInTheDocument();
+    await vi.waitFor(() => expect(screen.getByTestId('knowledge-workspace')).toBeInTheDocument());
+    expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('knowledge-workspace')).toHaveAttribute('data-relay-mode', 'server');
+    expect(screen.getByText('Relay / Knowledge')).toBeInTheDocument();
+    expect(lastKnowledgeWorkspaceProps?.contacts).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.groups).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.servers).toEqual([]);
+    expect(lastKnowledgeWorkspaceProps?.onAddToAssembler).toBe(mockHandleAddToAssembler);
   });
 
   it('navigates to Settings when the sidebar settings button is clicked', () => {

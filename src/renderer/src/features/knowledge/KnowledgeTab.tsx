@@ -75,12 +75,12 @@ function unavailableLinkMessage(reason: 'not-found' | 'ambiguous' | 'unsupported
 
 function emptyLibraryDescription(isServer: boolean, canManage: boolean): string {
   if (!isServer) {
-    return 'The Relay server has not shared any knowledge documents yet. They will appear here automatically when available.';
+    return 'The Relay server has not shared any Wiki documents yet. They will appear here automatically when available.';
   }
   if (canManage) {
-    return 'Use the protected management workspace to stage and publish PDF guides for every Relay operator.';
+    return 'Use the protected management workspace to stage and publish PDF guides for every Relay user.';
   }
-  return 'A designated Knowledge Base publisher can add PDF guides from their signed-in Relay workstation.';
+  return 'A designated Wiki publisher can add PDF guides from their signed-in Relay workstation.';
 }
 
 function KnowledgeEmptyState({
@@ -102,10 +102,10 @@ function KnowledgeEmptyState({
     <div className="knowledge-tab knowledge-tab--empty">
       <div className="knowledge-empty">
         <div className="knowledge-empty__glyph" aria-hidden="true">
-          KB
+          W
         </div>
         <span className="knowledge-empty__eyebrow">Read-only reference library</span>
-        <h1>No knowledge documents yet</h1>
+        <h1>No Wiki documents yet</h1>
         <p>{emptyLibraryDescription(relayMode === 'server', canManage)}</p>
         {statusMessage && (
           <span className="knowledge-empty__error" role="status">
@@ -115,7 +115,7 @@ function KnowledgeEmptyState({
         {error && <span className="knowledge-empty__error">{error}</span>}
         {canManage && (
           <TactileButton variant="primary" onClick={onManage}>
-            Manage knowledge base
+            Manage Wiki
           </TactileButton>
         )}
       </div>
@@ -361,8 +361,8 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
     <div className="knowledge-tab">
       <header className="knowledge-tab__header">
         <div>
-          <span className="knowledge-tab__kicker">Operator reference</span>
-          <h1>Knowledge base</h1>
+          <span className="knowledge-tab__kicker">Operations reference</span>
+          <h1>Wiki</h1>
           <p>Find the guide, jump to the procedure, and stay in the flow.</p>
         </div>
         <div className="knowledge-tab__header-actions">
@@ -379,7 +379,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
       </header>
 
       <div className="knowledge-workspace">
-        <aside className="knowledge-drawer" aria-label="Knowledge library">
+        <aside className="knowledge-drawer" aria-label="Wiki library">
           <div className="knowledge-drawer__heading">
             <div>
               <span>Library</span>
@@ -394,7 +394,7 @@ export function KnowledgeTab({ active, relayMode }: Readonly<Props>) {
             </svg>
             <input
               type="search"
-              aria-label="Search knowledge base"
+              aria-label="Search Wiki"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search guides and sections"

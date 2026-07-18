@@ -146,6 +146,13 @@ describe('KnowledgePdfViewer', () => {
     } as never);
   });
 
+  it('labels the empty destination as the Wiki reader', () => {
+    renderComponent({ document: null });
+
+    expect(screen.getByText('Wiki reader')).toBeInTheDocument();
+    expect(screen.queryByText('Focus reader')).not.toBeInTheDocument();
+  });
+
   afterEach(() => {
     delete globalThis.api;
     vi.restoreAllMocks();

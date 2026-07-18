@@ -56,13 +56,13 @@ function lazyTab<T extends Record<string, ComponentType>>(
 }
 
 // Lazy load non-default tabs and settings modal
-const DirectoryTab = lazyTab(() => import('./tabs/DirectoryTab'), 'DirectoryTab');
-const ServersTab = lazyTab(() => import('./tabs/ServersTab'), 'ServersTab');
 const PersonnelTab = lazyTab(() => import('./tabs/PersonnelTab'), 'PersonnelTab');
 const SettingsTab = lazyTab(() => import('./components/SettingsModal'), 'SettingsModal');
 const DataManagerModal = lazyTab(() => import('./components/DataManagerModal'), 'DataManagerModal');
-const NotesTab = lazyTab(() => import('./tabs/NotesTab'), 'NotesTab');
-const KnowledgeTab = lazyTab(() => import('./features/knowledge/KnowledgeTab'), 'KnowledgeTab');
+const KnowledgeWorkspace = lazyTab(
+  () => import('./features/knowledge/KnowledgeWorkspace'),
+  'KnowledgeWorkspace',
+);
 const CloudStatusTab = lazyTab(() => import('./tabs/CloudStatusTab'), 'CloudStatusTab');
 const DynatraceProblemsTab = lazyTab(
   () => import('./tabs/DynatraceProblemsTab'),
@@ -307,10 +307,7 @@ export function MainApp({
                 {{
                   Compose: 'Compose',
                   Personnel: 'On-Call',
-                  People: 'People',
-                  Servers: 'Servers',
-                  Notes: 'Notes',
-                  Knowledge: 'Knowledge Base',
+                  Knowledge: 'Knowledge',
                   Status: 'Service Status',
                   Problems: 'Dynatrace Problems',
                   Alerts: 'Alerts',
@@ -385,45 +382,17 @@ export function MainApp({
                 </ErrorBoundary>
               </RetainedTabPanel>
             )}
-            {mountedTabs.has('People') && (
-              <RetainedTabPanel active={activeTab === 'People'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <DirectoryTab
-                      contacts={data.contacts}
-                      groups={data.groups}
-                      servers={data.servers}
-                      onAddToAssembler={handleAddToAssembler}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
-            {mountedTabs.has('Servers') && (
-              <RetainedTabPanel active={activeTab === 'Servers'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <ServersTab servers={data.servers} contacts={data.contacts} />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
-            {mountedTabs.has('Notes') && (
-              <RetainedTabPanel active={activeTab === 'Notes'}>
-                <ErrorBoundary fallback={errorFallback}>
-                  <Suspense fallback={<TabFallback />}>
-                    <NotesTab active={activeTab === 'Notes'} />
-                  </Suspense>
-                </ErrorBoundary>
-              </RetainedTabPanel>
-            )}
             {mountedTabs.has('Knowledge') && (
               <RetainedTabPanel active={activeTab === 'Knowledge'}>
                 <ErrorBoundary fallback={errorFallback}>
                   <Suspense fallback={<TabFallback />}>
-                    <KnowledgeTab
+                    <KnowledgeWorkspace
                       active={activeTab === 'Knowledge'}
+                      contacts={data.contacts}
+                      groups={data.groups}
+                      servers={data.servers}
                       relayMode={relayConfig?.mode}
+                      onAddToAssembler={handleAddToAssembler}
                     />
                   </Suspense>
                 </ErrorBoundary>
