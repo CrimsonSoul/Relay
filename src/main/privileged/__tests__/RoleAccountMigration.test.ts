@@ -10,6 +10,7 @@ class MigrationFixture {
   readonly collectionMetadata = new Map<string, Record<string, unknown>>();
   readonly writes: Array<{ collection: string; operation: string; id?: string }> = [];
   failNextUpdateFor: string | null = null;
+  ignoreNextUpdateFor: string | null = null;
   failNextCollectionDeleteFor: string | null = null;
 
   readonly pb: PocketBase;
@@ -66,6 +67,11 @@ class MigrationFixture {
         const records = this.records.get(name) ?? [];
         const index = records.findIndex((record) => record.id === id);
         if (index < 0) throw new Error(`Unknown ${name} record ${id}`);
+        if (this.ignoreNextUpdateFor === name) {
+          this.ignoreNextUpdateFor = null;
+          this.writes.push({ collection: name, operation: 'update', id });
+          return { ...structuredClone(records[index]), ...structuredClone(data) };
+        }
         records[index] = { ...records[index], ...structuredClone(data) };
         this.writes.push({ collection: name, operation: 'update', id });
         return structuredClone(records[index]);
@@ -404,6 +410,18 @@ describe('RoleAccountMigration', () => {
     await expect(migration(fixture).run()).resolves.toMatchObject({ status: 'migrated' });
     expect(fixture.record('alert_reminders', 'blank').createdBy).toBe('Charles Gibbs');
     expect(fixture.record('alert_reminders', 'preserved').createdBy).toBe('Original Ryan Snapshot');
+  });
+
+  it('re-reads historical backfills before deleting legacy identity collections', async () => {
+    const fixture = legacyFixture({
+      alert_reminders: [{ id: 'blank', operatorId: 'charles-op', createdBy: '' }],
+    });
+    fixture.ignoreNextUpdateFor = 'alert_reminders';
+
+    await expect(migration(fixture).run()).rejects.toThrow(/historical snapshot/i);
+
+    expect(fixture.record('alert_reminders', 'blank').createdBy).toBe('');
+    expect(fixture.hasCollection('relay_operators')).toBe(true);
   });
 
   it('defers an unresolvable historical attribution before making changes', async () => {

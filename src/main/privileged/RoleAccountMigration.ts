@@ -627,6 +627,7 @@ export class RoleAccountMigration {
     if ('reason' in converted) {
       throw new Error(`Role account migration validation failed: ${converted.reason}`);
     }
+    await this.verifyHistoricalUpdates(planned.historicalUpdates);
     await this.retireAccounts(
       committedAccounts.filter(({ id }) => planned.retiredAccountIds.includes(id)),
     );
@@ -711,6 +712,29 @@ export class RoleAccountMigration {
       await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).delete(account.id);
     }
   }
+
+  private async verifyHistoricalUpdates(updates: PlannedUpdate[]): Promise<void> {
+    const recordsByCollection = new Map<string, ReadonlyMap<string, PocketBaseRecord>>();
+    for (const update of updates) {
+      if (!recordsByCollection.has(update.collection)) {
+        const records = await this.listRecords<PocketBaseRecord>(update.collection);
+        recordsByCollection.set(
+          update.collection,
+          new Map(records.map((record) => [record.id, record])),
+        );
+      }
+      const record = recordsByCollection.get(update.collection)?.get(update.recordId);
+      const persisted =
+        record !== undefined &&
+        Object.entries(update.data).every(([field, value]) => record[field] === value);
+      if (!persisted) {
+        throw new Error(
+          `Role account migration validation failed: historical snapshot ${update.collection}/${update.recordId} was not persisted.`,
+        );
+      }
+    }
+  }
+
   private async planHistoricalUpdates(
     collectionByName: ReadonlyMap<string, CollectionInfo>,
     operators: LegacyOperatorRecord[],
