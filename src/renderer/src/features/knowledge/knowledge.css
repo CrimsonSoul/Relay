@@ -366,6 +366,7 @@
   min-width: 0;
   min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   background: var(--color-bg-app);
 }
 
@@ -483,6 +484,38 @@
   padding: clamp(22px, 3vw, 44px);
   background:
     radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.035), transparent 35%), #0b0b0e;
+}
+
+.knowledge-continuous-pdf {
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: clamp(18px, 2.4vw, 30px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.knowledge-page-shell {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.knowledge-page-shell > .knowledge-page {
+  width: 100%;
+  min-height: 100%;
+}
+
+.knowledge-page-placeholder {
+  display: flex;
+  width: 100%;
+  min-height: inherit;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #5e5e63;
+  background: #f3f3f4;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
 }
 
 .knowledge-page {
