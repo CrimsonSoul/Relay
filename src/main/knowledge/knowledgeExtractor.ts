@@ -11,12 +11,14 @@ import {
   type KnowledgeTextPage,
   type NativeKnowledgeOutlineEntry,
 } from './knowledgeOutline';
+import { renderKnowledgeDocumentCover } from './knowledgeCover';
 
 export type KnowledgeExtractionResult = {
   metadataTitle: string | null;
   pageCount: number;
   outline: KnowledgeOutlineNode[];
   outlineSource: KnowledgeOutlineSource;
+  coverPng: Uint8Array;
 };
 
 function destinationType(value: unknown): string {
@@ -130,9 +132,10 @@ export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeEx
       throw new Error('page-limit');
     }
 
-    const [metadata, rawOutline] = await Promise.all([
+    const [metadata, rawOutline, coverPng] = await Promise.all([
       document.getMetadata(),
       document.getOutline(),
+      renderKnowledgeDocumentCover(document),
     ]);
     const nativeOutline = await normalizeNativeKnowledgeOutline(
       asNativeOutline(rawOutline),
@@ -144,6 +147,7 @@ export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeEx
         pageCount: document.numPages,
         outline: nativeOutline,
         outlineSource: 'native',
+        coverPng,
       };
     }
 
@@ -153,6 +157,7 @@ export async function extractKnowledgePdf(data: Uint8Array): Promise<KnowledgeEx
       pageCount: document.numPages,
       outline: inferredOutline,
       outlineSource: inferredOutline.length > 0 ? 'inferred' : 'none',
+      coverPng,
     };
   } catch (error) {
     throw normalizedExtractionError(error);

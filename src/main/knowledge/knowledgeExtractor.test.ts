@@ -52,6 +52,7 @@ describe('extractKnowledgePdf', () => {
     expect(result.outline).toEqual([
       expect.objectContaining({ label: 'Overview', level: 1, pageIndex: 0, top: 700 }),
     ]);
+    expect([...result.coverPng.subarray(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 
   it('infers headings when a readable PDF has no native outline', async () => {

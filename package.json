@@ -53,6 +53,7 @@
     "@fontsource/ibm-plex-sans": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@formkit/auto-animate": "^0.9.0",
+    "@napi-rs/canvas": "0.1.100",
     "better-sqlite3": "12.10.1",
     "bonjour-service": "1.4.1",
     "eventsource": "4.1.0",

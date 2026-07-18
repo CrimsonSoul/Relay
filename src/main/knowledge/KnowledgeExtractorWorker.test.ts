@@ -27,7 +27,13 @@ describe('KnowledgeExtractorWorker', () => {
     worker.emit('message', {
       id: worker.posted[0]?.id,
       ok: true,
-      result: { metadataTitle: null, pageCount: 1, outline: [], outlineSource: 'none' },
+      result: {
+        metadataTitle: null,
+        pageCount: 1,
+        outline: [],
+        outlineSource: 'none',
+        coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      },
     });
     await expect(first).resolves.toMatchObject({ pageCount: 1 });
     expect(worker.posted).toHaveLength(2);
@@ -35,7 +41,13 @@ describe('KnowledgeExtractorWorker', () => {
     worker.emit('message', {
       id: worker.posted[1]?.id,
       ok: true,
-      result: { metadataTitle: 'Second', pageCount: 2, outline: [], outlineSource: 'none' },
+      result: {
+        metadataTitle: 'Second',
+        pageCount: 2,
+        outline: [],
+        outlineSource: 'none',
+        coverPng: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+      },
     });
     await expect(second).resolves.toMatchObject({ metadataTitle: 'Second' });
     await extractor.stop();
