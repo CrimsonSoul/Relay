@@ -172,23 +172,60 @@ export class PublisherAssignmentManager {
     actorAccountId: string,
   ): Promise<void> {
     const credential = randomBytes(48).toString('base64url');
-    await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
-      account.id,
-      {
-        active: false,
-        mustChangePassword: true,
-        credentialVersion: account.credentialVersion + 1,
-        password: credential,
-        passwordConfirm: credential,
-      },
-      { requestKey: null },
-    );
+    try {
+      await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
+        account.id,
+        {
+          active: false,
+          mustChangePassword: true,
+          credentialVersion: account.credentialVersion + 1,
+          password: credential,
+          passwordConfirm: credential,
+        },
+        { requestKey: null },
+      );
+    } catch (error) {
+      if (!(await this.isPreparationProvenUnchanged(account))) {
+        await this.recoverAmbiguousPreparation(account, actorAccountId);
+      }
+      throw error;
+    }
     try {
       await this.revokeDevices(account, actorAccountId);
     } catch (error) {
       await this.notifyAfterError([account.id]);
       throw error;
     }
+  }
+
+  private async isPreparationProvenUnchanged(
+    account: RelayPrivilegedAccountRecord,
+  ): Promise<boolean> {
+    try {
+      const current = await this.getAccount(account.id);
+      return (
+        current.id === account.id &&
+        current.active === account.active &&
+        current.mustChangePassword === account.mustChangePassword &&
+        current.credentialVersion === account.credentialVersion
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async recoverAmbiguousPreparation(
+    account: RelayPrivilegedAccountRecord,
+    actorAccountId: string,
+  ): Promise<void> {
+    let revocationError: unknown;
+    try {
+      await this.revokeDevices(account, actorAccountId);
+    } catch (error) {
+      revocationError = error;
+    }
+    await this.notifyAfterError([account.id]);
+    if (revocationError) throw revocationError;
   }
 
   private async disablePublisher(

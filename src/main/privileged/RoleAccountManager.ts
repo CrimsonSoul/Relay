@@ -180,6 +180,12 @@ export class RoleAccountManager {
   async setActive(
     input: AccountRevisionInput & { active: boolean },
   ): Promise<RelayAdministrationSnapshot> {
+    return this.withAuthorityMutation(() => this.setActiveExclusive(input));
+  }
+
+  private async setActiveExclusive(
+    input: AccountRevisionInput & { active: boolean },
+  ): Promise<RelayAdministrationSnapshot> {
     const [state, actor, target] = await Promise.all([
       this.getState(),
       this.getAccount(input.actorAccountId),
@@ -191,14 +197,24 @@ export class RoleAccountManager {
     }
     this.assertRevision(target.revision, input.expectedRevision);
     if (target.active !== input.active) {
+      const [commitState, commitActor, commitTarget] = await Promise.all([
+        this.getState(),
+        this.getAccount(input.actorAccountId),
+        this.getAccount(input.accountId),
+      ]);
+      this.assertCanManageTarget(commitState, commitActor, commitTarget);
+      if (!input.active && commitTarget.id === commitState.ownerAccountId) {
+        throw new Error('The current Owner cannot be deactivated.');
+      }
+      this.assertRevision(commitTarget.revision, input.expectedRevision);
       await this.pb
         .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
         .update(
-          target.id,
-          { active: input.active, revision: target.revision + 1 },
+          commitTarget.id,
+          { active: input.active, revision: commitTarget.revision + 1 },
           { requestKey: null },
         );
-      await this.notifyAuthorityChanged([target.id]);
+      await this.notifyAuthorityChanged([commitTarget.id]);
     }
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }

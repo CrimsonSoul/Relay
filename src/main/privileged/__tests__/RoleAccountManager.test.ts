@@ -5,6 +5,7 @@ import {
   type RelayPrivilegedAccountRecord,
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
+import { AuthorityMutationCoordinator } from '../AuthorityMutationCoordinator';
 import { RoleAccountConflictError, RoleAccountManager } from '../RoleAccountManager';
 
 const NOW = '2026-07-17T15:00:00.000Z';
@@ -247,6 +248,83 @@ describe('RoleAccountManager', () => {
         expectedStateRevision: 3,
       }),
     ).rejects.toEqual(new RoleAccountConflictError(4));
+  });
+
+  it('serializes deactivation with ownership transfer so the final Owner remains active', async () => {
+    let currentState = state();
+    const currentAccounts = new Map(accounts.map((entry) => [entry.id, entry]));
+    let releaseTransferTarget!: () => void;
+    let reportTransferTargetRead!: () => void;
+    const transferTargetRelease = new Promise<void>((resolve) => {
+      releaseTransferTarget = resolve;
+    });
+    const transferTargetRead = new Promise<void>((resolve) => {
+      reportTransferTargetRead = resolve;
+    });
+    let charlesReads = 0;
+
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({ ...data });
+        return currentState;
+      },
+    );
+    accountCollection.getOne.mockImplementation(async (id: string) => {
+      const current = currentAccounts.get(id)!;
+      if (id === 'account-charles' && ++charlesReads === 1) {
+        reportTransferTargetRead();
+        await transferTargetRelease;
+      }
+      return current;
+    });
+    accountCollection.update.mockImplementation(
+      async (id: string, data: Record<string, unknown>) => {
+        const updated = account({ ...currentAccounts.get(id), id, ...data });
+        currentAccounts.set(id, updated);
+        return updated;
+      },
+    );
+    class CountingAuthorityMutationCoordinator extends AuthorityMutationCoordinator {
+      runs = 0;
+
+      override run<T>(operation: () => Promise<T>): Promise<T> {
+        this.runs += 1;
+        return super.run(operation);
+      }
+    }
+    const coordinator = new CountingAuthorityMutationCoordinator();
+    const roleManager = new RoleAccountManager({
+      pb: pb as never,
+      snapshotReader: snapshotReader as never,
+      now: () => Date.parse(NOW),
+      onAuthorityChanged,
+      coordinator,
+    });
+
+    const transfer = roleManager.transferOwnership({
+      actorAccountId: 'account-ryan',
+      accountId: 'account-charles',
+      expectedStateRevision: 4,
+    });
+    await transferTargetRead;
+    const deactivation = roleManager.setActive({
+      actorAccountId: 'account-ryan',
+      accountId: 'account-charles',
+      active: false,
+      expectedRevision: 1,
+    });
+    if (coordinator.runs === 1) await deactivation;
+    releaseTransferTarget();
+
+    const results = await Promise.allSettled([transfer, deactivation]);
+
+    expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter(({ status }) => status === 'rejected')).toHaveLength(1);
+    expect(currentState.ownerAccountId).toBe('account-charles');
+    expect(currentAccounts.get(currentState.ownerAccountId)?.active).toBe(true);
+    expect(accountCollection.update).not.toHaveBeenCalled();
+    expect(coordinator.runs).toBe(2);
   });
 
   it('reports callback failure as a committed ownership transfer with failed invalidation', async () => {

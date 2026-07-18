@@ -251,6 +251,45 @@ describe('PublisherAssignmentManager', () => {
     expect(onAssignmentChanged).not.toHaveBeenCalled();
   });
 
+  it('invalidates a remotely prepared target when its update response is lost without moving the pointer', async () => {
+    let preparedTarget = records.get('account-publisher')!;
+    accountCollection.getOne.mockImplementation(async (id: string) =>
+      id === 'account-publisher' ? preparedTarget : records.get(id),
+    );
+    accountCollection.update.mockImplementationOnce(
+      async (id: string, data: Record<string, unknown>) => {
+        preparedTarget = account({ ...preparedTarget, id, ...data });
+        throw new Error('target preparation response lost');
+      },
+    );
+    deviceCollection.getFullList.mockResolvedValueOnce([device()]);
+
+    await expect(
+      manager().assign({
+        actorAccountId: 'account-charles',
+        accountId: 'account-publisher',
+        expectedStateRevision: 3,
+      }),
+    ).rejects.toThrow('target preparation response lost');
+
+    expect(preparedTarget).toMatchObject({
+      active: false,
+      mustChangePassword: true,
+      credentialVersion: 2,
+    });
+    expect(stateCollection.update).not.toHaveBeenCalled();
+    expect(deviceCollection.update).toHaveBeenCalledWith(
+      'device-publisher',
+      expect.objectContaining({
+        state: 'revoked',
+        revokedByAccountId: 'account-charles',
+        revision: 3,
+      }),
+      { requestKey: null },
+    );
+    expect(onAssignmentChanged).toHaveBeenCalledWith(['account-publisher']);
+  });
+
   it('leaves a partially prepared target inactive and invalidates it without moving the pointer', async () => {
     deviceCollection.getFullList.mockResolvedValueOnce([device()]);
     deviceCollection.update.mockRejectedValueOnce(new Error('device revocation failed'));
