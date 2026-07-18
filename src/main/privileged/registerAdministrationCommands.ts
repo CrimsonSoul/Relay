@@ -166,7 +166,7 @@ export function registerAdministrationCommands({
         return withConflictTranslation(() =>
           deviceManager.revoke({
             actorRole: context.role,
-            actorOperatorId: context.account.id,
+            actorAccountId: context.account.id,
             deviceId: payload.deviceId,
             expectedRevision: payload.expectedRevision,
           }),

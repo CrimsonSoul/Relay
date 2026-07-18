@@ -187,6 +187,7 @@ export class PrivilegedRuntime {
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
   private authorityStop: (() => Promise<void>) | null = null;
+  private authorityGeneration = 0;
 
   constructor(options: PrivilegedRuntimeOptions) {
     this.mode = options.mode;
@@ -524,13 +525,36 @@ export class PrivilegedRuntime {
   private async startAuthorityMonitoring(accountId: string): Promise<void> {
     if (!this.authClient.monitorAuthority) return;
     await this.stopAuthorityMonitoring();
-    this.authorityStop = await this.authClient.monitorAuthority(accountId, {
-      onDisconnect: () => this.sessionManager.handleDisconnect(),
-      onSnapshot: (snapshot) => this.handleAuthoritySnapshot(snapshot),
-    });
+    const generation = ++this.authorityGeneration;
+    let stop: () => void | Promise<void>;
+    try {
+      stop = await this.authClient.monitorAuthority(accountId, {
+        onDisconnect: () => {
+          if (this.authorityGeneration === generation) this.sessionManager.handleDisconnect();
+        },
+        onSnapshot: (snapshot) => {
+          if (this.authorityGeneration === generation) this.handleAuthoritySnapshot(snapshot);
+        },
+      });
+    } catch (error) {
+      if (this.authorityGeneration !== generation) return;
+      throw error;
+    }
+    const view = this.getView();
+    if (
+      this.authorityGeneration !== generation ||
+      this.disposed ||
+      view.accountId !== accountId ||
+      (view.state !== 'active' && view.state !== 'pairing-required')
+    ) {
+      await stop();
+      return;
+    }
+    this.authorityStop = stop;
   }
 
   private async stopAuthorityMonitoring(): Promise<void> {
+    this.authorityGeneration += 1;
     const stop = this.authorityStop;
     this.authorityStop = null;
     await stop?.();

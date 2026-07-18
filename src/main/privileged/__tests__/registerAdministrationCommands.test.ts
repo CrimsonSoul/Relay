@@ -143,7 +143,7 @@ describe('registerAdministrationCommands', () => {
 
     expect(deviceManager.revoke).toHaveBeenCalledWith({
       actorRole: 'admin',
-      actorOperatorId: 'account-charles',
+      actorAccountId: 'account-charles',
       deviceId: 'device-1',
       expectedRevision: 3,
     });

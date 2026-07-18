@@ -257,71 +257,86 @@ export class PrivilegedPocketBaseClient implements PrivilegedAuthClient {
     const disposers: Array<() => Promise<void>> = [];
     const previousOnDisconnect = client.realtime.onDisconnect;
     let stopped = false;
+    let cancelled = false;
     let refreshQueue = Promise.resolve();
+    let setupPromise: Promise<void> | null = null;
     let cleanupPromise: Promise<void> | null = null;
+    const isCurrent = (): boolean =>
+      !stopped && this.authorityCleanup === cleanup && this.client === client;
     const cleanup = (): Promise<void> => {
       if (cleanupPromise) return cleanupPromise;
       stopped = true;
+      cancelled = true;
+      if (this.authorityCleanup === cleanup) this.authorityCleanup = null;
       if (client.realtime.onDisconnect === onDisconnect) {
         client.realtime.onDisconnect = previousOnDisconnect;
       }
-      cleanupPromise = Promise.allSettled(disposers.map((dispose) => dispose())).then(
-        () => undefined,
-      );
+      cleanupPromise = (async () => {
+        await setupPromise?.catch(() => undefined);
+        await Promise.allSettled(disposers.map((dispose) => dispose()));
+        await refreshQueue.catch(() => undefined);
+      })();
       return cleanupPromise;
     };
-    const stop = async (): Promise<void> => {
-      if (this.authorityCleanup === cleanup) this.authorityCleanup = null;
-      await cleanup();
-    };
+    const stop = (): Promise<void> => cleanup();
     const refresh = (): Promise<void> => {
-      refreshQueue = refreshQueue.then(async () => {
-        if (stopped) return;
-        const [rawAccount, rawState] = await Promise.all([
-          client
-            .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-            .getOne(accountId, { requestKey: null }),
-          client
-            .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
-            .getFirstListItem('key="primary"', { requestKey: null }),
-        ]);
-        const account = normalizeAccountRecord(rawAccount);
-        const state = normalizeStateRecord(rawState);
-        if (!account || account.id !== accountId || !state) {
-          throw new PrivilegedAuthenticationError('invalid-credentials');
-        }
-        listener.onSnapshot({ account, state });
-      });
+      refreshQueue = refreshQueue
+        .catch(() => undefined)
+        .then(async () => {
+          if (!isCurrent()) return;
+          const [rawAccount, rawState] = await Promise.all([
+            client
+              .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+              .getOne(accountId, { requestKey: null }),
+            client
+              .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
+              .getFirstListItem('key="primary"', { requestKey: null }),
+          ]);
+          const account = normalizeAccountRecord(rawAccount);
+          const state = normalizeStateRecord(rawState);
+          if (!account || account.id !== accountId || !state) {
+            throw new PrivilegedAuthenticationError('invalid-credentials');
+          }
+          if (!isCurrent()) return;
+          listener.onSnapshot({ account, state });
+        });
       return refreshQueue;
     };
     const refreshAfterChange = (): void => {
       void refresh().catch(() => {
-        if (!stopped) listener.onDisconnect();
+        if (isCurrent()) listener.onDisconnect();
       });
     };
     const onDisconnect = (activeSubscriptions: string[]): void => {
       previousOnDisconnect?.(activeSubscriptions);
-      if (!stopped && activeSubscriptions.length > 0) listener.onDisconnect();
+      if (isCurrent() && activeSubscriptions.length > 0) listener.onDisconnect();
     };
     client.realtime.onDisconnect = onDisconnect;
+    this.authorityCleanup = cleanup;
+    setupPromise = (async () => {
+      const disposeAccount = await client
+        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+        .subscribe(accountId, refreshAfterChange);
+      disposers.push(disposeAccount);
+      if (!isCurrent()) return;
+      const disposeState = await client
+        .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
+        .subscribe('*', refreshAfterChange);
+      disposers.push(disposeState);
+    })();
 
     try {
-      disposers.push(
-        await client
-          .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-          .subscribe(accountId, refreshAfterChange),
-      );
-      disposers.push(
-        await client
-          .collection(RELAY_PRIVILEGED_STATE_COLLECTION)
-          .subscribe('*', refreshAfterChange),
-      );
-      this.authorityCleanup = cleanup;
+      await setupPromise;
+      if (!isCurrent()) throw new PrivilegedAuthenticationError('invalid-credentials');
       await refresh();
+      if (!isCurrent()) throw new PrivilegedAuthenticationError('invalid-credentials');
       return stop;
     } catch (error) {
-      if (this.authorityCleanup === cleanup) this.authorityCleanup = null;
+      const wasCancelled = cancelled;
       await cleanup();
+      if (wasCancelled && !(error instanceof PrivilegedAuthenticationError)) {
+        throw new PrivilegedAuthenticationError('invalid-credentials');
+      }
       throw error;
     }
   }

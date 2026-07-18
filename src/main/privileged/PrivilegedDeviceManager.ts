@@ -1,5 +1,6 @@
 import type PocketBase from 'pocketbase';
 import {
+  getPrivilegedCapabilities,
   MAX_PRIVILEGED_DEVICE_LABEL_LENGTH,
   RELAY_PRIVILEGED_ACCOUNTS_COLLECTION,
   RELAY_PRIVILEGED_DEVICES_COLLECTION,
@@ -8,7 +9,6 @@ import {
   type RelayPrivilegedDeviceAdminView,
   type RelayPrivilegedDeviceRecord,
 } from '@shared/privilegedAccess';
-import { RELAY_OPERATORS_COLLECTION, type RelayOperatorRecord } from '@shared/operators';
 
 type PrivilegedDeviceManagerOptions = {
   pb: PocketBase;
@@ -60,23 +60,18 @@ export class PrivilegedDeviceManager {
       input.role === 'publisher'
         ? { filter: `accountId="${escapeFilter(input.accountId)}"`, requestKey: null }
         : { requestKey: null };
-    const [devices, accounts, operators] = await Promise.all([
+    const [devices, accounts] = await Promise.all([
       this.pb
         .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
         .getFullList<RelayPrivilegedDeviceRecord>(deviceOptions),
       this.pb
         .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
         .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
-      this.pb
-        .collection(RELAY_OPERATORS_COLLECTION)
-        .getFullList<RelayOperatorRecord>({ requestKey: null }),
     ]);
     const accountsById = new Map(accounts.map((account) => [account.id, account]));
-    const operatorsById = new Map(operators.map((operator) => [operator.id, operator]));
     return devices.flatMap((device) => {
       const account = accountsById.get(device.accountId);
-      const operator = account ? operatorsById.get(account.operatorId) : undefined;
-      return account && operator ? [this.publicView(device, account, operator)] : [];
+      return account ? [this.publicView(device, account)] : [];
     });
   }
 
@@ -86,47 +81,55 @@ export class PrivilegedDeviceManager {
     label: string;
     expectedRevision: number;
   }): Promise<RelayPrivilegedDeviceAdminView> {
-    this.assertAdministrator(input.actorRole);
+    this.assertCanManageDevices(input.actorRole);
     const current = await this.getDevice(input.deviceId);
     this.assertRevision(current, input.expectedRevision);
-    const updated = await this.pb
+    const account = await this.getAccount(current.accountId);
+    const currentView = this.publicView(current, account);
+    const label = normalizedLabel(input.label);
+    await this.pb
       .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
       .update<RelayPrivilegedDeviceRecord>(
         current.id,
-        { label: normalizedLabel(input.label), revision: current.revision + 1 },
+        { label, revision: current.revision + 1 },
         { requestKey: null },
       );
-    return this.resolvePublicView(updated);
+    return { ...currentView, label, revision: current.revision + 1 };
   }
 
   async revoke(input: {
     actorRole: PrivilegedRole;
-    actorOperatorId: string;
+    actorAccountId: string;
     deviceId: string;
     expectedRevision: number;
   }): Promise<RelayPrivilegedDeviceAdminView> {
-    this.assertAdministrator(input.actorRole);
+    this.assertCanManageDevices(input.actorRole);
     const current = await this.getDevice(input.deviceId);
-    if (current.state === 'revoked') return this.resolvePublicView(current);
+    const account = await this.getAccount(current.accountId);
+    const currentView = this.publicView(current, account);
+    if (current.state === 'revoked') return currentView;
     this.assertRevision(current, input.expectedRevision);
-    const updated = await this.pb
+    await this.pb
       .collection(RELAY_PRIVILEGED_DEVICES_COLLECTION)
       .update<RelayPrivilegedDeviceRecord>(
         current.id,
         {
           state: 'revoked',
           revokedAt: new Date(this.now()).toISOString(),
-          revokedByOperatorId: input.actorOperatorId,
+          revokedByAccountId: input.actorAccountId,
           revision: current.revision + 1,
         },
         { requestKey: null },
       );
-    await this.onDeviceRevoked?.(updated.accountId, updated.deviceId);
-    return this.resolvePublicView(updated);
+    await this.onDeviceRevoked?.(current.accountId, current.deviceId);
+    return { ...currentView, state: 'revoked', revision: current.revision + 1 };
   }
 
-  private assertAdministrator(role: PrivilegedRole): void {
-    if (role !== 'admin') throw new Error('Relay administrator access is required.');
+  private assertCanManageDevices(role: PrivilegedRole): void {
+    const capabilities = getPrivilegedCapabilities({ active: true, assigned: true, role });
+    if (!capabilities.includes('devices.manage')) {
+      throw new Error('Relay device-management access is required.');
+    }
   }
 
   private assertRevision(device: RelayPrivilegedDeviceRecord, expectedRevision: number): void {
@@ -143,34 +146,30 @@ export class PrivilegedDeviceManager {
       });
   }
 
-  private async resolvePublicView(
-    device: RelayPrivilegedDeviceRecord,
-  ): Promise<RelayPrivilegedDeviceAdminView> {
-    const [accounts, operators] = await Promise.all([
-      this.pb
-        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .getFullList<RelayPrivilegedAccountRecord>({ requestKey: null }),
-      this.pb
-        .collection(RELAY_OPERATORS_COLLECTION)
-        .getFullList<RelayOperatorRecord>({ requestKey: null }),
-    ]);
-    const account = accounts.find(({ id }) => id === device.accountId);
-    const operator = account ? operators.find(({ id }) => id === account.operatorId) : undefined;
-    if (!account || !operator) throw new Error('Paired device identity is unavailable.');
-    return this.publicView(device, account, operator);
+  private async getAccount(accountId: string): Promise<RelayPrivilegedAccountRecord> {
+    return this.pb
+      .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+      .getOne<RelayPrivilegedAccountRecord>(accountId, { requestKey: null });
   }
 
   private publicView(
     device: RelayPrivilegedDeviceRecord,
     account: RelayPrivilegedAccountRecord,
-    operator: RelayOperatorRecord,
   ): RelayPrivilegedDeviceAdminView {
+    if (
+      !account.username ||
+      account.username.length > 64 ||
+      !account.displayName ||
+      account.displayName.length > 120
+    ) {
+      throw new Error('Paired device account identity is unavailable.');
+    }
     return {
       id: device.id,
       deviceId: device.deviceId,
       accountId: device.accountId,
-      operatorId: account.operatorId,
-      operatorName: operator.displayName,
+      username: account.username,
+      displayName: account.displayName,
       label: device.label,
       hostname: device.hostnameSnapshot,
       state: device.state,

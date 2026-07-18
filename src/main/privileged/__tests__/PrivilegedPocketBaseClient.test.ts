@@ -29,6 +29,29 @@ function accountRecord(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function authorityState(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'privileged-state',
+    key: 'primary',
+    ownerAccountId: 'account-admin',
+    publisherAccountId: null,
+    assignmentVersion: 1,
+    identityMigrationVersion: 1,
+    updatedByAccountId: 'account-admin',
+    created: '2026-07-15T12:00:00.000Z',
+    updated: '2026-07-15T12:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 describe('PrivilegedPocketBaseClient', () => {
   let authStores: BaseAuthStore[];
   let adapters: PrivilegedPocketBaseClientAdapter[];
@@ -265,6 +288,91 @@ describe('PrivilegedPocketBaseClient', () => {
     releaseCleanup();
     await stopPromise;
     expect(stopped).toBe(true);
+  });
+
+  it('registers cleanup before a delayed first subscription can finish', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    const firstSubscription = deferred<void>();
+    subscribe.mockImplementationOnce(
+      async (collection: string, topic: string, callback: (event: unknown) => void) => {
+        subscriptionCallbacks.set(`${collection}/${topic}`, callback);
+        const dispose = vi.fn(async () => undefined);
+        subscriptionDisposers.push(dispose);
+        await firstSubscription.promise;
+        return dispose;
+      },
+    );
+    getOne.mockResolvedValueOnce(accountRecord());
+    getFirstListItem.mockResolvedValueOnce(authorityState());
+    const onSnapshot = vi.fn();
+
+    const monitoring = client.monitorAuthority('account-admin', {
+      onDisconnect: vi.fn(),
+      onSnapshot,
+    });
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce());
+    client.clear();
+    firstSubscription.resolve();
+
+    await expect(monitoring).rejects.toMatchObject({ code: 'invalid-credentials' });
+    expect(subscribe).toHaveBeenCalledOnce();
+    expect(subscriptionDisposers[0]).toHaveBeenCalledOnce();
+    expect(onSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('invalidates a delayed initial snapshot read before it can deliver', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    const accountRead = deferred<Record<string, unknown>>();
+    getOne.mockImplementationOnce(() => accountRead.promise);
+    getFirstListItem.mockResolvedValueOnce(authorityState());
+    const onSnapshot = vi.fn();
+
+    const monitoring = client.monitorAuthority('account-admin', {
+      onDisconnect: vi.fn(),
+      onSnapshot,
+    });
+    await vi.waitFor(() => expect(getOne).toHaveBeenCalledOnce());
+    client.clear();
+    accountRead.resolve(accountRecord({ displayName: 'Stale Ryan' }));
+
+    await expect(monitoring).rejects.toMatchObject({ code: 'invalid-credentials' });
+    expect(onSnapshot).not.toHaveBeenCalled();
+    expect(subscriptionDisposers.every((dispose) => dispose.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('reconfigure waits for and suppresses an old in-flight realtime refresh', async () => {
+    const client = createPrivilegedClient();
+    await client.authenticate(USERNAME, PASSWORD);
+    getOne.mockResolvedValueOnce(accountRecord());
+    getFirstListItem.mockResolvedValueOnce(authorityState());
+    const onSnapshot = vi.fn();
+    const stop = await client.monitorAuthority('account-admin', {
+      onDisconnect: vi.fn(),
+      onSnapshot,
+    });
+    onSnapshot.mockClear();
+
+    const accountRead = deferred<Record<string, unknown>>();
+    getOne.mockImplementationOnce(() => accountRead.promise);
+    getFirstListItem.mockResolvedValueOnce(
+      authorityState({ ownerAccountId: 'account-charles', assignmentVersion: 2 }),
+    );
+    subscriptionCallbacks.get('relay_privileged_state/*')?.({ action: 'update', record: {} });
+    await vi.waitFor(() => expect(getOne).toHaveBeenCalledTimes(2));
+
+    client.reconfigure('https://relay-two.example.com', false);
+    let stopped = false;
+    const stopPromise = stop().then(() => {
+      stopped = true;
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(stopped).toBe(false);
+
+    accountRead.resolve(accountRecord({ displayName: 'Stale Ryan' }));
+    await stopPromise;
+    expect(onSnapshot).not.toHaveBeenCalled();
   });
 
   it('maps invalid credentials to a generic error without retaining server details', async () => {

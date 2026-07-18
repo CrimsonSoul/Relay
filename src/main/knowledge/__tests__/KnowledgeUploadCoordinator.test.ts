@@ -26,6 +26,12 @@ const admin: KnowledgeUploadActor = {
   operatorName: 'Ryan Bledsoe',
   role: 'admin',
 };
+const owner: KnowledgeUploadActor = {
+  ...admin,
+  accountId: 'account-owner',
+  operatorId: 'account-owner',
+  role: 'owner',
+};
 
 function checksum(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -258,6 +264,32 @@ describe('KnowledgeUploadCoordinator', () => {
     await expect(
       coordinator.status({ ...publisher, accountId: 'other-account' }, batch.id),
     ).rejects.toMatchObject({ code: 'unauthorized' });
+  });
+
+  it('treats the effective Owner as the devices-and-knowledge capability superset cross-account', async () => {
+    const { coordinator, repository } = createCoordinator();
+    const bytes = Buffer.from('%PDF-test');
+    const { batch, upload } = await beginOneFile(coordinator, bytes);
+    await repository.updateUpload(upload.id, { state: 'ready' });
+
+    await expect(coordinator.status(owner, batch.id)).resolves.toMatchObject({
+      batch: { id: batch.id },
+    });
+    await expect(
+      coordinator.finalize(owner, { uploadId: upload.id, expectedRevision: upload.revision }),
+    ).resolves.toMatchObject({ state: 'ready' });
+    await coordinator.cancelFile(owner, {
+      uploadId: upload.id,
+      expectedRevision: upload.revision,
+    });
+    const currentBatch = repository.batches.get(batch.id)!;
+    await coordinator.cancelBatch(owner, {
+      batchId: batch.id,
+      expectedRevision: currentBatch.revision,
+    });
+
+    expect(repository.uploads.get(upload.id)?.state).toBe('cancelled');
+    expect(repository.batches.get(batch.id)?.state).toBe('cancelled');
   });
 
   it('returns processing immediately, assembles in order, and deletes chunks only after ready is durable', async () => {

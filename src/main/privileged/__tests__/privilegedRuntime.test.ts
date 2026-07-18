@@ -44,6 +44,14 @@ const state: RelayPrivilegedStateRecord = {
   updated: '2026-07-15T11:00:00.000Z',
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
 describe('PrivilegedRuntime', () => {
   let keyPair: ReturnType<typeof generateKeyPairSync>;
   let authClient: {
@@ -261,6 +269,76 @@ describe('PrivilegedRuntime', () => {
       accountId: ACCOUNT_ID,
     });
     expect(authClient.clear).not.toHaveBeenCalled();
+  });
+
+  it('ignores a delayed old monitor after logout and relogin', async () => {
+    const runtime = createClientRuntime();
+    const firstMonitor = deferred<void>();
+    const firstStop = vi.fn(async () => undefined);
+    const secondStop = vi.fn(async () => undefined);
+    const listeners: Array<{
+      onSnapshot(snapshot: {
+        account: RelayPrivilegedAccountRecord;
+        state: RelayPrivilegedStateRecord;
+      }): void;
+    }> = [];
+    const monitorAuthority = vi
+      .fn()
+      .mockImplementationOnce(async (_accountId, listener) => {
+        listeners.push(listener);
+        await firstMonitor.promise;
+        return firstStop;
+      })
+      .mockImplementationOnce(async (_accountId, listener) => {
+        listeners.push(listener);
+        return secondStop;
+      });
+    Object.assign(authClient, { monitorAuthority });
+
+    const firstLogin = runtime.login({ username: USERNAME, password: PASSWORD });
+    await vi.waitFor(() => expect(monitorAuthority).toHaveBeenCalledOnce());
+    await runtime.logout();
+    await expect(runtime.login({ username: USERNAME, password: PASSWORD })).resolves.toMatchObject({
+      state: 'active',
+      accountId: ACCOUNT_ID,
+    });
+
+    listeners[0]!.onSnapshot({
+      account: { ...account, credentialVersion: 2 },
+      state: { ...state, ownerAccountId: 'account-charles', assignmentVersion: 2 },
+    });
+    expect(runtime.getView()).toMatchObject({ state: 'active', accountId: ACCOUNT_ID });
+
+    firstMonitor.resolve();
+    await firstLogin;
+    expect(firstStop).toHaveBeenCalledOnce();
+    expect(secondStop).not.toHaveBeenCalled();
+  });
+
+  it('does not let a cancelled old monitor rejection lock a relogged session', async () => {
+    const runtime = createClientRuntime();
+    const firstMonitor = deferred<void>();
+    const secondStop = vi.fn(async () => undefined);
+    const monitorAuthority = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await firstMonitor.promise;
+        throw Object.assign(new Error('cancelled old monitor'), {
+          code: 'invalid-credentials',
+        });
+      })
+      .mockResolvedValueOnce(secondStop);
+    Object.assign(authClient, { monitorAuthority });
+
+    const firstLogin = runtime.login({ username: USERNAME, password: PASSWORD });
+    await vi.waitFor(() => expect(monitorAuthority).toHaveBeenCalledOnce());
+    await runtime.logout();
+    await runtime.login({ username: USERNAME, password: PASSWORD });
+
+    firstMonitor.resolve();
+    await expect(firstLogin).resolves.toMatchObject({ state: 'active', accountId: ACCOUNT_ID });
+    expect(runtime.getView()).toMatchObject({ state: 'active', accountId: ACCOUNT_ID });
+    expect(secondStop).not.toHaveBeenCalled();
   });
 
   it('delays chunk creation only behind the explicit E2E fixture controls', async () => {

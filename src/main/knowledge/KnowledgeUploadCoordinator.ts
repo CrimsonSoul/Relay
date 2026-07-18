@@ -12,7 +12,7 @@ import {
   type KnowledgeUploadBatchView,
   type KnowledgeUploadManifestView,
 } from '@shared/knowledge';
-import type { PrivilegedRole } from '@shared/privilegedAccess';
+import { getPrivilegedCapabilities, type PrivilegedRole } from '@shared/privilegedAccess';
 import type { KnowledgeExtractionResult } from './knowledgeExtractor';
 
 export type KnowledgeUploadActor = {
@@ -681,7 +681,18 @@ export class KnowledgeUploadCoordinator {
     actor: KnowledgeUploadActor,
     allowAdministratorCrossAccount: boolean,
   ): void {
-    if (allowAdministratorCrossAccount && actor.role === 'admin') return;
+    const capabilities = getPrivilegedCapabilities({
+      active: true,
+      assigned: true,
+      role: actor.role,
+    });
+    if (
+      allowAdministratorCrossAccount &&
+      capabilities.includes('knowledge.manage') &&
+      capabilities.includes('settings.manage')
+    ) {
+      return;
+    }
     if (record.accountId !== actor.accountId || record.deviceId !== actor.deviceId) {
       throw new KnowledgeUploadCoordinatorError('unauthorized');
     }
