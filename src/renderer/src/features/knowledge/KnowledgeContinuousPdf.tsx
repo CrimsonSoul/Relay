@@ -18,6 +18,7 @@ type KnowledgeContinuousPdfProps = {
   onActivateResolvedLink: KnowledgePdfPageProps['onActivateResolvedLink'];
   onActivateDestination: KnowledgePdfPageProps['onActivateDestination'];
   onPageStatus?: KnowledgePdfPageProps['onStatus'];
+  onTargetNavigationComplete?: (target: KnowledgeViewerTarget) => void;
   onCurrentPageChange: (pageIndex: number) => void;
 };
 
@@ -67,6 +68,7 @@ export const KnowledgeContinuousPdf = forwardRef<
     onActivateResolvedLink,
     onActivateDestination,
     onPageStatus = ignorePageStatus,
+    onTargetNavigationComplete,
     onCurrentPageChange,
   },
   ref,
@@ -196,6 +198,10 @@ export const KnowledgeContinuousPdf = forwardRef<
     if (pageCount === 0 || !isExternalRequest) return;
 
     let disposed = false;
+    if (previousFocusRequestKeyRef.current !== focusRequestKey) {
+      previousFocusRequestKeyRef.current = focusRequestKey;
+      viewportRef.current?.focus();
+    }
     const navigate = async () => {
       let targetOffset = 0;
       if (targetTop !== null && targetTop !== undefined) {
@@ -205,14 +211,17 @@ export const KnowledgeContinuousPdf = forwardRef<
         const [, viewportY] = viewport.convertToViewportPoint(0, targetTop);
         targetOffset = Math.max(0, viewportY);
       }
-      if (!disposed) scrollToPage(boundedRequestedPageIndex, targetOffset);
+      if (disposed) return;
+      scrollToPage(boundedRequestedPageIndex, targetOffset);
+      if (targetPageIndex !== undefined) {
+        onTargetNavigationComplete?.({
+          pageIndex: boundedRequestedPageIndex,
+          top: targetTop ?? null,
+        });
+      }
     };
     navigate().catch(() => undefined);
 
-    if (previousFocusRequestKeyRef.current !== focusRequestKey) {
-      previousFocusRequestKeyRef.current = focusRequestKey;
-      viewportRef.current?.focus();
-    }
     return () => {
       disposed = true;
     };
@@ -221,6 +230,7 @@ export const KnowledgeContinuousPdf = forwardRef<
     focusRequestKey,
     pageCount,
     pdf,
+    onTargetNavigationComplete,
     scrollToPage,
     targetPageIndex,
     targetTop,

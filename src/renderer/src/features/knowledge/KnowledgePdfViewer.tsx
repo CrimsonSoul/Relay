@@ -64,6 +64,13 @@ function viewerError(error: string): string {
   }
 }
 
+function viewerTargetsMatch(
+  left: KnowledgeViewerTarget | null,
+  right: KnowledgeViewerTarget | null,
+): boolean {
+  return left?.pageIndex === right?.pageIndex && left?.top === right?.top;
+}
+
 export function KnowledgePdfViewer({
   document: knowledgeDocument,
   active,
@@ -87,7 +94,9 @@ export function KnowledgePdfViewer({
   const viewerRef = useRef<HTMLElement>(null);
   const continuousPdfRef = useRef<KnowledgeContinuousPdfHandle>(null);
   const pageIndexRef = useRef(0);
+  const observedPageIndexRef = useRef(0);
   const navigationTargetRef = useRef<KnowledgeViewerTarget | null>(target);
+  const issuedNavigationTargetRef = useRef<KnowledgeViewerTarget | null>(null);
   const readyPageIndicesRef = useRef(new Set<number>());
   const pdfIdentityRef = useRef<{
     pdf: PDFDocumentProxy;
@@ -133,6 +142,8 @@ export function KnowledgePdfViewer({
     setLoading(true);
     setError(null);
     pageIndexRef.current = 0;
+    observedPageIndexRef.current = 0;
+    issuedNavigationTargetRef.current = null;
     setPageIndex(0);
     setPdf(null);
 
@@ -203,6 +214,7 @@ export function KnowledgePdfViewer({
     const nextTarget =
       targetPageIndex === undefined ? null : { pageIndex: targetPageIndex, top: targetTop ?? null };
     navigationTargetRef.current = nextTarget;
+    issuedNavigationTargetRef.current = null;
     setNavigationTarget(nextTarget);
   }, [targetPageIndex, targetRequestKey, targetTop]);
 
@@ -325,43 +337,78 @@ export function KnowledgePdfViewer({
     [documentChecksum, documentId, onActivateResolvedLink, onDestinationChange, pdf],
   );
 
-  const handlePageStatus = useCallback((status: KnowledgePdfPageStatus) => {
-    if (status.state !== 'ready') return;
-    readyPageIndicesRef.current.add(status.pageIndex);
+  const focusPendingRequest = useCallback((pageIndex: number) => {
     const pendingFocusRequest = pendingFocusRequestRef.current;
     const focusContext = focusContextRef.current;
     if (
       pendingFocusRequest !== undefined &&
       pendingFocusRequest.key === focusContext.focusRequestKey &&
       pendingFocusRequest.documentId === focusContext.documentId &&
-      pendingFocusRequest.target.pageIndex === status.pageIndex &&
+      pendingFocusRequest.target.pageIndex === pageIndex &&
       focusContext.targetPageIndex === pendingFocusRequest.target.pageIndex &&
       focusContext.targetTop === pendingFocusRequest.target.top
     ) {
       viewerRef.current?.querySelector<HTMLDivElement>('.knowledge-viewer__viewport')?.focus();
       pendingFocusRequestRef.current = undefined;
     }
-    if (navigationTargetRef.current?.pageIndex === status.pageIndex) {
-      navigationTargetRef.current = null;
-      setNavigationTarget(null);
-    }
   }, []);
+
+  const consumeNavigationTarget = useCallback(
+    (pageIndex: number) => {
+      const pendingTarget = navigationTargetRef.current;
+      if (
+        pendingTarget?.pageIndex !== pageIndex ||
+        observedPageIndexRef.current !== pageIndex ||
+        !readyPageIndicesRef.current.has(pageIndex) ||
+        !viewerTargetsMatch(issuedNavigationTargetRef.current, pendingTarget)
+      ) {
+        return false;
+      }
+      focusPendingRequest(pageIndex);
+      navigationTargetRef.current = null;
+      issuedNavigationTargetRef.current = null;
+      setNavigationTarget(null);
+      return true;
+    },
+    [focusPendingRequest],
+  );
+
+  const handlePageStatus = useCallback(
+    (status: KnowledgePdfPageStatus) => {
+      if (status.state !== 'ready') return;
+      readyPageIndicesRef.current.add(status.pageIndex);
+      focusPendingRequest(status.pageIndex);
+      consumeNavigationTarget(status.pageIndex);
+    },
+    [consumeNavigationTarget, focusPendingRequest],
+  );
+
+  const handleTargetNavigationComplete = useCallback(
+    (completedTarget: KnowledgeViewerTarget) => {
+      if (!viewerTargetsMatch(navigationTargetRef.current, completedTarget)) return;
+      issuedNavigationTargetRef.current = completedTarget;
+      if (readyPageIndicesRef.current.has(completedTarget.pageIndex)) {
+        focusPendingRequest(completedTarget.pageIndex);
+      }
+      consumeNavigationTarget(completedTarget.pageIndex);
+    },
+    [consumeNavigationTarget, focusPendingRequest],
+  );
 
   const handleContinuousPageChange = useCallback(
     (nextPageIndex: number) => {
+      observedPageIndexRef.current = nextPageIndex;
       const pendingTarget = navigationTargetRef.current;
       if (pendingTarget && pendingTarget.pageIndex !== nextPageIndex) return;
       if (pendingTarget?.pageIndex === nextPageIndex) {
-        if (!readyPageIndicesRef.current.has(nextPageIndex)) return;
-        navigationTargetRef.current = null;
-        setNavigationTarget(null);
+        if (!consumeNavigationTarget(nextPageIndex)) return;
       }
       if (pageIndexRef.current === nextPageIndex) return;
       pageIndexRef.current = nextPageIndex;
       setPageIndex(nextPageIndex);
       onPageChange(nextPageIndex);
     },
-    [onPageChange],
+    [consumeNavigationTarget, onPageChange],
   );
 
   const pageTargetTop = navigationTarget?.pageIndex === pageIndex ? navigationTarget.top : null;
@@ -504,6 +551,7 @@ export function KnowledgePdfViewer({
           onActivateResolvedLink={onActivateResolvedLink}
           onActivateDestination={activateDestination}
           onPageStatus={handlePageStatus}
+          onTargetNavigationComplete={handleTargetNavigationComplete}
           onCurrentPageChange={handleContinuousPageChange}
         />
       )}

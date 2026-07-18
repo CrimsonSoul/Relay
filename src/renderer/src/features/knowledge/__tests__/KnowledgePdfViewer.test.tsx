@@ -298,6 +298,87 @@ describe('KnowledgePdfViewer', () => {
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 1572, behavior: 'smooth' });
   });
 
+  it('consumes a same-page ready target after scrolling so later observer pages remain current', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const { container, rerender } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalled());
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    const scrollTo = vi.fn();
+    viewport.scrollTo = scrollTo;
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+    Object.defineProperty(pages[0], 'offsetTop', { configurable: true, value: 200 });
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 0, top: 650 }, currentSection: 'Overview target' })}
+      />,
+    );
+
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 329.5, behavior: 'smooth' }));
+    expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: pages[0], intersectionRatio: 0 },
+        { target: pages[1], intersectionRatio: 1 },
+      ]);
+    });
+
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenLastCalledWith(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    expect(await screen.findByLabelText('Page 2')).toBeVisible();
+  });
+
+  it('releases a cross-page target that becomes visible before it finishes rendering', async () => {
+    localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
+    const pageTwoText = deferred<{ items: never[]; styles: Record<string, never> }>();
+    getPage.mockImplementation(async (pageNumber: number) => {
+      const loadedPage = page(pageNumber);
+      if (pageNumber === 2) loadedPage.getTextContent = vi.fn(() => pageTwoText.promise);
+      return loadedPage;
+    });
+    const { container, rerender } = renderComponent();
+    await screen.findByText('Page 1 of 3');
+    const viewport = screen.getByRole('region', { name: 'Continuous PDF pages' });
+    viewport.scrollTo = vi.fn();
+    const pages = [...container.querySelectorAll<HTMLElement>('[data-page-index]')];
+
+    rerender(
+      <KnowledgePdfViewer
+        {...viewerProps({ target: { pageIndex: 1, top: null }, currentSection: 'Delayed target' })}
+      />,
+    );
+    await waitFor(() => expect(viewport.scrollTo).toHaveBeenCalled());
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: pages[0], intersectionRatio: 0 },
+        { target: pages[1], intersectionRatio: 1 },
+      ]);
+    });
+    expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
+
+    await act(async () => {
+      pageTwoText.resolve({ items: [], styles: {} });
+      await pageTwoText.promise;
+    });
+    await waitFor(() => expect(TextLayerMock).toHaveBeenCalledTimes(3));
+
+    act(() => {
+      IntersectionObserverDouble.instances[0].emit([
+        { target: pages[1], intersectionRatio: 0 },
+        { target: pages[2], intersectionRatio: 1 },
+      ]);
+    });
+
+    expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
+    expect(onPageChange).toHaveBeenLastCalledWith(2);
+    fireEvent.click(screen.getByRole('button', { name: 'View: Continuous' }));
+    expect(await screen.findByLabelText('Page 3')).toBeVisible();
+  });
+
   it('keeps outline offsets, shared zoom, and fit width without a second PDF fetch', async () => {
     localStorage.removeItem(KNOWLEDGE_PDF_VIEW_MODE_STORAGE_KEY);
     const scrollTo = vi.mocked(HTMLElement.prototype.scrollTo);
