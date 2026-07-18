@@ -17,12 +17,17 @@ import {
   normalizeRoleUsername,
 } from '@shared/roleAccounts';
 import type { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
+import {
+  AuthorityMutationCoordinator,
+  type AuthorityMutationCoordinatorPort,
+} from './AuthorityMutationCoordinator';
 
 type RoleAccountManagerOptions = {
   pb: PocketBase;
   snapshotReader: Pick<RelayAdministrationSnapshotReader, 'read'>;
   now?: () => number;
   onAuthorityChanged?: (accountIds: string[]) => void | Promise<void>;
+  coordinator?: AuthorityMutationCoordinatorPort;
 };
 
 type CreateRoleAccountInput = {
@@ -51,6 +56,27 @@ export class RoleAccountConflictError extends Error {
   }
 }
 
+export class RoleAccountCommitVerificationError extends Error {
+  constructor() {
+    super('The account was created, but its authority commit could not be verified safely.');
+    this.name = 'RoleAccountCommitVerificationError';
+  }
+}
+
+export class RoleAccountCleanupError extends Error {
+  constructor() {
+    super('Account creation failed and cleanup also failed; the inactive account was retained.');
+    this.name = 'RoleAccountCleanupError';
+  }
+}
+
+export class RoleAccountNotificationError extends Error {
+  constructor() {
+    super('Account authority change committed, but session invalidation failed.');
+    this.name = 'RoleAccountNotificationError';
+  }
+}
+
 function internalEmail(username: string): string {
   return `${username}@relay.invalid`;
 }
@@ -73,13 +99,14 @@ export class RoleAccountManager {
   private readonly snapshotReader: Pick<RelayAdministrationSnapshotReader, 'read'>;
   private readonly now: () => number;
   private readonly onAuthorityChanged?: (accountIds: string[]) => void | Promise<void>;
-  private authorityMutationTail: Promise<void> = Promise.resolve();
+  private readonly coordinator: AuthorityMutationCoordinatorPort;
 
   constructor(options: RoleAccountManagerOptions) {
     this.pb = options.pb;
     this.snapshotReader = options.snapshotReader;
     this.now = options.now ?? Date.now;
     this.onAuthorityChanged = options.onAuthorityChanged;
+    this.coordinator = options.coordinator ?? new AuthorityMutationCoordinator();
   }
 
   async createAdministrator(input: CreateRoleAccountInput): Promise<RelayAdministrationSnapshot> {
@@ -171,7 +198,7 @@ export class RoleAccountManager {
           { active: input.active, revision: target.revision + 1 },
           { requestKey: null },
         );
-      await this.onAuthorityChanged?.([target.id]);
+      await this.notifyAuthorityChanged([target.id]);
     }
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }
@@ -196,7 +223,7 @@ export class RoleAccountManager {
         ownerAccountId: target.id,
         updatedByAccountId: input.actorAccountId,
       });
-      await this.onAuthorityChanged?.([input.actorAccountId, target.id]);
+      await this.notifyAuthorityChanged([input.actorAccountId, target.id]);
     }
     return this.snapshotReader.read({ accountId: input.actorAccountId });
   }
@@ -236,20 +263,37 @@ export class RoleAccountManager {
     try {
       await commit();
     } catch (error) {
-      await this.pb
-        .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
-        .delete(account.id, { requestKey: null });
+      if (error instanceof RoleAccountCommitVerificationError) throw error;
+      let current: RelayPrivilegedStateRecord;
+      try {
+        current = await this.getState();
+      } catch {
+        throw new RoleAccountCommitVerificationError();
+      }
+      if (current.ownerAccountId === account.id || current.publisherAccountId === account.id) {
+        throw new RoleAccountCommitVerificationError();
+      }
+      try {
+        await this.pb
+          .collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION)
+          .delete(account.id, { requestKey: null });
+      } catch {
+        throw new RoleAccountCleanupError();
+      }
       throw error;
     }
   }
 
   private withAuthorityMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.authorityMutationTail.then(operation);
-    this.authorityMutationTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return this.coordinator.run(operation);
+  }
+
+  private async notifyAuthorityChanged(accountIds: string[]): Promise<void> {
+    try {
+      await this.onAuthorityChanged?.(accountIds);
+    } catch {
+      throw new RoleAccountNotificationError();
+    }
   }
 
   private assertCanManageTarget(
@@ -310,18 +354,43 @@ export class RoleAccountManager {
     if (current.id !== state.id || current.assignmentVersion !== state.assignmentVersion) {
       throw new RoleAccountConflictError(current.assignmentVersion);
     }
-    await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
-      current.id,
-      {
-        ...(change.ownerAccountId === undefined ? {} : { ownerAccountId: change.ownerAccountId }),
-        ...(change.publisherAccountId === undefined
-          ? {}
-          : { publisherAccountId: change.publisherAccountId }),
-        assignmentVersion: current.assignmentVersion + 1,
-        updatedByAccountId: change.updatedByAccountId,
-        updatedAt: new Date(this.now()).toISOString(),
-      },
-      { requestKey: null },
-    );
+    const expected = {
+      ownerAccountId: change.ownerAccountId ?? current.ownerAccountId,
+      publisherAccountId: change.publisherAccountId ?? current.publisherAccountId,
+      assignmentVersion: current.assignmentVersion + 1,
+      updatedByAccountId: change.updatedByAccountId,
+    };
+    try {
+      await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
+        current.id,
+        {
+          ...(change.ownerAccountId === undefined ? {} : { ownerAccountId: change.ownerAccountId }),
+          ...(change.publisherAccountId === undefined
+            ? {}
+            : { publisherAccountId: change.publisherAccountId }),
+          assignmentVersion: expected.assignmentVersion,
+          updatedByAccountId: change.updatedByAccountId,
+          updatedAt: new Date(this.now()).toISOString(),
+        },
+        { requestKey: null },
+      );
+    } catch (commitError) {
+      let verified: RelayPrivilegedStateRecord;
+      try {
+        verified = await this.getState();
+      } catch {
+        throw new RoleAccountCommitVerificationError();
+      }
+      if (
+        verified.id === current.id &&
+        verified.ownerAccountId === expected.ownerAccountId &&
+        verified.publisherAccountId === expected.publisherAccountId &&
+        verified.assignmentVersion === expected.assignmentVersion &&
+        verified.updatedByAccountId === expected.updatedByAccountId
+      ) {
+        return;
+      }
+      throw commitError;
+    }
   }
 }

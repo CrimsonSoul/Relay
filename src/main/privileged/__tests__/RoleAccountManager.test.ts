@@ -249,6 +249,34 @@ describe('RoleAccountManager', () => {
     ).rejects.toEqual(new RoleAccountConflictError(4));
   });
 
+  it('reports callback failure as a committed ownership transfer with failed invalidation', async () => {
+    let currentState = state();
+    stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+    stateCollection.update.mockImplementation(
+      async (_id: string, data: Record<string, unknown>) => {
+        currentState = state({ ...data });
+        return currentState;
+      },
+    );
+    onAuthorityChanged.mockRejectedValueOnce(new Error('callback unavailable'));
+
+    await expect(
+      manager().transferOwnership({
+        actorAccountId: 'account-ryan',
+        accountId: 'account-charles',
+        expectedStateRevision: 4,
+      }),
+    ).rejects.toMatchObject({
+      name: 'RoleAccountNotificationError',
+      message: expect.stringMatching(/committed.*invalidation failed/i),
+    });
+
+    expect(currentState).toMatchObject({
+      ownerAccountId: 'account-charles',
+      assignmentVersion: 5,
+    });
+  });
+
   it('never infers ownership from a display name', async () => {
     accountCollection.getOne.mockImplementation(async (id: string) =>
       id === 'account-impostor'
@@ -326,6 +354,66 @@ describe('RoleAccountManager', () => {
       expect(snapshotReader.read).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    ['Administrator', 'createAdministrator', 'account-ryan', 'admin-2', null],
+    ['Publisher', 'createPublisher', 'account-charles', 'publisher-2', 'account-created'],
+  ] as const)(
+    'keeps a created %s when the singleton response fails after the commit',
+    async (_label, method, actorAccountId, username, publisherAccountId) => {
+      let currentState = state();
+      stateCollection.getFirstListItem.mockImplementation(async () => currentState);
+      stateCollection.update.mockImplementationOnce(
+        async (_id: string, data: Record<string, unknown>) => {
+          currentState = state({ ...data });
+          throw new Error('singleton response lost');
+        },
+      );
+
+      await expect(
+        manager()[method]({
+          actorAccountId,
+          username,
+          displayName: 'New Account',
+          expectedStateRevision: 4,
+        }),
+      ).resolves.toEqual({ generatedAt: NOW });
+
+      expect(currentState).toMatchObject({
+        assignmentVersion: 5,
+        publisherAccountId,
+        updatedByAccountId: actorAccountId,
+      });
+      expect(accountCollection.delete).not.toHaveBeenCalled();
+      expect(snapshotReader.read).toHaveBeenCalledWith({ accountId: actorAccountId });
+    },
+  );
+
+  it('reports cleanup failure explicitly while leaving a created account inactive and non-authoritative', async () => {
+    stateCollection.update.mockRejectedValueOnce(new Error('singleton unavailable'));
+    accountCollection.delete.mockRejectedValueOnce(new Error('cleanup unavailable'));
+
+    await expect(
+      manager().createPublisher({
+        actorAccountId: 'account-charles',
+        username: 'publisher-2',
+        displayName: 'Publisher Two',
+        expectedStateRevision: 4,
+      }),
+    ).rejects.toMatchObject({
+      name: 'RoleAccountCleanupError',
+      message: expect.stringMatching(/cleanup.*failed/i),
+    });
+
+    expect(accountCollection.create).toHaveBeenCalledWith(
+      expect.objectContaining({ active: false, mustChangePassword: true }),
+      { requestKey: null },
+    );
+    expect(stateCollection.getFirstListItem).toHaveBeenLastCalledWith('key="primary"', {
+      requestKey: null,
+    });
+    expect(snapshotReader.read).not.toHaveBeenCalled();
+  });
 
   it('serializes simultaneous account creation so one state revision cannot create two accounts', async () => {
     let currentState = state();

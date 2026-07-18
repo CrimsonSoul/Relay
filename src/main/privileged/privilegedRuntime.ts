@@ -65,6 +65,7 @@ import { PrivilegedDeviceManager } from './PrivilegedDeviceManager';
 import { RelayAdministrationSnapshotReader } from './RelayAdministrationSnapshotReader';
 import { RelayAdministrationService } from './RelayAdministrationService';
 import { RoleAccountManager } from './RoleAccountManager';
+import { AuthorityMutationCoordinator } from './AuthorityMutationCoordinator';
 import { registerKnowledgeManagementCommands } from '../knowledge/registerKnowledgeManagementCommands';
 import { ManagedKnowledgeService } from '../knowledge/ManagedKnowledgeService';
 import { KnowledgeMutationCoordinator } from '../knowledge/KnowledgeMutationCoordinator';
@@ -531,6 +532,7 @@ export function registerProductionAdministrationCommands(options: {
   publisherManager: PublisherAssignmentManager;
   deviceManager: PrivilegedDeviceManager;
   snapshotReader: RelayAdministrationSnapshotReader;
+  coordinator: AuthorityMutationCoordinator;
 } {
   const deviceManager = new PrivilegedDeviceManager({ pb: options.pb });
   const snapshotReader = new RelayAdministrationSnapshotReader({
@@ -539,11 +541,13 @@ export function registerProductionAdministrationCommands(options: {
     administrationService: options.administrationService ?? { getSettingSummaries: () => [] },
     logger: loggers.security,
   });
+  const coordinator = new AuthorityMutationCoordinator();
   const roleAccountManager = new RoleAccountManager({
     pb: options.pb,
     snapshotReader,
+    coordinator,
   });
-  const publisherManager = new PublisherAssignmentManager({ pb: options.pb });
+  const publisherManager = new PublisherAssignmentManager({ pb: options.pb, coordinator });
   registerAdministrationCommands({
     registrar: options.registrar,
     roleAccountManager,
@@ -553,7 +557,7 @@ export function registerProductionAdministrationCommands(options: {
     snapshotReader,
     consumeReauthenticationProof: options.consumeReauthenticationProof,
   });
-  return { roleAccountManager, publisherManager, deviceManager, snapshotReader };
+  return { roleAccountManager, publisherManager, deviceManager, snapshotReader, coordinator };
 }
 
 function boundedIdentityString(value: unknown, max: number): value is string {

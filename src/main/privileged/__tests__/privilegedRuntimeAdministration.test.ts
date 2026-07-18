@@ -18,6 +18,13 @@ describe('production administration command wiring', () => {
     });
 
     expect(services.roleAccountManager.constructor.name).toBe('RoleAccountManager');
+    expect(services.coordinator.constructor.name).toBe('AuthorityMutationCoordinator');
+    expect((services.roleAccountManager as unknown as { coordinator: unknown }).coordinator).toBe(
+      services.coordinator,
+    );
+    expect((services.publisherManager as unknown as { coordinator: unknown }).coordinator).toBe(
+      services.coordinator,
+    );
     expect(registered.has('account.admin.create')).toBe(true);
     expect(registered.has('account.publisher.create')).toBe(true);
   });

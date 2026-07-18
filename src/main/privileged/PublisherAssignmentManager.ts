@@ -9,11 +9,16 @@ import {
   type RelayPrivilegedStateRecord,
 } from '@shared/privilegedAccess';
 import { getEffectiveRole } from '@shared/roleAccounts';
+import {
+  AuthorityMutationCoordinator,
+  type AuthorityMutationCoordinatorPort,
+} from './AuthorityMutationCoordinator';
 
 type PublisherAssignmentManagerOptions = {
   pb: PocketBase;
   now?: () => number;
   onAssignmentChanged?: (accountIds: string[]) => void | Promise<void>;
+  coordinator?: AuthorityMutationCoordinatorPort;
 };
 
 type PublisherAssignmentInput = {
@@ -35,6 +40,29 @@ export class PublisherAssignmentConflictError extends Error {
   }
 }
 
+export class PublisherAssignmentCommitVerificationError extends Error {
+  constructor() {
+    super(
+      'The Publisher assignment response failed and the committed state could not be verified.',
+    );
+    this.name = 'PublisherAssignmentCommitVerificationError';
+  }
+}
+
+export class PublisherAssignmentRecoveryError extends Error {
+  constructor() {
+    super('Publisher assignment failed and session invalidation also failed.');
+    this.name = 'PublisherAssignmentRecoveryError';
+  }
+}
+
+export class PublisherAssignmentNotificationError extends Error {
+  constructor() {
+    super('Publisher assignment committed, but session invalidation failed.');
+    this.name = 'PublisherAssignmentNotificationError';
+  }
+}
+
 function escapeFilter(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 }
@@ -43,21 +71,17 @@ export class PublisherAssignmentManager {
   private readonly pb: PocketBase;
   private readonly now: () => number;
   private readonly onAssignmentChanged?: (accountIds: string[]) => void | Promise<void>;
-  private assignmentTail: Promise<void> = Promise.resolve();
+  private readonly coordinator: AuthorityMutationCoordinatorPort;
 
   constructor(options: PublisherAssignmentManagerOptions) {
     this.pb = options.pb;
     this.now = options.now ?? Date.now;
     this.onAssignmentChanged = options.onAssignmentChanged;
+    this.coordinator = options.coordinator ?? new AuthorityMutationCoordinator();
   }
 
   async assign(input: PublisherAssignmentInput): Promise<PublisherAssignmentResult> {
-    const result = this.assignmentTail.then(() => this.assignExclusive(input));
-    this.assignmentTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return this.coordinator.run(() => this.assignExclusive(input));
   }
 
   private async assignExclusive(
@@ -90,28 +114,40 @@ export class PublisherAssignmentManager {
       throw new PublisherAssignmentConflictError(commitState.assignmentVersion);
     }
 
-    const nextRevision = commitState.assignmentVersion + 1;
-    await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
-      commitState.id,
-      {
-        publisherAccountId: input.accountId ?? '',
-        assignmentVersion: nextRevision,
-        updatedByAccountId: input.actorAccountId,
-        updatedAt: new Date(this.now()).toISOString(),
-      },
-      { requestKey: null },
-    );
-    if (target) await this.preparePendingPublisher(target, input.actorAccountId);
-    if (commitState.publisherAccountId) {
-      await this.disablePublisher(
-        await this.getAccount(commitState.publisherAccountId),
-        input.actorAccountId,
-      );
-    }
     const changedAccounts = [commitState.publisherAccountId, input.accountId].filter(
       (accountId): accountId is string => Boolean(accountId),
     );
-    await this.onAssignmentChanged?.([...new Set(changedAccounts)]);
+    const uniqueChangedAccounts = [...new Set(changedAccounts)];
+
+    if (target) {
+      await this.preparePendingPublisher(target, input.actorAccountId);
+    }
+
+    const nextRevision = commitState.assignmentVersion + 1;
+    try {
+      await this.commitAssignment(commitState, input.accountId, input.actorAccountId);
+    } catch (error) {
+      await this.notifyAfterError(uniqueChangedAccounts);
+      throw error;
+    }
+
+    try {
+      if (commitState.publisherAccountId) {
+        await this.disablePublisher(
+          await this.getAccount(commitState.publisherAccountId),
+          input.actorAccountId,
+        );
+      }
+    } catch (error) {
+      await this.notifyAfterError(uniqueChangedAccounts);
+      throw error;
+    }
+
+    try {
+      await this.onAssignmentChanged?.(uniqueChangedAccounts);
+    } catch {
+      throw new PublisherAssignmentNotificationError();
+    }
     return {
       publisherAccountId: input.accountId,
       assignmentRevision: nextRevision,
@@ -135,7 +171,6 @@ export class PublisherAssignmentManager {
     account: RelayPrivilegedAccountRecord,
     actorAccountId: string,
   ): Promise<void> {
-    await this.revokeDevices(account, actorAccountId);
     const credential = randomBytes(48).toString('base64url');
     await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
       account.id,
@@ -148,6 +183,12 @@ export class PublisherAssignmentManager {
       },
       { requestKey: null },
     );
+    try {
+      await this.revokeDevices(account, actorAccountId);
+    } catch (error) {
+      await this.notifyAfterError([account.id]);
+      throw error;
+    }
   }
 
   private async disablePublisher(
@@ -157,7 +198,6 @@ export class PublisherAssignmentManager {
     if (account.storedRole !== 'publisher') {
       throw new Error('The authoritative Publisher account is invalid.');
     }
-    await this.revokeDevices(account, actorAccountId);
     const credential = randomBytes(48).toString('base64url');
     await this.pb.collection(RELAY_PRIVILEGED_ACCOUNTS_COLLECTION).update(
       account.id,
@@ -170,6 +210,55 @@ export class PublisherAssignmentManager {
       },
       { requestKey: null },
     );
+    await this.revokeDevices(account, actorAccountId);
+  }
+
+  private async commitAssignment(
+    state: RelayPrivilegedStateRecord,
+    publisherAccountId: string | null,
+    actorAccountId: string,
+  ): Promise<void> {
+    const expected = {
+      publisherAccountId,
+      assignmentVersion: state.assignmentVersion + 1,
+      updatedByAccountId: actorAccountId,
+    };
+    try {
+      await this.pb.collection(RELAY_PRIVILEGED_STATE_COLLECTION).update(
+        state.id,
+        {
+          publisherAccountId: publisherAccountId ?? '',
+          assignmentVersion: expected.assignmentVersion,
+          updatedByAccountId: actorAccountId,
+          updatedAt: new Date(this.now()).toISOString(),
+        },
+        { requestKey: null },
+      );
+    } catch (commitError) {
+      let verified: RelayPrivilegedStateRecord;
+      try {
+        verified = await this.getState();
+      } catch {
+        throw new PublisherAssignmentCommitVerificationError();
+      }
+      if (
+        verified.id === state.id &&
+        verified.publisherAccountId === expected.publisherAccountId &&
+        verified.assignmentVersion === expected.assignmentVersion &&
+        verified.updatedByAccountId === expected.updatedByAccountId
+      ) {
+        return;
+      }
+      throw commitError;
+    }
+  }
+
+  private async notifyAfterError(accountIds: string[]): Promise<void> {
+    try {
+      await this.onAssignmentChanged?.([...new Set(accountIds)]);
+    } catch {
+      throw new PublisherAssignmentRecoveryError();
+    }
   }
 
   private async revokeDevices(
